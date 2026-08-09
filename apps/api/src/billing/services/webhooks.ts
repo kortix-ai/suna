@@ -25,6 +25,7 @@ import {
   defaultAutoTopupForSeats,
 } from './tiers';
 import { grantCredits, resetExpiringCredits } from './credits';
+import { isPayingSubscriptionStatus } from './billing-state';
 import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
@@ -148,11 +149,92 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
   const stripe = getStripe();
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
+  // FRAUD GATE — money first, entitlements second.
+  //
+  // `checkout.session.completed` fires as soon as Stripe finishes the session,
+  // INCLUDING when the first invoice was never paid. Such a session carries
+  // `payment_status='unpaid'` and leaves the subscription at `incomplete`,
+  // which expires to `incomplete_expired` after 23 hours with no money moved.
+  // Activating here handed those sessions the full tier write AND the
+  // activation credit grant: on production, 85 accounts holding
+  // incomplete/incomplete_expired subscriptions burned $840 of granted credit
+  // without ever paying (a signup farm).
+  //
+  // Record the subscription pointer only — no tier, no credits. Activation is
+  // deferred to `invoice.paid` (billing_reason `subscription_create`), which
+  // Stripe sends once the first invoice actually settles. That covers the
+  // legitimate case this gate also catches: delayed payment methods
+  // (bank debits, vouchers) whose checkout completes before the money does.
+  if (session.payment_status !== 'paid') {
+    await upsertCreditAccount(accountId, {
+      stripeSubscriptionId: subscriptionId,
+      stripeSubscriptionStatus: subscription.status,
+      provider: 'stripe',
+    });
+    console.log(
+      `[Webhook] Deferred subscription activation for ${accountId} (sub=${subscriptionId}): checkout payment_status=${session.payment_status ?? 'unknown'}, subscription status=${subscription.status}. Waiting for invoice.paid.`,
+    );
+    return;
+  }
+
+  await activateSubscriptionForAccount({
+    accountId,
+    subscription,
+    subscriptionId,
+    tierKey,
+    commitmentType: session.metadata?.commitment_type ?? null,
+    previousSubscriptionIdHint: session.metadata?.previous_subscription_id ?? null,
+    customerId: typeof session.customer === 'string'
+      ? session.customer
+      : session.customer?.id ?? null,
+    customerEmail: session.customer_email ?? null,
+    serverType: session.metadata?.server_type ?? null,
+    location: session.metadata?.location ?? null,
+  });
+}
+
+/**
+ * Write the tier, grant the activation credit, and stitch up the customer /
+ * previous-subscription / machine-bonus side effects for a subscription whose
+ * first payment has SETTLED.
+ *
+ * Two callers reach it, and both must have proven payment first:
+ * - `handleSubscriptionCheckout`, when `session.payment_status === 'paid'`.
+ * - `handleInvoicePaid` on billing_reason `subscription_create`, when the
+ *   subscription status is a paying one.
+ *
+ * Nothing in here re-checks payment. The gate belongs to the callers, so this
+ * function stays a single place that describes what activation IS.
+ */
+async function activateSubscriptionForAccount(params: {
+  accountId: string;
+  subscription: Stripe.Subscription;
+  subscriptionId: string;
+  tierKey: string;
+  commitmentType: string | null;
+  previousSubscriptionIdHint: string | null;
+  customerId: string | null;
+  customerEmail: string | null;
+  serverType: string | null;
+  location: string | null;
+}) {
+  const {
+    accountId,
+    subscription,
+    subscriptionId,
+    tierKey,
+    commitmentType,
+    previousSubscriptionIdHint,
+    customerId,
+    customerEmail,
+    serverType,
+    location,
+  } = params;
+
   const tier = getTier(tierKey);
-  const commitmentType = session.metadata?.commitment_type;
   const isYearly = commitmentType === 'yearly' || commitmentType === 'yearly_commitment';
   const existingAccount = await getCreditAccount(accountId);
-  const previousSubscriptionId = session.metadata?.previous_subscription_id
+  const previousSubscriptionId = previousSubscriptionIdHint
     ?? (
       existingAccount?.tier === 'free' &&
       existingAccount.stripeSubscriptionId &&
@@ -185,6 +267,9 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
 
   await upsertCreditAccount(accountId, {
     tier: tierKey,
+    // A real subscription ends an admin-issued trial: mark it converted so the
+    // trial overlay (effective-tier.ts) stops masking the purchased plan.
+    ...(existingAccount?.trialStatus === 'active' ? { trialStatus: 'converted' } : {}),
     provider: 'stripe',
     stripeSubscriptionId: subscriptionId,
     stripeSubscriptionStatus: 'active',
@@ -224,12 +309,11 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
   }
 
   // Upsert Stripe customer record
-  if (session.customer) {
-    const customerId = typeof session.customer === 'string' ? session.customer : session.customer.id;
+  if (customerId) {
     await upsertCustomer({
       accountId,
       id: customerId,
-      email: session.customer_email ?? null,
+      email: customerEmail,
       provider: 'stripe',
       active: true,
     });
@@ -238,9 +322,6 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
   if (previousSubscriptionId && previousSubscriptionId !== subscriptionId) {
     await cancelFreeSubscriptionForUpgrade(previousSubscriptionId, accountId);
   }
-
-  const serverType = session.metadata?.server_type;
-  const location = session.metadata?.location;
 
   if (serverType) {
     try {
@@ -258,7 +339,7 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     void tierKey;
   }
 
-  console.log(`[Webhook] Subscription checkout: ${tierKey} for ${accountId} (sub=${subscriptionId})`);
+  console.log(`[Webhook] Subscription activated: ${tierKey} for ${accountId} (sub=${subscriptionId})`);
 }
 
 async function handleSubscriptionChange(subscription: Stripe.Subscription) {
@@ -341,11 +422,17 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   // (the stored pointer pointed at a dead sub while a live plan sub was being
   // adopted above). In all these cases the balance is likely $0 and the
   // customer was paywalled through no fault of their own.
+  //
+  // Gated on `subIsPaying` for the same reason the checkout path is: a
+  // `customer.subscription.created` for an `incomplete` subscription is not a
+  // customer, it is an unpaid attempt. Recovery credit for one is a pure gift.
+  const subIsPaying = isPayingSubscriptionStatus(subscription.status);
   const shouldGrantRecoveryCredits =
     !!resolvedTier &&
+    subIsPaying &&
     (!account || (!account.stripeSubscriptionId && (!account.tier || account.tier === 'free' || account.tier === 'none')));
 
-  console.log(`[Webhook] syncSubscriptionState: account=${accountId} tier_meta=${tierKey} price=${priceId} resolved=${resolvedTier} status=${subscription.status}`);
+  console.log(`[Webhook] syncSubscriptionState: account=${accountId} tier_meta=${tierKey} price=${priceId} resolved=${resolvedTier} status=${subscription.status} paying=${subIsPaying}`);
 
   const updates: Record<string, any> = {
     stripeSubscriptionId: subscription.id,
@@ -359,7 +446,11 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       : null,
   };
 
-  if (resolvedTier) {
+  // Tier is an ENTITLEMENT, and entitlements follow money. A subscription that
+  // is `incomplete` (first invoice never paid) or `incomplete_expired` (first
+  // invoice never paid, and now it never will be) must not write a paid tier.
+  // Every other field above is factual bookkeeping and is written regardless.
+  if (resolvedTier && subIsPaying) {
     updates.tier = resolvedTier;
   }
 
@@ -393,7 +484,10 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     !!account && (account.enterpriseEntitled || account.tier === 'enterprise');
   let perSeatDelta = 0;
   let perSeatNewSeats = 0;
-  if (perSeatItem) {
+  // Same gate as the tier write. Seat count, billing model, and the seat
+  // allowance grant are all entitlements bought with the first invoice; an
+  // `incomplete` per-seat subscription has bought none of them yet.
+  if (perSeatItem && subIsPaying) {
     const newSeats = Math.max(1, Math.floor(perSeatItem.quantity ?? 1));
     const oldSeats = account?.seatCount ?? 0;
     perSeatDelta = newSeats - oldSeats;
@@ -423,6 +517,52 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       const defaults = defaultAutoTopupForSeats(newSeats);
       updates.autoTopupThreshold = String(defaults.threshold);
       updates.autoTopupAmount = String(defaults.amount);
+    }
+  }
+
+  // A real, paying subscription ends an admin-issued trial: mark it converted
+  // so the trial overlay (effective-tier.ts) stops masking the purchased plan.
+  // Only paying statuses count — an incomplete/past_due sub must not eat the
+  // trial the account is still evaluating on.
+  if (
+    account?.trialStatus === 'active' &&
+    (updates.tier || perSeatItem) &&
+    (subscription.status === 'active' || subscription.status === 'trialing')
+  ) {
+    updates.trialStatus = 'converted';
+  }
+
+  // NEVER-PAID RESET — revoke a tier this subscription should never have granted.
+  //
+  // `incomplete_expired` has exactly one meaning in Stripe: the first invoice
+  // was never paid, and Stripe has given up collecting it. No money EVER moved
+  // on this subscription. Rows written before the payment gate above landed
+  // (85 production accounts, $840 of granted credit) still carry the paid tier
+  // that this subscription handed out, and nothing else would ever take it
+  // back — `customer.subscription.deleted` does not fire for a subscription
+  // that expired without activating.
+  //
+  // Deliberately narrow. It only fires when the account still points at THIS
+  // subscription and still holds the exact tier THIS subscription granted, so
+  // it can never strip a tier that some other subscription, a migration, or an
+  // operator granted. `enterprise_entitled` accounts are never touched: their
+  // entitlement is contracted, not Stripe-derived.
+  const neverPaidTierGrantedByThisSub =
+    subscription.status === 'incomplete_expired' &&
+    account &&
+    account.stripeSubscriptionId === subscription.id &&
+    !account.enterpriseEntitled &&
+    account.tier &&
+    !['free', 'none'].includes(account.tier) &&
+    (account.tier === resolvedTier || (!!perSeatItem && account.tier === 'per_seat'));
+
+  if (neverPaidTierGrantedByThisSub) {
+    console.log(
+      `[Webhook] syncSubscriptionState: revoking never-paid tier '${account!.tier}' for ${accountId} (sub=${subscription.id} is incomplete_expired — first invoice was never paid)`,
+    );
+    updates.tier = 'free';
+    if (account!.billingModel === 'per_seat') {
+      updates.billingModel = 'legacy';
     }
   }
 
@@ -460,7 +600,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     }
   }
 
-  if (perSeatItem && perSeatDelta > 0 && !recoveryCoveredEverySeat) {
+  if (perSeatItem && subIsPaying && perSeatDelta > 0 && !recoveryCoveredEverySeat) {
     // INCLUDED_CREDITS_PER_SEAT_USD ($25 of wallet allowance), never
     // PER_SEAT_PRICE_USD ($40, the price the customer pays). tiers.ts documents
     // that the two are decoupled on purpose — the other $15 is platform margin.
@@ -635,8 +775,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     : invoice.subscription?.id;
   if (!subscriptionId) return;
 
+  // `subscription_cycle` is a renewal. `subscription_create` is the FIRST
+  // invoice of a new subscription actually settling — the event that proves
+  // money moved, and therefore the only trustworthy activation trigger.
   const billingReason = invoice.billing_reason;
-  if (billingReason !== 'subscription_cycle') return;
+  if (billingReason !== 'subscription_cycle' && billingReason !== 'subscription_create') return;
 
   const stripe = getStripe();
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -644,6 +787,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   if (!accountId) return;
 
   await repairStripeSubscriptionAccountMetadata(subscription, accountId);
+
+  if (billingReason === 'subscription_create') {
+    await activateOnFirstInvoicePaid(accountId, subscription, subscriptionId);
+    return;
+  }
 
   const account = await getCreditAccount(accountId);
   if (!account) return;
@@ -686,6 +834,67 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   });
 
   console.log(`[Webhook] Renewal processed: ${credits} credits for ${accountId}`);
+}
+
+/**
+ * Activate a subscription whose FIRST invoice has just been paid
+ * (`invoice.paid`, billing_reason `subscription_create`).
+ *
+ * This is the money-first counterpart to the checkout path. It is what
+ * activates a delayed-payment-method checkout — bank debit, voucher, 3DS
+ * finished late — where `checkout.session.completed` arrived with
+ * `payment_status='unpaid'` and was deferred on purpose.
+ *
+ * IDEMPOTENT WITH THE CHECKOUT PATH. Running both for the same subscription
+ * grants once and converges on the same row:
+ * - the activation credit grant shares the
+ *   `subscription_activation:${subscriptionId}` idempotency key with
+ *   `handleSubscriptionCheckout` (and with syncSubscriptionState's recovery
+ *   reset), so the second caller is deduped by the credits ledger;
+ * - the machine bonus is guarded by `grantMachineBonusOnce`;
+ * - every other write (`upsertCreditAccount`, `upsertCustomer`) is an upsert
+ *   with identical values, and `cancelFreeSubscriptionForUpgrade` is a no-op
+ *   for an already-cancelled subscription.
+ */
+async function activateOnFirstInvoicePaid(
+  accountId: string,
+  subscription: Stripe.Subscription,
+  subscriptionId: string,
+) {
+  // Stripe can send `invoice.paid` for an invoice that was paid out-of-band on
+  // a subscription that is still not collecting. Require a paying status.
+  if (!isPayingSubscriptionStatus(subscription.status)) {
+    console.log(
+      `[Webhook] invoice.paid(subscription_create): skipping activation for ${accountId} (sub=${subscriptionId} status=${subscription.status} is not a paying status)`,
+    );
+    return;
+  }
+
+  const priceId = subscription.items.data[0]?.price?.id;
+  const tierKey = subscription.metadata?.tier_key ?? getTierByPriceId(priceId ?? '')?.name;
+  if (!tierKey) {
+    console.warn(
+      `[Webhook] invoice.paid(subscription_create): no tier for ${accountId} (sub=${subscriptionId} price=${priceId ?? 'none'})`,
+    );
+    return;
+  }
+
+  await withAccountLock(accountId, () =>
+    activateSubscriptionForAccount({
+      accountId,
+      subscription,
+      subscriptionId,
+      tierKey,
+      commitmentType: subscription.metadata?.commitment_type ?? null,
+      previousSubscriptionIdHint: null,
+      customerId: typeof subscription.customer === 'string'
+        ? subscription.customer
+        : subscription.customer?.id ?? null,
+      customerEmail: null,
+      serverType: null,
+      location: null,
+    }),
+  );
 }
 
 async function applyScheduledDowngrade(accountId: string, targetTier: string, account: any) {

@@ -157,6 +157,12 @@ function connectorResponseMessage(body: unknown, status: number): string {
   return `HTTP ${status}`;
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return end === value.length ? value : value.slice(0, end);
+}
+
 export async function uploadConnectorAttachment(
   projectId: string | undefined,
   content: Uint8Array | ArrayBuffer | Blob,
@@ -176,7 +182,7 @@ export async function uploadConnectorAttachment(
     headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
   }
 
-  const backendUrl = platformConfig().backendUrl.replace(/\/+$/, '');
+  const backendUrl = trimTrailingSlashes(platformConfig().backendUrl);
   const endpoint = connectorGatewayPath(projectId, 'attachments');
   const response = await authenticatedFetch(
     `${backendUrl}${endpoint}`,
@@ -932,6 +938,11 @@ export async function listPipedreamApps(projectId: string, q?: string, cursor?: 
   return unwrap(
     await backendApi.get<{
       apps: PipedreamApp[];
+      /** The catalogue's size for this query, across every page. Optional
+       *  because API builds before it was forwarded omit it — callers fall
+       *  back to what they have loaded rather than quoting a total they cannot
+       *  back up. */
+      total?: number;
       nextCursor?: string;
       hasMore: boolean;
     }>(`/connectors/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`),

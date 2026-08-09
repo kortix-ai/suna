@@ -58,6 +58,7 @@ mock.module('../../billing/services/entitlements', () => ({
   // (getCachedAccountTier) instead of keeping its own duplicate cache — see
   // unit-account-tier-cache-unified.test.ts for that cache's own behavior.
   getCachedAccountTier: async () => 'free',
+  accountMayUseManagedModels: async () => false,
 }));
 
 mock.module('../../projects/secrets', () => ({

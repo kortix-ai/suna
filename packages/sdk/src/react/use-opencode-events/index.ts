@@ -18,6 +18,7 @@ import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { opencodeKeys } from '../use-opencode-sessions';
+import { useKortixRouteProjectId } from '../route-project';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import { releaseMessageRehydrate, reserveMessageRehydrate } from './helpers';
@@ -41,6 +42,11 @@ import { openEventStream } from '../../core/stream/event-stream';
  */
 export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
+  // The project this SSE connection's events are about — threaded into
+  // `refetchKortixSessionMirrors` so a title/tree mirror refetch stays scoped
+  // to the project actually being viewed instead of guessing at "every
+  // project" (see that function's doc comment in `helpers.ts`).
+  const projectId = useKortixRouteProjectId();
   const addPermission = useOpenCodePendingStore((s) => s.addPermission);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
   const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
@@ -145,6 +151,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       markSessionAbortedLocally,
       fetchLspDiagnosticsDebounced,
       reconcileSessionTail,
+      projectId,
     });
 
     // ---- CONSOLIDATED hydration function ----
@@ -261,6 +268,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     options.enabled,
     applySyncEvent,
     stopCompaction,
+    projectId,
   ]);
 }
 

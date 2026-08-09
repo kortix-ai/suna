@@ -47,8 +47,10 @@ describe('connectorTabs', () => {
     ]);
   });
 
-  test('a computer connector with no write access has no tabs', () => {
-    expect(connectorTabs(conn({ provider: 'computer' }), { canWrite: false })).toEqual([]);
+  test('a computer connector with no write access still identifies its bound machine', () => {
+    expect(connectorTabs(conn({ provider: 'computer' }), { canWrite: false })).toEqual([
+      'accounts',
+    ]);
   });
 
   test('a read-only viewer sees no tools or settings tab', () => {
@@ -57,7 +59,7 @@ describe('connectorTabs', () => {
     expect(tabs).not.toContain('settings');
   });
 
-  test('computer connectors are managed in Computers — no settings tab', () => {
+  test('a computer profile omits generic credential settings', () => {
     expect(connectorTabs(conn({ provider: 'computer' }), { canWrite: true })).not.toContain(
       'settings',
     );
@@ -71,8 +73,9 @@ describe('connectorTabs', () => {
     expect(connectorTabs(conn({ provider: 'mcp' }), { canWrite: true })).toContain('accounts');
   });
 
-  test('a writer on a computer connector gets exactly tools', () => {
+  test('a writer on a computer connector gets accounts and tools', () => {
     expect(connectorTabs(conn({ provider: 'computer' }), { canWrite: true })).toEqual([
+      'accounts',
       'tools',
     ]);
   });

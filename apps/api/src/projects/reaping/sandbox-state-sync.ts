@@ -8,13 +8,15 @@
  * no-op, so the two paths can race freely.
  */
 
-import { eq, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { eq, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
+import { invalidateProviderCache } from '../../sandbox-proxy';
+import { db } from '../../shared/db';
 import { preserveEstablishedRuntime } from '../runtime-identity';
+import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import type { StopReason } from '../stop-reason';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
 export function mergeMetadata(patch: Record<string, unknown>) {
@@ -25,7 +27,9 @@ export interface StoppedStateWrite {
   sandboxId: string;
   sessionId: string;
   externalId: string | null;
-  /** Extra keys to record about WHY it stopped. Merged, never assigned. */
+  /** WHY this box parked. Required — the classification query groups on it. */
+  stopReason: StopReason;
+  /** Extra keys to record about the stop. Merged, never assigned. */
   metadata?: Record<string, unknown>;
   now?: Date;
 }
@@ -57,16 +61,34 @@ export interface StoppedStateWrite {
 export async function applyStoppedState(write: StoppedStateWrite): Promise<void> {
   const now = write.now ?? new Date();
   await pauseComputeSession(write.sandboxId).catch((err) =>
-    console.warn(`[reaper] pauseComputeSession failed for ${write.sandboxId}:`, err instanceof Error ? err.message : err),
+    console.warn(
+      `[reaper] pauseComputeSession failed for ${write.sandboxId}:`,
+      err instanceof Error ? err.message : err,
+    ),
   );
-  const patch = { ...(write.metadata ?? {}) };
+  const patch = { ...(write.metadata ?? {}), stopReason: write.stopReason, stoppedAt: now.toISOString() };
   await db.transaction(async (tx) => {
     await tx
       .update(sessionSandboxes)
       .set({
         status: 'stopped',
         updatedAt: now,
-        ...(Object.keys(patch).length ? { metadata: mergeMetadata(patch) } : {}),
+        // A committed stop cancels any in-flight wake. If provider.start()
+        // resolves after this transaction, its fenced completion write loses
+        // and the resume path stops the provider again. This makes an explicit
+        // user stop win both orderings of the start/stop race.
+        //
+        // `patch` always carries stopReason + stoppedAt, so this is never an
+        // empty merge: the wake keys are dropped AND the reason is recorded in
+        // one statement. Still a MERGE, never a whole-object assign — a
+        // concurrent writer's lastAliveAt lives in this column too.
+        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
+          - 'runtimeWakeStartedAt'
+          - 'runtimeWakeId'
+          - 'runtimeWakeLeaseExpiresAt'
+          - 'runtimeWakeProviderStatus'
+          - 'runtimeWakeCleanupId'
+          - 'runtimeWakeCleanupLeaseExpiresAt') || ${JSON.stringify(patch)}::jsonb`,
       })
       .where(eq(sessionSandboxes.sandboxId, write.sandboxId));
     await tx
@@ -81,14 +103,23 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
  * Close billing + reconcile a sandbox the PROVIDER reports stopped/archived,
  * keyed by external id. Returns true if it transitioned a live row.
  */
-export async function reconcileSandboxStoppedByExternalId(externalId: string, now = new Date()): Promise<boolean> {
+export async function reconcileSandboxStoppedByExternalId(
+  externalId: string,
+  now = new Date(),
+): Promise<boolean> {
   const [row] = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      status: sessionSandboxes.status,
+      metadata: sessionSandboxes.metadata,
+    })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row) return false;
   if (row.status === 'stopped' || row.status === 'archived') return false;
+  if (runtimeWakeInProgress(row.metadata, now)) return false;
   // A stopped box stays stopped: passive /v1/p traffic (markSandboxUsed heal /
   // wakeSandbox) must not resurrect it. That used to need an `idleQuiesced`
   // flag written here; the heal now refuses any row whose deadline has passed —
@@ -97,6 +128,7 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
     sandboxId: row.sandboxId,
     sessionId: row.sessionId,
     externalId,
+    stopReason: 'provider_reconcile',
     now,
   });
   return true;
@@ -107,7 +139,10 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
  * preserve the original mapping. Keyed by external id; idempotent. Shared by
  * webhook ingress + reaper.
  */
-export async function reconcileSandboxRemovedByExternalId(externalId: string, now = new Date()): Promise<boolean> {
+export async function reconcileSandboxRemovedByExternalId(
+  externalId: string,
+  now = new Date(),
+): Promise<boolean> {
   const [row] = await db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -122,7 +157,7 @@ export async function reconcileSandboxRemovedByExternalId(externalId: string, no
     .limit(1);
   if (!row) return false;
   if (!row.externalId) return false;
-  await preserveEstablishedRuntime(row, 'provider_webhook_removed', now);
+  await preserveEstablishedRuntime(row, 'provider_webhook_removed', 'provider_removed', now);
   // The box is GONE at the provider — unlike an idle stop, nothing can wake it,
   // so its connector token is now a bearer credential with no owner. Nothing
   // else ever expires these (no expiresAt, exempt from PAT idle-revoke).

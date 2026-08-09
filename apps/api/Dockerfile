@@ -12,6 +12,24 @@ ARG BUN_VERSION=1.2
 ARG SANDBOX_AGENT_BUN_VERSION=1.3.11
 FROM oven/bun:${BUN_VERSION}-slim AS base
 
+# ---- Kortix Apps Runtime Stage ----
+# App snapshots are built at API runtime. The deployed API image therefore
+# carries the exact supervisor and ingress binaries that every provider adds to
+# a user image.
+FROM golang:1.25-bookworm AS app-runtime
+
+WORKDIR /runtime
+COPY apps/kortix-app-runtime/go.mod apps/kortix-app-runtime/main.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -buildvcs=false -trimpath -ldflags='-s -w' -o /out/kortix-appd .
+
+COPY apps/kortix-app-runtime/caddy/go.mod apps/kortix-app-runtime/caddy/go.sum ./caddy/
+WORKDIR /runtime/caddy
+RUN go mod download
+COPY apps/kortix-app-runtime/caddy/main.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+      -trimpath -ldflags='-s -w' -o /out/caddy .
+
 # ---- Sandbox Agent Stage ----
 # The API builds Daytona layered snapshots at runtime. Those snapshots bake the
 # sandbox-side daemon from this repo, so the deployable API image must carry the
@@ -140,6 +158,8 @@ COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
 COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
 COPY --from=deps /app/packages/db/scripts/migration-ledger-repair.ts ./packages/db/scripts/migration-ledger-repair.ts
+COPY --from=deps /app/packages/db/scripts/migration-retry.ts ./packages/db/scripts/migration-retry.ts
+COPY --from=deps /app/packages/db/scripts/migration-runtime-overrides.ts ./packages/db/scripts/migration-runtime-overrides.ts
 # Non-kortix bootstrap (basejump + credit RPCs + signup triggers) for FRESH
 # self-host databases. `migrate.ts bootstrap` applies this before `up` when
 # basejump is absent (no-op on provisioned cloud/dev DBs).
@@ -172,6 +192,8 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
+COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-appd-linux-amd64
+COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md

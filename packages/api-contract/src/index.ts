@@ -39,12 +39,17 @@ export const OkResponseSchema = z.object({ ok: z.literal(true) });
 export type OkResponse = z.infer<typeof OkResponseSchema>;
 
 /**
- * Effective on/off map for every experimental feature. Keys mirror the
- * registry in apps/api/src/experimental/features.ts, which imports
- * `ExperimentalFeatureKey` from here — adding a feature there without
- * updating this map fails typecheck.
+ * Effective on/off map for every feature flag. Keys mirror the registry in
+ * apps/api/src/feature-flags/registry.ts, which imports `FeatureFlagKey` from
+ * here — adding a flag there without updating this map fails typecheck.
+ *
+ * Wire note: the serialized project fields keep their historical names
+ * (`experimental`, `experimental_features`) and the override map lives at
+ * `projects.metadata.experimental` — both are stable wire/storage details.
+ * Code-level names are the FeatureFlag* family; the Experimental* exports
+ * below are deprecated aliases kept for published-SDK compatibility.
  */
-export const ExperimentalFeatureMapSchema = z.object({
+export const FeatureFlagMapSchema = z.object({
   agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
@@ -54,40 +59,65 @@ export const ExperimentalFeatureMapSchema = z.object({
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
   meta_agent: z.boolean(),
+  apps: z.boolean(),
 });
-export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
+export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
-export const ExperimentalFeatureKeySchema = ExperimentalFeatureMapSchema.keyof();
-export type ExperimentalFeatureKey = z.infer<typeof ExperimentalFeatureKeySchema>;
-export const EXPERIMENTAL_FEATURE_KEYS = ExperimentalFeatureKeySchema.options;
+export const FeatureFlagKeySchema = FeatureFlagMapSchema.keyof();
+export type FeatureFlagKey = z.infer<typeof FeatureFlagKeySchema>;
+export const FEATURE_FLAG_KEYS = FeatureFlagKeySchema.options;
 
-/** One catalog entry of the self-describing experimental-features UI list. */
-export const ExperimentalFeatureViewSchema = z.object({
-  key: ExperimentalFeatureKeySchema,
+/** How settled a flag's surface is — a badge, not a mechanism. A `stable`
+ *  feature can still ship behind a flag (dark launch, gradual rollout). */
+export const FeatureFlagStabilitySchema = z.enum(['experimental', 'beta', 'stable']);
+export type FeatureFlagStability = z.infer<typeof FeatureFlagStabilitySchema>;
+
+/** One catalog entry of the self-describing feature-flag UI list. */
+export const FeatureFlagViewSchema = z.object({
+  key: FeatureFlagKeySchema,
   name: z.string(),
   description: z.string(),
-  stability: z.enum(['experimental', 'beta']),
+  stability: FeatureFlagStabilitySchema,
   available: z.boolean(),
   enabled: z.boolean(),
   overridden: z.boolean(),
 });
-export type ExperimentalFeatureView = z.infer<typeof ExperimentalFeatureViewSchema>;
+export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
+
+/**
+ * Standard error body for a route whose feature flag is off for the project:
+ * `403` with `code: 'feature_disabled'`. Emitted only after membership authz,
+ * so it reveals nothing to non-members.
+ */
+export const FeatureDisabledErrorSchema = z.object({
+  error: z.string(),
+  code: z.literal('feature_disabled'),
+  feature: FeatureFlagKeySchema,
+});
+export type FeatureDisabledError = z.infer<typeof FeatureDisabledErrorSchema>;
+
+/** @deprecated Use {@link FeatureFlagMapSchema}. */
+export const ExperimentalFeatureMapSchema = FeatureFlagMapSchema;
+/** @deprecated Use {@link FeatureFlagMap}. */
+export type ExperimentalFeatureMap = FeatureFlagMap;
+/** @deprecated Use {@link FeatureFlagKeySchema}. */
+export const ExperimentalFeatureKeySchema = FeatureFlagKeySchema;
+/** @deprecated Use {@link FeatureFlagKey}. */
+export type ExperimentalFeatureKey = FeatureFlagKey;
+/** @deprecated Use {@link FEATURE_FLAG_KEYS}. */
+export const EXPERIMENTAL_FEATURE_KEYS = FEATURE_FLAG_KEYS;
+/** @deprecated Use {@link FeatureFlagViewSchema}. */
+export const ExperimentalFeatureViewSchema = FeatureFlagViewSchema;
+/** @deprecated Use {@link FeatureFlagView}. */
+export type ExperimentalFeatureView = FeatureFlagView;
 
 /** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
 export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
-/**
- * Every sandbox provider the current platform can select or emit.
- *
- * 'local-docker' (hyphenated) is EXPERIMENTAL — same-machine Docker
- * containers, see apps/api/src/platform/providers/local-docker.ts. It is a
- * deliberately DIFFERENT identifier from the retired 'local_docker'
- * (underscore) single-instance provider ripped out in 9cbf57dda — the schema
- * test suite asserts the old identifier stays rejected.
- */
-export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b', 'local-docker'] as const;
+/** Every sandbox provider the current platform can select or emit. */
+export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 

@@ -9,7 +9,7 @@ const discoverSource = existsSync(discoverPath) ? readFileSync(discoverPath, 'ut
 describe('feature-flagged Discover connector marketplace', () => {
   test('keeps Easy Connect and adds Discover only for explicit project opt-in', () => {
     expect(connectorsSource).toContain(
-      'projectQuery.data?.project?.experimental?.connectors_api_discover === true',
+      "const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;",
     );
     expect(connectorsSource).toContain(
       '<TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>',

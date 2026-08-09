@@ -69,7 +69,10 @@ import { cn } from '@/lib/utils';
 import { getProject, listProjectAccess } from '@kortix/sdk';
 import {
   type Agent,
+  contract,
   modelKeyToWire,
+  qk,
+  useFeatureFlag,
   useRuntimeProviders,
   useVisibleAgents,
   wireToModelKey,
@@ -99,14 +102,20 @@ const SLACK_MANIFEST_STEPS = [
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const projectQuery = useQuery({
-    queryKey: ['project', projectId],
-    queryFn: () => getProject(projectId ?? ''),
-    enabled: Boolean(projectId),
-    staleTime: 10_000,
-  });
-  const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
-  const teamsChannelEnabled = projectQuery.data?.experimental?.teams === true;
+  // This view used to read the flags off the project SUMMARY query
+  // (`qk.project.summary` / `getProject`, whose payload nests them one level
+  // shallower). It now reads the one gating primitive, which is backed by
+  // `qk.project.detail` — the entry the Customize panel that hosts this view
+  // already holds, so the switch removes a fetch rather than adding one.
+  //
+  // The LOADING semantics are preserved deliberately: unlike its siblings, this
+  // surface WAITS on the flag before painting (`emailFlag.isLoading` feeds
+  // `loading` below), so the header action cannot flash the wrong state, and
+  // `useEmailInstall` stays unfired until the flag resolves.
+  const emailFlag = useFeatureFlag(projectId, 'agentmail_email');
+  const teamsFlag = useFeatureFlag(projectId, 'teams');
+  const emailChannelEnabled = emailFlag.enabled;
+  const teamsChannelEnabled = teamsFlag.enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
@@ -116,7 +125,8 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const loading =
     loadingInstall ||
     loadingMode ||
-    projectQuery.isLoading ||
+    emailFlag.isLoading ||
+    teamsFlag.isLoading ||
     (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
@@ -344,9 +354,9 @@ function ChannelBindingTableRow({
   canWrite: boolean;
 }) {
   const accessQuery = useQuery({
-    queryKey: ['project-access', projectId],
+    queryKey: qk.project.access(projectId),
     queryFn: () => listProjectAccess(projectId),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   // `can_manage` is the coarse project-manage flag; AND it with the real
   // connector write leaf so a READ-only connector role can't edit bindings

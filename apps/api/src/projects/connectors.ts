@@ -70,8 +70,7 @@ const PROVIDERS: readonly ConnectorProvider[] = [
   'channel',
   'computer',
 ];
-export type ConnectorAuthorizationStrategy =
-  (typeof CONNECTOR_AUTHORIZATION_STRATEGIES)[number];
+export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STRATEGIES)[number];
 
 /**
  * Platform-owned slugs and the ONLY provider allowed to use each. These are
@@ -84,7 +83,9 @@ export type ConnectorAuthorizationStrategy =
  *
  *  - `kortix_slack` → channel only (the Slack channel materializes under it; see
  *    connector/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
- *  - `computer`     → computer only (the Agent Computer Tunnel connector).
+ *  - `computer`     → computer only (retired aggregate compatibility slug).
+ * Per-machine connector slugs are synthetic `computer-<tunnel-uuid>` values
+ * and never pass through manifest parsing.
  * See KORTIX-206 + docs/specs/computer-connector.md. The pairs themselves are
  * canonically defined in `@kortix/manifest-schema` (imported above) — this
  * `export` just preserves this module's existing public surface, since
@@ -194,6 +195,8 @@ export interface ConnectorSpec {
   baseUrl: string | null;
   /** channel: chat platform (slack | …) — selects the fixed action catalog + API base. */
   platform: ChannelPlatform | null;
+  /** computer: immutable account-scoped tunnel bound to this synthetic profile. */
+  tunnelId?: string | null;
   /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──
@@ -376,6 +379,7 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     endpoint: spec.endpoint,
     baseUrl: spec.baseUrl,
     platform: spec.platform,
+    tunnelId: spec.tunnelId ?? null,
     spec: spec.spec,
     auth: spec.auth,
     authAuto: spec.authAuto ?? false,
@@ -476,11 +480,7 @@ function parseConnectorEntry(
     strategyRaw &&
     !(CONNECTOR_AUTHORIZATION_STRATEGIES as readonly string[]).includes(strategyRaw)
   ) {
-    return err(
-      slug,
-      'authorization_strategy must be "project" or "user"',
-      filename,
-    );
+    return err(slug, 'authorization_strategy must be "project" or "user"', filename);
   }
   const authorizationStrategy: ConnectorAuthorizationStrategy =
     (strategyRaw as ConnectorAuthorizationStrategy) || 'project';
@@ -587,7 +587,10 @@ function parseProviderFields(
         filename,
       );
     }
-    return { ok: true, value: { ...base, platform: platform as ChannelPlatform } };
+    return {
+      ok: true,
+      value: { ...base, platform: platform as ChannelPlatform },
+    };
   }
 
   if (provider === 'computer') {
@@ -684,7 +687,10 @@ function parseAuth(
     );
   }
 
-  return { ok: true, value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret } };
+  return {
+    ok: true,
+    value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret },
+  };
 }
 
 /**

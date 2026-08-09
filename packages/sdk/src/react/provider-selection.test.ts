@@ -114,7 +114,7 @@ describe('mergeProviderLists', () => {
 
 // The session picker renders from the cached gateway ProviderListResponse
 // (query ['project-providers', :id, 'gateway'], staleTime Infinity) — NOT from
-// the ['project-model-picker'] query the Manage-models tab writes through. A
+// the `qk.project.modelPicker(id)` query the Manage-models tab writes through. A
 // toggle must be able to restamp `enabled` on that cached shape optimistically,
 // or the open picker keeps showing the pre-toggle list until a hard refresh.
 describe('applyEnablementToProviderList', () => {

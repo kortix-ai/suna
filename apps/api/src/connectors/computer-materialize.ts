@@ -4,15 +4,14 @@
  * Exactly like the Slack `channel` connector, `computer` is a REGULAR connector
  * with no `[[connectors]]` entry and no experimental opt-in — connecting a
  * machine over the Agent Computer Tunnel IS the registration. When a project's
- * account has at least one connected machine, we synthesize a SINGLE `computer`
- * ConnectorSpec here so the materializer treats it like any other connector (DB
- * rows, the fixed action catalog, policies, and the connector
- * surface). One connector fronts ALL the account's machines — the machine is a
- * call argument, resolved at call time. There is no credential: the live WS
+ * account has connected machines, we synthesize one ConnectorSpec PER MACHINE
+ * so the materializer treats each profile like any other connector (DB rows,
+ * the fixed action catalog, policies, and the connector surface). The connector
+ * config binds its immutable tunnel id. There is no credential: the live WS
  * relay is the credential, and per-machine auth/scope is the tunnel permission
  * layer.
  *
- * NOT gated by the per-project `agent_tunnel` experimental flag: a machine can
+ * NOT gated by the per-project `agent_tunnel` feature flag: a machine can
  * only exist when the platform tunnel service is on (the tunnel routes are
  * `config.TUNNEL_ENABLED`-gated), so machine-presence already implies platform
  * support. The `agent_tunnel` flag now only gates the dedicated Computers
@@ -36,15 +35,19 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { projects, tunnelConnections } from '@kortix/db';
 import { db } from '../shared/db';
-import { COMPUTER_SLUG, computerLabel } from './computers';
+import { computerConnectorSlug } from './computers';
 import type { ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';
 
-function computerSpec(): ConnectorSpec {
+function computerSpec(tunnel: {
+  tunnelId: string;
+  name: string;
+}): ConnectorSpec {
+  const slug = computerConnectorSlug(tunnel.tunnelId);
   return {
-    slug: COMPUTER_SLUG,
-    path: `${MANIFEST_FILENAME}#connectors.${COMPUTER_SLUG} (auto: tunnel)`,
-    name: computerLabel(),
+    slug,
+    path: `${MANIFEST_FILENAME}#connectors.${slug} (auto: tunnel)`,
+    name: tunnel.name || `Computer ${tunnel.tunnelId.slice(0, 8)}`,
     enabled: true,
     provider: 'computer',
     credentialMode: 'shared',
@@ -58,7 +61,14 @@ function computerSpec(): ConnectorSpec {
     baseUrl: null,
     platform: null,
     spec: null,
-    auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
+    tunnelId: tunnel.tunnelId,
+    auth: {
+      type: 'none',
+      in: 'header',
+      name: null,
+      prefix: null,
+      secret: null,
+    },
     // Platform-called connector — the request isn't built by executeCall's
     // HTTP builders, so a static header table would be inert. Always empty.
     headers: {},
@@ -66,25 +76,15 @@ function computerSpec(): ConnectorSpec {
   };
 }
 
-/** True if a `computer` connector (or anything on its slug) is already declared. */
-function alreadyDeclared(declared: ConnectorSpec[]): boolean {
-  return declared.some((s) => s.slug === COMPUTER_SLUG || s.provider === 'computer');
-}
-
 /**
- * A single synthetic `computer` ConnectorSpec when this project's account has a
- * connected machine — never written to git, never shadowing an explicit
- * declaration. Returns `[]` otherwise. A machine that has connected at least
- * once is the only gate (no experimental flag): it's a regular connector,
- * materialized like Slack. A tunnel row that has never completed a handshake
- * (never online, ever) does not count — see the module doc for why.
+ * One synthetic ConnectorSpec per machine that completed a handshake. Specs are
+ * never written to git. A declared slug wins defensively, although the UUID-
+ * based platform slug makes a collision impractical.
  */
 export async function synthesizeComputerConnectors(
   projectId: string,
   declared: ConnectorSpec[],
 ): Promise<ConnectorSpec[]> {
-  if (alreadyDeclared(declared)) return [];
-
   const [proj] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
@@ -92,17 +92,18 @@ export async function synthesizeComputerConnectors(
     .limit(1);
   if (!proj) return [];
 
-  const [tunnel] = await db
-    .select({ tunnelId: tunnelConnections.tunnelId })
+  const tunnels = await db
+    .select({
+      tunnelId: tunnelConnections.tunnelId,
+      name: tunnelConnections.name,
+    })
     .from(tunnelConnections)
     .where(
       and(
         eq(tunnelConnections.accountId, proj.accountId),
         isNotNull(tunnelConnections.lastHeartbeatAt),
       ),
-    )
-    .limit(1);
-  if (!tunnel) return [];
-
-  return [computerSpec()];
+    );
+  const declaredSlugs = new Set(declared.map((spec) => spec.slug));
+  return tunnels.map(computerSpec).filter((spec) => !declaredSlugs.has(spec.slug));
 }

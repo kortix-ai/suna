@@ -2,6 +2,7 @@
 // roles, super-admin promotion, and effective-permissions probe.
 
 import { backendApi } from '../../http/api-client';
+import type { AuditEvent } from './audit';
 
 export type ResourceType =
   | 'account'
@@ -851,7 +852,7 @@ export async function deleteAuditWebhook(accountId: string, webhookId: string) {
 
 // ─── Audit log ─────────────────────────────────────────────────────────────
 
-export interface IamAuditEvent {
+export interface IamAuditEvent extends AuditEvent {
   event_id: string;
   occurred_at: string;
   project_id: string | null;
@@ -885,6 +886,7 @@ export interface ListAuditFilter {
   session_id?: string;
   actor_type?: 'human' | 'agent' | 'service_account' | 'system';
   source?: string;
+  phase?: string;
   outcome?: 'success' | 'failure' | 'denied' | 'pending';
   request_id?: string;
   correlation_id?: string;
@@ -910,6 +912,7 @@ export async function listAuditEvents(accountId: string, filter: ListAuditFilter
   if (filter.session_id) params.set('session_id', filter.session_id);
   if (filter.actor_type) params.set('actor_type', filter.actor_type);
   if (filter.source) params.set('source', filter.source);
+  if (filter.phase) params.set('phase', filter.phase);
   if (filter.outcome) params.set('outcome', filter.outcome);
   if (filter.request_id) params.set('request_id', filter.request_id);
   if (filter.correlation_id) params.set('correlation_id', filter.correlation_id);

@@ -8,9 +8,15 @@ import { resolve } from "node:path";
 import { Client } from "./client";
 import { withRecorder, type StepRecorder } from "./context";
 import { AssertionError } from "./expect";
-import { allFlows, clearRegistry, type RegisteredFlow } from "./flow";
+import {
+  allFlows,
+  clearRegistry,
+  DEFAULT_FLOW_ATTEMPTS,
+  type RegisteredFlow,
+} from "./flow";
 import { loadEnv, type Env } from "./env";
 import { log } from "./log";
+import { formatFlowProgress, redactSensitiveLogText } from "./progress";
 import { partitionParallelFlows } from "./lanes";
 import { mapWithConcurrency } from "./concurrency";
 import { ke2eRetryDelayMs } from "./client";
@@ -93,7 +99,7 @@ async function runOneFlow(
   const flowStart = performance.now();
   // Every flow gets one clean retry for errors explicitly marked as
   // infrastructure failures. Assertion failures never retry.
-  const maxAttempts = f.meta.retry?.attempts ?? 2;
+  const maxAttempts = f.meta.retry?.attempts ?? DEFAULT_FLOW_ATTEMPTS;
 
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
@@ -146,6 +152,10 @@ async function runOneFlow(
       // Never retry assertion failures — only infra signals.
       const retryable = !(err instanceof AssertionError) && (err as any)?.ke2eRetryable === true;
       if (!retryable || attempt >= maxAttempts) break;
+      log.warn(
+        `retry ${f.id} after attempt ${attempt}/${maxAttempts}: ` +
+          `${redactSensitiveLogText((err as Error)?.message ?? String(err))}`,
+      );
       await new Promise((resolve) => setTimeout(resolve, ke2eRetryDelayMs(err)));
     }
   }
@@ -231,12 +241,34 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
     const globalLane = flows.filter((f) => f.meta.global);
 
     const out: FlowResult[] = [];
+    let started = 0;
+    let completed = 0;
+    const runTrackedFlow = async (flow: RegisteredFlow): Promise<FlowResult> => {
+      started += 1;
+      log.step(`[${started}/${flows.length}] START ${flow.id}`);
+      try {
+        const result = await runOneFlow(flow, env, world, routesHit);
+        completed += 1;
+        const progress = formatFlowProgress(result, completed, flows.length);
+        if (result.status === "pass") log.pass(progress);
+        else if (result.status === "fail") log.fail(progress);
+        else log.skip(progress);
+        return result;
+      } catch (error) {
+        completed += 1;
+        log.fail(
+          `[${completed}/${flows.length}] ERROR ${flow.id} — ` +
+            `${redactSensitiveLogText((error as Error)?.message ?? String(error))}`,
+        );
+        throw error;
+      }
+    };
     if (opts.workers !== undefined) {
       const workers = positiveWorkerCount(opts.workers, 4);
       log.info(`lanes: ${parallelLane.length} parallel flows · ${workers} explicit workers`);
       out.push(
         ...(await mapWithConcurrency(parallelLane, workers, (f) =>
-          runOneFlow(f, env, world, routesHit),
+          runTrackedFlow(f),
         )),
       );
     } else {
@@ -254,15 +286,15 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
           `${sandboxLane.length} sandbox flows × ${sandboxWorkers} workers`,
       );
       const [apiResults, sandboxResults] = await Promise.all([
-        mapWithConcurrency(apiLane, apiWorkers, (f) => runOneFlow(f, env, world, routesHit)),
+        mapWithConcurrency(apiLane, apiWorkers, runTrackedFlow),
         mapWithConcurrency(sandboxLane, sandboxWorkers, (f) =>
-          runOneFlow(f, env, world, routesHit),
+          runTrackedFlow(f),
         ),
       ]);
       out.push(...apiResults, ...sandboxResults);
     }
-    for (const f of serialLane) out.push(await runOneFlow(f, env, world, routesHit));
-    for (const f of globalLane) out.push(await runOneFlow(f, env, world, routesHit));
+    for (const f of serialLane) out.push(await runTrackedFlow(f));
+    for (const f of globalLane) out.push(await runTrackedFlow(f));
 
     out.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     const durationMs = performance.now() - start;

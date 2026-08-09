@@ -46,6 +46,7 @@ let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let manifestReadCalls = 0;
 let mirrorInvalidationCalls = 0;
+let manifestCommitConflictsRemaining = 0;
 let modelDefaults: {
   account: string | null;
   agents: Record<string, string>;
@@ -95,6 +96,7 @@ function resetState() {
   secretRows = [];
   manifestReadCalls = 0;
   mirrorInvalidationCalls = 0;
+  manifestCommitConflictsRemaining = 0;
   modelDefaults = { account: null, agents: {}, projects: {} };
   projectRow.metadata = {};
   secretValues.clear();
@@ -145,7 +147,14 @@ mock.module('../projects/git', () => ({
     manifestReadCalls += 1;
     for (const path of candidatePaths) {
       const content = repoFiles.get(path);
-      if (content !== undefined) return { path, content };
+      if (content !== undefined) {
+        return {
+          path,
+          content,
+          sha: `sha-${path}`,
+          candidatePaths,
+        };
+      }
     }
     return null;
   },
@@ -166,6 +175,12 @@ mock.module('../projects/git', () => ({
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async (_project: unknown, opts: { path: string; content: string; message: string }) => {
+    if (manifestCommitConflictsRemaining > 0) {
+      manifestCommitConflictsRemaining -= 1;
+      const error = new Error(`File "${opts.path}" changed since it was read`);
+      error.name = 'GitFileRevisionConflictError';
+      throw error;
+    }
     repoFiles.set(opts.path, opts.content);
     commitCalls.push({ path: opts.path, message: opts.message });
     return { commitSha: 'a'.repeat(40) };
@@ -287,17 +302,6 @@ mock.module('../platform/services/session-sandbox', () => ({
 
 mock.module('../platform/services/provider-balancer', () => ({
   selectProvider: async () => 'daytona',
-}));
-
-// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
-// lists exports by hand deletes every export it omits — the failure surfaces in
-// whatever unrelated file imports the missing name next, attributed to no test.
-// `await import`, not a top-level `import`: the latter hoists above the
-// process.env writes here, and the barrel pulls in config, which reads them once.
-const realProviders = await import('../platform/providers');
-mock.module('../platform/providers', () => ({
-  ...realProviders,
-  getProvider: () => ({ requiresPublicCallback: false }),
 }));
 
 mock.module('../llm-gateway/enablement', () => ({
@@ -913,6 +917,29 @@ describe('git-backed triggers — CRUD', () => {
     expect(body.triggers[0].webhook_url).toContain(`/v1/webhooks/projects/${PROJECT_ID}/slack-hook`);
   });
 
+  test('POST /triggers reloads and retries one manifest revision conflict', async () => {
+    seedManifest();
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Daily Digest',
+        type: 'cron',
+        cron: '0 0 9 * * 1-5',
+        timezone: 'UTC',
+        prompt_template: 'Pull the deploy logs.',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(manifestReadCalls).toBe(3);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('slug: daily-digest');
+  });
+
   test('POST /triggers rejects duplicate slugs', async () => {
     seedManifest(cronEntry({
       slug: 'daily-digest',
@@ -1045,6 +1072,32 @@ describe('git-backed triggers — CRUD', () => {
     expect(updated).toContain('old prompt');
   });
 
+  test('PATCH /triggers/:slug reloads and retries one manifest revision conflict', async () => {
+    seedManifest(cronEntry({
+      slug: 'one',
+      name: 'Old name',
+      agent: 'default',
+      enabled: true,
+      cron: '0 */15 * * * *',
+      timezone: 'UTC',
+      prompt: 'old prompt',
+    }));
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New name', enabled: false }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(manifestReadCalls).toBe(3);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('name: New name');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('enabled: false');
+  });
+
   test('POST /triggers accepts and returns a pinned model', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
@@ -1128,6 +1181,25 @@ describe('git-backed triggers — CRUD', () => {
     const updated = repoFiles.get(MANIFEST_PATH)!;
     expect(updated).not.toContain('slug: one');
     expect(updated).toContain('slug: two');
+  });
+
+  test('DELETE /triggers/:slug reloads and retries one manifest revision conflict', async () => {
+    seedManifest(
+      cronEntry({ slug: 'one', name: 'One', cron: '* * * * * *', prompt: 'body' }),
+      cronEntry({ slug: 'two', name: 'Two', cron: '* * * * * *', prompt: 'body' }),
+    );
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(200);
+    expect(manifestReadCalls).toBe(2);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).not.toContain('slug: one');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('slug: two');
   });
 
   test('DELETE /triggers/:slug returns 404 when the entry is already gone', async () => {

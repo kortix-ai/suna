@@ -15,8 +15,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import {
   agentMailProvisioningClientIds,
   agentMailUpstreamStatus,
@@ -65,6 +64,7 @@ import {
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
+import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
 import {
   finalizePipedreamConnectionAuthorization,
@@ -72,7 +72,8 @@ import {
   pipedreamConnectUrl,
 } from '../../connectors/pipedream';
 import { reconcileChannelConnectors } from '../../connectors/sync';
-import { resolveExperimentalFeature } from '../../experimental/features';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -132,10 +133,8 @@ import {
   loadEmailInstallConnectionId,
 } from '../lib/session-connector-bindings';
 import {
-  commitManifest,
   draftToSpec,
   fireGitTrigger,
-  loadManifestForEdit,
   loadTriggersForResponse,
   markGitTriggerFired,
   parseTriggerDraft,
@@ -1103,28 +1102,29 @@ projectsApp.openapi(
       }
     }
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-
-    if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
-      return c.json(
-        {
-          error: `A trigger with slug "${draft.slug}" already exists. Pick a different name.`,
-        },
-        409,
-      );
-    }
-
-    const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-    const result = await commitManifest(loaded.row, next, `chore: add trigger ${draft.slug}`);
-    if ('error' in result) {
+    let committedManifest: ParsedManifest | undefined;
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${draft.slug} was being created`,
+      (manifest) => {
+        if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
+          return {
+            ok: false,
+            error: `A trigger with slug "${draft.slug}" already exists. Pick a different name.`,
+            status: 409,
+          };
+        }
+        const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
+        manifest.raw = next.raw;
+        committedManifest = manifest;
+        return { ok: true, commitMessage: `chore: add trigger ${draft.slug}` };
+      },
+    );
+    if (!result.ok) {
       return c.json({ error: result.error }, result.status as 400 | 409 | 502);
     }
-    await reconcileProjectTriggerRuntime(projectId, extractTriggers(next).specs);
+    if (!committedManifest) throw new Error('trigger create completed without a manifest');
+    await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
@@ -1225,58 +1225,64 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
     );
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
-    if (!current) return c.json({ error: 'Not found' }, 404);
-
     // Only commit the repo manifest when a manifest field actually changed; a
     // PATCH that touches none is a no-op that skips git entirely.
     const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
-    if (touchesManifest) {
-      // Merge the patch onto the current spec so callers can send partial bodies
-      // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
-      const base = specToBody(current);
-      // Setting a `session_key` is itself the opt-in to keyed sessions (see
-      // parseTriggerDraft). The merge base always carries an explicit
-      // `session_mode`, which would outvote a caller that sent ONLY a key — so
-      // drop it and let the key decide. An explicit mode in the patch still wins.
-      const patchesKey = 'session_key' in body || 'sessionKey' in body;
-      const patchesMode = 'session_mode' in body || 'sessionMode' in body;
-      if (patchesKey && !patchesMode) delete base.session_mode;
-      const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
-      if ('error' in draft) return c.json({ error: draft.error }, 400);
+    let committedManifest: ParsedManifest | undefined;
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${slug} was being updated`,
+      async (manifest) => {
+        const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
+        if (!current) return { ok: false, error: 'Not found', status: 404 };
+        if (!touchesManifest) return { ok: true, commitMessage: null };
 
-      // A `pinned` trigger may only target a session that belongs to THIS project.
-      if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
-        const [pinned] = await db
-          .select({ sessionId: projectSessions.sessionId })
-          .from(projectSessions)
-          .where(
-            and(
-              eq(projectSessions.sessionId, draft.pinnedSessionId),
-              eq(projectSessions.projectId, projectId),
-            ),
-          )
-          .limit(1);
-        if (!pinned) {
-          return c.json(
-            { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
-            400,
-          );
+        // Merge the patch onto the current spec so callers can send partial bodies
+        // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
+        const base = specToBody(current);
+        // Setting a `session_key` is itself the opt-in to keyed sessions (see
+        // parseTriggerDraft). The merge base always carries an explicit
+        // `session_mode`, which would outvote a caller that sent ONLY a key — so
+        // drop it and let the key decide. An explicit mode in the patch still wins.
+        const patchesKey = 'session_key' in body || 'sessionKey' in body;
+        const patchesMode = 'session_mode' in body || 'sessionMode' in body;
+        if (patchesKey && !patchesMode) delete base.session_mode;
+        const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
+        if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+
+        // A `pinned` trigger may only target a session that belongs to THIS project.
+        if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
+          const [pinned] = await db
+            .select({ sessionId: projectSessions.sessionId })
+            .from(projectSessions)
+            .where(
+              and(
+                eq(projectSessions.sessionId, draft.pinnedSessionId),
+                eq(projectSessions.projectId, projectId),
+              ),
+            )
+            .limit(1);
+          if (!pinned) {
+            return {
+              ok: false,
+              error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.`,
+              status: 400,
+            };
+          }
         }
-      }
 
-      const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-      const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
-      if ('error' in result) {
-        return c.json({ error: result.error }, result.status as 400 | 409 | 502);
-      }
-      await reconcileProjectTriggerRuntime(projectId, extractTriggers(next).specs);
+        const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
+        manifest.raw = next.raw;
+        committedManifest = manifest;
+        return { ok: true, commitMessage: `chore: update trigger ${slug}` };
+      },
+    );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+    }
+    if (touchesManifest) {
+      if (!committedManifest) throw new Error('trigger update completed without a manifest');
+      await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
@@ -1317,20 +1323,20 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid slug' }, 400);
     }
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-
-    const next = removeTriggerFromManifest(manifest, slug);
-    const result = await commitManifest(loaded.row, next, `chore: delete trigger ${slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 409 | 502);
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${slug} was being deleted`,
+      (manifest) => {
+        if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
+          return { ok: false, error: 'Not found', status: 404 };
+        }
+        const next = removeTriggerFromManifest(manifest, slug);
+        manifest.raw = next.raw;
+        return { ok: true, commitMessage: `chore: delete trigger ${slug}` };
+      },
+    );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
     }
 
     // Drop runtime state too — a re-created trigger of the same slug should
@@ -1627,7 +1633,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
-    responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -1645,7 +1651,9 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) {
+      return c.json(featureDisabledBody('teams'), 403);
+    }
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -1763,7 +1771,7 @@ projectsApp.openapi(
         z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(),
         'Consent card sent',
       ),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -1781,7 +1789,9 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) {
+      return c.json(featureDisabledBody('teams'), 403);
+    }
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
       serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
@@ -1799,7 +1809,7 @@ projectsApp.openapi(
 // ─── Email install — AgentMail-backed inbox per project ─────────────────────
 
 function emailChannelEnabled(metadata: unknown): boolean {
-  return resolveExperimentalFeature(metadata, 'agentmail_email');
+  return resolveFeatureFlag(metadata, 'agentmail_email');
 }
 
 projectsApp.openapi(
@@ -1891,12 +1901,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
     if (!emailChannelEnabled(loaded.row.metadata)) {
-      return c.json(
-        {
-          error: 'AgentMail Email is experimental and must be enabled for this project',
-        },
-        403,
-      );
+      return c.json(featureDisabledBody('agentmail_email'), 403);
     }
 
     let body: {
@@ -2077,12 +2082,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
     if (!emailChannelEnabled(loaded.row.metadata)) {
-      return c.json(
-        {
-          error: 'AgentMail Email is experimental and must be enabled for this project',
-        },
-        403,
-      );
+      return c.json(featureDisabledBody('agentmail_email'), 403);
     }
     let body: {
       connector_slug?: string;
@@ -2764,10 +2764,9 @@ projectsApp.openapi(
     // Free-tier accounts see only managed models explicitly marked free plus
     // their own BYOK/Codex-connected catalog entries. Paid managed models and
     // synthetic AUTO stay hidden from the picker.
-    const freeManagedOnly =
-      config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
-        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-        : false;
+    const freeManagedOnly = ownerAccountId
+      ? !(await accountMayUseManagedModels(ownerAccountId))
+      : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
   },
@@ -2802,9 +2801,7 @@ projectsApp.openapi(
     }
 
     const accountId = loaded.row.accountId as string;
-    const freeManagedOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(accountId))
-      : false;
+    const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
     const [secrets, defaults, routing] = await Promise.all([
       listProjectSecretNamesForConsumer({
         projectId,
@@ -3003,9 +3000,7 @@ projectsApp.openapi(
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId, projectId);
-    const freeTier = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-      : false;
+    const freeTier = !(await accountMayUseManagedModels(ownerAccountId));
     // Honest project-level resolution (project → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · project default". The
     // authoritative per-request resolution still happens in the gateway.
@@ -3081,9 +3076,7 @@ projectsApp.openapi(
       );
     }
 
-    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-      : false;
+    const freeModelsOnly = !(await accountMayUseManagedModels(ownerAccountId));
     const servable = await isModelServableForAccount({
       userId,
       accountId: ownerAccountId,

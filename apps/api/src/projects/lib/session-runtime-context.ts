@@ -2,6 +2,7 @@ import { type SessionRuntimeContext, SessionRuntimeContextSchema } from '@kortix
 import { projectSessionRuntimeContexts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 
 /** The only environment variable a public runtime_context request can create. */
 export const SESSION_RUNTIME_CONTEXT_ENV_NAME = 'KORTIX_SESSION_CONTEXT';
@@ -10,7 +11,10 @@ export const SESSION_RUNTIME_CONTEXT_ENV_NAME = 'KORTIX_SESSION_CONTEXT';
  * Env vars the server owns end to end. A later `extraEnvVars` merge must not
  * forge or erase this durable context envelope.
  */
-const SERVER_OWNED_ENV_NAMES = [SESSION_RUNTIME_CONTEXT_ENV_NAME] as const;
+const SERVER_OWNED_ENV_NAMES = [
+  SESSION_RUNTIME_CONTEXT_ENV_NAME,
+  SECRET_CAPABILITIES_ENV_NAME,
+] as const;
 
 export function parseSessionRuntimeContext(
   value: unknown,

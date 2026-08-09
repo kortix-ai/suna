@@ -18,6 +18,8 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -31,10 +33,6 @@ import {
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
-import {
-  projectDetailQuery,
-  useProjectAccountId,
-} from '@/features/workspace/capabilities/shared/project-detail-query';
 import { filterSkills, type SkillScope } from './skill-scope';
 
 type ScopeFilter = SkillScope | 'all';
@@ -47,7 +45,7 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
 
 /**
  * /projects/[id]/skills — the standalone Skills catalog. Reads
- * `config.skills` off the same `['project-detail', projectId]` query
+ * `config.skills` off the same `qk.project.detail(id)` query
  * `ConfigEntityView` (Customize) reads, so the two surfaces cannot disagree
  * about what a project's skills are.
  *
@@ -73,7 +71,11 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
-  const detailQuery = useQuery(projectDetailQuery(projectId));
+  const detailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
 
   const skills = useMemo(() => {
     const raw = detailQuery.data?.config.skills;

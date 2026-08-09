@@ -16,7 +16,11 @@ import {
 } from '../../shared/daytona';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
-import { providerAutoStopBackstopMinutes } from './index';
+import {
+  assertWorkloadCredential,
+  providerAutoStopBackstopMinutes,
+  sandboxWorkloadType,
+} from './index';
 import { classifyDaytonaState } from './daytona-state';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 
@@ -78,8 +82,12 @@ function reportIfDiskQuotaError(err: unknown, reason: string): never {
 // otherwise one env would stop another env's sandboxes. `kortix.managed` marks
 // "we created it"; `kortix.env` pins the owning environment. The reaper lists
 // by exactly these labels (see listManagedRunningSandboxes).
-function managedSandboxLabels(): Record<string, string> {
-  return { 'kortix.managed': 'true', 'kortix.env': config.INTERNAL_KORTIX_ENV };
+function managedSandboxLabels(workloadType?: 'session' | 'app'): Record<string, string> {
+  return {
+    'kortix.managed': 'true',
+    'kortix.env': config.INTERNAL_KORTIX_ENV,
+    ...(workloadType === 'app' ? { 'kortix.workload': workloadType } : {}),
+  };
 }
 import type {
   SandboxProvider,
@@ -158,7 +166,6 @@ export function daytonaLifecycle(autoStopOverride?: number): {
 
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
-  readonly requiresPublicCallback = true;
 
   readonly provisioning: ProvisioningTraits = {
     async: false,
@@ -172,6 +179,7 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
+    const workloadType = sandboxWorkloadType(opts);
     // KORTIX_URL is the public API base URL the sandbox calls back on. Strip
     // any route suffix so older env files that included /v1 or /v1/router still
     // resolve to the bare origin.
@@ -193,15 +201,14 @@ export class DaytonaProvider implements SandboxProvider {
       // Frontend base for user-facing dashboard links (never the API host).
       // Guaranteed here too so it is present even if a caller's env map omits it.
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
+      ...(workloadType === 'app' ? { KORTIX_WORKLOAD_TYPE: workloadType } : {}),
       // Session identity, git context, KORTIX_TOKEN, and the project's own
       // secrets (incl. provider keys set via `kortix providers`, picked up by
       // opencode at boot) — see buildSessionSandboxEnvVars() and
       // provisionSessionSandbox().
       ...opts.envVars,
     };
-    if (!envVars.KORTIX_SANDBOX_TOKEN) {
-      throw new Error('[daytona] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to the Kortix router.');
-    }
+    assertWorkloadCredential(this.name, opts, envVars);
 
     // Every Daytona sandbox boots from its project's own per-project
     // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
@@ -231,7 +238,7 @@ export class DaytonaProvider implements SandboxProvider {
         // API/tunnel that created it dies. Intervals are env-tunable
         // (KORTIX_SANDBOX_AUTO*).
         ...daytonaLifecycle(opts.autoStopInterval),
-        labels: managedSandboxLabels(),
+        labels: managedSandboxLabels(workloadType),
         public: false,
       },
       { timeout: createTimeoutSeconds },
@@ -239,7 +246,8 @@ export class DaytonaProvider implements SandboxProvider {
 
     const externalId = daytonaSandbox.id;
     const apiBase = sandboxApiBase;
-    const baseUrl = `${apiBase}/v1/p/${externalId}/8000`;
+    const ingressPort = workloadType === 'app' ? 8080 : 8000;
+    const baseUrl = `${apiBase}/v1/p/${externalId}/${ingressPort}`;
 
     // Warm the preview route NOW, so the edge is live before anything asks for it.
     // The Platinum provider has always done the equivalent (its eager
@@ -257,9 +265,9 @@ export class DaytonaProvider implements SandboxProvider {
     // still resolves the link lazily, so a failure here costs nothing beyond the
     // old behaviour. Bounded so a hung Daytona call cannot outlive the provision.
     void withTimeout(
-      (daytonaSandbox as any).getPreviewLink(8000),
+      (daytonaSandbox as any).getPreviewLink(ingressPort),
       PROVIDER_CALL_TIMEOUT_MS,
-      `Daytona eager getPreviewLink(${externalId}:8000)`,
+      `Daytona eager getPreviewLink(${externalId}:${ingressPort})`,
     ).catch((err: unknown) => {
       console.warn(
         `[DAYTONA] eager preview-link warm for ${externalId} failed (lazy fallback):`,
@@ -275,8 +283,34 @@ export class DaytonaProvider implements SandboxProvider {
         daytonaSandboxId: externalId,
         snapshot,
         version: SANDBOX_VERSION,
+        workloadType,
       },
     };
+  }
+
+  /**
+   * Daytona runs its own `/usr/local/bin/daytona` entrypoint and does not run
+   * the image ENTRYPOINT. Start appd through the toolbox after every create or
+   * wake. The PID-file check makes concurrent and repeated calls idempotent.
+   */
+  async ensureAppRuntimeStarted(externalId: string): Promise<void> {
+    const daytona = getDaytona();
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId}) for App bootstrap`,
+    );
+    const command = '/kortix/bin/kortix-appd --daemon';
+    const result = await withTimeout(
+      sandbox.process.executeCommand(command, undefined, undefined, 15),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona App bootstrap(${externalId})`,
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Daytona App bootstrap failed for ${externalId}: exit ${result.exitCode}: ${result.result.slice(0, 500)}`,
+      );
+    }
   }
 
   async start(externalId: string): Promise<void> {

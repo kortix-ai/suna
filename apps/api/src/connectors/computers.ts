@@ -6,10 +6,10 @@
  * live WS relay IS the credential, and per-machine auth/scope is enforced by the
  * tunnel permission layer at call time.
  *
- * ONE `computer` connector fronts ALL of an account's machines: every action
- * takes a `computer` selector (machine name or id; optional when exactly one is
- * online), and the meta `list_computers` action enumerates them. The gateway
- * routes `tunnel` bindings through the shared tunnel RPC core
+ * Each connected machine is one connector profile bound to one immutable
+ * tunnel id. Tool schemas therefore describe only the operation inputs. The
+ * connector identity selects the machine. The gateway routes `tunnel` bindings
+ * through the shared tunnel RPC core
  * (`tunnel/core/rpc-core.ts`), NOT executeCall. See
  * docs/specs/computer-connector.md.
  */
@@ -17,11 +17,16 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
 
 /** Human label for the computer connector (UI default name). */
 export function computerLabel(): string {
-  return 'Computers';
+  return 'Computer';
 }
 
-/** The slug of the single auto-materialized computer connector. */
+/** Legacy aggregate slug. Kept for existing session bindings during migration. */
 export const COMPUTER_SLUG = 'computer';
+
+/** Stable project connector slug for one tunnel. The full UUID avoids collisions. */
+export function computerConnectorSlug(tunnelId: string): string {
+  return `computer-${tunnelId.toLowerCase()}`;
+}
 
 /** One curated computer action — normalized into a `tunnel`-bound NormalizedAction. */
 interface ComputerActionDef {
@@ -32,21 +37,10 @@ interface ComputerActionDef {
   name: string;
   description: string;
   risk: Risk;
-  /** JSON-schema properties (the machine `computer` selector is added separately). */
+  /** JSON-schema properties for the operation itself. */
   properties: Record<string, { type: string; description: string }>;
   required: string[];
-  /** Meta actions (list_computers) are handled server-side and take no selector. */
-  meta?: boolean;
 }
-
-/** Selector shared by every relayed action — which machine to target. */
-const COMPUTER_SELECTOR = {
-  computer: {
-    type: 'string',
-    description:
-      'Target machine — its name or id from list_computers. Optional when exactly one machine is online (it is used by default).',
-  },
-} as const;
 
 /**
  * The computer catalog. `fs.*` + `shell.exec` are fully typed; the high-value
@@ -55,17 +49,6 @@ const COMPUTER_SELECTOR = {
  * the long tail is reachable without hand-maintaining every schema.
  */
 const COMPUTER_ACTIONS: ComputerActionDef[] = [
-  {
-    path: 'list_computers',
-    method: 'list_computers',
-    name: 'List computers',
-    description:
-      'List the machines connected to this account over the tunnel — id, name, online status, declared capabilities, platform. Use this to choose a `computer` for the other actions.',
-    risk: 'read',
-    properties: {},
-    required: [],
-    meta: true,
-  },
   // ── filesystem ──────────────────────────────────────────────────────────
   {
     path: 'fs.read',
@@ -74,8 +57,14 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     description: 'Read a file from the machine. Provide an absolute `path`.',
     risk: 'read',
     properties: {
-      path: { type: 'string', description: 'Absolute path of the file to read.' },
-      encoding: { type: 'string', description: 'Encoding: "utf-8" (default) or "base64" for binary.' },
+      path: {
+        type: 'string',
+        description: 'Absolute path of the file to read.',
+      },
+      encoding: {
+        type: 'string',
+        description: 'Encoding: "utf-8" (default) or "base64" for binary.',
+      },
     },
     required: ['path'],
   },
@@ -86,9 +75,15 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     description: 'Write (create or overwrite) a file on the machine. Provide `path` and `content`.',
     risk: 'write',
     properties: {
-      path: { type: 'string', description: 'Absolute path of the file to write.' },
+      path: {
+        type: 'string',
+        description: 'Absolute path of the file to write.',
+      },
       content: { type: 'string', description: 'File contents.' },
-      encoding: { type: 'string', description: 'Encoding of `content`: "utf-8" (default) or "base64".' },
+      encoding: {
+        type: 'string',
+        description: 'Encoding of `content`: "utf-8" (default) or "base64".',
+      },
     },
     required: ['path', 'content'],
   },
@@ -96,11 +91,15 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     path: 'fs.list',
     method: 'fs.list',
     name: 'List directory',
-    description: 'List the entries of a directory on the machine. Provide `path`; set `recursive` to walk subdirectories.',
+    description:
+      'List the entries of a directory on the machine. Provide `path`; set `recursive` to walk subdirectories.',
     risk: 'read',
     properties: {
       path: { type: 'string', description: 'Absolute directory path to list.' },
-      recursive: { type: 'boolean', description: 'Recurse into subdirectories (default false).' },
+      recursive: {
+        type: 'boolean',
+        description: 'Recurse into subdirectories (default false).',
+      },
     },
     required: ['path'],
   },
@@ -119,7 +118,8 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     path: 'fs.delete',
     method: 'fs.delete',
     name: 'Delete path',
-    description: 'Delete a file or directory on the machine. Destructive — confirm intent. Provide `path`.',
+    description:
+      'Delete a file or directory on the machine. Destructive — confirm intent. Provide `path`.',
     risk: 'destructive',
     properties: {
       path: { type: 'string', description: 'Absolute path to delete.' },
@@ -135,10 +135,16 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
       'Run a shell command on the machine and return stdout/stderr/exitCode. Provide `command` (and optional `args`, `cwd`, `timeout`). Be deliberate — commands can be destructive.',
     risk: 'write',
     properties: {
-      command: { type: 'string', description: 'The command (executable) to run.' },
+      command: {
+        type: 'string',
+        description: 'The command (executable) to run.',
+      },
       args: { type: 'array', description: 'Optional argument list.' },
       cwd: { type: 'string', description: 'Optional working directory.' },
-      timeout: { type: 'number', description: 'Optional timeout in milliseconds.' },
+      timeout: {
+        type: 'number',
+        description: 'Optional timeout in milliseconds.',
+      },
     },
     required: ['command'],
   },
@@ -174,7 +180,8 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     path: 'desktop.cua.get_accessibility_tree',
     method: 'desktop.cua.get_accessibility_tree',
     name: 'Get accessibility tree',
-    description: 'Read the accessibility tree of the focused window — the elements you can interact with.',
+    description:
+      'Read the accessibility tree of the focused window — the elements you can interact with.',
     risk: 'read',
     properties: {},
     required: [],
@@ -231,7 +238,10 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     description: 'Press a key combination. Provide `keys` (e.g. ["cmd","c"]).',
     risk: 'write',
     properties: {
-      keys: { type: 'array', description: 'Keys to press together, e.g. ["cmd","c"].' },
+      keys: {
+        type: 'array',
+        description: 'Keys to press together, e.g. ["cmd","c"].',
+      },
     },
     required: ['keys'],
   },
@@ -255,7 +265,10 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
       'Escape hatch — invoke ANY computer-use tool by name (use desktop.cua.list_tools / desktop.cua.describe to discover them). Provide `tool` and its `args`.',
     risk: 'write',
     properties: {
-      tool: { type: 'string', description: 'Computer-use tool name (e.g. "double_click", "drag", "zoom").' },
+      tool: {
+        type: 'string',
+        description: 'Computer-use tool name (e.g. "double_click", "drag", "zoom").',
+      },
       args: { type: 'object', description: 'Arguments for the tool.' },
     },
     required: ['tool'],
@@ -264,9 +277,13 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
 
 function toAction(def: ComputerActionDef): NormalizedAction {
   const binding: ActionBinding = { kind: 'tunnel', method: def.method };
-  const properties = def.meta ? def.properties : { ...COMPUTER_SELECTOR, ...def.properties };
+  const properties = def.properties;
   const inputSchema = Object.keys(properties).length
-    ? { type: 'object', properties, ...(def.required.length ? { required: def.required } : {}) }
+    ? {
+        type: 'object',
+        properties,
+        ...(def.required.length ? { required: def.required } : {}),
+      }
     : null;
   return {
     path: def.path,
@@ -279,7 +296,7 @@ function toAction(def: ComputerActionDef): NormalizedAction {
   };
 }
 
-/** The fixed catalog for the computer connector (identical for every account). */
+/** The fixed catalog for every machine-bound computer connector. */
 export function computerCatalog(): NormalizedAction[] {
   return COMPUTER_ACTIONS.map(toAction);
 }

@@ -203,7 +203,7 @@ describe('marketplace catalog', () => {
       const entry = await findCatalogEntryByName(name);
       expect(entry?.item.meta?.managedBy).toBe('kortix');
     }
-    for (const name of ['agent-browser', 'kortix', 'memory-reflector', 'web_search', 'pdf']) {
+    for (const name of ['agent-browser', 'kortix', 'harness-reflector', 'web_search', 'pdf']) {
       const entry = await findCatalogEntryByName(name);
       expect(entry?.item.meta?.managedBy).toBeUndefined();
     }

@@ -10,7 +10,7 @@ sandbox is a disposable cloud machine that Kortix creates for a
 it stays connected across sessions.
 
 This feature is experimental. Before you connect a machine, enable **Agent
-Computer Tunnel** in Customize → Experimental.
+Computer Tunnel** in Customize → Feature flags.
 
 ## Connect a machine
 
@@ -28,16 +28,28 @@ permission request. You approve or deny each request on the Computers page.
 
 ## How the agent reaches a computer
 
-Connecting a machine creates one `computer`
-[connector](/docs/connect/connectors) that fronts every machine you connect.
-The agent calls `computer.list_computers` to find machines, then
-`computer.fs.read`, `computer.shell.exec`, or `computer.desktop.cua.*` to act
-on one. You control who can use the `computer` connector from the project's
-Connectors page.
+Connecting a machine creates one standalone
+[connector](/docs/connect/connectors) profile for that machine. Connecting two
+machines creates two profiles. Each profile has its own agent grants and tool
+policies, so a project can allow one machine without allowing the other.
+
+The connector profile selects the machine. Tool inputs contain only the
+operation arguments, such as `{ "path": "/etc/hosts" }`. They do not accept a
+machine name or id. The connector slug includes the immutable tunnel id, for
+example `computer-11111111-1111-4111-8111-111111111111`.
+
+```bash
+kortix connectors call \
+  computer-11111111-1111-4111-8111-111111111111.fs.read \
+  '{"path":"/etc/hosts"}'
+```
 
 A computer has no credential. The live tunnel connection is the credential.
-Per-machine access control lives in the tunnel permission layer, not in a
-stored secret.
+Per-machine filesystem, shell, and desktop access also lives in the tunnel
+permission layer. The connector policy and tunnel permission must both allow a
+call.
 
 You configure computers from the dashboard, not from `kortix.yaml`. Connecting
-a machine creates the connector automatically — you never add it by hand.
+a machine creates its connector profile automatically — you never add it by
+hand. Use the Computers page to pair, rename, and remove machines. Use each
+profile's Tools tab to configure its Connector policy.

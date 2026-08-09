@@ -61,6 +61,15 @@ describe('dependency contract — every external binary the worktree spawns is d
   });
 });
 
+describe('runtime artifact contract', () => {
+  test('worktree startup builds every binary consumed by runtime snapshot staging', () => {
+    const services = readFileSync(join(LIB_DIR, 'services.ts'), 'utf8');
+    expect(services).toContain("['sandbox agent', '@kortix/sandbox-agent-server']");
+    expect(services).toContain("['CLI', '@kortix/cli']");
+    expect(services).toContain("['Apps runtime', 'apps/kortix-app-runtime/build.sh']");
+  });
+});
+
 describe('supabase CLI contract', () => {
   test('the repository pins a CLI version that supports the configured PostgreSQL 17 stack', () => {
     const config = readFileSync(join(REPO, 'supabase', 'config.toml'), 'utf8');

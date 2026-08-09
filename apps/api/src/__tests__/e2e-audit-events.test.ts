@@ -10,11 +10,13 @@ mock.module('../shared/db', () => ({
       values: (values: Record<string, unknown>) => {
         auditRows.push(values);
         return {
-          returning: async () => [{
-            eventId: 'audit_test',
-            occurredAt: new Date('2026-01-01T00:00:00Z'),
-            ...values,
-          }],
+          returning: async () => [
+            {
+              eventId: 'audit_test',
+              occurredAt: new Date('2026-01-01T00:00:00Z'),
+              ...values,
+            },
+          ],
         };
       },
     }),
@@ -29,7 +31,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { auditApiRequest } = await import('../shared/audit');
+const { auditApiRequest, recordAuditEvent } = await import('../shared/audit');
 
 describe('audit event middleware', () => {
   beforeEach(() => {
@@ -50,9 +52,9 @@ describe('audit event middleware', () => {
     const res = await app.request(
       '/v1/projects/00000000-0000-4000-a000-000000000201/sessions/session-1/messages',
       {
-      method: 'POST',
-      headers: { 'User-Agent': 'kortix-cli/dev', 'X-Kortix-Client': 'cli' },
-      body: '{}',
+        method: 'POST',
+        headers: { 'User-Agent': 'kortix-cli/dev', 'X-Kortix-Client': 'cli' },
+        body: '{}',
       },
     );
 
@@ -67,8 +69,7 @@ describe('audit event middleware', () => {
       source: 'agent',
       outcome: 'success',
       httpStatus: 200,
-      action:
-        'POST /v1/projects/00000000-0000-4000-a000-000000000201/sessions/session-1/messages',
+      action: 'POST /v1/projects/:projectId/sessions/:sessionId/messages',
       resourceType: 'project_session',
       resourceId: 'session-1',
       userAgent: 'kortix-cli/dev',
@@ -76,7 +77,7 @@ describe('audit event middleware', () => {
     expect(auditRows[0]?.durationMs).toBeNumber();
   });
 
-  test('records an authenticated CLI request as CLI traffic', async () => {
+  test('keeps client-reported CLI provenance separate from authoritative provenance', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
     app.patch('/v1/projects/:projectId/secrets/:identifier/strategy', async (c) => {
@@ -95,7 +96,9 @@ describe('audit event middleware', () => {
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
       actorType: 'human',
-      source: 'cli',
+      source: 'api',
+      authoritativeSource: 'api',
+      clientReportedSource: 'cli',
       outcome: 'success',
     });
   });
@@ -110,13 +113,34 @@ describe('audit event middleware', () => {
       return c.json({ ok: true });
     });
 
-    const res = await app.request(
-      '/v1/projects/00000000-0000-4000-a000-000000000201/detail',
-      { headers: { 'X-Kortix-Client': 'forged-source' } },
-    );
+    const res = await app.request('/v1/projects/00000000-0000-4000-a000-000000000201/detail', {
+      headers: { 'X-Kortix-Client': 'forged-source' },
+    });
 
     expect(res.status).toBe(200);
-    expect(auditRows[0]).toMatchObject({ source: 'api' });
+    expect(auditRows[0]).toMatchObject({
+      source: 'api',
+      authoritativeSource: 'api',
+      clientReportedSource: 'forged-source',
+    });
+  });
+
+  test('rejects credential-shaped client source labels', async () => {
+    const app = new Hono();
+    app.use('/v1/*', auditApiRequest);
+    app.get('/v1/projects/:projectId/detail', async (c) => {
+      (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
+      (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'pat');
+      return c.json({ ok: true });
+    });
+
+    const res = await app.request('/v1/projects/00000000-0000-4000-a000-000000000201/detail', {
+      headers: { 'X-Kortix-Client': 'kortix_pat_private-credential' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(auditRows[0]?.clientReportedSource).toBeNull();
   });
 
   test('records failed mutations with a failure outcome', async () => {
@@ -135,7 +159,8 @@ describe('audit event middleware', () => {
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
       actorType: 'human',
-      source: 'web',
+      source: 'human',
+      authoritativeSource: 'human',
       outcome: 'failure',
       httpStatus: 400,
     });
@@ -151,14 +176,12 @@ describe('audit event middleware', () => {
       return c.json({ projects: [] });
     });
 
-    const res = await app.request(
-      '/v1/accounts/00000000-0000-4000-a000-000000000101/projects',
-    );
+    const res = await app.request('/v1/accounts/00000000-0000-4000-a000-000000000101/projects');
 
     expect(res.status).toBe(200);
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
-      action: 'GET /v1/accounts/00000000-0000-4000-a000-000000000101/projects',
+      action: 'GET /v1/accounts/:accountId/projects',
       outcome: 'success',
       httpStatus: 200,
     });
@@ -191,12 +214,104 @@ describe('audit event middleware', () => {
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]?.metadata).toEqual({
       method: 'POST',
-      path: '/v1/projects/00000000-0000-4000-a000-000000000201/secrets',
+      path: '/v1/projects/:projectId/secrets',
     });
     expect(JSON.stringify(auditRows[0])).not.toContain('query-secret');
     expect(JSON.stringify(auditRows[0])).not.toContain('body-secret');
     expect(JSON.stringify(auditRows[0])).not.toContain('private prompt');
     expect(JSON.stringify(auditRows[0])).not.toContain('private credential');
+  });
+
+  test('stores the matched route template instead of bearer values in path segments', async () => {
+    const app = new Hono();
+    app.use('/v1/*', auditApiRequest);
+    app.get('/v1/approval-links/:token', async (c) => {
+      (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
+      (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'supabase');
+      return c.json({ ok: true });
+    });
+
+    const res = await app.request('/v1/approval-links/private-bearer-capability');
+
+    expect(res.status).toBe(200);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({
+      action: 'GET /v1/approval-links/:token',
+      metadata: { method: 'GET', path: '/v1/approval-links/:token' },
+    });
+    expect(JSON.stringify(auditRows[0])).not.toContain('private-bearer-capability');
+  });
+
+  test('redacts content fields and fingerprints raw errors at the central write boundary', async () => {
+    await recordAuditEvent({
+      accountId: '00000000-0000-4000-a000-000000000101',
+      action: 'test.privacy',
+      resourceType: 'test',
+      inputSummary: {
+        prompt: 'private prompt body',
+        command: 'curl https://private.example.test',
+        note: 'x'.repeat(513),
+        request: { authorization: 'Bearer private-input-credential' },
+        count: 1,
+      },
+      outputSummary: {
+        output: 'raw unrestricted output',
+        response: 'unrestricted provider response',
+        status: 'failed',
+      },
+      errorMessage: 'provider echoed sk-private-error-credential',
+      before: {
+        url: 'https://user:private-password@example.test/private/bearer/path?trace=private#secret',
+      },
+      metadata: {
+        access_token: 'private-access-token',
+        environment: { PRIVATE_KEY: 'private-environment-value' },
+        safe_reason: 'provider_failed',
+      },
+    });
+
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({
+      inputSummary: {
+        prompt: '[REDACTED]',
+        command: '[REDACTED]',
+        note: { redacted: true, length: 513 },
+        request: { authorization: '[REDACTED]' },
+        count: 1,
+      },
+      outputSummary: {
+        output: '[REDACTED]',
+        response: '[REDACTED]',
+        status: 'failed',
+      },
+      errorMessage: null,
+      metadata: {
+        access_token: '[REDACTED]',
+        environment: '[REDACTED]',
+        safe_reason: 'provider_failed',
+      },
+    });
+    expect(auditRows[0]?.inputSha256).toHaveLength(64);
+    expect(auditRows[0]?.outputSha256).toHaveLength(64);
+    expect(auditRows[0]?.before).toMatchObject({
+      url: { origin: 'https://example.test' },
+    });
+    expect(
+      ((auditRows[0]?.before as { url?: { sha256?: string } })?.url?.sha256 ?? '').length,
+    ).toBe(64);
+    const persisted = JSON.stringify(auditRows[0]);
+    expect(persisted).not.toContain('private prompt body');
+    expect(persisted).not.toContain('curl https://private.example.test');
+    expect(persisted).not.toContain('private-input-credential');
+    expect(persisted).not.toContain('raw unrestricted output');
+    expect(persisted).not.toContain('unrestricted provider response');
+    expect(persisted).not.toContain('private-error-credential');
+    expect(persisted).not.toContain('private-access-token');
+    expect(persisted).not.toContain('private-environment-value');
+    expect(persisted).not.toContain('x'.repeat(513));
+    expect(persisted).not.toContain('private-password');
+    expect(persisted).not.toContain('/private/bearer/path');
   });
 
   test('records mounted project routes from the shared request context', async () => {
@@ -228,7 +343,9 @@ describe('audit event middleware', () => {
       projectId: '00000000-0000-4000-a000-000000000201',
       actorUserId: '00000000-0000-4000-a000-000000000001',
       actorType: 'human',
-      source: 'cli',
+      source: 'api',
+      authoritativeSource: 'api',
+      clientReportedSource: 'cli',
       outcome: 'success',
       httpStatus: 201,
       correlationId: 'project-create-1',

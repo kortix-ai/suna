@@ -157,7 +157,12 @@ describe('gateway routing editor helpers', () => {
 
   test('default changes refresh routing and the shared compact picker cache', () => {
     expect(modelDefaultsSource).toContain("['gateway-routing-policy', projectId]");
-    expect(modelDefaultsSource).toContain("['project-model-picker', projectId]");
+    // Was a standalone flat array literal, independently hand-typed from
+    // `qk.project.modelPicker(id)` — the SAME entry `useProjectModels` reads
+    // and `gateway-routing.tsx`'s own invalidation targets (see this file's
+    // other assertion on `qk.project.modelPicker(projectId)` above). Fixed as
+    // part of migrating `packages/sdk/src/react` onto `qk`.
+    expect(modelDefaultsSource).toContain("qk.project.modelPicker(projectId ?? '')");
   });
 
   test('an effective-default refetch does not overwrite an unsaved routing draft', () => {
@@ -191,7 +196,7 @@ describe('gateway routing editor helpers', () => {
     expect(routingSource).toContain('routing.set.isPending ||');
     expect(routingSource).toContain('routing.reset.isPending ||');
     expect(routingSource).toContain("queryKey: ['model-defaults', projectId]");
-    expect(routingSource).toContain("queryKey: ['project-model-picker', projectId]");
+    expect(routingSource).toContain('queryKey: qk.project.modelPicker(projectId)');
   });
 
   test('renders a capability-gated generation-controls panel for the resolved primary model', () => {

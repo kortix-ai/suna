@@ -1,6 +1,13 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
-import { accountIsFreeTierForModels, getTier, isPaidTier, isPerSeatAccount, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
+import {
+  activeTrialSeatLimit,
+  coercePerSeatTier,
+  resolveEffectiveTier,
+  type SubscriptionFields,
+} from '../billing/services/effective-tier';
+import { accountMayUseManagedModels } from '../billing/services/entitlements';
+import { getTier, isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 // Managed cloud is paid-only: new accounts resolve to tier 'none' and must
@@ -52,22 +59,12 @@ async function resolveAccountLimitInfo(
 
   try {
     const subscription = await getSubscriptionInfo(accountId);
-    let tier = subscription?.tier ?? 'free';
-    // Per-seat teams are paid by virtue of an active seat subscription, but a
-    // number of rows still carry a stale tier='free' — the seat-billing
-    // migration set billing_model='per_seat' without backfilling tier. Deriving
-    // the paid tier from billing_model + an active subscription here means stale
-    // tier data can't mis-gate paying teams as free (e.g. the 1-project cap),
-    // and it self-heals every tier-based limit (projects, sessions, rate).
-    if (
-      !isPaidTier(tier) &&
-      isPerSeatAccount(subscription?.billingModel) &&
-      !!subscription?.stripeSubscriptionId &&
-      subscription.stripeSubscriptionStatus !== 'canceled' &&
-      subscription.stripeSubscriptionStatus !== 'unpaid'
-    ) {
-      tier = 'per_seat';
-    }
+    // Effective tier = active trial overlay > per-seat self-heal > stored tier
+    // (see billing/services/effective-tier.ts). The self-heal keeps stale
+    // tier='free' per-seat rows from mis-gating paying teams; the trial overlay
+    // lets an admin-issued trial lift project/session/rate limits for exactly
+    // the trial window.
+    const tier = subscription ? resolveEffectiveTier(subscription) : 'free';
     const rawOverride = subscription?.maxConcurrentSessions;
     const sessionOverride =
       typeof rawOverride === 'number' && Number.isFinite(rawOverride) && rawOverride > 0
@@ -106,8 +103,9 @@ export async function resolveAccountTier(accountId: string): Promise<string | nu
  */
 export async function accountEntitledToLlmGateway(accountId: string): Promise<boolean> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
-  const tier = await resolveAccountTier(accountId);
-  return !accountIsFreeTierForModels(tier ?? 'free');
+  // Single source of truth for "may this account use managed models" — trial
+  // overlay and the operator managed_models_override included (entitlements.ts).
+  return accountMayUseManagedModels(accountId);
 }
 
 export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLimitPolicy {
@@ -194,21 +192,23 @@ export function clearAccountLimitCache() {
  */
 export function effectiveTierForLimits(
   tier: string | null | undefined,
-  subscription: {
-    billingModel?: string | null;
-    stripeSubscriptionId?: string | null;
-    stripeSubscriptionStatus?: string | null;
-  } | null | undefined,
+  subscription: SubscriptionFields | null | undefined,
 ): string {
-  const raw = tier ?? 'free';
-  if (
-    !isPaidTier(raw) &&
-    isPerSeatAccount(subscription?.billingModel) &&
-    !!subscription?.stripeSubscriptionId &&
-    subscription.stripeSubscriptionStatus !== 'canceled' &&
-    subscription.stripeSubscriptionStatus !== 'unpaid'
-  ) {
-    return 'per_seat';
+  return coercePerSeatTier(tier ?? 'free', subscription);
+}
+
+/**
+ * Seat allowance for an account while an admin-issued trial is active.
+ * null = no active trial or the trial is uncapped — no trial seat gate.
+ * Reads uncached: member-add/invite is rare and must see a just-granted or
+ * just-revoked trial immediately across API tasks.
+ */
+export async function resolveTrialSeatLimit(accountId: string): Promise<number | null> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
+  try {
+    const subscription = await getSubscriptionInfo(accountId);
+    return activeTrialSeatLimit(subscription);
+  } catch {
+    return null;
   }
-  return raw;
 }

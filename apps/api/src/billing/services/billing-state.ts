@@ -108,6 +108,33 @@ export function isDeadSubscriptionStatus(status: string | null | undefined): boo
   return DEAD_SUBSCRIPTION_STATUSES.has(status ?? '');
 }
 
+/**
+ * Whether a RAW Stripe subscription status means Stripe is collecting money.
+ *
+ * Same allow-list as `hasPayingSubscription`, but takes the status string
+ * directly so the webhook layer can ask the question about a `Stripe.
+ * Subscription` object it has just retrieved, before any `credit_accounts` row
+ * exists to build a snapshot from.
+ *
+ * THE WEBHOOK LAYER MUST GATE EVERY TIER WRITE AND EVERY ACTIVATION/RECOVERY
+ * CREDIT GRANT ON THIS PREDICATE. It previously activated on subscription
+ * EVENTS alone — `checkout.session.completed` and `customer.subscription.
+ * created` fire the moment Stripe attaches a subscription, whether or not the
+ * first invoice is ever paid. A subscription that never collects sits at
+ * `incomplete` for 23 hours and then becomes `incomplete_expired`; no money
+ * moves at any point. A signup farm exploited exactly that: 85 production
+ * accounts held `incomplete`/`incomplete_expired` subscriptions, received the
+ * full paid-tier write plus the activation credit grant, and burned $840 of
+ * granted credit without paying a cent.
+ *
+ * Gating on this predicate means money must settle first. The paid path is
+ * driven by `invoice.paid` (billing_reason `subscription_create`), which Stripe
+ * only sends once the first invoice is actually paid.
+ */
+export function isPayingSubscriptionStatus(status: string | null | undefined): boolean {
+  return PAYING_SUBSCRIPTION_STATUSES.has(status ?? '');
+}
+
 /** Whether a subscription row exists at all, live or lapsed. */
 export function hasSubscriptionRecord(snapshot: BillingSnapshot): boolean {
   return !!snapshot.subscriptionId;

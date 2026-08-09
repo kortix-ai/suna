@@ -1,7 +1,7 @@
+import type { SessionConfigState } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { SessionConfigState } from '@kortix/sdk';
 
 import {
   CONFIG_FRESHNESS_STALE_TIME_MS,
@@ -56,14 +56,12 @@ describe('sessionConfigNotice', () => {
     ).toEqual({ kind: 'hidden' });
   });
 
-  test('a live box that reports no etag is UNVERIFIED, not fresh and not stale', () => {
-    // A sandbox provisioned before the etag shipped. We genuinely cannot tell,
-    // and a reload is exactly the fix — so this is the one null worth showing.
+  test('a live box that reports no etag stays quiet instead of presenting an unverifiable error', () => {
     expect(
       sessionConfigNotice(
         state({ stale: null, running_etag: null, latest_etag: 'new1new1new1new1' }),
       ),
-    ).toEqual({ kind: 'unverified' });
+    ).toEqual({ kind: 'hidden' });
   });
 
   test('NO input ever yields a positive "up to date" state', () => {
@@ -85,15 +83,15 @@ describe('sessionConfigNotice', () => {
             );
 
     const kinds = new Set(combos.map((c) => sessionConfigNotice(c).kind));
-    expect([...kinds].sort()).toEqual(['hidden', 'stale', 'unverified']);
+    expect([...kinds].sort()).toEqual(['hidden', 'stale']);
   });
 
   test('stale wins over every explanatory branch', () => {
     // If the server said stale, that is the answer even when the box then went
     // unreachable between the two reads inside the same response.
-    expect(
-      sessionConfigNotice(state({ stale: true, sandbox_reachable: false })).kind,
-    ).toBe('stale');
+    expect(sessionConfigNotice(state({ stale: true, sandbox_reachable: false })).kind).toBe(
+      'stale',
+    );
   });
 });
 
@@ -141,12 +139,14 @@ describe('reloadNotAppliedCopy', () => {
  * Source-asserted: exercising them needs a QueryClientProvider + a real network
  * seam, and this hook's own value is the pure logic above.
  */
-const HOOK_SOURCE = readFileSync(
-  join(import.meta.dir, 'use-session-config-freshness.ts'),
-  'utf8',
-);
+const HOOK_SOURCE = readFileSync(join(import.meta.dir, 'use-session-config-freshness.ts'), 'utf8');
 
 describe('useReloadSessionConfig — the costly mistakes', () => {
+  test('the web reload is config-only and cannot refresh workspace files', () => {
+    const body = HOOK_SOURCE.split('const mutation = useMutation({')[1]?.split('\n  });')[0];
+    expect(body).toContain('refresh_repo: false');
+  });
+
   test('the reload mutation never retries', () => {
     // The app-wide default retries any non-4xx once. The API answers 503 at its
     // own 25s deadline WHILE the reload keeps running server-side, so the

@@ -11,16 +11,43 @@
 import { config } from '../../config';
 import type { TierEntitlements } from '../../types';
 import { getCreditAccount } from '../repositories/credit-accounts';
-import { getTierEntitlements, tierHasEntitlement } from './tiers';
+import { resolveEffectiveTier } from './effective-tier';
+import { getTierEntitlements, tierGrantsAllModels, tierHasEntitlement } from './tiers';
 
-/** Resolve the tier name backing an account ('none' if no billing row). */
+/**
+ * Resolve the tier name backing an account ('none' if no billing row).
+ * This is the EFFECTIVE tier: an active admin-issued trial and the per-seat
+ * self-heal overlay the stored `credit_accounts.tier` (see effective-tier.ts).
+ */
 export async function getAccountTier(accountId: string): Promise<string> {
   const acct = await getCreditAccount(accountId);
-  return acct?.tier ?? 'none';
+  return resolveEffectiveTier(acct);
 }
 
 const TIER_CACHE_TTL_MS = 30_000;
-const accountTierCache = new Map<string, { tier: string; expiresAt: number }>();
+type TierSnapshot = { tier: string; managedModels: boolean };
+const accountTierCache = new Map<string, TierSnapshot & { expiresAt: number }>();
+
+async function loadTierSnapshot(accountId: string, now: number): Promise<TierSnapshot> {
+  const acct = await getCreditAccount(accountId);
+  const tier = resolveEffectiveTier(acct, now);
+  // Managed-models entitlement: the operator override wins in both directions
+  // (grant managed models to a BYOK/credit tier, or force an account BYOK-only
+  // regardless of tier); NULL means the effective tier decides.
+  const managedModels =
+    typeof acct?.managedModelsOverride === 'boolean'
+      ? acct.managedModelsOverride
+      : tierGrantsAllModels(tier);
+  return { tier, managedModels };
+}
+
+async function getCachedTierSnapshot(accountId: string, now: number): Promise<TierSnapshot> {
+  const cached = accountTierCache.get(accountId);
+  if (cached && cached.expiresAt > now) return cached;
+  const snapshot = await loadTierSnapshot(accountId, now);
+  accountTierCache.set(accountId, { ...snapshot, expiresAt: now + TIER_CACHE_TTL_MS });
+  return snapshot;
+}
 
 /**
  * getAccountTier with a short per-process TTL cache — the SINGLE tier cache for
@@ -43,11 +70,26 @@ export async function getCachedAccountTier(
   accountId: string,
   now: number = Date.now(),
 ): Promise<string> {
-  const cached = accountTierCache.get(accountId);
-  if (cached && cached.expiresAt > now) return cached.tier;
-  const tier = await getAccountTier(accountId);
-  accountTierCache.set(accountId, { tier, expiresAt: now + TIER_CACHE_TTL_MS });
-  return tier;
+  return (await getCachedTierSnapshot(accountId, now)).tier;
+}
+
+/**
+ * Whether the account may use Kortix-managed model credentials (vs BYOK only).
+ * THE single request-time answer for the whole control plane — the gateway auth
+ * hot path, resolveCandidates' managed gate, the sandbox-provision gateway
+ * mount, and every model-picker/catalog narrowing consult this instead of
+ * deriving it from a tier string themselves, so the operator override and the
+ * trial overlay cannot skew between surfaces. Shares the tier snapshot cache
+ * (same TTL, same invalidation point).
+ */
+export async function accountMayUseManagedModels(
+  accountId: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  // Billing off (local / self-hosted): the tier system is a no-op and every
+  // account sees the full lineup — same convention as the limit resolvers.
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
+  return (await getCachedTierSnapshot(accountId, now)).managedModels;
 }
 
 /**
@@ -91,7 +133,10 @@ export async function getAccountEntitlements(
   // preview, NOT a real Enterprise plan (which is sales-assigned or set via
   // `enterprise_entitled`).
   if (acct?.demoEnterprise) return getTierEntitlements('enterprise');
-  return getTierEntitlements(acct?.tier ?? 'none');
+  // Effective tier: an active admin-issued trial overlays the stored tier, so
+  // a trial of an entitled tier (e.g. 'enterprise') grants its feature set for
+  // exactly the trial window and lapses back on expiry with no cron involved.
+  return getTierEntitlements(resolveEffectiveTier(acct));
 }
 
 /** Whether an account's plan unlocks a specific enterprise feature. */
@@ -103,5 +148,5 @@ export async function accountHasEntitlement(
   const acct = await getCreditAccount(accountId);
   if (acct?.enterpriseEntitled) return true;
   if (acct?.demoEnterprise) return true;
-  return tierHasEntitlement(acct?.tier ?? 'none', key);
+  return tierHasEntitlement(resolveEffectiveTier(acct), key);
 }

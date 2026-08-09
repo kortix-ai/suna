@@ -9,9 +9,10 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { type SandboxProviderName, config } from '../../config';
 import { type SecretGrant, visibilityToIntent } from '../../connectors/share';
-import { buildExperimentalCatalog, resolveExperimentalFeatures } from '../../experimental/features';
+import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
@@ -43,6 +44,7 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
+  clientReportedSource?: string | null;
 };
 
 export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -194,11 +196,12 @@ export function serializeProject(
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
     dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
-    // Experimental features (Customize → Settings → Experimental) — `experimental`
-    // is the effective on/off map; `experimental_features` is the self-describing
-    // catalog the UI renders from. SoT = ../../experimental/features.
-    experimental: resolveExperimentalFeatures(row.metadata),
-    experimental_features: buildExperimentalCatalog(row.metadata),
+    // Feature flags (Settings → Feature flags) — `experimental` is the effective
+    // on/off map; `experimental_features` is the self-describing catalog the UI
+    // renders from. Both wire names are historical and STABLE; do not rename
+    // them. SoT = ../../feature-flags/registry.
+    experimental: resolveFeatureFlags(row.metadata),
+    experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
     // `available_sandbox_providers` is the enabled set the picker offers
@@ -280,6 +283,7 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     path: c.req.path,
     ip: clientIp(c),
     userAgent: c.req.header('user-agent') || null,
+    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 

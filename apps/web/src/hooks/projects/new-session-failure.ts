@@ -21,6 +21,7 @@ export function resolveCreateFailure(
 ): 'upgrade' | 'silent' | 'connect' | 'toast' {
   if (code === 'subscription_required' || code === 'no_account') return 'upgrade';
   if (code === 'concurrent_session_limit') return 'silent';
+  if (code === 'TIMEOUT' || code === 'request_deadline') return 'silent';
   // One code, not two. `CONNECTOR_CONNECTION_REQUIRED` was also listed here and
   // the API has never emitted it — a dead branch that cost nothing only because
   // the live code sits beside it.
@@ -50,9 +51,7 @@ function isConnectorGateConnection(value: unknown): value is ConnectorGateConnec
   );
 }
 
-export function getRequiredConnectorConnections(
-  error: unknown,
-): ConnectorGateConnection[] | null {
+export function getRequiredConnectorConnections(error: unknown): ConnectorGateConnection[] | null {
   if (!isRecord(error)) return null;
 
   const rootCode = error.code;

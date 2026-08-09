@@ -1,5 +1,5 @@
-import { and, asc, desc, eq, isNull, lte, sql } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
+import { and, asc, desc, eq, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 export interface SandboxSpec {
@@ -44,16 +44,6 @@ export async function getLatestComputeSession(sandboxId: string) {
   return row ?? null;
 }
 
-export async function updateComputeSession(
-  id: string,
-  patch: Partial<typeof sandboxComputeSessions.$inferInsert>,
-) {
-  await db
-    .update(sandboxComputeSessions)
-    .set({ ...patch, updatedAt: new Date().toISOString() })
-    .where(eq(sandboxComputeSessions.id, id));
-}
-
 /**
  * Find active sessions whose `last_billed_at` is older than `cutoff`.
  * Used by the cron tick to partially bill long-running sandboxes so a missed
@@ -93,14 +83,15 @@ export async function findStaleActiveSessions(cutoff: Date, limit = 100) {
  * hooks on other replicas.
  *
  * So the cursor move IS the lock. `last_billed_at` must still equal the value
- * the caller read, and the row must still be open. `cost_usd` accumulates in
- * SQL rather than from an in-memory `Number(row.costUsd) + windowCost`, which
- * had the same lost-update flaw one column over.
+ * the caller read, and the row must still be open. A terminal claim also writes
+ * `state` and `ended_at` in this statement. `cost_usd` accumulates in SQL rather
+ * than from an in-memory `Number(row.costUsd) + windowCost`, which had the same
+ * lost-update flaw one column over.
  *
  * Returns true when this caller owns the window and may bill it. False means
  * somebody else already did — bill nothing.
  */
-export async function claimComputeWindow(input: {
+export interface ClaimComputeWindowInput {
   id: string;
   /** The `last_billed_at` the caller based its window on. */
   expectedLastBilledAt: string;
@@ -108,12 +99,20 @@ export async function claimComputeWindow(input: {
   nextLastBilledAt: string;
   /** Added to `cost_usd` in SQL. May be 0 for a zero-cost window. */
   addCostUsd: number;
-}): Promise<boolean> {
-  const rows = await db
+  /** Atomically closes the row at `nextLastBilledAt` when this is a terminal settle. */
+  terminalState?: 'stopped' | 'finalized';
+}
+
+/** Exported query builder so the terminal CAS predicate is tested as rendered SQL. */
+export function buildClaimComputeWindowQuery(input: ClaimComputeWindowInput) {
+  return db
     .update(sandboxComputeSessions)
     .set({
       lastBilledAt: input.nextLastBilledAt,
       costUsd: sql`${sandboxComputeSessions.costUsd} + ${String(input.addCostUsd)}::numeric`,
+      ...(input.terminalState
+        ? { state: input.terminalState, endedAt: input.nextLastBilledAt }
+        : {}),
       updatedAt: new Date().toISOString(),
     })
     .where(
@@ -124,6 +123,10 @@ export async function claimComputeWindow(input: {
       ),
     )
     .returning({ id: sandboxComputeSessions.id });
+}
+
+export async function claimComputeWindow(input: ClaimComputeWindowInput): Promise<boolean> {
+  const rows = await buildClaimComputeWindowQuery(input);
   return rows.length > 0;
 }
 
@@ -134,32 +137,48 @@ export async function claimComputeWindow(input: {
  * behaviour: an out-of-credits account must be able to retry the same seconds
  * once its wallet can pay, rather than silently forfeiting them.
  *
- * Also CAS'd. If another settler has since moved the cursor past our value we
- * do NOT force it back — that would re-open the window for double billing,
- * trading a revenue loss for a customer overcharge. Losing this race forfeits
- * the seconds, which is the safe direction.
+ * Also CAS'd. A partial release requires an open row. A terminal release
+ * requires the exact terminal state and timestamp it wrote, then reopens the
+ * row for the invariant sweep. If another settler moved the cursor, do NOT
+ * force it back. That would re-open the window for double billing.
  */
-export async function releaseComputeWindow(input: {
+export interface ReleaseComputeWindowInput {
   id: string;
   /** The cursor value this caller wrote when it claimed. */
   claimedLastBilledAt: string;
   /** Where to put the cursor back. */
   revertToLastBilledAt: string;
   subCostUsd: number;
-}): Promise<boolean> {
-  const rows = await db
+  /** Reopens a row whose terminal claim could not be debited. */
+  terminalState?: 'stopped' | 'finalized';
+}
+
+/** Exported query builder so release cannot silently reopen a closed unrelated row. */
+export function buildReleaseComputeWindowQuery(input: ReleaseComputeWindowInput) {
+  return db
     .update(sandboxComputeSessions)
     .set({
       lastBilledAt: input.revertToLastBilledAt,
       costUsd: sql`${sandboxComputeSessions.costUsd} - ${String(input.subCostUsd)}::numeric`,
+      ...(input.terminalState ? { state: 'active' as const, endedAt: null } : {}),
       updatedAt: new Date().toISOString(),
     })
     .where(
       and(
         eq(sandboxComputeSessions.id, input.id),
         eq(sandboxComputeSessions.lastBilledAt, input.claimedLastBilledAt),
+        input.terminalState
+          ? and(
+              eq(sandboxComputeSessions.state, input.terminalState),
+              eq(sandboxComputeSessions.endedAt, input.claimedLastBilledAt),
+            )
+          : isNull(sandboxComputeSessions.endedAt),
       ),
     )
     .returning({ id: sandboxComputeSessions.id });
+}
+
+export async function releaseComputeWindow(input: ReleaseComputeWindowInput): Promise<boolean> {
+  const rows = await buildReleaseComputeWindowQuery(input);
   return rows.length > 0;
 }

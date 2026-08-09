@@ -5,7 +5,7 @@ import {
   loadSlackInstall,
   loadTeamsInstall,
 } from '../channels/install-store';
-import { resolveExperimentalFeature } from '../experimental/features';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -80,7 +80,7 @@ export async function synthesizeChannelConnectors(
 ): Promise<ConnectorSpec[]> {
   const specs: ConnectorSpec[] = [];
 
-  // Slack — no experimental flag: the install IS the registration (Telegram
+  // Slack — no feature flag: the install IS the registration (Telegram
   // slots in here the same way — see KORTIX-206 Phase D). Teams sits below,
   // with the other flag-gated channels.
   // Use the reserved platform-owned slug so user-defined connectors like
@@ -98,9 +98,9 @@ export async function synthesizeChannelConnectors(
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
-  // Teams — gated on the per-project `teams` experimental flag, then the
+  // Teams — gated on the per-project `teams` feature flag, then the
   // install, exactly like email below.
-  if (project && resolveExperimentalFeature(project.metadata, 'teams')) {
+  if (project && resolveFeatureFlag(project.metadata, 'teams')) {
     const teamsSlug = channelDefaultSlug('teams');
     if (!channelAlreadyDeclared(declared, 'teams', teamsSlug)) {
       const install = await loadTeamsInstall(projectId).catch(() => null);
@@ -108,19 +108,19 @@ export async function synthesizeChannelConnectors(
     }
   }
 
-  // Voice — gated on the per-project `voice` experimental flag. Unlike
+  // Voice — gated on the per-project `voice` feature flag. Unlike
   // Slack/Teams/email there is no install to check: LiveKit config lives in
   // this API's own env, not a per-project OAuth token, so the flag itself IS
   // the registration (mirrors how `sensitive`-less channels work, minus the
   // install lookup).
-  if (project && resolveExperimentalFeature(project.metadata, 'voice')) {
+  if (project && resolveFeatureFlag(project.metadata, 'voice')) {
     const voiceSlug = channelDefaultSlug('voice');
     if (!channelAlreadyDeclared(declared, 'voice', voiceSlug)) {
       specs.push(channelSpec('voice', voiceSlug));
     }
   }
 
-  if (!project || !resolveExperimentalFeature(project.metadata, 'agentmail_email')) {
+  if (!project || !resolveFeatureFlag(project.metadata, 'agentmail_email')) {
     return specs;
   }
 

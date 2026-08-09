@@ -42,7 +42,9 @@ const { config } = await import('../config');
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
+let providerStopCalls = 0;
 let providerStatus = 'stopped';
+let providerStatusSequence: string[] = [];
 let providerStatusAfterStart: string | null = null;
 let providerStatusSessionMetadataUpdate: Record<string, unknown> | null = null;
 let providerStartError: Error | null = null;
@@ -110,7 +112,9 @@ function resetState() {
   branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
+  providerStopCalls = 0;
   providerStatus = 'stopped';
+  providerStatusSequence = [];
   providerStatusAfterStart = null;
   providerStatusSessionMetadataUpdate = null;
   providerStartError = null;
@@ -421,7 +425,7 @@ mock.module('../platform/providers', () => ({
           },
         };
       }
-      return providerStatus;
+      return providerStatusSequence.shift() ?? providerStatus;
     },
     start: async () => {
       providerStartCalls += 1;
@@ -429,7 +433,9 @@ mock.module('../platform/providers', () => ({
       if (providerStatusAfterStart) providerStatus = providerStatusAfterStart;
       if (providerStartGate) await providerStartGate;
     },
-    stop: async () => undefined,
+    stop: async () => {
+      providerStopCalls += 1;
+    },
     remove: async () => undefined,
     ...(providerRecoveryEnabled
       ? {
@@ -558,6 +564,33 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
+function applySandboxUpdates(
+  row: SandboxRowFixture,
+  updates: Partial<typeof sessionSandboxes.$inferSelect>,
+): SandboxRowFixture {
+  let metadata = updates.metadata;
+  if (metadata && typeof metadata === 'object' && 'queryChunks' in metadata) {
+    const query = new PgDialect().sqlToQuery(metadata as unknown as SQL);
+    const merged = { ...((row.metadata ?? {}) as Record<string, unknown>) };
+    for (const key of query.sql.matchAll(/- '([^']+)'/g)) delete merged[key[1]!];
+    for (const param of query.params) {
+      if (typeof param !== 'string' || !param.startsWith('{')) continue;
+      try {
+        Object.assign(merged, JSON.parse(param) as Record<string, unknown>);
+      } catch {
+        // Non-JSON SQL parameters are unrelated to metadata merges.
+      }
+    }
+    metadata = merged;
+  }
+  return {
+    ...row,
+    ...updates,
+    metadata: metadata === undefined ? row.metadata : metadata,
+    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+  };
+}
+
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
   db: {
@@ -596,6 +629,9 @@ mock.module('../shared/db', () => ({
             if (table === projects) return [projectRow];
             if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
+            if (table === projectSessions && fields?.sessionMetadata) {
+              return sessionRow ? [{ sessionMetadata: sessionRow.metadata }] : [];
+            }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
           },
@@ -710,7 +746,11 @@ mock.module('../shared/db', () => ({
           return [sessionRow];
         },
         onConflictDoNothing: async () => [],
-        onConflictDoUpdate: ({ set }: { set: Partial<typeof projectSecrets.$inferInsert> }) => {
+        onConflictDoUpdate: ({
+          set,
+        }: {
+          set: Partial<typeof projectSecrets.$inferInsert>;
+        }) => {
           const conflictResult = {
             returning: async () => {
               if (table === projectGitConnections) {
@@ -834,7 +874,7 @@ mock.module('../shared/db', () => ({
         updates: Partial<typeof projectSessions.$inferSelect> &
           Partial<typeof sessionSandboxes.$inferSelect>,
       ) => ({
-        where: () => ({
+        where: (predicate?: unknown) => ({
           returning: async () => {
             if (table === projectSessions) {
               if (!sessionRow) return [];
@@ -854,11 +894,22 @@ mock.module('../shared/db', () => ({
             if (table === sessionSandboxes) {
               const row = sessionSandboxRows[0];
               if (!row) return [];
-              sessionSandboxRows[0] = {
-                ...row,
-                ...updates,
-                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-              };
+              if (predicate) {
+                const query = new PgDialect().sqlToQuery(predicate as SQL);
+                const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+                if (
+                  query.sql.includes('runtimeWakeRetryAfterAt') &&
+                  typeof metadata.runtimeWakeId === 'string' &&
+                  Date.parse(String(metadata.runtimeWakeLeaseExpiresAt)) > Date.now()
+                ) {
+                  return [];
+                }
+                if (query.sql.includes("->>'runtimeWakeId' =")) {
+                  const wakeId = (row.metadata as Record<string, unknown> | null)?.runtimeWakeId;
+                  if (typeof wakeId !== 'string' || !query.params.includes(wakeId)) return [];
+                }
+              }
+              sessionSandboxRows[0] = applySandboxUpdates(row, updates);
               return [sessionSandboxRows[0]];
             }
             return [];
@@ -881,11 +932,7 @@ mock.module('../shared/db', () => ({
                 if (table === sessionSandboxes) {
                   const row = sessionSandboxRows[0];
                   if (!row) return [];
-                  sessionSandboxRows[0] = {
-                    ...row,
-                    ...updates,
-                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                  };
+                  sessionSandboxRows[0] = applySandboxUpdates(row, updates);
                   return [sessionSandboxRows[0]];
                 }
                 return [];
@@ -909,11 +956,7 @@ mock.module('../shared/db', () => ({
               if (table === sessionSandboxes) {
                 const row = sessionSandboxRows[0];
                 if (!row) return [];
-                sessionSandboxRows[0] = {
-                  ...row,
-                  ...updates,
-                  updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                };
+                sessionSandboxRows[0] = applySandboxUpdates(row, updates);
                 return [sessionSandboxRows[0]];
               }
               return [];
@@ -930,6 +973,9 @@ mock.module('../shared/db', () => ({
 const { projectsApp } = await import('../projects/index');
 const { encryptProjectSecret } = await import('../projects/secrets');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { applyStoppedState, reconcileSandboxStoppedByExternalId } = await import(
+  '../projects/reaping/sandbox-state-sync'
+);
 
 function createApp() {
   const app = new Hono();
@@ -1052,7 +1098,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'meta' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'meta',
+      }),
     });
 
     expect(response.status).toBe(400);
@@ -1068,7 +1118,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'meta' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'meta',
+      }),
     });
 
     expect(response.status).toBe(201);
@@ -1085,7 +1139,7 @@ describe('project session API contract', () => {
     expect(assertedIamActions).toContain('project.session.read');
   });
 
-  test('in-place resume clears stale readiness timers and the prior terminal session error', async () => {
+  test('in-place resume keeps stopped state and billing closed until the provider proves running', async () => {
     const staleReadyWaitStartedAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     sessionRow = {
       ...sessionRow!,
@@ -1131,9 +1185,9 @@ describe('project session API contract', () => {
     });
 
     expect(won).toBe(true);
-    expect(sessionRow).toMatchObject({ status: 'running', error: null });
+    expect(sessionRow).toMatchObject({ status: 'stopped' });
     expect(sessionSandboxRows[0]).toMatchObject({
-      status: 'active',
+      status: 'stopped',
       externalId: 'original-provider-identity',
       metadata: {
         initStatus: 'ready',
@@ -1147,8 +1201,232 @@ describe('project session API contract', () => {
     expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
     expect(resumedMetadata.runtimeWakeId).toEqual(expect.any(String));
+    expect(computeReopenCalls).toBe(0);
 
+    providerStatus = 'running';
     releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    expect(sessionRow).toMatchObject({ status: 'running', error: null });
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('provider reconciliation observes a stopped row while an in-place resume is starting', async () => {
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      error: null,
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-resume-race',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+
+    const won = await resumeStoppedSandbox({
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      externalId: 'platinum-resume-race',
+      metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+    });
+    const reconciled = await reconcileSandboxStoppedByExternalId(
+      'platinum-resume-race',
+      new Date(),
+    );
+    expect(won).toBe(true);
+    expect(reconciled).toBe(false);
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
+    expect(computeReopenCalls).toBe(0);
+
+    providerStatus = 'running';
+    releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('provider start rejection keeps both rows stopped and opens no compute meter', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rejected-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartError = new Error('provider rejected start');
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rejected-wake',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+    await flushUntil(
+      () =>
+        typeof (sessionSandboxRows[0]?.metadata as Record<string, unknown>)?.runtimeWakeFailedAt ===
+        'string',
+    );
+
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
+    expect(computeReopenCalls).toBe(0);
+    const failureMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(failureMetadata.runtimeWakeError).toBe('start_failed');
+    expect(typeof failureMetadata.runtimeWakeFailedAt).toBe('string');
+    expect(typeof failureMetadata.runtimeWakeRetryAfterAt).toBe('string');
+    expect(failureMetadata.runtimeWakeId).toBeUndefined();
+    expect(Date.parse(String(failureMetadata.runtimeWakeRetryAfterAt))).toBeGreaterThan(Date.now());
+
+    const response = await createApp().request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'stopped',
+      retriable: false,
+      reason: 'runtime_wake_cooldown',
+      sandbox: { status: 'stopped' },
+      failure: {
+        category: 'sandbox-provider',
+        retryable: true,
+      },
+    });
+    expect(providerStartCalls).toBe(1);
+  });
+
+  test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-single-flight-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+    const input = {
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      externalId: 'platinum-single-flight-wake',
+      metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+    };
+
+    const [first, second] = await Promise.all([
+      resumeStoppedSandbox(input),
+      resumeStoppedSandbox(input),
+    ]);
+    await flushUntil(() => providerStartCalls > 0);
+
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect(providerStartCalls).toBe(1);
+    expect(computeReopenCalls).toBe(0);
+
+    providerStatus = 'running';
+    releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('a manual stop wins when provider start resolves after the stop', async () => {
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      error: null,
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-cancelled-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-cancelled-wake',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+    await applyStoppedState({
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      externalId: 'platinum-cancelled-wake',
+      // Top-level, not nested in `metadata`: the patch sets `stopReason` from
+      // the required field AFTER spreading `metadata`, so a nested one is
+      // overwritten and `JSON.stringify` drops the resulting undefined.
+      stopReason: 'manual',
+      metadata: { stoppedBy: USER_ID },
+    });
+    releaseProviderStart?.();
+    await flushUntil(() => providerStopCalls === 1);
+
+    expect(providerStopCalls).toBe(1);
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
   });
 
   test('upserts and lists project secrets without exposing secret values', async () => {
@@ -1210,7 +1488,9 @@ describe('project session API contract', () => {
       configured: true,
     });
 
-    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, { headers });
+    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      headers,
+    });
     expect(listRes.status).toBe(200);
     expect(await listRes.json()).toMatchObject({
       items: [
@@ -1371,11 +1651,72 @@ describe('project session API contract', () => {
     expect(patBody).not.toHaveProperty('origin_ref');
   });
 
+  test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
+    sessionRow!.metadata = { workspace_mode: 'runtime' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+
+    const projectRes = await app.request(`/v1/projects/${PROJECT_ID}`, {
+      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
+    });
+    expect(projectRes.status).toBe(403);
+    expect(await projectRes.json()).toMatchObject({
+      message: 'session workspace does not allow repository access',
+    });
+
+    const patCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
+    });
+    expect(patCloneRes.status).toBe(403);
+    expect(await patCloneRes.json()).toMatchObject({
+      message: 'session workspace does not allow repository access',
+    });
+
+    const sandboxCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+    });
+    expect(sandboxCloneRes.status).toBe(403);
+    expect(await sandboxCloneRes.json()).toMatchObject({
+      error: 'sandbox workspace does not allow repository access',
+    });
+
+    for (const suffix of ['diff', 'merge-preview']) {
+      const crRes = await app.request(
+        `/v1/projects/${PROJECT_ID}/change-requests/00000000-0000-4000-a000-000000000801/${suffix}`,
+        { headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` } },
+      );
+      expect(crRes.status).toBe(403);
+      expect(await crRes.json()).toMatchObject({
+        message: 'session workspace does not allow repository access',
+      });
+    }
+  });
+
   test('rejects removed session attribution fields', async () => {
     const app = createApp();
 
     for (const body of [
-      { provider: 'daytona', base_ref: 'main', end_user_ref: 'legacy-reference' },
+      {
+        provider: 'daytona',
+        base_ref: 'main',
+        end_user_ref: 'legacy-reference',
+      },
       { provider: 'daytona', base_ref: 'main', origin_ref: 'legacy-reference' },
     ]) {
       const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1406,10 +1747,16 @@ describe('project session API contract', () => {
     const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAIL_TOKEN'],
+      }),
     });
     expect(forbidden.status).toBe(403);
-    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
+    expect(await forbidden.json()).toMatchObject({
+      code: 'origin_override_forbidden',
+    });
 
     // A backend (PAT) caller naming an unknown identifier fails fast at create.
     const unknown = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1418,10 +1765,16 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['DOES_NOT_EXIST'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['DOES_NOT_EXIST'],
+      }),
     });
     expect(unknown.status).toBe(404);
-    expect(await unknown.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_NOT_FOUND' });
+    expect(await unknown.json()).toMatchObject({
+      code: 'SECRET_IDENTIFIER_NOT_FOUND',
+    });
 
     // A backend caller with a valid identifier → 201, allowlist persisted + echoed.
     const ok = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1430,7 +1783,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAIL_TOKEN'],
+      }),
     });
     expect(ok.status).toBe(201);
     expect((await ok.json()).secrets_allowlist).toEqual(['GMAIL_TOKEN']);
@@ -1442,7 +1799,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: [] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: [],
+      }),
     });
     expect(zero.status).toBe(201);
     expect((await zero.json()).secrets_allowlist).toEqual([]);
@@ -1485,7 +1846,9 @@ describe('project session API contract', () => {
       }),
     });
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_KEY_COLLISION' });
+    expect(await res.json()).toMatchObject({
+      code: 'SECRET_IDENTIFIER_KEY_COLLISION',
+    });
   });
 
   test('backend overrides for model, secrets, and agent apply at boot', async () => {
@@ -1498,7 +1861,12 @@ describe('project session API contract', () => {
       const w = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, value, strategy: 'runtime', consumer: 'sandbox' }),
+        body: JSON.stringify({
+          name,
+          value,
+          strategy: 'runtime',
+          consumer: 'sandbox',
+        }),
       });
       expect(w.status).toBe(200);
     }
@@ -1539,7 +1907,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'reviewer' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'reviewer',
+      }),
     });
     expect(res2.status).toBe(201);
     expect((await res2.json()).agent_name).toBe('reviewer');
@@ -2265,7 +2637,7 @@ describe('project session API contract', () => {
     ).toEqual(expect.any(String));
   });
 
-  test('concurrent archived resume + transient removed status keeps the original identity fenced', async () => {
+  test('a removed stopped runtime keeps the original identity fenced without optimistic activation', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -2305,13 +2677,13 @@ describe('project session API contract', () => {
     expect(await res.json()).toMatchObject({
       stage: 'starting',
       retriable: true,
-      reason: 'runtime_removed_checking',
+      reason: 'runtime_waking',
     });
-    expect(providerStartCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-original-archived');
-    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
     expect(
       (sessionSandboxRows[0]?.metadata as Record<string, unknown>).runtimeWakeStartedAt,
     ).toEqual(expect.any(String));
@@ -2666,7 +3038,10 @@ describe('project session API contract', () => {
       ...sessionRow!,
       status: 'stopped',
       agentName: 'meta',
-      metadata: { ...((sessionRow!.metadata as Record<string, unknown>) ?? {}), sandbox_slug: 'meta' },
+      metadata: {
+        ...((sessionRow!.metadata as Record<string, unknown>) ?? {}),
+        sandbox_slug: 'meta',
+      },
     };
     sessionSandboxRows = [];
 
@@ -2913,7 +3288,10 @@ describe('project session API contract', () => {
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', pending_prompt: pendingPrompt }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: pendingPrompt,
+      }),
     });
 
     expect(response.status).toBe(201);
@@ -2988,7 +3366,11 @@ describe('project session API contract', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'default' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'default',
+      }),
     });
     expect(createRes.status).toBe(201);
 

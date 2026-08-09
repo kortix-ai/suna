@@ -18,6 +18,7 @@ import {
   setGlobalDefaultModel,
   wireToModelKey,
 } from './use-model-store';
+import { qk } from './query-keys';
 
 export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;
@@ -73,7 +74,8 @@ export function useModelDefaults(
     await Promise.all([
       queryClient.invalidateQueries({ queryKey }),
       queryClient.invalidateQueries({ queryKey: ['gateway-routing-policy', projectId] }),
-      queryClient.invalidateQueries({ queryKey: ['project-model-picker', projectId] }),
+      // Same entry `useProjectModels`/`useModelEnablement` read.
+      queryClient.invalidateQueries({ queryKey: qk.project.modelPicker(projectId ?? '') }),
       queryClient.invalidateQueries({ queryKey: ['project-providers', projectId] }),
     ]);
   }, [projectId, queryClient, queryKey]);

@@ -8,7 +8,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { isLegacyMigratedSession, sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -27,6 +27,7 @@ import {
   canMountSessionChat,
   canShowSessionChat,
   findInitialSessionPin,
+  gatedRuntimeError,
 } from '@/features/session/session-load-state';
 import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
@@ -68,7 +69,9 @@ import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
+  contract,
   migrateStash,
+  qk,
   readStartStash,
   useRuntimeConnectionStore,
   useSession,
@@ -134,12 +137,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // wrote does not need a sandbox, let alone an entitlement re-check.
   // Scope to the account that OWNS this project (team account), not the viewer's.
   const { data: projectDetail } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => {
       if (!projectId) throw new Error('Missing project id');
       return getProjectDetail(projectId);
     },
     enabled: !!projectId,
+    ...contract('config'),
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
   const { data: accountState } = useAccountState({
@@ -157,11 +161,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
   const { data: projectSessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!user && !!projectId,
-    staleTime: 10_000,
     refetchOnWindowFocus: false,
+    ...contract('inventory'),
   });
   const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
   const pendingPrompt = pendingSessionPromptFromMetadata(currentProjectSession?.metadata);
@@ -253,7 +257,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // query that /start never touches, so opening a session left the dot stale
       // until a manual refresh. Refresh the list once the runtime switches in so
       // the status flips to running on its own.
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     }
   }, [session.switched, sandbox, queryClient, projectId]);
 
@@ -520,6 +524,26 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // into the FAILURE card above and claim a session that merely stopped had
     // failed before it ever got a computer.
     if (dormantWithoutRuntime) {
+      // A migrated session's first open lands here by design: it has never had
+      // a computer. "Stopped" would be a lie — nothing ever ran. Say what it is
+      // and make the CTA the restore it actually performs.
+      if (currentProjectSession && isLegacyMigratedSession(currentProjectSession)) {
+        return (
+          <InlineSessionError
+            title="Legacy session"
+            message="This conversation was imported from Suna. Restore the session to load its chat history — its files are already in the project under legacy/."
+            detail={restart.errorMessage ?? undefined}
+            action={
+              <RestartSessionButton
+                restart={restart}
+                onRestart={handleRestart}
+                label="Restore session"
+                pendingLabel="Restoring…"
+              />
+            }
+          />
+        );
+      }
       return (
         <InlineSessionError
           title="This session is stopped"
@@ -641,9 +665,13 @@ function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) 
 function RestartSessionButton({
   restart,
   onRestart,
+  label = 'Restart session',
+  pendingLabel = 'Restarting…',
 }: {
   restart: { isPending: boolean };
   onRestart: () => void;
+  label?: string;
+  pendingLabel?: string;
 }) {
   return (
     <Button
@@ -659,7 +687,7 @@ function RestartSessionButton({
       ) : (
         <RotateCcw className="size-3.5 shrink-0" />
       )}
-      {restart.isPending ? 'Restarting…' : 'Restart session'}
+      {restart.isPending ? pendingLabel : label}
     </Button>
   );
 }
@@ -722,7 +750,18 @@ function ActiveSessionChat({
   const runtimeSessions = sessionState.runtimeSessions;
   const sessionsLoading = sessionState.runtimeSessionsLoading;
   const sessionsListed = sessionState.runtimeSessionsListed;
-  const runtimeError = sessionState.runtimeError;
+  // Gate on `phase`, not the raw field: `sessionState.runtimeError` can be a
+  // benign 503 racing a live `/start` wake (a parked sandbox resuming), which
+  // `derivePhase` (@kortix/sdk) holds as `'starting'` until `/start` itself
+  // settles or gives up (~61.5s worst case). Reading the raw field rendered
+  // the panic card — and marked `chatShowable` below true, ending the loading
+  // skeleton with nothing to show — for every such race; `phase === 'error'`
+  // is the SDK's own answer to "is this real." `canShowSessionChat` below
+  // gets this SAME gated value, so both consumers agree.
+  const runtimeError = gatedRuntimeError({
+    phase: sessionState.phase,
+    runtimeError: sessionState.runtimeError,
+  });
 
   const restart = useRestartProjectSession(projectId, sessionId);
 
@@ -771,12 +810,9 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     sessionMark(sessionId, 'chat-ready');
-    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>([
-      'project',
-      'session-sandbox',
-      projectId,
-      sessionId,
-    ]);
+    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>(
+      qk.project.sessionSandbox(projectId, sessionId),
+    );
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
 

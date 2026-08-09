@@ -1,6 +1,7 @@
 'use client';
 
 import { listAccounts, provisionProject } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   SignInIcon as LogIn,
   ChatsIcon as MessagesSquare,
@@ -94,7 +95,10 @@ export function TemplateSessionInstallDialog({
           name: newProjectName.trim() || title || 'My project',
           starter_template: 'general-knowledge-worker',
         });
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        // qk.projects.scope(): every account's list AND the accountless slot.
+        // qk.projects.list(...) forms are SIBLINGS under this prefix, so the
+        // prefix is the only shape that reaches all of them in one call.
+        queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
         projectId = project.project_id;
       }
       const { session_id } = await installMarketplaceItemAsSession(

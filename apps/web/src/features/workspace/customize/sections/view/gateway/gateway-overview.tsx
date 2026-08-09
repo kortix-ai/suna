@@ -13,6 +13,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { listProjectSessions } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   useGatewayBreakdown,
   useGatewayErrors,
@@ -75,10 +76,10 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
   // raw uuid. Map both the kortix and opencode ids since the gateway may key on
   // either.
   const { data: projectSessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const sessionNames = useMemo(() => {
     const m = new Map<string, string>();

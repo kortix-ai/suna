@@ -7,6 +7,7 @@ import {
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
+import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
 import { MINIMUM_CREDIT_FOR_RUN, TOKEN_PRICE_MULTIPLIER } from './tiers';
 import { getManagedModel } from '@kortix/llm-catalog';
 import { calculateCost as calculateGatewayCost } from '@kortix/llm-gateway';
@@ -103,6 +104,11 @@ export async function deductCredits(
    */
   idempotencyKey?: string,
 ) {
+  // The RPC hardcodes `type = 'usage'` on the ledger row, so a non-usage kind
+  // here manufactures a row that contradicts itself. Reject before the money
+  // moves rather than after (2026-07-30 mislabelled-clawback incident).
+  assertRpcDebitLedgerType(ledgerType);
+
   const supabase = getSupabase();
 
   const { data, error } = await supabase.rpc('atomic_use_credits', {

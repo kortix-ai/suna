@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import * as realProviders from '../../../platform/providers';
 import * as realComputeMetering from '../../../billing/services/compute-metering';
+import * as realProviders from '../../../platform/providers';
 
 let sandboxRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
 let stopError: Error | null = null;
 let pausedCompute: string[] = [];
 let cacheInvalidations: string[] = [];
-let updateCalls: Array<{ table: unknown; updates: Record<string, unknown>; inTransaction: boolean }> = [];
+let updateCalls: Array<{
+  table: unknown;
+  updates: Record<string, unknown>;
+  inTransaction: boolean;
+}> = [];
 let inTransaction = false;
 
 /** Flatten a drizzle SQL expression (including its bound params) to text, so a
@@ -117,21 +121,65 @@ describe('stopSession', () => {
   });
 
   test('409s when the sandbox is not currently active', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'stopped', metadata: {} };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'stopped',
+      metadata: {},
+    };
     const result = await stopSession(baseInput);
     expect(result.status).toBe(409);
     expect(stopCalls).toEqual([]);
   });
 
+  test('cancels an in-progress stopped-row wake and guards against a late provider start', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'stopped',
+      metadata: {
+        runtimeWakeId: 'wake-1',
+        runtimeWakeStartedAt: new Date().toISOString(),
+        runtimeWakeLeaseExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    };
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(200);
+    expect(stopCalls).toEqual(['ext-1']);
+    expect(pausedCompute).toEqual(['sess-1']);
+    const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
+    const rendered = describeSql(metadata);
+    expect(rendered).toContain('runtimeWakeId');
+    expect(rendered).toContain('runtimeWakeLeaseExpiresAt');
+    expect(rendered).toContain('runtimeWakeCleanupUntilAt');
+    expect(rendered).toContain('manual');
+  });
+
   test('400s for an unsupported/unallowed provider', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'justavps', status: 'active', metadata: {} };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'justavps',
+      status: 'active',
+      metadata: {},
+    };
     const result = await stopSession(baseInput);
     expect(result.status).toBe(400);
     expect(stopCalls).toEqual([]);
   });
 
   test('stops the provider sandbox, closes billing, and marks both rows stopped', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: { foo: 'bar' } };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: { foo: 'bar' },
+    };
     const result = await stopSession(baseInput);
 
     expect(result.status).toBe(200);
@@ -182,23 +230,56 @@ describe('stopSession', () => {
     expect(rendered).toContain('coalesce');
     expect(rendered).toContain("'{}'::jsonb");
     expect(rendered).toContain('stopReason');
-    // The keys it read are left for the DB to keep — never re-sent, so a
-    // concurrent write to either of them survives this stop.
-    expect(rendered).not.toContain('runtimeWakeId');
+    // The wake fence is deleted in SQL so a late provider start cannot revive
+    // the stopped session. Unrelated concurrent metadata remains untouched.
+    expect(rendered).toContain('runtimeWakeId');
     expect(rendered).not.toContain('lastTurnAt');
   });
 
   test('reconciles the row as stopped even if the provider says it is already gone', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
     stopError = new Error('sandbox already stopped');
     const result = await stopSession(baseInput);
 
     expect(result.status).toBe(200);
-    expect(updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped')).toBe(true);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
+  });
+
+  test('commits the stop when provider start is still transitioning', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'active',
+      metadata: { runtimeWakeId: 'wake-1' },
+    };
+    stopError = new Error('sandbox state change in progress');
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(200);
+    expect(pausedCompute).toEqual(['sess-1']);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
   });
 
   test('502s on a genuine provider failure and leaves the rows untouched', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
     stopError = new Error('provider unreachable');
     stopError.message = 'internal provider error: connection refused';
     const result = await stopSession(baseInput);

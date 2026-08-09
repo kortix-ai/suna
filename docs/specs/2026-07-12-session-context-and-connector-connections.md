@@ -42,8 +42,10 @@ The implementation MUST preserve these invariants:
    binding may only narrow that set; it cannot add a connector the agent was not
    granted.
 5. Omitted session bindings preserve existing manifest/project defaults.
-6. Binding and connection revocation take effect on the next Connector request,
-   without sandbox restart or token remint.
+6. Binding, connection and manifest grant changes take effect on the next
+   Connector request, without sandbox restart or a replacement token.
+   Authorization reads bypass the process-local Git mirror TTL so this remains
+   true when the manifest write and Connector request reach different replicas.
 7. Runtime context contains only bounded JSON scalars and is never security
    significant.
 8. A session bound to a member connection remains private and cannot create public

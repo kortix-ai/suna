@@ -2,12 +2,12 @@
  * Computer connectors (the Agent Computer Tunnel as a first-class Connector
  * connector).
  *   • catalog — the tunnel RPC method set normalizes to `tunnel` bindings, with
- *     a `computer` machine selector on relayed actions and a meta list_computers.
+ *     no machine selector because each connector is bound to one tunnel.
  *   • parse   — `provider="computer"` cannot be declared in kortix.yaml (it is
  *     synth-only; connecting a machine materializes it).
  *   • gateway — a computer call routes through executeComputerCall (NOT an HTTP
- *     call); the `computer` selector is pulled out of args; a permission_required
- *     outcome becomes pending_approval; no_machine / error become errors.
+ *     call); the connector's bound tunnel id is used; a permission_required
+ *     outcome becomes pending_approval; missing-machine / relay errors become errors.
  */
 import { describe, expect, test } from 'bun:test';
 import { computerCatalog, computerLabel } from '../connectors/computers';
@@ -36,20 +36,16 @@ describe('computerCatalog()', () => {
     }
   });
 
-  test('list_computers is a read meta action with no selector', () => {
-    const a = byPath.get('list_computers')!;
-    expect(a.binding).toEqual({ kind: 'tunnel', method: 'list_computers' });
-    expect(a.risk).toBe('read');
-    // meta action: no `computer` selector in its schema
-    expect(a.inputSchema).toBeNull();
+  test('does not expose account-wide machine discovery', () => {
+    expect(byPath.has('list_computers')).toBe(false);
   });
 
-  test('fs.read → tunnel fs.read, read, path required + computer selector', () => {
+  test('fs.read → tunnel fs.read, read, path required, no machine selector', () => {
     const a = byPath.get('fs.read')!;
     expect(a.binding).toEqual({ kind: 'tunnel', method: 'fs.read' });
     expect(a.risk).toBe('read');
     const props = Object.keys((a.inputSchema as any).properties);
-    expect(props).toContain('computer'); // machine selector merged in
+    expect(props).not.toContain('computer');
     expect(props).toContain('path');
     expect((a.inputSchema as any).required).toEqual(['path']); // selector NOT required
   });
@@ -64,11 +60,11 @@ describe('computerCatalog()', () => {
     expect(a.binding).toEqual({ kind: 'tunnel', method: 'desktop.cua.call' });
     const props = Object.keys((a.inputSchema as any).properties);
     expect(props).toContain('tool');
-    expect(props).toContain('computer');
+    expect(props).not.toContain('computer');
   });
 
   test('label', () => {
-    expect(computerLabel()).toBe('Computers');
+    expect(computerLabel()).toBe('Computer');
   });
 });
 
@@ -95,8 +91,9 @@ connectors:
 
 const COMPUTER: GatewayConnector = {
   connectorId: 'conn-computer',
-  slug: 'computer',
+  slug: 'computer-11111111-1111-4111-8111-111111111111',
   provider: 'computer',
+  tunnelId: '11111111-1111-4111-8111-111111111111',
   baseUrl: null,
   auth: { type: 'none', in: 'header', name: null, prefix: null },
   hasAuth: false, // no credential — the relay is the credential
@@ -105,19 +102,11 @@ const COMPUTER: GatewayConnector = {
 };
 
 const FS_READ: GatewayAction = {
-  path: 'computer.fs.read',
+  path: 'computer-11111111-1111-4111-8111-111111111111.fs.read',
   relPath: 'fs.read',
-  inputSchema: { type: 'object', properties: { computer: {}, path: {} }, required: ['path'] },
+  inputSchema: { type: 'object', properties: { path: {} }, required: ['path'] },
   risk: 'read',
   binding: { kind: 'tunnel', method: 'fs.read' },
-};
-
-const LIST: GatewayAction = {
-  path: 'computer.list_computers',
-  relPath: 'list_computers',
-  inputSchema: null,
-  risk: 'read',
-  binding: { kind: 'tunnel', method: 'list_computers' },
 };
 
 function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ) {
@@ -130,8 +119,13 @@ function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ)
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
     recordExecution: async () => null,
-    fetchImpl: async () => { throw new Error('fetch must not be used for a computer call'); },
-    executeComputerCall: async (i) => { calls.push(i); return outcome; },
+    fetchImpl: async () => {
+      throw new Error('fetch must not be used for a computer call');
+    },
+    executeComputerCall: async (i) => {
+      calls.push(i);
+      return outcome;
+    },
   };
   return { deps, calls };
 }
@@ -142,16 +136,16 @@ function input(args: Record<string, unknown>, actionPath = 'fs.read'): CallInput
     accountId: 'acct-1',
     subject: { userId: 'u1', groupIds: [] },
     sessionId: 'sess-1',
-    connectorSlug: 'computer',
+    connectorSlug: COMPUTER.slug,
     actionPath,
     args,
   };
 }
 
 describe('handleCall — computer (tunnel)', () => {
-  test('relays via executeComputerCall, pulling the `computer` selector out of args', async () => {
+  test('relays through the connector-bound tunnel without a selector argument', async () => {
     const { deps, calls } = makeDeps({ ok: true, data: { content: 'hello' } });
-    const res = await handleCall(deps, input({ computer: 'laptop', path: '/tmp/x' }));
+    const res = await handleCall(deps, input({ path: '/tmp/x' }));
     expect(res.status).toBe('ok');
     if (res.status === 'ok') expect(res.data).toEqual({ content: 'hello' });
     expect(calls).toHaveLength(1);
@@ -160,44 +154,42 @@ describe('handleCall — computer (tunnel)', () => {
       actorUserId: 'u1',
       projectId: 'proj-1',
       sessionId: 'sess-1',
-      selector: 'laptop',
+      tunnelId: '11111111-1111-4111-8111-111111111111',
       method: 'fs.read',
       args: { path: '/tmp/x' },
     });
   });
 
-  test('no selector → selector is null (resolved server-side to the sole online machine)', async () => {
-    const { deps, calls } = makeDeps({ ok: true, data: {} });
-    await handleCall(deps, input({ path: '/tmp/x' }));
-    expect(calls[0]!.selector).toBeNull();
-  });
-
   test('permission_required → pending_approval, requestId surfaced', async () => {
-    const { deps } = makeDeps({ ok: false, kind: 'permission_required', requestId: 'req-9', message: 'no grant' });
+    const { deps } = makeDeps({
+      ok: false,
+      kind: 'permission_required',
+      requestId: 'req-9',
+      message: 'no grant',
+    });
     const res = await handleCall(deps, input({ path: '/etc/hosts' }));
     expect(res.status).toBe('pending_approval');
     if (res.status === 'pending_approval') expect(res.reason).toMatch(/req-9/);
   });
 
   test('no_machine → error', async () => {
-    const { deps } = makeDeps({ ok: false, kind: 'no_machine', message: 'No machine is online' });
+    const { deps } = makeDeps({
+      ok: false,
+      kind: 'no_machine',
+      message: 'No machine is online',
+    });
     const res = await handleCall(deps, input({ path: '/x' }));
     expect(res.status).toBe('error');
     if (res.status === 'error') expect(res.reason).toMatch(/online/);
   });
 
-  test('list_computers is relayed as the meta method (no selector pulled)', async () => {
-    const { deps, calls } = makeDeps({ ok: true, data: { computers: [] } }, LIST);
-    const res = await handleCall(deps, input({}, 'list_computers'));
-    expect(res.status).toBe('ok');
-    expect(calls[0]).toEqual({
-      accountId: 'acct-1',
-      actorUserId: 'u1',
-      projectId: 'proj-1',
-      sessionId: 'sess-1',
-      selector: null,
-      method: 'list_computers',
-      args: {},
+  test('a connector without a bound tunnel fails closed', async () => {
+    const { deps } = makeDeps({ ok: true, data: {} });
+    deps.loadConnectorBySlug = async () => ({ ...COMPUTER, tunnelId: null });
+    const res = await handleCall(deps, input({ path: '/tmp/x' }));
+    expect(res).toEqual({
+      status: 'error',
+      reason: 'computer connector has no bound machine',
     });
   });
 });

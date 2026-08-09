@@ -26,6 +26,11 @@ mock.module('../config', () => ({
 mock.module('../billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => (currentTier === null ? null : { tier: currentTier }),
+  // Imported (not called) by billing/services/entitlements, which
+  // shared/account-limits now loads for the managed-models resolver — a named
+  // import from a wholesale-mocked module must exist or every co-loaded file
+  // dies with "Export named ... not found".
+  getCreditAccount: async () => (currentTier === null ? null : { tier: currentTier }),
 }));
 
 const { maxProjectsForAccount, FREE_TIER_PROJECT_LIMIT, clearAccountLimitCache } = await import(

@@ -4,6 +4,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { endComputeSession, reopenComputeForSandbox } from '../billing/services/compute-metering';
 import type { ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
+import type { StopReason } from './stop-reason';
 
 export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
 export const RUNTIME_IDENTITY_ERROR =
@@ -165,10 +166,21 @@ export async function finalizeRecoveredRuntimeIfRunning(
  * It is therefore an immutable identity boundary: provider 404s, transitional
  * states, health timeouts, and restart failures may stop the session, but may
  * never delete this row or attach a fresh provider object to the same session.
+ *
+ * `stopReason` is REQUIRED and has no default ON PURPOSE. This function serves
+ * several unrelated populations — provider removals, failed wakes, failed
+ * restarts, stalled provisioning — and it cannot tell them apart from the
+ * inside. It used to hard-code `provider_removed`, which reported every
+ * 90-second failed wake as "the provider said the box was gone", i.e. confident
+ * wrong data in the one query this field exists to answer. A required parameter
+ * makes a new call site a compile error instead of a silent misclassification;
+ * `reason` stays free text for humans reading a row, `stopReason` is the closed
+ * value the classification query groups on.
  */
 export async function preserveEstablishedRuntime(
   row: RuntimeIdentityRow,
   reason: string,
+  stopReason: StopReason,
   now = new Date(),
 ): Promise<typeof sessionSandboxes.$inferSelect | null> {
   if (!row.externalId) {
@@ -197,6 +209,11 @@ export async function preserveEstablishedRuntime(
     runtimeUnavailableReason: reason,
     runtimeUnavailableAt: now.toISOString(),
     preservedExternalId: externalId,
+    // NOT resumable in place — /start must branch on runtimeIdentityState, not
+    // on the bare `stopped` status (see Task 7). WHICH park this is comes from
+    // the caller; see the note on the parameter above.
+    stopReason,
+    stoppedAt: now.toISOString(),
   });
 
   let preserved: typeof sessionSandboxes.$inferSelect | null = null;
@@ -236,6 +253,7 @@ export async function preserveEstablishedRuntime(
     sandboxId: row.sandboxId,
     externalId: row.externalId,
     reason,
+    stopReason,
   });
   return preserved;
 }

@@ -54,8 +54,16 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'tracestate',
       'X-Request-Id',
       'Last-Event-ID',
+      'X-Kortix-Client',
     ],
-    exposeHeaders: ['X-Next-Cursor', 'X-Request-Id'],
+    exposeHeaders: [
+      'X-Next-Cursor',
+      'X-Request-Id',
+      'X-Audit-Row-Count',
+      'X-Audit-Capped',
+      'X-Audit-Complete',
+      'X-Audit-Next-Cursor',
+    ],
     credentials: true,
     maxAge: 600,
   });

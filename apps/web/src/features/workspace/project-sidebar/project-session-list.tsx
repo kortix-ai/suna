@@ -49,7 +49,6 @@ import {
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
-import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { cn } from '@/lib/utils';
 import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
@@ -59,9 +58,11 @@ import {
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import {
   CalendarDotsIcon as CalendarClock,
   CaretRightIcon,
+  ClockCounterClockwiseIcon,
   DotsThreeIcon,
   EnvelopeIcon as Mail,
   FolderSimpleIcon as MetaFolder,
@@ -158,19 +159,19 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
-    staleTime: 10_000,
     refetchInterval: (query) =>
       shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
     refetchOnWindowFocus: false,
+    ...contract('inventory'),
   });
 
   // Review Center is one coherent system: the per-session row indicators, the
   // footer "Review" pill, and the Customize rail all read the SAME inbox summary
   // and gate on the SAME flag. When the flag is off the summary query never runs,
   // so no indicators render and nothing polls.
-  const reviewEnabled = useReviewCenterEnabled(projectId);
+  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
   const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
   // Grouping, ordering, and the two multi-select facets all live in the
@@ -199,7 +200,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       restartProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
       successToast(`Restarting "${label}"…`);
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to restart session');
@@ -211,7 +212,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       stopProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
       successToast(`"${label}" stopped`);
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to stop session');
@@ -422,7 +423,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         session={sessionToShare}
         open={!!sessionToShare}
         onOpenChange={(open) => !open && setSessionToShare(null)}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })}
+        onSaved={() =>
+          queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) })
+        }
       />
 
       <RenameSessionModal
@@ -447,7 +450,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 /** The `Sessions` row above the list. Lives here — not in `project-sidebar.tsx`
  *  — because everything it needs (the session list, the review summary, the
  *  filter facets) is already read by `ProjectSessionList`; hoisting it up meant
- *  a second `['project-sessions', projectId]` query and two files owning the
+ *  a second `qk.project.sessions(projectId)` query and two files owning the
  *  same horizontal padding. The label opens the full sessions page; the `⋯`
  *  opens the nested Grouping/Ordering/Show/Filters menu (`SessionFilterMenu`)
  *  and appears whenever there is at least one session. */
@@ -905,6 +908,10 @@ const STATUS_DOT_STYLE: Record<
   done: { color: 'var(--muted-foreground)', glyph: 'check', fill: false },
   stopped: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
   failed: { color: 'var(--kortix-red)', glyph: 'ring', fill: true },
+  // `legacy` renders <ClockCounterClockwiseIcon /> instead and never reads
+  // glyph/fill — a dormant migrated chat is neither done nor merely stopped;
+  // the history glyph says "restorable" without spending any color.
+  legacy: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
 };
 
 function SessionStatusDot({
@@ -928,6 +935,12 @@ function SessionStatusDot({
           // Loading is the only spinner in this codebase. The previous
           // implementation spun an SVG with animate-spin, which the rule bans.
           <Loading className="text-kortix-yellow size-3.5" />
+        ) : display === 'legacy' ? (
+          <ClockCounterClockwiseIcon
+            className="size-3.5 shrink-0"
+            style={{ color: style.color }}
+            aria-hidden
+          />
         ) : (
           <svg
             height="16"

@@ -17,24 +17,26 @@ import {
   useSelectedVersion,
 } from '@/features/project-files';
 import { getProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { ProjectFilesSkeleton } from './project-files-skeleton';
 import { resolveFilesRef } from './resolve-files-ref';
 
 export function ProjectFilesView({ projectId }: { projectId: string }) {
-  // `['project', id]` is the canonical getProject cache slot — the same one
-  // `useProjectCan` reads (lib/use-project-can.ts:55). The sidebar's Files
-  // entry calls that hook to decide whether to render itself, so this slot is
-  // already populated before the user can click through: first render reads it
-  // synchronously instead of paying a second round trip for identical data.
-  // This view used to own a private `['projects', id, 'meta']` key, which made
-  // that duplicate fetch unavoidable and blocked the whole page behind it.
+  // `qk.project.summary(id)` is the canonical getProject cache slot — the
+  // same one `useProjectCan` reads (lib/use-project-can.ts:55). The sidebar's
+  // Files entry calls that hook to decide whether to render itself, so this
+  // slot is already populated before the user can click through: first
+  // render reads it synchronously instead of paying a second round trip for
+  // identical data. This view used to own a private projects/id/meta key,
+  // which made that duplicate fetch unavoidable and blocked the whole page
+  // behind it.
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
+    ...contract('config'),
     enabled: !!projectId,
-    staleTime: 60_000,
   });
 
   const selectedVersion = useSelectedVersion(projectId);

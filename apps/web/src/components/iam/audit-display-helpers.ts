@@ -78,8 +78,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /metrics': 'Viewed system metrics',
   'GET /v1/accounts/:accountId/audit': 'Viewed audit log',
   'GET /v1/accounts/:accountId/audit/export': 'Exported audit log',
+  'POST /v1/accounts/:accountId/audit/reconcile': 'Reconciled audit log',
   'GET /v1/accounts/:accountId/audit/webhooks': 'Listed audit webhooks',
   'POST /v1/accounts/:accountId/audit/webhooks': 'Created audit webhook',
+  'GET /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries':
+    'Listed audit webhook deliveries',
+  'POST /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay':
+    'Replayed audit webhook delivery',
   'PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId': 'Updated audit webhook',
   'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId': 'Deleted audit webhook',
   'GET /v1/accounts/:accountId/iam/mfa-required': 'Viewed MFA requirement',
@@ -91,7 +96,9 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/accounts/me': 'Viewed current account',
   'GET /v1/accounts/:accountId/iam/enterprise-demo': 'Viewed Enterprise preview',
   'PUT /v1/accounts/:accountId/iam/enterprise-demo': 'Updated Enterprise preview',
+  'GET /v1/projects/:projectId/audit': 'Viewed project audit log',
   'GET /v1/projects/:projectId/sessions/:sessionId/audit': 'Viewed session audit log',
+  'POST /v1/projects/:projectId/sessions/:sessionId/audit/events': 'Ingested session audit events',
   'GET /v1/projects/:projectId/sessions/:sessionId/transcript': 'Viewed session transcript',
   'GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
   'POST /v1/projects/:projectId/sessions/:sessionId/commit-push':
@@ -108,10 +115,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/approvals/:executionId': 'Resolved approval',
   'GET /v1/projects/:projectId/approvals/needs-input': 'Listed approvals needing input',
   'POST /v1/projects/:projectId/connect-requests': 'Created connection request',
-  'PUT /v1/projects/:projectId/connections/:connectionId/activate':
-    'Activated connector',
-  'PUT /v1/projects/:projectId/connections/:connectionId/default':
-    'Set default connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/activate': 'Activated connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/default': 'Set default connector',
   'PUT /v1/projects/:projectId/connections/:connectionId/revoke': 'Revoked connector',
   'POST /v1/projects/:projectId/connections/me': 'Created personal connector',
   'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',
@@ -148,7 +153,15 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/account-invites/:inviteId/decline': 'Declined account invitation',
   'DELETE /v1/account/delete-immediately': 'Deleted account immediately',
   'DELETE /v1/billing/account/delete-immediately': 'Deleted billing account immediately',
+  // Admin entitlement overrides. The auto-labeller reads these as nouns
+  // ("Ran trial", "Created managed model"); they are operator decisions.
+  'POST /v1/admin/api/accounts/:id/trial': 'Granted account trial',
+  'DELETE /v1/admin/api/accounts/:id/trial': 'Revoked account trial',
+  'POST /v1/admin/api/accounts/:id/managed-models': 'Set managed-models override',
+  'POST /v1/admin/api/accounts/:id/enterprise-demo': 'Set enterprise demo flag',
+  'POST /v1/admin/api/accounts/:id/enterprise-entitlement': 'Set enterprise entitlement flag',
   'POST /v1/billing/cron/free-tier-rotation': 'Ran free-tier billing rotation',
+  'POST /v1/billing/cron/trial-expiry': 'Ran trial expiry sweep',
   'POST /v1/billing/cron/yearly-rotation': 'Ran yearly billing rotation',
   'POST /v1/billing/webhook/revenuecat': 'Received RevenueCat billing webhook',
   'POST /v1/billing/webhook/stripe': 'Received Stripe billing webhook',
@@ -368,8 +381,7 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
 // match wins. `segments` is the path after /v1/ with UUIDs replaced by
 // the literal token `:id`, so e.g.
 //   POST /v1/projects/abc-…/group-grants
-// becomes
-//   ['projects', ':id', 'group-grants']
+// becomes segments ["projects", ":id", "group-grants"]
 
 type PathSegments = string[];
 type HttpPatternHandler = (

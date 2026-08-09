@@ -12,6 +12,7 @@
  *     (added as a header in resolveEndpoint, same effective auth as Daytona).
  */
 
+import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson } from '../../shared/platinum';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -29,11 +30,17 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
 } from './index';
-import { SandboxTemplateNotFoundError } from './index';
+import {
+  assertWorkloadCredential,
+  SandboxTemplateNotFoundError,
+  sandboxWorkloadType,
+} from './index';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { providerAutoStopBackstopMinutes } from './index';
 
 const AGENT_PORT = 8000;
+const START_CONFLICT_GRACE_MS = 30_000;
+const START_CONFLICT_POLL_MS = 250;
 
 interface PlatinumSandbox {
   id: string;
@@ -42,6 +49,15 @@ interface PlatinumSandbox {
   backup_state?: string | null;
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
+type PlatinumExecResponse = {
+  result?: {
+    stdout?: string;
+    stderr?: string;
+    exit_code?: number;
+    error?: string;
+  };
+  error?: string;
+};
 
 /**
  * FIX-A: a DEFINITIVE "pinned template is gone" signal — a 404 on the create
@@ -78,7 +94,6 @@ function isMissingSandboxError(error: unknown): boolean {
 
 export class PlatinumProvider implements SandboxProvider {
   readonly name: ProviderName = 'platinum';
-  readonly requiresPublicCallback = true;
 
   readonly provisioning: ProvisioningTraits = {
     async: false,
@@ -131,6 +146,7 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   private async provisionFromTemplate(template: string, opts: CreateSandboxOpts): Promise<ProvisionResult> {
+    const workloadType = sandboxWorkloadType(opts);
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
       .replace(/\/v1\/router$/, '')
@@ -140,11 +156,10 @@ export class PlatinumProvider implements SandboxProvider {
       KORTIX_API_URL: `${sandboxApiBase}/v1`,
       // Frontend base for user-facing dashboard links (never the API host).
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
+      ...(workloadType === 'app' ? { KORTIX_WORKLOAD_TYPE: workloadType } : {}),
       ...opts.envVars,
     };
-    if (!envVars.KORTIX_SANDBOX_TOKEN) {
-      throw new Error('[platinum] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to the Kortix router.');
-    }
+    assertWorkloadCredential(this.name, opts, envVars);
 
     // autoStopInterval maps to Platinum's auto_stop_minutes. 0 → persistent
     // (never auto-stops); >0 → ephemeral with that idle timeout.
@@ -207,7 +222,8 @@ export class PlatinumProvider implements SandboxProvider {
       );
     }
 
-    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${AGENT_PORT}`;
+    const ingressPort = workloadType === 'app' ? 8080 : AGENT_PORT;
+    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${ingressPort}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
     // the sandbox is running — before the FE connects. Expose is otherwise lazy
@@ -220,7 +236,7 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
         method: 'POST',
-        body: JSON.stringify({ port: AGENT_PORT, public: true }),
+        body: JSON.stringify({ port: ingressPort, public: true }),
       });
       exposedUrl = (exposed.url ?? '').replace(/\/$/, '');
     } catch (err) {
@@ -256,12 +272,63 @@ export class PlatinumProvider implements SandboxProvider {
         platinumSandboxId: externalId,
         template,
         version: SANDBOX_VERSION,
+        workloadType,
       },
     };
   }
 
+  async ensureAppRuntimeStarted(externalId: string): Promise<void> {
+    // Platinum restores the template filesystem but does not run the image
+    // ENTRYPOINT. appd owns daemonization, locking, and PID validation so this
+    // path works in images without a shell or flock utility.
+    const response = await platinumJson<PlatinumExecResponse>(
+      `/v1/sandboxes/${externalId}/exec`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ cmd: ['/kortix/bin/kortix-appd', '--daemon'], timeout_ms: 15_000 }),
+      },
+    );
+    const result = response.result;
+    if (!result || result.exit_code !== 0) {
+      const detail = result?.stderr || result?.error || response.error || 'missing exec result';
+      throw new Error(
+        `Platinum App bootstrap failed for ${externalId}: exit ${result?.exit_code ?? 'unknown'}: ${detail.slice(0, 500)}`,
+      );
+    }
+  }
+
   async start(externalId: string): Promise<void> {
-    await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
+    const deadline = Date.now() + START_CONFLICT_GRACE_MS;
+    let firstConflict: unknown = null;
+
+    for (;;) {
+      try {
+        await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
+        return;
+      } catch (error) {
+        // Platinum acknowledges stop before the VM always reaches `stopped`.
+        // An immediate user reopen can therefore race `stopping` and receive
+        // 409. Keep the provider call inside this adapter until the accepted
+        // stop settles, then retry start. The control plane remains stopped and
+        // unbilled until its separate provider-running confirmation succeeds.
+        const message = error instanceof Error ? error.message : String(error ?? '');
+        if (!/ -> 409\b/.test(message)) throw error;
+        firstConflict ??= error;
+      }
+
+      for (;;) {
+        const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
+        const state = String(sandbox.state ?? '').toLowerCase();
+        if (state === 'running') return;
+        if (state === 'stopped' || state.includes('archiv')) break;
+        if (!['starting', 'stopping', 'pending'].includes(state) || Date.now() >= deadline) {
+          throw firstConflict;
+        }
+        await Bun.sleep(START_CONFLICT_POLL_MS);
+      }
+
+      if (Date.now() >= deadline) throw firstConflict;
+    }
   }
 
   async stop(externalId: string): Promise<void> {
@@ -348,7 +415,11 @@ export class PlatinumProvider implements SandboxProvider {
     const ptyWebsocket =
       request.transport === 'websocket' && classifyPtyWebSocketPath(request.path) !== null;
     return {
-      effectivePort: request.port === 4096 || ptyWebsocket ? AGENT_PORT : request.port,
+      // Either half of the opencode pair rewrites to the agent bridge —
+      // Platinum cannot expose opencode's port directly. After a verified
+      // reload the live half may be the standby, and matching only 4096 would
+      // send it upstream unrewritten (see shared/opencode-ports).
+      effectivePort: isOpencodePort(request.port) || ptyWebsocket ? AGENT_PORT : request.port,
       websocket: ptyWebsocket
         ? {
             userContextQueryParam: '__kortix_user_context',
@@ -372,7 +443,7 @@ export class PlatinumProvider implements SandboxProvider {
     const headers: Record<string, string> = { ...ingress.headers, 'Content-Type': 'application/json' };
     try {
       const serviceKey = await serviceKeyForExternalId(externalId);
-      if (serviceKey) headers['Authorization'] = `Bearer ${serviceKey}`;
+      if (serviceKey) headers.Authorization = `Bearer ${serviceKey}`;
     } catch (err) {
       console.warn(`[PLATINUM] Failed to look up service key for ${externalId}:`, err);
     }

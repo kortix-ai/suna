@@ -10,6 +10,7 @@ import {
   GitForkIcon as GitFork,
   TrayIcon as Inbox,
   KeyIcon as KeyRound,
+  FlagIcon,
   GearSixIcon as LucideSettings,
   UsersThreeIcon as LucideUsersRound,
   MonitorIcon as Monitor,
@@ -88,6 +89,7 @@ const GROUPS: readonly RailGroup[] = [
       { section: 'sandbox', label: 'Sandbox templates', icon: Container },
       { section: 'members', label: 'Members', icon: LucideUsersRound },
       { section: 'settings', label: 'Settings', icon: LucideSettings },
+      { section: 'feature-flags', label: 'Feature flags', icon: FlagIcon },
     ],
   },
 ];
@@ -95,7 +97,14 @@ const GROUPS: readonly RailGroup[] = [
 export interface RailFlags {
   tunnelEnabled: boolean;
   marketplaceEnabled: boolean;
-  llmGatewayAvailable: boolean;
+  /**
+   * The LLM item follows ENABLED, not merely available. A disabled feature's
+   * surface is invisible: the panel renders nothing for `llm-*` when the flag
+   * is off, so an item gated on availability was a rail entry that opened a
+   * blank pane. Connecting a provider without the gateway goes through the
+   * provider modal (`secrets-view.tsx`), never through this item.
+   */
+  llmGatewayEnabled: boolean;
   voiceEnabled: boolean;
   reviewEnabled: boolean;
 }
@@ -121,7 +130,7 @@ export function railGroups(flags: RailFlags): readonly RailGroup[] {
       const items = [...g.items];
       if (flags.voiceEnabled) items.push(VOICE_ITEM);
       if (flags.tunnelEnabled) items.push(COMPUTERS_ITEM);
-      if (flags.llmGatewayAvailable) items.push(LLM_ITEM);
+      if (flags.llmGatewayEnabled) items.push(LLM_ITEM);
       return { ...g, items };
     }
     return g;

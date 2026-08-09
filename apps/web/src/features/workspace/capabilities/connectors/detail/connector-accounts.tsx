@@ -9,6 +9,7 @@ import {
   ConnectionSection,
   ConnectionsList,
 } from '@/features/workspace/customize/sections/connectors-view';
+import { ComputerConnectorAccount } from './computer-connector-account';
 
 export interface ConnectorAccountsProps {
   projectId: string;
@@ -50,9 +51,14 @@ export function ConnectorAccounts({
 }: ConnectorAccountsProps) {
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
+  const isComputer = connector.provider === 'computer';
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
   const showRoster =
     isPipedream && canManageConnections && connector.authorizationStrategy === 'user';
+
+  if (isComputer) {
+    return <ComputerConnectorAccount projectId={projectId} connector={connector} />;
+  }
 
   if (isPipedream) {
     return (

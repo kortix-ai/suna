@@ -830,7 +830,14 @@ export async function confirmCheckoutSession(params: {
     return { success: false, status: 'pending', message: 'Subscription not attached yet' };
   }
 
-  if (session.status !== 'complete' && session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+  // Payment_status is the ONLY signal that money settled. The old guard also
+  // accepted session.status === 'complete', but a checkout completes with an
+  // UNPAID first invoice for delayed/failed payment methods (subscription
+  // status 'incomplete') — and this endpoint is client-callable, so that
+  // loophole reproduced the exact never-paid activation hole the webhook
+  // layer closes (see handleSubscriptionCheckout's fraud gate). Fail closed:
+  // no settled payment, no activation, no grant.
+  if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
     return { success: false, status: 'pending', message: 'Checkout payment is not completed yet' };
   }
 

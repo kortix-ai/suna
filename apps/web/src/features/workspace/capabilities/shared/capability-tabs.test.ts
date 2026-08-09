@@ -96,6 +96,18 @@ describe('CapabilityTabs Global rules control', () => {
   });
 });
 
+describe('CapabilityTabs route prefetch', () => {
+  test('fully prefetches every capability page behind the loading boundary', () => {
+    const body = code(source);
+    const tabsStart = body.indexOf('export function CapabilityTabs');
+    const tabs = body.slice(tabsStart);
+
+    expect(tabs).toMatch(
+      /<Link\s+href=\{capabilityTabHref\(projectId, tab\.key\)\}\s+prefetch=\{true\}>/,
+    );
+  });
+});
+
 /**
  * The tab bar is pinned by LAYOUT, not by `position`. Two classes carry that,
  * in two different files, and neither reads as load-bearing on its own — which

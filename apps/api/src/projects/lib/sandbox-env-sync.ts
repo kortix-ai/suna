@@ -6,7 +6,7 @@ import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import { getProvider, type ProviderName } from '../../platform/providers';
+import type { ProviderName } from '../../platform/providers';
 import {
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
@@ -18,23 +18,18 @@ import { sanitizeSandboxEnv } from './sandbox-env-names';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
+  resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
 import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
+import {
+  workspaceModeAllowsFullRepository,
+  workspaceModeFromSessionMetadata,
+} from './session-sandbox-metadata';
 
-/**
- * The origin THIS sandbox should reach kortix-api's LLM-gateway surface at —
- * mirrors session-sandbox.ts's boot-time computation (see that file and
- * `local-docker.ts`'s `sandboxFacingApiOrigin()`). Every hot env-push call
- * site here recomputes the LLM-gateway base URL from scratch (a project's
- * gateway opt-in can toggle, or secrets can rotate, mid-session), so it must
- * ask the OWNING provider for its origin the same way the boot path does —
- * otherwise a same-machine provider's boot-time fix is silently undone by the
- * very next prompt or gateway-mode toggle, which re-pushes the generic public
- * origin over the daemon's `/kortix/env` and re-breaks connectivity.
- */
-export function llmGatewayBaseUrlForProvider(providerName: ProviderName): string {
-  const origin = getProvider(providerName).sandboxFacingApiOrigin?.() ?? config.KORTIX_URL;
-  return resolveLlmGatewayBaseUrl(origin);
+/** Resolve the LLM gateway URL used by every supported remote provider. */
+export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
+  return resolveLlmGatewayBaseUrl(config.KORTIX_URL);
 }
 
 const SANDBOX_SERVICE_PORT = 8000;
@@ -46,6 +41,7 @@ export interface SandboxEnvSnapshot {
   names: string[];
   revision: string;
   scope: 'inherit' | 'restricted' | 'none';
+  capabilitiesJson: string;
 }
 
 export interface ProjectSecretPropagationTarget {
@@ -75,7 +71,11 @@ async function resolveOwnerRawEnv(
   projectId: string,
   sessionId: string | null,
   requestedAgent?: string | null,
-): Promise<{ env: Record<string, string>; scope: SandboxEnvSnapshot['scope'] } | null> {
+): Promise<{
+  env: Record<string, string>;
+  capabilitiesJson: string;
+  scope: SandboxEnvSnapshot['scope'];
+} | null> {
   if (!sessionId) return null;
   const [row] = await db
     .select({
@@ -127,18 +127,17 @@ async function resolveOwnerRawEnv(
   // every secret-CRUD fan-out) would re-push the full agent-grant set into a
   // narrowed sandbox, silently widening it back. null allowlist → passthrough.
   const grantEnvForSession = intersectSecretGrants(grantEnv, row.secretsAllowlist ?? null);
-  const env = (
-    await listProjectSecretsSnapshotForUser(
-      projectId,
-      row.createdBy,
-      grantEnvForSession,
-      // Same session the boot path built for — boot and hot push must agree on
-      // delivery or a prompt would re-push a value boot deliberately withheld.
-      sessionId,
-    )
-  ).env;
+  const snapshot = await listProjectSecretsSnapshotForUser(
+    projectId,
+    row.createdBy,
+    grantEnvForSession,
+    // Same session the boot path built for — boot and hot push must agree on
+    // delivery or a prompt would re-push a value boot deliberately withheld.
+    sessionId,
+  );
   return {
-    env,
+    env: snapshot.env,
+    capabilitiesJson: snapshot.capabilitiesJson,
     scope:
       row.secretsAllowlist == null
         ? 'inherit'
@@ -156,7 +155,13 @@ export async function resolveSandboxEnvSnapshot(
   const resolved = await resolveOwnerRawEnv(projectId, sessionId, requestedAgent);
   if (!resolved) return null;
   const { env, names } = sanitizeSandboxEnv(resolved.env);
-  return { env, names, revision: projectSecretsRevision(env), scope: resolved.scope };
+  return {
+    env,
+    names,
+    revision: projectSecretsRevision(env),
+    capabilitiesJson: resolved.capabilitiesJson,
+    scope: resolved.scope,
+  };
 }
 
 function isSecureOrPrivateTarget(rawUrl: string): boolean {
@@ -201,6 +206,18 @@ async function postEnvToDaemon(args: {
   managed: number | null;
   withheld: number | null;
   agentEnvWritten: boolean;
+  /**
+   * How the daemon applied the config, or null when it did not say (an older
+   * daemon, or no reload was needed). 'kept-old' is the verified swap
+   * declining: the new opencode never came up and the previous one still
+   * serves — the push landed, the config did not.
+   */
+  opencodeReload: 'disposed' | 'restarted' | 'kept-old' | null;
+  /**
+   * Did applying the config interrupt a turn someone was waiting on?
+   * `null` = the box did not say (older daemon, or no reload happened).
+   */
+  opencodeTurnEnded: boolean | null;
 }> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -219,7 +236,10 @@ async function postEnvToDaemon(args: {
       names: args.snapshot.names,
       revision: args.snapshot.revision,
       refreshModels: args.refreshModels ?? false,
-      ...(args.opencodeEnv ? { opencodeEnv: args.opencodeEnv } : {}),
+      opencodeEnv: {
+        ...(args.opencodeEnv ?? {}),
+        [SECRET_CAPABILITIES_ENV_NAME]: args.snapshot.capabilitiesJson,
+      },
       ...(typeof args.llmGatewayEnabled === 'boolean'
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
@@ -246,6 +266,8 @@ async function postEnvToDaemon(args: {
     withheld?: unknown;
     agent_env_written?: unknown;
     opencode?: unknown;
+    opencode_reload?: unknown;
+    opencode_turn_ended?: unknown;
   } | null;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
@@ -262,6 +284,16 @@ async function postEnvToDaemon(args: {
   }
   return {
     opencodeState: typeof body?.opencode === 'string' ? body.opencode : null,
+    // How the daemon applied the config. 'kept-old' means the verified swap
+    // declined: the new opencode never came up, so the running one still
+    // serves and the change did NOT take. An older daemon omits the field
+    // entirely — null, meaning "could not tell", never "it worked".
+    opencodeReload:
+      typeof body?.opencode_reload === 'string'
+        ? (body.opencode_reload as 'disposed' | 'restarted' | 'kept-old')
+        : null,
+    opencodeTurnEnded:
+      typeof body?.opencode_turn_ended === 'boolean' ? body.opencode_turn_ended : null,
     revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
     exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
     managed: typeof body?.managed === 'number' ? body.managed : null,
@@ -567,6 +599,7 @@ function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
     names: [],
     revision: `${reason}-${Date.now()}`,
     scope: 'inherit',
+    capabilitiesJson: '{"version":1,"capabilities":[]}',
   };
 }
 
@@ -622,18 +655,37 @@ export async function pushSessionAgentConfigToSandbox(input: {
   defaultBranch: string;
   manifestPath?: string | null;
   baseRef?: string | null;
-}): Promise<{ applied: boolean; reason?: string }> {
+}): Promise<{
+  applied: boolean;
+  reason?: string;
+  opencodeReload?: 'disposed' | 'restarted' | 'kept-old' | null;
+  opencodeTurnEnded?: boolean | null;
+}> {
   try {
-    const compiled = await resolveCompiledAgentConfigForSession(
-      {
-        projectId: input.projectId,
-        repoUrl: input.repoUrl,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath ?? 'kortix.yaml',
-        gitAuthToken: null,
-      },
-      input.baseRef,
-    );
+    const [session] = await db
+      .select({
+        agentName: projectSessions.agentName,
+        metadata: projectSessions.metadata,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, input.sessionId))
+      .limit(1);
+    const gitProject = {
+      projectId: input.projectId,
+      repoUrl: input.repoUrl,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath ?? 'kortix.yaml',
+      gitAuthToken: null,
+    };
+    const compiled =
+      !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
+      session?.agentName
+        ? await resolveSelectedAgentConfigForSession(
+            gitProject,
+            session.agentName,
+            input.baseRef,
+          )
+        : await resolveCompiledAgentConfigForSession(gitProject, input.baseRef);
     // `null` is a v1 project or an unreadable manifest. Pushing an empty value
     // would DELETE the agent config the box is running — a v1 project has none
     // to begin with, and for a transient read failure that would be a silent
@@ -660,7 +712,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
     });
-    await postEnvToDaemon({
+    const pushed = await postEnvToDaemon({
       previewUrl: url,
       providerHeaders: headers,
       serviceKey,
@@ -674,7 +726,14 @@ export async function pushSessionAgentConfigToSandbox(input: {
       // Restarts opencode so it rebuilds its config against the new agents.
       refreshModels: true,
     });
-    return { applied: true };
+    // `applied` means WE pushed it. Whether opencode actually took it is
+    // `opencodeReload` — a declined swap leaves the old config running, and
+    // reporting a bare `applied: true` for that is the lie this field prevents.
+    return {
+      applied: true,
+      opencodeReload: pushed.opencodeReload,
+      opencodeTurnEnded: pushed.opencodeTurnEnded,
+    };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`[env-sync] agent-config push failed for session ${input.sessionId}:`, reason);

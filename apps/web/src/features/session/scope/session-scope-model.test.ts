@@ -1,9 +1,4 @@
-import type {
-  AdminConnector,
-  Connection,
-  ProjectSecret,
-  SessionScope,
-} from '@kortix/sdk';
+import type { AdminConnector, Connection, ProjectSecret, SessionScope } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -133,7 +128,7 @@ describe('createSessionScopeDraft', () => {
 });
 
 describe('createNewSessionScopeDraft', () => {
-  test('starts with unrestricted secrets (null) and no connections selected', () => {
+  test('starts with unrestricted secrets and every available default connection', () => {
     // `null` is the no-override state — "inherit everything the agent's grant
     // allows", identical to how a server-created session starts. `[]` would be an
     // explicit "inject zero project secrets", which silently denied every
@@ -154,7 +149,11 @@ describe('createNewSessionScopeDraft', () => {
 
     expect(createNewSessionScopeDraft(catalog)).toEqual({
       secrets: null,
-      connector_bindings: {},
+      connector_bindings: {
+        'mail-read': { connection_id: 'connection-mail-default' },
+        issues: { connection_id: 'connection-issues-only' },
+      },
+      connector_bindings_inherited: true,
       require_connectors: [],
     });
   });
@@ -174,6 +173,7 @@ describe('createNewSessionScopeDraft', () => {
     expect(createNewSessionScopeDraft(catalog)).toEqual({
       secrets: null,
       connector_bindings: {},
+      connector_bindings_inherited: true,
       require_connectors: [],
     });
   });
@@ -247,6 +247,22 @@ describe('buildSessionScopeReplacement', () => {
     ).toEqual({
       secrets: null,
       connector_bindings: {},
+      require_connectors: [],
+    });
+  });
+
+  test('keeps untouched connector defaults on server-side inheritance', () => {
+    expect(
+      buildSessionScopeReplacement({
+        secrets: null,
+        connector_bindings: {
+          mail: { connection_id: 'stale-client-default' },
+        },
+        connector_bindings_inherited: true,
+        require_connectors: [],
+      }),
+    ).toEqual({
+      secrets: null,
       require_connectors: [],
     });
   });
@@ -328,7 +344,9 @@ describe('buildSessionScopeSelectionCatalog', () => {
 
     expect(ungoverned.secrets.status === 'ready' ? ungoverned.secrets.items : []).toHaveLength(1);
     expect(
-      ungoverned.connector_connections.status === 'ready' ? ungoverned.connector_connections.items : [],
+      ungoverned.connector_connections.status === 'ready'
+        ? ungoverned.connector_connections.items
+        : [],
     ).toHaveLength(1);
     expect(none.secrets).toEqual({ status: 'ready', items: [] });
     expect(none.connector_connections).toEqual({ status: 'ready', items: [] });

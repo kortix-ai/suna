@@ -46,6 +46,10 @@ mock.module('../build-context', () => ({
   DEFAULT_CPU: 2,
   DEFAULT_MEMORY_GB: 4,
   KORTIX_ENTRYPOINT: '/usr/local/bin/kortix-entrypoint',
+  stageAppBuildContext: async () => ({
+    contextDir: '/tmp/kortix-e2b-app-adapter-test',
+    dockerfileName: 'Dockerfile',
+  }),
   stageBuildContext: async () => ({
     contextDir: '/tmp/kortix-e2b-adapter-test',
     composedPath: '/tmp/kortix-e2b-adapter-test/Dockerfile',

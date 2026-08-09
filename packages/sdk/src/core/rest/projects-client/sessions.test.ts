@@ -249,6 +249,18 @@ test('getSessionAudit appends ?limit= only when a limit is given', async () => {
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/audit');
 });
 
+test('getSessionAudit can poll approvals without refetching historical events', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', agent: null, count: 0, actions: [] } };
+  await getSessionAudit('P1', 'S1', 1000, {
+    cursor: '14|event-14',
+    includeEvents: false,
+    showErrors: false,
+  });
+  expect(last().url).toBe(
+    'http://test.local/projects/P1/sessions/S1/audit?limit=1000&cursor=14%7Cevent-14&include_events=false',
+  );
+});
+
 test('getSessionTranscript builds the query string from limit/chars options', async () => {
   nextResponse = {
     status: 200,

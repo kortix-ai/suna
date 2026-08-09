@@ -321,7 +321,8 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 // first-party app code (only from Paper Shaders' library internals), so the
 // message wording alone is specific enough to safely classify as noise without
 // a chunk-frame anchor (unlike the generic old-browser SyntaxError class). The
-// matching covers all four JS engine wordings for the same null-context bug:
+// matching covers all five JS-engine / DOM-binding wordings for the same
+// null-context bug:
 //   - V8 (Chrome/Edge):          `Cannot read properties of null (reading '<m>')`
 //   - old JSC (old Safari/iOS):  `Cannot read property '<m>' of null`
 //   - SpiderMonkey (Firefox):    `can't access property "<m>"<…>` (the variable
@@ -340,6 +341,14 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 //                                method so a generic JSC `null is not an object
 //                                (evaluating '<other expr>')` throw does NOT
 //                                match (pattern `a8754de5…`).
+//   - Gecko (Firefox) DOM-binding: `WebGL2RenderingContext.<m>: Argument 1 is
+//                                not an object.` — Firefox's DOM bindings throw
+//                                on the method call itself (a DIFFERENT code
+//                                path from SpiderMonkey's engine TypeError
+//                                above) when the `this` binding is not a valid
+//                                object (here the null WebGL2 context). Pattern
+//                                `fd773de2…` (Firefox 152 on Android 17,
+//                                `getAttribLocation`, marketing homepage).
 // `TypeError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers are
 // stripped before matching so all capture paths (window.onerror,
 // onunhandledrejection, Sentry exception) classify consistently.
@@ -377,6 +386,38 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   // class after V8 (#4544), old JSC, and SpiderMonkey (#5172).
   "null is not an object (evaluating 'this.gl.getSupportedExtensions')",
   "null is not an object (evaluating 'this.gl.getAttribLocation')",
+  // Gecko / Firefox DOM-binding wording. When the WebGL2 context is `null` /
+  // invalid (context loss, blacklisted GPU, stripped WebView), Firefox's DOM
+  // bindings throw on the method call itself with the canonical Gecko DOM-API
+  // shape `<Interface>.<method>: Argument 1 is not an object.` — the
+  // `Argument 1 is not an object.` is Gecko's standard message for a `this`
+  // binding that is not a valid object (here the null WebGL2 context). This is
+  // the SAME null-WebGL-context crash class as the V8/JSC/SpiderMonkey entries
+  // above, just with Firefox's DOM-API error wording instead of an engine
+  // TypeError. Better Stack pattern
+  // fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a
+  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.`,
+  // 1 occurrence / 0 identified users, first 2026-08-07 19:34:33 UTC
+  // (post-v0.12.5, release `e2540c341c6f43536a7cf0e0b51599e9928f055c`),
+  // call site `setupPositionAttribute` in chunk
+  // `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, request URL
+  // `https://kortix.com/` (marketing homepage), browser Firefox 152.0 on
+  // Android 17 (Gecko engine), mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`). The `getSupportedExtensions` sibling is added
+  // preemptively — same class, Firefox may emit it too. The
+  // `WebGL2RenderingContext.<method>:` prefix is the Gecko DOM-binding's own
+  // canonical marker (the interface + method name), never emitted by
+  // first-party app code, so the message wording alone is specific enough —
+  // same message-only contract as the other engine variants (no chunk-frame
+  // anchor, no first-party negative guard). Note: `stripErrorWrappers`'s
+  // `[A-Za-z]+Error:` regex does NOT strip the
+  // `WebGL2RenderingContext.<method>:` prefix (it contains a `.`), so the
+  // pattern is matched verbatim by `.includes()` after the `TypeError: ` /
+  // `Unhandled promise rejection: ` wrappers are stripped.
+  'WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
+  'WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
 ] as const;
 
 // Paper Shaders (`@paper-design/shaders-react`) WebGL-unsupported deliberate
@@ -450,6 +491,72 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
 // only safe gate.
 const PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE =
   'Paper Shaders: WebGL is not supported in this browser';
+
+// Canvas `getImageData` out-of-memory noise — a third-party canvas library
+// (e.g. a decorative background / hyper-logo animation effect on the marketing
+// homepage) called `CanvasRenderingContext2D.getImageData()` and the browser ran
+// out of memory allocating the `ImageData` buffer, surfacing as
+//   `Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of
+//    memory at ImageData creation`
+// (V8/Chrome wording — a `RangeError`, NOT a `TypeError`). This is TRANSIENT
+// browser resource exhaustion: the canvas was too large / the tab was under
+// memory pressure / the device is low-RAM, so the engine failed the buffer
+// allocation. It is NOT a deterministic code bug — the same canvas renders fine
+// on the next visit once memory frees up. The throw fires from a
+// third-party library's `addEventListener` callback (Sentry's `BrowserApiErrors`
+// integration auto-wraps `addEventListener` on `EventTarget` and captures the
+// throw as `handled:false`, UNCAUGHT — it never reached a React error
+// boundary), and the stack frames are all minified `_next/static/chunks/…`
+// library frames with NO resolved first-party `apps/web/src/…` source.
+//
+// Better Stack pattern
+// b4b4384734b09b411e476591e3f9ac3ad88f110e0be91aae390913038f6844f0
+// (Kortix Frontend prod, application_id 2346967): `RangeError`, message
+// `Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of
+// memory at ImageData creation`, 1 occurrence / 0 identified users, last
+// 2026-08-07 10:09:13 UTC, release
+// `160f0b286f0ad5c53debc343d5e055241694e24d` (v0.12.4 prod), call site
+// function `Image.<anonymous>`, call site file
+// `app:///_next/static/chunks/0fl4m2af7bsiq.js` (minified), request URL
+// `https://kortix.com/` (marketing homepage), browser Chrome 130 on Linux,
+// mechanism `auto.browser.browserapierrors.addEventListener` (UNCAUGHT,
+// `handled:false`). Stack: 2 frames, both minified third-party canvas library
+// chunk frames — NO first-party `apps/web/src/…` frame.
+//
+// The message is the browser's OWN canonical out-of-memory wording for a
+// `CanvasRenderingContext2D.getImageData()` allocation failure (the
+// `Failed to execute 'getImageData' on 'CanvasRenderingContext2D':` prefix is
+// V8's DOM-bindings exception format; the `Out of memory at ImageData
+// creation` suffix is the specific allocation-failure reason). This exact
+// string is the browser's, never an app-logic phrase — a real first-party
+// `throw new RangeError('…Out of memory at ImageData creation…')` regression
+// is vanishingly unlikely AND would de-minify to `apps/web/src/…` frames.
+// BUT `getImageData` IS a Canvas 2D API method that first-party code CAN call
+// (e.g. an image-processing helper, a screenshot/export path, a pixel-reader),
+// so — mirroring `isSafariGenericSecurityErrorNoise` /
+// `isOldBrowserDomNullDerefNoise` — the matcher carries a NEGATIVE guard: if
+// ANY frame (or the window.onerror `filename`) resolves to a de-minified
+// first-party `apps/web/src/…` source path, the event KEEPS reporting (our
+// own code is the `getImageData` caller → a real first-party OOM regression
+// we want to fix). Only events with NO resolved first-party frame (the prod
+// noise shape: all minified third-party canvas library chunk frames, or
+// frameless) are dropped. A frameless capture with this exact message still
+// classifies as noise — the message alone is the browser's canonical OOM
+// wording and is specific enough (the `CanvasRenderingContext2D` +
+// `getImageData` + `ImageData creation` tokens together pin this single DOM
+// API call site). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there could swallow a real first-party
+// `getImageData` OOM regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate. The runtime `window.onerror` gate
+// (`shouldIgnoreBrowserRuntimeNoise`) is also wired so a runtime capture with
+// the exact message + no first-party `filename` drops.
+const CANVAS_GETIMAGE_DATA_OOM_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // The exact V8/Chrome message. Anchored as a full-match (the trailing
+  // `Out of memory at ImageData creation` is the specific OOM reason).
+  /^Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation$/,
+];
 
 // Old-browser / stripped-down-WebView minified-chunk parse failures. When a
 // browser that cannot parse modern minified JS (old Safari/iOS, legacy Android
@@ -1812,12 +1919,15 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
  * React error boundary, and reach Sentry/Better Stack as global errors. The
  * method names are WebGL2 API — never called from first-party app code — so the
  * message wording alone is specific enough; no chunk-frame anchor is needed.
- * Matches all four JS engine wordings: V8
+ * Matches all five JS-engine / DOM-binding wordings: V8
  * (`Cannot read properties of null (reading '<m>')`), old JSC
  * (`Cannot read property '<m>' of null`), SpiderMonkey/Firefox
- * (`can't access property "<m>"<…>`), and modern JSC (Safari / Chrome-on-iOS
+ * (`can't access property "<m>"<…>`), modern JSC (Safari / Chrome-on-iOS
  * CriOS, which uses WebKit/JSC rather than V8:
- * `null is not an object (evaluating 'this.gl.<m>')`). Never page Better Stack
+ * `null is not an object (evaluating 'this.gl.<m>')`), and Gecko/Firefox
+ * DOM-binding (`WebGL2RenderingContext.<m>: Argument 1 is not an object.` —
+ * Firefox's DOM bindings throw on the method call itself when the `this`
+ * binding is the null WebGL2 context). Never page Better Stack
  * for this class. See `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full
  * rationale and the `supportsWebGL2()` probe in `shader-safe.tsx` for the
  * primary guard.
@@ -1889,6 +1999,59 @@ export function isPaperShaderWebGLUnsupportedNoise(input: {
   // (the library's canonical string) that a frameless capture is safe to
   // drop, unlike the generic `undefined` / `OperationError` matchers.
   if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the Canvas `getImageData`
+ * out-of-memory noise class: a `RangeError` from
+ * `CanvasRenderingContext2D.getImageData()` running out of memory allocating
+ * the `ImageData` buffer — the browser's canonical
+ * `Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of
+ * memory at ImageData creation` message. This is TRANSIENT browser resource
+ * exhaustion (the canvas was too large / the tab was under memory pressure /
+ * the device is low-RAM), fired from a third-party canvas library's
+ * `addEventListener` callback (Sentry's `BrowserApiErrors` auto-wrapper captures
+ * it as UNCAUGHT, `handled:false` — never reached a React error boundary).
+ * NOT a deterministic code bug — the same canvas renders fine on the next
+ * visit once memory frees up. See `CANVAS_GETIMAGE_DATA_OOM_NOISE_PATTERNS`
+ * for the full rationale and Better Stack pattern `b4b43847…`.
+ *
+ * Requires the EXACT V8/Chrome message AND a NEGATIVE guard: if any frame (or
+ * the window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event keeps reporting — our own code is
+ * the `getImageData` caller and a real first-party OOM regression is
+ * actionable. Only events with NO resolved first-party frame (the prod noise
+ * shape: all minified third-party canvas library chunk frames, or frameless)
+ * are dropped. A frameless capture with this exact message still classifies
+ * as noise (the message alone is the browser's canonical OOM wording and is
+ * specific enough — the `CanvasRenderingContext2D` + `getImageData` +
+ * `ImageData creation` tokens together pin this single DOM API call site).
+ * `RangeError: ` / `Unhandled promise rejection: ` wrappers are stripped
+ * before matching so all capture paths (window.onerror, onunhandledrejection,
+ * Sentry exception) classify consistently.
+ */
+export function isCanvasImageDataOOMNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!CANVAS_GETIMAGE_DATA_OOM_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code is the `getImageData` caller
+  // → a real first-party OOM regression; keep reporting so the call site can
+  // be found + fixed. A real first-party `getImageData` OOM de-minifies to
+  // `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
     return false;
   }
   return true;
@@ -3022,6 +3185,137 @@ export function isSupabaseTokenExpiredNoise(input: {
   return true;
 }
 
+// Supabase gotrue `Object Not Found Matching Id:…, MethodName:update,
+// ParamCount:…` OTP-expired-link rejection noise. When a user lands on an
+// expired/invalid OTP email link, the auth error page is served at
+// `/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired`,
+// and the Supabase auth client tries to update the session from the expired
+// OTP token in the URL hash. gotrue rejects the update server-side with a
+// plain-string error `Object Not Found Matching Id:<n>, MethodName:update,
+// ParamCount:<n>` (the gotrue RPC "no row found" wording for the session-update
+// call — `<n>` varies per call). Because the rejected value is a bare STRING
+// (NOT an Error instance), Sentry 10.x's GlobalHandlers `onunhandledrejection`
+// integration cannot extract a `.message`/`.stack` from it: it synthesizes the
+// canonical
+//   "Non-Error promise rejection captured with value: Object Not Found
+//    Matching Id:2, MethodName:update, ParamCount:4"
+// (the rejection value inlined after `value: `) with NO stacktrace frames at
+// all — there is no Error object to de-minify. Better Stack pattern
+// e9a720020c921fbf82323125c20714fd7455e803295cf13aa624440de6d35e8e
+// (Kortix Frontend prod, application_id 2346967): `UnhandledRejection`,
+// 116 occurrences, 0 identified users (anonymous), first 2026-06-02 /
+// recurring, mechanism `auto.browser.global_handlers.onunhandledrejection`
+// (`handled:false` — UNCAUGHT, never reached a React error boundary),
+// `synthetic:true`, release
+// `160f0b286f0ad5c53debc343d5e055241694e24d` (v0.12.4 prod), request URL
+// `https://kortix.com/#error=access_denied&error_code=otp_expired&error_
+// description=Email+link+is+invalid+or+has+expired` (the auth error page —
+// the OTP-expired redirect). Browser Chrome 142 on Windows 10. Breadcrumbs:
+// `[runtime-env]` with `supabaseUrl: https://supa.kortix.com` (the Supabase
+// auth client initializing), then a navigation to the same
+// `#error=otp_expired` URL, then marketing-site fetches
+// (`/api/github-stars`, `/_vercel/insights/view`, `/api/maintenance`) — the
+// Supabase auth client's session-update rejecting on the expired-OTP error
+// page. Stack trace: NONE — the raw exception payload is
+// `{"values":[{"type":"UnhandledRejection","value":"Non-Error promise
+// rejection captured with value: Object Not Found Matching Id:2,
+// MethodName:update, ParamCount:4","mechanism":{"type":"auto.browser.
+// global_handlers.onunhandledrejection","handled":false}}]}` with NO
+// `stacktrace` key, NO frames, NO `call_site_file`/`call_site_function`,
+// NO `call_stack_hash`.
+//
+// The `Id:2, MethodName:update, ParamCount:4` suffix varies per gotrue call
+// (the `<n>` integers are the RPC's internal ids/counts), so the matcher
+// anchors on the STABLE prefix
+// `/^Non-Error promise rejection captured with value: Object Not Found
+// Matching/` and lets the variable suffix match — every OTP-expired
+// session-update rejection from gotrue shares this exact prefix.
+//
+// SIBLING of `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`) and `isSupabaseTokenExpiredNoise` (pattern `63b0cde7…`):
+// all three are frameless non-Error promise rejections from the Supabase
+// auth client / third-party scripts on the auth/marketing pages, captured by
+// Sentry's GlobalHandlers `onunhandledrejection` integration as a synthetic
+// "Non-Error promise rejection captured with value: <value>" /
+// "Object captured as promise rejection with keys: …" message with NO frames.
+// The `undefined` matcher (#5200) rejects with the primitive `undefined`;
+// the `TOKEN_EXPIRED` matcher rejects with a `{ code, message, status }`
+// object (Sentry emits "Object captured as promise rejection with keys: …");
+// THIS matcher rejects with a bare STRING (Sentry emits "Non-Error promise
+// rejection captured with value: <string>"). The three message prefixes are
+// disjoint, so the matchers do not shadow each other. Distinct from the EIP-1193
+// wallet-extension plain-object rejection class (`isExtensionRejectedObject
+// Noise`, PR #4720): that one rejects with `{ code, message, stack }` and
+// Sentry emits "Object captured as promise rejection with keys: code,
+// message, stack" (carrying the extension stack).
+//
+// The "Non-Error promise rejection captured with value: Object Not Found
+// Matching…" prefix is Sentry's generic signature for ANY non-Error promise
+// rejection whose value string starts with `Object Not Found Matching` — a
+// real first-party `Promise.reject('Object Not Found Matching Id:…')` (e.g.
+// a code path that rejects with a bare string on an error branch instead of
+// throwing an Error) would produce the SAME signature, so matching on the
+// message alone is too broad. Require BOTH the canonical prefix AND a
+// NEGATIVE guard: if the event has ANY resolved stack frame OR a resolved
+// first-party `apps/web/src/…` frame, keep reporting (a real first-party
+// bare-string rejection we can attribute should still surface). The
+// production noise pattern has NO frames at all; only the frameless capture
+// is dropped. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-string
+// match there would swallow a real first-party bare-string rejection the
+// negative guard exists to preserve; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const NON_ERROR_OBJECT_NOT_FOUND_REJECTION_PATTERN =
+  /^Non-Error promise rejection captured with value: Object Not Found Matching/;
+
+/**
+ * Whether a Sentry event is the Supabase gotrue OTP-expired-link
+ * `Object Not Found Matching Id:…, MethodName:update, ParamCount:…`
+ * non-Error promise rejection noise class: a user landed on an expired/invalid
+ * OTP email link (`/#error=access_denied&error_code=otp_expired`), and the
+ * Supabase auth client's session-update from the expired OTP token rejected
+ * with a bare string `Object Not Found Matching Id:<n>, MethodName:update,
+ * ParamCount:<n>` (gotrue's "no row found" wording for the session-update RPC;
+ * the `<n>` integers vary per call). Because the rejected value is a bare
+ * string (NOT an Error), Sentry 10.x's GlobalHandlers `onunhandledrejection`
+ * integration cannot extract a stack and synthesizes the canonical
+ * "Non-Error promise rejection captured with value: Object Not Found
+ * Matching Id:2, MethodName:update, ParamCount:4" message with NO stacktrace
+ * frames. Requires the canonical prefix (the `Id:…, MethodName:…,
+ * ParamCount:…` suffix varies per gotrue call) AND a NEGATIVE guard: if any
+ * frame resolves to a de-minified first-party `apps/web/src/…` source path OR
+ * any resolvable frame location at all, the event keeps reporting (a real
+ * first-party bare-string `Promise.reject('Object Not Found Matching…')` we
+ * can attribute should still surface). The production noise pattern has NO
+ * frames at all; only the frameless capture is dropped. Sibling of
+ * `isNonErrorUndefinedRejectionNoise` (PR #5200) and
+ * `isSupabaseTokenExpiredNoise`. See
+ * `NON_ERROR_OBJECT_NOT_FOUND_REJECTION_PATTERN` for the full rationale.
+ */
+export function isNonErrorObjectNotFoundRejectionNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!NON_ERROR_OBJECT_NOT_FOUND_REJECTION_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code rejected a promise with the bare-string gotrue value → actionable;
+  // keep reporting so the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable error with a real stack; keep reporting. Only the
+  // frameless capture (the production noise pattern) remains → drop it.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 // Transient WebSocket / Server-Sent-Events (SSE) transport-close noise.
 // `Connection closed.` is the CANONICAL transport-close message a client-side
 // WebSocket/SSE library throws when the server closes the connection — a deploy
@@ -3585,6 +3879,26 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Canvas `getImageData` out-of-memory noise — a third-party canvas library
+  // (e.g. a decorative background / hyper-logo animation on the marketing
+  // homepage) called `CanvasRenderingContext2D.getImageData()` and the browser
+  // ran out of memory allocating the `ImageData` buffer, surfacing as the
+  // canonical `Failed to execute 'getImageData' on 'CanvasRenderingContext2D':
+  // Out of memory at ImageData creation` `RangeError`. TRANSIENT browser
+  // resource exhaustion (canvas too large / tab under memory pressure / low-
+  // RAM device), not a deterministic code bug. The throw fires from a
+  // third-party library's `addEventListener` callback (Sentry's
+  // `BrowserApiErrors` auto-wrapper captures it as UNCAUGHT, `handled:false`
+  // — never reached a React error boundary). Requires the exact message AND a
+  // NEGATIVE guard: a resolved first-party `apps/web/src/…` filename means our
+  // own code is the `getImageData` caller → a real first-party OOM regression;
+  // keep reporting. A frameless window.onerror capture with the exact message
+  // + no first-party filename drops. See `isCanvasImageDataOOMNoise` and
+  // Better Stack pattern `b4b43847…`.
+  if (isCanvasImageDataOOMNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // Old-browser / stripped-down-WebView minified-chunk parse failures
   // (`Unexpected token …`, `Invalid or unexpected token`, `Cannot use import
   // statement outside a module`) from `window.onerror`. The browser cannot
@@ -3916,6 +4230,28 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `@paper-design/shaders` chunk frames. NOT in `ignoreErrors` (no frame
   // context there). See `isPaperShaderWebGLUnsupportedNoise`.
   if (isPaperShaderWebGLUnsupportedNoise({ message, frames })) {
+    return true;
+  }
+
+  // Canvas `getImageData` out-of-memory noise — a third-party canvas library
+  // (e.g. a decorative background / hyper-logo animation on the marketing
+  // homepage) called `CanvasRenderingContext2D.getImageData()` and the browser
+  // ran out of memory allocating the `ImageData` buffer, surfacing as the
+  // canonical `Failed to execute 'getImageData' on 'CanvasRenderingContext2D':
+  // Out of memory at ImageData creation` `RangeError`. This is TRANSIENT
+  // browser resource exhaustion (canvas too large / tab under memory pressure
+  // / low-RAM device), NOT a deterministic code bug — the same canvas renders
+  // fine on the next visit. The throw fires from a third-party library's
+  // `addEventListener` callback (Sentry's `BrowserApiErrors` auto-wrapper
+  // captures it as UNCAUGHT, `handled:false` — never reached a React error
+  // boundary). Requires the exact message AND a NEGATIVE guard: a resolved
+  // first-party `apps/web/src/…` frame means our own code is the
+  // `getImageData` caller → a real first-party OOM regression; keep reporting.
+  // The prod event carries only minified third-party canvas library chunk
+  // frames (no first-party source). NOT in `ignoreErrors` (no frame context
+  // there). See `isCanvasImageDataOOMNoise` and Better Stack pattern
+  // `b4b43847…`.
+  if (isCanvasImageDataOOMNoise({ message, frames })) {
     return true;
   }
 
@@ -4277,6 +4613,32 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // frameless capture is dropped. See `isSupabaseTokenExpiredNoise`. NOT in
   // `ignoreErrors` (no frame context there).
   if (isSupabaseTokenExpiredNoise({ message, frames })) {
+    return true;
+  }
+
+  // Supabase gotrue OTP-expired-link `Object Not Found Matching Id:…,
+  // MethodName:update, ParamCount:…` non-Error promise rejection noise — a
+  // user landed on an expired/invalid OTP email link
+  // (`/#error=access_denied&error_code=otp_expired`), and the Supabase auth
+  // client's session-update from the expired OTP token rejected with a bare
+  // string `Object Not Found Matching Id:<n>, MethodName:update,
+  // ParamCount:<n>` (gotrue's "no row found" wording; the `<n>` integers
+  // vary per call). Because the rejected value is a bare string (NOT an
+  // Error), Sentry 10.x's GlobalHandlers `onunhandledrejection` integration
+  // cannot extract a stack and synthesizes the canonical "Non-Error promise
+  // rejection captured with value: Object Not Found Matching Id:2,
+  // MethodName:update, ParamCount:4" message with NO stacktrace frames.
+  // Requires the canonical prefix (the suffix varies per gotrue call) AND
+  // NEGATIVE guards: any resolved first-party `apps/web/src/…` frame OR any
+  // resolvable frame location → keep reporting (a real first-party
+  // bare-string `Promise.reject('Object Not Found Matching…')` we can
+  // attribute should still surface). The production noise pattern has NO
+  // frames at all; only the frameless capture is dropped. Sibling of
+  // `isNonErrorUndefinedRejectionNoise` (PR #5200) and
+  // `isSupabaseTokenExpiredNoise`. See
+  // `isNonErrorObjectNotFoundRejectionNoise`. NOT in `ignoreErrors` (no
+  // frame context there).
+  if (isNonErrorObjectNotFoundRejectionNoise({ message, frames })) {
     return true;
   }
 

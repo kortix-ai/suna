@@ -3,6 +3,7 @@ import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
+import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
@@ -218,6 +219,11 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'Manage sandbox images: templates, builds, health',
           },
           {
+            name: 'apps',
+            args: '<subcommand>',
+            blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
+          },
+          {
             name: 'marketplace',
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',
@@ -287,7 +293,10 @@ function tierBand(label: string): string {
 }
 
 function renderHelp(): string {
-  const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => s.commands));
+  const visibleCommands = (commands: readonly Command[]) => commands;
+  const allCommands = TIERS.flatMap((t) =>
+    t.sections.flatMap((s) => visibleCommands(s.commands)),
+  );
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
   );
@@ -296,7 +305,9 @@ function renderHelp(): string {
   lines.push(header('Kortix CLI', VERSION));
   lines.push(rule());
   for (const tier of TIERS) {
-    const sections = tier.sections.filter((s) => s.commands.length > 0);
+    const sections = tier.sections
+      .map((section) => ({ ...section, commands: visibleCommands(section.commands) }))
+      .filter((s) => s.commands.length > 0);
     if (sections.length === 0) continue;
     lines.push('');
     lines.push(tierBand(tier.label));
@@ -475,6 +486,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'gateway') {
     return runGateway(argv.slice(1));
   }
+  if (argv[0] === 'apps') {
+    return runApps(argv.slice(1));
+  }
   if (argv[0] === 'self-host') {
     return runSelfHost(argv.slice(1));
   }
@@ -578,6 +592,7 @@ const KNOWN_COMMANDS = [
   'providers',
   'env',
   'gateway',
+  'apps',
   'channels',
   'sandboxes',
   'marketplace',

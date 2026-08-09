@@ -6,7 +6,7 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
  *
  * Extracted so the rename mutation's `onMutate` (optimistic write, fired
  * before the request lands) and a plain unit test call the SAME function —
- * no React Query, no network, no mock. `['project-sessions', projectId]` has
+ * no React Query, no network, no mock. `qk.project.sessions(projectId)` has
  * seven readers (sidebar, session list, tab bar, command palette, review
  * center, gateway overview); writing here settles all of them at once instead
  * of waiting for the post-mutation refetch.

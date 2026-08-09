@@ -110,7 +110,7 @@ async function main() {
         sandboxId: row.sandbox_id,
         sessionId: row.session_id,
         externalId: row.external_id,
-        metadata: { stopReason: 'wedged_backlog_remediation' },
+        stopReason: 'wedged_backlog_remediation',
       });
       stopped += 1;
     } catch (err) {

@@ -158,7 +158,7 @@ describe('serializeProject ⇄ ProjectSchema', () => {
     }
   });
 
-  test.each(['managed', 'local_docker', 'justavps', 'unknown'])(
+  test.each(['managed', 'justavps', 'unknown'])(
     'does not surface retired or unknown project pin %s',
     (provider) => {
       const out = serializeProject(

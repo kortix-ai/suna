@@ -25,6 +25,7 @@ import { adminDeleteUser } from './supabase';
 import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from './principals';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
+import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
 import { createDatabaseProject, createDatabaseSession, deleteDatabaseProject } from './database-project';
 import { mapWithConcurrency } from '../core/concurrency';
 
@@ -188,11 +189,19 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
       stack.push('account', accountId);
       if (opts?.enterprise) {
-        const enabled = await adminClient.put(
-          '/v1/accounts/:accountId/iam/enterprise-demo',
-          { enabled: true },
-          { params: { accountId } },
-        );
+        // The enterprise-demo PUT is platform-admin-only — the OWNER of this
+        // fixture account gets 403 {code:'admin_required'}. Unlock through the
+        // run-scoped platform admin provisioned above.
+        if (!env.adminToken) {
+          throw new Error(`enterprise team fixture needs a platform admin — ${NO_ADMIN_TOKEN_HINT}`);
+        }
+        const enabled = await adminClient
+          .withBearer(env.adminToken, ADMIN_TOKEN_LABEL)
+          .put(
+            '/v1/accounts/:accountId/iam/enterprise-demo',
+            { enabled: true },
+            { params: { accountId } },
+          );
         if (enabled.statusCode !== 200 || enabled.json<any>()?.enabled !== true) {
           throw new Error(`enterprise team enable failed: ${enabled.text()}`);
         }
