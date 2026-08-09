@@ -1,7 +1,7 @@
 # Secret delivery control plane
 
-**Status:** Implemented for runtime, managed consumers, and policy-bound HTTPS calls
-**Not implemented:** Transparent network-boundary substitution
+**Status:** Implemented for runtime, managed consumers, policy-bound HTTPS calls,
+and Platinum network-boundary delivery
 
 ## Problem and contract
 
@@ -33,7 +33,7 @@ The product term is **Secret**. An environment variable is one delivery form.
 | `broker` | `connector` | Nothing | Kortix resolves automation and channel credentials server-side |
 | `broker` | `http_broker` | Opaque session handle | Kortix makes one policy-bound HTTPS request |
 | `broker` | `git_proxy` | Nothing | Git uses its separate encrypted credential path |
-| `egress` | `network` | Opaque placeholder | Unavailable and rejected with `409` |
+| `egress` | `network` | Nothing | Platinum injects one header for exact approved HTTPS hosts |
 | `denied` | none | Nothing | Stored but disabled |
 
 `runtime` is the only strategy that sends plaintext to a sandbox. No managed
@@ -43,9 +43,14 @@ Generic `git_proxy` policy updates remain unavailable. Git authorization uses a
 separate typed API and credential store. It applies the same server-only and
 audit requirements.
 
-Transparent `egress` remains unavailable because the enabled sandbox providers
-do not yet expose one verified, provider-independent substitution contract.
-Kortix rejects it instead of presenting a false security boundary.
+Transparent `egress` is provider-capability based. Platinum stores a write-only
+replica, attaches the exact authorized set to each sandbox, and injects one
+header for exact HTTPS hosts outside the guest. Daytona does not implement this
+boundary. A deployment without Platinum rejects the strategy with `409`.
+
+The transparent path does not support wildcard hosts, method or path filters,
+query parameters, or body injection. These controls require the explicit HTTPS
+broker. Kortix rejects an unenforceable transparent policy with `400`.
 
 ## Access flow
 
@@ -66,6 +71,8 @@ stored strategy AND configured consumer
     +-- broker/managed -------> server decrypts, uses, audits, discards
     |
     +-- broker/http_broker ---> session handle + outbound policy
+    |
+    +-- egress/network --------> provider-owned exact-host header transform
     |
     +-- denied/unsupported ---> no value and a failed or denied result
 ```
@@ -158,6 +165,30 @@ and rebinding targets. It reevaluates redirects. It bounds request and response
 sizes. It strips sensitive response headers and never records request bodies,
 response bodies, query values, injected headers, handles, or secret values.
 
+## Network boundary
+
+Network-boundary delivery is for ordinary sandbox HTTP clients that cannot use
+the explicit broker API. It is narrower than the HTTPS broker:
+
+- the project must run the session on Platinum;
+- the agent grant and session allowlist must name the secret explicitly;
+- every destination must be an exact HTTPS host;
+- the provider injects one configured header;
+- the sandbox receives no value, alias, handle, or placeholder;
+- an upstream response that echoes the credential is blocked;
+- rotation updates the provider replica without restarting the sandbox;
+- revocation detaches the binding before deleting the provider replica.
+
+Configuration fails closed. A session with an authorized network secret cannot
+start on a provider that lacks the boundary capability.
+
+```bash
+kortix secrets delivery ANTHROPIC_API_KEY egress \
+  --allow-host api.anthropic.com \
+  --inject-header x-api-key \
+  --template '{{secret}}'
+```
+
 The CLI exposes this path through:
 
 ```bash
@@ -210,10 +241,11 @@ The web editor provides these choices:
 - **Connector** for connector authorization;
 - **Automation** for Connector actions and channels;
 - **HTTPS broker** for a policy-bound request;
+- **Network boundary** for exact-host header injection on Platinum;
 - **Stored but disabled** for `denied`.
 
-The UI shows transparent network delivery as unavailable. It does not imply
-that an opaque handle provides network-boundary substitution.
+The UI enables network delivery only when Platinum is available. It labels the
+provider requirement and the controls that the provider can enforce.
 
 The CLI supports the same available consumers through `kortix secrets
 delivery`. `kortix connectors secret` manages connector bindings. `kortix
@@ -284,7 +316,9 @@ without returning the new value to a client.
 - A reused identifier with a different key returns `409`.
 - A broker policy without a host or injection slot returns `400`.
 - A generic unsupported broker backend returns `409`.
-- Transparent `egress` returns `409`.
+- Transparent `egress` returns `409` when Platinum is unavailable.
+- An unenforceable transparent policy returns `400`.
+- A granted transparent secret blocks session startup on unsupported providers.
 - A stale, expired, or revoked session handle returns `409`.
 - A host, method, or path mismatch returns `403`.
 - A connector binding blocks secret deletion and incompatible strategy changes
@@ -309,9 +343,9 @@ Every change to this control plane must prove these paths:
 7. Audit rows contain reconstruction metadata and no secret material.
 8. API, SDK, CLI, and web behavior agree on the stored policy.
 
-Transparent network substitution needs a separate provider-adapter design,
-live exfiltration tests, and fail-closed capability detection before Kortix can
-enable `egress`.
+Platinum network substitution also requires a live provider test. That test
+must prove injection, sandbox non-disclosure, rotation, revocation, and echo
+blocking.
 
 ## Related specifications
 

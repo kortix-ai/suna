@@ -136,12 +136,13 @@ export type SecretDeliveryOption = SecretDeliveryPresentation & {
 export function secretDeliveryOptions(
   selected: SecretDeliveryStrategy,
   status: SecretDeliveryStatus,
+  networkBoundaryAvailable: boolean,
 ): SecretDeliveryOption[] {
   return (Object.keys(PRESENTATIONS) as SecretDeliveryStrategy[]).map((strategy) => ({
     strategy,
     ...PRESENTATIONS[strategy],
     disabled:
-      strategy === 'egress' ||
+      (strategy === 'egress' && !networkBoundaryAvailable) ||
       (strategy === 'broker' && strategy === selected && status !== 'available'),
   }));
 }
@@ -198,6 +199,40 @@ export function buildBrokerPolicy(form: BrokerPolicyForm): SecretEgressPolicy | 
   };
 }
 
+export type NetworkBoundaryPolicyForm = {
+  hosts: string;
+  injectionTarget: string;
+  template: string;
+};
+
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const EXACT_HOST =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+export function buildNetworkBoundaryPolicy(
+  form: NetworkBoundaryPolicyForm,
+): SecretEgressPolicy | null {
+  const hosts = form.hosts
+    .split(/[\s,]+/)
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+  const target = form.injectionTarget.trim();
+  const template = form.template.trim();
+  if (hosts.length === 0 || hosts.some((host) => !EXACT_HOST.test(host))) return null;
+  if (!HEADER_NAME.test(target)) return null;
+  if (template && !template.includes('{{secret}}')) return null;
+  return {
+    rules: [...new Set(hosts)].map((host) => ({ host })),
+    inject: {
+      kind: 'header',
+      name: target,
+      ...(template ? { template } : {}),
+    },
+    on_no_match: 'deny',
+    tls: 'terminate',
+  };
+}
+
 export function canSaveSecretDelivery(input: {
   isEdit: boolean;
   key: string;
@@ -208,6 +243,7 @@ export function canSaveSecretDelivery(input: {
   nextStrategy: SecretDeliveryStrategy;
   nextConsumer: SecretConsumer | null;
   brokerPolicyValid: boolean;
+  networkBoundaryPolicyValid?: boolean;
   selectedConnectorCount?: number;
 }): boolean {
   const hasValue = Boolean(input.value.trim());
@@ -221,6 +257,7 @@ export function canSaveSecretDelivery(input: {
   ) {
     return false;
   }
+  if (input.nextStrategy === 'egress' && !input.networkBoundaryPolicyValid) return false;
   if (
     input.nextStrategy === 'broker' &&
     input.nextConsumer === 'connector' &&

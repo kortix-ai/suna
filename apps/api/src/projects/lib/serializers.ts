@@ -28,6 +28,7 @@ import { isPlaceholderOpencodeTitle } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { proxyGitUrl } from './sessions';
+import { networkBoundaryDeliveryAvailable } from '../../secrets/network-boundary-availability';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -371,11 +372,13 @@ export function buildSecretView(input: {
       (strategy === 'broker' && consumer === 'llm_gateway') ||
       (strategy === 'broker' && consumer === 'git_proxy') ||
       (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
+      (strategy === 'egress' && consumer === 'network' && networkBoundaryDeliveryAvailable()) ||
       consumer === 'connector'
         ? 'available'
         : strategy === 'denied'
           ? 'disabled'
           : 'unavailable',
+    network_boundary_available: networkBoundaryDeliveryAvailable(),
     egress_policy: deliveryRow?.egressPolicy ?? null,
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,

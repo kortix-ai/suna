@@ -91,6 +91,7 @@ import {
 import {
   brokerConsumerForSecret,
   buildBrokerPolicy,
+  buildNetworkBoundaryPolicy,
   canSaveSecretDelivery,
   connectorBindingChanges,
   connectorBindingOptions,
@@ -158,6 +159,9 @@ export function SecretsView({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const networkBoundaryAvailable = Boolean(
+    projectDetailQuery.data?.project.available_sandbox_providers?.includes('platinum'),
+  );
 
   const secretsQuery = useQuery({
     queryKey,
@@ -344,6 +348,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 row={dialogRow}
                 connectors={connectorsQuery.data?.connectors ?? []}
                 connectorsLoading={connectorsQuery.isLoading}
+                networkBoundaryAvailable={networkBoundaryAvailable}
                 onSaved={refreshSecretsAndProviders}
               />
             </>
@@ -579,6 +584,7 @@ function SecretDialog({
   row,
   connectors,
   connectorsLoading,
+  networkBoundaryAvailable,
   onSaved,
 }: {
   open: boolean;
@@ -587,6 +593,7 @@ function SecretDialog({
   row: SecretRow | null;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
+  networkBoundaryAvailable: boolean;
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -655,6 +662,11 @@ function SecretDialog({
     injectionTarget,
     template: injectionTemplate,
   });
+  const networkBoundaryPolicy = buildNetworkBoundaryPolicy({
+    hosts: brokerHosts,
+    injectionTarget,
+    template: injectionTemplate,
+  });
 
   const prepareSavePlan = (): SecretSavePlan => {
     const finalKey = (row?.key ?? key).trim().toUpperCase();
@@ -682,6 +694,9 @@ function SecretDialog({
     if (strategy === 'broker' && brokerConsumer === 'http_broker' && !brokerPolicy) {
       throw new Error('Complete the broker destination and credential placement.');
     }
+    if (strategy === 'egress' && !networkBoundaryPolicy) {
+      throw new Error('Add an exact HTTPS host and a valid header placement.');
+    }
     if (
       strategy === 'broker' &&
       brokerConsumer === 'connector' &&
@@ -700,13 +715,16 @@ function SecretDialog({
             : brokerConsumer;
     const hasValueChange = Boolean(value.trim()) || !row?.configured;
     const egressPolicy =
-      strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
-        ? brokerPolicy
-        : undefined;
+      strategy === 'egress'
+        ? (networkBoundaryPolicy ?? undefined)
+        : strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
+          ? brokerPolicy
+          : undefined;
     const shouldSetStrategy =
       strategy !== (row?.strategy ?? 'runtime') ||
       nextConsumer !== (row?.consumer ?? 'sandbox') ||
-      strategy === 'broker';
+      strategy === 'broker' ||
+      strategy === 'egress';
     return {
       finalKey,
       finalIdentifier,
@@ -845,7 +863,11 @@ function SecretDialog({
   );
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
   const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
-  const deliveryOptions = secretDeliveryOptions(strategy, row?.deliveryStatus ?? 'available');
+  const deliveryOptions = secretDeliveryOptions(
+    strategy,
+    row?.deliveryStatus ?? 'available',
+    networkBoundaryAvailable,
+  );
   const canSave = canSaveSecretDelivery({
     isEdit,
     key,
@@ -863,6 +885,7 @@ function SecretDialog({
             ? 'network'
             : brokerConsumer,
     brokerPolicyValid: brokerPolicy !== null,
+    networkBoundaryPolicyValid: networkBoundaryPolicy !== null,
     selectedConnectorCount: effectiveSelectedConnectorSlugs.length,
   });
 
@@ -986,6 +1009,72 @@ function SecretDialog({
                 Agent code and commands can read this value. Use this option only when the secret
                 must be available to a local process.
               </InfoBanner>
+            )}
+
+            {strategy === 'egress' && (
+              <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Network boundary</p>
+                  <p className="text-muted-foreground text-xs text-pretty">
+                    Platinum adds this value to matching HTTPS requests outside the sandbox.
+                  </p>
+                </div>
+
+                <InfoBanner tone="neutral" title="Not readable inside the sandbox">
+                  The sandbox receives no value, alias, or placeholder. Secret values echoed by an
+                  upstream response are blocked at the boundary.
+                </InfoBanner>
+
+                <Field>
+                  <FieldLabel htmlFor="secret-dialog-boundary-hosts">Allowed hosts</FieldLabel>
+                  <Textarea
+                    id="secret-dialog-boundary-hosts"
+                    value={brokerHosts}
+                    onChange={(event) => setBrokerHosts(event.target.value)}
+                    placeholder={'api.example.com\nuploads.example.com'}
+                    minHeight={56}
+                    maxHeight={112}
+                    variant="outline"
+                    className="font-mono text-xs"
+                    disabled={save.isPending}
+                  />
+                  <FieldDescription>
+                    One exact HTTPS host per line. Wildcards, paths, and ports are not accepted.
+                  </FieldDescription>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="secret-dialog-boundary-header">Header name</FieldLabel>
+                  <Input
+                    id="secret-dialog-boundary-header"
+                    value={injectionTarget}
+                    onChange={(event) => setInjectionTarget(event.target.value)}
+                    placeholder="authorization"
+                    className="font-mono text-xs"
+                    disabled={save.isPending}
+                  />
+                  <FieldDescription>
+                    Platinum replaces this header only for the allowed hosts.
+                  </FieldDescription>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="secret-dialog-boundary-template">
+                    Header value template
+                  </FieldLabel>
+                  <Input
+                    id="secret-dialog-boundary-template"
+                    value={injectionTemplate}
+                    onChange={(event) => setInjectionTemplate(event.target.value)}
+                    placeholder="Bearer {{secret}}"
+                    className="font-mono text-xs"
+                    disabled={save.isPending}
+                  />
+                  <FieldDescription>
+                    Optional. Include {'{{secret}}'} where Platinum inserts the value.
+                  </FieldDescription>
+                </Field>
+              </div>
             )}
 
             {strategy === 'broker' && (
