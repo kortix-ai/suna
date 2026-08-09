@@ -38,6 +38,13 @@ describe('local test runner contract', () => {
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
   });
 
+  it('generates an unpredictable internal gateway token for each local stack', () => {
+    const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
+
+    expect(source).toContain('const gatewayToken = `ke2e-local-${crypto.randomUUID()}`;');
+    expect(source).not.toContain('"ke2e-local-gateway-internal-token"');
+  });
+
   it('snapshots fixture counts into results before teardown starts', () => {
     const runner = readFileSync(resolve(root, 'tests/src/core/runner.ts'), 'utf8');
     const fixtureSnapshot = runner.indexOf('fixtureStats: world.fixtureStats()');

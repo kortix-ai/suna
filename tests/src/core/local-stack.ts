@@ -332,7 +332,7 @@ export async function ensureLocalStack(
   const apiPort = topology.marker?.ports.api ?? 8008;
   const webPort = topology.marker?.ports.web ?? 3000;
   const gatewayPort = topology.marker?.ports.gateway ?? 8090;
-  const gatewayToken = "ke2e-local-gateway-internal-token";
+  const gatewayToken = `ke2e-local-${crypto.randomUUID()}`;
   const owned: Bun.Subprocess[] = [];
   const api = apiWasHealthy
     ? null
