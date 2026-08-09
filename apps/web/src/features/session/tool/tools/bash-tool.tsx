@@ -31,7 +31,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { stripAnsi } from '@/ui';
-import { TerminalWindowIcon } from '@phosphor-icons/react';
+import { CodeSimpleIcon } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
 
 /**
@@ -168,7 +168,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<TerminalWindowIcon className="size-4 shrink-0" />}
+      icon={<CodeSimpleIcon className="size-4 shrink-0" />}
       trigger={
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
