@@ -930,9 +930,15 @@ importers:
       '@tiptap/extension-blockquote':
         specifier: ^3.14.0
         version: 3.27.1(@tiptap/core@3.27.1)
+      '@tiptap/extension-bold':
+        specifier: ^3
+        version: 3.27.1(@tiptap/core@3.27.1)
       '@tiptap/extension-character-count':
         specifier: ^3.3.0
         version: 3.27.1(@tiptap/extensions@3.27.1)
+      '@tiptap/extension-code':
+        specifier: ^3
+        version: 3.27.1(@tiptap/core@3.27.1)
       '@tiptap/extension-code-block':
         specifier: ^3.14.0
         version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
@@ -963,6 +969,9 @@ importers:
       '@tiptap/extension-image':
         specifier: ^3.3.0
         version: 3.27.1(@tiptap/core@3.27.1)
+      '@tiptap/extension-italic':
+        specifier: ^3
+        version: 3.27.1(@tiptap/core@3.27.1)
       '@tiptap/extension-link':
         specifier: ^3.3.0
         version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
@@ -972,6 +981,9 @@ importers:
       '@tiptap/extension-mathematics':
         specifier: ^3.3.0
         version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(katex@0.16.47)
+      '@tiptap/extension-mention':
+        specifier: ^3
+        version: 3.29.2(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(@tiptap/suggestion@3.29.2)
       '@tiptap/extension-paragraph':
         specifier: ^3.14.0
         version: 3.27.1(@tiptap/core@3.27.1)
@@ -1005,6 +1017,9 @@ importers:
       '@tiptap/extension-underline':
         specifier: ^3.14.0
         version: 3.27.1(@tiptap/core@3.27.1)
+      '@tiptap/extensions':
+        specifier: ^3
+        version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
       '@tiptap/pm':
         specifier: ^3.3.0
         version: 3.27.1
@@ -1014,6 +1029,9 @@ importers:
       '@tiptap/starter-kit':
         specifier: ^3.3.0
         version: 3.27.1
+      '@tiptap/suggestion':
+        specifier: ^3
+        version: 3.29.2(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
       '@types/jszip':
         specifier: ^3.4.0
         version: 3.4.1
@@ -13412,6 +13430,18 @@ packages:
       katex: 0.16.47
     dev: false
 
+  /@tiptap/extension-mention@3.29.2(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(@tiptap/suggestion@3.29.2):
+    resolution: {integrity: sha512-WF8ugDa2IRbgyRW+PffPYg8ZI+Qp9azvIsNoyuf+VSg5Vp7ze2TuJXUTObSckyiN5Ann8bDNM9Hbu3TdoI0DFQ==}
+    peerDependencies:
+      '@tiptap/core': 3.29.2
+      '@tiptap/pm': 3.29.2
+      '@tiptap/suggestion': 3.29.2
+    dependencies:
+      '@tiptap/core': 3.27.1(@tiptap/pm@3.27.1)
+      '@tiptap/pm': 3.27.1
+      '@tiptap/suggestion': 3.29.2(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
+    dev: false
+
   /@tiptap/extension-ordered-list@3.27.1(@tiptap/extension-list@3.27.1):
     resolution: {integrity: sha512-GYrKqD//9nHJ2r80uXqbDMzRnFpGzbaEQRTSGaO/SH7DvXWFMow8evkOdjQ7PCQO07jNjJo75+A85Jwu3Ov3AA==}
     peerDependencies:
@@ -13590,6 +13620,18 @@ packages:
       '@tiptap/extension-text': 3.27.1(@tiptap/core@3.27.1)
       '@tiptap/extension-underline': 3.27.1(@tiptap/core@3.27.1)
       '@tiptap/extensions': 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
+      '@tiptap/pm': 3.27.1
+    dev: false
+
+  /@tiptap/suggestion@3.29.2(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1):
+    resolution: {integrity: sha512-ZEhRm0gnRCwCScR9IrnIBhm9sr6U8vpR9oeznYk3hiedZ48zsgohqvgoIYpWcwYWrT2Pb0NrfhCT8IuSzdJHzQ==}
+    peerDependencies:
+      '@floating-ui/dom': ^1.0.0
+      '@tiptap/core': 3.29.2
+      '@tiptap/pm': 3.29.2
+    dependencies:
+      '@floating-ui/dom': 1.7.6
+      '@tiptap/core': 3.27.1(@tiptap/pm@3.27.1)
       '@tiptap/pm': 3.27.1
     dev: false
 
