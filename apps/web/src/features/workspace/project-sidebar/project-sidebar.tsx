@@ -14,7 +14,6 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
@@ -43,6 +42,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
+import { WorkspaceSwitcher } from './workspace-switcher';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -54,21 +54,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
 
-  const { data: adminRoleData } = useAdminRole();
-  const isAdmin = adminRoleData?.isAdmin ?? false;
-
   const accountId = useBillingAccountId();
-
-  const { user: authUser } = useAuth();
-  const user = useMemo(
-    () => ({
-      name: authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'User',
-      email: authUser?.email ?? '',
-      avatar: authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture || '',
-      isAdmin,
-    }),
-    [authUser, isAdmin],
-  );
 
   // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
@@ -129,7 +115,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             control below any more. */}
         <div className="flex w-full items-center gap-1">
           <div className="min-w-0 flex-1">
-            <UserMenu user={user} variant="sidebar" showWorkspaces />
+            <WorkspaceSwitcher projectId={projectId} />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {/* Search is the palette's only pointer-reachable entry point —

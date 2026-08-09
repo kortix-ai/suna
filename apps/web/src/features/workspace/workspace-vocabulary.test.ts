@@ -96,13 +96,13 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
     expect(code).toContain('No workspaces yet');
   });
 
-  // "Create a workspace…" sits with the back row in `user-menu.tsx`, which owns
-  // the workspace VIEW; the section above is only the list inside it. Asserted
-  // where the string actually lives — a guard pointed at the wrong file passes
-  // for the wrong reason the moment someone moves the row again.
-  test('user-menu.tsx renders the create item in its workspace view', () => {
+  // "Create a workspace…" sits inside the Switch Workspace submenu, which
+  // `workspace-switcher.tsx` owns; the section is only the list inside it.
+  // Asserted where the string actually lives — a guard pointed at the wrong
+  // file passes for the wrong reason the moment someone moves the row again.
+  test('workspace-switcher.tsx renders the create item and the switch row', () => {
     const code = stripComments(
-      readFileSync(join(import.meta.dir, '../layout/user-menu.tsx'), 'utf8'),
+      readFileSync(join(import.meta.dir, 'project-sidebar/workspace-switcher.tsx'), 'utf8'),
     );
     expect(code).toContain('Create a workspace…');
     expect(code).toContain('Switch Workspace');

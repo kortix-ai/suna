@@ -145,7 +145,7 @@ export function WorkspaceMenuSection() {
           it past the viewport. `min-h` stops the panel collapsing to a sliver on
           an empty or one-workspace account, where a search box above a single
           row would otherwise read as a rendering glitch. */}
-      <div className="max-h-[240px] min-h-[120px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="max-h-[640px] min-h-[120px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {workspacesLoading ? (
           <div className="space-y-1 p-1">
             {Array.from({ length: 3 }, (_, i) => (

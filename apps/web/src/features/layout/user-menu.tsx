@@ -33,7 +33,12 @@ import {
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
-import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
+import {
+  HelpSubmenu,
+  THEME_OPTIONS,
+  ThemeSubmenu,
+  useLogoutFlow,
+} from '@/features/layout/user-menu-shared';
 import { Monitor } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
@@ -74,56 +79,10 @@ import { useEffect, useState } from 'react';
 
 export type UserMenuVariant = 'header' | 'sidebar';
 
-type MenuLink = {
-  label: string;
-  href: string;
-  Icon: React.ComponentType<{ className?: string }>;
-  /**
-   * Navigate in place instead of opening a new tab. Only Marketplace: it is
-   * somewhere you go and act — browse, install — so it belongs in the session
-   * you are already in. Everything else under Help is something you read, and
-   * losing your workspace to go read it is the wrong trade.
-   */
-  internal?: boolean;
-};
+// Re-exported: `THEME_OPTIONS` moved to `user-menu-shared.tsx` when the sidebar
+// grew its own menu, and this stayed its public entry point.
+export { THEME_OPTIONS };
 
-/**
- * Reference destinations, grouped under Help.
- *
- * Hoisted to module scope so the arrays and their objects are allocated once
- * for the app instead of being rebuilt on every render — `UserMenu` mounts in
- * both the sidebar and the header, so this render path is not rare.
- *
- * Every entry but Marketplace opens in a new tab. These are pages you read, and
- * the person clicking them is mid-session in a workspace — sending them away
- * from it to read the privacy policy costs more than the tab does.
- */
-const HELP_LINKS: MenuLink[] = [
-  { label: 'Help center', href: '/help', Icon: LifebuoyIcon },
-  { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
-  { label: 'Blog', href: '/blog', Icon: ArticleIcon },
-  { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
-  { label: 'Contact', href: '/contact', Icon: PaperPlaneTiltIcon },
-  { label: 'Support', href: '/support', Icon: HeadsetIcon },
-];
-
-/** Kept separate so a divider can hold the legal pages apart from the rest. */
-const LEGAL_LINKS: MenuLink[] = [
-  { label: 'Privacy', href: '/legal?tab=privacy', Icon: ShieldCheckIcon },
-  { label: 'Terms and conditions', href: '/legal/terms', Icon: ScrollIcon },
-];
-
-/**
- * The three theme values `next-themes` accepts, in the order the rest of the
- * product lists them (see the Appearance tab in user settings — same words, same
- * icons, same order). A person who learns the control in one place should not
- * have to re-read it in the other.
- */
-export const THEME_OPTIONS = [
-  { value: 'light', label: 'Light', Icon: Sun },
-  { value: 'dark', label: 'Dark', Icon: Moon },
-  { value: 'system', label: 'System', Icon: Monitor },
-] as const;
 
 export interface UserMenuUser {
   name: string;
@@ -135,22 +94,9 @@ export interface UserMenuUser {
 export function UserMenu({
   user,
   variant = 'sidebar',
-  showWorkspaces = false,
 }: {
   user: UserMenuUser;
   variant?: UserMenuVariant;
-  /**
-   * Add "Switch Workspace" — a submenu holding the workspace directory, the
-   * same shape as Theme and Help. On for the project sidebar, off in the header.
-   *
-   * The directory used to be its own control at the top of the sidebar — a
-   * `<Link>` carrying the Kortix mark fused to a separate dropdown trigger
-   * carrying the workspace name — with this menu a third control in the footer.
-   * Three controls, two of them dropdowns, for "who am I / where am I / where
-   * can I go". It is one control now, and this flag is what makes it answer the
-   * middle question too.
-   */
-  showWorkspaces?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -163,7 +109,6 @@ export function UserMenu({
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
-  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -203,7 +148,7 @@ export function UserMenu({
       setSettingsOpen(true);
     });
 
-  const openLogoutConfirm = () => deferAfterClose(() => setLogoutConfirmOpen(true));
+  const { openConfirm: openLogoutConfirm, dialog: logoutDialog } = useLogoutFlow(deferAfterClose);
 
   /**
    * One Help row.
@@ -222,36 +167,6 @@ export function UserMenu({
    * This is a plain function, not a component, so the rows are not remounted on
    * every render of the menu.
    */
-  const renderMenuLink = ({ label, href, Icon, internal }: MenuLink) =>
-    internal ? (
-      <DropdownMenuItem key={href} onClick={() => deferAfterClose(() => router.push(href))}>
-        <Icon />
-        {label}
-      </DropdownMenuItem>
-    ) : (
-      <DropdownMenuItem key={href} asChild>
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => {
-            if (openExternalRoute(href)) event.preventDefault();
-            setMenuOpen(false);
-          }}
-        >
-          <Icon />
-          {label}
-        </a>
-      </DropdownMenuItem>
-    );
-
-  const performLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    await resetClientState();
-    router.push('/auth');
-  };
-
   const trigger =
     variant === 'header' ? (
       <Button
@@ -271,9 +186,9 @@ export function UserMenu({
       <SidebarMenuButton
         size="sm"
         className={cn(
-          'group/user relative gap-2 px-2.5 py-1',
+          'group/user relative gap-2  p-1',
           // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
-          'relative flex cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-150',
+          'relative flex cursor-pointer items-center gap-2 rounded-md transition-colors duration-150',
           'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
         )}
       >
@@ -355,87 +270,9 @@ export function UserMenu({
           </DropdownMenuItem>
         )}
 
-        {/* Theme used to be a segmented control pinned below Log out — the one
-            row in the menu that was not a menu item, sitting under the one row
-            that ends your session. It is a choice between three values, so it is
-            a submenu of three rows like any other, and it sits with Help because
-            both are settings you visit rather than places you go.
+        <ThemeSubmenu />
 
-            The leading icon shows the theme currently in effect, not the value
-            stored: on `system` it tracks what the OS resolved to, which is the
-            only answer to "what am I looking at right now". */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            {resolvedTheme === 'dark' ? <Moon /> : <Sun />}
-            Theme
-          </DropdownMenuSubTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
-              <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
-                {THEME_OPTIONS.map(({ value, label, Icon }) => (
-                  <DropdownMenuRadioItem key={value} value={value}>
-                    {/* RadioItem wraps its children in a single flex-1 span to
-                        push the check to the right edge, so the icon and label
-                        need their own flex row inside it to stay aligned. */}
-                    <span className="flex items-center gap-2">
-                      <Icon />
-                      {label}
-                    </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuPortal>
-        </DropdownMenuSub>
-
-        {/* Every reference and legal page collapses into one submenu, so the top
-            level only carries things you act on rather than eight links. */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <QuestionIcon />
-            Help
-          </DropdownMenuSubTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
-              {HELP_LINKS.map(renderMenuLink)}
-
-              <DropdownMenuSeparator />
-
-              {LEGAL_LINKS.map(renderMenuLink)}
-            </DropdownMenuSubContent>
-          </DropdownMenuPortal>
-        </DropdownMenuSub>
-
-        {/* A submenu, the same shape as Theme and Help above — all three are
-            things you open from here rather than places this menu sends you, so
-            they read as one family. Above the separator, clear of the row that
-            ends your session.
-
-            Wider than the default sub content: this one holds a search field and
-            grouped rows with avatars, not three radio items. */}
-        {showWorkspaces && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <ArrowsLeftRightIcon />
-              Switch Workspace
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent className="w-[264px] space-y-0.5" sideOffset={6}>
-                <WorkspaceMenuSection />
-
-                <DropdownMenuSeparator />
-
-                <DropdownMenuItem
-                  onSelect={() => deferAfterClose(() => router.push('/new'))}
-                  size="sm"
-                >
-                  <PlusIcon />
-                  Create a workspace…
-                </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
-        )}
+        <HelpSubmenu deferAfterClose={deferAfterClose} onClose={() => setMenuOpen(false)} />
 
         {/* Log out is the only row that ends something, so it gets its own
             group. Nothing sits below it — the last item in a menu is the one a
@@ -468,24 +305,7 @@ export function UserMenu({
         defaultTab={settingsTab}
       />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
-      <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextLogOutOfYour4770ea0c')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextYouLlNeedToee9fad67')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={performLogout}>
-              {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {logoutDialog}
     </>
   );
 }
