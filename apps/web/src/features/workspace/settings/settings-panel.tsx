@@ -72,9 +72,19 @@
  * It renders nothing without `account.write` on the resolved account, but —
  * unlike `billing` — does NOT also require `isBillingEnabled()`: session
  * costs stay available with billing off, matching `sectionVisible.
- * transactions` on the source page. The remaining five (`groups`, `roles`,
- * `identity`, `audit`, `api-keys`, `experimental`) stay placeholders — the
- * rest of phase 3 and phase 4 build them.
+ * transactions` on the source page.
+ *
+ * **Task 13 update.** `groups` is wired to the real `GroupsTab` (see
+ * `tabs/groups-tab.tsx`) and `roles` to the real `RolesTab` (see
+ * `tabs/roles-tab.tsx`) — same account-scoped shape as `billing`/`usage`.
+ * The two gate differently, matching `app/(app)/accounts/[id]/page.tsx`
+ * exactly (see each file's header comment): Groups has no permission gate
+ * at all (every member reaches the pane; only its CONTENT is
+ * entitlement-gated, showing `EnterpriseUpsell` in place of the real view
+ * on a non-`rbac` account); Roles additionally requires `role.create` as a
+ * whole-tab gate on top of that same entitlement content-gate. The
+ * remaining four (`identity`, `audit`, `api-keys`, `experimental`, plus
+ * `snapshots` from Task 5b2) stay placeholders — later phases build them.
  *
  * **Every pane must not fetch unless its tab is active** (see this file's
  * plan and `settings-panel.test.tsx`'s "real tab content gating" describe
@@ -136,8 +146,10 @@ import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { BillingTab } from './tabs/billing-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
+import { GroupsTab } from './tabs/groups-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
+import { RolesTab } from './tabs/roles-tab';
 import { UsageTab } from './tabs/usage-tab';
 import type { RailGroup, RailItem } from './type';
 
@@ -150,6 +162,12 @@ import type { RailGroup, RailItem } from './type';
  * experimental) are user- or account-scoped and get their own entitlement
  * gating in the tasks that build their content; until then `isTabAllowed`
  * falls through to "allowed" for them below, same as the fail-open default.
+ * This is deliberate for `roles` too (Task 13): its `role.create` whole-tab
+ * gate lives INSIDE `RolesTab`'s container (`tabs/roles-tab.tsx`), which
+ * returns `null` rather than hiding the rail row — the same choice already
+ * made for `billing`'s `billing.write` gate and `usage`'s `account.write`
+ * gate, neither of which hide their rail row either. See `tabs/roles-tab.tsx`'s
+ * header comment for the full reasoning.
  */
 const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
   general: 'settings',
@@ -615,14 +633,14 @@ export function SettingsPanelShell({
  * describe block for why this is explicit rather than left to Radix's own
  * `TabsContent` behaviour.
  *
- * `profile`, `preferences`, `connected` (Task 9), `billing` (Task 11), and
- * `usage` (Task 12) are handled above the switch (account-scoped, no
- * `projectId` needed). The switch below is the Task 5b2 mapping of the
- * legacy panel's `SectionContent` (14 `case` labels + the `llm-*` prefix
- * branch) onto the new tab ids. A tab NOT listed here or above —
- * `snapshots`, `groups`, `roles`, `identity`, `audit`, `api-keys`,
- * `experimental` — is a genuinely new surface with no legacy source to port;
- * it keeps the placeholder header until a later phase builds it. `snapshots` in
+ * `profile`, `preferences`, `connected` (Task 9), `billing` (Task 11),
+ * `usage` (Task 12), and `groups`/`roles` (Task 13) are handled above the
+ * switch (account-scoped, no `projectId` needed). The switch below is the
+ * Task 5b2 mapping of the legacy panel's `SectionContent` (14 `case` labels
+ * + the `llm-*` prefix branch) onto the new tab ids. A tab NOT listed here
+ * or above — `snapshots`, `identity`, `audit`, `api-keys`, `experimental` —
+ * is a genuinely new surface with no legacy source to port; it keeps the
+ * placeholder header until a later phase builds it. `snapshots` in
  * particular is HALF of the legacy `sandbox` case
  * (`SandboxView` renders templates and the build log together); splitting
  * them is a later task, so `sandbox` alone gets the full unsplit view for
@@ -671,6 +689,20 @@ function SettingsTabPane({
   // does NOT also require `isBillingEnabled()`.
   if (item.tab === 'usage') {
     return <UsageTab accountId={accountId} />;
+  }
+  // Same no-`projectId`-required, `accountId`-reading shape as `billing`/
+  // `usage` above — see `tabs/groups-tab.tsx`'s header comment. Groups has
+  // no whole-tab permission gate (every member reaches the pane); only its
+  // CONTENT is entitlement-gated.
+  if (item.tab === 'groups') {
+    return <GroupsTab accountId={accountId} />;
+  }
+  // Same shape as `groups` above, but ALSO renders nothing at all without
+  // `role.create` on the resolved account — see `tabs/roles-tab.tsx`'s
+  // header comment for why that whole-tab gate lives in the container
+  // rather than here.
+  if (item.tab === 'roles') {
+    return <RolesTab accountId={accountId} />;
   }
 
   if (projectId) {

@@ -212,14 +212,15 @@ describe('SettingsPanelShell — real tab content gating', () => {
     expect(() =>
       render({
         // `experimental` is still a genuinely unbuilt placeholder — `profile`,
-        // `preferences`, `connected`, (Task 11) `billing`, and (Task 12)
-        // `usage` moved into `REAL_VIEW_TABS`-equivalent coverage below once
-        // each was wired to its real view. This example previously used
-        // `usage`; Task 12 wired that tab to `UsageTab`, so this moved to
-        // `experimental` — confirmed by grep: `grep -n "'experimental'"
-        // settings-panel.test.tsx` before this change showed no reference at
-        // all, so moving this example here doesn't drop coverage of anything
-        // that was already being exercised.
+        // `preferences`, `connected`, (Task 11) `billing`, (Task 12) `usage`,
+        // and (Task 13) `groups`/`roles` moved into their own real-view
+        // coverage below once each was wired to its real view. This example
+        // previously used `usage`; Task 12 wired that tab to `UsageTab`, so
+        // this moved to `experimental`. Task 13 wires `groups`/`roles`, not
+        // `experimental` — confirmed by grep: `grep -n "'groups'\|'roles'\|
+        // 'experimental'" settings-panel.test.tsx` before this change showed
+        // `experimental` used only here, so it remains a valid still-a-
+        // placeholder example and does not need to move again.
         tab: 'experimental',
         projectId: 'p1',
         llmGatewayEnabled: true,
@@ -310,6 +311,40 @@ describe('SettingsPanelShell — real tab content gating', () => {
 
   test('usage mounts its real view even with no project id — it is account-scoped like profile/preferences/connected/billing, unlike every REAL_VIEW_TABS entry below', () => {
     expect(() => render({ tab: 'usage', projectId: undefined, accountId: undefined })).toThrow();
+  });
+
+  test('activating groups mounts its real view — it calls react-query with no provider present, so it throws', () => {
+    expect(() =>
+      render({
+        tab: 'groups',
+        projectId: 'p1',
+        accountId: 'a1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).toThrow();
+  });
+
+  test('groups mounts its real view even with no project id — it is account-scoped like billing/usage, unlike every REAL_VIEW_TABS entry below', () => {
+    expect(() => render({ tab: 'groups', projectId: undefined, accountId: undefined })).toThrow();
+  });
+
+  test('activating roles mounts its real view — it calls react-query with no provider present, so it throws', () => {
+    expect(() =>
+      render({
+        tab: 'roles',
+        projectId: 'p1',
+        accountId: 'a1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).toThrow();
+  });
+
+  test('roles mounts its real view even with no project id — it is account-scoped like billing/usage/groups, unlike every REAL_VIEW_TABS entry below', () => {
+    expect(() => render({ tab: 'roles', projectId: undefined, accountId: undefined })).toThrow();
   });
 
   for (const tab of REAL_VIEW_TABS) {
