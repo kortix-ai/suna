@@ -69,7 +69,7 @@ describe('buildNewSessionCreateInput', () => {
     });
   });
 
-  it('includes every available default connector for an untouched new session', () => {
+  it('leaves untouched connector defaults to server-side resolution', () => {
     const initialization = createNewSessionScopeInitialization({
       secrets: { status: 'ready', items: [] },
       connector_connections: {
@@ -110,11 +110,6 @@ describe('buildNewSessionCreateInput', () => {
       }),
     ).toEqual({
       agent_name: 'kortix',
-      connector_bindings: {
-        computer: { connection_id: 'connection-computer-default' },
-        gmail: { connection_id: 'connection-gmail-default' },
-      },
-      inherit_unbound: false,
     });
   });
 

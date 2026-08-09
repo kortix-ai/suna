@@ -153,6 +153,7 @@ describe('createNewSessionScopeDraft', () => {
         'mail-read': { connection_id: 'connection-mail-default' },
         issues: { connection_id: 'connection-issues-only' },
       },
+      connector_bindings_inherited: true,
       require_connectors: [],
     });
   });
@@ -172,6 +173,7 @@ describe('createNewSessionScopeDraft', () => {
     expect(createNewSessionScopeDraft(catalog)).toEqual({
       secrets: null,
       connector_bindings: {},
+      connector_bindings_inherited: true,
       require_connectors: [],
     });
   });
@@ -245,6 +247,22 @@ describe('buildSessionScopeReplacement', () => {
     ).toEqual({
       secrets: null,
       connector_bindings: {},
+      require_connectors: [],
+    });
+  });
+
+  test('keeps untouched connector defaults on server-side inheritance', () => {
+    expect(
+      buildSessionScopeReplacement({
+        secrets: null,
+        connector_bindings: {
+          mail: { connection_id: 'stale-client-default' },
+        },
+        connector_bindings_inherited: true,
+        require_connectors: [],
+      }),
+    ).toEqual({
+      secrets: null,
       require_connectors: [],
     });
   });
