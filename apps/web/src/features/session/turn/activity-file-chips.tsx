@@ -28,7 +28,7 @@ import {
 import { parseReadOutput } from '@/features/session/tool/shared/read-helpers';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { cn } from '@/lib/utils';
-import { getFileIcon, getFilename, getFileType, getTypeLabel } from '@/lib/utils/file-utils';
+import { fileIconFor, getFilename, getFileType, getTypeLabel } from '@/lib/utils/file-utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
 import { memo } from 'react';
@@ -128,7 +128,9 @@ function isInFlight(part: ToolPart): boolean {
 function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) => void }) {
   const filename = getFilename(path);
   const type = getFileType(filename);
-  const Icon = getFileIcon(type);
+  // The glyph for THIS file, not for its category — a .ts, a .png and a .zip
+  // used to share one anonymous mark.
+  const Icon = fileIconFor(filename);
   // `getFileType` enumerates twelve groups, so `.yml`, `.sh`, `.go`, `.rs`,
   // `.toml` and most of a real repo collapse to the literal word "File" — a
   // second line that costs 16px and says nothing. The extension itself is the

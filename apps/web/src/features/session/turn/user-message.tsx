@@ -28,7 +28,7 @@ import {
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { useSandboxImageSrc } from '@/features/session/sandbox-image';
 import { cn } from '@/lib/utils';
-import { getFileIcon, getFilename, getFileType } from '@/lib/utils/file-utils';
+import { fileIconFor, getFilename } from '@/lib/utils/file-utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
@@ -476,7 +476,7 @@ const isImageAttachment = (file: NormalizedAttachment) =>
  * line is indistinguishable from its siblings.
  */
 function FileTileBody({ file, pending }: { file: NormalizedAttachment; pending?: boolean }) {
-  const Icon = getFileIcon(getFileType(file.filename));
+  const Icon = fileIconFor(file.filename);
   return (
     <span className="flex size-full flex-col justify-between gap-1 p-2">
       {pending ? (
