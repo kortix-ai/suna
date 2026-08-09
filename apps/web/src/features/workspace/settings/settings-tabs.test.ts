@@ -59,6 +59,46 @@ describe('legacySectionRedirect', () => {
     expect(legacySectionRedirect('p1', 'upgrade')).toBe('/projects/p1/settings/upgrades');
   });
 
+  test('tokens folds into api-keys', () => {
+    // /accounts/[id]?tab=tokens is a bookmarked account-settings URL — see
+    // SettingsTabId in lib/menu-registry.ts. It must keep resolving.
+    expect(legacySectionRedirect('p1', 'tokens')).toBe('/projects/p1/settings/api-keys');
+  });
+
+  test('transactions folds into usage', () => {
+    // /accounts/[id]?tab=transactions is the same kind of bookmarked link.
+    expect(legacySectionRedirect('p1', 'transactions')).toBe('/projects/p1/settings/usage');
+  });
+
+  // Every entry in settings-tabs.ts's RENAMED_TABS map, pinned in one place.
+  // RENAMED_TABS itself is not exported (it's an implementation detail, not
+  // part of this module's public contract), so this table is a hand-kept
+  // mirror rather than a live import — if you rename or remove an entry in
+  // RENAMED_TABS, update this table in the same change, or this test goes
+  // stale without catching it. Adding a KNOWN id here that RENAMED_TABS
+  // doesn't have will fail immediately, which is what caught tokens/
+  // transactions being untested in the first place.
+  test('every renamed legacy id in RENAMED_TABS is pinned', () => {
+    const renames: Record<string, string> = {
+      commands: 'instructions',
+      settings: 'general',
+      git: 'repositories',
+      tokens: 'api-keys',
+      transactions: 'usage',
+      upgrade: 'upgrades',
+      'llm-management': 'models',
+      'llm-overview': 'models',
+      'llm-providers': 'models',
+      'llm-logs': 'models',
+      'llm-budgets': 'models',
+      'llm-keys': 'models',
+      'llm-api': 'models',
+    };
+    for (const [legacyId, newTab] of Object.entries(renames)) {
+      expect(legacySectionRedirect('p1', legacyId)).toBe(`/projects/p1/settings/${newTab}`);
+    }
+  });
+
   test('graduated capability pages still leave the overlay', () => {
     expect(legacySectionRedirect('p1', 'skills')).toBe('/projects/p1/skills');
     expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/agent');
