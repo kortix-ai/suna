@@ -334,38 +334,55 @@ describe('/new page: exports', () => {
   });
 });
 
-describe('/new page: ProvisionProgress wiring (Task 19)', () => {
-  test('imports ProvisionProgress from its own module, not re-implemented inline', () => {
-    expect(code).toContain("from '@/features/workspace/new/provision-progress'");
-    expect(code).toContain('<ProvisionProgress');
+describe('/new page: WorkspaceHandoff wiring', () => {
+  test('imports WorkspaceHandoff from its own module, not re-implemented inline', () => {
+    expect(code).toContain("from '@/features/workspace/new/workspace-handoff'");
+    expect(code).toContain('<WorkspaceHandoff');
   });
 
-  test('renders ProvisionProgress wired to the real workspace name and the live phase — not a re-derived name', () => {
-    const provisionProgress = code.match(/<ProvisionProgress[\s\S]*?\/>/)?.[0];
-    expect(provisionProgress).toBeDefined();
-    expect(provisionProgress).toContain('workspaceName={state.name.trim()}');
-    expect(provisionProgress).toContain('current={phase}');
+  test('the handoff gets the submitted name, not a re-derived one', () => {
+    const handoff = code.match(/<WorkspaceHandoff[\s\S]*?\/>/)?.[0];
+    expect(handoff).toBeDefined();
+    expect(handoff).toContain('workspaceName={state.name.trim()}');
+    expect(handoff).toContain('projectId={onboardingProjectId}');
   });
 
-  test('phase comes from useCreateWorkspace, not local component state', () => {
-    // Paired with the ProvisionProgress prop check above: `phase` must be
-    // destructured from the hook, or the prop check above would be wiring a
-    // variable that doesn't exist.
+  test('the form and the handoff are mutually exclusive — never both, never neither', () => {
+    // A single ternary on one derived flag, not two independent conditionals:
+    // the second shape can render neither branch (or both) as `submitting`
+    // and `onboardingProjectId` drift relative to each other, which is exactly
+    // what happens at the moment a create succeeds.
+    const swapMatch = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
+    expect(swapMatch).not.toBeNull();
+    const [, handoffBranch, formBranch] = swapMatch ?? [];
+    expect(handoffBranch).toContain('<WorkspaceHandoff');
+    expect(formBranch).toContain('<form');
+  });
+
+  test('one waiting state spans BOTH windows — the create, and the wizard mounting', () => {
+    // The seam between "creating" and "onboarding" is where the old UI swapped
+    // one screen for another. Folding both into `handingOff` is what makes a
+    // successful create a visual non-event.
+    expect(code).toContain('const handingOff = submitting || Boolean(onboardingProjectId);');
+  });
+
+  test('nothing renders phase progress — the create reports no steps to the user', () => {
+    expect(code).not.toContain('phase');
+    expect(code).not.toContain('provision-progress');
+    expect(code).not.toContain('provision-phases');
     expect(code).toContain(
-      'const { create, status, error: createError, phase, retry, canRetry } = useCreateWorkspace();',
+      'const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();',
     );
   });
 
-  test('the form and the panel are mutually exclusive on `submitting` — never both, never neither', () => {
-    // A single ternary keyed on `submitting`, not two independent
-    // conditionals — the second shape could render neither (or both) branch
-    // depending on how `submitting` and `status` drift relative to each
-    // other.
-    const swapMatch = code.match(/\{submitting \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
-    expect(swapMatch).toBeDefined();
-    const [, creatingBranch, formBranch] = swapMatch ?? [];
-    expect(creatingBranch).toContain('<ProvisionProgress');
-    expect(formBranch).toContain('<form');
+  test('the page heading belongs to the form branch, so the swap is one motion', () => {
+    // "Create a workspace" above a screen that is already creating one is
+    // stale, and a heading holding still while the block under it fades reads
+    // as two motions rather than the page turning over.
+    const swapMatch = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
+    const [, handoffBranch, formBranch] = swapMatch ?? [];
+    expect(formBranch).toContain('Create a workspace');
+    expect(handoffBranch).not.toContain('Create a workspace');
   });
 
   // ONE. The icon reveal is a persistent element retargeting its width, not an

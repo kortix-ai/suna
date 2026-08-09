@@ -516,14 +516,6 @@ export function useCreateWorkspace(): {
   create: (state: NewWorkspaceFormState) => Promise<void>;
   status: CreateStatus;
   error: string | null;
-  /**
-   * The phase `POST /projects/provision-stream` last reported, or `null`
-   * before the first event and while the plain-POST fallback is running (see
-   * `runProvisionAttempt`'s `onPhase(null)`). Render it through
-   * `phaseStatuses` (`provision-phases.ts`) for the full four-row checklist,
-   * not this value alone.
-   */
-  phase: ProvisionPhase | null;
   retry: () => void;
   /** Whether `retry` can plausibly succeed for the CURRENT error; see `isRetryableError`. */
   canRetry: boolean;
@@ -533,7 +525,6 @@ export function useCreateWorkspace(): {
   const { user } = useAuth();
   const [status, setStatus] = useState<CreateStatus>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<ProvisionPhase | null>(null);
   // The raw thrown value, not just its formatted message — `canRetry` below
   // needs to classify it with `isRetryableError`, which reads `.status`, not
   // the already-rendered string.
@@ -548,12 +539,18 @@ export function useCreateWorkspace(): {
       setLastState(state);
       setStatus('creating');
       setError(null);
-      setPhase(null);
 
       const result = await runCreate(state, creatableAccounts, user?.id, {
         attemptKeyFor,
         clearAttemptKey,
-        runCreateAttempt: (payload) => runProvisionAttempt(payload, setPhase),
+        // `onPhase` is a no-op: `/new` shows `WorkspaceHandoff`, one mark held
+        // across the whole wait, and reports no per-phase progress. The
+        // parameter stays on `runProvisionAttempt` because that function's own
+        // fallback depends on it — `onPhase(null)` is how it marks the switch
+        // to the plain POST — and because it is what a host WOULD read to
+        // render progress. Nothing here consumes it, so nothing here holds
+        // state for it.
+        runCreateAttempt: (payload) => runProvisionAttempt(payload, () => {}),
         // The optimistic write goes ONLY into the account this workspace
         // actually belongs to — the one entry a merge here can never get
         // wrong. `qk.projects.list()` (no account) is a DIFFERENT, sibling
@@ -601,5 +598,5 @@ export function useCreateWorkspace(): {
   // create is `'creating'` or has already succeeded.
   const canRetry = status === 'error' && isRetryableError(lastError);
 
-  return { create, status, error, phase, retry, canRetry };
+  return { create, status, error, retry, canRetry };
 }

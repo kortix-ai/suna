@@ -2,7 +2,6 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -13,7 +12,6 @@ import { ProjectOnboardingWizard } from '@/components/projects/project-onboardin
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -26,8 +24,8 @@ import {
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
-import { ProvisionProgress } from '@/features/workspace/new/provision-progress';
 import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
+import { WorkspaceHandoff } from '@/features/workspace/new/workspace-handoff';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
@@ -37,39 +35,30 @@ import { cn } from '@/lib/utils';
 import { listAccounts } from '@kortix/sdk';
 
 /**
- * The form <-> `ProvisionProgress` swap's ONLY transition — a plain opacity
- * cross-fade, no transform. "Nothing else moves" (task brief) is deliberate:
- * this page centers its column with `justify-center`, so the two states'
- * differing heights already reflow the header on swap; layering a slide or
- * scale on top of that reflow would read as two competing motions instead of
- * one. `mode="wait"` (not a true overlapping crossfade) because the form and
- * the panel are different heights — overlapping them mid-transition would
- * show both at once, at two different vertical rhythms. Same curve and
- * duration family as `session-starting-loader.tsx`'s `EASE_OUT`/`MESSAGE_IN`
- * — this codebase's other phase-swap surface — exit deliberately faster than
- * enter (~75%), matching the doctrine in `animations-dev`.
+ * The form <-> `WorkspaceHandoff` swap's ONLY transition — a plain opacity
+ * cross-fade, no transform. The two states are different heights and the page
+ * centers its column, so the swap already reflows; a slide or scale on top of
+ * that reads as two competing motions. `mode="wait"` for the same reason —
+ * overlapping two blocks of different heights shows both at once at two
+ * vertical rhythms.
+ *
+ * Kept short because this is the response to pressing Create — 300ms total,
+ * exit at ~66% of enter — and because the handoff has an entrance of its own:
+ * `KortixHyperLogo` dissolves itself in over 800ms the moment it mounts. A
+ * slow fade here would run under that reveal and mute it.
  */
 const EASE_OUT: [number, number, number, number] = [0, 0, 0.2, 1];
-const SWAP_IN = { duration: 0.2, ease: EASE_OUT };
-const SWAP_OUT = { duration: 0.15, ease: EASE_OUT };
+const SWAP_IN = { duration: 0.18, ease: EASE_OUT };
+const SWAP_OUT = { duration: 0.12, ease: EASE_OUT };
 
 /**
- * The icon reveal: the tile is not on screen, then it is, and the name field
- * gives up the room for it.
+ * The icon reveal — the name field gives up room for a tile that was not there.
  *
- * `ease-in-out`, NOT this file's `EASE_OUT`. Different job: `EASE_OUT` is for
- * something entering or leaving the screen, where the acceleration up front
- * reads as responsiveness. This is a RESIZE of a row already on screen — the
- * doctrine's "acceleration and deceleration of a car" case — and it wants a
- * curve that eases at both ends, or the row snaps to a stop.
- *
- * Width is the exception here, not the rule: the hard rule is transform and
- * opacity only, because layout properties re-layout every frame. It is
- * sanctioned when both ends are KNOWN rather than measured, which they are —
- * `0` and `size-14`'s `3.5rem`. There is no `auto` to measure and nothing to
- * reflow beyond this one row.
- *
- * Exit runs at ~77% of enter, per the same doctrine.
+ * `ease-in-out`, not this file's `EASE_OUT`: this is a RESIZE of a row already
+ * on screen, and an ease-out snaps it to a stop. Animating `width` is the
+ * sanctioned exception to transform-and-opacity-only — both ends are KNOWN
+ * (`0` and `ICON_WIDTH`), so there is no `auto` to measure and nothing outside
+ * this one row to reflow. Exit runs at ~77% of enter.
  */
 const EASE_IN_OUT: [number, number, number, number] = [0.77, 0, 0.175, 1];
 const ICON_REVEAL = { duration: 0.22, ease: EASE_IN_OUT };
@@ -145,8 +134,18 @@ export function NewWorkspacePage() {
   // One source for "is the icon column open" — the animation, the a11y
   // attributes and the inert gate all read the same value.
   const showIcon = state.name.trim().length > 0;
-  const { create, status, error: createError, phase, retry, canRetry } = useCreateWorkspace();
+  const { create, status, error: createError, retry, canRetry } = useCreateWorkspace();
   const submitting = status === 'creating';
+  /**
+   * The form is gone and `WorkspaceHandoff` holds the page.
+   *
+   * ONE flag over both waiting windows — the create being in flight, and the
+   * project existing while the wizard is still `null` — because the user is in
+   * one continuous wait across them and the screen should not change at the
+   * seam. Deriving it here rather than testing both conditions at the JSX also
+   * means the two can never drift into a state that renders neither branch.
+   */
+  const handingOff = submitting || Boolean(onboardingProjectId);
 
   // Only surface a name error after the field has been left once. Validating
   // on the first keystroke would tell the user "Name is required" while they
@@ -248,160 +247,137 @@ export function NewWorkspacePage() {
         </Button>
       </div>
 
-      <header className="flex flex-col gap-2 text-center">
-        <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-          Create a workspace
-        </h1>
-        <p className="text-muted-foreground text-[15px] text-balance">
-          A workspace is where your agents, files and sessions live.
-        </p>
-      </header>
+      {/* TWO states, one swap — see the `SWAP_IN`/`SWAP_OUT` doc comment above.
+          `initial={false}` so neither side fades in on first paint.
 
-      {/* The onboarding param OWNS this page. `/new?onboarding=<id>` means the
-          workspace already exists, so neither the create form nor
-          `ProvisionProgress` has anything left to say — and on a reload the
-          create hook restarts at `status: 'idle'`, which used to paint the live
-          form (Name input, `autoFocus`, fully interactive) in the window before
-          `getProjectDetail` settles. A user who reloaded mid-onboarding could
-          type into it, and if `['accounts']` resolved first, Enter fired a
-          SECOND `runCreate`.
+          `handingOff` deliberately folds the onboarding param in with
+          `submitting` rather than gating the whole block on it separately. The
+          param OWNS this page: `/new?onboarding=<id>` means the workspace
+          already exists, so the create form has nothing left to say — and on a
+          RELOAD the create hook restarts at `status: 'idle'`, so `submitting`
+          alone would paint the live form (Name input, `autoFocus`, fully
+          interactive) in the window before `getProjectDetail` settles. A user
+          who reloaded mid-onboarding could type into it, and if `['accounts']`
+          resolved first, Enter fired a SECOND `runCreate`.
 
-          Inside the gate: the form <-> ProvisionProgress swap's ONE transition
-          — see the `SWAP_IN`/`SWAP_OUT` doc comment above. `mode="wait"`, not a
-          true overlap: the two states are different heights, so a moment with
-          neither mounted reads better than both visible at once at two
-          different rhythms. `initial={false}` — the form must not fade in on
-          first paint, only on the swap back from the panel. */}
-      {!onboardingProjectId && (
-        <AnimatePresence mode="wait" initial={false}>
-          {submitting ? (
-            <m.div
-              key="creating"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: SWAP_IN }}
-              exit={{ opacity: 0, transition: SWAP_OUT }}
+          The header lives INSIDE the form branch, not above the swap. It is
+          the form's title — "Create a workspace" above a screen that is already
+          creating one is stale, and leaving it mounted would make the swap two
+          motions (a block fading while a heading holds still) instead of the
+          page turning over as one thing. */}
+      <AnimatePresence mode="wait" initial={false}>
+        {handingOff ? (
+          <m.div
+            key="handoff"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: SWAP_IN }}
+            exit={{ opacity: 0, transition: SWAP_OUT }}
+          >
+            {/* `state.name` survives the whole handoff — this component is a
+                sibling of the form in the same render, not a route away — so
+                the name shown is the one submitted, never re-fetched. */}
+            <WorkspaceHandoff workspaceName={state.name.trim()} projectId={onboardingProjectId} />
+          </m.div>
+        ) : (
+          <m.div
+            key="form"
+            className="flex flex-col gap-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: SWAP_IN }}
+            exit={{ opacity: 0, transition: SWAP_OUT }}
+          >
+            <header className="flex flex-col gap-2 text-center">
+              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
+                Create a workspace
+              </h1>
+              <p className="text-muted-foreground text-[15px] text-balance">
+                A workspace is where your agents, files and sessions live.
+              </p>
+            </header>
+
+            <form
+              className="flex flex-col space-y-8"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setTouched(true);
+                if (!canSubmit) return;
+                void create(effectiveState);
+              }}
             >
-              <ProvisionProgress workspaceName={state.name.trim()} current={phase} />
-            </m.div>
-          ) : (
-            <m.div
-              key="form"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: SWAP_IN }}
-              exit={{ opacity: 0, transition: SWAP_OUT }}
-            >
-              <form
-                className="flex flex-col space-y-8"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  setTouched(true);
-                  if (!canSubmit) return;
-                  void create(effectiveState);
-                }}
-              >
-                {state.templateId && (
-                  <p className="text-muted-foreground text-center text-xs">
-                    This workspace will be seeded from the template you picked.
-                  </p>
-                )}
+              {state.templateId && (
+                <p className="text-muted-foreground text-center text-xs">
+                  This workspace will be seeded from the template you picked.
+                </p>
+              )}
 
-                {/* No card. A single question does not need a bordered surface
+              {/* No card. A single question does not need a bordered surface
                     to group it — the border was drawing a box around one field
                     on an otherwise empty page, which reads as chrome rather than
                     structure. */}
-                <div className="flex flex-col space-y-4">
-                  {/* Held back until the workspace has a name, for the same
-                      reason Advanced is: an icon is a decision about a thing
-                      that does not exist yet, and an empty page led by a smiley
-                      asks you to decorate before it asks you to name.
-
-                      Once named, the tile is never empty — it shows the initial
-                      the workspace would carry anyway, drawn by `EntityAvatar`
-                      exactly as the switcher rows and the project cards draw it.
-                      So the default is a real default you can see and keep, not
-                      a placeholder demanding to be filled. The caption says
-                      "Change" rather than "Select" for the same reason: there is
-                      already something there. */}
-                  {/* One row: the icon, then the labelled name field.
+              <div className="flex flex-col space-y-4">
+                {/* One row: the icon, then the labelled name field.
                       `grid-cols-[auto_1fr]` rather than a flex row — the icon
                       takes exactly its own width and the field takes the rest,
                       with no flex-basis guessing. `items-end` bottom-aligns the
-                      tile with the input rather than the label above it, so the
-                      two controls sit on one baseline.
+                      tile with the input rather than the label above it.
 
-                      The tile is never blank: with a name it shows that
-                      workspace's initial through `EntityAvatar` — the same
-                      chalk-coloured tile the switcher rows and project cards
-                      draw — so the default is a real default you can see and
-                      keep rather than a placeholder demanding to be filled.
-                      Before a name it falls back to the neutral face.
+                      The icon is held back until the workspace has a name, for
+                      the same reason Advanced is: it is a decision about a thing
+                      that does not exist yet, and an empty page led by a smiley
+                      asks you to decorate before it asks you to name. Once
+                      named the tile is never blank — it shows the initial the
+                      workspace would carry anyway, through `EntityAvatar`, the
+                      same chalk tile the switcher rows and project cards draw.
+                      So the default is a real default you can see and keep.
 
-                      Hidden until the name exists, and it does not pop in — it
-                      OPENS the column. Beside the input the tile owns a track,
-                      so appearing instantly would jump the field sideways
-                      mid-word, right where the cursor is. Animating the width
-                      turns that jump into the row making room, which is what
-                      actually happened.
-
-                      No `gap` on the grid: a gap is there whether the column is
-                      or not, so it would hold a hole open before the first
-                      keystroke and make the reveal start from a ledge. The
-                      spacing lives INSIDE the collapsing box as `pr-3`, which
-                      border-box sizing clamps to nothing at `width: 0`. */}
-                  <div
-                    className={cn(
-                      'grid grid-cols-[auto_1fr] items-end',
-                      state.icon && 'gap-1.5',
-                    )}
+                      No `gap` while the column can still be closed: a gap is
+                      there whether the icon is or not, so it would hold a hole
+                      open before the first keystroke and make the reveal start
+                      from a ledge. The spacing lives INSIDE the collapsing box
+                      as an animated `paddingRight`. Once an icon is PICKED the
+                      column is open for good and the tile is tinted, so the
+                      extra `gap-1.5` is safe and keeps the fill off the input. */}
+                <div className={cn('grid grid-cols-[auto_1fr] items-end', state.icon && 'gap-1.5')}>
+                  <m.div
+                    // ONE element, always mounted, retargeting its width —
+                    // NOT an AnimatePresence enter/exit. Mount/unmount
+                    // restarts from zero, so backspacing to empty and typing
+                    // again (one space flips `trim()`) put a second tile in
+                    // the grid track while the first was still leaving. A
+                    // persistent element blends instead: interrupt it
+                    // mid-collapse and it turns around from where it is.
+                    initial={false}
+                    animate={
+                      reduceMotion
+                        ? { opacity: showIcon ? 1 : 0 }
+                        : {
+                            width: showIcon ? ICON_WIDTH : 0,
+                            // Animated, not a static `pr-3`: border-box clamps
+                            // CONTENT, not padding, so a fixed padding-right
+                            // survives `width: 0` as a 12px stub holding the
+                            // column open. This closes it completely.
+                            paddingRight: showIcon ? '0.75rem' : 0,
+                            opacity: showIcon ? 1 : 0,
+                            filter: showIcon ? 'blur(0px)' : 'blur(2px)',
+                          }
+                    }
+                    transition={showIcon ? ICON_REVEAL : ICON_HIDE}
+                    // Collapsed, the box is still in the DOM at zero width —
+                    // without these it stays focusable and clickable.
+                    aria-hidden={!showIcon}
+                    inert={!showIcon ? true : undefined}
+                    className="overflow-hidden"
                   >
-                    <m.div
-                      // ONE element, always mounted, retargeting its width —
-                      // NOT an AnimatePresence enter/exit. Mount/unmount
-                      // restarts from zero, so backspacing to empty and typing
-                      // again put a second tile in the same grid track while the
-                      // first was still leaving: two boxes fighting over one
-                      // column. `trim()` makes that easy to hit, since a single
-                      // space flips it. A persistent element blends instead —
-                      // interrupt it mid-collapse and it turns around from where
-                      // it is, which is the whole reason the doctrine says
-                      // transitions rather than enter/exit for anything
-                      // retriggerable.
-                      initial={false}
-                      animate={
-                        reduceMotion
-                          ? { opacity: showIcon ? 1 : 0 }
-                          : {
-                              width: showIcon ? ICON_WIDTH : 0,
-                              // Animated, not a static `pr-3`: border-box clamps
-                              // CONTENT, not padding, so a fixed padding-right
-                              // survives `width: 0` as a 12px stub holding the
-                              // column open. This closes it completely.
-                              paddingRight: showIcon ? '0.75rem' : 0,
-                              opacity: showIcon ? 1 : 0,
-                              filter: showIcon ? 'blur(0px)' : 'blur(2px)',
-                            }
-                      }
-                      // Collapsing runs faster than opening, per the doctrine's
-                      // ~75-80% rule: taking room back should not cost the user
-                      // as long as giving it.
-                      transition={showIcon ? ICON_REVEAL : ICON_HIDE}
-                      // Collapsed, the box is still in the DOM at zero width.
-                      // Without these it stays focusable and clickable — an
-                      // invisible control the keyboard can land on.
-                      aria-hidden={!showIcon}
-                      inert={!showIcon ? true : undefined}
-                      className="overflow-hidden"
-                    >
-                      <ProjectIconField
-                        value={state.icon}
-                        onChange={(emoji) => setState((s) => ({ ...s, icon: { emoji } }))}
-                        onGlyphChange={(glyph) => setState((s) => ({ ...s, icon: { glyph } }))}
-                        fallbackLabel={state.name}
-                        triggerClassName="size-10"
-                      />
-                    </m.div>
+                    <ProjectIconField
+                      value={state.icon}
+                      onChange={(emoji) => setState((s) => ({ ...s, icon: { emoji } }))}
+                      onGlyphChange={(glyph) => setState((s) => ({ ...s, icon: { glyph } }))}
+                      fallbackLabel={state.name}
+                      triggerClassName="size-10"
+                    />
+                  </m.div>
 
-                    {/* NO `col-span-2` when the name is empty. It looks like it
+                  {/* NO `col-span-2` when the name is empty. It looks like it
                         should reclaim the width, but the icon is still a grid
                         item needing track 1 — so spanning both tracks pushes it
                         onto a SECOND ROW, and the tile lands above the field
@@ -409,36 +385,36 @@ export function NewWorkspacePage() {
                         animation. Unnecessary as well as harmful: with the icon
                         track collapsed to nothing, `1fr` already takes the whole
                         row. */}
-                    <div className="flex w-full min-w-0 flex-col space-y-3">
-                      <Label htmlFor="workspace-name">Workspace name</Label>
-                      <Input
-                        id="workspace-name"
-                        autoFocus
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        value={state.name}
-                        onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
-                        onBlur={() => setTouched(true)}
-                        placeholder="Workspace name"
-                        maxLength={WORKSPACE_NAME_MAX_LENGTH}
-                        size="md"
-                        className="w-full"
-                        aria-invalid={nameError ? true : undefined}
-                        aria-describedby={nameError ? 'workspace-name-error' : undefined}
-                      />
-                    </div>
+                  <div className="flex w-full min-w-0 flex-col space-y-3">
+                    <Label htmlFor="workspace-name">Workspace name</Label>
+                    <Input
+                      id="workspace-name"
+                      autoFocus
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      value={state.name}
+                      onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
+                      onBlur={() => setTouched(true)}
+                      placeholder="Workspace name"
+                      maxLength={WORKSPACE_NAME_MAX_LENGTH}
+                      size="md"
+                      className="w-full"
+                      aria-invalid={nameError ? true : undefined}
+                      aria-describedby={nameError ? 'workspace-name-error' : undefined}
+                    />
                   </div>
+                </div>
 
-                  {/* Below the grid, not inside the field's column: the message
+                {/* Below the grid, not inside the field's column: the message
                       is about the row as a whole and gets the full width rather
                       than wrapping inside the narrower right-hand track. */}
-                  {nameError ? (
-                    <p id="workspace-name-error" className="text-destructive text-xs">
-                      {nameError}
-                    </p>
-                  ) : null}
+                {nameError ? (
+                  <p id="workspace-name-error" className="text-destructive text-xs">
+                    {nameError}
+                  </p>
+                ) : null}
 
-                  {/* `isSubmittable`'s `accountCount < 1` floor already disables
+                {/* `isSubmittable`'s `accountCount < 1` floor already disables
                       the button here — this note is what stops that disabled
                       button from being unexplained. Gated on
                       `!accountsQuery.isLoading` so it cannot flash true during
@@ -447,19 +423,19 @@ export function NewWorkspacePage() {
                       text in the field group's own flow, same treatment as
                       `AdvancedFields`' GitHub-source note — no `InfoBanner`, no
                       second card. Account picking itself lives in the top bar. */}
-                  {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
-                    <p className="text-muted-foreground text-xs">
-                      You need owner or admin access in an account to create a workspace.
-                    </p>
-                  ) : null}
+                {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
+                  <p className="text-muted-foreground text-xs">
+                    You need owner or admin access in an account to create a workspace.
+                  </p>
+                ) : null}
 
-                  <AdvancedFields state={state} onChange={setState} />
-                </div>
+                <AdvancedFields state={state} onChange={setState} />
+              </div>
 
-                <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
-                  Create workspace
-                </Button>
-                {/* Form-level, not a field error: every failure `messageFor`
+              <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
+                Create workspace
+              </Button>
+              {/* Form-level, not a field error: every failure `messageFor`
                     (`use-create-workspace.ts`) maps — 403 wrong-account, 400
                     bad name, a managed-git-unavailable 503, a retryable 502, or
                     a generic retry hint — is about the SUBMIT, not one input,
@@ -481,69 +457,35 @@ export function NewWorkspacePage() {
                     hover:text-foreground` treatment — rather than introducing a
                     third button weight beside the primary submit and that
                     one. */}
-                {status === 'error' && createError ? (
-                  <div role="alert" className="flex flex-col items-center gap-1.5">
-                    <p className="text-destructive text-center text-xs">{createError}</p>
-                    {canRetry ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={retry}
-                      >
-                        Try again
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </form>
-            </m.div>
-          )}
-        </AnimatePresence>
-      )}
+              {status === 'error' && createError ? (
+                <div role="alert" className="flex flex-col items-center gap-1.5">
+                  <p className="text-destructive text-center text-xs">{createError}</p>
+                  {canRetry ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={retry}
+                    >
+                      Try again
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </form>
+          </m.div>
+        )}
+      </AnimatePresence>
 
-      {/* The way into the workspace, always. The gate above means the page has
-          no other content while the param is set, and the wizard is `null`
-          until `getProjectDetail` settles — which, on an ERROR, it does: the
-          wizard then renders rather than staying null (see `onboarding-param.ts`
-          for why, and for why that is tolerable). So this link covers the
-          in-flight window and a query that never settles at all, not a
-          permanently-null wizard.
-          The workspace has already been created and paid for, so a state with
-          no route into it is not one this page is allowed to reach. This sits
-          in normal flow rather than behind a readiness check because the wizard
-          is a fullscreen portal: whenever it mounts, it covers this. */}
-      {onboardingProjectId && (
-        <div className="flex flex-col items-center gap-3">
-          <Loading className="size-4" />
-          <Link
-            href={`/projects/${encodeURIComponent(onboardingProjectId)}`}
-            className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-4"
-          >
-            Go to workspace
-          </Link>
-        </div>
-      )}
-
-      {/* Onboarding runs HERE, not on the workspace page.
-
-          BOTH exits stamp `metadata.onboarding_completed_at`, so the copy of
-          this wizard mounted on the project shell self-gates to `completed` and
-          renders nothing when we arrive. Skipping stamps too: this wizard has
-          already warmed the SAME `qk.project.detail(id)` entry the shell reads,
-          so an unstamped project meant the shell's copy — which has no skip
-          control and cannot be dismissed — reopened the instant the user
-          landed. Skipping was strictly worse than not skipping.
+      {/* Onboarding runs HERE, not on the workspace page. It is a fullscreen
+          portal, so whenever it mounts it covers the handoff above — which is
+          exactly why the handoff has no "finished" state of its own to render.
 
           `key` on the project: `index`, `domain` and the survey `answers` are
           plain `useState` inside the wizard, none keyed on the project, so a
           change of id on a mounted instance would PATCH workspace A's answers
-          onto workspace B.
-
-          `encodeURIComponent` on the way out mirrors `onboardingPath` on the
-          way in — asymmetric encoding builds a broken URL for any id carrying a
-          character that is not URL-safe. */}
+          onto workspace B. */}
       {onboardingProjectId && (
         <ProjectOnboardingWizard
           key={onboardingProjectId}

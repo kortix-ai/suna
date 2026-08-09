@@ -103,11 +103,12 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     // count below cannot tell which element carries the treatment.
     expect(region).toContain('text-muted-foreground hover:text-foreground');
 
-    // Three users of the ONE treatment: `Log out`, `Try again`, and the
-    // onboarding escape link (`Go to workspace`, rendered while
-    // `?onboarding=<id>` owns the page). Every quiet control here shares it.
+    // Two users of the ONE treatment in this file: `Log out` and `Try again`.
+    // The third — the onboarding escape link (`Go to workspace`) — moved into
+    // `workspace-handoff.tsx` with the rest of the waiting state, and carries
+    // the same treatment there (asserted in `workspace-handoff.test.tsx`).
     const treatmentMatches = page.match(/text-muted-foreground hover:text-foreground/g) ?? [];
-    expect(treatmentMatches).toHaveLength(3);
+    expect(treatmentMatches).toHaveLength(2);
   });
 
   test('the retry control does not appear when status !== "error" — the whole region is gated on status', () => {

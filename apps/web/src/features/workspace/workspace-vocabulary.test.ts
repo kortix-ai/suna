@@ -124,13 +124,19 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
     );
   });
 
-  test('account-picker.tsx renders the Account field label', () => {
+  test('account-picker.tsx names its control Account', () => {
     const code = stripComments(
       readFileSync(join(import.meta.dir, 'new/account-picker.tsx'), 'utf8'),
     );
-    // The full element, not a bare `.toContain('Account')` — this file also
+    // The full attribute, not a bare `.toContain('Account')` — this file also
     // imports `KortixAccount`, so a bare substring check would keep passing
-    // even if the rendered `<Label>` itself were deleted.
-    expect(code).toContain('<Label htmlFor="workspace-account">Account</Label>');
+    // even if the control's name were deleted.
+    //
+    // `aria-label`, not the `<Label htmlFor="workspace-account">` this asserted
+    // through 03486df38b: the picker moved into `/new`'s top bar, where a
+    // visible field label would read as a form field on a page whose form is
+    // one question. The accessible NAME is the contract, not the element that
+    // carries it.
+    expect(code).toContain('aria-label="Account"');
   });
 });

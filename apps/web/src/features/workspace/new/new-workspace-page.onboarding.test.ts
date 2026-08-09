@@ -66,8 +66,10 @@ describe('/new hosts the onboarding wizard', () => {
    */
   test('every trip into the workspace percent-encodes the id, matching onboardingPath', () => {
     expect(code).not.toContain('`/projects/${onboardingProjectId}`');
+    // Two here — the wizard's `onCompleted` and `onSkip`. The third exit, the
+    // escape link, moved into `workspace-handoff.tsx` and encodes there.
     expect(code.match(/\/projects\/\$\{encodeURIComponent\(onboardingProjectId\)\}/g)?.length).toBe(
-      3,
+      2,
     );
   });
 
@@ -91,26 +93,33 @@ describe('/new hosts the onboarding wizard', () => {
  * `runCreate`.
  */
 describe('/new: the onboarding param owns the page', () => {
-  test('neither the form nor ProvisionProgress renders while an onboarding project is in the URL', () => {
-    expect(code).toContain('{!onboardingProjectId && (');
-    expect(code).toContain('<AnimatePresence mode="wait" initial={false}>');
-    const gated = code.slice(code.indexOf('{!onboardingProjectId && ('));
-    expect(gated.indexOf('<AnimatePresence')).toBeGreaterThan(-1);
-    // The gate must sit OUTSIDE the AnimatePresence, not inside one of its
-    // branches — an inner guard still mounts the form's <input autoFocus>.
-    expect(gated.indexOf('<AnimatePresence')).toBeLessThan(gated.indexOf('<form'));
+  test('the onboarding param forces the handoff branch, so the form never renders under it', () => {
+    // ONE derived flag, not two conditions tested separately at the JSX — the
+    // second shape can drift into a state that renders neither branch.
+    expect(code).toContain('const handingOff = submitting || Boolean(onboardingProjectId);');
+    expect(code).toContain('{handingOff ? (');
+  });
+
+  test('the form is the OTHER branch of that swap, so the two can never both mount', () => {
+    // A reload of `/new?onboarding=<id>` restarts the create hook at
+    // `status: 'idle'`, so `submitting` alone would paint the form — <input
+    // autoFocus> and all — while `getProjectDetail` is still in flight.
+    const swap = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
+    expect(swap).not.toBeNull();
+    const [, handoffBranch, formBranch] = swap ?? [];
+    expect(handoffBranch).toContain('<WorkspaceHandoff');
+    expect(handoffBranch).not.toContain('<form');
+    expect(formBranch).toContain('<form');
   });
 
   /**
    * With the form gated off, a detail query still in flight (or errored) would
-   * leave nothing on screen but the header. The workspace has already been
-   * created and paid for, so there must always be a way into it.
+   * leave nothing on screen. The workspace has already been created and paid
+   * for, so there must always be a way into it — `WorkspaceHandoff` owns that
+   * link now, which is why it takes the project id at all.
    */
-  test('an explicit way into the workspace is always on the page', () => {
-    expect(code).toContain("import Loading from '@/components/ui/loading'");
-    expect(code).toContain("import Link from 'next/link'");
-    expect(code).toContain('href={`/projects/${encodeURIComponent(onboardingProjectId)}`}');
-    expect(code).toContain('Go to workspace');
+  test('the handoff is handed the project id, so it can offer a way into the workspace', () => {
+    expect(code).toContain('projectId={onboardingProjectId}');
   });
 
   /**
