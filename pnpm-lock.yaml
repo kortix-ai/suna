@@ -982,8 +982,8 @@ importers:
         specifier: ^3.3.0
         version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(katex@0.16.47)
       '@tiptap/extension-mention':
-        specifier: ^3
-        version: 3.29.2(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(@tiptap/suggestion@3.29.2)
+        specifier: 3.27.1
+        version: 3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(@tiptap/suggestion@3.27.1)
       '@tiptap/extension-paragraph':
         specifier: ^3.14.0
         version: 3.27.1(@tiptap/core@3.27.1)
@@ -1030,8 +1030,8 @@ importers:
         specifier: ^3.3.0
         version: 3.27.1
       '@tiptap/suggestion':
-        specifier: ^3
-        version: 3.29.2(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
+        specifier: 3.27.1
+        version: 3.27.1(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
       '@types/jszip':
         specifier: ^3.4.0
         version: 3.4.1
@@ -13430,16 +13430,16 @@ packages:
       katex: 0.16.47
     dev: false
 
-  /@tiptap/extension-mention@3.29.2(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(@tiptap/suggestion@3.29.2):
-    resolution: {integrity: sha512-WF8ugDa2IRbgyRW+PffPYg8ZI+Qp9azvIsNoyuf+VSg5Vp7ze2TuJXUTObSckyiN5Ann8bDNM9Hbu3TdoI0DFQ==}
+  /@tiptap/extension-mention@3.27.1(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)(@tiptap/suggestion@3.27.1):
+    resolution: {integrity: sha512-QfaKdl8PET01JvEFrIjMcOC1iYrBm2tsZEn07J1AaCqClW9iWcg/nCAdkdFhVir1fC54SLuaui43xslBawQRFg==}
     peerDependencies:
-      '@tiptap/core': 3.29.2
-      '@tiptap/pm': 3.29.2
-      '@tiptap/suggestion': 3.29.2
+      '@tiptap/core': 3.27.1
+      '@tiptap/pm': 3.27.1
+      '@tiptap/suggestion': 3.27.1
     dependencies:
       '@tiptap/core': 3.27.1(@tiptap/pm@3.27.1)
       '@tiptap/pm': 3.27.1
-      '@tiptap/suggestion': 3.29.2(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
+      '@tiptap/suggestion': 3.27.1(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1)
     dev: false
 
   /@tiptap/extension-ordered-list@3.27.1(@tiptap/extension-list@3.27.1):
@@ -13623,12 +13623,12 @@ packages:
       '@tiptap/pm': 3.27.1
     dev: false
 
-  /@tiptap/suggestion@3.29.2(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1):
-    resolution: {integrity: sha512-ZEhRm0gnRCwCScR9IrnIBhm9sr6U8vpR9oeznYk3hiedZ48zsgohqvgoIYpWcwYWrT2Pb0NrfhCT8IuSzdJHzQ==}
+  /@tiptap/suggestion@3.27.1(@floating-ui/dom@1.7.6)(@tiptap/core@3.27.1)(@tiptap/pm@3.27.1):
+    resolution: {integrity: sha512-GNBPRav+lAfXzqmmUAS6ylRAn3G8JfsP6XosjoORxJIQJLx1ktDqwp6tm1Vgz9aGIM2TrBxLS1uBbI1Gb2/1VA==}
     peerDependencies:
       '@floating-ui/dom': ^1.0.0
-      '@tiptap/core': 3.29.2
-      '@tiptap/pm': 3.29.2
+      '@tiptap/core': 3.27.1
+      '@tiptap/pm': 3.27.1
     dependencies:
       '@floating-ui/dom': 1.7.6
       '@tiptap/core': 3.27.1(@tiptap/pm@3.27.1)

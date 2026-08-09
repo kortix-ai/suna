@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import type { Editor, JSONContent } from '@tiptap/core';
+import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 
@@ -23,6 +24,19 @@ export interface ComposerEditorHandle {
   clear(): void;
   focus(): void;
   isEmpty(): boolean;
+  /**
+   * The contenteditable DOM node (`editor.view.dom`). `useComposerFocus`
+   * (`hooks/use-composer-focus.ts`) needs a `RefObject<HTMLElement>` aimed
+   * at this exact element — it calls `.focus()` and
+   * `.contains(document.activeElement)` on it directly — and `ComposerEditor`
+   * otherwise exposes no element, no `editor`, and `EditorContent` itself
+   * takes no ref. `autoFocus` only covers TipTap's own mount-time
+   * `autofocus`; it does not cover re-focus-when-revealed, the
+   * `focus-session-textarea` event, or the type-ahead redirect, all of which
+   * live in `useComposerFocus`. Wiring the hook to this element is Task 12's
+   * job, not this one's — this only exposes the element.
+   */
+  getElement(): HTMLElement | null;
 }
 
 export interface ComposerEditorProps {
@@ -59,6 +73,35 @@ export function trackEmptyBoundary(onEmptyChange: (isEmpty: boolean) => void) {
 }
 
 /**
+ * Enter submits, Shift+Enter inserts a newline — the composer's only custom
+ * keymap behaviour. Exported (same reasoning as `trackEmptyBoundary`) so
+ * it's directly testable without a DOM: it never touches `view`, only the
+ * event and the two live callbacks it's given.
+ *
+ * `isDisabled()` is a getter, not a boolean, because `editable={false}`
+ * alone does NOT stop this from firing (fix round 1, Important 1):
+ * `editable` only blocks ProseMirror from applying document-changing
+ * transactions, it does not stop `handleKeyDown` from being invoked at all,
+ * and `onSubmit()` is an imperative side effect this handler calls directly
+ * — nothing about a disabled editor would otherwise stop a stray Enter from
+ * submitting.
+ */
+export function createSubmitOnEnterHandler(
+  onSubmit: () => void,
+  isDisabled: () => boolean,
+): (view: EditorView, event: KeyboardEvent) => boolean {
+  return (_view, event) => {
+    if (isDisabled()) return false;
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      onSubmit();
+      return true;
+    }
+    return false;
+  };
+}
+
+/**
  * Turn plain text into ProseMirror JSON paragraph nodes, one per `\n`-
  * separated line. Passed as JSON — never as a bare string — because
  * `editor.commands.setContent()` / `insertContent()` parse a bare string as
@@ -75,19 +118,52 @@ function textToParagraphs(text: string): JSONContent[] {
   }));
 }
 
+/**
+ * The DOM-free equivalent of an empty document. `editor.commands.clearContent()`
+ * (fix round 1, Decision 3) calls `setContent('')` internally — a bare
+ * string, always HTML-parsed, same as above. `clear()` uses this instead.
+ */
+const EMPTY_DOC: JSONContent = { type: 'doc', content: textToParagraphs('') };
+
 export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorProps>(
   function ComposerEditor({ placeholder, disabled, autoFocus, onSubmit, onEmptyChange }, ref) {
     // Mirrors use-composer-focus.ts's onTypeAheadRef: @tiptap/react only
-    // resyncs `onUpdate` when some OTHER option also changed (it explicitly
-    // ignores onUpdate identity in its own option comparison), so a fresh
-    // inline callback each render would otherwise go stale.
+    // resyncs `onUpdate`/other callback options when some OTHER option also
+    // changed (it explicitly ignores their identity in its own option
+    // comparison), so a fresh inline callback each render would otherwise go
+    // stale. Applied to every value a stable, memoized-once closure below
+    // needs to read fresh: onEmptyChange, onSubmit, disabled, placeholder.
     const onEmptyChangeRef = useRef(onEmptyChange);
     useEffect(() => {
       onEmptyChangeRef.current = onEmptyChange;
     }, [onEmptyChange]);
 
+    const onSubmitRef = useRef(onSubmit);
+    useEffect(() => {
+      onSubmitRef.current = onSubmit;
+    }, [onSubmit]);
+
+    const disabledRef = useRef(disabled ?? false);
+    useEffect(() => {
+      disabledRef.current = disabled ?? false;
+    }, [disabled]);
+
+    const placeholderRef = useRef(placeholder);
+    useEffect(() => {
+      placeholderRef.current = placeholder;
+    }, [placeholder]);
+
     const handleUpdate = useMemo(
       () => trackEmptyBoundary((isEmpty) => onEmptyChangeRef.current(isEmpty)),
+      [],
+    );
+
+    const handleKeyDown = useMemo(
+      () =>
+        createSubmitOnEnterHandler(
+          () => onSubmitRef.current(),
+          () => disabledRef.current,
+        ),
       [],
     );
 
@@ -95,7 +171,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       immediatelyRender: false, // required: Next SSR
       autofocus: autoFocus,
       editable: !disabled,
-      extensions: [...baseExtensions(placeholder), MentionNode],
+      extensions: [...baseExtensions(() => placeholderRef.current), MentionNode],
       editorProps: {
         attributes: {
           role: 'textbox',
@@ -103,17 +179,35 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           'aria-label': 'Message input',
           class: 'outline-none min-h-[3rem] max-h-[12.5rem] overflow-y-auto',
         },
-        handleKeyDown: (_view, event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            onSubmit();
-            return true;
-          }
-          return false;
-        },
+        handleKeyDown,
       },
       onUpdate: handleUpdate,
     });
+
+    // `editable` in the useEditor() options above is honoured ONLY at
+    // construction (fix round 1, Important 1): @tiptap/react's own
+    // per-render resync deliberately overwrites `editable` with the editor's
+    // EXISTING value (`@tiptap/react/dist/index.js`:418-422,
+    // `setOptions({ ...current, editable: this.editor.isEditable })`) and
+    // never calls `setEditable` itself. `setEditable` is the only thing that
+    // actually toggles it after mount.
+    useEffect(() => {
+      editor?.setEditable(!disabled);
+    }, [editor, disabled]);
+
+    // Forces the Placeholder plugin to recompute its decorations (fix round
+    // 1, Important 2). `baseExtensions`'s `getPlaceholder` already reads
+    // `placeholderRef.current` fresh on every recompute, but ProseMirror only
+    // recomputes decorations on a view redraw — a ref mutation with no
+    // dispatched transaction doesn't trigger one by itself. A no-op
+    // transaction (`docChanged: false`) forces exactly that redraw without
+    // touching the document, and does not fire `onUpdate` (its guard is
+    // `transactions.some(tr => tr.docChanged)`), so this can never trip
+    // trackEmptyBoundary.
+    useEffect(() => {
+      if (!editor || editor.isDestroyed) return;
+      editor.view.dispatch(editor.state.tr);
+    }, [editor, placeholder]);
 
     useImperativeHandle(
       ref,
@@ -130,9 +224,10 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           }
           editor.commands.focus('end');
         },
-        clear: () => editor?.commands.clearContent(),
+        clear: () => editor?.commands.setContent(EMPTY_DOC),
         focus: () => editor?.commands.focus('end'),
         isEmpty: () => editor?.isEmpty ?? true,
+        getElement: () => (editor && !editor.isDestroyed ? editor.view.dom : null),
       }),
       [editor],
     );
