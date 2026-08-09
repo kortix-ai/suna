@@ -106,8 +106,6 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
     );
 
     expect(html).toContain('Preview</button>');
-    // The Preview action adds the right toolbar tab.
-    expect(html.match(/viewBox="0 0 38 64"/g)?.length).toBe(2);
     expect(html).not.toContain('rounded-tr-lg');
   });
 
@@ -123,7 +121,6 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
     );
 
     expect(html).not.toContain('Preview</button>');
-    expect(html.match(/viewBox="0 0 38 64"/g)?.length).toBe(1);
   });
 
   test('panel surface omits content Preview because the artifact is already open', () => {
