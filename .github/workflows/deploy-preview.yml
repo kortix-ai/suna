@@ -264,7 +264,7 @@ jobs:
             "${api}/v13/deployments?teamId=${TEAM_ID}&forceNew=1&skipAutoDetectionConfirmation=1" \
             "${auth[@]}" -H 'Content-Type: application/json' \
             -d "$(jq -n --arg n "$name" --argjson r "$repo_id" --arg b "$BRANCH" \
-              '{name:$n,target:"preview",gitSource:{type:"github",repoId:$r,ref:$b}}')")"
+              '{name:$n,gitSource:{type:"github",repoId:$r,ref:$b}}')")"
           if [ "$deployment_code" != 200 ] && [ "$deployment_code" != 201 ]; then
             jq '{error}' /tmp/vercel-deployment.json
             echo "::error::Vercel deployment creation returned HTTP ${deployment_code}."
