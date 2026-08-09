@@ -676,8 +676,7 @@ export async function observePlatinumSandboxStart(input: {
         observationFailures = 0;
       }
     } catch (error) {
-      const isEventualNotFound = error instanceof PlatinumHttpError && error.status === 404;
-      if (!isEventualNotFound && !isRetryablePlatinumError(error)) throw error;
+      if (!isRetryablePlatinumError(error)) throw error;
       observationFailures += 1;
       if (shouldReportObservationFailure(observationFailures)) {
         console.warn(

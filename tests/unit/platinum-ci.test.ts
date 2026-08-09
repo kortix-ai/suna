@@ -289,6 +289,22 @@ describe('Platinum CI worker plan', () => {
     })).rejects.toThrow('within 2700000ms');
   });
 
+  test('fails immediately when Platinum deletes a provisioning worker', async () => {
+    let now = 0;
+    await expect(observePlatinumSandboxStart({
+      sandbox: { id: 'worker', state: 'provisioning' },
+      startedAt: 0,
+      timeoutMs: 100,
+      pollMs: 10,
+      now: () => now,
+      sleep: async (delay) => { now += delay; },
+      readSandbox: async () => {
+        throw new PlatinumHttpError('sandbox not found', 404);
+      },
+    })).rejects.toThrow('sandbox not found');
+    expect(now).toBe(10);
+  });
+
   test('rejects values that could alter the Git fetch command', () => {
     expect(() =>
       validatePlatinumCiInput({
