@@ -34,6 +34,7 @@ import './routes/r9';
 import './routes/r10';
 import './routes/r11';
 import './routes/goals-tasks';
+import './routes/task-control-plane';
 import './routes/agent-scope';
 import './routes/agent-config';
 import './routes/gateway';

@@ -879,7 +879,9 @@ describe('Preview proxy: forwarding', () => {
       llmGatewayDenyEnv: '',
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
-      opencodeEnv: {},
+      opencodeEnv: {
+        KORTIX_API_URL: 'https://api.kortix.com/v1',
+      },
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });

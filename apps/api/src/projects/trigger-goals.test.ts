@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { META_AGENT_NAME } from '@kortix/shared';
+import { AGI_AGENT_NAME } from '@kortix/shared';
 import { goalPushTriggerSlug } from '@kortix/manifest-schema';
 import { extractGoals, extractTriggers, parseManifestString, type GitGoalSpec } from './triggers';
 import {
@@ -58,7 +58,7 @@ describe('goal manifest parsing and trigger desugaring', () => {
     });
   });
 
-  test('desugars each active pushed goal into exactly one reusable meta-agent cron trigger', () => {
+  test('desugars each active pushed goal into exactly one reusable AGI cron trigger', () => {
     const loaded = extractTriggers(
       manifest(`  - slug: launch
     title: Launch the product
@@ -76,8 +76,8 @@ describe('goal manifest parsing and trigger desugaring', () => {
       path: 'kortix.yaml#goals.launch.push',
       name: 'Goal push: Launch the product',
       type: 'cron',
-      agent: META_AGENT_NAME,
-      platformMetaGoalPush: true,
+      agent: AGI_AGENT_NAME,
+      platformAgiGoalPush: true,
       goalSlug: 'launch',
       enabled: true,
       cron: '0 0 9 * * *',
@@ -144,7 +144,7 @@ describe('goal manifest parsing and trigger desugaring', () => {
     expect(loaded).toEqual({ specs: [], errors: [] });
   });
 
-  test('uses an explicit goal agent instead of the reserved meta agent', () => {
+  test('uses an explicit goal agent instead of the reserved AGI agent', () => {
     const loaded = extractTriggers(
       manifest(`  - slug: delegated
     title: Delegated
@@ -157,24 +157,24 @@ describe('goal manifest parsing and trigger desugaring', () => {
 
     expect(loaded.errors).toEqual([]);
     expect(loaded.specs[0]!.agent).toBe('worker');
-    expect(loaded.specs[0]!.platformMetaGoalPush).toBeUndefined();
+    expect(loaded.specs[0]!.platformAgiGoalPush).toBeUndefined();
   });
 
-  test('treats explicit meta as the reserved platform goal coordinator', () => {
+  test('treats explicit agi as the reserved platform goal coordinator', () => {
     const loaded = extractTriggers(
       manifest(`  - slug: coordinated
     title: Coordinated
     done_when: Done
     status: active
     push: "0 0 9 * * *"
-    agent: meta
+    agent: agi
 `),
     );
 
     expect(loaded.errors).toEqual([]);
     expect(loaded.specs[0]).toMatchObject({
-      agent: META_AGENT_NAME,
-      platformMetaGoalPush: true,
+      agent: AGI_AGENT_NAME,
+      platformAgiGoalPush: true,
     });
   });
 

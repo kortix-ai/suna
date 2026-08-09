@@ -31,7 +31,7 @@ export type FeatureFlagKey =
   | 'voice'
   | 'llm_gateway'
   | 'review_center'
-  | 'meta_agent'
+  | 'agi'
   | 'apps';
 
 /**
@@ -48,7 +48,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'voice',
   'llm_gateway',
   'review_center',
-  'meta_agent',
+  'agi',
   'apps',
 ] as const;
 

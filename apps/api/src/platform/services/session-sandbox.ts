@@ -14,7 +14,7 @@
 
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
+import { AGI_SANDBOX_SLUG, isAgiAgentName } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
@@ -38,7 +38,7 @@ import {
 } from './sandbox-init-state';
 import {
   ensureSandboxImage,
-  ensureMetaSandboxImage,
+  ensureAgiSandboxImage,
   deleteSandboxImage,
   resolveTemplate,
   DEFAULT_SANDBOX_SLUG,
@@ -60,7 +60,7 @@ import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-er
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
-import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { platformAgiAgentGrant } from '../../projects/lib/platform-agi-agent';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -138,12 +138,12 @@ async function mintConnectorToken(opts: {
   agentName: string;
   gitProject: GitBackedProject;
 }): Promise<string | null> {
-  const platformMetaAgent = isMetaAgentName(opts.agentName);
+  const platformAgiAgent = isAgiAgentName(opts.agentName);
   // The reserved coordinator uses a platform-owned full project grant. It acts
   // as the launching user and never resolves through a project-declared agent
   // or standing service account.
-  const [agentGrant, serviceAccountId] = platformMetaAgent
-    ? [platformMetaAgentGrant(), null]
+  const [agentGrant, serviceAccountId] = platformAgiAgent
+    ? [platformAgiAgentGrant(), null]
     : await Promise.all([
         // Resolve the per-session grant AND the agent's standing-identity
         // service account in parallel. The SA resolution is FAIL-SAFE: on error
@@ -305,8 +305,8 @@ export async function provisionSessionSandbox(opts: {
     gitProject: GitBackedProject,
     targetProvider: string,
   ): Promise<EnsureSandboxImageResult> =>
-    slug === META_SANDBOX_SLUG
-      ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
+    slug === AGI_SANDBOX_SLUG
+      ? ensureAgiSandboxImage({ source: 'session-start', provider: targetProvider })
       : ensureSandboxImage(gitProject, {
           slug,
           accountId,

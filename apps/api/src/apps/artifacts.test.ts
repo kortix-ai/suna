@@ -6,6 +6,7 @@ import * as tar from 'tar';
 import {
   MAX_ARCHIVE_BYTES,
   appArtifactObjectPath,
+  externalizeAppArtifactUploadUrl,
   extractAppArchive,
   inspectAppArchive,
   retryAppArtifactStorage,
@@ -61,6 +62,24 @@ describe('App artifacts', () => {
     expect(() => appArtifactObjectPath('../account', 'project-1', 'artifact-1')).toThrow(
       /invalid characters/,
     );
+  });
+
+  test('relays loopback signed uploads through a public Kortix API', () => {
+    const signed = 'http://127.0.0.1:54321/storage/v1/object/upload/sign/app-artifacts/account/project/artifact/source.tar.gz?token=signed-token';
+    expect(externalizeAppArtifactUploadUrl(
+      signed,
+      'https://example.trycloudflare.com',
+    )).toBe(
+      'https://example.trycloudflare.com/v1/app-artifact-uploads/app-artifacts/account/project/artifact/source.tar.gz?token=signed-token',
+    );
+  });
+
+  test('keeps directly routable signed uploads and local-only development unchanged', () => {
+    const remote = 'https://storage.example.com/object?signature=one';
+    expect(externalizeAppArtifactUploadUrl(remote, 'https://api.example.com')).toBe(remote);
+
+    const local = 'http://127.0.0.1:54321/storage/v1/object/upload/sign/app-artifacts/a/p/r/source.tar.gz?token=two';
+    expect(externalizeAppArtifactUploadUrl(local, 'http://localhost:8008')).toBe(local);
   });
 
   test('rejects traversal, absolute paths, devices, and escaping links', () => {

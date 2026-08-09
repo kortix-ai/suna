@@ -54,7 +54,7 @@ mock.module('../build-context', () => ({
     contextDir: '/tmp/kortix-e2b-adapter-test',
     composedPath: '/tmp/kortix-e2b-adapter-test/Dockerfile',
   }),
-  stageMetaBuildContext: async () => ({
+  stageAgiBuildContext: async () => ({
     contextDir: '/tmp/kortix-e2b-adapter-test',
     composedPath: '/tmp/kortix-e2b-adapter-test/Dockerfile',
   }),

@@ -6,7 +6,7 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
+import { AGI_AGENT_NAME, AGI_SANDBOX_SLUG, isAgiAgentName } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -103,10 +103,10 @@ import {
 } from './session-runtime-context';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import {
-  buildPlatformMetaOpenCodeConfig,
-  platformMetaAgentEnabledForSession,
-  resolvePlatformMetaSandbox,
-} from './platform-meta-agent';
+  buildPlatformAgiOpenCodeConfig,
+  platformAgiAgentEnabledForSession,
+  resolvePlatformAgiSandbox,
+} from './platform-agi-agent';
 
 export type SessionCreateError = {
   status: number;
@@ -296,7 +296,7 @@ export async function buildSessionSandboxEnvVars(input: {
   defaultBranch?: string;
   manifestPath?: string;
   /** The reserved platform coordinator receives no project checkout or secrets. */
-  platformMetaAgent?: boolean;
+  platformAgiAgent?: boolean;
   workspaceMode?: WorkspaceModeV2 | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
@@ -316,10 +316,10 @@ export async function buildSessionSandboxEnvVars(input: {
   // project's sandbox env is byte-for-byte unaffected by this. Gated on the
   // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
-  let compiledAgentConfig: string | null = input.platformMetaAgent
-    ? buildPlatformMetaOpenCodeConfig()
+  let compiledAgentConfig: string | null = input.platformAgiAgent
+    ? buildPlatformAgiOpenCodeConfig()
     : null;
-  if (input.defaultBranch && !input.platformMetaAgent) {
+  if (input.defaultBranch && !input.platformAgiAgent) {
     const gitProject = {
       projectId: input.projectId,
       repoUrl: input.repoUrl,
@@ -374,7 +374,7 @@ export async function buildSessionSandboxEnvVars(input: {
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
-  const grantEnvForSession = input.platformMetaAgent
+  const grantEnvForSession = input.platformAgiAgent
     ? []
     : intersectSecretGrants(agentGrantEnv, sessionPolicyRow?.secretsAllowlist ?? null);
 
@@ -499,8 +499,8 @@ export async function buildSessionSandboxEnvVars(input: {
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
     // agent workspace mode cannot re-enable the daemon's automatic clone.
-    ...(input.platformMetaAgent
-      ? { KORTIX_PROJECT_AUTO_CLONE: '0', KORTIX_META_AGENT: '1' }
+    ...(input.platformAgiAgent
+      ? { KORTIX_PROJECT_AUTO_CLONE: '0', KORTIX_AGI: '1' }
       : {}),
   };
 }
@@ -566,7 +566,7 @@ export async function createProjectSession(input: {
   enforceAccountCap?: boolean;
   metadata?: Record<string, unknown>;
   /** Trusted server-only proof that this create came from a goal push. */
-  platformMetaGoalPush?: boolean;
+  platformAgiGoalPush?: boolean;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
   /**
@@ -589,8 +589,8 @@ export async function createProjectSession(input: {
   apiKeyType?: string | null;
   inSession?: boolean | null;
   /** The caller's own session when the credential is session-bound (the
-   *  connector PAT injected into a sandbox). Used only to stop meta→meta
-   *  recursion — a meta coordinator must spawn project agents, not itself. */
+   *  connector PAT injected into a sandbox). Used only to stop AGI→AGI
+   *  recursion — an AGI coordinator must spawn project agents, not itself. */
   callerSessionId?: string | null;
   /** The request-time capability verdict for operator-managed (non-member)
    * connections. Personal connections ignore this and remain owner-only. */
@@ -604,7 +604,7 @@ export async function createProjectSession(input: {
   const requestMetadata = normalizeJsonObject(body.metadata);
   const projectId = project.projectId;
   const accountId = project.accountId;
-  let callerIsMeta = false;
+  let callerIsAgi = false;
   if (input.callerSessionId) {
     const [caller] = await db
       .select({ agentName: projectSessions.agentName })
@@ -616,10 +616,10 @@ export async function createProjectSession(input: {
         ),
       )
       .limit(1);
-    callerIsMeta = Boolean(caller && isMetaAgentName(caller.agentName));
+    callerIsAgi = Boolean(caller && isAgiAgentName(caller.agentName));
   }
   if (
-    callerIsMeta &&
+    callerIsAgi &&
     (Object.prototype.hasOwnProperty.call(body, 'initial_prompt') ||
       Object.prototype.hasOwnProperty.call(body, 'initialPrompt') ||
       Object.prototype.hasOwnProperty.call(body, 'pending_prompt') ||
@@ -791,34 +791,34 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
   const projectDefaultAgent = normalizeString(loadedAgents.defaultAgent) ?? mirroredDefaultAgent;
-  const metaAgentEnabled = platformMetaAgentEnabledForSession(
+  const agiEnabled = platformAgiAgentEnabledForSession(
     project.metadata,
     requestedAgent,
-    input.platformMetaGoalPush === true,
+    input.platformAgiGoalPush === true,
   );
-  // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
-  // the meta coordinator, and an omitted agent still defaults to it. The one
-  // exception is a caller that IS a meta session: its omitted agent resolves
+  // AGI→AGI recursion stop. Anyone — dashboard users included — may spawn
+  // the AGI coordinator, and an omitted agent still defaults to it. The one
+  // exception is a caller that IS an AGI session: its omitted agent resolves
   // to the project default (the observed failure was meta "spawning a worker"
-  // and getting another coordinator), and an explicit meta request is
+  // and getting another coordinator), and an explicit AGI request is
   // rejected.
   const agentName =
-    metaAgentEnabled && !requestedAgent && !callerIsMeta
-      ? META_AGENT_NAME
+    agiEnabled && !requestedAgent && !callerIsAgi
+      ? AGI_AGENT_NAME
       : resolveSessionAgentName({
           requestedAgent,
           manifestDefaultAgent: normalizeString(loadedAgents.defaultAgent),
           mirroredDefaultAgent,
         });
-  const platformMetaAgent = metaAgentEnabled && isMetaAgentName(agentName);
-  if (platformMetaAgent && callerIsMeta) {
+  const platformAgiAgent = agiEnabled && isAgiAgentName(agentName);
+  if (platformAgiAgent && callerIsAgi) {
     return {
       error: {
         status: 400,
         body: {
           error:
-            'The meta coordinator cannot spawn another meta coordinator — pick a project agent',
-          code: 'META_AGENT_RECURSION',
+            'The AGI coordinator cannot spawn another AGI coordinator — pick a project agent',
+          code: 'AGI_RECURSION',
         },
       },
     };
@@ -910,7 +910,7 @@ export async function createProjectSession(input: {
     }
   }
 
-  const agentRequiredConnectors = platformMetaAgent
+  const agentRequiredConnectors = platformAgiAgent
     ? []
     : requiredConnectorsForAgent(agentName, loadedAgents);
   const effectiveRequireConnectors = Array.from(
@@ -1027,7 +1027,7 @@ export async function createProjectSession(input: {
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
   if (
-    !platformMetaAgent &&
+    !platformAgiAgent &&
     projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)
   ) {
     const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
@@ -1045,18 +1045,18 @@ export async function createProjectSession(input: {
   );
   const requestedSandboxSlug = normalizeString(body.sandbox_slug ?? body.sandboxSlug);
   let sandboxSlug: string;
-  if (platformMetaAgent) {
-    // The meta coordinator is locked to its own sandbox. An explicit request for
+  if (platformAgiAgent) {
+    // The AGI coordinator is locked to its own sandbox. An explicit request for
     // any other slug is the only failure here, so scope the catch to this branch.
     try {
-      sandboxSlug = resolvePlatformMetaSandbox(requestedSandboxSlug);
+      sandboxSlug = resolvePlatformAgiSandbox(requestedSandboxSlug);
     } catch {
       return {
         error: {
           status: 400,
           body: {
-            error: `Agent "meta" always uses sandbox "${META_SANDBOX_SLUG}"`,
-            code: 'META_SANDBOX_LOCKED',
+            error: `Agent "agi" always uses sandbox "${AGI_SANDBOX_SLUG}"`,
+            code: 'AGI_SANDBOX_LOCKED',
           },
         },
       };
@@ -1101,7 +1101,7 @@ export async function createProjectSession(input: {
   // Validate the requested sandbox template up front so the user gets a clean
   // 400 instead of an async session-failed if they typed a slug that doesn't
   // exist. The platform default is always valid.
-  if (!platformMetaAgent && sandboxSlug && sandboxSlug !== DEFAULT_SANDBOX_SLUG) {
+  if (!platformAgiAgent && sandboxSlug && sandboxSlug !== DEFAULT_SANDBOX_SLUG) {
     try {
       await resolveTemplate(
         {
@@ -1224,7 +1224,7 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
-    ...(callerIsMeta
+    ...(callerIsAgi
       ? {
           task_liveness_binding_required: true,
           task_liveness_binding_status: 'pending',
@@ -1247,7 +1247,7 @@ export async function createProjectSession(input: {
   let sessionRow: ProjectSessionRow | null = null;
   try {
     sessionRow = await db.transaction(async (tx) => {
-      if (callerIsMeta && input.callerSessionId) {
+      if (callerIsAgi && input.callerSessionId) {
         await assertTaskWorkerReservationSlot(tx as unknown as typeof db, {
           projectId,
           coordinatorSessionId: input.callerSessionId,
@@ -1267,7 +1267,7 @@ export async function createProjectSession(input: {
         // Do not set opencodeSessionId during wrapper-session creation.
         // Runtime root discovery persists it only after OpenCode creates its root.
         agentName,
-        status: callerIsMeta ? 'queued' : 'provisioning',
+        status: callerIsAgi ? 'queued' : 'provisioning',
         // Sessions are private to their creator by default; share via the
         // session-header control (visibility = project | restricted).
         createdBy: userId,
@@ -1350,7 +1350,7 @@ export async function createProjectSession(input: {
 
   setContextField('sessionId', sessionId);
 
-  if (callerIsMeta) return { row: sessionRow, headers: responseHeaders };
+  if (callerIsAgi) return { row: sessionRow, headers: responseHeaders };
 
   // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
   // inside the box — it never crosses the API again, so this is the only moment
@@ -1400,7 +1400,7 @@ export async function createProjectSession(input: {
           initialPrompt,
           opencodeModel,
           llmGatewayEnabled,
-          platformMetaAgent,
+          platformAgiAgent,
           freshSession: true,
           baseSha,
           defaultBranch: project.defaultBranch,

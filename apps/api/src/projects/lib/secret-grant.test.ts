@@ -233,6 +233,40 @@ describe('resolveSessionSecretGrant', () => {
     ).resolves.toBeUndefined();
   });
 
+  test('resolves the reserved platform AGI grant without consulting Git', async () => {
+    loadProjectAgentsImpl = async () => {
+      throw new Error('platform AGI must not resolve through the project manifest');
+    };
+    await expect(
+      resolveSessionAgentGrant({ ...PROJECT, sessionAgent: 'agi', requestedAgent: 'agi' }),
+    ).resolves.toMatchObject({
+      agent: 'agi',
+      env: [],
+      connectors: [],
+      kortixCli: expect.arrayContaining(['project.task.read', 'project.task.write']),
+    });
+  });
+
+  test('resolves the reserved platform AGI grant for a repository-free project', async () => {
+    loadProjectAgentsImpl = async () => {
+      throw new Error('platform AGI must not require a project repository');
+    };
+    await expect(
+      resolveSessionAgentGrant({
+        ...PROJECT,
+        repoUrl: '',
+        defaultBranch: null,
+        sessionAgent: 'agi',
+        requestedAgent: null,
+      }),
+    ).resolves.toMatchObject({
+      agent: 'agi',
+      env: [],
+      connectors: [],
+      kortixCli: expect.arrayContaining(['project.task.read', 'project.task.write']),
+    });
+  });
+
   test('a project that has not adopted agents is unrestricted', async () => {
     loadProjectAgentsImpl = async () => loaded([]);
     await expect(

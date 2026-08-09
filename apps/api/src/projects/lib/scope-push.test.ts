@@ -15,8 +15,6 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
 
-process.env.KORTIX_URL = 'https://api.example.com';
-
 let posted: Array<{
   revision?: string;
   env?: Record<string, string>;
@@ -119,7 +117,7 @@ function recordingFetch(): (u: unknown, init?: { body?: string }) => Promise<Res
 const ORIGINAL_FETCH = globalThis.fetch;
 (globalThis as { fetch: unknown }).fetch = recordingFetch();
 
-const { pushSessionScopeToSandbox } = await import('./sandbox-env-sync');
+const { pushSessionScopeToSandbox, syncSandboxEnvForPrompt } = await import('./sandbox-env-sync');
 
 const INPUT = {
   projectId: 'proj-1',
@@ -228,5 +226,23 @@ describe('pushSessionScopeToSandbox', () => {
     expect(result.applied).toBe(false);
     expect(result.reason).toContain('daemon unreachable');
     // beforeEach restores the recording fetch for any subsequent test.
+  });
+});
+
+describe('syncSandboxEnvForPrompt', () => {
+  test('pushes the configured session callback URL on every prompt', async () => {
+    await syncSandboxEnvForPrompt({
+      projectId: INPUT.projectId,
+      sessionId: INPUT.sessionId,
+      serviceKey: 'svc-key',
+      previewUrl: 'https://sandbox.test',
+      providerHeaders: {},
+      providerName: 'daytona',
+    });
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0].opencodeEnv).toMatchObject({
+      KORTIX_API_URL: 'http://localhost:8008/v1',
+    });
   });
 });

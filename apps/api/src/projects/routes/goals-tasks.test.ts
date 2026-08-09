@@ -7,6 +7,7 @@ import {
   claimTaskForProject,
   completeTaskForProject,
   mapGeneratedStateError,
+  releaseTaskClaimForProject,
   resolveObservationSessionId,
 } from './goals-tasks-service';
 
@@ -25,8 +26,10 @@ describe('goals/tasks route wiring', () => {
       '/{projectId}/goals/{slug}/push',
       '/{projectId}/goals/{slug}/observations',
       '/{projectId}/tasks',
+      '/{projectId}/tasks/current',
       '/{projectId}/tasks/{taskId}',
       '/{projectId}/tasks/{taskId}/claim',
+      '/{projectId}/tasks/{taskId}/release-claim',
       '/{projectId}/tasks/{taskId}/done',
       '/{projectId}/tasks/{taskId}/block',
       '/{projectId}/tasks/{taskId}/worker',
@@ -35,6 +38,9 @@ describe('goals/tasks route wiring', () => {
     ]) {
       expect(route).toContain(`path: '${path}'`);
     }
+    expect(route.indexOf("path: '/{projectId}/tasks/current'")).toBeLessThan(
+      route.indexOf("path: '/{projectId}/tasks/{taskId}'"),
+    );
   });
 });
 
@@ -112,6 +118,77 @@ describe('goals/tasks service boundaries', () => {
     expect(claim.sessionId).toBe('coordinated-session');
   });
 
+  test('releases only the authenticated project session claim and preserves idempotent replay', async () => {
+    const releaseTaskClaim = mock(async () => ({
+      state: 'released' as const,
+      task: { taskId: TASK_ID },
+      released: true as const,
+    }));
+    const dependencies = {
+      sessionBelongsToProject: async () => true,
+      releaseTaskClaim,
+    };
+    const input = {
+      projectId: PROJECT_ID,
+      taskId: TASK_ID,
+      sessionId: 'coordinator-session',
+      authenticatedSessionId: 'coordinator-session',
+      now: new Date('2026-08-09T12:00:00.000Z'),
+    };
+
+    await expect(releaseTaskClaimForProject(dependencies, input)).resolves.toEqual({
+      task: { taskId: TASK_ID },
+      released: true,
+    });
+    await expect(releaseTaskClaimForProject(dependencies, input)).resolves.toEqual({
+      task: { taskId: TASK_ID },
+      released: true,
+    });
+    expect(releaseTaskClaim).toHaveBeenCalledTimes(2);
+
+    await expect(
+      releaseTaskClaimForProject(dependencies, {
+        ...input,
+        authenticatedSessionId: 'different-session',
+      }),
+    ).rejects.toMatchObject({ status: 403, code: 'session_identity_mismatch' });
+  });
+
+  test('maps claim-release store outcomes without weakening another live claim', async () => {
+    const base = {
+      sessionBelongsToProject: async () => true,
+    };
+    const input = {
+      projectId: PROJECT_ID,
+      taskId: TASK_ID,
+      sessionId: 'coordinator-session',
+      authenticatedSessionId: null,
+      now: new Date('2026-08-09T12:00:00.000Z'),
+    };
+
+    await expect(
+      releaseTaskClaimForProject(
+        {
+          ...base,
+          releaseTaskClaim: async () => ({ state: 'not_found' as const }),
+        },
+        input,
+      ),
+    ).rejects.toMatchObject({ status: 404, code: 'task_not_found' });
+    await expect(
+      releaseTaskClaimForProject(
+        {
+          ...base,
+          releaseTaskClaim: async () => ({ state: 'conflict' as const }),
+        },
+        input,
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'task_claim_release_conflict',
+    });
+  });
+
   test('refuses done without cited evidence before calling the store', async () => {
     let transitionCalls = 0;
     await expect(
@@ -133,6 +210,44 @@ describe('goals/tasks service boundaries', () => {
         },
       ),
     ).rejects.toMatchObject({ status: 400, code: 'evidence_required' });
+    expect(transitionCalls).toBe(0);
+  });
+
+  test('refuses legacy done for a V1 task with the default empty contract', async () => {
+    let transitionCalls = 0;
+    await expect(
+      completeTaskForProject(
+        {
+          sessionBelongsToProject: async () => true,
+          loadTaskEvidence: async () => ({
+            intent: '',
+            constraints: [],
+            outOfScope: [],
+            contractRevision: 1,
+            controlPlaneVersion: 1,
+            verificationRequirements: [],
+            reviewPolicy: { mode: 'auto' as const },
+            livenessCoordinatorSessionId: null,
+            livenessWorkerSessionId: null,
+            lastProgressRef: null,
+          }),
+          transitionTask: async () => {
+            transitionCalls += 1;
+            return { taskId: TASK_ID };
+          },
+        },
+        {
+          projectId: PROJECT_ID,
+          taskId: TASK_ID,
+          evidence: [{ ref: 'proof' }],
+          sessionId: 'session-1',
+          now: new Date('2026-08-07T12:00:00.000Z'),
+        },
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'completion_contract_required',
+    });
     expect(transitionCalls).toBe(0);
   });
 

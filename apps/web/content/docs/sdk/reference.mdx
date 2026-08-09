@@ -355,26 +355,43 @@ A `ProjectGoal` contains `slug`, `path`, `title`, `done_when`, `status`,
 
 | method | what |
 | --- | --- |
+| `current()` | Return the task bound to the authenticated session principal. |
 | `list(options?)` | List tasks by `goal_slug?`, `statuses?`, and `limit?`. |
 | `get(taskId)` | Return one project task. |
 | `create(input)` | Create a task, or reuse the matching `origin_fingerprint`. Returns `{ task, created }`. |
 | `claim(taskId, input)` | Claim ready work with `{ session_id, lease_seconds? }` and set its status to `doing`. All dependencies must be `done`. The lease defaults to 900 seconds. |
+| `releaseClaim(taskId, input)` | Idempotently release an unused coordinator claim after launch compensation. |
 | `registerWorker(taskId, input)` | Bind one spawned worker with `{ session_id, worker_session_id, prompt, contract }`. The API persists the immutable bounds and initial prompt atomically. |
 | `recordProgress(taskId, input)` | Persist `{ session_id, worker_session_id, settlement_id, ref }` for the matching live worker binding. |
 | `settleNoProgress(taskId, input)` | Submit `{ session_id, worker_session_id, settlement_id, reason }`. The first distinct settlement queues one continuation. The second or an exhausted bound blocks and escalates. |
-| `complete(taskId, input)` | Complete with `{ session_id, evidence: [{ ref, summary? }] }`. Evidence cannot be empty. A liveness-bound task must cite its server-recorded `last_progress_ref`. |
+| `reviseContract(taskId, input)` | Revise intent, constraints, verification requirements, or review policy. |
+| `evidence.list/add(taskId, ...)` | Read or append candidate-scoped immutable evidence. |
+| `requestCompletion(taskId, input)` | Ask the server to verify the current contract and move the task to `done` or `review`. |
+| `blockers.list/create/resolve(taskId, ...)` | Manage typed, idempotent blockers and reminder state. |
+| `events(taskId)` · `sessions(taskId)` | Read the append-only timeline and session lineage. |
+| `messages.list/send/acknowledge(taskId, ...)` | Exchange durable coordinator, worker, and verifier messages. |
+| `cancel(taskId, input)` | Cancel task responsibility as a human caller. |
+| `refinements.list/propose/rollback(...)` | Propose and roll back scoped harness improvements. |
+| `complete(taskId, input)` | Complete a legacy task with cited evidence. V1 tasks use `evidence.add()` and `requestCompletion()`. |
 | `block(taskId, input)` | Block with `{ session_id, blocker }`. |
 
-`create(input)` requires `goal_slug`, `title`, and `origin`. Optional fields are
-`parent_id`, `body`, `status`, `priority`, `assignee_agent`,
-`assignee_user_id`, `blocked_by`, and `origin_fingerprint`. A creation status
-can be `backlog`, `todo`, `doing`, `review`, or `cancelled`. The two assignee
-fields are mutually exclusive.
+`create(input)` requires `title` and `origin`. `goal_slug` is optional. Set it
+only when the task belongs to a Git-authored goal. Optional fields include the
+outcome contract, hierarchy, assignee, dependencies, priority, and
+`origin_fingerprint`. A creation status can be `backlog` or `todo`. Claim and
+transition operations own all later statuses. The two assignee fields are
+mutually exclusive.
 
 ```ts
 const { task, created } = await project.tasks.create({
-  goal_slug: 'reduce-api-latency',
   title: 'Profile the slowest endpoint',
+  intent: 'Identify and verify the largest latency source.',
+  verification_requirements: [{
+    id: 'profile',
+    kind: 'artifact',
+    description: 'An independent profile identifies the slowest endpoint.',
+    required: true,
+  }],
   status: 'todo',
   priority: 10,
   origin: 'session',
@@ -397,24 +414,31 @@ const registration = await project.tasks.registerWorker(task.task_id, {
   },
 });
 console.log(registration.worker.state); // "queued" or "drained"
+```
 
 The platform ceilings are `max_wall_seconds <= 3,600`, `max_tokens <= 1,000,000`,
 `max_cost_usd <= 25`, and `max_iterations <= 128`. A coordinator, including
 meta, can select smaller positive bounds. It cannot widen these server-owned
 ceilings.
 
+```ts
 await project.tasks.recordProgress(task.task_id, {
   session_id: coordinatorSessionId,
   worker_session_id: workerSessionId,
   settlement_id: registration.task.liveness_turn_id!,
   ref: 'profile-report://runs/4f34a2d',
 });
-await project.tasks.complete(task.task_id, {
+await project.tasks.evidence.add(task.task_id, {
+  requirement_id: 'profile',
+  kind: 'artifact',
+  ref: 'profile-report://runs/4f34a2d',
+  summary: 'The independent profile confirms the result.',
+  candidate_digest: 'sha256:4f34a2d',
+  state: 'passed',
+});
+await project.tasks.requestCompletion(task.task_id, {
   session_id: coordinatorSessionId,
-  evidence: [{
-    ref: 'profile-report://runs/4f34a2d',
-    summary: 'The independent profile confirms the result.',
-  }],
+  candidate_digest: 'sha256:4f34a2d',
 });
 ```
 
@@ -423,19 +447,21 @@ If the worker settles without evidence or a blocker, call
 the same decision. The response contains `action`, `command_id`,
 `measured_usage`, and the updated task.
 
-A `ProjectTask` contains its project and goal IDs, hierarchy (`parent_id`),
+A `ProjectTask` contains its project ID, optional goal ID, hierarchy (`parent_id`),
 dependencies (`blocked_by`), assignee, status, priority, origin, claim lease,
-worker contract, current `liveness_turn_id`, progress, settlement, escalation, result, and timestamps.
+versioned verification contract, worker contract, current `liveness_turn_id`,
+progress, settlement, escalation, result, and timestamps.
 `parent_id` is structure. Only `blocked_by` declares a dependency. The API
 rejects a claim held by another live session with `409`.
 
 For a liveness-bound task, the server enforces evidence provenance and
 transition order. The worker is a distinct child of the coordinator.
-`recordProgress()` must match that live binding. Progress and no-progress share one settlement ledger; the same settlement id cannot record both outcomes. `complete()` must cite the
-persisted `last_progress_ref`. The terminal result includes server-owned
+`recordProgress()` must match that live binding. Progress and no-progress share
+one settlement ledger; the same settlement id cannot record both outcomes.
+Candidate evidence must cite the persisted progress result. The terminal result includes server-owned
 coordinator, worker, progress-ref, and timestamp provenance. A general task
-without a liveness worker preserves the original contract: `complete()` is the
-explicit evidence transition, and its evidence array cannot be empty.
+without `control_plane_version` preserves the legacy `complete()` contract.
+V1 tasks cannot bypass the verification gate through that legacy route.
 
 The generic API does not dereference or evaluate arbitrary evidence refs. Their
 content remains an authenticated caller assertion. Goal observation `source`

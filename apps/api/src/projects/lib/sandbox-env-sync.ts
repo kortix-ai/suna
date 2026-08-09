@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { isAgiAgentName } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
@@ -26,6 +27,8 @@ import {
   workspaceModeAllowsFullRepository,
   workspaceModeFromSessionMetadata,
 } from './session-sandbox-metadata';
+import { deriveKortixApiBase } from './sessions';
+import { buildPlatformAgiOpenCodeConfig } from './platform-agi-agent';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
 export function llmGatewayBaseUrlForProvider(_providerName: ProviderName): string {
@@ -333,7 +336,14 @@ export async function syncSandboxEnvForPrompt(args: {
     serviceKey: args.serviceKey,
     snapshot,
     refreshModels: true,
-    opencodeEnv: args.opencodeEnv,
+    opencodeEnv: {
+      ...(args.opencodeEnv ?? {}),
+      // A cloud sandbox can outlive a local callback tunnel. The current API
+      // process owns this value and refreshes it at the same pre-prompt boundary
+      // as gateway and secret state. The daemon writes it to the tmpfs shell
+      // environment before the prompt reaches OpenCode.
+      KORTIX_API_URL: deriveKortixApiBase(),
+    },
     llmGatewayEnabled,
     llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
     llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
@@ -677,9 +687,10 @@ export async function pushSessionAgentConfigToSandbox(input: {
       manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
-    const compiled =
-      !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
-      session?.agentName
+    const compiled = isAgiAgentName(session?.agentName ?? '')
+      ? buildPlatformAgiOpenCodeConfig()
+      : !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
+          session?.agentName
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
             session.agentName,

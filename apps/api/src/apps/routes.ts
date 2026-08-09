@@ -17,6 +17,7 @@ import { db } from '../shared/db';
 import {
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,
+  externalizeAppArtifactUploadUrl,
   MAX_ARCHIVE_BYTES,
 } from './artifacts';
 import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-worker';
@@ -425,7 +426,13 @@ projectsApp.openapi(
       status: 'uploading', objectPath: upload.objectPath,
       mediaType: body.media_type ?? 'application/gzip', createdBy: loaded.userId,
     }).returning();
-    return c.json({ artifact: serializeArtifact(artifact!), upload: { url: upload.uploadUrl, max_bytes: upload.maxBytes } }, 201);
+    return c.json({
+      artifact: serializeArtifact(artifact!),
+      upload: {
+        url: externalizeAppArtifactUploadUrl(upload.uploadUrl, config.KORTIX_URL),
+        max_bytes: upload.maxBytes,
+      },
+    }, 201);
   },
 );
 

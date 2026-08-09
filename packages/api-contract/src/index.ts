@@ -58,7 +58,7 @@ export const FeatureFlagMapSchema = z.object({
   voice: z.boolean(),
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
-  meta_agent: z.boolean(),
+  agi: z.boolean(),
   apps: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;

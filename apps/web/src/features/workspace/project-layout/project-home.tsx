@@ -53,7 +53,7 @@ import {
   listProjectSandboxes,
 } from '@kortix/sdk';
 import { contract, qk, useProjectName, type Command } from '@kortix/sdk/react';
-import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
+import { AGI_SANDBOX_SLUG, chalkColors, isAgiAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
@@ -99,11 +99,11 @@ export function ProjectHome({
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
   const activeSlug = selectedSlug ?? defaultSlug;
-  const metaSelected = isMetaAgentName(selectedAgent);
+  const agiSelected = isAgiAgentName(selectedAgent);
 
   useEffect(() => {
-    if (metaSelected) setSelectedSlug(null);
-  }, [metaSelected]);
+    if (agiSelected) setSelectedSlug(null);
+  }, [agiSelected]);
 
   const showSandboxPicker = sandboxItems.length >= 1;
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
@@ -129,14 +129,14 @@ export function ProjectHome({
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       onSend(text, files, {
         ...options,
-        ...(metaSelected
-          ? { sandbox_slug: META_SANDBOX_SLUG }
+        ...(agiSelected
+          ? { sandbox_slug: AGI_SANDBOX_SLUG }
           : selectedSlug
             ? { sandbox_slug: selectedSlug }
             : {}),
       });
     },
-    [metaSelected, selectedSlug, onSend],
+    [agiSelected, selectedSlug, onSend],
   );
 
   const handleCommand = useCallback(
@@ -223,8 +223,8 @@ export function ProjectHome({
             prefill={prefill}
             onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={
-              metaSelected ? (
-                <MetaRuntimeIndicator />
+              agiSelected ? (
+                <AgiRuntimeIndicator />
               ) : showSandboxPicker ? (
                 <SandboxPicker
                   items={sandboxItems}
@@ -241,12 +241,12 @@ export function ProjectHome({
   );
 }
 
-function MetaRuntimeIndicator() {
+function AgiRuntimeIndicator() {
   return (
-    <Hint label="Meta uses a fixed minimal sandbox. It starts specialized sessions for project work.">
+    <Hint label="AGI uses a fixed minimal sandbox. It starts specialized sessions for project work.">
       <span className="text-muted-foreground inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium">
         <Container className="size-3.5" />
-        Meta runtime
+        AGI runtime
       </span>
     </Hint>
   );

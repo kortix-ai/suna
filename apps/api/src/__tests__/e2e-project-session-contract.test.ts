@@ -297,9 +297,9 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     isDefault: true,
   }),
-  ensureMetaSandboxImage: async () => ({
-    snapshotName: 'kortix-meta-test',
-    slug: 'meta',
+  ensureAgiSandboxImage: async () => ({
+    snapshotName: 'kortix-agi-test',
+    slug: 'agi',
     contentHash: 'b'.repeat(64),
     built: false,
     isDefault: false,
@@ -632,7 +632,12 @@ mock.module('../shared/db', () => ({
             if (table === projectSessions && fields?.sessionMetadata) {
               return sessionRow ? [{ sessionMetadata: sessionRow.metadata }] : [];
             }
-            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions) {
+              // Reservation-slot queries select only sessionId. The default
+              // fixture is the coordinator itself, not an existing child.
+              if (fields && Object.keys(fields).length === 1 && 'sessionId' in fields) return [];
+              return sessionRow ? [sessionRow] : [];
+            }
             return [];
           },
         }),
@@ -1026,17 +1031,17 @@ describe('project session API contract', () => {
   beforeEach(() => resetState());
 
   // The platform coordinator is a per-project experimental opt-in. Every other
-  // test in this file runs with the flag OFF and asserts the pre-meta default
+  // test in this file runs with the flag OFF and asserts the pre-AGI default
   // behavior byte-for-byte.
-  function enableMetaAgent() {
+  function enableAgi() {
     projectRow.metadata = {
       ...(projectRow.metadata as Record<string, unknown>),
-      experimental: { meta_agent: true },
+      experimental: { agi: true },
     };
   }
 
-  test('creates an omitted-agent session with the meta REST runtime', async () => {
-    enableMetaAgent();
+  test('creates an omitted-agent session with the AGI REST runtime', async () => {
+    enableAgi();
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1045,30 +1050,30 @@ describe('project session API contract', () => {
     });
 
     expect(response.status).toBe(201);
-    const createdMeta = await response.json();
-    expect(createdMeta).toMatchObject({
-      agent_name: 'meta',
+    const createdAgi = await response.json();
+    expect(createdAgi).toMatchObject({
+      agent_name: 'agi',
       metadata: {
-        sandbox_slug: 'meta',
+        sandbox_slug: 'agi',
       },
     });
     // A browser (supabase) create is not an in-session spawn — its Supabase
     // AUTH session id must never be stamped as a coordinator link.
-    expect(createdMeta.metadata?.spawned_by_session).toBeUndefined();
+    expect(createdAgi.metadata?.spawned_by_session).toBeUndefined();
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(lastProvisionInput).toMatchObject({
-      agentName: 'meta',
-      sandboxSlug: 'meta',
+      agentName: 'agi',
+      sandboxSlug: 'agi',
       extraEnvVars: {
-        KORTIX_AGENT_NAME: 'meta',
-        KORTIX_META_AGENT: '1',
+        KORTIX_AGENT_NAME: 'agi',
+        KORTIX_AGI: '1',
         KORTIX_PROJECT_AUTO_CLONE: '0',
       },
     });
   });
-  test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
-    enableMetaAgent();
-    sessionRow = { ...sessionRow!, agentName: 'meta' };
+  test('an AGI session with an omitted agent spawns the project default, not another AGI session', async () => {
+    enableAgi();
+    sessionRow = { ...sessionRow!, agentName: 'agi' };
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1081,16 +1086,17 @@ describe('project session API contract', () => {
 
     expect(response.status).toBe(201);
     const created = await response.json();
-    // The fixture project declares `default_agent: 'kortix'` — a meta-session
-    // spawn resolves to it, never to another platform meta coordinator.
+    // The fixture project declares `default_agent: 'kortix'` — an AGI session
+    // spawn resolves to it, never to another platform AGI coordinator.
     expect(created.agent_name).toBe('kortix');
-    expect(created.metadata?.sandbox_slug).not.toBe('meta');
+    expect(created.metadata?.sandbox_slug).not.toBe('agi');
     expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.metadata?.task_liveness_binding_required).toBe(true);
   });
 
-  test('a meta session cannot spawn another meta coordinator', async () => {
-    enableMetaAgent();
-    sessionRow = { ...sessionRow!, agentName: 'meta' };
+  test('an AGI session cannot spawn another AGI coordinator', async () => {
+    enableAgi();
+    sessionRow = { ...sessionRow!, agentName: 'agi' };
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1101,16 +1107,16 @@ describe('project session API contract', () => {
       body: JSON.stringify({
         provider: 'daytona',
         base_ref: 'main',
-        agent_name: 'meta',
+        agent_name: 'agi',
       }),
     });
 
     expect(response.status).toBe(400);
-    expect((await response.json()).code).toBe('META_AGENT_RECURSION');
+    expect((await response.json()).code).toBe('AGI_RECURSION');
   });
 
-  test('a non-meta session-bound caller may still spawn the meta coordinator', async () => {
-    enableMetaAgent();
+  test('a non-AGI session-bound caller may still spawn the AGI coordinator', async () => {
+    enableAgi();
     const app = createApp();
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1121,12 +1127,12 @@ describe('project session API contract', () => {
       body: JSON.stringify({
         provider: 'daytona',
         base_ref: 'main',
-        agent_name: 'meta',
+        agent_name: 'agi',
       }),
     });
 
     expect(response.status).toBe(201);
-    expect((await response.json()).agent_name).toBe('meta');
+    expect((await response.json()).agent_name).toBe('agi');
   });
 
   test('GET project session inventory rejects callers without project.session.read', async () => {
@@ -1585,11 +1591,12 @@ describe('project session API contract', () => {
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://gitlab.com/acme/private-project.git',
-      source: 'project_credential',
+      repo_url: `https://api.test.kortix.local/v1/git/${PROJECT_ID}.git`,
+      source: 'kortix_git_proxy',
+      expires_at: null,
       auth: {
         username: 'x-access-token',
-        token: 'gitlab-project-token',
+        token: PROJECT_SANDBOX_TOKEN,
         type: 'basic',
       },
     });
@@ -2001,11 +2008,12 @@ describe('project session API contract', () => {
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.example.test/legacy-private-project',
-      source: 'project_credential',
+      repo_url: `https://api.test.kortix.local/v1/git/${PROJECT_ID}.git`,
+      source: 'kortix_git_proxy',
+      expires_at: null,
       auth: {
         username: 'x-access-token',
-        token: 'legacy-git-token',
+        token: PROJECT_SANDBOX_TOKEN,
         type: 'basic',
       },
     });
@@ -3032,15 +3040,15 @@ describe('project session API contract', () => {
     });
   });
 
-  test('restart of a meta session keeps the meta runtime env', async () => {
+  test('restart of an AGI session keeps the AGI runtime env', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
       status: 'stopped',
-      agentName: 'meta',
+      agentName: 'agi',
       metadata: {
         ...((sessionRow!.metadata as Record<string, unknown>) ?? {}),
-        sandbox_slug: 'meta',
+        sandbox_slug: 'agi',
       },
     };
     sessionSandboxRows = [];
@@ -3051,12 +3059,12 @@ describe('project session API contract', () => {
 
     expect([200, 202]).toContain(res.status);
     await flushUntil(() => sandboxProvisionCalls === 1);
-    // The rebuilt env must keep the meta runtime — losing it makes the daemon
-    // clone the project over the meta workspace and wipe /workspace/AGENTS.md.
+    // The rebuilt env must keep the AGI runtime. Losing it makes the daemon
+    // clone the project over the AGI workspace and wipe /workspace/AGENTS.md.
     expect(lastProvisionInput).toMatchObject({
-      agentName: 'meta',
+      agentName: 'agi',
       extraEnvVars: {
-        KORTIX_META_AGENT: '1',
+        KORTIX_AGI: '1',
         KORTIX_PROJECT_AUTO_CLONE: '0',
       },
     });

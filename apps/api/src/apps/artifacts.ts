@@ -15,6 +15,7 @@ export const MAX_ARCHIVE_FILES = 100_000;
 export const MAX_ARCHIVE_PATH_BYTES = 1024;
 
 const SAFE_OBJECT_SEGMENT = /^[a-zA-Z0-9_-]{1,128}$/;
+const SIGNED_APP_ARTIFACT_UPLOAD_PREFIX = '/storage/v1/object/upload/sign/';
 const ALLOWED_ENTRY_TYPES = new Set([
   'File',
   'OldFile',
@@ -80,6 +81,49 @@ export function appArtifactObjectPath(
     safeObjectSegment(artifactId, 'artifactId'),
     'source.tar.gz',
   ].join('/');
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  return normalized === 'localhost'
+    || normalized === '::1'
+    || normalized === '0.0.0.0'
+    || normalized.startsWith('127.');
+}
+
+/**
+ * Cloud sandboxes cannot use a signed Supabase Storage URL whose host is the
+ * API machine's loopback interface. In that one topology, return the same
+ * signed path through the public Kortix upload relay. Production object-store
+ * URLs stay direct and local-only development stays local.
+ */
+export function externalizeAppArtifactUploadUrl(
+  signedUploadUrl: string,
+  publicKortixUrl: string,
+): string {
+  let signed: URL;
+  let publicUrl: URL;
+  try {
+    signed = new URL(signedUploadUrl);
+    publicUrl = new URL(publicKortixUrl);
+  } catch {
+    return signedUploadUrl;
+  }
+  if (!isLoopbackHostname(signed.hostname) || isLoopbackHostname(publicUrl.hostname)) {
+    return signedUploadUrl;
+  }
+  if (!signed.pathname.startsWith(SIGNED_APP_ARTIFACT_UPLOAD_PREFIX)) {
+    return signedUploadUrl;
+  }
+  const objectPath = signed.pathname.slice(SIGNED_APP_ARTIFACT_UPLOAD_PREFIX.length);
+  if (!objectPath.startsWith(`${APP_ARTIFACT_BUCKET}/`)) return signedUploadUrl;
+
+  const relay = new URL(
+    `/v1/app-artifact-uploads/${objectPath}`,
+    publicUrl.origin,
+  );
+  relay.search = signed.search;
+  return relay.toString();
 }
 
 export async function ensureAppArtifactBucket(): Promise<void> {

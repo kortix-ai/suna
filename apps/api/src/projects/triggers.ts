@@ -41,7 +41,7 @@ import {
   parseManifestText,
   serializeManifestObject,
 } from '@kortix/manifest-schema';
-import { META_AGENT_NAME } from '@kortix/shared';
+import { AGI_AGENT_NAME } from '@kortix/shared';
 import { type GitBackedProject, readManifestFromRepo } from './git';
 import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 
@@ -105,7 +105,7 @@ export interface GitTriggerSpec {
   /** Agent name (default: "default"). */
   agent: string;
   /** Server-owned provenance for a trigger synthesized from `goals[].push`. */
-  platformMetaGoalPush?: true;
+  platformAgiGoalPush?: true;
   /** Server-owned goal identity for every trigger synthesized from `goals[].push`. */
   goalSlug?: string;
   /**
@@ -199,7 +199,7 @@ export interface GitGoalSpec {
   status: GitGoalStatus;
   pushCron: string | null;
   timezone: string;
-  /** Null means the reserved platform meta agent owns automatic pushes. */
+  /** Null means the reserved platform AGI agent owns automatic pushes. */
   agent: string | null;
   metrics: GitGoalMetricSpec[];
 }
@@ -540,10 +540,10 @@ function goalSpecToTrigger(goal: GitGoalSpec): GitTriggerSpec {
     path: `${goal.path}.push`,
     name: `Goal push: ${goal.title}`,
     type: 'cron',
-    agent: goal.agent ?? META_AGENT_NAME,
-    ...(goal.agent && goal.agent !== META_AGENT_NAME
+    agent: goal.agent ?? AGI_AGENT_NAME,
+    ...(goal.agent && goal.agent !== AGI_AGENT_NAME
       ? {}
-      : { platformMetaGoalPush: true as const }),
+      : { platformAgiGoalPush: true as const }),
     goalSlug: goal.slug,
     model: null,
     enabled: true,

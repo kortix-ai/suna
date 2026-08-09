@@ -33,6 +33,8 @@ import { manualTriggerIdempotencyKey } from '../lib/manual-trigger-idempotency';
 import { requestAuditContext } from '../lib/serializers';
 import { fireGitTrigger, markGitTriggerFired, renderPromptTemplate } from '../lib/triggers';
 import { drainSessionLifecycleQueue } from '../session-lifecycle/engine';
+import { releaseProjectTaskClaimForCompensation } from '../task-claim-release-store';
+import { currentProjectTaskForSession } from '../task-control-plane-store';
 import {
   type GitGoalSpec,
   type LoadedGoals,
@@ -50,6 +52,7 @@ import {
   completeTaskForProject,
   deriveProjectGoalHealth,
   mapGeneratedStateError,
+  releaseTaskClaimForProject,
   resolveObservationSessionId,
 } from './goals-tasks-service';
 
@@ -58,8 +61,12 @@ const SlugSchema = z
   .trim()
   .regex(/^[a-z0-9][a-z0-9_-]{0,127}$/);
 const ProjectParamsSchema = z.object({ projectId: z.string().uuid() }).strict();
-const GoalParamsSchema = ProjectParamsSchema.extend({ slug: SlugSchema }).strict();
-const TaskParamsSchema = ProjectParamsSchema.extend({ taskId: z.string().uuid() }).strict();
+const GoalParamsSchema = ProjectParamsSchema.extend({
+  slug: SlugSchema,
+}).strict();
+const TaskParamsSchema = ProjectParamsSchema.extend({
+  taskId: z.string().uuid(),
+}).strict();
 const TaskStatusSchema = z.enum([
   'backlog',
   'todo',
@@ -69,6 +76,15 @@ const TaskStatusSchema = z.enum([
   'done',
   'cancelled',
 ]);
+const VerificationRequirementSchema = z
+  .object({
+    id: SlugSchema,
+    kind: z.enum(['command', 'http', 'artifact', 'deployment', 'policy', 'human', 'monitor']),
+    description: z.string().trim().min(1).max(2_000),
+    required: z.boolean().default(true),
+  })
+  .strict();
+const TaskReviewPolicySchema = z.object({ mode: z.enum(['auto', 'human']) }).strict();
 
 const GoalMetricSchema = z
   .object({
@@ -159,14 +175,21 @@ const ObservationsQuerySchema = z
   })
   .strict();
 
-const TaskSchema = z
+export const TaskSchema = z
   .object({
     task_id: z.string().uuid(),
     project_id: z.string().uuid(),
-    goal_slug: z.string(),
+    goal_slug: z.string().nullable(),
     parent_id: z.string().uuid().nullable(),
     title: z.string(),
     body: z.string(),
+    intent: z.string(),
+    constraints: z.array(z.string()),
+    out_of_scope: z.array(z.string()),
+    contract_revision: z.number().int().positive(),
+    control_plane_version: z.number().int().positive().nullable(),
+    verification_requirements: z.array(VerificationRequirementSchema),
+    review_policy: TaskReviewPolicySchema,
     status: TaskStatusSchema,
     priority: z.number().int(),
     assignee_agent: z.string().nullable(),
@@ -195,6 +218,7 @@ const TaskSchema = z
     last_no_progress_command_id: z.string().uuid().nullable(),
     escalated_at: z.string().datetime({ offset: true }).nullable(),
     liveness_blocker: z.string().nullable(),
+    completed_at: z.string().datetime({ offset: true }).nullable(),
     result: z.record(z.any()),
     created_at: z.string().datetime({ offset: true }),
     updated_at: z.string().datetime({ offset: true }),
@@ -206,11 +230,16 @@ const TasksResponseSchema = z.object({ tasks: z.array(TaskSchema) }).strict();
 const CreateTaskResponseSchema = z.object({ task: TaskSchema, created: z.boolean() }).strict();
 const CreateTaskBodySchema = z
   .object({
-    goal_slug: SlugSchema,
+    goal_slug: SlugSchema.nullable().optional(),
     parent_id: z.string().uuid().nullable().optional(),
     title: z.string().trim().min(1).max(500),
     body: z.string().max(100_000).optional(),
-    status: z.enum(['backlog', 'todo', 'doing', 'review', 'cancelled']).optional(),
+    intent: z.string().trim().min(1).max(100_000).optional(),
+    constraints: z.array(z.string().trim().min(1).max(10_000)).max(100).optional(),
+    out_of_scope: z.array(z.string().trim().min(1).max(10_000)).max(100).optional(),
+    verification_requirements: z.array(VerificationRequirementSchema).max(100).optional(),
+    review_policy: TaskReviewPolicySchema.optional(),
+    status: z.enum(['backlog', 'todo']).optional(),
     priority: z.number().int().safe().optional(),
     assignee_agent: z.string().trim().min(1).max(128).nullable().optional(),
     assignee_user_id: z.string().uuid().nullable().optional(),
@@ -245,6 +274,12 @@ const ClaimTaskBodySchema = z
       .max(MAX_TASK_LEASE_SECONDS)
       .default(900),
   })
+  .strict();
+const ReleaseTaskClaimBodySchema = z
+  .object({ session_id: z.string().trim().min(1).max(256) })
+  .strict();
+const ReleaseTaskClaimResponseSchema = z
+  .object({ task: TaskSchema, released: z.boolean() })
   .strict();
 const EvidenceSchema = z
   .object({
@@ -338,7 +373,7 @@ function serializeObservation(row: ProjectGoalObservation) {
   };
 }
 
-function serializeTask(row: ProjectTask) {
+export function serializeTask(row: ProjectTask) {
   return {
     task_id: row.taskId,
     project_id: row.projectId,
@@ -346,6 +381,13 @@ function serializeTask(row: ProjectTask) {
     parent_id: row.parentId,
     title: row.title,
     body: row.body,
+    intent: row.intent,
+    constraints: row.constraints,
+    out_of_scope: row.outOfScope,
+    contract_revision: row.contractRevision,
+    control_plane_version: row.controlPlaneVersion,
+    verification_requirements: row.verificationRequirements,
+    review_policy: row.reviewPolicy,
     status: row.status,
     priority: row.priority,
     assignee_agent: row.assigneeAgent,
@@ -375,6 +417,7 @@ function serializeTask(row: ProjectTask) {
     last_no_progress_command_id: row.lastNoProgressCommandId,
     escalated_at: row.escalatedAt ? iso(row.escalatedAt) : null,
     liveness_blocker: row.livenessBlocker,
+    completed_at: row.completedAt ? iso(row.completedAt) : null,
     result: row.result,
     created_at: iso(row.createdAt),
     updated_at: iso(row.updatedAt),
@@ -475,7 +518,66 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_GOAL_READ,
     );
     const goals = await loadGoals(loaded.row);
-    return c.json({ goals: goals.specs.map(serializeGoal), errors: goals.errors });
+    return c.json({
+      goals: goals.specs.map(serializeGoal),
+      errors: goals.errors,
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/tasks/{taskId}/release-claim',
+    tags: ['tasks'],
+    summary: 'Release an unused task claim after coordinator launch failure',
+    ...auth,
+    request: {
+      params: TaskParamsSchema,
+      body: {
+        content: { 'application/json': { schema: ReleaseTaskClaimBodySchema } },
+      },
+    },
+    responses: {
+      200: json(ReleaseTaskClaimResponseSchema, 'Released task claim'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c) => {
+    const { projectId, taskId } = c.req.valid('param');
+    const body = c.req.valid('json');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TASK_WRITE,
+    );
+    const workerDenial = await taskWorkerControlDenial(c, 'control');
+    if (workerDenial) return c.json(workerDenial, 403);
+    try {
+      const result = await releaseTaskClaimForProject(
+        {
+          sessionBelongsToProject,
+          releaseTaskClaim: (input) => releaseProjectTaskClaimForCompensation(db, input),
+        },
+        {
+          projectId,
+          taskId,
+          sessionId: body.session_id,
+          authenticatedSessionId: callerKortixSessionId(c),
+          now: new Date(),
+        },
+      );
+      return c.json({
+        task: serializeTask(result.task),
+        released: result.released,
+      });
+    } catch (error) {
+      return serviceErrorResponse(c, error);
+    }
   },
 );
 
@@ -537,7 +639,10 @@ projectsApp.openapi(
     const goals = await loadGoals(loaded.row);
     const goal = goals.specs.find((candidate) => candidate.slug === slug);
     if (!goal) return c.json({ error: 'Goal not found', errors: goals.errors }, 404);
-    const evaluations = await getProjectGoalEvaluationHealthRows(db, { projectId, goalSlug: slug });
+    const evaluations = await getProjectGoalEvaluationHealthRows(db, {
+      projectId,
+      goalSlug: slug,
+    });
     const health = deriveProjectGoalHealth({
       goalSlug: slug,
       desiredStatus: goal.status,
@@ -595,7 +700,10 @@ projectsApp.openapi(
       });
     } catch (error) {
       return c.json(
-        { error: error instanceof Error ? error.message : String(error), code: 'manifest_read' },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          code: 'manifest_read',
+        },
         409,
       );
     }
@@ -697,7 +805,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: GoalParamsSchema,
-      body: { content: { 'application/json': { schema: ObservationBodySchema } } },
+      body: {
+        content: { 'application/json': { schema: ObservationBodySchema } },
+      },
     },
     responses: {
       201: json(ObservationResponseSchema, 'Recorded observation'),
@@ -737,7 +847,10 @@ projectsApp.openapi(
     if (!goal) return c.json({ error: 'Goal not found', errors: goals.errors }, 404);
     if (!goal.metrics.some((metric) => metric.name === body.metric)) {
       return c.json(
-        { error: 'Metric is not declared by this goal', code: 'metric_not_declared' },
+        {
+          error: 'Metric is not declared by this goal',
+          code: 'metric_not_declared',
+        },
         400,
       );
     }
@@ -763,16 +876,74 @@ projectsApp.openapi(
           ? String((error as { code: unknown }).code)
           : '';
       if (generatedCode === 'GOAL_OBSERVATION_AUTHORITY') {
-        return c.json({ error: (error as Error).message, code: 'goal_observation_authority' }, 403);
+        return c.json(
+          {
+            error: (error as Error).message,
+            code: 'goal_observation_authority',
+          },
+          403,
+        );
       }
       if (generatedCode === 'GOAL_EVALUATION_NOT_FIRED') {
-        return c.json({ error: (error as Error).message, code: 'goal_evaluation_not_fired' }, 409);
+        return c.json(
+          {
+            error: (error as Error).message,
+            code: 'goal_evaluation_not_fired',
+          },
+          409,
+        );
       }
       const conflict = mapGeneratedStateError(error);
       if (conflict) return c.json({ error: conflict.error, code: conflict.code }, conflict.status);
       throw error;
     }
     return c.json({ observation: serializeObservation(observation) }, 201);
+  },
+);
+
+// This static path must register before `/{projectId}/tasks/{taskId}`. Hono
+// resolves routes in registration order and otherwise treats `current` as a
+// taskId before the UUID validator can reject it.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/tasks/current',
+    tags: ['tasks'],
+    summary: 'Get the task bound to the authenticated session',
+    ...auth,
+    request: { params: ProjectParamsSchema },
+    responses: {
+      200: json(z.object({ task: TaskSchema }), 'Current task'),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c) => {
+    const { projectId } = c.req.valid('param');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TASK_READ,
+    );
+    const sessionId = callerKortixSessionId(c);
+    if (!sessionId) {
+      return c.json(
+        {
+          error: 'A session principal is required',
+          code: 'session_principal_required',
+        },
+        403,
+      );
+    }
+    const task = await currentProjectTaskForSession(db, {
+      projectId,
+      sessionId,
+    });
+    if (!task) return c.json({ error: 'No task is bound to this session' }, 404);
+    return c.json({ task: serializeTask(task) });
   },
 );
 
@@ -806,7 +977,10 @@ projectsApp.openapi(
     if (!goal) return c.json({ error: 'Goal not found', errors: goals.errors }, 404);
     if (!goal.metrics.some((metric) => metric.name === query.metric)) {
       return c.json(
-        { error: 'Metric is not declared by this goal', code: 'metric_not_declared' },
+        {
+          error: 'Metric is not declared by this goal',
+          code: 'metric_not_declared',
+        },
         400,
       );
     }
@@ -877,7 +1051,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: ProjectParamsSchema,
-      body: { content: { 'application/json': { schema: CreateTaskBodySchema } } },
+      body: {
+        content: { 'application/json': { schema: CreateTaskBodySchema } },
+      },
     },
     responses: {
       201: json(CreateTaskResponseSchema, 'Created project task'),
@@ -899,16 +1075,23 @@ projectsApp.openapi(
     );
     const workerDenial = await taskWorkerControlDenial(c, 'control');
     if (workerDenial) return c.json(workerDenial, 403);
-    const goals = await loadGoals(loaded.row);
-    if (!goals.specs.some((goal) => goal.slug === body.goal_slug)) {
-      return c.json({ error: 'Goal not found', errors: goals.errors }, 404);
+    if (body.goal_slug != null) {
+      const goals = await loadGoals(loaded.row);
+      if (!goals.specs.some((goal) => goal.slug === body.goal_slug)) {
+        return c.json({ error: 'Goal not found', errors: goals.errors }, 404);
+      }
     }
     const result = await createProjectTask(db, {
       projectId,
-      goalSlug: body.goal_slug,
+      goalSlug: body.goal_slug ?? null,
       parentId: body.parent_id,
       title: body.title,
       body: body.body,
+      intent: body.intent,
+      constraints: body.constraints,
+      outOfScope: body.out_of_scope,
+      verificationRequirements: body.verification_requirements,
+      reviewPolicy: body.review_policy,
       status: body.status,
       priority: body.priority,
       assigneeAgent: body.assignee_agent,
@@ -963,7 +1146,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: TaskParamsSchema,
-      body: { content: { 'application/json': { schema: ClaimTaskBodySchema } } },
+      body: {
+        content: { 'application/json': { schema: ClaimTaskBodySchema } },
+      },
     },
     responses: {
       200: json(TaskResponseSchema, 'Claimed project task'),
@@ -1068,7 +1253,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: TaskParamsSchema,
-      body: { content: { 'application/json': { schema: BlockTaskBodySchema } } },
+      body: {
+        content: { 'application/json': { schema: BlockTaskBodySchema } },
+      },
     },
     responses: {
       200: json(TaskResponseSchema, 'Blocked project task'),
@@ -1120,7 +1307,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: TaskParamsSchema,
-      body: { content: { 'application/json': { schema: RegisterWorkerBodySchema } } },
+      body: {
+        content: { 'application/json': { schema: RegisterWorkerBodySchema } },
+      },
     },
     responses: {
       202: json(
@@ -1171,7 +1360,10 @@ projectsApp.openapi(
       !(await sessionBelongsToProject(projectId, body.worker_session_id))
     ) {
       return c.json(
-        { error: 'Both sessions must belong to this project', code: 'session_not_in_project' },
+        {
+          error: 'Both sessions must belong to this project',
+          code: 'session_not_in_project',
+        },
         400,
       );
     }
@@ -1215,7 +1407,11 @@ projectsApp.openapi(
       return c.json(
         {
           task: serializeTask(result.task),
-          worker: { session_id: body.worker_session_id, command_id: result.commandId, state },
+          worker: {
+            session_id: body.worker_session_id,
+            command_id: result.commandId,
+            state,
+          },
           contract: body.contract,
         },
         202,
@@ -1295,7 +1491,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: TaskParamsSchema,
-      body: { content: { 'application/json': { schema: NoProgressBodySchema } } },
+      body: {
+        content: { 'application/json': { schema: NoProgressBodySchema } },
+      },
     },
     responses: {
       200: json(

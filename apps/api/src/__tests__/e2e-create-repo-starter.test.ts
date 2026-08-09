@@ -198,9 +198,9 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     isDefault: true,
   }),
-  ensureMetaSandboxImage: async () => ({
-    snapshotName: 'kortix-meta-test',
-    slug: 'meta',
+  ensureAgiSandboxImage: async () => ({
+    snapshotName: 'kortix-agi-test',
+    slug: 'agi',
     contentHash: 'b'.repeat(64),
     built: false,
     isDefault: false,

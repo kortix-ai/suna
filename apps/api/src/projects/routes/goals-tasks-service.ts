@@ -157,10 +157,60 @@ export async function claimTaskForProject<T>(
   }
 }
 
+export async function releaseTaskClaimForProject<T>(
+  dependencies: {
+    sessionBelongsToProject(projectId: string, sessionId: string): Promise<boolean>;
+    releaseTaskClaim(input: {
+      projectId: string;
+      taskId: string;
+      sessionId: string;
+      now: Date;
+    }): Promise<
+      | { state: 'released' | 'already_released'; task: T; released: boolean }
+      | { state: 'not_found' }
+      | { state: 'conflict' }
+    >;
+  },
+  input: {
+    projectId: string;
+    taskId: string;
+    sessionId: string;
+    authenticatedSessionId?: string | null;
+    now: Date;
+  },
+): Promise<{ task: T; released: boolean }> {
+  assertSessionIdentity(input);
+  await assertProjectSession(dependencies, input);
+  const result = await dependencies.releaseTaskClaim({
+    projectId: input.projectId,
+    taskId: input.taskId,
+    sessionId: input.sessionId,
+    now: input.now,
+  });
+  if (result.state === 'not_found') {
+    throw new GoalsTasksServiceError(404, 'task_not_found', 'Task not found');
+  }
+  if (result.state === 'conflict') {
+    throw new GoalsTasksServiceError(
+      409,
+      'task_claim_release_conflict',
+      'task claim is owned by another session or task work has already started',
+    );
+  }
+  return { task: result.task, released: result.released };
+}
+
 export async function completeTaskForProject<T>(
   dependencies: {
     sessionBelongsToProject: (projectId: string, sessionId: string) => Promise<boolean>;
     loadTaskEvidence(input: { projectId: string; taskId: string }): Promise<{
+      intent: string;
+      constraints: string[];
+      outOfScope: string[];
+      contractRevision: number;
+      controlPlaneVersion: number | null;
+      verificationRequirements: unknown[];
+      reviewPolicy: { mode: 'auto' | 'human' };
       livenessCoordinatorSessionId: string | null;
       livenessWorkerSessionId: string | null;
       lastProgressRef: string | null;
@@ -213,6 +263,21 @@ export async function completeTaskForProject<T>(
   });
   if (!evidenceState) {
     throw new GoalsTasksServiceError(404, 'task_not_found', 'Task not found');
+  }
+  const hasCompletionContract =
+    evidenceState.controlPlaneVersion !== null ||
+    evidenceState.contractRevision > 1 ||
+    evidenceState.intent.trim().length > 0 ||
+    evidenceState.constraints.length > 0 ||
+    evidenceState.outOfScope.length > 0 ||
+    evidenceState.verificationRequirements.length > 0 ||
+    evidenceState.reviewPolicy.mode === 'human';
+  if (hasCompletionContract) {
+    throw new GoalsTasksServiceError(
+      409,
+      'completion_contract_required',
+      'this task has a verification contract; use the request-completion endpoint',
+    );
   }
   const progressRef = evidenceState.lastProgressRef?.trim() ?? '';
   const citesRecordedProgress = input.evidence.some(

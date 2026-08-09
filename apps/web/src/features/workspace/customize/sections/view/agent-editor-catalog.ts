@@ -179,6 +179,8 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
       'project.trigger.fire',
     ],
   },
+  { group: 'Goals', actions: ['project.goal.read', 'project.goal.write'] },
+  { group: 'Tasks', actions: ['project.task.read', 'project.task.write'] },
   {
     group: 'LLM gateway',
     actions: [

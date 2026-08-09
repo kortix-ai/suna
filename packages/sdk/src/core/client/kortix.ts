@@ -360,8 +360,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         get: (appId: string) => P.getApp(projectId, appId),
         update: (...a: DropFirst<Parameters<typeof P.updateApp>>) => P.updateApp(projectId, ...a),
         access: {
-          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) => P.getAppAccess(projectId, ...a),
-          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) => P.updateAppAccess(projectId, ...a),
+          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) =>
+            P.getAppAccess(projectId, ...a),
+          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) =>
+            P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
         },
@@ -553,6 +555,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       tasks: {
+        current: () => P.getCurrentProjectTask(projectId),
         list: (...a: DropFirst<Parameters<typeof P.listProjectTasks>>) =>
           P.listProjectTasks(projectId, ...a),
         get: (...a: DropFirst<Parameters<typeof P.getProjectTask>>) =>
@@ -561,6 +564,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.createProjectTask(projectId, ...a),
         claim: (...a: DropFirst<Parameters<typeof P.claimProjectTask>>) =>
           P.claimProjectTask(projectId, ...a),
+        releaseClaim: (...a: DropFirst<Parameters<typeof P.releaseProjectTaskClaim>>) =>
+          P.releaseProjectTaskClaim(projectId, ...a),
         complete: (...a: DropFirst<Parameters<typeof P.completeProjectTask>>) =>
           P.completeProjectTask(projectId, ...a),
         block: (...a: DropFirst<Parameters<typeof P.blockProjectTask>>) =>
@@ -571,6 +576,45 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.recordProjectTaskProgress(projectId, ...a),
         settleNoProgress: (...a: DropFirst<Parameters<typeof P.settleNoProgressProjectTask>>) =>
           P.settleNoProgressProjectTask(projectId, ...a),
+        reviseContract: (...a: DropFirst<Parameters<typeof P.reviseProjectTaskContract>>) =>
+          P.reviseProjectTaskContract(projectId, ...a),
+        requestCompletion: (...a: DropFirst<Parameters<typeof P.requestProjectTaskCompletion>>) =>
+          P.requestProjectTaskCompletion(projectId, ...a),
+        cancel: (...a: DropFirst<Parameters<typeof P.cancelProjectTask>>) =>
+          P.cancelProjectTask(projectId, ...a),
+        evidence: {
+          list: (...a: DropFirst<Parameters<typeof P.listProjectTaskEvidence>>) =>
+            P.listProjectTaskEvidence(projectId, ...a),
+          add: (...a: DropFirst<Parameters<typeof P.addProjectTaskEvidence>>) =>
+            P.addProjectTaskEvidence(projectId, ...a),
+        },
+        blockers: {
+          list: (...a: DropFirst<Parameters<typeof P.listProjectTaskBlockers>>) =>
+            P.listProjectTaskBlockers(projectId, ...a),
+          create: (...a: DropFirst<Parameters<typeof P.createProjectTaskBlocker>>) =>
+            P.createProjectTaskBlocker(projectId, ...a),
+          resolve: (...a: DropFirst<Parameters<typeof P.resolveProjectTaskBlocker>>) =>
+            P.resolveProjectTaskBlocker(projectId, ...a),
+        },
+        events: (...a: DropFirst<Parameters<typeof P.listProjectTaskEvents>>) =>
+          P.listProjectTaskEvents(projectId, ...a),
+        sessions: (...a: DropFirst<Parameters<typeof P.listProjectTaskSessionLinks>>) =>
+          P.listProjectTaskSessionLinks(projectId, ...a),
+        messages: {
+          list: (...a: DropFirst<Parameters<typeof P.listProjectTaskMessages>>) =>
+            P.listProjectTaskMessages(projectId, ...a),
+          send: (...a: DropFirst<Parameters<typeof P.sendProjectTaskMessage>>) =>
+            P.sendProjectTaskMessage(projectId, ...a),
+          acknowledge: (...a: DropFirst<Parameters<typeof P.acknowledgeProjectTaskMessage>>) =>
+            P.acknowledgeProjectTaskMessage(projectId, ...a),
+        },
+        refinements: {
+          list: () => P.listProjectTaskRefinements(projectId),
+          propose: (...a: DropFirst<Parameters<typeof P.proposeProjectTaskRefinement>>) =>
+            P.proposeProjectTaskRefinement(projectId, ...a),
+          rollback: (...a: DropFirst<Parameters<typeof P.rollbackProjectTaskRefinement>>) =>
+            P.rollbackProjectTaskRefinement(projectId, ...a),
+        },
       },
 
       files: {
@@ -838,7 +882,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
      * cache the resolved runtime for THIS handle. Also points the app's shared
      * "current runtime" store there, for React hosts that still read it.
      */
-    async function ensureReady(opts?: { readyTimeoutMs?: number }): Promise<SessionRuntimeEntry> {
+    async function ensureReady(opts?: {
+      readyTimeoutMs?: number;
+    }): Promise<SessionRuntimeEntry> {
       const cached = tryResolveReady();
       if (cached) return cached;
       const readyTimeoutMs = opts?.readyTimeoutMs ?? 180_000;

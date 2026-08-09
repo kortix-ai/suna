@@ -201,7 +201,7 @@ export async function buildOpencodeConfigContent(
   // (5) The daemon-injected managed skills dir (`ensureInjectedManagedSkills`).
   // OpenCode loads skills from config-declared `skills.paths` — the overlay dir
   // must be declared or the baked `kortix-*` skills are never discovered on a
-  // box with no project config (the platform meta sandbox).
+  // box with no project config (the platform AGI sandbox).
   const injectedSkillsDir =
     opts.injectedSkillsDir && existsSync(opts.injectedSkillsDir) ? opts.injectedSkillsDir : null
   const secretCapabilitiesInstructionPath =

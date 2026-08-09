@@ -739,7 +739,7 @@ function EntityDetail<T extends ConfigEntity>({
   split,
 }: EntityDetailProps<T>) {
   const configure = useConfigureThread(projectId);
-  // A platform-managed entity (e.g. the meta coordinator) declares an
+  // A platform-managed entity (e.g. the AGI coordinator) declares an
   // absolute sandbox path — its source lives in the sandbox image, not the
   // project repo, so there is nothing to fetch.
   const platformSource = entity.path.startsWith('/');

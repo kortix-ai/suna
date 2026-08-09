@@ -12,6 +12,122 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-09 — session `task-system-agi-rename` claim
+
+No **Now** task claimed. This is the user-directed task-system cleanup in the
+isolated `suna-core-rlm-harness-v1` worktree on branch `agi-task-system-v1`.
+
+Claimed SDK scope:
+
+- Rename the canonical experimental feature key from `meta_agent` to `agi`.
+- Keep the durable task, claim, evidence, blocker, event, and session APIs unchanged.
+- Remove no exported task API names and do not change the package version.
+- Update feature-key coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke before delivery.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+Verification:
+
+- `pnpm --filter @kortix/sdk test`: `1829 pass`, `0 fail`, `7135 expect()`
+  calls across `144` files.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk smoke:install`: packed `@kortix/sdk`,
+  `@kortix/llm-catalog`, and `@kortix/executor-sdk` installed, imported, and
+  constructed in Node ESM.
+- Both public-surface snapshots pass. The task API remains additive.
+- `packages/sdk/package.json` is unchanged. The release-managed version was not
+  bumped.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-09 — session `core-rlm-harness-v1-run-compensation` completion
+
+SDK scope:
+
+- Add an idempotent task claim-release client for CLI launch compensation.
+- Preserve every existing published name and keep the change additive.
+- Add failing REST and facade coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke before delivery.
+
+The required `tdd` skill was unavailable in this session. This work used the
+required RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- The REST test failed because `releaseProjectTaskClaim` did not exist.
+- Three CLI tests failed because `tasks run` performed no compensation actions.
+- Both public-surface snapshots rejected the two additive function exports.
+
+GREEN:
+
+- Task REST and facade coverage passes with the new `releaseClaim` path.
+- CLI compensation coverage: `11 pass`, `0 fail`, `214 expect()` calls.
+- `pnpm --filter @kortix/sdk test`: `1827 pass`, `0 fail`, `7131 expect()`
+  calls across `144` files.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk`,
+  `@kortix/llm-catalog`, and `@kortix/executor-sdk` installed, imported, and
+  constructed in Node ESM.
+- Both public snapshots contain only the additive `releaseProjectTaskClaim`
+  export at the root and `./projects-client` entry points.
+- `packages/sdk/README.md` documents idempotent claim-release compensation.
+- `packages/sdk/package.json` is unchanged. The release-managed version was not
+  bumped.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+## Session `core-rlm-harness-v1` — goal-less task creation claim (2026-08-09)
+
+Claimed the additive task-first contract for the Core RLM Harness v1.
+
+- `goal_slug` becomes optional or nullable across the database, API, SDK, CLI,
+  and Task Center.
+- Task creation without a Git-authored goal becomes a supported primary path.
+- Existing goal-linked task behavior and goal filters remain unchanged.
+- Public SDK export names remain unchanged. The package version remains
+  unchanged.
+
+The required `tdd` skill is unavailable in this session. The work uses the same
+RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- The database contract reported `4 pass`, `2 fail`: `goal_slug` was not-null
+  and `control_plane_version` was absent.
+- SDK typecheck reported three errors because `goal_slug` was required and its
+  response type rejected `null`.
+- The CLI suite reported `11 pass`, `1 fail` because `tasks new` required
+  `--goal`.
+- The narrowed status type reported three unused `@ts-expect-error` directives
+  before `doing`, `review`, and `cancelled` creation were rejected.
+
+GREEN:
+
+- Database schema suites: `89 pass`, `0 fail`.
+- Goal/task HTTP suites: goal-less creation, goal-linked creation, initial-status
+  rejection, goal filtering, and service boundaries pass.
+- CLI task suite: `12 pass`, `0 fail`, `230 expect()` calls; CLI typecheck exits
+  `0`.
+- Task Center focused suite: `13 pass`, `0 fail`, `59 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `1829 pass`, `0 fail`, `7135 expect()` calls
+  across `144` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed installation and Node
+  ESM import pass.
+- No SDK export name or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-09 — session `core-rlm-harness-v1` claim
 
 No **Now** task claimed. This is the isolated AGI co-worker V1 implementation.
@@ -26,9 +142,32 @@ Claimed SDK scope:
 The required `tdd` skill is unavailable in this session. This work uses the
 required RED, GREEN, and REFACTOR sequence directly.
 
-**Status:** IN PROGRESS.
+RED:
 
-**SDK package shippable to production: NOT YET.**
+- `getCurrentProjectTask` was absent from the public projects client before implementation.
+- The task query-key coverage failed before the task projection keys were added.
+- Both public-surface snapshots rejected the new names before deliberate review.
+
+GREEN:
+
+- Task REST client and facade coverage: `10 pass`, `0 fail`.
+- Task query-key coverage: `49 pass`, `0 fail`, `119 expect()` calls.
+- Public snapshots: `34` runtime-name additions and `68` type-level-name additions,
+  with `0` removals or renames.
+- `pnpm --filter @kortix/sdk test`: `1826 pass`, `0 fail`, `7129 expect()`
+  calls across `144` files.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk`,
+  `@kortix/llm-catalog`, and `@kortix/executor-sdk` installed, imported, and
+  constructed in Node ESM.
+- `packages/sdk/README.md` documents durable task contracts, claims, evidence,
+  blockers, event/session projections, refinements, and server-gated completion.
+- `packages/sdk/package.json` is unchanged. The release-managed version was not
+  bumped.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ### 2026-08-09 — session `computers-connector-grouping` claim
 

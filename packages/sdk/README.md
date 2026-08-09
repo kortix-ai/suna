@@ -46,12 +46,12 @@ const connectors = projectId
 
 await connectors.catalog();
 await connectors.tools();
-await connectors.search('send email');
-await connectors.describe('gmail.send_email');
-await connectors.call('gmail.send_email', { to, subject, body });
+await connectors.search("send email");
+await connectors.describe("gmail.send_email");
+await connectors.call("gmail.send_email", { to, subject, body });
 await connectors.uploadAttachment(bytes, {
-  filename: 'invoice.pdf',
-  contentType: 'application/pdf',
+  filename: "invoice.pdf",
+  contentType: "application/pdf",
 });
 ```
 
@@ -148,20 +148,84 @@ const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
 
+### Durable AI coworker tasks
+
+`kortix.project(projectId).tasks` is the task control plane for long-running
+agent work. A task stores the outcome contract, verification requirements,
+claim lease, evidence, blockers, event timeline, and session lineage. A session
+is one execution attempt. The task remains durable when that session stops.
+
+```ts
+const tasks = kortix.project(projectId).tasks;
+const { task } = await tasks.create({
+  title: "Fix and verify the production regression",
+  body: "Deploy the fix and prove the error no longer occurs.",
+  intent: "Restore the production workflow.",
+  constraints: ["Do not weaken the production error monitor."],
+  verification_requirements: [
+    {
+      id: "tests",
+      kind: "command",
+      description: "The regression suite passes.",
+      required: true,
+    },
+    {
+      id: "production",
+      kind: "monitor",
+      description: "The production monitor confirms recovery.",
+      required: true,
+    },
+  ],
+  review_policy: { mode: "human" },
+  origin: "operator",
+});
+
+// Set goal_slug only when this task belongs to a Git-authored goal.
+
+await tasks.claim(task.task_id, { session_id: coordinatorSessionId });
+await tasks.evidence.add(task.task_id, {
+  requirement_id: "tests",
+  kind: "command",
+  ref: "command://pnpm-test/2026-08-09T12:00:00Z",
+  summary: "The regression suite passed.",
+  candidate_digest: commitSha,
+  state: "passed",
+});
+
+// The server rejects completion while a required condition remains unmet.
+await tasks.requestCompletion(task.task_id, {
+  session_id: coordinatorSessionId,
+  candidate_digest: commitSha,
+});
+```
+
+If coordinator launch fails after the claim succeeds, stop or delete the
+session and call `tasks.releaseClaim(task.task_id, { session_id })`. The server
+requeues only an unused claim owned by that session. A repeated call succeeds
+with `released: false`. The `kortix tasks run` CLI performs this compensation
+automatically and reports every cleanup result.
+
+Use `tasks.blockers.create()` when a human action or authorization blocks the
+task. The blocker includes `next_reminder_at` and stays open until
+`tasks.blockers.resolve()` succeeds. Use `tasks.events()`, `tasks.sessions()`,
+and `tasks.messages.*` to reconstruct execution without reading one runtime's
+local transcript. Continual-harness changes use `tasks.refinements.*`; they are
+scoped proposals with explicit evidence and rollback state.
+
 ### Apps
 
 `kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
 
 ```ts
 const apps = kortix.project(projectId).apps;
-const app = await apps.create({ slug: 'docs', name: 'Docs' });
+const app = await apps.create({ slug: "docs", name: "Docs" });
 const artifact = await apps.artifacts.uploadArchive(tarGzBytes);
 await apps.deployments.create(app.app_id, {
   artifact_id: artifact.artifact_id,
-  source: { kind: 'static', spa: true },
+  source: { kind: "static", spa: true },
 });
 await apps.access.update(app.app_id, {
-  mode: 'restricted',
+  mode: "restricted",
   member_ids: [memberId],
   group_ids: [groupId],
 });
@@ -202,17 +266,17 @@ OpenCode id during adoption.
 `createKortix(config)` returns one client. The table below is illustrative, not
 exhaustive — see `API-MAP.md` for the full per-domain surface:
 
-| namespace | what |
-|---|---|
-| `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
-| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
-| `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
-| `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
-| `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
-| `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
+| namespace                  | what                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kortix.projects`          | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `kortix.accounts`          | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `kortix.billing`           | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `kortix.marketplace`       | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `kortix.validateToken()`   | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `kortix.connectors`        | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `kortix.project(id)`       | id-bound handle: `.tasks` (durable claims, contracts, evidence, blockers, events, session lineage, messages, refinements, server-gated completion) · `.goals` (health and observations) · `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `kortix.runtime()`         | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -251,10 +315,13 @@ const auth = await project.connectors.auth.discover({
   provider: "postman",
   spec: "https://github.com/HubSpot/HubSpot-public-api-spec-collection",
 });
-await project.connectors.connections.updateCredential(connection.connection_id, {
-  value: shortLivedCapability,
-  kind: "secret",
-});
+await project.connectors.connections.updateCredential(
+  connection.connection_id,
+  {
+    value: shortLivedCapability,
+    kind: "secret",
+  },
+);
 await project.sessions.create({
   runtime_context: { locale: "de" },
   connector_bindings: {
@@ -274,7 +341,9 @@ const connection = await project.connectors.connections.reconcileMember({
 });
 await project.connectors.connections.pipedreamConnect(connection.connection_id);
 // Complete OAuth, then:
-await project.connectors.connections.pipedreamFinalize(connection.connection_id);
+await project.connectors.connections.pipedreamFinalize(
+  connection.connection_id,
+);
 await project.sessions.create({
   connector_bindings: { gmail: { connection_id: connection.connection_id } },
 });
@@ -498,7 +567,7 @@ Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
 interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
-  clientSource?: 'api' | 'cli' | 'mobile' | 'web';
+  clientSource?: "api" | "cli" | "mobile" | "web";
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;

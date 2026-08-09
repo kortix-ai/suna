@@ -37,7 +37,7 @@ with completion.
    - Record RED, GREEN, typecheck, full suite, and packed-install evidence in
      `packages/sdk/PROGRESS.md`.
 
-5. **CLI and meta agent**
+5. **CLI and AGI**
    - Add `kortix goals ls|show|push|observe`.
    - Add `kortix tasks ls|show|new|claim|done|block`.
    - Use SDK contracts, not host-local fetches.
@@ -66,7 +66,7 @@ with completion.
      the lifecycle outbox.
    - Do not accept session idle or an empty not-yet-prompted session as task or
      goal completion.
-   - Prevent the reserved meta principal from merging, pushing a protected
+   - Prevent the reserved AGI principal from merging, pushing a protected
      branch, stopping arbitrary sessions, or using broad project write.
 
 7. **Verification and delivery**

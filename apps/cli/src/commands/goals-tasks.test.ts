@@ -107,6 +107,28 @@ function fakeSdkFactory() {
           return Promise.resolve(responseOrThrow(method, response));
         };
         return {
+          sessions: {
+            create: (...args: unknown[]) =>
+              record('sessions.create', args, {
+                session_id: 'coordinator-session',
+                project_id: projectId,
+              }),
+          },
+          session(sessionId: string) {
+            return {
+              send: (...args: unknown[]) =>
+                record('session.send', [sessionId, ...args], {
+                  info: { id: 'message-1' },
+                }),
+              stop: (...args: unknown[]) =>
+                record('session.stop', [sessionId, ...args], {
+                  ok: true,
+                  status: 'stopped',
+                }),
+              delete: (...args: unknown[]) =>
+                record('session.delete', [sessionId, ...args], { ok: true }),
+            };
+          },
           goals: {
             list: () => record('goals.list', [], { goals: [GOAL], errors: [] }),
             get: (...args: unknown[]) => record('goals.get', args, { goal: GOAL }),
@@ -138,6 +160,7 @@ function fakeSdkFactory() {
             },
           },
           tasks: {
+            current: (...args: unknown[]) => record('tasks.current', args, { task: TASK }),
             list: (...args: unknown[]) => record('tasks.list', args, { tasks: [TASK] }),
             get: (...args: unknown[]) => record('tasks.get', args, { task: TASK }),
             create: (...args: unknown[]) =>
@@ -150,6 +173,11 @@ function fakeSdkFactory() {
                   claim_expires_at: '2026-08-01T12:15:00.000Z',
                 },
               }),
+            releaseClaim: (...args: unknown[]) =>
+              record('tasks.releaseClaim', args, {
+                task: TASK,
+                released: true,
+              }),
             complete: (...args: unknown[]) =>
               record('tasks.complete', args, {
                 task: { ...TASK, status: 'done' },
@@ -161,7 +189,11 @@ function fakeSdkFactory() {
             registerWorker: (...args: unknown[]) =>
               record('tasks.registerWorker', args, {
                 task: { ...TASK, status: 'doing' },
-                worker: { session_id: 'worker-session', command_id: 'command-1', state: 'queued' },
+                worker: {
+                  session_id: 'worker-session',
+                  command_id: 'command-1',
+                  state: 'queued',
+                },
                 contract: {
                   max_wall_seconds: 3600,
                   max_tokens: 1000000,
@@ -183,6 +215,63 @@ function fakeSdkFactory() {
                   no_progress_settlements: 1,
                 },
               }),
+            reviseContract: (...args: unknown[]) =>
+              record('tasks.reviseContract', args, {
+                task: { ...TASK, contract_revision: 2 },
+              }),
+            requestCompletion: (...args: unknown[]) =>
+              record('tasks.requestCompletion', args, {
+                task: { ...TASK, status: 'done' },
+              }),
+            cancel: (...args: unknown[]) =>
+              record('tasks.cancel', args, {
+                task: { ...TASK, status: 'cancelled' },
+              }),
+            evidence: {
+              list: (...args: unknown[]) => record('tasks.evidence.list', args, { evidence: [] }),
+              add: (...args: unknown[]) =>
+                record('tasks.evidence.add', args, {
+                  evidence: { evidence_id: 'e1' },
+                }),
+            },
+            blockers: {
+              list: (...args: unknown[]) => record('tasks.blockers.list', args, { blockers: [] }),
+              create: (...args: unknown[]) =>
+                record('tasks.blockers.create', args, {
+                  blocker: { blocker_id: 'b1' },
+                  created: true,
+                }),
+              resolve: (...args: unknown[]) =>
+                record('tasks.blockers.resolve', args, {
+                  blocker: { blocker_id: 'b1', status: 'resolved' },
+                }),
+            },
+            events: (...args: unknown[]) => record('tasks.events', args, { events: [] }),
+            sessions: (...args: unknown[]) => record('tasks.sessions', args, { sessions: [] }),
+            messages: {
+              list: (...args: unknown[]) => record('tasks.messages.list', args, { messages: [] }),
+              send: (...args: unknown[]) =>
+                record('tasks.messages.send', args, {
+                  message: { message_id: 'm1' },
+                  created: true,
+                }),
+              acknowledge: (...args: unknown[]) =>
+                record('tasks.messages.acknowledge', args, {
+                  message: { message_id: 'm1' },
+                }),
+            },
+            refinements: {
+              list: (...args: unknown[]) =>
+                record('tasks.refinements.list', args, { refinements: [] }),
+              propose: (...args: unknown[]) =>
+                record('tasks.refinements.propose', args, {
+                  refinement: { proposal_id: 'r1' },
+                }),
+              rollback: (...args: unknown[]) =>
+                record('tasks.refinements.rollback', args, {
+                  refinement: { proposal_id: 'r1' },
+                }),
+            },
           },
         };
       },
@@ -433,6 +522,164 @@ describe('goals command', () => {
 });
 
 describe('tasks command', () => {
+  test('exposes the V1 completion, evidence, blocker, timeline, and cancellation loop', async () => {
+    const sdk = fakeSdkFactory();
+    for (const args of [
+      ['current', '--json'],
+      ['contract', TASK.task_id, '--intent', 'Ship verified', '--review', 'human', '--json'],
+      [
+        'evidence',
+        TASK.task_id,
+        '--kind',
+        'command',
+        '--ref',
+        'command://test',
+        '--candidate',
+        'sha256:abc',
+        '--state',
+        'passed',
+        '--requirement',
+        'tests',
+        '--json',
+      ],
+      ['submit', TASK.task_id, '--session', 'session_1', '--candidate', 'sha256:abc', '--json'],
+      ['blockers', TASK.task_id, '--json'],
+      [
+        'blocker',
+        TASK.task_id,
+        '--category',
+        'authorization',
+        '--action',
+        'Grant Drive',
+        '--digest',
+        'drive-read',
+        '--remind-at',
+        '2026-08-10T00:00:00.000Z',
+        '--json',
+      ],
+      ['resolve-blocker', TASK.task_id, '--blocker', 'b1', '--json'],
+      ['events', TASK.task_id, '--limit', '50', '--json'],
+      ['sessions', TASK.task_id, '--json'],
+      ['cancel', TASK.task_id, '--reason', 'Superseded', '--json'],
+    ]) {
+      const code = await runTasks(commandArgs(args), { kortixFromAuth: sdk });
+      expect(code).toBe(0);
+      resetOutput();
+    }
+    expect(calls.map((call) => call.method)).toEqual([
+      'tasks.current',
+      'tasks.reviseContract',
+      'tasks.evidence.add',
+      'tasks.requestCompletion',
+      'tasks.blockers.list',
+      'tasks.blockers.create',
+      'tasks.blockers.resolve',
+      'tasks.events',
+      'tasks.sessions',
+      'tasks.cancel',
+    ]);
+  });
+
+  test('run creates a coordinator, claims the task, and delivers the task-owned prompt', async () => {
+    const code = await runTasks(
+      commandArgs(['run', TASK.task_id, '--lease-seconds', '900', '--json']),
+      { kortixFromAuth: fakeSdkFactory() },
+    );
+    expect(code).toBe(0);
+    expect(calls.map((call) => call.method)).toEqual([
+      'sessions.create',
+      'tasks.claim',
+      'session.send',
+    ]);
+    expect(calls[0]?.args[0]).toMatchObject({
+      agent_name: 'agi',
+      metadata: { task_id: TASK.task_id, task_role: 'coordinator' },
+    });
+    expect(calls[2]?.args[1]).toContain('Do not stop until the server accepts completion');
+  });
+
+  test('run deletes its new session when the task claim fails', async () => {
+    failures['tasks.claim'] = new Error('claim failed');
+    const code = await runTasks(
+      commandArgs(['run', TASK.task_id, '--lease-seconds', '900', '--json']),
+      { kortixFromAuth: fakeSdkFactory() },
+    );
+
+    expect(code).toBe(1);
+    expect(calls.map((call) => call.method)).toEqual([
+      'sessions.create',
+      'tasks.claim',
+      'session.delete',
+    ]);
+    expect(stderr).toContain('"stage":"claim"');
+    expect(stderr).toContain('"session_delete":{"status":"succeeded"}');
+    expect(stderr).toContain('claim failed');
+  });
+
+  test('run stops and deletes its session, then releases the claim when prompt delivery fails', async () => {
+    failures['session.send'] = new Error('prompt failed');
+    const code = await runTasks(
+      commandArgs(['run', TASK.task_id, '--lease-seconds', '900', '--json']),
+      { kortixFromAuth: fakeSdkFactory() },
+    );
+
+    expect(code).toBe(1);
+    expect(calls.map((call) => call.method)).toEqual([
+      'sessions.create',
+      'tasks.claim',
+      'session.send',
+      'session.stop',
+      'session.delete',
+      'tasks.releaseClaim',
+    ]);
+    expect(calls.at(-1)?.args).toEqual([TASK.task_id, { session_id: 'coordinator-session' }]);
+    expect(stderr).toContain('"stage":"prompt"');
+    expect(stderr).toContain('"session_stop":{"status":"succeeded"}');
+    expect(stderr).toContain('"session_delete":{"status":"succeeded"}');
+    expect(stderr).toContain('"task_claim_release":{"status":"succeeded"}');
+    expect(stderr).toContain('prompt failed');
+  });
+
+  test('run reports every failed compensation action and preserves the prompt error', async () => {
+    failures['session.send'] = new Error('prompt failed');
+    failures['session.stop'] = new Error('stop failed');
+    failures['session.delete'] = new Error('delete failed');
+    failures['tasks.releaseClaim'] = new Error('release failed');
+
+    const code = await runTasks(commandArgs(['run', TASK.task_id]), {
+      kortixFromAuth: fakeSdkFactory(),
+    });
+
+    expect(code).toBe(1);
+    expect(stderr).toContain('"session_stop":{"status":"failed","error":"stop failed"}');
+    expect(stderr).toContain('"session_delete":{"status":"failed","error":"delete failed"}');
+    expect(stderr).toContain('"task_claim_release":{"status":"failed","error":"release failed"}');
+    expect(stderr).toContain('prompt failed');
+  });
+
+  test('watch supports a one-shot machine-readable task status check', async () => {
+    const code = await runTasks(commandArgs(['watch', TASK.task_id, '--once', '--json']), {
+      kortixFromAuth: fakeSdkFactory(),
+    });
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ task: TASK });
+    expect(calls.map((call) => call.method)).toEqual(['tasks.get']);
+  });
+
+  test('creates task-first work without --goal', async () => {
+    const code = await runTasks(
+      commandArgs(['new', '--title', 'Handle support backlog', '--json']),
+      { kortixFromAuth: fakeSdkFactory() },
+    );
+
+    expect(code).toBe(0);
+    expect(calls).toContainEqual({
+      method: 'tasks.create',
+      projectId: 'project_1',
+      args: [{ title: 'Handle support backlog', origin: 'cli' }],
+    });
+  });
+
   test('executes every SDK operation with validated and translated arguments', async () => {
     const sdk = fakeSdkFactory();
 
@@ -679,6 +926,9 @@ describe('tasks command', () => {
       [['ls', '--status', 'ready'], 'must be one of'],
       [['ls', '--limit', '0'], 'between 1 and 1000'],
       [['new', '--goal', GOAL.slug, '--title', TASK.title, '--status', 'done'], 'creatable status'],
+      [['new', '--title', TASK.title, '--status', 'doing'], 'creatable status'],
+      [['new', '--title', TASK.title, '--status', 'review'], 'creatable status'],
+      [['new', '--title', TASK.title, '--status', 'cancelled'], 'creatable status'],
       [
         ['new', '--goal', GOAL.slug, '--title', TASK.title, '--priority', '1.5'],
         'must be an integer',

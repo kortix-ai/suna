@@ -261,14 +261,14 @@ describe('resolveSessionListViewState', () => {
 });
 
 describe('groupSessionsByCoordinator', () => {
-  const meta = makeSession({ session_id: 'meta-1', agent_name: 'meta' } as never);
+  const agi = makeSession({ session_id: 'agi-1', agent_name: 'agi' } as never);
   const childA = makeSession({
     session_id: 'child-a',
-    metadata: { spawned_by_session: 'meta-1' },
+    metadata: { spawned_by_session: 'agi-1' },
   } as never);
   const childB = makeSession({
     session_id: 'child-b',
-    metadata: { spawned_by_session: 'meta-1' },
+    metadata: { spawned_by_session: 'agi-1' },
   } as never);
   const solo = makeSession({ session_id: 'solo-1' });
   const orphan = makeSession({
@@ -277,8 +277,8 @@ describe('groupSessionsByCoordinator', () => {
   } as never);
 
   test('nests children under their coordinator, in list order', () => {
-    const groups = groupSessionsByCoordinator([meta, childA, solo, childB]);
-    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1', 'solo-1']);
+    const groups = groupSessionsByCoordinator([agi, childA, solo, childB]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['agi-1', 'solo-1']);
     expect(groups[0].children.map((c) => c.session_id)).toEqual(['child-a', 'child-b']);
     expect(groups[1].children).toEqual([]);
   });

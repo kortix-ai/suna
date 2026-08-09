@@ -232,13 +232,13 @@ export function validateGoalsV2(
           message: 'agent must be a valid non-empty agent slug.',
           severity: 'error',
         });
-      } else if (agent !== 'meta' && !agentNames.includes(agent)) {
+      } else if (agent !== 'agi' && !agentNames.includes(agent)) {
         issues.push({
           path: `${where}.agent`,
-          message: `agent "${agent}" does not match an enabled declared agent in \`agents\`; omit it or use \`meta\` for the reserved platform coordinator.`,
+          message: `agent "${agent}" does not match an enabled declared agent in \`agents\`; omit it or use \`agi\` for the reserved platform coordinator.`,
           severity: 'error',
         });
-      } else if (agent !== 'meta' && disabledAgentNames.includes(agent)) {
+      } else if (agent !== 'agi' && disabledAgentNames.includes(agent)) {
         issues.push({
           path: `${where}.agent`,
           message: `agent "${agent}" is declared with \`enabled: false\` and cannot advance a goal.`,

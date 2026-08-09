@@ -9,6 +9,7 @@ const ACCOUNT_ID = 'acct-1';
 const PROJECT_ID = 'proj-1';
 const EXTERNAL_ID = 'sandbox-1';
 const events: string[] = [];
+const syncInputs: Record<string, unknown>[] = [];
 
 mock.module('../../task-worker-prompt-admission', () => ({
   projectTaskWorkerPromptAdmission: async () => ({ state: 'not_worker' }),
@@ -75,14 +76,7 @@ mock.module('../../../platform/service-key', () => ({
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async (input: Record<string, unknown>) => {
     events.push('sync');
-    expect(input).toMatchObject({
-      projectId: PROJECT_ID,
-      sessionId: SESSION_ID,
-      serviceKey: 'service-key-1',
-      previewUrl: 'https://sandbox.test',
-      providerName: 'daytona',
-      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
-    });
+    syncInputs.push(input);
   },
 }));
 
@@ -97,6 +91,7 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
 }));
 
 mock.module('../../lib/sessions', () => ({
+  deriveKortixApiBase: () => 'http://localhost:8008',
   createProjectSession: async () => {
     throw new Error('not expected');
   },
@@ -117,10 +112,14 @@ mock.module('../store', () => ({
   lifecycleCommandClaim: () => ({ lockedBy: 'test-worker', attempt: 1 }),
   renewLifecycleCommandLease: async () => true,
   repairLegacyLifecycleMessageIds: async () => 0,
+  retireStaleReadyTaskCoordinator: async () => true,
   deferLifecycleCommand: async () => {
     throw new Error('not expected in continue-session tests');
   },
   claimCreateSessionCommand: async () => {
+    throw new Error('not expected');
+  },
+  claimReadyTaskAndEnqueuePrompt: async () => {
     throw new Error('not expected');
   },
   claimDueLifecycleCommands: async () => [],
@@ -137,6 +136,7 @@ const { continueSession } = await import('../engine');
 
 beforeEach(() => {
   events.length = 0;
+  syncInputs.length = 0;
 });
 
 describe('continueSession runtime env', () => {
@@ -150,5 +150,36 @@ describe('continueSession runtime env', () => {
       }),
     ).toBe('delivered');
     expect(events).toEqual(['open', 'sync', 'prompt']);
+    expect(syncInputs).toEqual([
+      expect.objectContaining({
+        projectId: PROJECT_ID,
+        sessionId: SESSION_ID,
+        serviceKey: 'service-key-1',
+        previewUrl: 'https://sandbox.test',
+        providerName: 'daytona',
+        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
+      }),
+    ]);
+  });
+
+  test('syncs the control-plane URL before a normal continuation prompt', async () => {
+    expect(
+      await continueSession({
+        source: 'system:approval-resume',
+        sessionId: SESSION_ID,
+        text: 'resume task',
+      }),
+    ).toBe('delivered');
+    expect(events).toEqual(['open', 'sync', 'prompt']);
+    expect(syncInputs).toEqual([
+      expect.objectContaining({
+        projectId: PROJECT_ID,
+        sessionId: SESSION_ID,
+        serviceKey: 'service-key-1',
+        previewUrl: 'https://sandbox.test',
+        providerName: 'daytona',
+        opencodeEnv: {},
+      }),
+    ]);
   });
 });

@@ -1290,14 +1290,14 @@ async function ensurePlatformDefaultImage(
   });
 }
 
-const metaImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
-let metaRuntimeFingerprint: Promise<string> | null = null;
+const agiImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+let agiRuntimeFingerprint: Promise<string> | null = null;
 
-function currentMetaRuntimeFingerprint(): Promise<string> {
-  if (metaRuntimeFingerprint) return metaRuntimeFingerprint;
+function currentAgiRuntimeFingerprint(): Promise<string> {
+  if (agiRuntimeFingerprint) return agiRuntimeFingerprint;
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-  metaRuntimeFingerprint = buildRuntimeArtifactFingerprint({
-    sandboxVersion: `meta-v3:opencode:${OPENCODE_VERSION}`,
+  agiRuntimeFingerprint = buildRuntimeArtifactFingerprint({
+    sandboxVersion: `agi-v1:opencode:${OPENCODE_VERSION}`,
     opencodeVersion: OPENCODE_VERSION,
     artifacts: [
       { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
@@ -1305,7 +1305,7 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       { label: 'cli', path: resolve(root, 'apps/cli/src') },
       { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
       { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
-      { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
+      { label: 'agi-renderer', path: resolve(root, 'packages/shared/src/sandbox/agi-dockerfile.ts') },
       { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
       { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
       { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
@@ -1317,10 +1317,10 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       { label: 'starter-templates', path: resolve(root, 'packages/starter/templates') },
     ],
   });
-  return metaRuntimeFingerprint;
+  return agiRuntimeFingerprint;
 }
 
-export async function ensureMetaSandboxImage(opts: {
+export async function ensureAgiSandboxImage(opts: {
   source?: SnapshotBuildSource;
   provider: string;
 }): Promise<EnsureSandboxImageResult> {
@@ -1328,31 +1328,31 @@ export async function ensureMetaSandboxImage(opts: {
   if (!provider.isConfigured()) {
     throw new SnapshotBuildError(`Sandbox provider ${opts.provider} is not configured`);
   }
-  const fingerprint = await currentMetaRuntimeFingerprint();
-  const contentHash = createHash('sha256').update(`meta-runtime-v1\0${fingerprint}`).digest('hex');
-  const snapshotName = `kortix-meta-${contentHash.slice(0, 16)}`;
+  const fingerprint = await currentAgiRuntimeFingerprint();
+  const contentHash = createHash('sha256').update(`agi-runtime-v1\0${fingerprint}`).digest('hex');
+  const snapshotName = `kortix-agi-${contentHash.slice(0, 16)}`;
   const buildKey = `${opts.provider}:${snapshotName}`;
-  const existing = metaImageBuilds.get(buildKey);
+  const existing = agiImageBuilds.get(buildKey);
   if (existing) return existing;
 
   const build = (async () => {
     let state = await provider.getSnapshotState(snapshotName);
     if (state === 'building') state = await waitForProviderBuild(provider, snapshotName);
     if (state === 'active') {
-      return { snapshotName, slug: 'meta', contentHash, built: false, isDefault: false };
+      return { snapshotName, slug: 'agi', contentHash, built: false, isDefault: false };
     }
     if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
     await provider.buildSnapshot({
       snapshotName,
-      userDockerfile: '# platform meta runtime',
+      userDockerfile: '# platform AGI runtime',
       spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
-      slug: 'meta',
+      slug: 'agi',
       isShared: true,
-      runtimeProfile: 'meta',
+      runtimeProfile: 'agi',
     });
-    return { snapshotName, slug: 'meta', contentHash, built: true, isDefault: false };
-  })().finally(() => metaImageBuilds.delete(buildKey));
-  metaImageBuilds.set(buildKey, build);
+    return { snapshotName, slug: 'agi', contentHash, built: true, isDefault: false };
+  })().finally(() => agiImageBuilds.delete(buildKey));
+  agiImageBuilds.set(buildKey, build);
   return build;
 }
 
@@ -1364,7 +1364,7 @@ let startupPreBuildKicked = false;
  * session never pays a provider-specific lazy build.
  */
 export function kickStartupPreBuild(): void {
-  // Focused acceptance runs can skip the multi-gigabyte session and meta
+  // Focused acceptance runs can skip the multi-gigabyte session and AGI
   // images. Production keeps the pre-build enabled by default.
   if (process.env.KORTIX_SKIP_STARTUP_PREBUILD === 'true') return;
   if (startupPreBuildKicked) return;
@@ -1382,15 +1382,15 @@ export function kickStartupPreBuild(): void {
           err instanceof Error ? err.message : err,
         ),
       );
-    void ensureMetaSandboxImage({ source: 'startup', provider: providerId })
+    void ensureAgiSandboxImage({ source: 'startup', provider: providerId })
       .then((r) =>
         console.log(
-          `[snapshots] startup pre-build (${providerId}): meta image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
+          `[snapshots] startup pre-build (${providerId}): AGI image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
         ),
       )
       .catch((err) =>
         console.warn(
-          `[snapshots] startup pre-build of platform meta failed (${providerId}):`,
+          `[snapshots] startup pre-build of platform AGI failed (${providerId}):`,
           err instanceof Error ? err.message : err,
         ),
       );

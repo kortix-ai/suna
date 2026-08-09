@@ -1,16 +1,35 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
+  acknowledgeProjectTaskMessage,
+  addProjectTaskEvidence,
   blockProjectTask,
+  cancelProjectTask,
   claimProjectTask,
   completeProjectTask,
   createProjectTask,
+  createProjectTaskBlocker,
+  getCurrentProjectTask,
   getProjectTask,
+  listProjectTaskBlockers,
+  listProjectTaskEvents,
+  listProjectTaskEvidence,
+  listProjectTaskMessages,
+  listProjectTaskRefinements,
+  listProjectTaskSessionLinks,
   listProjectTasks,
+  proposeProjectTaskRefinement,
   recordProjectTaskProgress,
   registerProjectTaskWorker,
+  releaseProjectTaskClaim,
+  requestProjectTaskCompletion,
+  resolveProjectTaskBlocker,
+  reviseProjectTaskContract,
+  rollbackProjectTaskRefinement,
+  sendProjectTaskMessage,
   settleNoProgressProjectTask,
 } from './tasks';
+import type { CreateProjectTaskInput, ProjectTask } from './tasks';
 
 let calls: Array<{ url: string; method: string; body?: unknown }> = [];
 
@@ -29,7 +48,10 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+configureKortix({
+  backendUrl: 'http://test.local',
+  getToken: async () => 'token',
+});
 const last = () => calls[calls.length - 1];
 
 test('task reads bind identifiers and encode list filters', async () => {
@@ -50,7 +72,7 @@ test('task creation carries the idempotent origin fingerprint', async () => {
   await createProjectTask('project-1', {
     goal_slug: 'ship-kernel',
     title: 'Verify API',
-    origin: 'meta',
+    origin: 'agi',
     origin_fingerprint: 'ship-kernel:verify-api:v1',
     blocked_by: [],
   });
@@ -60,11 +82,56 @@ test('task creation carries the idempotent origin fingerprint', async () => {
     body: {
       goal_slug: 'ship-kernel',
       title: 'Verify API',
-      origin: 'meta',
+      origin: 'agi',
       origin_fingerprint: 'ship-kernel:verify-api:v1',
       blocked_by: [],
     },
   });
+});
+
+test('task creation can omit goal_slug', async () => {
+  const input = {
+    title: 'Handle support backlog',
+    origin: 'human',
+  } satisfies CreateProjectTaskInput;
+  const goalSlug: ProjectTask['goal_slug'] = null;
+
+  await createProjectTask('project-1', input);
+
+  expect(goalSlug).toBeNull();
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks',
+    method: 'POST',
+    body: { title: 'Handle support backlog', origin: 'human' },
+  });
+});
+
+test('task creation only accepts queue-entry statuses', () => {
+  const valid: CreateProjectTaskInput[] = [
+    { title: 'Backlog task', origin: 'human', status: 'backlog' },
+    { title: 'Ready task', origin: 'human', status: 'todo' },
+  ];
+  expect(valid).toHaveLength(2);
+
+  const doing: CreateProjectTaskInput = {
+    title: 'Doing',
+    origin: 'human',
+    // @ts-expect-error A task must be claimed before it can be doing.
+    status: 'doing',
+  };
+  const review: CreateProjectTaskInput = {
+    title: 'Review',
+    origin: 'human',
+    // @ts-expect-error Review requires a submitted candidate.
+    status: 'review',
+  };
+  const cancelled: CreateProjectTaskInput = {
+    title: 'Cancelled',
+    origin: 'human',
+    // @ts-expect-error Cancellation is a transition, not an initial state.
+    status: 'cancelled',
+  };
+  expect([doing, review, cancelled]).toHaveLength(3);
 });
 
 test('task claim and terminal transitions carry session ownership and evidence', async () => {
@@ -99,6 +166,17 @@ test('task claim and terminal transitions carry session ownership and evidence',
     url: 'http://test.local/projects/project-1/tasks/task-2/block',
     method: 'POST',
     body: { session_id: 'session-2', blocker: 'Human approval is required' },
+  });
+});
+
+test('task claim release posts the coordinator session for idempotent compensation', async () => {
+  await releaseProjectTaskClaim('project-1', 'task-1', {
+    session_id: 'session-1',
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/release-claim',
+    method: 'POST',
+    body: { session_id: 'session-1' },
   });
 });
 
@@ -154,6 +232,96 @@ test('worker registration, progress, and no-progress use separate durable contra
       settlement_id: '33333333-3333-4333-8333-333333333333',
       reason: 'Worker settled without verifier evidence or a delivered blocker',
     },
+  });
+});
+
+test('AI coworker task control-plane methods bind every durable route', async () => {
+  await getCurrentProjectTask('project-1');
+  expect(last().url).toBe('http://test.local/projects/project-1/tasks/current');
+
+  await reviseProjectTaskContract('project-1', 'task-1', {
+    intent: 'Ship the verified result',
+    verification_requirements: [
+      {
+        id: 'tests',
+        kind: 'command',
+        description: 'The focused suite passes',
+        required: true,
+      },
+    ],
+    review_policy: { mode: 'human' },
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/contract',
+    method: 'PATCH',
+  });
+
+  await listProjectTaskEvidence('project-1', 'task-1');
+  expect(last().url).toBe('http://test.local/projects/project-1/tasks/task-1/evidence');
+  await addProjectTaskEvidence('project-1', 'task-1', {
+    requirement_id: 'tests',
+    kind: 'command',
+    ref: 'command://bun-test',
+    candidate_digest: 'sha256:abc',
+    state: 'passed',
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/evidence',
+    method: 'POST',
+  });
+  await requestProjectTaskCompletion('project-1', 'task-1', {
+    session_id: 'session-1',
+    candidate_digest: 'sha256:abc',
+  });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/request-completion',
+    method: 'POST',
+  });
+
+  await listProjectTaskBlockers('project-1', 'task-1');
+  await createProjectTaskBlocker('project-1', 'task-1', {
+    category: 'authorization',
+    requested_action: 'Grant Drive access',
+    target: { service: 'drive' },
+    request_digest: 'drive-read',
+    attempts_made: ['checked connector'],
+  });
+  await resolveProjectTaskBlocker('project-1', 'task-1', 'blocker-1');
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/blockers/blocker-1/resolve',
+    method: 'POST',
+  });
+
+  await listProjectTaskEvents('project-1', 'task-1', 50);
+  expect(last().url).toBe('http://test.local/projects/project-1/tasks/task-1/events?limit=50');
+  await listProjectTaskSessionLinks('project-1', 'task-1');
+  await listProjectTaskMessages('project-1', 'task-1');
+  await sendProjectTaskMessage('project-1', 'task-1', {
+    recipient_session_id: 'worker-1',
+    type: 'request',
+    body: { instruction: 'verify' },
+    idempotency_key: 'verify-1',
+  });
+  await acknowledgeProjectTaskMessage('project-1', 'task-1', 'message-1');
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/tasks/task-1/messages/message-1/ack',
+    method: 'POST',
+  });
+
+  await cancelProjectTask('project-1', 'task-1', { reason: 'Superseded' });
+  await listProjectTaskRefinements('project-1');
+  await proposeProjectTaskRefinement('project-1', {
+    task_id: 'task-1',
+    scope: 'task',
+    observation: 'Require browser proof',
+    base_revision: '1',
+    patch: { verifier: 'browser' },
+    evidence_refs: [],
+  });
+  await rollbackProjectTaskRefinement('project-1', 'proposal-1');
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/project-1/refinements/proposal-1/rollback',
+    method: 'POST',
   });
 });
 

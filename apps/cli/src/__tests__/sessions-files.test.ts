@@ -190,9 +190,9 @@ describe('sessionPromptDefaults', () => {
   test('omits missing pieces instead of guessing', () => {
     expect(sessionPromptDefaults({ agent_name: null, metadata: {} })).toEqual({});
     expect(
-      sessionPromptDefaults({ agent_name: 'meta', metadata: { opencode_model: 'nonsense' } }),
+      sessionPromptDefaults({ agent_name: 'agi', metadata: { opencode_model: 'nonsense' } }),
     ).toEqual({
-      agent: 'meta',
+      agent: 'agi',
     });
   });
 });

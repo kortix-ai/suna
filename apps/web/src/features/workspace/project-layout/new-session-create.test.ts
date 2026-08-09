@@ -21,10 +21,10 @@ describe('buildNewSessionCreateInput', () => {
     });
   });
 
-  it('forces the fixed meta sandbox when the meta agent is selected', () => {
-    expect(buildNewSessionCreateInput({ agent: 'meta', sandbox_slug: 'node22' })).toEqual({
-      agent_name: 'meta',
-      sandbox_slug: 'meta',
+  it('forces the fixed AGI sandbox when the AGI agent is selected', () => {
+    expect(buildNewSessionCreateInput({ agent: 'agi', sandbox_slug: 'node22' })).toEqual({
+      agent_name: 'agi',
+      sandbox_slug: 'agi',
     });
   });
 

@@ -176,6 +176,17 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
 
 
 describe('task liveness sweep overlap guard', () => {
+  test('runs ready-task reconciliation inside the existing leader-owned sweep', async () => {
+    const source = await Bun.file(new URL('./triggers.ts', import.meta.url)).text();
+    const sweepStart = source.indexOf('export async function runTaskLivenessSweep');
+    const schedulerStart = source.indexOf('export function startProjectTriggerScheduler');
+    const sweepSource = source.slice(sweepStart, schedulerStart);
+
+    expect(sweepStart).toBeGreaterThan(-1);
+    expect(sweepSource).toContain('if (!leader || taskLivenessSweepRunning) return null');
+    expect(sweepSource).toContain('reconcileReadyProjectTasks({ database: db })');
+  });
+
   test('skips an overlapping leader sweep and resets after completion', async () => {
     let release!: (value: number) => void;
     const firstSweep = new Promise<number>((resolve) => {

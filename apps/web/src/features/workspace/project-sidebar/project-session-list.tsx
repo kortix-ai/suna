@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import {
   directSubsessions,
-  isMetaCoordinatorSession,
+  isAgiCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
@@ -65,7 +65,7 @@ import {
   ClockCounterClockwiseIcon,
   DotsThreeIcon,
   EnvelopeIcon as Mail,
-  FolderSimpleIcon as MetaFolder,
+  FolderSimpleIcon as AgiFolder,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
@@ -690,7 +690,7 @@ function ProjectSessionRow({
 
   const source = sessionSource(session);
   const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
-  const isMeta = isMetaCoordinatorSession(session);
+  const isAgi = isAgiCoordinatorSession(session);
   const spawnedBy = spawnedBySessionId(session);
 
   return (
@@ -715,10 +715,10 @@ function ProjectSessionRow({
         >
           <SessionStatusDot session={session} reviewCount={reviewCount} />
 
-          {isMeta && (
-            <Hint side="top" label="Meta coordinator">
+          {isAgi && (
+            <Hint side="top" label="AGI coordinator">
               <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
-                <MetaFolder className="size-3.5" weight="fill" />
+                <AgiFolder className="size-3.5" weight="fill" />
               </span>
             </Hint>
           )}

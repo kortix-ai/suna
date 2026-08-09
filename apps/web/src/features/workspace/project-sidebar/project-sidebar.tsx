@@ -18,12 +18,13 @@ import {
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
+import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
-import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { ProjectTasksNavItem } from '@/features/workspace/project-sidebar/footer/project-tasks-nav';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import {
   ProjectCustomizeNavItem,
@@ -246,6 +247,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   here — one Settings entry, on the Customize row's old line,
                   replaced all four. */}
               <ProjectFilesNavItem />
+              <ProjectTasksNavItem />
               <ProjectAppsNavItem />
               <ProjectSettingsNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />

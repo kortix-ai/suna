@@ -98,6 +98,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './projects/main
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
+import { createAppArtifactUploadRelay } from './apps/upload-relay';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import {
   startSunaMigrationWorker,
@@ -810,6 +811,12 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
+// Signed archive uploads carry their own short-lived Supabase token. This
+// relay is public by design so cloud sandboxes can reach local Supabase through
+// the same public API tunnel used by KORTIX_URL.
+app.route('/v1/app-artifact-uploads', createAppArtifactUploadRelay({
+  supabaseUrl: config.SUPABASE_URL,
+}));
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 // Voice routes are registered BEFORE projectsApp: Hono matches in registration
 // order, and projectsApp's auth middleware would otherwise claim the worker's

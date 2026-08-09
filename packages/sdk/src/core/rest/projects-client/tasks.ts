@@ -15,13 +15,42 @@ export interface ProjectTaskEvidence {
   summary?: string;
 }
 
+export type TaskVerificationKind =
+  | 'command'
+  | 'http'
+  | 'artifact'
+  | 'deployment'
+  | 'policy'
+  | 'human'
+  | 'monitor';
+
+export interface TaskVerificationRequirement {
+  id: string;
+  kind: TaskVerificationKind;
+  description: string;
+  required: boolean;
+}
+
+export interface TaskReviewPolicy {
+  mode: 'auto' | 'human';
+}
+
 export interface ProjectTask {
   task_id: string;
   project_id: string;
-  goal_slug: string;
+  goal_slug: string | null;
   parent_id: string | null;
   title: string;
   body: string;
+  /** Versioned V1 completion contract. Present on servers with the task control plane. */
+  intent?: string;
+  constraints?: string[];
+  out_of_scope?: string[];
+  contract_revision?: number;
+  /** Null identifies a historical task. One identifies the V1 task control plane. */
+  control_plane_version?: number | null;
+  verification_requirements?: TaskVerificationRequirement[];
+  review_policy?: TaskReviewPolicy;
   status: ProjectTaskStatus;
   priority: number;
   assignee_agent: string | null;
@@ -49,6 +78,7 @@ export interface ProjectTask {
   last_no_progress_command_id: string | null;
   escalated_at: string | null;
   liveness_blocker: string | null;
+  completed_at?: string | null;
   result: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -60,13 +90,18 @@ export interface ListProjectTasksOptions {
   limit?: number;
 }
 
-export type CreatableProjectTaskStatus = Exclude<ProjectTaskStatus, 'blocked' | 'done'>;
+export type CreatableProjectTaskStatus = 'backlog' | 'todo';
 
 export interface CreateProjectTaskInput {
-  goal_slug: string;
+  goal_slug?: string | null;
   parent_id?: string | null;
   title: string;
   body?: string;
+  intent?: string;
+  constraints?: string[];
+  out_of_scope?: string[];
+  verification_requirements?: TaskVerificationRequirement[];
+  review_policy?: TaskReviewPolicy;
   status?: CreatableProjectTaskStatus;
   priority?: number;
   assignee_agent?: string | null;
@@ -91,6 +126,146 @@ export interface BlockProjectTaskInput {
   blocker: string;
 }
 
+export interface ReviseProjectTaskContractInput {
+  intent?: string;
+  constraints?: string[];
+  out_of_scope?: string[];
+  verification_requirements?: TaskVerificationRequirement[];
+  review_policy?: TaskReviewPolicy;
+}
+
+export interface TaskEvidenceRecord {
+  evidence_id: string;
+  project_id: string;
+  task_id: string;
+  session_id: string | null;
+  contract_revision: number;
+  requirement_id: string | null;
+  kind: string;
+  ref: string;
+  summary: string;
+  candidate_digest: string;
+  state: 'passed' | 'failed' | 'info';
+  created_at: string;
+}
+
+export interface AddProjectTaskEvidenceInput {
+  requirement_id?: string | null;
+  kind: string;
+  ref: string;
+  summary?: string;
+  candidate_digest: string;
+  state: TaskEvidenceRecord['state'];
+}
+
+export interface RequestProjectTaskCompletionInput {
+  candidate_digest: string;
+  session_id?: string;
+}
+
+export interface TaskCompletionUnmetCondition {
+  code: string;
+  requirement_id?: string;
+  message: string;
+}
+
+export interface TaskBlocker {
+  blocker_id: string;
+  project_id: string;
+  task_id: string;
+  category: string;
+  requested_action: string;
+  target: Record<string, unknown>;
+  request_digest: string;
+  attempts_made: string[];
+  status: 'open' | 'resolved' | 'canceled' | 'expired';
+  next_reminder_at: string | null;
+  expires_at: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateProjectTaskBlockerInput {
+  category: string;
+  requested_action: string;
+  target?: Record<string, unknown>;
+  request_digest: string;
+  attempts_made?: string[];
+  next_reminder_at?: string | null;
+  expires_at?: string | null;
+  session_id?: string;
+}
+
+export interface TaskEvent {
+  event_id: string;
+  event_type: string;
+  actor_type: string;
+  actor_id: string | null;
+  session_id: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface TaskSessionLink {
+  task_id: string;
+  session_id: string;
+  role: 'coordinator' | 'worker' | 'verifier';
+  parent_session_id: string | null;
+  created_at: string;
+}
+
+export interface TaskMessage {
+  message_id: string;
+  task_id: string;
+  sender_session_id: string | null;
+  recipient_session_id: string | null;
+  type: string;
+  body: Record<string, unknown>;
+  correlation_id: string | null;
+  idempotency_key: string;
+  status: 'accepted' | 'queued' | 'delivered' | 'processed' | 'failed' | 'expired';
+  acknowledged_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SendProjectTaskMessageInput {
+  recipient_session_id?: string | null;
+  type: string;
+  body: Record<string, unknown>;
+  correlation_id?: string | null;
+  idempotency_key: string;
+}
+
+export type TaskRefinementScope = 'task' | 'agent' | 'project' | 'account' | 'platform';
+
+export interface TaskRefinementProposal {
+  proposal_id: string;
+  task_id: string | null;
+  scope: TaskRefinementScope;
+  observation: string;
+  base_revision: string;
+  patch: Record<string, unknown>;
+  rollback_patch: Record<string, unknown>;
+  evidence_refs: string[];
+  status: 'proposed' | 'applied' | 'rejected' | 'rolled_back';
+  created_by_session_id: string | null;
+  applied_at: string | null;
+  rolled_back_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProposeProjectTaskRefinementInput {
+  task_id?: string | null;
+  scope: TaskRefinementScope;
+  observation: string;
+  base_revision: string;
+  patch: Record<string, unknown>;
+  evidence_refs?: string[];
+}
+
 /** Immutable server-enforced bounds for one task worker. */
 export interface ProjectTaskWorkerContract {
   max_wall_seconds: number;
@@ -109,7 +284,11 @@ export interface RegisterProjectTaskWorkerInput {
 
 export interface RegisterProjectTaskWorkerResponse {
   task: ProjectTask;
-  worker: { session_id: string; command_id: string; state: 'queued' | 'drained' };
+  worker: {
+    session_id: string;
+    command_id: string;
+    state: 'queued' | 'drained';
+  };
   contract: ProjectTaskWorkerContract;
 }
 
@@ -181,6 +360,20 @@ export async function claimProjectTask(
   );
 }
 
+/** Idempotently release an unused task claim after coordinator launch compensation. */
+export async function releaseProjectTaskClaim(
+  projectId: string,
+  taskId: string,
+  input: { session_id: string },
+) {
+  return unwrap(
+    await backendApi.post<{ task: ProjectTask; released: boolean }>(
+      `${taskPath(projectId, taskId)}/release-claim`,
+      input,
+    ),
+  );
+}
+
 export async function completeProjectTask(
   projectId: string,
   taskId: string,
@@ -198,6 +391,174 @@ export async function blockProjectTask(
 ) {
   return unwrap(
     await backendApi.post<{ task: ProjectTask }>(`${taskPath(projectId, taskId)}/block`, input),
+  );
+}
+
+/** Resolve the durable task bound to the authenticated session principal. */
+export async function getCurrentProjectTask(projectId: string) {
+  return unwrap(await backendApi.get<{ task: ProjectTask }>(`${taskPath(projectId)}/current`));
+}
+
+/** Create a human-authored revision of the task outcome and verification contract. */
+export async function reviseProjectTaskContract(
+  projectId: string,
+  taskId: string,
+  input: ReviseProjectTaskContractInput,
+) {
+  return unwrap(
+    await backendApi.patch<{ task: ProjectTask }>(`${taskPath(projectId, taskId)}/contract`, input),
+  );
+}
+
+export async function listProjectTaskEvidence(projectId: string, taskId: string) {
+  return unwrap(
+    await backendApi.get<{ evidence: TaskEvidenceRecord[] }>(
+      `${taskPath(projectId, taskId)}/evidence`,
+    ),
+  );
+}
+
+export async function addProjectTaskEvidence(
+  projectId: string,
+  taskId: string,
+  input: AddProjectTaskEvidenceInput,
+) {
+  return unwrap(
+    await backendApi.post<{ evidence: TaskEvidenceRecord }>(
+      `${taskPath(projectId, taskId)}/evidence`,
+      input,
+    ),
+  );
+}
+
+export async function requestProjectTaskCompletion(
+  projectId: string,
+  taskId: string,
+  input: RequestProjectTaskCompletionInput,
+) {
+  return unwrap(
+    await backendApi.post<{ task: ProjectTask }>(
+      `${taskPath(projectId, taskId)}/request-completion`,
+      input,
+    ),
+  );
+}
+
+export async function listProjectTaskBlockers(projectId: string, taskId: string) {
+  return unwrap(
+    await backendApi.get<{ blockers: TaskBlocker[] }>(`${taskPath(projectId, taskId)}/blockers`),
+  );
+}
+
+export async function createProjectTaskBlocker(
+  projectId: string,
+  taskId: string,
+  input: CreateProjectTaskBlockerInput,
+) {
+  return unwrap(
+    await backendApi.post<{ blocker: TaskBlocker; created: boolean }>(
+      `${taskPath(projectId, taskId)}/blockers`,
+      input,
+    ),
+  );
+}
+
+export async function resolveProjectTaskBlocker(
+  projectId: string,
+  taskId: string,
+  blockerId: string,
+) {
+  return unwrap(
+    await backendApi.post<{ blocker: TaskBlocker }>(
+      `${taskPath(projectId, taskId)}/blockers/${encodeURIComponent(blockerId)}/resolve`,
+      {},
+    ),
+  );
+}
+
+export async function listProjectTaskEvents(projectId: string, taskId: string, limit?: number) {
+  const suffix = limit === undefined ? '' : `?limit=${encodeURIComponent(String(limit))}`;
+  return unwrap(
+    await backendApi.get<{ events: TaskEvent[] }>(`${taskPath(projectId, taskId)}/events${suffix}`),
+  );
+}
+
+export async function listProjectTaskSessionLinks(projectId: string, taskId: string) {
+  return unwrap(
+    await backendApi.get<{ sessions: TaskSessionLink[] }>(
+      `${taskPath(projectId, taskId)}/sessions`,
+    ),
+  );
+}
+
+export async function listProjectTaskMessages(projectId: string, taskId: string) {
+  return unwrap(
+    await backendApi.get<{ messages: TaskMessage[] }>(`${taskPath(projectId, taskId)}/messages`),
+  );
+}
+
+export async function sendProjectTaskMessage(
+  projectId: string,
+  taskId: string,
+  input: SendProjectTaskMessageInput,
+) {
+  return unwrap(
+    await backendApi.post<{ message: TaskMessage; created: boolean }>(
+      `${taskPath(projectId, taskId)}/messages`,
+      input,
+    ),
+  );
+}
+
+export async function acknowledgeProjectTaskMessage(
+  projectId: string,
+  taskId: string,
+  messageId: string,
+) {
+  return unwrap(
+    await backendApi.post<{ message: TaskMessage }>(
+      `${taskPath(projectId, taskId)}/messages/${encodeURIComponent(messageId)}/ack`,
+      {},
+    ),
+  );
+}
+
+export async function cancelProjectTask(
+  projectId: string,
+  taskId: string,
+  input: { reason: string },
+) {
+  return unwrap(
+    await backendApi.post<{ task: ProjectTask }>(`${taskPath(projectId, taskId)}/cancel`, input),
+  );
+}
+
+export async function listProjectTaskRefinements(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ refinements: TaskRefinementProposal[] }>(
+      `/projects/${encodeURIComponent(projectId)}/refinements`,
+    ),
+  );
+}
+
+export async function proposeProjectTaskRefinement(
+  projectId: string,
+  input: ProposeProjectTaskRefinementInput,
+) {
+  return unwrap(
+    await backendApi.post<{ refinement: TaskRefinementProposal }>(
+      `/projects/${encodeURIComponent(projectId)}/refinements`,
+      input,
+    ),
+  );
+}
+
+export async function rollbackProjectTaskRefinement(projectId: string, proposalId: string) {
+  return unwrap(
+    await backendApi.post<{ refinement: TaskRefinementProposal }>(
+      `/projects/${encodeURIComponent(projectId)}/refinements/${encodeURIComponent(proposalId)}/rollback`,
+      {},
+    ),
   );
 }
 

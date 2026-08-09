@@ -17,6 +17,7 @@ export type SessionInvocationSource =
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
+  | 'system:task-ready-reconciler'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';
@@ -33,6 +34,13 @@ export type SessionLifecyclePostCreateAction =
       source: SessionInvocationSource;
       text: string;
       userId?: string | null;
+    }
+  | {
+      /** Bind a new AGI coordinator to ready work and durably queue its first turn. */
+      type: 'claim_ready_task';
+      taskId: string;
+      leaseSeconds: number;
+      prompt: string;
     };
 
 export type SessionLifecycleStatus =
@@ -54,8 +62,8 @@ export interface CreateSessionCommand {
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
-  /** Trusted server-only proof that this create came from a platform-meta goal push. */
-  platformMetaGoalPush?: boolean;
+  /** Trusted server-only proof that this create came from a platform AGI goal push. */
+  platformAgiGoalPush?: boolean;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
   request?: RequestAuditContext;
@@ -78,8 +86,8 @@ export interface QueuedCreateSessionPayload {
   /** Absent on commands persisted before principal type was added. */
   requestingPrincipalType?: 'human' | 'service_account';
   metadata?: Record<string, unknown>;
-  /** Trusted server-only proof that this create came from a platform-meta goal push. */
-  platformMetaGoalPush?: boolean;
+  /** Trusted server-only proof that this create came from a platform AGI goal push. */
+  platformAgiGoalPush?: boolean;
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnections?: boolean;

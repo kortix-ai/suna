@@ -347,11 +347,9 @@ describe('Kortix Apps schema', () => {
   test('stores immutable artifacts and deployment versions', () => {
     expect(getTableConfig(appArtifacts).name).toBe('app_artifacts');
     expect(getTableConfig(appDeployments).name).toBe('app_deployments');
-    expect(columnNames(appDeployments)).toEqual(expect.arrayContaining([
-      'created_by',
-      'source_session_id',
-      'actor_type',
-    ]));
+    expect(columnNames(appDeployments)).toEqual(
+      expect.arrayContaining(['created_by', 'source_session_id', 'actor_type']),
+    );
     expect(indexNames(appDeployments)).toContain('app_deployments_app_version_unique');
   });
 
@@ -522,6 +520,13 @@ describe('generated project state tables', () => {
       'parent_id',
       'title',
       'body',
+      'intent',
+      'constraints',
+      'out_of_scope',
+      'contract_revision',
+      'control_plane_version',
+      'verification_requirements',
+      'review_policy',
       'status',
       'priority',
       'assignee_agent',
@@ -558,6 +563,7 @@ describe('generated project state tables', () => {
       'last_no_progress_command_id',
       'escalated_at',
       'liveness_blocker',
+      'completed_at',
       'created_at',
       'updated_at',
     ]);

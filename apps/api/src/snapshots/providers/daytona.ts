@@ -21,7 +21,7 @@ import {
   type StagedContext,
   stageBuildContext,
   stageAppBuildContext,
-  stageMetaBuildContext,
+  stageAgiBuildContext,
   stageWarmFromBaseContext,
 } from '../build-context';
 import { type InvalidatableObservation, shortLivedObservation } from '../observation-cache';
@@ -140,8 +140,8 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       } else {
         ctx = input.runtimeProfile === 'app'
           ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
-          : input.runtimeProfile === 'meta'
-          ? await stageMetaBuildContext()
+          : input.runtimeProfile === 'agi'
+          ? await stageAgiBuildContext()
           : await stageBuildContext(
               input.snapshotName,
               userDockerfile,

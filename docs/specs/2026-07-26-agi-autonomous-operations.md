@@ -22,8 +22,8 @@ This document answers that, and specifies the surface built on top of it: the
 AGI agent, goals, tasks, and the loop that keeps them advancing without a human
 prompt.
 
-Implementation update (2026-08-07): the shipped feature key is `meta_agent`,
-and it gates only platform-launched reserved-meta sessions. Goal and task API,
+Implementation update (2026-08-07): the feature key is `agi`,
+and it gates only platform-launched reserved AGI sessions. Goal and task API,
 SDK, and CLI surfaces remain available through their leaf IAM actions. The
 older single-key `agi` proposal below is superseded by
 `2026-08-06-autonomous-agent-harness.md`.
@@ -470,7 +470,7 @@ UI-only capability is out of contract (R-8.1, 2026-07-24 spec).
 
 ### 10.2 Experimental gate
 
-R-44 — Superseded. `meta_agent` is default-off and controls only reserved-meta
+R-44 — Superseded. `agi` is default-off and controls only reserved AGI
 launch. Goal/task routes, CLI commands, SDK methods, and manifest validation use
 leaf IAM and schema enforcement rather than the removed all-or-nothing `agi`
 gate.
@@ -506,7 +506,7 @@ gate.
 
 Each step is independently shippable and independently useful.
 
-1. **Reserved-meta gate** — `meta_agent` gates platform meta launch only.
+1. **Reserved AGI gate** — `agi` gates platform AGI launch only.
 2. **Tasks** — table, claim semantics, `kortix tasks` CLI, API routes. Usable by
    existing agents immediately, with no AGI and no goals.
 3. **Goals** — `kortix.yaml` block, `validate` enforcement, `push` desugaring to

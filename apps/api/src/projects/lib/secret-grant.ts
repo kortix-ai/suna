@@ -29,12 +29,14 @@
  */
 
 import type { AgentGrant } from '@kortix/db';
+import { isAgiAgentName } from '@kortix/shared';
 import {
   DEFAULT_AGENT_SENTINEL,
   type LoadedAgents,
   grantFromLoadedAgents,
   loadProjectAgents,
 } from '../agents';
+import { platformAgiAgentGrant } from './platform-agi-agent';
 
 /**
  * The grant could not be resolved (manifest unreadable, loader threw). Callers
@@ -255,9 +257,19 @@ export async function resolveSessionAgentGrant(
 async function loadGrantForRunningAgent(
   input: SessionSecretGrantInput,
 ): Promise<{ grant: AgentGrant | null; env: string[] | 'all' | undefined }> {
-  if (!input.defaultBranch) return { grant: null, env: undefined };
-
   const runningAgent = effectiveRunningAgent(input.requestedAgent, input.sessionAgent);
+
+  // The reserved AGI agent is platform-owned. It does not exist in the
+  // project's Git manifest and it must work for repository-free projects.
+  // Token minting uses this same grant, so ordinary meta prompts must resolve
+  // it before the Git precondition instead of treating the missing repository
+  // as unrestricted and refusing a false privilege widening.
+  if (isAgiAgentName(input.sessionAgent) && isAgiAgentName(runningAgent)) {
+    const grant = platformAgiAgentGrant();
+    return { grant, env: grant.env };
+  }
+
+  if (!input.defaultBranch) return { grant: null, env: undefined };
 
   let loaded: LoadedAgents;
   try {

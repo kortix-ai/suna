@@ -25,6 +25,7 @@ beforeAll(async () => {
     select p.project_id, p.account_id, m.user_id
     from kortix.projects p
     join kortix.account_members m on m.account_id = p.account_id and m.account_role = 'owner'
+    where p.status = 'active'
     limit 1`)) as unknown as Array<{ project_id: string; account_id: string; user_id: string }>;
   const r = rows[0];
   if (r) ctx = { projectId: r.project_id, accountId: r.account_id, userId: r.user_id };
@@ -74,10 +75,10 @@ describe('HTTP enforcement — CR merge gate via the real route', () => {
     expect(res.status).not.toBe(403);
   });
 
-  test('meta agent with a stale all grant → 403 at the independent reserved-principal gate', async () => {
+  test('AGI agent with a stale all grant → 403 at the independent reserved-principal gate', async () => {
     if (!ctx) return;
     const secret = await mintToken({
-      agent: 'meta',
+      agent: 'agi',
       kortixCli: 'all',
       connectors: [],
       env: [],

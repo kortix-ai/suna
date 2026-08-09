@@ -17,7 +17,7 @@ import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
 import {
   stageBuildContext,
   stageAppBuildContext,
-  stageMetaBuildContext,
+  stageAgiBuildContext,
   stageAgentBinaryGz,
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
@@ -492,8 +492,8 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
     const ctx = input.runtimeProfile === 'app'
       ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
-      : input.runtimeProfile === 'meta'
-      ? await stageMetaBuildContext()
+      : input.runtimeProfile === 'agi'
+      ? await stageAgiBuildContext()
       : await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {

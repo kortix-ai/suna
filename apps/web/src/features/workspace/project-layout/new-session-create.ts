@@ -1,6 +1,6 @@
 import type { ComposerOptions } from '@/features/session/composer-chat-input';
 import type { SessionConnectorBindingsInput } from '@kortix/sdk';
-import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
+import { isAgiAgentName, AGI_SANDBOX_SLUG } from '@kortix/shared';
 
 export interface NewSessionCreateInput {
   sandbox_slug?: string;
@@ -27,8 +27,8 @@ export function buildNewSessionCreateInput(
   options: Pick<ComposerOptions, 'agent' | 'scope'> & { sandbox_slug?: string } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
-  if (isMetaAgentName(options.agent)) {
-    input.sandbox_slug = META_SANDBOX_SLUG;
+  if (isAgiAgentName(options.agent)) {
+    input.sandbox_slug = AGI_SANDBOX_SLUG;
   } else if (options.sandbox_slug) {
     input.sandbox_slug = options.sandbox_slug;
   }

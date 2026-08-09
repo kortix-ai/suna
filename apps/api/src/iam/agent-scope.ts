@@ -1,8 +1,9 @@
 import type { AgentGrant } from '@kortix/db';
-import { isMetaAgentName } from '@kortix/shared';
+import { isAgiAgentName } from '@kortix/shared';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { canonicalConnectorAlias } from '../shared/connector-alias';
+import { PLATFORM_AGI_AGENT_ACTIONS } from './agi-agent-policy';
 
 /**
  * Agent-session scope enforcement — the `kortix_cli` half of per-agent
@@ -44,15 +45,26 @@ const AGENT_ACTION_ALIASES: Readonly<Record<string, string>> = {
   'project.gitops.merge': 'project.cr.merge',
 };
 
-const META_AGENT_DENIED_ACTIONS: ReadonlySet<string> = new Set([
+const AGI_AGENT_DENIED_ACTIONS: ReadonlySet<string> = new Set([
   'project.cr.merge',
   'project.gitops.merge',
 ]);
 
-const META_AGENT_EXACT_DENIED_ACTIONS: ReadonlySet<string> = new Set([
-  ...META_AGENT_DENIED_ACTIONS,
+const AGI_AGENT_EXACT_DENIED_ACTIONS: ReadonlySet<string> = new Set([
+  ...AGI_AGENT_DENIED_ACTIONS,
   'project.gitops.push',
 ]);
+
+function effectiveKortixCli(grant: AgentGrant): AgentGrant['kortixCli'] {
+  return isAgiAgentName(grant.agent) ? [...PLATFORM_AGI_AGENT_ACTIONS] : grant.kortixCli;
+}
+
+function agentScopeDeniedMessage(grant: AgentGrant | null, action: string, exact: boolean): string {
+  if (grant && isAgiAgentName(grant.agent)) {
+    return `The reserved AGI coordinator is not ${exact ? 'explicitly ' : ''}granted "${action}" by platform policy.`;
+  }
+  return `Agent "${grant?.agent ?? 'unknown'}" is not ${exact ? 'explicitly ' : ''}granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`;
+}
 
 /**
  * True only when the grant contains this exact action.
@@ -63,8 +75,9 @@ const META_AGENT_EXACT_DENIED_ACTIONS: ReadonlySet<string> = new Set([
  */
 export function agentMayPerformExact(grant: AgentGrant | null, action: string): boolean {
   if (!grant) return true;
-  if (isMetaAgentName(grant.agent) && META_AGENT_EXACT_DENIED_ACTIONS.has(action)) return false;
-  return grant.kortixCli === 'all' || grant.kortixCli.includes(action);
+  if (isAgiAgentName(grant.agent) && AGI_AGENT_EXACT_DENIED_ACTIONS.has(action)) return false;
+  const kortixCli = effectiveKortixCli(grant);
+  return kortixCli === 'all' || kortixCli.includes(action);
 }
 
 /** True if the agent-session grant permits `action` (or there is no grant). */
@@ -72,11 +85,12 @@ export function agentMayPerform(grant: AgentGrant | null, action: string): boole
   if (!grant) return true; // no grant = no restriction
   // This principal-level deny protects sessions minted before the platform
   // grant was narrowed, including stale tokens stamped with `kortixCli: all`.
-  if (isMetaAgentName(grant.agent) && META_AGENT_DENIED_ACTIONS.has(action)) return false;
-  if (grant.kortixCli === 'all') return true;
-  if (grant.kortixCli.includes(action)) return true;
+  if (isAgiAgentName(grant.agent) && AGI_AGENT_DENIED_ACTIONS.has(action)) return false;
+  const kortixCli = effectiveKortixCli(grant);
+  if (kortixCli === 'all') return true;
+  if (kortixCli.includes(action)) return true;
   const alias = AGENT_ACTION_ALIASES[action];
-  return alias ? grant.kortixCli.includes(alias) : false;
+  return alias ? kortixCli.includes(alias) : false;
 }
 
 /** Throw 403 unless the agent grant contains the exact action. */
@@ -84,7 +98,7 @@ export function assertAgentScopeExact(c: Context, action: string): void {
   const grant = getAgentGrant(c);
   if (agentMayPerformExact(grant, action)) return;
   throw new HTTPException(403, {
-    message: `Agent "${grant?.agent ?? 'unknown'}" is not explicitly granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
+    message: agentScopeDeniedMessage(grant, action, true),
   });
 }
 
@@ -145,6 +159,6 @@ export function assertAgentScope(c: Context, action: string): void {
   const grant = getAgentGrant(c);
   if (agentMayPerform(grant, action)) return;
   throw new HTTPException(403, {
-    message: `Agent "${grant?.agent ?? 'unknown'}" is not granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
+    message: agentScopeDeniedMessage(grant, action, false),
   });
 }

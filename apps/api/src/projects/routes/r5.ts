@@ -38,7 +38,7 @@ import {
   serializeProject,
   serializeProjectGitConnection,
 } from '../lib/serializers';
-import { addPlatformMetaAgent, projectMetaAgentEnabled } from '../lib/platform-meta-agent';
+import { addPlatformAgiAgent, projectAgiEnabled } from '../lib/platform-agi-agent';
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -134,10 +134,10 @@ projectsApp.openapi(
   };
   const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
   // The platform coordinator appears in the agent list (and becomes the
-  // default) only for projects that opted into the `meta_agent` experimental
+  // default) only for projects that opted into the `agi` experimental
   // feature. Flag off: the config is exactly the repo-declared surface.
-  const config = projectMetaAgentEnabled(loaded.row.metadata)
-    ? addPlatformMetaAgent(filteredConfig)
+  const config = projectAgiEnabled(loaded.row.metadata)
+    ? addPlatformAgiAgent(filteredConfig)
     : filteredConfig;
   // …and hide the raw FILES of those resources from the file list (visibility
   // isolation). Reuses the config already loaded — no extra git round-trip.
@@ -377,7 +377,7 @@ projectsApp.openapi(
   const path = normalizeString(c.req.query('path'));
   if (!path) return c.json({ error: 'path query param is required' }, 400);
   // Absolute and traversal paths can never resolve inside the repo tree —
-  // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
+  // e.g. the platform AGI agent's /workspace/AGENTS.md lives in the sandbox
   // image, not the project repo. Answer like any other missing file.
   if (path.startsWith('/') || path.includes('..')) {
     return c.json({ error: 'File not found' }, 404);
@@ -441,7 +441,7 @@ projectsApp.openapi(
   const path = normalizeString(c.req.query('path'));
   if (!path) return c.json({ error: 'path query param is required' }, 400);
   // Absolute and traversal paths can never resolve inside the repo tree —
-  // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
+  // e.g. the platform AGI agent's /workspace/AGENTS.md lives in the sandbox
   // image, not the project repo. Answer like any other missing file.
   if (path.startsWith('/') || path.includes('..')) {
     return c.json({ error: 'File not found' }, 404);

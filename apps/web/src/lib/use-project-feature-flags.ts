@@ -31,7 +31,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const voice = useFeatureFlag(projectId, 'voice');
   const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const reviewCenter = useFeatureFlag(projectId, 'review_center');
-  const metaAgent = useFeatureFlag(projectId, 'meta_agent');
+  const agi = useFeatureFlag(projectId, 'agi');
   const apps = useFeatureFlag(projectId, 'apps');
 
   return {
@@ -44,7 +44,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       voice: voice.enabled,
       llm_gateway: llmGateway.enabled,
       review_center: reviewCenter.enabled,
-      meta_agent: metaAgent.enabled,
+      agi: agi.enabled,
       apps: apps.enabled,
     },
     isLoading: apps.isLoading,

@@ -8,6 +8,10 @@ import { requiresRespawn, type Opencode } from '../opencode'
 import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
+  // Local-dev callback tunnels rotate while a cloud sandbox can persist for
+  // days. Refresh the control-plane URL before every prompt so new CLI/tool
+  // shells do not keep calling an expired tunnel from the boot environment.
+  'KORTIX_API_URL',
   'KORTIX_LLM_API_KEY',
   'KORTIX_LLM_BASE_URL',
   // Gateway-only: the provider-key names opencode must never see. Flipped with the

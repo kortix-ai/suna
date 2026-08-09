@@ -38,7 +38,7 @@ NOT be the sole verifier.
 | **Harness** | The model loop that assembles context, invokes tools, and emits turns. OpenCode is the current harness. It is replaceable. |
 | **Kernel** | A harness-local programmable working environment. Prime Agent uses persistent IPython. A kernel is optional and never authoritative storage. |
 | **Autonomy** | The bounded control policy that decides when to start, continue, wait, escalate, or stop work. Kortix implements this above the harness. |
-| **Meta agent** | The platform-owned `meta` coordinator. It decomposes goals and starts specialist Kortix sessions. It does not perform project work in its coordinator sandbox. |
+| **AGI agent** | The platform-owned `agi` coordinator. It decomposes goals and starts specialist Kortix sessions. It does not perform project work in its coordinator sandbox. |
 
 These terms are not interchangeable. A sandbox is an isolation boundary. A
 kernel is a working-memory convenience. Autonomy is a control policy. The
@@ -53,7 +53,7 @@ The comparison uses Prime Agent public commit
 |---|---|---|
 | Session lifecycle | Local daemon, one worker per root tree, JSONL transcript, recovery journal | Keep Kortix API sessions, lifecycle queue, sandbox providers, and PostgreSQL leases. Do not port the local daemon. |
 | Programmable kernel | Persistent IPython plus typed host requests | Do not make `dill` or a process namespace authoritative. Add a sandbox-local kernel only if evaluation proves it improves results. Host operations remain typed SDK/API calls. |
-| Recursive workers | `rlm()` admits child sessions; results arrive through messages or files | Reuse `meta` plus ordinary Kortix sessions. Record task, parent session, budget, state, and result explicitly. |
+| Recursive workers | `rlm()` admits child sessions; results arrive through messages or files | Reuse `agi` plus ordinary Kortix sessions. Record task, parent session, budget, state, and result explicitly. |
 | Goal | One session-scoped objective stored in its JSONL state | Store reviewed goal declarations in git. Store contended execution and measurement state in PostgreSQL. A session cannot own a durable goal. |
 | Heartbeat | Session-local recurring prompts and schedules | Desugar goal `push` to the existing Kortix trigger subsystem. Do not add a heartbeat scheduler or wake queue. |
 | Continual harness | Local/global JSON CRUD for prompts, memories, skills, and subagent descriptions | Keep durable knowledge in reviewed repository text. Add provenance, evidence, and rollback through git. Do not call unverified CRUD “learning.” |
@@ -99,7 +99,7 @@ recover durable goal and tasks
   -> continue, wait for the existing trigger, escalate, or stop
 ```
 
-Only five product nouns are required: workspace, meta agent, goal, task, and
+Only five product nouns are required: workspace, AGI, goal, task, and
 trigger. Do not add an organization chart, workflow engine, wake queue, or
 separate memory service.
 
@@ -186,7 +186,7 @@ cost enforcement.
 remains pending initial-prompt delivery and is not classified as settled or
 no-progress. A liveness-stopped worker must not be revived.
 
-The reserved meta principal excludes broad project write, arbitrary session
+The reserved AGI principal excludes broad project write, arbitrary session
 stop, protected-branch push, and merge. Runtime Git clone credentials contain
 only the Kortix proxy origin and the caller's existing Kortix token. Sandbox
 tokens are read-only at the proxy. A session PAT must contain the literal
@@ -234,7 +234,7 @@ Relevant evaluation guidance:
 - AI Agents That Matter: <https://arxiv.org/abs/2407.01502>
 - NIST AI RMF 1.0: <https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf>
 
-The product MAY use “AGI” as a concise name for the meta-agent experience. The
+The product MAY use “AGI” as a concise name for the AGI experience. The
 technical documentation and evidence MUST call it a long-running autonomous-
 agent harness until a predeclared AGI definition and independently reproduced
 threshold are satisfied.

@@ -7,15 +7,25 @@ let authType: 'pat' | 'supabase' = 'pat';
 let authenticatedSessionId: string | null = 'authenticated-session';
 let workerState: 'not_worker' | 'spawned_unbound' | 'bound' = 'not_worker';
 
-function task(status: 'doing' | 'done' | 'blocked' = 'doing') {
+function task(
+  status: 'doing' | 'done' | 'blocked' = 'doing',
+  goalSlug: string | null = 'ship-kernel',
+) {
   const now = new Date('2026-08-07T12:00:00.000Z');
   return {
     taskId: TASK_ID,
     projectId: PROJECT_ID,
-    goalSlug: 'ship-kernel',
+    goalSlug,
     parentId: null,
     title: 'Identity-bound task',
     body: '',
+    intent: 'Complete the identity-bound task.',
+    constraints: [],
+    outOfScope: [],
+    contractRevision: 1,
+    controlPlaneVersion: 1,
+    verificationRequirements: [],
+    reviewPolicy: { mode: 'auto' as const },
     status,
     priority: 0,
     assigneeAgent: null,
@@ -32,6 +42,7 @@ function task(status: 'doing' | 'done' | 'blocked' = 'doing') {
     livenessStartedAt: null,
     livenessDeadlineAt: null,
     livenessIterationsAdmitted: 0,
+    livenessTurnId: null,
     noProgressSettlements: 0,
     continuationConsumedAt: null,
     lastProgressAt: null,
@@ -41,6 +52,7 @@ function task(status: 'doing' | 'done' | 'blocked' = 'doing') {
     lastNoProgressCommandId: null,
     escalatedAt: null,
     livenessBlocker: null,
+    completedAt: status === 'done' ? now : null,
     result: {},
     createdAt: now,
     updatedAt: now,
@@ -48,7 +60,17 @@ function task(status: 'doing' | 'done' | 'blocked' = 'doing') {
 }
 
 const claimTask = mock(async () => task('doing'));
+const createTask = mock(async (_database: unknown, input: { goalSlug: string | null }) => ({
+  task: task('doing', input.goalSlug),
+  created: true,
+}));
+const listTasks = mock(async () => [task('doing')]);
 const transitionTask = mock(async (input: { status: 'done' | 'blocked' }) => task(input.status));
+const releaseTaskClaim = mock(async () => ({
+  state: 'released' as const,
+  task: task('doing'),
+  released: true,
+}));
 const recordObservation = mock(async (input: { sessionId?: string | null }) => ({
   observationId: '55555555-5555-4555-8555-555555555555',
   projectId: PROJECT_ID,
@@ -64,6 +86,8 @@ const recordObservation = mock(async (input: { sessionId?: string | null }) => (
 const realStore = await import('../generated-state-store');
 mock.module('../generated-state-store', () => ({
   ...realStore,
+  createProjectTask: createTask,
+  listProjectTasks: listTasks,
   claimProjectTask: claimTask,
   transitionProjectTask: transitionTask,
   recordProjectGoalObservation: recordObservation,
@@ -79,12 +103,18 @@ mock.module('../generated-state-store', () => ({
     workerState === 'bound' ? { taskId: TASK_ID, status: 'doing' as const } : null,
 }));
 
+mock.module('../task-claim-release-store', () => ({
+  releaseProjectTaskClaimForCompensation: releaseTaskClaim,
+}));
+
 mock.module('../../shared/db', () => ({
   hasDatabase: true,
   db: {
     select: () => ({
       from: () => ({
-        where: () => ({ limit: async () => [{ sessionId: 'existing-session' }] }),
+        where: () => ({
+          limit: async () => [{ sessionId: 'existing-session' }],
+        }),
       }),
     }),
   },
@@ -156,13 +186,15 @@ projectsApp.use('*', async (c, next) => {
 });
 await import('./goals-tasks');
 
-function post(suffix: 'claim' | 'done' | 'block', sessionId: string) {
+function post(suffix: 'claim' | 'release-claim' | 'done' | 'block', sessionId: string) {
   const extra =
     suffix === 'claim'
       ? { lease_seconds: 300 }
-      : suffix === 'done'
-        ? { evidence: [{ ref: 'proof' }] }
-        : { blocker: 'waiting' };
+      : suffix === 'release-claim'
+        ? {}
+        : suffix === 'done'
+          ? { evidence: [{ ref: 'proof' }] }
+          : { blocker: 'waiting' };
   return projectsApp.request(`/${PROJECT_ID}/tasks/${TASK_ID}/${suffix}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -175,6 +207,9 @@ beforeEach(() => {
   authenticatedSessionId = 'authenticated-session';
   workerState = 'not_worker';
   claimTask.mockClear();
+  createTask.mockClear();
+  listTasks.mockClear();
+  releaseTaskClaim.mockClear();
   transitionTask.mockClear();
   recordObservation.mockClear();
 });
@@ -202,12 +237,92 @@ describe('goal health HTTP contract', () => {
   });
 });
 
+describe('task creation HTTP contract', () => {
+  test('creates a task without a Git-authored goal', async () => {
+    const response = await projectsApp.request(`/${PROJECT_ID}/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Task-first work', origin: 'human' }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      created: true,
+      task: { goal_slug: null, title: 'Identity-bound task' },
+    });
+    expect(createTask).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ goalSlug: null }),
+    );
+  });
+
+  test('preserves goal validation and linkage when goal_slug is present', async () => {
+    const response = await projectsApp.request(`/${PROJECT_ID}/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        goal_slug: 'ship-kernel',
+        title: 'Goal-linked work',
+        origin: 'human',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      created: true,
+      task: { goal_slug: 'ship-kernel' },
+    });
+    expect(createTask).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ goalSlug: 'ship-kernel' }),
+    );
+  });
+
+  for (const status of ['doing', 'review', 'cancelled'] as const) {
+    test(`rejects direct creation in ${status}`, async () => {
+      const response = await projectsApp.request(`/${PROJECT_ID}/tasks`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Invalid initial state',
+          origin: 'human',
+          status,
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(createTask).toHaveBeenCalledTimes(0);
+    });
+  }
+});
+
+describe('task list HTTP contract', () => {
+  test('preserves the existing goal_slug filter', async () => {
+    const response = await projectsApp.request(
+      `/${PROJECT_ID}/tasks?goal_slug=ship-kernel&status=todo&limit=25`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(listTasks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        projectId: PROJECT_ID,
+        goalSlug: 'ship-kernel',
+        statuses: ['todo'],
+        limit: 25,
+      }),
+    );
+  });
+});
+
 describe('task transition HTTP identity binding', () => {
-  for (const suffix of ['claim', 'done', 'block'] as const) {
+  for (const suffix of ['claim', 'release-claim', 'done', 'block'] as const) {
     test(`a project-session PAT cannot impersonate another session on ${suffix}`, async () => {
       const response = await post(suffix, 'impersonated-session');
       expect(response.status).toBe(403);
-      expect(await response.json()).toMatchObject({ code: 'session_identity_mismatch' });
+      expect(await response.json()).toMatchObject({
+        code: 'session_identity_mismatch',
+      });
     });
   }
 
@@ -216,6 +331,14 @@ describe('task transition HTTP identity binding', () => {
     const response = await post('claim', 'existing-session');
     expect(response.status).toBe(200);
     expect(claimTask).toHaveBeenCalledTimes(1);
+  });
+
+  test('a human PAT can idempotently release an existing project session claim', async () => {
+    authenticatedSessionId = null;
+    const response = await post('release-claim', 'existing-session');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ released: true });
+    expect(releaseTaskClaim).toHaveBeenCalledTimes(1);
   });
 
   test('a Supabase auth session is not mistaken for a project session', async () => {
@@ -243,7 +366,9 @@ describe('goal observation HTTP identity binding', () => {
       }),
     });
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'session_identity_mismatch' });
+    expect(await response.json()).toMatchObject({
+      code: 'session_identity_mismatch',
+    });
   });
 
   test('a project-session principal cannot attribute an observation to another session', async () => {
@@ -259,7 +384,9 @@ describe('goal observation HTTP identity binding', () => {
       }),
     });
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'session_identity_mismatch' });
+    expect(await response.json()).toMatchObject({
+      code: 'session_identity_mismatch',
+    });
   });
 });
 
@@ -268,7 +395,9 @@ describe('worker task-control confinement', () => {
     workerState = 'spawned_unbound';
     const response = await post('claim', 'authenticated-session');
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'task_worker_control_denied' });
+    expect(await response.json()).toMatchObject({
+      code: 'task_worker_control_denied',
+    });
     expect(claimTask).toHaveBeenCalledTimes(0);
   });
 
@@ -284,7 +413,9 @@ describe('worker task-control confinement', () => {
       }),
     });
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'task_worker_control_denied' });
+    expect(await response.json()).toMatchObject({
+      code: 'task_worker_control_denied',
+    });
   });
 
   test('a bound worker cannot write goal observations', async () => {
@@ -300,7 +431,9 @@ describe('worker task-control confinement', () => {
       }),
     });
     expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'task_worker_control_denied' });
+    expect(await response.json()).toMatchObject({
+      code: 'task_worker_control_denied',
+    });
     expect(recordObservation).toHaveBeenCalledTimes(0);
   });
 });

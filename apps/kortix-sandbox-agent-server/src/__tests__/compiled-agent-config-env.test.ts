@@ -37,6 +37,10 @@ describe('the live-env allowlist', () => {
     expect(runtimeEnvAllowlist()).toContain('KORTIX_OPENCODE_MODEL')
   })
 
+  test('accepts the control-plane callback URL for warm-session refresh', () => {
+    expect(runtimeEnvAllowlist()).toContain('KORTIX_API_URL')
+  })
+
   test('the allowlist is a closed set, not a pattern over KORTIX_*', () => {
     // Anything reaching opencode's process env is reaching the agent. The gate
     // is an explicit list precisely so a new KORTIX_* name cannot be pushed into

@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
-import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
+import { buildAgiSandboxDockerfile } from '@kortix/shared/sandbox';
 import {
   getManagedSkillFiles,
   getStarterFiles,
@@ -164,7 +164,7 @@ export async function stageAppBuildContext(
  * the same extraction `packages/starter/scripts/write-managed-skills.ts` runs
  * for the standard sandbox image. The daemon overlays `/opt/kortix/managed-skills`
  * into the harness skills dir at boot (`ensureInjectedManagedSkills`), so this
- * is what teaches the meta coordinator the `kortix` CLI.
+ * is what teaches the AGI coordinator the `kortix` CLI.
  */
 async function stageManagedSkills(outDir: string): Promise<void> {
   const SKILLS_PREFIX = '.kortix/opencode/skills/';
@@ -182,7 +182,7 @@ async function stageManagedSkills(outDir: string): Promise<void> {
   }
 }
 
-export async function stageMetaBuildContext(): Promise<StagedContext> {
+export async function stageAgiBuildContext(): Promise<StagedContext> {
   const agentPath = agentBinPath();
   const cliPath = cliBinPath();
   const entrypointPath = entrypointSrcPath();
@@ -190,7 +190,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   await assertExists(cliPath, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(entrypointPath, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
 
-  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-meta-snap-'));
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-agi-snap-'));
   await gzipFile(agentPath, join(contextDir, 'kortix-agent.gz'));
   await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
   await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
@@ -204,7 +204,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   const composedPath = join(contextDir, dockerfileName);
   await writeFileFs(
     composedPath,
-    buildMetaSandboxDockerfile({
+    buildAgiSandboxDockerfile({
       agentBinaryPath: 'kortix-agent.gz',
       cliBinaryPath: 'kortix.gz',
       entrypointScriptPath: 'kortix-entrypoint',

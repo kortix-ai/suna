@@ -8,39 +8,42 @@ import {
 import { and, eq } from "drizzle-orm";
 import { bindChatThread } from "../../channels/slack/binding";
 import { config } from "../../config";
-import { mayRequeueFailedCreate } from "./requeue-policy";
-import { forwardToSandbox } from "../../sandbox-proxy/routes/preview";
-import { resolveSandboxIngress } from "../../sandbox-proxy/backend";
-import { serviceKeyForExternalId } from "../../platform/service-key";
 import type { ProviderName } from "../../platform/providers";
+import { serviceKeyForExternalId } from "../../platform/service-key";
+import { resolveSandboxIngress } from "../../sandbox-proxy/backend";
+import { forwardToSandbox } from "../../sandbox-proxy/routes/preview";
 import { db } from "../../shared/db";
 import { getProjectTaskWorkerBinding } from "../generated-state-store";
+import { syncSandboxEnvForPrompt } from "../lib/sandbox-env-sync";
+import { connectorBindingPayloadConflicts } from "../lib/session-connector-bindings";
+import { createProjectSession } from "../lib/sessions";
+import { allocateRuntimeOnOpen, openSession } from "../routes/shared";
+import { secretsAllowlistPayloadConflicts } from "../secrets";
+import { generateSessionTitleFromFirstPrompt } from "../session-title-generate";
 import {
   projectTaskWorkerPromptAdmission,
   taskWorkerPromptIsAllowed,
 } from "../task-worker-prompt-admission";
-import { connectorBindingPayloadConflicts } from "../lib/session-connector-bindings";
-import { secretsAllowlistPayloadConflicts } from "../secrets";
+import { resolveProjectAutomationActor } from "./actor";
+import { awaitTerminalStage } from "./await-stage";
+import { sessionBackpressureState } from "./backpressure";
+import { type DeliveryTarget, deliverWithRetry } from "./deliver";
 import {
   requireConnectorsConflicts,
   runtimeContextConflicts,
 } from "./idempotency-conflicts";
-import { createProjectSession } from "../lib/sessions";
-import { syncSandboxEnvForPrompt } from "../lib/sandbox-env-sync";
-import { allocateRuntimeOnOpen, openSession } from "../routes/shared";
-import { generateSessionTitleFromFirstPrompt } from "../session-title-generate";
-import { resolveProjectAutomationActor } from "./actor";
-import { awaitTerminalStage } from "./await-stage";
+import { crossAccountIdempotencyResult } from "./idempotency-guard";
+import { openCodePromptPayload } from "./opencode-message-id";
+import { mayRequeueFailedCreate } from "./requeue-policy";
 import { stopSession } from "./stop";
 import { classifyStopCommandResult } from "./stop-command-outcome";
-import { sessionBackpressureState } from "./backpressure";
-import { type DeliveryTarget, deliverWithRetry } from "./deliver";
 import {
   LIFECYCLE_COMMAND_HEARTBEAT_MS,
   type LifecycleCommandClaim,
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
+  claimReadyTaskAndEnqueuePrompt,
   deferLifecycleCommand,
   enqueueContinueSessionCommand,
   lifecycleCommandClaim,
@@ -49,10 +52,10 @@ import {
   markCommandSucceeded,
   renewLifecycleCommandLease,
   repairLegacyLifecycleMessageIds,
+  retireStaleReadyTaskCoordinator,
   resultFromExistingCommand,
 } from "./store";
 import type { QueuedContinueSessionPayload } from "./store";
-import { crossAccountIdempotencyResult } from "./idempotency-guard";
 import type {
   ContinueSessionCommand,
   CreateSessionCommand,
@@ -63,7 +66,6 @@ import type {
   SessionLifecycleResult,
   StartSessionCommand,
 } from "./types";
-import { openCodePromptPayload } from "./opencode-message-id";
 
 const WORKSPACE = "/workspace";
 const DAEMON_PORT = 8000;
@@ -170,8 +172,14 @@ export async function createSession(
           status: "failed",
           sessionId: result.sessionId,
           row: result.row,
-          retryable: false,
-          error: { status: 500, body: { error: postCreate.error } },
+          retryable: postCreate.retryable,
+          error: {
+            status: postCreate.code === "TASK_READY_STALE" ? 409 : 500,
+            body: {
+              error: postCreate.error,
+              ...(postCreate.code ? { code: postCreate.code } : {}),
+            },
+          },
         };
       }
     }
@@ -341,7 +349,7 @@ export async function createSession(
     });
     if (!postCreate.ok) {
       await markCommandFailed(claimed.row.commandId, postCreate.error, {
-        retryable: true,
+        retryable: postCreate.retryable,
         attempts: claimed.row.attempts + 1,
         sessionId: result.sessionId,
         result: {
@@ -349,6 +357,7 @@ export async function createSession(
           session_id: result.sessionId,
           source: command.source,
           post_create_error: postCreate.error,
+          ...(postCreate.code ? { post_create_code: postCreate.code } : {}),
         },
       });
       return {
@@ -356,8 +365,14 @@ export async function createSession(
         commandId: claimed.row.commandId,
         sessionId: result.sessionId,
         row: result.row,
-        retryable: true,
-        error: { status: 500, body: { error: postCreate.error } },
+        retryable: postCreate.retryable,
+        error: {
+          status: postCreate.code === "TASK_READY_STALE" ? 409 : 500,
+          body: {
+            error: postCreate.error,
+            ...(postCreate.code ? { code: postCreate.code } : {}),
+          },
+        },
       };
     }
     await markCommandSucceeded(
@@ -548,52 +563,54 @@ export async function continueSession(
     await sleep(POLL_INTERVAL_MS);
   }
 
-  if (command.opencodeEnv) {
-    const sandbox = opened.sandbox as {
-      external_id?: string | null;
-      provider?: string | null;
-    } | null;
-    const externalId = sandbox?.external_id ?? null;
-    const providerName = sandbox?.provider ?? null;
-    if (!externalId || !isProviderName(providerName)) {
-      console.warn(
-        "[session-lifecycle] runtime env sync target is incomplete",
-        {
-          sessionId,
-          hasExternalId: !!externalId,
-          provider: providerName,
-        },
-      );
-      return "pending";
-    }
-    try {
-      const [serviceKey, ingress] = await Promise.all([
-        serviceKeyForExternalId(externalId),
-        resolveSandboxIngress(externalId, {
-          port: DAEMON_PORT,
-          transport: "http",
-        }),
-      ]);
-      if (!serviceKey) throw new Error("sandbox service key is unavailable");
-      await syncSandboxEnvForPrompt({
-        projectId: session.projectId,
+  // Every continuation refreshes KORTIX_API_URL in the remote runtime. Local
+  // Cloudflare tunnels can rotate while a sandbox remains active. Restricting
+  // this sync to callers with extra OpenCode env left ordinary task wakes on a
+  // dead callback URL.
+  const sandbox = opened.sandbox as {
+    external_id?: string | null;
+    provider?: string | null;
+  } | null;
+  const externalId = sandbox?.external_id ?? null;
+  const providerName = sandbox?.provider ?? null;
+  if (!externalId || !isProviderName(providerName)) {
+    console.warn(
+      "[session-lifecycle] runtime env sync target is incomplete",
+      {
         sessionId,
-        serviceKey,
-        previewUrl: ingress.url,
-        providerHeaders: ingress.headers,
-        providerName,
-        opencodeEnv: command.opencodeEnv,
-      });
-    } catch (err) {
-      console.warn(
-        "[session-lifecycle] runtime env sync failed before prompt delivery",
-        {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      );
-      return "pending";
-    }
+        hasExternalId: !!externalId,
+        provider: providerName,
+      },
+    );
+    return "pending";
+  }
+  try {
+    const [serviceKey, ingress] = await Promise.all([
+      serviceKeyForExternalId(externalId),
+      resolveSandboxIngress(externalId, {
+        port: DAEMON_PORT,
+        transport: "http",
+      }),
+    ]);
+    if (!serviceKey) throw new Error("sandbox service key is unavailable");
+    await syncSandboxEnvForPrompt({
+      projectId: session.projectId,
+      sessionId,
+      serviceKey,
+      previewUrl: ingress.url,
+      providerHeaders: ingress.headers,
+      providerName,
+      opencodeEnv: command.opencodeEnv ?? {},
+    });
+  } catch (err) {
+    console.warn(
+      "[session-lifecycle] runtime env sync failed before prompt delivery",
+      {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+    return "pending";
   }
 
   // Runtime is ready — hand off the prompt, healing + retrying through the
@@ -619,7 +636,10 @@ export async function continueSession(
     send: async (externalId, runtimeId) => {
       // The task may become terminal, or an unbound child may race registration,
       // while the sandbox wakes. Re-check at the final prompt-dispatch boundary.
-      const freshAdmission = await projectTaskWorkerPromptAdmission(db, sessionId);
+      const freshAdmission = await projectTaskWorkerPromptAdmission(
+        db,
+        sessionId,
+      );
       if (!taskWorkerPromptIsAllowed(freshAdmission)) return false;
       return postPrompt(
         externalId,
@@ -703,7 +723,7 @@ export async function drainSessionLifecycleQueue(
             row.commandId,
             postCreate.error,
             {
-              retryable: true,
+              retryable: postCreate.retryable,
               attempts: row.attempts,
               sessionId: result.sessionId,
               result: {
@@ -711,11 +731,17 @@ export async function drainSessionLifecycleQueue(
                 session_id: result.sessionId,
                 source: row.source,
                 post_create_error: postCreate.error,
+                ...(postCreate.code
+                  ? { post_create_code: postCreate.code }
+                  : {}),
               },
               claim,
             },
           );
-          if (applied) out.queued += 1;
+          if (applied) {
+            if (postCreate.retryable) out.queued += 1;
+            else out.failed += 1;
+          }
           continue;
         }
         const applied = await markCommandSucceeded(
@@ -792,7 +818,12 @@ async function executeQueuedProvision(
     const applied = await markCommandFailed(
       row.commandId,
       "task worker reservation has no matching live binding",
-      { retryable: false, attempts: row.attempts, sessionId: row.sessionId, claim },
+      {
+        retryable: false,
+        attempts: row.attempts,
+        sessionId: row.sessionId,
+        claim,
+      },
     );
     return applied ? "failed" : "stale";
   }
@@ -804,23 +835,33 @@ async function executeQueuedProvision(
       .where(eq(projects.projectId, row.projectId))
       .limit(1);
     if (!project) {
-      const applied = await markCommandFailed(row.commandId, "Project not found", {
-        retryable: false,
-        attempts: row.attempts,
-        sessionId: row.sessionId,
-        claim,
-      });
+      const applied = await markCommandFailed(
+        row.commandId,
+        "Project not found",
+        {
+          retryable: false,
+          attempts: row.attempts,
+          sessionId: row.sessionId,
+          claim,
+        },
+      );
       return applied ? "failed" : "stale";
     }
-    const userId = session.createdBy ?? row.actorUserId ??
+    const userId =
+      session.createdBy ??
+      row.actorUserId ??
       (await resolveProjectAutomationActor(row.accountId));
     if (!userId) {
-      const applied = await markCommandFailed(row.commandId, "No session owner available", {
-        retryable: false,
-        attempts: row.attempts,
-        sessionId: row.sessionId,
-        claim,
-      });
+      const applied = await markCommandFailed(
+        row.commandId,
+        "No session owner available",
+        {
+          retryable: false,
+          attempts: row.attempts,
+          sessionId: row.sessionId,
+          claim,
+        },
+      );
       return applied ? "failed" : "stale";
     }
     try {
@@ -829,7 +870,9 @@ async function executeQueuedProvision(
         session,
         row.projectId,
         row.sessionId,
-        { awaitKickoff: true },
+        {
+          awaitKickoff: true,
+        },
       );
     } catch (error) {
       const applied = await markCommandFailed(
@@ -844,11 +887,16 @@ async function executeQueuedProvision(
       );
       return applied ? "queued" : "stale";
     }
-  } else if (!['provisioning', 'running'].includes(session.status)) {
+  } else if (!["provisioning", "running"].includes(session.status)) {
     const applied = await markCommandFailed(
       row.commandId,
       `task worker reservation is ${session.status}`,
-      { retryable: false, attempts: row.attempts, sessionId: row.sessionId, claim },
+      {
+        retryable: false,
+        attempts: row.attempts,
+        sessionId: row.sessionId,
+        claim,
+      },
     );
     return applied ? "failed" : "stale";
   }
@@ -955,7 +1003,12 @@ async function executeQueuedContinue(
       const applied = await markCommandFailed(
         row.commandId,
         "task worker provisioning did not succeed",
-        { retryable: false, attempts: row.attempts, sessionId: row.sessionId, claim },
+        {
+          retryable: false,
+          attempts: row.attempts,
+          sessionId: row.sessionId,
+          claim,
+        },
       );
       return applied ? "failed" : "stale";
     }
@@ -1106,7 +1159,7 @@ async function executeQueuedCreate(
     requestingPrincipalType,
     body: payload.body ?? {},
     metadata: payload.metadata,
-    platformMetaGoalPush: payload.platformMetaGoalPush,
+    platformAgiGoalPush: payload.platformAgiGoalPush,
     extraEnvVars: payload.extraEnvVars,
     visibility: payload.visibility,
     mayManageSystemConnections: payload.mayManageSystemConnections,
@@ -1141,7 +1194,7 @@ async function executeCreateSession(
     body: command.body,
     enforceAccountCap: command.enforceAccountCap,
     metadata,
-    platformMetaGoalPush: command.platformMetaGoalPush,
+    platformAgiGoalPush: command.platformAgiGoalPush,
     extraEnvVars: command.extraEnvVars,
     request: command.request,
     visibility: command.visibility,
@@ -1152,17 +1205,22 @@ async function executeCreateSession(
     mayManageSystemConnections: command.mayManageSystemConnections,
   });
 
-  if (result.error) {
+  if (result.error || !result.row) {
     return {
       status: "failed",
-      error: result.error,
+      error: result.error ?? {
+        status: 500,
+        body: { error: "session creation returned no row" },
+      },
       headers: result.headers,
-      retryable: isRetryableCreateError(result.error.status),
+      retryable: result.error
+        ? isRetryableCreateError(result.error.status)
+        : true,
     };
   }
   return {
     status: "created",
-    sessionId: result.row!.sessionId,
+    sessionId: result.row.sessionId,
     row: result.row,
     headers: result.headers,
     retryable: true,
@@ -1173,7 +1231,10 @@ async function applyPostCreateActions(input: {
   projectId: string;
   sessionId: string;
   actions?: SessionLifecyclePostCreateAction[];
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true }
+  | { ok: false; error: string; retryable: boolean; code?: "TASK_READY_STALE" }
+> {
   if (!input.actions?.length) return { ok: true };
   try {
     for (const action of input.actions) {
@@ -1193,7 +1254,34 @@ async function applyPostCreateActions(input: {
           userId: action.userId ?? undefined,
         });
         if (outcome !== "delivered") {
-          return { ok: false, error: `initial prompt delivery ${outcome}` };
+          return {
+            ok: false,
+            error: `initial prompt delivery ${outcome}`,
+            retryable: true,
+          };
+        }
+      } else if (action.type === "claim_ready_task") {
+        const result = await claimReadyTaskAndEnqueuePrompt(db, {
+          projectId: input.projectId,
+          taskId: action.taskId,
+          sessionId: input.sessionId,
+          leaseSeconds: action.leaseSeconds,
+          prompt: action.prompt,
+        });
+        if (!result.ok) {
+          const retired = await retireStaleReadyTaskCoordinator(db, {
+            projectId: input.projectId,
+            sessionId: input.sessionId,
+            reason: result.error,
+          });
+          if (!retired) {
+            return {
+              ok: false,
+              error: `${result.error}; coordinator cleanup rejected the session`,
+              retryable: true,
+            };
+          }
+          return result;
         }
       }
     }
@@ -1204,7 +1292,7 @@ async function applyPostCreateActions(input: {
       sessionId: input.sessionId,
       error,
     });
-    return { ok: false, error };
+    return { ok: false, error, retryable: true };
   }
 }
 
@@ -1227,11 +1315,7 @@ function sandboxExternalId(
 }
 
 function isProviderName(value: string | null): value is ProviderName {
-  return (
-    value === "daytona" ||
-    value === "platinum" ||
-    value === "e2b"
-  );
+  return value === "daytona" || value === "platinum" || value === "e2b";
 }
 
 async function postPrompt(

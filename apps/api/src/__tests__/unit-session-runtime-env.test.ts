@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
+import { buildPlatformAgiOpenCodeConfig } from '../projects/lib/platform-agi-agent';
 import { buildSessionRuntimeEnv } from '../projects/lib/session-runtime-env';
 
 const base = {
@@ -33,14 +33,14 @@ describe('buildSessionRuntimeEnv', () => {
     expect(env.KORTIX_INITIAL_PROMPT).toBe('answer this Slack thread');
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
-  test('boots the platform meta agent through OpenCode REST', () => {
+  test('boots the platform AGI agent through OpenCode REST', () => {
     const env = buildSessionRuntimeEnv({
       ...base,
-      agentName: 'meta',
-      compiledAgentConfig: buildPlatformMetaOpenCodeConfig(),
+      agentName: 'agi',
+      compiledAgentConfig: buildPlatformAgiOpenCodeConfig(),
     });
 
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
-    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(buildPlatformMetaOpenCodeConfig());
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(buildPlatformAgiOpenCodeConfig());
   });
 });

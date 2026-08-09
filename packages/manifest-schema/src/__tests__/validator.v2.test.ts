@@ -1253,21 +1253,21 @@ goals:
     expect(result.errorPaths).toContain('goals[0].agent');
   });
 
-  test('allows the reserved platform meta agent explicitly without declaring it', () => {
+  test('allows the reserved platform AGI agent explicitly without declaring it', () => {
     const result = summarize(
       manifestWithGoals(`goals:
   - slug: coordinated
     title: Coordinated
     done_when: Done
     status: active
-    agent: meta`),
+    agent: agi`),
     );
 
     expect(result.valid).toBe(true);
     expect(result.errorPaths).toEqual([]);
   });
 
-  test('allows an omitted goal agent for the reserved platform meta coordinator', () => {
+  test('allows an omitted goal agent for the reserved platform AGI coordinator', () => {
     const result = summarize(
       manifestWithGoals(`goals:
   - slug: coordinated

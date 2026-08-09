@@ -19,7 +19,7 @@ import {
   useRuntimeProviders,
 } from '@kortix/sdk/react';
 import { useProjectConfig } from '@kortix/sdk/react';
-import { isMetaAgentName } from '@kortix/shared';
+import { isAgiAgentName } from '@kortix/shared';
 
 export interface ComposerOptions {
   agent?: string;
@@ -122,7 +122,7 @@ export function ComposerChatInput({
   // the new-session picker is switchable; the chosen agent rides through on create.
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
   const lockedAgentName =
-    isMetaAgentName(boundAgentName) || SESSION_AGENT_LOCK_ENABLED
+    isAgiAgentName(boundAgentName) || SESSION_AGENT_LOCK_ENABLED
       ? boundAgentName?.trim() || null
       : null;
   const selectedAgentName = lockedAgentName ?? local.agent.current?.name ?? null;

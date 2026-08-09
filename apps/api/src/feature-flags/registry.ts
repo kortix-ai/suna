@@ -195,17 +195,17 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'meta_agent',
-    name: 'Meta Agent',
+    key: 'agi',
+    name: 'AGI',
     description:
-      'A reserved coordinator agent that spawns and manages specialized sessions, transfers files between them, and orchestrates multi-step work across the project. Adds a platform-owned meta agent to the project and changes the default agent for new sessions without an explicit --agent flag.',
+      'A reserved coordinator agent that spawns and manages specialized sessions, transfers files between them, and orchestrates multi-step work across the project. Adds the platform-owned AGI agent to the project and makes it the default agent for new sessions without an explicit --agent flag.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
-      'Off ⇒ the platform meta agent is not added to the agent list and is not ' +
-      'the default for new sessions (projects/lib/platform-meta-agent.ts).',
+      'Off ⇒ the platform AGI agent is not added to the agent list and is not ' +
+      'the default for new sessions (projects/lib/platform-agi-agent.ts).',
   },
   {
     key: 'apps',

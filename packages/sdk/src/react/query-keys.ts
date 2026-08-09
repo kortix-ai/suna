@@ -187,6 +187,18 @@ export const qk = {
     sessionSandbox: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'sandbox'] as const,
 
+    /** Durable AI coworker task queue and one task's control-plane projections. */
+    tasks: (id: string) => [...qk.project.scope(id), 'tasks'] as const,
+    task: (id: string, taskId: string) => [...qk.project.tasks(id), taskId] as const,
+    taskEvidence: (id: string, taskId: string) =>
+      [...qk.project.task(id, taskId), 'evidence'] as const,
+    taskBlockers: (id: string, taskId: string) =>
+      [...qk.project.task(id, taskId), 'blockers'] as const,
+    taskEvents: (id: string, taskId: string) =>
+      [...qk.project.task(id, taskId), 'events'] as const,
+    taskSessions: (id: string, taskId: string) =>
+      [...qk.project.task(id, taskId), 'sessions'] as const,
+
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */
     connectorConfig: (id: string, slug: string) =>

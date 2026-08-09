@@ -47,9 +47,9 @@ export interface SessionSource {
   triggerSlug: string | null;
 }
 
-/** The platform meta coordinator — drives other sessions from its own sandbox. */
-export function isMetaCoordinatorSession(session: ProjectSession): boolean {
-  return session.agent_name === 'meta';
+/** The platform AGI coordinator — drives other sessions from its own sandbox. */
+export function isAgiCoordinatorSession(session: ProjectSession): boolean {
+  return session.agent_name === 'agi';
 }
 
 /** The coordinator session that spawned this one (stamped at create from the

@@ -73,7 +73,7 @@ authoring and review source for agent definitions. Volumes carry working data.
 | Per-agent learning must coexist with shared project memory   | Memory has session, agent-private, project-shared, and reviewed classes.                             |
 | Multiple harness configurations need clean organization      | Root configuration imports data-only agent definitions and harness-specific files.                   |
 | Unpublished configuration can conflict with a session branch | `policy_sha` and `workspace_sha` are separate immutable references.                                  |
-| A meta-agent needs to coordinate specialized agents          | Every child receives an independent environment and delegated capability intersection.               |
+| An AGI coordinator needs to coordinate specialized agents          | Every child receives an independent environment and delegated capability intersection.               |
 
 ## Trust boundary
 
@@ -262,9 +262,9 @@ An agent receives only declared memory resources. Per-agent learning does not
 require a separate repository. Agent-private and shared memory can coexist in one
 project when materialization and access are explicit.
 
-### Meta-agent and child sessions
+### AGI agent and child sessions
 
-A meta-agent orchestrates child sessions through the Kortix CLI. Each child gets
+An AGI coordinator orchestrates child sessions through the Kortix CLI. Each child gets
 its own sandbox, `SessionSpec`, `WorkspaceArtifact`, and `SessionToken`.
 
 Child access is the intersection of the parent's delegatable access and the child

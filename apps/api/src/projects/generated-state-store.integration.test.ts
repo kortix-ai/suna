@@ -81,6 +81,7 @@ function testDb(): Database {
 
 async function cleanup() {
   const database = testDb();
+  await database.delete(projectTasks).where(eq(projectTasks.projectId, PROJECT_ID));
   await database.delete(projects).where(eq(projects.projectId, PROJECT_ID));
   await database.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
 }
@@ -216,6 +217,7 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     });
 
     expect(first.created).toBe(true);
+    expect(first.task.controlPlaneVersion).toBe(1);
     expect(retry.created).toBe(false);
     expect(retry.task.taskId).toBe(first.task.taskId);
     expect(retry.task.title).toBe('First materialization');
@@ -604,10 +606,16 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     ).rejects.toBeInstanceOf(TaskTransitionConflictError);
 
     expect(
-      await getProjectTask(database, { projectId: PROJECT_ID, taskId: neverClaimed.task.taskId }),
+      await getProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: neverClaimed.task.taskId,
+      }),
     ).toMatchObject({ status: 'backlog', claimSessionId: null, result: {} });
     expect(
-      await getProjectTask(database, { projectId: PROJECT_ID, taskId: expired.task.taskId }),
+      await getProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: expired.task.taskId,
+      }),
     ).toMatchObject({
       status: 'doing',
       claimSessionId: SESSION_A,
@@ -711,6 +719,39 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     ).toHaveLength(0);
   });
 
+  test('a bound session does not reserve a worker slot after its task releases the binding', async () => {
+    const database = testDb();
+    const now = new Date('2026-08-07T13:00:00.000Z');
+    const { task } = await createProjectTask(database, {
+      projectId: PROJECT_ID,
+      goalSlug: null,
+      title: 'Released worker binding',
+      origin: 'reservation-recovery-proof',
+    });
+    await database
+      .update(projectSessions)
+      .set({
+        status: 'running',
+        metadata: {
+          spawned_by_session: SESSION_A,
+          task_liveness_binding_required: true,
+          task_liveness_binding_status: 'bound',
+          task_liveness_bound_task_id: task.taskId,
+        },
+      })
+      .where(eq(projectSessions.sessionId, SESSION_B));
+
+    await expect(
+      database.transaction((tx) =>
+        assertTaskWorkerReservationSlot(tx as unknown as Database, {
+          projectId: PROJECT_ID,
+          coordinatorSessionId: SESSION_A,
+          now,
+        }),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   test('spawned reservations cannot claim coordinator authority', async () => {
     const database = testDb();
     await reserveWorker(SESSION_B);
@@ -730,20 +771,29 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       }),
     ).rejects.toBeInstanceOf(TaskClaimConflictError);
     expect(
-      await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId }),
+      await getProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+      }),
     ).toMatchObject({ status: 'backlog', claimSessionId: null });
     await database
       .update(projectSessions)
-      .set({ status: 'stopped', updatedAt: new Date('2026-08-07T13:31:00.000Z') })
+      .set({
+        status: 'stopped',
+        updatedAt: new Date('2026-08-07T13:31:00.000Z'),
+      })
       .where(eq(projectSessions.sessionId, SESSION_A));
     expect(await projectTaskWorkerAdmissionState(database, SESSION_A)).toBe('stale_runtime');
     await database
       .update(projectSessions)
-      .set({ status: 'running', updatedAt: new Date('2026-08-07T13:31:01.000Z') })
+      .set({
+        status: 'running',
+        updatedAt: new Date('2026-08-07T13:31:01.000Z'),
+      })
       .where(eq(projectSessions.sessionId, SESSION_A));
   });
 
-  test('worker registration and one continuation survive retries and process restarts', async () => {
+  test('one claim binds one worker and one continuation across retries and process restarts', async () => {
     const database = testDb();
     await Promise.all([
       reserveWorker(SESSION_B),
@@ -764,7 +814,10 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
         .from(sessionLifecycleCommands)
         .where(eq(sessionLifecycleCommands.projectId, PROJECT_ID)),
     ).toHaveLength(0);
-    const reservations = await database.select().from(projectSessions);
+    const reservations = await database
+      .select()
+      .from(projectSessions)
+      .where(eq(projectSessions.projectId, PROJECT_ID));
     expect(
       reservations.filter(
         (row) =>
@@ -779,6 +832,10 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       title: 'Restart-safe liveness',
       origin: 'liveness-proof',
     });
+    await database
+      .update(projectTasks)
+      .set({ result: { harness_overrides: { verification: 'adversarial' } } })
+      .where(eq(projectTasks.taskId, task.taskId));
     const claimedAt = new Date('2026-08-07T14:00:00.000Z');
     await claimProjectTask(database, {
       projectId: PROJECT_ID,
@@ -824,6 +881,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       `task-worker-provision:${task.taskId}:${SESSION_B}`,
       `task-worker:${task.taskId}:${SESSION_B}`,
     ]);
+    const registeredPrompt = registrationCommands[1]?.payload.text;
+    expect(typeof registeredPrompt).toBe('string');
+    expect(registeredPrompt as string).toContain(
+      '[BEGIN SERVER-OWNED TASK HARNESS OVERRIDES JSON V1]',
+    );
+    expect(registeredPrompt as string).toContain('{"verification":"adversarial"}');
     expect(registrationCommands[0].availableAt.getTime()).toBeLessThan(
       registrationCommands[1].availableAt.getTime(),
     );
@@ -878,6 +941,20 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       ),
     ).toHaveLength(2);
 
+    await expect(
+      registerProjectTaskWorker(database, {
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        taskId: task.taskId,
+        claimSessionId: SESSION_A,
+        workerSessionId: SESSION_C,
+        actorUserId: null,
+        prompt: 'A second worker must not bind to the same claim.',
+        contract,
+        now: new Date('2026-08-07T14:00:01.750Z'),
+      }),
+    ).rejects.toBeInstanceOf(TaskLivenessConflictError);
+
     // PostgreSQL enforces that the coordinator claim cannot be shortened below
     // the immutable worker deadline.
     await expect(
@@ -920,7 +997,10 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       usage,
       now: new Date('2026-08-07T14:00:30.000Z'),
     });
-    expect(liveAdmission).toMatchObject({ taskId: task.taskId, admitted: true });
+    expect(liveAdmission).toMatchObject({
+      taskId: task.taskId,
+      admitted: true,
+    });
 
     const initialTurnId = registered.task.livenessTurnId!;
     const progressed = await recordProjectTaskProgress(database, {
@@ -1045,11 +1125,18 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       action: 'continuation_queued',
       commandId: first.commandId,
       measuredUsage: usage,
-      task: { status: 'doing', noProgressSettlements: 1, claimSessionId: SESSION_A },
+      task: {
+        status: 'doing',
+        noProgressSettlements: 1,
+        claimSessionId: SESSION_A,
+      },
     });
-    expect(await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId })).toEqual(
-      second.task,
-    );
+    expect(
+      await getProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: task.taskId,
+      }),
+    ).toEqual(second.task);
     expect(
       await database
         .select()
@@ -1120,7 +1207,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       workerSessionId: SESSION_B,
       actorUserId: USER_A,
       prompt: 'Return one semantic outcome.',
-      contract: { max_wall_seconds: 600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 4 },
+      contract: {
+        max_wall_seconds: 600,
+        max_tokens: 1_000,
+        max_cost_usd: 1,
+        max_iterations: 4,
+      },
       now,
     });
     const turnId = registered.task.livenessTurnId!;
@@ -1177,7 +1269,10 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       .where(eq(projectTaskTurnOutcomes.taskId, task.taskId));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.settlementId).toBe(turnId);
-    const current = await getProjectTask(database, { projectId: PROJECT_ID, taskId: task.taskId });
+    const current = await getProjectTask(database, {
+      projectId: PROJECT_ID,
+      taskId: task.taskId,
+    });
     expect(current!.livenessTurnId).not.toBe(turnId);
   });
 
@@ -1212,7 +1307,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
         workerSessionId: SESSION_B,
         actorUserId: null,
         prompt: 'This must never run.',
-        contract: { max_wall_seconds: 60, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 1 },
+        contract: {
+          max_wall_seconds: 60,
+          max_tokens: 1_000,
+          max_cost_usd: 1,
+          max_iterations: 1,
+        },
         now,
       }),
     ).rejects.toBeInstanceOf(TaskLivenessConflictError);
@@ -1249,7 +1349,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       workerSessionId: SESSION_B,
       actorUserId: null,
       prompt: 'Complete this bounded task.',
-      contract: { max_wall_seconds: 3_600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 2 },
+      contract: {
+        max_wall_seconds: 3_600,
+        max_tokens: 1_000,
+        max_cost_usd: 1,
+        max_iterations: 2,
+      },
       now,
     });
 
@@ -1262,7 +1367,10 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       now: new Date(now.getTime() + 1_000),
     });
 
-    expect(terminal).toMatchObject({ status: 'done', livenessWorkerSessionId: SESSION_B });
+    expect(terminal).toMatchObject({
+      status: 'done',
+      livenessWorkerSessionId: SESSION_B,
+    });
     expect(await projectTaskWorkerIsBound(database, SESSION_B)).toBe(true);
     await expect(
       admitProjectTaskWorkerIteration(database, {
@@ -1367,7 +1475,10 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       projectId: PROJECT_ID,
       taskId: exhausted.taskId,
     });
-    expect(exhaustedReadBack).toMatchObject({ status: 'blocked', claimSessionId: null });
+    expect(exhaustedReadBack).toMatchObject({
+      status: 'blocked',
+      claimSessionId: null,
+    });
     let commands = await database.select().from(sessionLifecycleCommands);
     expect(
       commands.filter((row) => row.idempotencyKey === `task-stop:${exhausted.taskId}:${SESSION_B}`),
@@ -1417,7 +1528,10 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       }),
     ).rejects.toBeInstanceOf(TaskLivenessLimitExceededError);
     expect(
-      await getProjectTask(database, { projectId: PROJECT_ID, taskId: concurrent.taskId }),
+      await getProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: concurrent.taskId,
+      }),
     ).toMatchObject({ status: 'blocked', livenessIterationsAdmitted: 1 });
 
     const swept = await boundedTask('usage-sweep-exhaustion', SESSION_D, {
@@ -1437,8 +1551,14 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     );
     expect(finalized).toBe(1);
     expect(
-      await getProjectTask(database, { projectId: PROJECT_ID, taskId: swept.taskId }),
-    ).toMatchObject({ status: 'blocked', livenessBlocker: 'max_tokens exceeded' });
+      await getProjectTask(database, {
+        projectId: PROJECT_ID,
+        taskId: swept.taskId,
+      }),
+    ).toMatchObject({
+      status: 'blocked',
+      livenessBlocker: 'max_tokens exceeded',
+    });
     commands = await database.select().from(sessionLifecycleCommands);
     expect(
       commands.filter((row) => row.idempotencyKey === `task-stop:${swept.taskId}:${SESSION_D}`),
@@ -1480,7 +1600,12 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
         workerSessionId,
         actorUserId: USER_A,
         prompt: origin,
-        contract: { max_wall_seconds: 600, max_tokens: 1_000, max_cost_usd: 1, max_iterations: 10 },
+        contract: {
+          max_wall_seconds: 600,
+          max_tokens: 1_000,
+          max_cost_usd: 1,
+          max_iterations: 10,
+        },
         now,
       });
       await database.insert(accountTokens).values({
@@ -2017,7 +2142,10 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
       sessionId: null,
       now: new Date('2026-08-07T12:04:01.000Z'),
     });
-    expect(successFirst).toMatchObject({ state: 'fired', sessionId: SESSION_B });
+    expect(successFirst).toMatchObject({
+      state: 'fired',
+      sessionId: SESSION_B,
+    });
     expect(successFirst.firedAt?.toISOString()).toBe('2026-08-07T12:04:00.000Z');
 
     const [attachFirstCommand] = await database
@@ -2050,13 +2178,19 @@ describeWithDb('generated task and goal-observation state — real PostgreSQL', 
     });
     await database
       .update(sessionLifecycleCommands)
-      .set({ status: 'succeeded', updatedAt: new Date('2026-08-07T12:05:02.000Z') })
+      .set({
+        status: 'succeeded',
+        updatedAt: new Date('2026-08-07T12:05:02.000Z'),
+      })
       .where(eq(sessionLifecycleCommands.commandId, attachFirstCommand!.commandId));
     const [attachFirst] = await database
       .select()
       .from(projectGoalEvaluations)
       .where(eq(projectGoalEvaluations.evaluationId, attachFirstEvaluation.evaluationId));
-    expect(attachFirst).toMatchObject({ state: 'fired', sessionId: SESSION_C });
+    expect(attachFirst).toMatchObject({
+      state: 'fired',
+      sessionId: SESSION_C,
+    });
     expect(attachFirst!.firedAt?.toISOString()).toBe('2026-08-07T12:05:02.000Z');
   });
 });

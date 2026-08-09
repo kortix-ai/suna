@@ -26,12 +26,12 @@ describe('create session command payload', () => {
       userId: crypto.randomUUID(),
       requestingPrincipalType: 'service_account',
       body: { connector_bindings: {} },
-      platformMetaGoalPush: true,
+      platformAgiGoalPush: true,
     } satisfies CreateSessionCommand;
 
     expect(createSessionCommandPayload(command)).toMatchObject({
       requestingPrincipalType: 'service_account',
-      platformMetaGoalPush: true,
+      platformAgiGoalPush: true,
     });
   });
 });

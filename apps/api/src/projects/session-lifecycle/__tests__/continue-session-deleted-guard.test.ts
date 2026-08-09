@@ -32,6 +32,7 @@ let workerBindingStatus: string | null = null;
 let workerAdmissionState: 'not_worker' | 'spawned_unbound' | 'bound' = 'not_worker';
 let openSessionResult: Record<string, unknown> | null = null;
 let forwardCalls = 0;
+let envSyncCalls = 0;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
 mock.module('../../../config', () => ({ config: {}, SANDBOX_VERSION: 'test' }));
@@ -75,6 +76,7 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
   },
 }));
 mock.module('../../lib/sessions', () => ({
+  deriveKortixApiBase: () => 'http://localhost:8008',
   createProjectSession: async () => {
     throw new Error('createProjectSession: not expected in this test');
   },
@@ -86,6 +88,19 @@ mock.module('../../routes/shared', () => ({
   openSession: async () => {
     if (openSessionResult) return openSessionResult;
     throw new Error('openSession: not reached when the deletedAt guard trips');
+  },
+}));
+const actualSandboxBackend = await import('../../../sandbox-proxy/backend');
+mock.module('../../../sandbox-proxy/backend', () => ({
+  ...actualSandboxBackend,
+  resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
+}));
+mock.module('../../../platform/service-key', () => ({
+  serviceKeyForExternalId: async () => 'service-key-1',
+}));
+mock.module('../../lib/sandbox-env-sync', () => ({
+  syncSandboxEnvForPrompt: async () => {
+    envSyncCalls += 1;
   },
 }));
 mock.module('../../session-title-generate', () => ({
@@ -128,6 +143,7 @@ beforeEach(() => {
   workerAdmissionState = 'not_worker';
   openSessionResult = null;
   forwardCalls = 0;
+  envSyncCalls = 0;
   updateCalls = [];
 });
 
@@ -182,6 +198,7 @@ describe('continueSession — deleted-mid-flight guard', () => {
     const result = await continueSession({ sessionId: SESSION_ID, text: 'work' } as never);
 
     expect(result).toBe('delivered');
+    expect(envSyncCalls).toBe(1);
     expect(forwardCalls).toBe(1);
   });
 

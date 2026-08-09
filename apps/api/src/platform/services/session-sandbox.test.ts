@@ -232,11 +232,11 @@ mock.module('../../snapshots/builder', () => ({
       built: false,
     };
   },
-  ensureMetaSandboxImage: async (opts: Record<string, unknown>) => {
+  ensureAgiSandboxImage: async (opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     return {
       snapshotName: 'snap-meta-1',
-      slug: 'meta',
+      slug: 'agi',
       contentHash: 'meta-hash-1',
       isDefault: false,
       built: false,
@@ -355,11 +355,11 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
-  test('meta sessions receive a bounded project grant without a standing service-account ceiling', async () => {
+  test('AGI sessions receive a bounded project grant without a standing service-account ceiling', async () => {
     await provisionSessionSandbox({
       ...baseOpts(),
-      agentName: 'meta',
-      sandboxSlug: 'meta',
+      agentName: 'agi',
+      sandboxSlug: 'agi',
     });
 
     expect(accountTokenCreateCalls).toHaveLength(1);
@@ -369,7 +369,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       projectId: PROJECT_ID,
       sessionId: SANDBOX_ID,
       agentGrant: {
-        agent: 'meta',
+        agent: 'agi',
         connectors: [],
         env: [],
       },

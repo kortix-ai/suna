@@ -38,6 +38,8 @@ export const PROJECT_ACTIONS = {
   PROJECT_COMMAND_WRITE: 'project.command.write',
   PROJECT_TRIGGER_READ: 'project.trigger.read',
   PROJECT_TRIGGER_CREATE: 'project.trigger.create',
+  PROJECT_TASK_READ: 'project.task.read',
+  PROJECT_TASK_WRITE: 'project.task.write',
   PROJECT_FILE_READ: 'project.file.read',
   PROJECT_FILE_WRITE: 'project.file.write',
   PROJECT_CUSTOMIZE_READ: 'project.customize.read',

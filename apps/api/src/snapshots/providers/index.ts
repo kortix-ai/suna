@@ -56,8 +56,8 @@ export interface BuildableTemplate {
   slug: string;
   /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
-  /** Selects the fixed platform meta-agent runtime instead of the full layer. */
-  runtimeProfile?: 'standard' | 'meta' | 'app';
+  /** Selects the fixed platform AGI runtime instead of the full layer. */
+  runtimeProfile?: 'standard' | 'agi' | 'app';
   /** Required when runtimeProfile is app. */
   appContext?: AppBuildContext;
   /**

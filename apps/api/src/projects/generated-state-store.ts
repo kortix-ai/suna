@@ -4,16 +4,23 @@ import {
   projectGoalEvaluations,
   projectGoalObservations,
   projectSessions,
-  projects,
+  projectTaskBlockers,
+  projectTaskEvents,
+  projectTaskEvidence,
   projectTaskNoProgressSettlements,
-  projectTaskTurnOutcomes,
   type projectTaskStatusEnum,
+  projectTaskTurnOutcomes,
   projectTasks,
+  projects,
   sessionLifecycleCommands,
   sessionSandboxes,
 } from '@kortix/db/schema';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { normalizeOpenCodeMessageId } from './session-lifecycle/opencode-message-id';
+import {
+  type TaskCompletionUnmetCondition,
+  evaluateTaskCompletion,
+} from './task-completion-policy';
 
 export type ProjectTask = typeof projectTasks.$inferSelect;
 export type ProjectGoalEvaluation = typeof projectGoalEvaluations.$inferSelect;
@@ -82,7 +89,17 @@ export async function assertTaskWorkerReservationSlot(
         sql`${projectSessions.metadata}->>'task_liveness_binding_required' = 'true'`,
         sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
         sql`(
-        ${projectSessions.metadata}->>'task_liveness_binding_status' = 'bound'
+        (
+          ${projectSessions.metadata}->>'task_liveness_binding_status' = 'bound'
+          and exists (
+            select 1
+            from ${projectTasks}
+            where ${projectTasks.projectId} = ${input.projectId}
+              and ${projectTasks.status} = 'doing'
+              and ${projectTasks.claimSessionId} = ${input.coordinatorSessionId}
+              and ${projectTasks.livenessWorkerSessionId} = ${projectSessions.sessionId}
+          )
+        )
         or (
           ${projectSessions.metadata}->>'task_liveness_binding_status' = 'pending'
           and (${projectSessions.metadata}->>'task_liveness_reservation_expires_at')::timestamptz > ${input.now.toISOString()}
@@ -98,11 +115,21 @@ export async function assertTaskWorkerReservationSlot(
 
 export interface CreateProjectTaskInput {
   projectId: string;
-  goalSlug: string;
+  goalSlug: string | null;
   parentId?: string | null;
   title: string;
   body?: string;
-  status?: ProjectTaskStatus;
+  intent?: string;
+  constraints?: string[];
+  outOfScope?: string[];
+  verificationRequirements?: Array<{
+    id: string;
+    kind: 'command' | 'http' | 'artifact' | 'deployment' | 'policy' | 'human' | 'monitor';
+    description: string;
+    required: boolean;
+  }>;
+  reviewPolicy?: { mode: 'auto' | 'human' };
+  status?: 'backlog' | 'todo';
   priority?: number;
   assigneeAgent?: string | null;
   assigneeUserId?: string | null;
@@ -139,6 +166,12 @@ export async function createProjectTask(
       parentId: input.parentId ?? null,
       title: input.title,
       body: input.body ?? '',
+      intent: input.intent ?? input.body ?? '',
+      constraints: input.constraints ?? [],
+      outOfScope: input.outOfScope ?? [],
+      controlPlaneVersion: 1,
+      verificationRequirements: input.verificationRequirements ?? [],
+      reviewPolicy: input.reviewPolicy ?? { mode: 'auto' },
       status: input.status ?? 'backlog',
       priority: input.priority ?? 0,
       assigneeAgent: input.assigneeAgent ?? null,
@@ -270,6 +303,7 @@ export async function claimProjectTask(
           and(
             eq(projectTasks.projectId, input.projectId),
             eq(projectTasks.claimSessionId, input.sessionId),
+            eq(projectTasks.status, 'doing'),
             lte(projectTasks.claimExpiresAt, input.now),
             isNull(projectTasks.livenessWorkerSessionId),
           ),
@@ -300,7 +334,10 @@ export async function claimProjectTask(
               select 1 from ${projectTasks} as active_claim
               where active_claim.project_id = ${projectTasks.projectId}
                 and active_claim.claim_session_id = ${input.sessionId}
-                and active_claim.status = 'doing'::kortix.project_task_status
+                and active_claim.status in (
+                  'doing'::kortix.project_task_status,
+                  'review'::kortix.project_task_status
+                )
                 and active_claim.task_id <> ${projectTasks.taskId}
             )`,
             sql`exists (
@@ -578,6 +615,281 @@ export async function transitionProjectTask(
   });
 }
 
+export class TaskCompletionGateError extends Error {
+  readonly code = 'TASK_COMPLETION_GATE_UNMET' as const;
+
+  constructor(readonly unmet: TaskCompletionUnmetCondition[]) {
+    super('task completion conditions are not satisfied');
+    this.name = 'TaskCompletionGateError';
+  }
+}
+
+/**
+ * Complete a task only after the server validates its current contract,
+ * immutable evidence, blockers, candidate digest, and review policy.
+ */
+export async function requestProjectTaskCompletion(
+  database: Database,
+  input: {
+    projectId: string;
+    taskId: string;
+    expectedClaimSessionId: string;
+    candidateDigest: string;
+    /** True only for a human JWT or PAT calling the explicit approval endpoint. */
+    humanReviewApproved: boolean;
+    now: Date;
+  },
+): Promise<ProjectTask | null> {
+  assertValidDate(input.now, 'now');
+  const outcome = await database.transaction(async (tx) => {
+    await tx.execute(sql`select task_id from ${projectTasks}
+      where project_id = ${input.projectId} and task_id = ${input.taskId} for update`);
+    const [task] = await tx
+      .select()
+      .from(projectTasks)
+      .where(
+        and(eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId)),
+      )
+      .limit(1);
+    if (!task) return null;
+    const humanMayApproveExpiredReview = input.humanReviewApproved && task.status === 'review';
+    if (
+      task.claimSessionId !== input.expectedClaimSessionId ||
+      !task.claimExpiresAt ||
+      (task.claimExpiresAt <= input.now && !humanMayApproveExpiredReview)
+    ) {
+      throw new TaskTransitionConflictError({
+        projectId: input.projectId,
+        taskId: input.taskId,
+        claimSessionId: task.claimSessionId,
+        claimExpiresAt: task.claimExpiresAt,
+      });
+    }
+    if (task.gitWriteRequestId && task.gitWriteLeaseExpiresAt && task.gitWriteState !== 'settled') {
+      throw new TaskGitWriteInFlightError(task.taskId, task.gitWriteLeaseExpiresAt);
+    }
+    if (
+      task.livenessAdmissionId &&
+      task.livenessAdmissionExpiresAt &&
+      task.livenessAdmissionExpiresAt > input.now
+    ) {
+      throw new TaskLivenessRequestInFlightError(task.taskId, task.livenessAdmissionExpiresAt);
+    }
+
+    const evidence = await tx
+      .select()
+      .from(projectTaskEvidence)
+      .where(
+        and(
+          eq(projectTaskEvidence.projectId, input.projectId),
+          eq(projectTaskEvidence.taskId, input.taskId),
+        ),
+      );
+    const [{ count: openBlockerCount }] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(projectTaskBlockers)
+      .where(
+        and(
+          eq(projectTaskBlockers.projectId, input.projectId),
+          eq(projectTaskBlockers.taskId, input.taskId),
+          eq(projectTaskBlockers.status, 'open'),
+        ),
+      );
+    const decision = evaluateTaskCompletion({
+      contractRevision: task.contractRevision,
+      requirements: task.verificationRequirements,
+      evidence: evidence.map((item) => ({
+        evidenceId: item.evidenceId,
+        requirementId: item.requirementId,
+        kind: item.kind,
+        contractRevision: item.contractRevision,
+        candidateDigest: item.candidateDigest,
+        state: item.state as 'passed' | 'failed' | 'info',
+      })),
+      openBlockerCount: openBlockerCount ?? 0,
+      reviewPolicy: task.reviewPolicy,
+      humanReviewSatisfied: input.humanReviewApproved,
+      candidateDigest: input.candidateDigest,
+    });
+    if (!decision.ok) {
+      const onlyHumanReviewRemains =
+        decision.unmet.length === 1 && decision.unmet[0]?.code === 'HUMAN_REVIEW_REQUIRED';
+      if (onlyHumanReviewRemains && task.status !== 'review') {
+        const [reviewTask] = await tx
+          .update(projectTasks)
+          .set({
+            status: 'review',
+            // Review revokes worker authority and ends the active turn. Keep
+            // the immutable worker lineage for inspection, but clear every
+            // doing-only fence before the status transition.
+            livenessTurnId: null,
+            livenessAdmissionId: null,
+            livenessAdmissionExpiresAt: null,
+            ...clearTaskGitWrite,
+            updatedAt: input.now,
+          })
+          .where(
+            and(
+              eq(projectTasks.projectId, input.projectId),
+              eq(projectTasks.taskId, input.taskId),
+              eq(projectTasks.claimSessionId, input.expectedClaimSessionId),
+              gt(projectTasks.claimExpiresAt, input.now),
+            ),
+          )
+          .returning();
+        if (!reviewTask) {
+          throw new TaskTransitionConflictError({
+            projectId: input.projectId,
+            taskId: input.taskId,
+            claimSessionId: task.claimSessionId,
+            claimExpiresAt: task.claimExpiresAt,
+          });
+        }
+        await tx.insert(projectTaskEvents).values({
+          projectId: input.projectId,
+          taskId: input.taskId,
+          eventType: 'task.review_requested',
+          actorType: 'session',
+          actorId: input.expectedClaimSessionId,
+          sessionId: input.expectedClaimSessionId,
+          payload: {
+            candidate_digest: input.candidateDigest,
+            contract_revision: task.contractRevision,
+          },
+          createdAt: input.now,
+        });
+        if (reviewTask.livenessWorkerSessionId) {
+          const [project] = await tx
+            .select({ accountId: projects.accountId })
+            .from(projects)
+            .where(eq(projects.projectId, input.projectId))
+            .limit(1);
+          if (!project) {
+            throw new Error(`project ${input.projectId} disappeared during review request`);
+          }
+          await revokeWorkerSessionTokens(
+            tx,
+            reviewTask.livenessWorkerSessionId,
+            project.accountId,
+            input.now,
+          );
+          await tx
+            .insert(sessionLifecycleCommands)
+            .values({
+              commandType: 'stop_session',
+              source: 'cli',
+              status: 'queued',
+              projectId: input.projectId,
+              accountId: project.accountId,
+              sessionId: reviewTask.livenessWorkerSessionId,
+              idempotencyKey: `task-stop:${reviewTask.taskId}:${reviewTask.livenessWorkerSessionId}`,
+              payload: { reason: 'task_review_requested' },
+              result: {},
+              availableAt: input.now,
+              updatedAt: input.now,
+            })
+            .onConflictDoNothing({
+              target: sessionLifecycleCommands.idempotencyKey,
+            });
+        }
+      }
+      return { kind: 'unmet' as const, unmet: decision.unmet };
+    }
+
+    const [updated] = await tx
+      .update(projectTasks)
+      .set({
+        status: 'done',
+        result: {
+          ...task.result,
+          completion: {
+            candidate_digest: input.candidateDigest,
+            contract_revision: task.contractRevision,
+            evidence_ids: evidence
+              .filter((item) => {
+                const requirement = task.verificationRequirements.find(
+                  (candidate) => candidate.id === item.requirementId,
+                );
+                return (
+                  item.contractRevision === task.contractRevision &&
+                  item.candidateDigest === input.candidateDigest &&
+                  item.state === 'passed' &&
+                  requirement?.kind === item.kind
+                );
+              })
+              .map((item) => item.evidenceId),
+            verified_at: input.now.toISOString(),
+          },
+        },
+        completedAt: input.now,
+        claimSessionId: null,
+        claimedAt: null,
+        claimExpiresAt: null,
+        livenessTurnId: null,
+        livenessAdmissionId: null,
+        livenessAdmissionExpiresAt: null,
+        ...clearTaskGitWrite,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(projectTasks.projectId, input.projectId),
+          eq(projectTasks.taskId, input.taskId),
+          eq(projectTasks.claimSessionId, input.expectedClaimSessionId),
+          ...(humanMayApproveExpiredReview
+            ? [eq(projectTasks.status, 'review')]
+            : [gt(projectTasks.claimExpiresAt, input.now)]),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new TaskTransitionConflictError({
+        projectId: input.projectId,
+        taskId: input.taskId,
+        claimSessionId: task.claimSessionId,
+        claimExpiresAt: task.claimExpiresAt,
+      });
+    }
+
+    if (updated.livenessWorkerSessionId) {
+      const [project] = await tx
+        .select({ accountId: projects.accountId })
+        .from(projects)
+        .where(eq(projects.projectId, input.projectId))
+        .limit(1);
+      if (!project) throw new Error(`project ${input.projectId} disappeared during completion`);
+      await revokeWorkerSessionTokens(
+        tx,
+        updated.livenessWorkerSessionId,
+        project.accountId,
+        input.now,
+      );
+      await tx
+        .insert(sessionLifecycleCommands)
+        .values({
+          commandType: 'stop_session',
+          source: 'cli',
+          status: 'queued',
+          projectId: input.projectId,
+          accountId: project.accountId,
+          sessionId: updated.livenessWorkerSessionId,
+          idempotencyKey: `task-stop:${updated.taskId}:${updated.livenessWorkerSessionId}`,
+          payload: { reason: 'task_completed' },
+          result: {},
+          availableAt: input.now,
+          updatedAt: input.now,
+        })
+        .onConflictDoNothing({
+          target: sessionLifecycleCommands.idempotencyKey,
+        });
+    }
+    return { kind: 'completed' as const, task: updated };
+  });
+  if (!outcome) return null;
+  if (outcome.kind === 'unmet') throw new TaskCompletionGateError(outcome.unmet);
+  return outcome.task;
+}
+
 export interface ProjectTaskWorkerContract {
   max_wall_seconds: number;
   max_tokens: number;
@@ -605,6 +917,44 @@ export class TaskLivenessConflictError extends Error {
     super(message);
     this.name = 'TaskLivenessConflictError';
   }
+}
+
+export const TASK_HARNESS_OVERRIDES_MAX_BYTES = 16 * 1_024;
+
+/** Build the immutable worker prompt from this task's accepted local overrides only. */
+export function projectTaskWorkerInitialPrompt(input: {
+  projectId: string;
+  taskId: string;
+  result: Record<string, unknown>;
+  prompt: string;
+}): string {
+  const overrides = input.result.harness_overrides;
+  if (
+    !overrides ||
+    typeof overrides !== 'object' ||
+    Array.isArray(overrides) ||
+    Object.keys(overrides).length === 0
+  ) {
+    return input.prompt;
+  }
+  const serialized = JSON.stringify(overrides);
+  const serializedBytes = new TextEncoder().encode(serialized).byteLength;
+  if (serializedBytes > TASK_HARNESS_OVERRIDES_MAX_BYTES) {
+    throw new TaskLivenessConflictError(
+      input.projectId,
+      input.taskId,
+      `task harness overrides exceed ${TASK_HARNESS_OVERRIDES_MAX_BYTES} UTF-8 bytes`,
+    );
+  }
+  return [
+    '[BEGIN SERVER-OWNED TASK HARNESS OVERRIDES JSON V1]',
+    `task_id=${input.taskId}`,
+    `json_bytes=${serializedBytes}`,
+    serialized,
+    '[END SERVER-OWNED TASK HARNESS OVERRIDES JSON V1]',
+    '',
+    input.prompt,
+  ].join('\n');
 }
 
 function sameWorkerContract(left: unknown, right: ProjectTaskWorkerContract): boolean {
@@ -780,6 +1130,13 @@ export async function registerProjectTaskWorker(
       }
     }
 
+    const effectivePrompt = projectTaskWorkerInitialPrompt({
+      projectId: input.projectId,
+      taskId: input.taskId,
+      result: task.result,
+      prompt: input.prompt,
+    });
+
     const [insertedProvision] = await tx
       .insert(sessionLifecycleCommands)
       .values({
@@ -821,7 +1178,7 @@ export async function registerProjectTaskWorker(
         actorUserId: input.actorUserId,
         sessionId: input.workerSessionId,
         idempotencyKey: promptIdempotencyKey,
-        payload: { text: input.prompt, messageId },
+        payload: { text: effectivePrompt, messageId },
         result: {},
         // Stable ordering lets a normal batch drain kick provisioning before it
         // starts the readiness wait for the first prompt.
@@ -852,7 +1209,7 @@ export async function registerProjectTaskWorker(
         typeof payload.messageId === 'string'
           ? normalizeOpenCodeMessageId(payload.messageId)
           : payload.messageId;
-      if (payload.text !== input.prompt || persistedMessageId !== messageId) {
+      if (payload.text !== effectivePrompt || persistedMessageId !== messageId) {
         throw new TaskLivenessConflictError(
           input.projectId,
           input.taskId,
@@ -1191,7 +1548,10 @@ export async function settleProjectTaskNoProgress(
         actorUserId: input.actorUserId,
         sessionId: targetSessionId,
         idempotencyKey,
-        payload: { text, messageId: normalizeOpenCodeMessageId(idempotencyKey) },
+        payload: {
+          text,
+          messageId: normalizeOpenCodeMessageId(idempotencyKey),
+        },
         result: {},
         availableAt: input.now,
         updatedAt: input.now,
@@ -1226,7 +1586,9 @@ export async function settleProjectTaskNoProgress(
           availableAt: input.now,
           updatedAt: input.now,
         })
-        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+        .onConflictDoNothing({
+          target: sessionLifecycleCommands.idempotencyKey,
+        });
     }
     const blocker = exceeded ?? input.reason;
     const [updated] = await tx
@@ -1446,7 +1808,12 @@ export async function acquireProjectTaskGitWrite(
 /** Mark only the matching receive-pack request as confirmed settled. */
 export async function settleProjectTaskGitWrite(
   database: Database,
-  input: { projectId: string; workerSessionId: string; requestId: string; now: Date },
+  input: {
+    projectId: string;
+    workerSessionId: string;
+    requestId: string;
+    now: Date;
+  },
 ): Promise<boolean> {
   assertValidDate(input.now, 'now');
   const [settled] = await database
@@ -1687,7 +2054,12 @@ export async function admitProjectTaskWorkerIteration(
 /** Fail closed when gateway accounting cannot durably settle this request. */
 export async function blockProjectTaskWorkerAdmission(
   database: Database,
-  input: { workerSessionId: string; admissionId: string; reason: string; now: Date },
+  input: {
+    workerSessionId: string;
+    admissionId: string;
+    reason: string;
+    now: Date;
+  },
 ): Promise<boolean> {
   const [row] = await database
     .select({ task: projectTasks, accountId: projects.accountId })
@@ -1788,7 +2160,10 @@ async function finalizeTaskLiveness(
         livenessBlocker: input.reason,
         result: {
           ...task.result,
-          liveness: { blocker: input.reason, measured_usage: input.usage ?? null },
+          liveness: {
+            blocker: input.reason,
+            measured_usage: input.usage ?? null,
+          },
         },
         claimSessionId: null,
         claimedAt: null,
@@ -1851,7 +2226,11 @@ async function finalizeTaskLiveness(
 
 export async function finalizeProjectTaskLivenessIfExceeded(
   database: Database,
-  input: { workerSessionId: string; usage: ProjectTaskMeasuredUsage; now: Date },
+  input: {
+    workerSessionId: string;
+    usage: ProjectTaskMeasuredUsage;
+    now: Date;
+  },
 ): Promise<boolean> {
   const [row] = await database
     .select({ task: projectTasks, accountId: projects.accountId })
@@ -1918,7 +2297,10 @@ export async function sweepTaskLivenessBounds(
           : null;
       const usage =
         !wallReason && loadUsage
-          ? await loadUsage({ accountId: row.accountId, sessionId: workerSessionId })
+          ? await loadUsage({
+              accountId: row.accountId,
+              sessionId: workerSessionId,
+            })
           : undefined;
       const reason = wallReason ?? (usage ? exceededWorkerBounds(row.task, usage, now) : null);
       if (
@@ -2034,13 +2416,14 @@ export async function settleProjectGoalEvaluation(
         firedAt = null;
       }
     }
+    const effectiveFiredAt = state === 'fired' ? (firedAt ?? input.now) : null;
     const [row] = await tx
       .update(projectGoalEvaluations)
       .set({
         state,
         firedAt:
-          state === 'fired'
-            ? sql`coalesce(${projectGoalEvaluations.firedAt}, ${firedAt!.toISOString()}::timestamptz)`
+          effectiveFiredAt !== null
+            ? sql`coalesce(${projectGoalEvaluations.firedAt}, ${effectiveFiredAt.toISOString()}::timestamptz)`
             : null,
         ...(input.lifecycleCommandId === undefined
           ? {}

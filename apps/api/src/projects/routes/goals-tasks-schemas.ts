@@ -2,7 +2,7 @@ import { TASK_WORKER_PLATFORM_CEILINGS } from '@kortix/db';
 import { z } from '@hono/zod-openapi';
 
 /**
- * Non-overridable server bounds. Meta agents and other callers may only narrow them.
+ * Non-overridable server bounds. AGI agents and other callers may only narrow them.
  */
 export const WORKER_CONTRACT_PLATFORM_CEILINGS = TASK_WORKER_PLATFORM_CEILINGS;
 

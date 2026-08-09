@@ -44,7 +44,6 @@ import {
   KeyboardIcon as Keyboard,
   KeyIcon as KeyRound,
   StackIcon as Layers,
-  WaveformIcon as Waveform,
   SquaresFourIcon as LayoutDashboard,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
@@ -66,6 +65,7 @@ import {
   UsersIcon as UsersSolid,
   SpeakerHighIcon as Volume2,
   ImagesSquareIcon as WallpaperIcon,
+  WaveformIcon as Waveform,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
@@ -400,6 +400,18 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/files',
     requiresProject: true,
     keywords: 'files repository project drive browser explorer',
+  },
+  {
+    id: 'proj-tasks',
+    label: 'Tasks',
+    icon: Inbox,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/tasks',
+    requiresProject: true,
+    requiresFlag: 'agi',
+    keywords: 'tasks agi coworker goals blockers verification evidence review work',
   },
   {
     id: 'proj-apps',

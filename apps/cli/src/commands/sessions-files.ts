@@ -158,7 +158,7 @@ export function buildPromptWithFiles(prompt: string, sandboxPaths: string[]): st
 
 /**
  * Appended to every spawn prompt sent from INSIDE a sandbox (a coordinator
- * like the platform meta agent). Without it a worker session sees the same
+ * like the platform AGI agent). Without it a worker session sees the same
  * CLI + token its coordinator has and re-delegates instead of working — the
  * observed failure: "generate a demo PDF" spawned a session that spawned
  * another session.

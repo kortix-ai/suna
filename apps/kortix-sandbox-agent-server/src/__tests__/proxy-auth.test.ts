@@ -305,7 +305,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('uses the clone-credential repo_url for clone, origin, fetch auth, and denied push', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'kortix-meta-git-proxy-'))
+    const root = mkdtempSync(join(tmpdir(), 'kortix-agi-git-proxy-'))
     const originalFetch = globalThis.fetch
     const remote = join(root, 'remote.git')
     const seed = join(root, 'seed')
@@ -1091,6 +1091,59 @@ describe('daemon proxy auth gate', () => {
       else process.env.KORTIX_LLM_API_KEY = previousLlmKey
       if (previousLlmBase === undefined) delete process.env.KORTIX_LLM_BASE_URL
       else process.env.KORTIX_LLM_BASE_URL = previousLlmBase
+    }
+  })
+
+  it('refreshes the control-plane callback URL in process env and the agent shell file', async () => {
+    let reloadCalls = 0
+    const previousApiUrl = process.env.KORTIX_API_URL
+    process.env.KORTIX_API_URL = 'https://expired-tunnel.example/v1'
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => { reloadCalls += 1 } }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
+    )
+
+    try {
+      const response = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          revision: 'rev-callback-refresh',
+          env: {},
+          names: [],
+          refreshModels: true,
+          opencodeEnv: {
+            KORTIX_API_URL: 'https://active-tunnel.example/v1',
+          },
+        }),
+      })
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: true,
+        opencode_env_names: ['KORTIX_API_URL'],
+        agent_env_written: true,
+      })
+      expect(process.env.KORTIX_API_URL).toBe('https://active-tunnel.example/v1')
+      expect(readFileSync(TEST_AGENT_ENV_FILE, 'utf8')).toContain(
+        "export KORTIX_API_URL='https://active-tunnel.example/v1'",
+      )
+      expect(reloadCalls).toBe(1)
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.KORTIX_API_URL
+      else process.env.KORTIX_API_URL = previousApiUrl
+      rmSync(TEST_AGENT_ENV_FILE, { force: true })
     }
   })
 

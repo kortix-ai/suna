@@ -3,20 +3,20 @@ import { describe, expect, test } from 'bun:test';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 import {
-  addPlatformMetaAgent,
-  buildPlatformMetaOpenCodeConfig,
-  platformMetaAgentGrant,
-  platformMetaAgentEnabledForSession,
-  projectMetaAgentEnabled,
-  resolvePlatformMetaSandbox,
-} from '../projects/lib/platform-meta-agent';
+  addPlatformAgiAgent,
+  buildPlatformAgiOpenCodeConfig,
+  platformAgiAgentGrant,
+  platformAgiAgentEnabledForSession,
+  projectAgiEnabled,
+  resolvePlatformAgiSandbox,
+} from '../projects/lib/platform-agi-agent';
 
-describe('platform meta agent', () => {
-  test('adds one reserved meta agent and replaces a project collision', () => {
-    const config = addPlatformMetaAgent({
+describe('platform AGI agent', () => {
+  test('adds one reserved AGI agent and replaces a project collision', () => {
+    const config = addPlatformAgiAgent({
       agents: [
         {
-          name: 'meta',
+          name: 'agi',
           path: '/project/AGENTS.md',
           source: 'opencode',
           description: 'project override',
@@ -40,9 +40,9 @@ describe('platform meta agent', () => {
       agent_discovery: 'opencode',
     });
 
-    expect(config.agents.filter((agent) => agent.name === 'meta')).toHaveLength(1);
+    expect(config.agents.filter((agent) => agent.name === 'agi')).toHaveLength(1);
     expect(config.agents[0]).toMatchObject({
-      name: 'meta',
+      name: 'agi',
       path: '/workspace/AGENTS.md',
       scope: {
         env: [],
@@ -50,13 +50,13 @@ describe('platform meta agent', () => {
         kortix_cli: expect.any(Array),
       },
     });
-    expect(config.open_code_default_agent).toBe('meta');
+    expect(config.open_code_default_agent).toBe('agi');
   });
 
   test('defines an OpenCode agent that follows the platform guide', () => {
-    expect(JSON.parse(buildPlatformMetaOpenCodeConfig())).toEqual({
+    expect(JSON.parse(buildPlatformAgiOpenCodeConfig())).toEqual({
       agent: {
-        meta: {
+        agi: {
           description: 'Starts specialized Kortix sessions and coordinates their work.',
           mode: 'primary',
           prompt:
@@ -66,10 +66,10 @@ describe('platform meta agent', () => {
     });
   });
 
-  test('forces the meta sandbox and rejects an explicit alternate sandbox', () => {
-    expect(resolvePlatformMetaSandbox(undefined)).toBe('meta');
-    expect(resolvePlatformMetaSandbox('meta')).toBe('meta');
-    expect(() => resolvePlatformMetaSandbox('node22')).toThrow('META_SANDBOX_LOCKED');
+  test('forces the AGI sandbox and rejects an explicit alternate sandbox', () => {
+    expect(resolvePlatformAgiSandbox(undefined)).toBe('agi');
+    expect(resolvePlatformAgiSandbox('agi')).toBe('agi');
+    expect(() => resolvePlatformAgiSandbox('node22')).toThrow('AGI_SANDBOX_LOCKED');
   });
 
   test('denies merge authority by construction while retaining other project actions', () => {
@@ -86,17 +86,17 @@ describe('platform meta agent', () => {
       PROJECT_ACTIONS.PROJECT_GITOPS_READ,
     ];
 
-    expect(platformMetaAgentGrant()).toEqual({
-      agent: 'meta',
+    expect(platformAgiAgentGrant()).toEqual({
+      agent: 'agi',
       kortixCli: expectedActions,
       connectors: [],
       env: [],
     });
-    expect(platformMetaAgentGrant().kortixCli).not.toBe('all');
-    expect(platformMetaAgentGrant().kortixCli).not.toContain(PROJECT_ACTIONS.PROJECT_WRITE);
-    expect(platformMetaAgentGrant().kortixCli).not.toContain(PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    expect(platformAgiAgentGrant().kortixCli).not.toBe('all');
+    expect(platformAgiAgentGrant().kortixCli).not.toContain(PROJECT_ACTIONS.PROJECT_WRITE);
+    expect(platformAgiAgentGrant().kortixCli).not.toContain(PROJECT_ACTIONS.PROJECT_SESSION_STOP);
     expect(
-      addPlatformMetaAgent({
+      addPlatformAgiAgent({
         agents: [],
         commands: [],
         skills: [],
@@ -113,26 +113,26 @@ describe('platform meta agent', () => {
     ).toEqual(expectedActions);
   });
 
-  test('is gated on the meta_agent feature flag, default off', () => {
-    expect(projectMetaAgentEnabled(null)).toBe(false);
-    expect(projectMetaAgentEnabled({})).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: {} })).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: { meta_agent: false } })).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: { meta_agent: true } })).toBe(true);
+  test('is gated on the agi feature flag, default off', () => {
+    expect(projectAgiEnabled(null)).toBe(false);
+    expect(projectAgiEnabled({})).toBe(false);
+    expect(projectAgiEnabled({ experimental: {} })).toBe(false);
+    expect(projectAgiEnabled({ experimental: { agi: false } })).toBe(false);
+    expect(projectAgiEnabled({ experimental: { agi: true } })).toBe(true);
   });
 
-  test('enables meta only for a trusted generated goal push when the project flag is off', () => {
-    expect(platformMetaAgentEnabledForSession(null, 'meta', true)).toBe(true);
+  test('enables AGI only for a trusted generated goal push when the project flag is off', () => {
+    expect(platformAgiAgentEnabledForSession(null, 'agi', true)).toBe(true);
     expect(
-      platformMetaAgentEnabledForSession({ experimental: { meta_agent: false } }, 'meta', true),
+      platformAgiAgentEnabledForSession({ experimental: { agi: false } }, 'agi', true),
     ).toBe(true);
   });
 
-  test('keeps arbitrary and forged meta requests gated off by default', () => {
-    expect(platformMetaAgentEnabledForSession(null, 'meta', false)).toBe(false);
-    expect(platformMetaAgentEnabledForSession(null, 'worker', true)).toBe(false);
+  test('keeps arbitrary and forged AGI requests gated off by default', () => {
+    expect(platformAgiAgentEnabledForSession(null, 'agi', false)).toBe(false);
+    expect(platformAgiAgentEnabledForSession(null, 'worker', true)).toBe(false);
     expect(
-      platformMetaAgentEnabledForSession({ experimental: { meta_agent: true } }, 'meta', false),
+      platformAgiAgentEnabledForSession({ experimental: { agi: true } }, 'agi', false),
     ).toBe(true);
   });
 });

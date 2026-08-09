@@ -196,7 +196,7 @@ mock.module('../projects/git', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
+  ensureAgiSandboxImage: async () => ({ snapshotName: "kortix-agi-test", slug: "agi", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],

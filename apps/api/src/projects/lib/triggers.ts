@@ -1,5 +1,4 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { goalPushTriggerSlug } from '@kortix/manifest-schema';
 import type { TriggerList } from '@kortix/api-contract';
 import {
   connectors,
@@ -8,22 +7,23 @@ import {
   projects,
   sessionLifecycleCommands,
 } from '@kortix/db';
+import { goalPushTriggerSlug } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
+import { reconcileProjectTaskGitRemoteRef } from '../../git-proxy/task-write-reconcile';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
+import { isLeader } from '../../shared/leader-election';
+import { getSessionResourceUsage } from '../../shared/session-costs';
 import {
   createProjectGoalEvaluation,
   reconcileProjectTaskGitWrites,
   settleProjectGoalEvaluation,
   sweepTaskLivenessBounds,
 } from '../generated-state-store';
-import { reconcileProjectTaskGitRemoteRef } from '../../git-proxy/task-write-reconcile';
-import { getSessionResourceUsage } from '../../shared/session-costs';
-import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
-import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
+import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
 import {
   createSession,
   drainSessionLifecycleQueue,
@@ -32,6 +32,11 @@ import {
   resolveProjectAutomationActor,
   sessionBackpressureState,
 } from '../session-lifecycle';
+import {
+  sweepDueProjectTaskBlockerReminders,
+  sweepExpiredProjectTaskCoordinatorClaims,
+} from '../task-control-plane-store';
+import { reconcileReadyProjectTasks } from '../task-ready-reconciler';
 import {
   type TriggerExecutionRow,
   claimDueScheduleSlots,
@@ -810,7 +815,12 @@ export async function markGitTriggerAttemptFailed(
     })
     .onConflictDoUpdate({
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
-      set: { lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when },
+      set: {
+        lastStatus: 'failed',
+        lastError,
+        lastAttemptAt: when,
+        updatedAt: when,
+      },
     });
 }
 
@@ -910,7 +920,10 @@ async function enqueueTriggerPrompt(input: {
   deduped?: boolean;
 }> {
   const [session] = await db
-    .select({ status: projectSessions.status, metadata: projectSessions.metadata })
+    .select({
+      status: projectSessions.status,
+      metadata: projectSessions.metadata,
+    })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
@@ -1033,7 +1046,10 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
   // See resolveTriggerActor().
   const actor = await resolveTriggerActor(project);
   if (!actor) {
-    return { status: 'failed', error: 'No account owner available to own the session' };
+    return {
+      status: 'failed',
+      error: 'No account owner available to own the session',
+    };
   }
 
   let replayingCreateSession = false;
@@ -1054,7 +1070,10 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
         existing.projectId !== project.projectId ||
         !['create_session', 'continue_session'].includes(existing.commandType)
       ) {
-        return { status: 'failed', error: 'Idempotency key belongs to another delivery' };
+        return {
+          status: 'failed',
+          error: 'Idempotency key belongs to another delivery',
+        };
       }
       if (existing.commandType === 'continue_session') {
         return {
@@ -1174,7 +1193,7 @@ async function deliverGitTrigger(input: FireGitTriggerInput): Promise<GitTrigger
     // make them project-visible so the whole team can find them.
     visibility: 'project',
     request: input.request,
-    platformMetaGoalPush: spec.platformMetaGoalPush === true,
+    platformAgiGoalPush: spec.platformAgiGoalPush === true,
     queuePolicy: 'on_backpressure',
     idempotencyKey: input.idempotencyKey ?? null,
     body: {
@@ -1340,13 +1359,21 @@ async function executeTriggerExecution(
       return result.status;
     }
     const error = result.error ?? result.reason ?? 'scheduled trigger execution failed';
-    const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error });
+    const state = await markTriggerExecutionFailed({
+      row,
+      failedAt: completedAt,
+      error,
+    });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, completedAt, error);
     return state === 'queued' ? 'queued' : 'failed';
   } catch (error) {
     const failedAt = new Date();
     const message = error instanceof Error ? error.message : String(error);
-    const state = await markTriggerExecutionFailed({ row, failedAt, error: message });
+    const state = await markTriggerExecutionFailed({
+      row,
+      failedAt,
+      error: message,
+    });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, failedAt, message).catch(() => {});
     return state === 'queued' ? 'queued' : 'failed';
   }
@@ -1393,7 +1420,22 @@ export async function runTaskLivenessSweep(
       now,
       reconcileRemoteRef: reconcileProjectTaskGitRemoteRef,
     });
-    return sweepTaskLivenessBounds(db, now, 100, getSessionResourceUsage);
+    const [finalized, reminders, recovered, ready] = await Promise.all([
+      sweepTaskLivenessBounds(db, now, 100, getSessionResourceUsage),
+      sweepDueProjectTaskBlockerReminders(db, now, 100),
+      sweepExpiredProjectTaskCoordinatorClaims(db, now, 100),
+      reconcileReadyProjectTasks({ database: db }),
+    ]);
+    if (reminders.reminded || reminders.expired) {
+      console.log('[task-blockers] reminder sweep completed', reminders);
+    }
+    if (recovered > 0) {
+      console.log('[task-coordinator] expired claims recovered', { recovered });
+    }
+    if (ready.queued > 0 || ready.deduped > 0) {
+      console.log('[task-coordinator] ready tasks reconciled', ready);
+    }
+    return finalized + recovered + ready.queued;
   },
 ): Promise<number | null> {
   if (!leader || taskLivenessSweepRunning) return null;
@@ -1427,7 +1469,9 @@ export function startProjectTriggerScheduler(): void {
     runTaskLivenessSweep()
       .then((finalized) => {
         if (finalized && finalized > 0) {
-          console.log('[task-liveness] deadline sweep finalized tasks', { finalized });
+          console.log('[task-liveness] deadline sweep finalized tasks', {
+            finalized,
+          });
         }
       })
       .catch((error) => {
@@ -1604,7 +1648,9 @@ export function parseTriggerDraft(
 
   const slug = opts.existingSlug ?? rawSlug ?? slugify(name);
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
-    return { error: `Invalid slug "${slug}" — use letters, digits, dashes, underscores only` };
+    return {
+      error: `Invalid slug "${slug}" — use letters, digits, dashes, underscores only`,
+    };
   }
 
   const type =
@@ -1642,7 +1688,9 @@ export function parseTriggerDraft(
       : 'fresh';
   const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
   if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
-    return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
+    return {
+      error: 'session_mode "pinned" requires a session_id to pin the trigger to',
+    };
   }
   const pinnedSessionId: string | null =
     sessionMode === 'pinned' ? (pinnedSessionIdRaw ?? null) : null;
@@ -1660,14 +1708,18 @@ export function parseTriggerDraft(
   let filter: Record<string, string> | null = null;
   if (filterRaw !== undefined && filterRaw !== null) {
     if (!isPlainObject(filterRaw)) {
-      return { error: 'filter must be an object mapping payload paths to expected values' };
+      return {
+        error: 'filter must be an object mapping payload paths to expected values',
+      };
     }
     const entries: Record<string, string> = {};
     for (const [key, value] of Object.entries(filterRaw)) {
       const trimmed = key.trim();
       if (!trimmed) return { error: 'filter keys must be non-empty payload paths' };
       if (value === null || typeof value === 'object') {
-        return { error: `filter.${trimmed} must be a string, number, or boolean` };
+        return {
+          error: `filter.${trimmed} must be a string, number, or boolean`,
+        };
       }
       entries[trimmed] = String(value);
     }
@@ -1683,7 +1735,9 @@ export function parseTriggerDraft(
     if (runAtRaw) {
       const parsed = Date.parse(runAtRaw);
       if (Number.isNaN(parsed)) {
-        return { error: `run_at must be an ISO-8601 datetime (got "${runAtRaw}")` };
+        return {
+          error: `run_at must be an ISO-8601 datetime (got "${runAtRaw}")`,
+        };
       }
       return {
         slug,
@@ -1705,7 +1759,9 @@ export function parseTriggerDraft(
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
     if (!cron)
-      return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
+      return {
+        error: 'cron triggers must declare a `cron` expression or a one-off `run_at`',
+      };
     const cronError = validateTriggerCron(cron, timezone);
     if (cronError) return { error: cronError };
     return {
@@ -1730,7 +1786,9 @@ export function parseTriggerDraft(
   const secretEnv = normalizeString((body as any).secret_env ?? (body as any).secretEnv);
   if (!secretEnv) return { error: 'webhook triggers must declare `secret_env`' };
   if (!/^[A-Z_][A-Z0-9_]*$/.test(secretEnv)) {
-    return { error: `secret_env must look like a project_secrets name (got "${secretEnv}")` };
+    return {
+      error: `secret_env must look like a project_secrets name (got "${secretEnv}")`,
+    };
   }
   return {
     slug,
@@ -1854,7 +1912,10 @@ export async function loadManifestForEdit(project: ManifestProject): Promise<Par
   const gitProject = hasResolvedGitAuth(project) ? project : await withProjectGitAuth(project);
   const existing = await readManifest(gitProject);
   if (existing) return existing;
-  return synthesizeBlankManifest({ name: project.name, manifestPath: project.manifestPath });
+  return synthesizeBlankManifest({
+    name: project.name,
+    manifestPath: project.manifestPath,
+  });
 }
 
 /** Insert or replace a trigger by slug inside the manifest's triggers array. */
@@ -1973,7 +2034,10 @@ export async function commitRepoFile(
     }
   }
   if (!gitProject.gitAuthToken) {
-    return { error: 'No git credentials available to write to the project repo', status: 502 };
+    return {
+      error: 'No git credentials available to write to the project repo',
+      status: 502,
+    };
   }
 
   try {
@@ -1987,7 +2051,11 @@ export async function commitRepoFile(
       expectedFileRevision:
         expectedFileRevision === undefined
           ? undefined
-          : { path, sha: expectedFileRevision, candidatePaths: expectedCandidatePaths },
+          : {
+              path,
+              sha: expectedFileRevision,
+              candidatePaths: expectedCandidatePaths,
+            },
     });
   } catch (err) {
     if (err instanceof Error && err.name === 'GitFileRevisionConflictError') {

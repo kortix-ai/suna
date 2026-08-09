@@ -404,6 +404,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|git|collaborators",
   "GET|v1|projects|:projectId|goals",
   "GET|v1|projects|:projectId|goals|:slug",
+  "GET|v1|projects|:projectId|goals|:slug|health",
   "GET|v1|projects|:projectId|goals|:slug|observations",
   "POST|v1|projects|:projectId|goals|:slug|observations",
   "POST|v1|projects|:projectId|goals|:slug|push",

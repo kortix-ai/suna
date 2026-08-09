@@ -8,7 +8,7 @@ import {
   DEFAULT_MEMORY_GB,
   stageBuildContext,
   stageAppBuildContext,
-  stageMetaBuildContext,
+  stageAgiBuildContext,
 } from '../build-context';
 import { shortLivedObservation } from '../observation-cache';
 import { isE2BConcurrentBuildConflict, waitForConcurrentE2BBuild } from './e2b-build-conflict';
@@ -80,8 +80,8 @@ class E2BAdapter implements SandboxProviderAdapter {
     const context =
       input.runtimeProfile === 'app'
         ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
-        : input.runtimeProfile === 'meta'
-        ? await stageMetaBuildContext()
+        : input.runtimeProfile === 'agi'
+        ? await stageAgiBuildContext()
         : await stageBuildContext(
             input.snapshotName,
             userDockerfile,

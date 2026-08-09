@@ -1,8 +1,12 @@
+import type { Database } from '@kortix/db';
 import {
+  accountTokens,
   projectGoalEvaluations,
   projectSessions,
+  projectTasks,
   sessionLifecycleCommands,
 } from '@kortix/db/schema';
+import { AGI_AGENT_NAME } from '@kortix/shared';
 import { and, asc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -12,6 +16,7 @@ import type {
   SessionInvocationSource,
   SessionLifecycleResult,
 } from './types';
+import { normalizeOpenCodeMessageId } from './opencode-message-id';
 
 export type SessionLifecycleCommandRow = typeof sessionLifecycleCommands.$inferSelect;
 
@@ -51,7 +56,7 @@ export function createSessionCommandPayload(
     body: command.body,
     requestingPrincipalType: command.requestingPrincipalType,
     metadata: command.metadata,
-    platformMetaGoalPush: command.platformMetaGoalPush,
+    platformAgiGoalPush: command.platformAgiGoalPush,
     extraEnvVars: command.extraEnvVars,
     visibility: command.visibility,
     mayManageSystemConnections: command.mayManageSystemConnections,
@@ -99,6 +104,61 @@ export interface EnqueueContinueSessionCommandInput {
   idempotencyKey?: string | null;
 }
 
+export interface EnqueueCreateSessionLifecycleCommandInput {
+  source: SessionInvocationSource;
+  projectId: string;
+  accountId: string;
+  actorUserId: string | null;
+  idempotencyKey: string;
+  payload: QueuedCreateSessionPayload;
+}
+
+/** Queue one server-owned create command without inventing a human actor. */
+export async function enqueueCreateSessionLifecycleCommand(
+  database: Database,
+  input: EnqueueCreateSessionLifecycleCommandInput,
+): Promise<{ row: SessionLifecycleCommandRow; existing: boolean }> {
+  const now = new Date();
+  const values = {
+    commandType: 'create_session',
+    source: input.source,
+    status: 'queued' as const,
+    projectId: input.projectId,
+    accountId: input.accountId,
+    actorUserId: input.actorUserId,
+    idempotencyKey: input.idempotencyKey,
+    payload: input.payload as unknown as Record<string, unknown>,
+    result: {},
+    availableAt: now,
+    updatedAt: now,
+  };
+  const [created] = await database
+    .insert(sessionLifecycleCommands)
+    .values(values)
+    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+    .returning();
+  if (created) return { row: created, existing: false };
+
+  const [existing] = await database
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+  if (!existing) {
+    throw new Error(`Create command ${input.idempotencyKey} conflicted but could not be loaded`);
+  }
+  if (
+    existing.commandType !== 'create_session' ||
+    existing.projectId !== input.projectId ||
+    existing.accountId !== input.accountId
+  ) {
+    throw new Error(
+      `Create command idempotency key ${input.idempotencyKey} belongs to another job`,
+    );
+  }
+  return { row: existing, existing: true };
+}
+
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
 export function buildContinueSessionCommandValues(input: EnqueueContinueSessionCommandInput) {
   const now = new Date();
@@ -122,6 +182,269 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     availableAt: input.availableAt ?? now,
     updatedAt: now,
   };
+}
+
+export type ClaimReadyTaskPostCreateResult =
+  | {
+      ok: true;
+      deduped: boolean;
+      promptCommandId: string;
+    }
+  | {
+      ok: false;
+      code: 'TASK_READY_STALE';
+      retryable: false;
+      error: string;
+    };
+
+/**
+ * Claim a ready task for a newly-created AGI coordinator and persist its first
+ * prompt in the same transaction. A replay performs no second task update and
+ * converges on the same prompt command.
+ */
+export async function claimReadyTaskAndEnqueuePrompt(
+  database: Database,
+  input: {
+    projectId: string;
+    taskId: string;
+    sessionId: string;
+    leaseSeconds: number;
+    prompt: string;
+    now?: Date;
+  },
+): Promise<ClaimReadyTaskPostCreateResult> {
+  if (!Number.isSafeInteger(input.leaseSeconds) || input.leaseSeconds <= 0) {
+    throw new RangeError('leaseSeconds must be a positive safe integer');
+  }
+  if (!input.prompt.trim()) throw new RangeError('prompt must not be empty');
+  const now = input.now ?? new Date();
+  const claimExpiresAt = new Date(now.getTime() + input.leaseSeconds * 1_000);
+  const promptIdempotencyKey =
+    `task-ready-prompt:${input.projectId}:${input.taskId}:${input.sessionId}`;
+  const promptMessageId = normalizeOpenCodeMessageId(promptIdempotencyKey);
+  const stale = (error: string): ClaimReadyTaskPostCreateResult => ({
+    ok: false,
+    code: 'TASK_READY_STALE',
+    retryable: false,
+    error,
+  });
+
+  try {
+    return await database.transaction(async (tx) => {
+      // The session row serializes coordinator ownership across different task rows.
+      await tx.execute(sql`select session_id from ${projectSessions}
+        where project_id = ${input.projectId} and session_id = ${input.sessionId}
+        for update`);
+      const [session] = await tx
+        .select()
+        .from(projectSessions)
+        .where(
+          and(
+            eq(projectSessions.projectId, input.projectId),
+            eq(projectSessions.sessionId, input.sessionId),
+          ),
+        )
+        .limit(1);
+      const sessionMetadata = (session?.metadata ?? {}) as Record<string, unknown>;
+      if (
+        !session ||
+        session.agentName !== AGI_AGENT_NAME ||
+        typeof sessionMetadata.deletedAt === 'string' ||
+        typeof sessionMetadata.spawned_by_session === 'string'
+      ) {
+        return stale('ready task requires a live AGI coordinator in the same project');
+      }
+
+      await tx.execute(sql`select task_id from ${projectTasks}
+        where project_id = ${input.projectId} and task_id = ${input.taskId}
+        for update`);
+      const [task] = await tx
+        .select()
+        .from(projectTasks)
+        .where(
+          and(eq(projectTasks.projectId, input.projectId), eq(projectTasks.taskId, input.taskId)),
+        )
+        .limit(1);
+      if (!task) return stale('ready task no longer exists');
+
+      const replay =
+        task.claimSessionId === input.sessionId &&
+        ['doing', 'review', 'done'].includes(task.status);
+      if (!replay) {
+        const [claimed] = await tx
+          .update(projectTasks)
+          .set({
+            status: 'doing',
+            claimSessionId: input.sessionId,
+            claimedAt: now,
+            claimExpiresAt,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(projectTasks.projectId, input.projectId),
+              eq(projectTasks.taskId, input.taskId),
+              eq(projectTasks.status, 'todo'),
+              isNull(projectTasks.claimSessionId),
+              sql`(${projectTasks.assigneeAgent} is null or ${projectTasks.assigneeAgent} = ${session.agentName})`,
+              sql`(${projectTasks.assigneeUserId} is null or ${projectTasks.assigneeUserId} = ${session.createdBy})`,
+              sql`not exists (
+                select 1 from ${projectTasks} active_claim
+                where active_claim.project_id = ${input.projectId}
+                  and active_claim.claim_session_id = ${input.sessionId}
+                  and active_claim.status in (
+                    'doing'::kortix.project_task_status,
+                    'review'::kortix.project_task_status
+                  )
+                  and active_claim.task_id <> ${input.taskId}
+              )`,
+              sql`not exists (
+                select 1
+                from unnest(${projectTasks.blockedBy}) blocker(task_id)
+                left join ${projectTasks} dependency
+                  on dependency.project_id = ${input.projectId}
+                 and dependency.task_id = blocker.task_id
+                where dependency.status is distinct from 'done'::kortix.project_task_status
+              )`,
+            ),
+          )
+          .returning({ taskId: projectTasks.taskId });
+        if (!claimed) {
+          return stale(
+            'ready task was claimed, blocked, reassigned, or changed before session creation',
+          );
+        }
+      }
+
+      const values = buildContinueSessionCommandValues({
+        source: 'system:task-ready-reconciler',
+        projectId: input.projectId,
+        accountId: session.accountId,
+        sessionId: input.sessionId,
+        actorUserId: session.createdBy,
+        text: input.prompt,
+        messageId: promptMessageId,
+        triggerSlug: 'task-ready-reconciler',
+        idempotencyKey: promptIdempotencyKey,
+      });
+      const [created] = await tx
+        .insert(sessionLifecycleCommands)
+        .values(values)
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+        .returning({ commandId: sessionLifecycleCommands.commandId });
+      const [promptCommand] = created
+        ? [created]
+        : await tx
+            .select({
+              commandId: sessionLifecycleCommands.commandId,
+              commandType: sessionLifecycleCommands.commandType,
+              projectId: sessionLifecycleCommands.projectId,
+              sessionId: sessionLifecycleCommands.sessionId,
+            })
+            .from(sessionLifecycleCommands)
+            .where(eq(sessionLifecycleCommands.idempotencyKey, promptIdempotencyKey))
+            .limit(1);
+      if (
+        !promptCommand ||
+        ('commandType' in promptCommand && promptCommand.commandType !== 'continue_session') ||
+        ('projectId' in promptCommand && promptCommand.projectId !== input.projectId) ||
+        ('sessionId' in promptCommand && promptCommand.sessionId !== input.sessionId)
+      ) {
+        throw new Error('ready-task prompt idempotency key belongs to another delivery');
+      }
+      return {
+        ok: true,
+        deduped: !created,
+        promptCommandId: promptCommand.commandId,
+      };
+    });
+  } catch (error) {
+    if ((error as { code?: unknown })?.code === '23505') {
+      return stale('ready task lost a concurrent claim race');
+    }
+    throw error;
+  }
+}
+
+/**
+ * Retire an AGI coordinator that lost the ready-task claim race. The database
+ * revokes authority before the typed stale error returns. Provider teardown is
+ * durable through the existing lifecycle outbox.
+ */
+export async function retireStaleReadyTaskCoordinator(
+  database: Database,
+  input: { projectId: string; sessionId: string; reason: string; now?: Date },
+): Promise<boolean> {
+  const now = input.now ?? new Date();
+  return database.transaction(async (tx) => {
+    await tx.execute(sql`select session_id from ${projectSessions}
+      where project_id = ${input.projectId} and session_id = ${input.sessionId}
+      for update`);
+    const [session] = await tx
+      .select()
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.sessionId, input.sessionId),
+        ),
+      )
+      .limit(1);
+    const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
+    if (
+      !session ||
+      session.agentName !== AGI_AGENT_NAME ||
+      metadata.task_ready_reconciler !== true
+    ) {
+      return false;
+    }
+
+    await tx
+      .update(accountTokens)
+      .set({ status: 'revoked', revokedAt: now })
+      .where(
+        and(
+          eq(accountTokens.accountId, session.accountId),
+          eq(accountTokens.sessionId, input.sessionId),
+          eq(accountTokens.status, 'active'),
+        ),
+      );
+    await tx
+      .update(projectSessions)
+      .set({
+        status: 'stopped',
+        metadata: {
+          ...metadata,
+          deletedAt: now.toISOString(),
+          deletedBy: 'system:task-ready-reconciler',
+          taskReadyRetiredReason: input.reason,
+        },
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.sessionId, input.sessionId),
+        ),
+      );
+    await tx
+      .insert(sessionLifecycleCommands)
+      .values({
+        commandType: 'stop_session',
+        source: 'system:task-ready-reconciler',
+        status: 'queued',
+        projectId: input.projectId,
+        accountId: session.accountId,
+        sessionId: input.sessionId,
+        idempotencyKey: `task-ready-stale-stop:${input.projectId}:${input.sessionId}`,
+        payload: { reason: input.reason },
+        result: {},
+        availableAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    return true;
+  });
 }
 
 /**

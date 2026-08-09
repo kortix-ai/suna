@@ -11,6 +11,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realCompile from './compile-agent-config';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
+import { buildPlatformAgiOpenCodeConfig } from './platform-agi-agent';
 
 process.env.KORTIX_URL = 'https://api.example.com';
 
@@ -29,13 +30,13 @@ const SANDBOX_ROW = {
 };
 const SESSION_ROW = {
   createdBy: 'user-1',
-  agentName: 'support',
   secretsAllowlist: null,
   repoUrl: 'https://example.test/acme/repo.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
   accountId: 'acct-1',
 };
+let sessionAgentName = 'support';
 let activeSandbox: { externalId: string; config: Record<string, unknown> } | null = SANDBOX_ROW;
 let daemonProof = true;
 let daemonReload: string | null = 'restarted';
@@ -66,7 +67,7 @@ mock.module('../../shared/db', () => ({
       from: () => ({
         where: () => {
           const rows = activeSandbox
-            ? [{ ...SESSION_ROW, metadata: sessionMetadata, ...activeSandbox }]
+            ? [{ ...SESSION_ROW, agentName: sessionAgentName, metadata: sessionMetadata, ...activeSandbox }]
             : [];
           return {
             limit: async () => rows,
@@ -146,6 +147,7 @@ beforeEach(() => {
   daemonProof = true;
   daemonReload = 'restarted';
   sessionMetadata = null;
+  sessionAgentName = 'support';
 });
 
 describe('propagateProjectSecretsToActiveSandboxes', () => {
@@ -240,6 +242,17 @@ describe('pushSessionAgentConfigToSandbox', () => {
     await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
 
     expect(compileCalls).toEqual([{ ref: 'main', agent: 'support' }]);
+  });
+
+  test('keeps the platform AGI config when a coordinator sandbox restarts', async () => {
+    sessionAgentName = 'agi';
+
+    await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
+
+    expect(compileCalls).toEqual([]);
+    expect(posted[0].opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(
+      buildPlatformAgiOpenCodeConfig(),
+    );
   });
 
   test('a project with no compiled config pushes NOTHING', async () => {

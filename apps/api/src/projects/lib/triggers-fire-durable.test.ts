@@ -231,13 +231,13 @@ describe('fireGitTrigger — durable prompt delivery', () => {
     expect(result).toMatchObject({ status: 'fired', sessionId: 'sess-new' });
   });
 
-  test('a generated goal push carries the narrow session identity that enables platform meta', async () => {
+  test('a generated goal push carries the narrow session identity that enables platform AGI', async () => {
     await fireGitTrigger({
       spec: {
         ...baseSpec,
         slug: 'kortix-goal-push-grow-revenue',
-        agent: 'meta',
-        platformMetaGoalPush: true,
+        agent: 'agi',
+        platformAgiGoalPush: true,
         goalSlug: 'grow-revenue',
         sessionMode: 'reuse',
       } as never,
@@ -266,12 +266,12 @@ describe('fireGitTrigger — durable prompt delivery', () => {
     expect(createCalls[0]).toMatchObject({
       source: 'trigger:cron',
       body: {
-        agent_name: 'meta',
+        agent_name: 'agi',
         initial_prompt: expect.stringContaining(
           'Goal evaluation id: 11111111-1111-4111-8111-111111111111',
         ),
       },
-      platformMetaGoalPush: true,
+      platformAgiGoalPush: true,
       metadata: {
         trigger_kind: 'git',
         trigger_slug: 'kortix-goal-push-grow-revenue',
@@ -284,7 +284,7 @@ describe('fireGitTrigger — durable prompt delivery', () => {
       spec: {
         ...baseSpec,
         slug: 'kortix-goal-push-forged',
-        agent: 'meta',
+        agent: 'agi',
         sessionMode: 'fresh',
       } as never,
       project,
@@ -294,6 +294,6 @@ describe('fireGitTrigger — durable prompt delivery', () => {
     });
 
     expect(createCalls).toHaveLength(1);
-    expect(createCalls[0]).toMatchObject({ platformMetaGoalPush: false });
+    expect(createCalls[0]).toMatchObject({ platformAgiGoalPush: false });
   });
 });

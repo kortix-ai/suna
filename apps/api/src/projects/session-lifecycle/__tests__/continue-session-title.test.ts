@@ -54,6 +54,7 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
   },
 }));
 mock.module('../../lib/sessions', () => ({
+  deriveKortixApiBase: () => 'http://localhost:8008',
   createProjectSession: async () => {
     throw new Error('createProjectSession: not expected in this test');
   },
@@ -82,10 +83,14 @@ mock.module('../store', () => ({
   lifecycleCommandClaim: () => ({ lockedBy: 'test-worker', attempt: 1 }),
   renewLifecycleCommandLease: async () => true,
   repairLegacyLifecycleMessageIds: async () => 0,
+  retireStaleReadyTaskCoordinator: async () => true,
   deferLifecycleCommand: async () => {
     throw new Error('not expected in continue-session tests');
   },
   claimCreateSessionCommand: async () => {
+    throw new Error('not expected in this test');
+  },
+  claimReadyTaskAndEnqueuePrompt: async () => {
     throw new Error('not expected in this test');
   },
   claimDueLifecycleCommands: async () => {

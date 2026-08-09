@@ -27,7 +27,17 @@ function dependencies(
   return {
     dependencies: {
       sessionBelongsToProject: async () => true,
-      loadTaskEvidence: async () => evidenceState,
+      loadTaskEvidence: async () =>
+        evidenceState && {
+          intent: '',
+          constraints: [],
+          outOfScope: [],
+          contractRevision: 1,
+          controlPlaneVersion: null,
+          verificationRequirements: [],
+          reviewPolicy: { mode: 'auto' as const },
+          ...evidenceState,
+        },
       transitionTask: async (value: unknown) => {
         transitionInput = value;
         return { taskId: TASK_ID };
@@ -52,7 +62,9 @@ describe('task completion evidence provenance', () => {
       status: 'done',
       result: { evidence: [{ ref: 'verifier://report/42' }] },
     });
-    const transition = setup.transitionInput() as { result: { verifier?: unknown } };
+    const transition = setup.transitionInput() as {
+      result: { verifier?: unknown };
+    };
     expect(transition.result.verifier).toBeUndefined();
   });
 
@@ -79,7 +91,10 @@ describe('task completion evidence provenance', () => {
 
     await expect(
       completeTaskForProject(setup.dependencies, input([{ ref: 'worker://claim/99' }])),
-    ).rejects.toMatchObject({ status: 400, code: 'verified_progress_required' });
+    ).rejects.toMatchObject({
+      status: 400,
+      code: 'verified_progress_required',
+    });
     expect(setup.transitionInput()).toBeUndefined();
   });
 

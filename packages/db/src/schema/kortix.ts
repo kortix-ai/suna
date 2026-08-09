@@ -833,6 +833,17 @@ export const TASK_WORKER_PLATFORM_CEILINGS = {
   max_iterations: 128,
 } as const;
 
+export interface ProjectTaskVerificationRequirementRecord {
+  id: string;
+  kind: 'command' | 'http' | 'artifact' | 'deployment' | 'policy' | 'human' | 'monitor';
+  description: string;
+  required: boolean;
+}
+
+export interface ProjectTaskReviewPolicyRecord {
+  mode: 'auto' | 'human';
+}
+
 /**
  * Durable generated task state. A task UUID is globally unique, while every
  * lookup and relationship remains project-scoped. `parent_id` models structure
@@ -845,10 +856,24 @@ export const projectTasks = kortixSchema.table(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    goalSlug: text('goal_slug').notNull(),
+    goalSlug: text('goal_slug'),
     parentId: uuid('parent_id'),
     title: text('title').notNull(),
     body: text('body').default('').notNull(),
+    intent: text('intent').default('').notNull(),
+    constraints: jsonb('constraints').default([]).$type<string[]>().notNull(),
+    outOfScope: jsonb('out_of_scope').default([]).$type<string[]>().notNull(),
+    contractRevision: integer('contract_revision').default(1).notNull(),
+    /** Null identifies a task created before the task control plane existed. */
+    controlPlaneVersion: integer('control_plane_version'),
+    verificationRequirements: jsonb('verification_requirements')
+      .default([])
+      .$type<ProjectTaskVerificationRequirementRecord[]>()
+      .notNull(),
+    reviewPolicy: jsonb('review_policy')
+      .default({ mode: 'auto' })
+      .$type<ProjectTaskReviewPolicyRecord>()
+      .notNull(),
     status: projectTaskStatusEnum('status').default('backlog').notNull(),
     /** Higher values sort before lower values. Zero is the neutral default. */
     priority: integer('priority').default(0).notNull(),
@@ -876,24 +901,34 @@ export const projectTasks = kortixSchema.table(
       max_iterations: number;
     }>(),
     livenessStartedAt: timestamp('liveness_started_at', { withTimezone: true }),
-    livenessDeadlineAt: timestamp('liveness_deadline_at', { withTimezone: true }),
+    livenessDeadlineAt: timestamp('liveness_deadline_at', {
+      withTimezone: true,
+    }),
     livenessIterationsAdmitted: integer('liveness_iterations_admitted').default(0).notNull(),
     /** Server-owned identity for the one semantic outcome allowed in the current worker turn. */
     livenessTurnId: uuid('liveness_turn_id'),
     /** Durable single-request gateway fence. Cleared only by its matching request. */
     livenessAdmissionId: text('liveness_admission_id'),
-    livenessAdmissionExpiresAt: timestamp('liveness_admission_expires_at', { withTimezone: true }),
+    livenessAdmissionExpiresAt: timestamp('liveness_admission_expires_at', {
+      withTimezone: true,
+    }),
     /** Durable receive-pack state. Only `settled` proves upstream can no longer mutate. */
     gitWriteRequestId: text('git_write_request_id'),
-    gitWriteLeaseExpiresAt: timestamp('git_write_lease_expires_at', { withTimezone: true }),
+    gitWriteLeaseExpiresAt: timestamp('git_write_lease_expires_at', {
+      withTimezone: true,
+    }),
     gitWriteState: varchar('git_write_state', { length: 16 }),
     gitWriteRef: text('git_write_ref'),
     gitWriteOldOid: varchar('git_write_old_oid', { length: 64 }),
     gitWriteNewOid: varchar('git_write_new_oid', { length: 64 }),
     /** Rotation cursor for starvation-free recurring bounded-worker sweeps. */
-    livenessLastSweptAt: timestamp('liveness_last_swept_at', { withTimezone: true }),
+    livenessLastSweptAt: timestamp('liveness_last_swept_at', {
+      withTimezone: true,
+    }),
     noProgressSettlements: smallint('no_progress_settlements').default(0).notNull(),
-    continuationConsumedAt: timestamp('continuation_consumed_at', { withTimezone: true }),
+    continuationConsumedAt: timestamp('continuation_consumed_at', {
+      withTimezone: true,
+    }),
     lastProgressAt: timestamp('last_progress_at', { withTimezone: true }),
     lastProgressRef: text('last_progress_ref'),
     lastNoProgressSettlementId: text('last_no_progress_settlement_id'),
@@ -901,6 +936,7 @@ export const projectTasks = kortixSchema.table(
     lastNoProgressCommandId: uuid('last_no_progress_command_id'),
     escalatedAt: timestamp('escalated_at', { withTimezone: true }),
     livenessBlocker: text('liveness_blocker'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -936,6 +972,14 @@ export const projectTasks = kortixSchema.table(
     uniqueIndex('idx_project_tasks_active_liveness_coordinator')
       .on(table.livenessCoordinatorSessionId)
       .where(sql`${table.status} = 'doing' and ${table.livenessCoordinatorSessionId} is not null`),
+    uniqueIndex('idx_project_tasks_live_claim_session')
+      .on(table.claimSessionId)
+      .where(sql`${table.status} in ('doing', 'review') and ${table.claimSessionId} is not null`),
+    uniqueIndex('idx_project_tasks_live_liveness_coordinator')
+      .on(table.livenessCoordinatorSessionId)
+      .where(
+        sql`${table.status} in ('doing', 'review') and ${table.livenessCoordinatorSessionId} is not null`,
+      ),
     uniqueIndex('idx_project_tasks_liveness_worker')
       .on(table.livenessWorkerSessionId)
       .where(sql`${table.livenessWorkerSessionId} is not null`),
@@ -945,6 +989,14 @@ export const projectTasks = kortixSchema.table(
       .where(sql`${table.originFingerprint} is not null`),
     check('project_tasks_goal_slug_nonempty', sql`btrim(${table.goalSlug}) <> ''`),
     check('project_tasks_title_nonempty', sql`btrim(${table.title}) <> ''`),
+    check('project_tasks_contract_revision_positive', sql`${table.contractRevision} >= 1`),
+    check(
+      'project_tasks_contract_collections_valid',
+      sql`jsonb_typeof(${table.constraints}) = 'array'
+        and jsonb_typeof(${table.outOfScope}) = 'array'
+        and jsonb_typeof(${table.verificationRequirements}) = 'array'
+        and jsonb_typeof(${table.reviewPolicy}) = 'object'`,
+    ),
     check('project_tasks_origin_nonempty', sql`btrim(${table.origin}) <> ''`),
     check(
       'project_tasks_origin_fingerprint_nonempty',
@@ -1076,6 +1128,235 @@ export const projectTasks = kortixSchema.table(
     check(
       'project_tasks_last_no_progress_action_valid',
       sql`${table.lastNoProgressAction} is null or ${table.lastNoProgressAction} in ('continuation_queued', 'blocked_escalation_queued')`,
+    ),
+  ],
+);
+
+/** Immutable task evidence. Existing rows are never updated in place. */
+export const projectTaskEvidence = kortixSchema.table(
+  'project_task_evidence',
+  {
+    evidenceId: uuid('evidence_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    sessionId: text('session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    contractRevision: integer('contract_revision').notNull(),
+    requirementId: text('requirement_id'),
+    kind: varchar('kind', { length: 32 }).notNull(),
+    ref: text('ref').notNull(),
+    summary: text('summary').default('').notNull(),
+    candidateDigest: text('candidate_digest').notNull(),
+    state: varchar('state', { length: 16 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_task_evidence_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    index('idx_project_task_evidence_task_created').on(
+      table.projectId,
+      table.taskId,
+      table.createdAt,
+    ),
+    check('project_task_evidence_revision_positive', sql`${table.contractRevision} >= 1`),
+    check('project_task_evidence_ref_nonempty', sql`btrim(${table.ref}) <> ''`),
+    check('project_task_evidence_digest_nonempty', sql`btrim(${table.candidateDigest}) <> ''`),
+    check('project_task_evidence_state_valid', sql`${table.state} in ('passed', 'failed', 'info')`),
+  ],
+);
+
+/** Typed waits with a durable reminder time. */
+export const projectTaskBlockers = kortixSchema.table(
+  'project_task_blockers',
+  {
+    blockerId: uuid('blocker_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    category: varchar('category', { length: 48 }).notNull(),
+    requestedAction: text('requested_action').notNull(),
+    target: jsonb('target').default({}).$type<Record<string, unknown>>().notNull(),
+    requestDigest: text('request_digest').notNull(),
+    attemptsMade: jsonb('attempts_made').default([]).$type<string[]>().notNull(),
+    status: varchar('status', { length: 16 }).default('open').notNull(),
+    nextReminderAt: timestamp('next_reminder_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_task_blockers_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    index('idx_project_task_blockers_due')
+      .on(table.status, table.nextReminderAt)
+      .where(sql`${table.status} = 'open'`),
+    index('idx_project_task_blockers_expiry')
+      .on(table.expiresAt)
+      .where(sql`${table.status} = 'open' and ${table.expiresAt} is not null`),
+    uniqueIndex('idx_project_task_blockers_open_digest_unique')
+      .on(table.projectId, table.taskId, table.requestDigest)
+      .where(sql`${table.status} = 'open'`),
+    index('idx_project_task_blockers_task').on(table.projectId, table.taskId),
+    check(
+      'project_task_blockers_status_valid',
+      sql`${table.status} in ('open', 'resolved', 'canceled', 'expired')`,
+    ),
+    check('project_task_blockers_action_nonempty', sql`btrim(${table.requestedAction}) <> ''`),
+    check('project_task_blockers_digest_nonempty', sql`btrim(${table.requestDigest}) <> ''`),
+  ],
+);
+
+/** Append-only task timeline. */
+export const projectTaskEvents = kortixSchema.table(
+  'project_task_events',
+  {
+    eventId: uuid('event_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    eventType: text('event_type').notNull(),
+    actorType: varchar('actor_type', { length: 32 }).notNull(),
+    actorId: text('actor_id'),
+    sessionId: text('session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    payload: jsonb('payload').default({}).$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_task_events_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    index('idx_project_task_events_task_created').on(
+      table.projectId,
+      table.taskId,
+      table.createdAt,
+      table.eventId,
+    ),
+    check('project_task_events_type_nonempty', sql`btrim(${table.eventType}) <> ''`),
+  ],
+);
+
+/** Durable coordinator, worker, and verifier lineage. */
+export const projectTaskSessionLinks = kortixSchema.table(
+  'project_task_session_links',
+  {
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    role: varchar('role', { length: 16 }).notNull(),
+    parentSessionId: text('parent_session_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.taskId, table.sessionId] }),
+    foreignKey({
+      name: 'project_task_session_links_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'project_task_session_links_session_fkey',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'project_task_session_links_parent_session_fkey',
+      columns: [table.parentSessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('set null'),
+    index('idx_project_task_session_links_task_role').on(table.projectId, table.taskId, table.role),
+    check(
+      'project_task_session_links_role_valid',
+      sql`${table.role} in ('coordinator', 'worker', 'verifier')`,
+    ),
+  ],
+);
+
+/** Task-scoped, typed, idempotent coordinator and worker messages. */
+export const projectTaskMessages = kortixSchema.table(
+  'project_task_messages',
+  {
+    messageId: uuid('message_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    senderSessionId: text('sender_session_id'),
+    recipientSessionId: text('recipient_session_id'),
+    messageType: varchar('message_type', { length: 32 }).notNull(),
+    body: jsonb('body').default({}).$type<Record<string, unknown>>().notNull(),
+    correlationId: text('correlation_id'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    status: varchar('status', { length: 16 }).default('accepted').notNull(),
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_task_messages_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    uniqueIndex('idx_project_task_messages_idempotency').on(table.taskId, table.idempotencyKey),
+    index('idx_project_task_messages_recipient').on(
+      table.recipientSessionId,
+      table.status,
+      table.createdAt,
+    ),
+    check(
+      'project_task_messages_status_valid',
+      sql`${table.status} in ('accepted', 'queued', 'delivered', 'processed', 'failed', 'expired')`,
+    ),
+    check('project_task_messages_idempotency_nonempty', sql`btrim(${table.idempotencyKey}) <> ''`),
+  ],
+);
+
+/** Reviewable continual-harness changes. Task-local proposals can auto-apply. */
+export const projectTaskRefinementProposals = kortixSchema.table(
+  'project_task_refinement_proposals',
+  {
+    proposalId: uuid('proposal_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id'),
+    scope: varchar('scope', { length: 16 }).notNull(),
+    observation: text('observation').notNull(),
+    baseRevision: text('base_revision').notNull(),
+    patch: jsonb('patch').$type<Record<string, unknown>>().notNull(),
+    rollbackPatch: jsonb('rollback_patch').$type<Record<string, unknown>>().notNull(),
+    evidenceRefs: jsonb('evidence_refs').default([]).$type<string[]>().notNull(),
+    status: varchar('status', { length: 16 }).default('proposed').notNull(),
+    createdBySessionId: text('created_by_session_id'),
+    appliedAt: timestamp('applied_at', { withTimezone: true }),
+    rolledBackAt: timestamp('rolled_back_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_task_refinement_task_fkey',
+      columns: [table.projectId, table.taskId],
+      foreignColumns: [projectTasks.projectId, projectTasks.taskId],
+    }).onDelete('cascade'),
+    index('idx_project_task_refinement_project_status').on(
+      table.projectId,
+      table.status,
+      table.createdAt,
+    ),
+    check(
+      'project_task_refinement_scope_valid',
+      sql`${table.scope} in ('task', 'agent', 'project', 'account', 'platform')`,
+    ),
+    check(
+      'project_task_refinement_status_valid',
+      sql`${table.status} in ('proposed', 'applied', 'rejected', 'rolled_back')`,
     ),
   ],
 );
@@ -1396,7 +1677,9 @@ export const accountModelPreferences = kortixSchema.table(
     scope: text('scope').notNull(),
     scopeKey: text('scope_key').default('').notNull(),
     // Only ever set for scope='agent' — see doc comment above.
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.projectId, {
+      onDelete: 'cascade',
+    }),
     model: varchar('model', { length: 128 }).notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2176,8 +2459,12 @@ export const sandboxTemplates = kortixSchema.table(
      * Owning project. NULL for the platform-shared default(s), which any
      * project may boot a session from.
      */
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
-    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.projectId, {
+      onDelete: 'cascade',
+    }),
+    accountId: uuid('account_id').references(() => accounts.accountId, {
+      onDelete: 'cascade',
+    }),
     /** Unique per project (or globally for shared templates). User-visible. */
     slug: text('slug').notNull(),
     name: text('name').notNull(),
@@ -2988,7 +3275,9 @@ export const usageEvents = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
+    projectId: uuid('project_id').references(() => projects.projectId, {
+      onDelete: 'set null',
+    }),
     sessionId: text('session_id'),
     /** Server-owned dedupe key. Gateway usage uses `llm-gateway:<requestId>`. */
     idempotencyKey: text('idempotency_key'),
@@ -3048,7 +3337,9 @@ export const gatewayRequestLogs = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
+    projectId: uuid('project_id').references(() => projects.projectId, {
+      onDelete: 'set null',
+    }),
     actorUserId: uuid('actor_user_id'),
     sessionId: text('session_id'),
     keyId: uuid('key_id'),
@@ -3174,16 +3465,28 @@ export const creditAccounts = kortixSchema.table(
     accountId: uuid('account_id').primaryKey().notNull(),
     legacyBalance: numeric('balance', { precision: 12, scale: 4 }).default('0').notNull(),
     balance: numeric('balance_precise', { precision: 20, scale: 10 }).default('0').notNull(),
-    legacyLifetimeGranted: numeric('lifetime_granted', { precision: 12, scale: 4 })
+    legacyLifetimeGranted: numeric('lifetime_granted', {
+      precision: 12,
+      scale: 4,
+    })
       .default('0')
       .notNull(),
-    lifetimeGranted: numeric('lifetime_granted_precise', { precision: 20, scale: 10 })
+    lifetimeGranted: numeric('lifetime_granted_precise', {
+      precision: 20,
+      scale: 10,
+    })
       .default('0')
       .notNull(),
-    legacyLifetimePurchased: numeric('lifetime_purchased', { precision: 12, scale: 4 })
+    legacyLifetimePurchased: numeric('lifetime_purchased', {
+      precision: 12,
+      scale: 4,
+    })
       .default('0')
       .notNull(),
-    lifetimePurchased: numeric('lifetime_purchased_precise', { precision: 20, scale: 10 })
+    lifetimePurchased: numeric('lifetime_purchased_precise', {
+      precision: 20,
+      scale: 10,
+    })
       .default('0')
       .notNull(),
     legacyLifetimeUsed: numeric('lifetime_used', { precision: 12, scale: 4 })
@@ -3192,44 +3495,99 @@ export const creditAccounts = kortixSchema.table(
     lifetimeUsed: numeric('lifetime_used_precise', { precision: 20, scale: 10 })
       .default('0')
       .notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow(),
-    lastGrantDate: timestamp('last_grant_date', { withTimezone: true, mode: 'string' }),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
+    lastGrantDate: timestamp('last_grant_date', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     tier: varchar('tier', { length: 50 }).default('free'),
-    billingCycleAnchor: timestamp('billing_cycle_anchor', { withTimezone: true, mode: 'string' }),
-    nextCreditGrant: timestamp('next_credit_grant', { withTimezone: true, mode: 'string' }),
+    billingCycleAnchor: timestamp('billing_cycle_anchor', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    nextCreditGrant: timestamp('next_credit_grant', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     stripeSubscriptionId: varchar('stripe_subscription_id', { length: 255 }),
-    legacyExpiringCredits: numeric('expiring_credits', { precision: 12, scale: 4 })
+    legacyExpiringCredits: numeric('expiring_credits', {
+      precision: 12,
+      scale: 4,
+    })
       .default('0')
       .notNull(),
-    expiringCredits: numeric('expiring_credits_precise', { precision: 20, scale: 10 })
+    expiringCredits: numeric('expiring_credits_precise', {
+      precision: 20,
+      scale: 10,
+    })
       .default('0')
       .notNull(),
-    legacyNonExpiringCredits: numeric('non_expiring_credits', { precision: 12, scale: 4 })
+    legacyNonExpiringCredits: numeric('non_expiring_credits', {
+      precision: 12,
+      scale: 4,
+    })
       .default('0')
       .notNull(),
-    nonExpiringCredits: numeric('non_expiring_credits_precise', { precision: 20, scale: 10 })
+    nonExpiringCredits: numeric('non_expiring_credits_precise', {
+      precision: 20,
+      scale: 10,
+    })
       .default('0')
       .notNull(),
-    legacyDailyCreditsBalance: numeric('daily_credits_balance', { precision: 10, scale: 2 })
+    legacyDailyCreditsBalance: numeric('daily_credits_balance', {
+      precision: 10,
+      scale: 2,
+    })
       .default('0')
       .notNull(),
-    dailyCreditsBalance: numeric('daily_credits_balance_precise', { precision: 20, scale: 10 })
+    dailyCreditsBalance: numeric('daily_credits_balance_precise', {
+      precision: 20,
+      scale: 10,
+    })
       .default('0')
       .notNull(),
     trialStatus: varchar('trial_status', { length: 20 }).default('none'),
-    trialStartedAt: timestamp('trial_started_at', { withTimezone: true, mode: 'string' }),
-    trialEndsAt: timestamp('trial_ends_at', { withTimezone: true, mode: 'string' }),
+    trialStartedAt: timestamp('trial_started_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    trialEndsAt: timestamp('trial_ends_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     isGrandfatheredFree: boolean('is_grandfathered_free').default(false),
-    lastProcessedInvoiceId: varchar('last_processed_invoice_id', { length: 255 }),
+    lastProcessedInvoiceId: varchar('last_processed_invoice_id', {
+      length: 255,
+    }),
     commitmentType: varchar('commitment_type', { length: 50 }),
-    commitmentStartDate: timestamp('commitment_start_date', { withTimezone: true, mode: 'string' }),
-    commitmentEndDate: timestamp('commitment_end_date', { withTimezone: true, mode: 'string' }),
+    commitmentStartDate: timestamp('commitment_start_date', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    commitmentEndDate: timestamp('commitment_end_date', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     commitmentPriceId: varchar('commitment_price_id', { length: 255 }),
-    canCancelAfter: timestamp('can_cancel_after', { withTimezone: true, mode: 'string' }),
-    lastRenewalPeriodStart: bigint('last_renewal_period_start', { mode: 'number' }),
+    canCancelAfter: timestamp('can_cancel_after', {
+      withTimezone: true,
+      mode: 'string',
+    }),
+    lastRenewalPeriodStart: bigint('last_renewal_period_start', {
+      mode: 'number',
+    }),
     paymentStatus: text('payment_status').default('active'),
-    lastPaymentFailure: timestamp('last_payment_failure', { withTimezone: true, mode: 'string' }),
+    lastPaymentFailure: timestamp('last_payment_failure', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     scheduledTierChange: text('scheduled_tier_change'),
     scheduledTierChangeDate: timestamp('scheduled_tier_change_date', {
       withTimezone: true,
@@ -3238,7 +3596,9 @@ export const creditAccounts = kortixSchema.table(
     scheduledPriceId: text('scheduled_price_id'),
     provider: varchar('provider', { length: 20 }).default('stripe'),
     revenuecatCustomerId: varchar('revenuecat_customer_id', { length: 255 }),
-    revenuecatSubscriptionId: varchar('revenuecat_subscription_id', { length: 255 }),
+    revenuecatSubscriptionId: varchar('revenuecat_subscription_id', {
+      length: 255,
+    }),
     revenuecatCancelledAt: timestamp('revenuecat_cancelled_at', {
       withTimezone: true,
       mode: 'string',
@@ -3255,10 +3615,18 @@ export const creditAccounts = kortixSchema.table(
     revenuecatPendingChangeType: text('revenuecat_pending_change_type'),
     revenuecatProductId: text('revenuecat_product_id'),
     planType: varchar('plan_type', { length: 50 }).default('monthly'),
-    stripeSubscriptionStatus: varchar('stripe_subscription_status', { length: 50 }),
-    lastDailyRefresh: timestamp('last_daily_refresh', { withTimezone: true, mode: 'string' }),
+    stripeSubscriptionStatus: varchar('stripe_subscription_status', {
+      length: 50,
+    }),
+    lastDailyRefresh: timestamp('last_daily_refresh', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     autoTopupEnabled: boolean('auto_topup_enabled').default(false).notNull(),
-    autoTopupThreshold: numeric('auto_topup_threshold', { precision: 10, scale: 2 })
+    autoTopupThreshold: numeric('auto_topup_threshold', {
+      precision: 10,
+      scale: 2,
+    })
       .default('5')
       .notNull(),
     autoTopupAmount: numeric('auto_topup_amount', { precision: 10, scale: 2 })
@@ -3367,7 +3735,10 @@ export const sessionPendingQuestions = kortixSchema.table(
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     /** Null while the question is still open — the index keys on this. */
-    answeredAt: timestamp('answered_at', { withTimezone: true, mode: 'string' }),
+    answeredAt: timestamp('answered_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     answers: jsonb(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
@@ -3409,7 +3780,10 @@ export const sandboxComputeSessions = kortixSchema.table(
       .defaultNow()
       .notNull(),
     endedAt: timestamp('ended_at', { withTimezone: true, mode: 'string' }),
-    lastBilledAt: timestamp('last_billed_at', { withTimezone: true, mode: 'string' })
+    lastBilledAt: timestamp('last_billed_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
       .defaultNow()
       .notNull(),
     costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
@@ -3511,11 +3885,7 @@ export const appAccessGrants = kortixSchema.table(
   },
   (table) => [
     index('app_access_grants_app_idx').on(table.appId),
-    uniqueIndex('app_access_grants_unique').on(
-      table.appId,
-      table.principalType,
-      table.principalId,
-    ),
+    uniqueIndex('app_access_grants_unique').on(table.appId, table.principalType, table.principalId),
   ],
 );
 
@@ -3630,7 +4000,9 @@ export const appRuntimes = kortixSchema.table(
     ingressPort: integer('ingress_port').default(8080).notNull(),
     controlTokenHash: text('control_token_hash').notNull(),
     idleDeadlineAt: timestamp('idle_deadline_at', { withTimezone: true }),
-    activityLeaseUntil: timestamp('activity_lease_until', { withTimezone: true }),
+    activityLeaseUntil: timestamp('activity_lease_until', {
+      withTimezone: true,
+    }),
     wakeLeaseOwner: text('wake_lease_owner'),
     wakeLeaseUntil: timestamp('wake_lease_until', { withTimezone: true }),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
@@ -3659,7 +4031,9 @@ export const appDeploymentEvents = kortixSchema.table(
   {
     eventId: uuid('event_id').defaultRandom().primaryKey().notNull(),
     deploymentId: uuid('deployment_id').notNull(),
-    runtimeId: uuid('runtime_id').references(() => appRuntimes.runtimeId, { onDelete: 'set null' }),
+    runtimeId: uuid('runtime_id').references(() => appRuntimes.runtimeId, {
+      onDelete: 'set null',
+    }),
     level: varchar('level', { length: 8 }).default('info').notNull(),
     type: text('type').notNull(),
     message: text('message').notNull(),
@@ -3688,7 +4062,10 @@ export const stripeWebhookEventsProcessed = kortixSchema.table(
   {
     eventId: text('event_id').primaryKey().notNull(),
     eventType: text('event_type').notNull(),
-    processedAt: timestamp('processed_at', { withTimezone: true, mode: 'string' })
+    processedAt: timestamp('processed_at', {
+      withTimezone: true,
+      mode: 'string',
+    })
       .defaultNow()
       .notNull(),
   },
@@ -3705,7 +4082,10 @@ export const yoloMemberTokens = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
       .defaultNow()
       .notNull(),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true, mode: 'string' }),
+    lastUsedAt: timestamp('last_used_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'string' }),
   },
   (table) => [
@@ -3735,7 +4115,10 @@ export const creditLedger = kortixSchema.table(
     referenceId: uuid('reference_id'),
     referenceType: text('reference_type'),
     metadata: jsonb().default({}),
-    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'string',
+    }).defaultNow(),
     createdBy: uuid('created_by'),
     isExpiring: boolean('is_expiring').default(true),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }),
@@ -3760,10 +4143,16 @@ export const creditLedger = kortixSchema.table(
 export const creditUsage = kortixSchema.table('credit_usage', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   accountId: uuid('account_id').notNull(),
-  amountDollars: numeric('amount_dollars', { precision: 10, scale: 2 }).notNull(),
+  amountDollars: numeric('amount_dollars', {
+    precision: 10,
+    scale: 2,
+  }).notNull(),
   description: text(),
   usageType: text('usage_type').default('token_overage'),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
+  createdAt: timestamp('created_at', {
+    withTimezone: true,
+    mode: 'string',
+  }).defaultNow(),
   subscriptionTier: text('subscription_tier'),
   metadata: jsonb().default({}),
 });
@@ -3774,25 +4163,48 @@ export const accountDeletionRequests = kortixSchema.table('account_deletion_requ
   userId: uuid('user_id').notNull(),
   status: text().default('pending').notNull(),
   reason: text(),
-  requestedAt: timestamp('requested_at', { withTimezone: true, mode: 'string' }).defaultNow(),
-  scheduledFor: timestamp('scheduled_for', { withTimezone: true, mode: 'string' }).notNull(),
-  completedAt: timestamp('completed_at', { withTimezone: true, mode: 'string' }),
-  cancelledAt: timestamp('cancelled_at', { withTimezone: true, mode: 'string' }),
+  requestedAt: timestamp('requested_at', {
+    withTimezone: true,
+    mode: 'string',
+  }).defaultNow(),
+  scheduledFor: timestamp('scheduled_for', {
+    withTimezone: true,
+    mode: 'string',
+  }).notNull(),
+  completedAt: timestamp('completed_at', {
+    withTimezone: true,
+    mode: 'string',
+  }),
+  cancelledAt: timestamp('cancelled_at', {
+    withTimezone: true,
+    mode: 'string',
+  }),
 });
 
 export const creditPurchases = kortixSchema.table('credit_purchases', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   accountId: uuid('account_id').notNull(),
-  amountDollars: numeric('amount_dollars', { precision: 10, scale: 2 }).notNull(),
+  amountDollars: numeric('amount_dollars', {
+    precision: 10,
+    scale: 2,
+  }).notNull(),
   stripePaymentIntentId: text('stripe_payment_intent_id'),
   stripeChargeId: text('stripe_charge_id'),
   status: text().default('pending').notNull(),
   description: text(),
   metadata: jsonb().default({}),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
-  completedAt: timestamp('completed_at', { withTimezone: true, mode: 'string' }),
+  createdAt: timestamp('created_at', {
+    withTimezone: true,
+    mode: 'string',
+  }).defaultNow(),
+  completedAt: timestamp('completed_at', {
+    withTimezone: true,
+    mode: 'string',
+  }),
   provider: varchar('provider', { length: 50 }).default('stripe'),
-  revenuecatTransactionId: varchar('revenuecat_transaction_id', { length: 255 }),
+  revenuecatTransactionId: varchar('revenuecat_transaction_id', {
+    length: 255,
+  }),
   revenuecatProductId: varchar('revenuecat_product_id', { length: 255 }),
 });
 
@@ -3870,15 +4282,21 @@ export const tunnelConnections = kortixSchema.table(
   {
     tunnelId: uuid('tunnel_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
-    sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
+    sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, {
+      onDelete: 'set null',
+    }),
     name: varchar('name', { length: 255 }).notNull(),
     status: tunnelStatusEnum('status').default('offline').notNull(),
     capabilities: jsonb('capabilities').default([]).$type<string[]>(),
     machineInfo: jsonb('machine_info').default({}).$type<TunnelMachineInfo>(),
     relayOwnerId: varchar('relay_owner_id', { length: 255 }),
     relayOwnerInstance: varchar('relay_owner_instance', { length: 255 }),
-    relayOwnerStartedAt: timestamp('relay_owner_started_at', { withTimezone: true }),
-    relayOwnerHeartbeatAt: timestamp('relay_owner_heartbeat_at', { withTimezone: true }),
+    relayOwnerStartedAt: timestamp('relay_owner_started_at', {
+      withTimezone: true,
+    }),
+    relayOwnerHeartbeatAt: timestamp('relay_owner_heartbeat_at', {
+      withTimezone: true,
+    }),
     setupTokenHash: varchar('setup_token_hash', { length: 128 }),
     lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -3901,12 +4319,18 @@ export const tunnelRpcForwards = kortixSchema.table(
       .references(() => tunnelConnections.tunnelId, { onDelete: 'cascade' }),
     accountId: uuid('account_id').notNull(),
     requesterRelayOwnerId: varchar('requester_relay_owner_id', { length: 255 }),
-    targetRelayOwnerId: varchar('target_relay_owner_id', { length: 255 }).notNull(),
+    targetRelayOwnerId: varchar('target_relay_owner_id', {
+      length: 255,
+    }).notNull(),
     status: varchar('status', { length: 32 }).default('pending').notNull(),
     method: varchar('method', { length: 255 }).notNull(),
     params: jsonb('params').default({}).$type<Record<string, unknown>>(),
     result: jsonb('result'),
-    error: jsonb('error').$type<{ code?: number; message?: string; data?: unknown } | null>(),
+    error: jsonb('error').$type<{
+      code?: number;
+      message?: string;
+      data?: unknown;
+    } | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
@@ -4756,7 +5180,9 @@ export const serviceAccounts = kortixSchema.table(
     status: varchar('status', { length: 16 }).default('active').notNull(),
     /** Set for an auto-provisioned AGENT identity: the project the agent lives
      *  in. NULL for a manually-created (human-managed) service account. */
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.projectId, {
+      onDelete: 'cascade',
+    }),
     /** The kortix.yaml `agents` entry name this SA is the standing identity for.
      *  NULL for a manual service account. (account_id, project_id, agent_name)
      *  is unique so get-or-create is idempotent per agent. */
@@ -4832,7 +5258,9 @@ export const accountSsoGroupMappings = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     ssoProviderId: uuid('sso_provider_id')
       .notNull()
-      .references(() => accountSsoProviders.ssoProviderId, { onDelete: 'cascade' }),
+      .references(() => accountSsoProviders.ssoProviderId, {
+        onDelete: 'cascade',
+      }),
     /** Match against an entry in the IdP group claim. Compared case- and
      *  whitespace-INSENSITIVELY at sync time (see iam/sso-sync.ts
      *  resolveClaimedGroupIds) so an admin can't silently lock users out by
