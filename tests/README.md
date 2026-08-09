@@ -168,10 +168,11 @@ counts. Do not infer those counts from source files.
 Playwright exists only for behavior that requires a browser. Browser tests live
 in `tests/e2e/specs`. API-only behavior belongs in a REST flow.
 
-The browser suite does not repeat every REST contract. It covers one journey
-for each user-visible behavior. REST flows remain authoritative for complete API
-and CLI contracts. A browser journey is incomplete when it skips for a missing
-provider, OAuth, or mutation capability; report that skip explicitly.
+The browser suite does not repeat every REST contract. It covers selected
+browser-visible journeys. REST flows remain authoritative for complete API and
+CLI contracts. The browser suite does not claim complete customer-journey
+coverage. A browser journey is incomplete when it skips for a missing provider,
+OAuth, or mutation capability; report that skip explicitly.
 
 The browser lane uses the current worktree web, API, and Supabase ports. It
 starts and owns the deterministic local stack. Run it directly:
