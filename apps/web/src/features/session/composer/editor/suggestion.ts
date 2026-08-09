@@ -6,8 +6,8 @@ import type { SuggestionKeyDownProps, SuggestionOptions, SuggestionProps } from 
 /**
  * The render-callback shape both the `@` mention menu and the `/` slash menu
  * implement. This is the one `@tiptap/suggestion` code path both triggers go
- * through — `createMentionSuggestion` (`../menus/mention-menu.tsx`) and
- * `createSlashSuggestion` (`../menus/slash-menu.tsx`) each build a
+ * through — `createMentionSuggestion` (`../menus/mention-controller.ts`) and
+ * `createSlashSuggestion` (`../menus/slash-controller.ts`) each build a
  * `MenuController` and hand it to `baseSuggestion` below.
  *
  * `onKeyDown` only receives `{view, event, range}` — NOT the full
@@ -54,16 +54,24 @@ export interface MenuController<TSelected> {
  * `exceedsMinQueryLength` is always true, so every keystroke transition takes
  * the async-fetch branch and dispatches the renderer TWICE (`loading: true`,
  * then `loading: false` once the — trivially resolved — promise settles),
- * on top of the ONE dispatch `onStart` already gets for free (verified
- * against the installed package's `plugin/view.ts`, `dist/index.js:587-625`:
- * `dispatchStateUpdate("started", ...)` at 588, then unconditionally re-enters
- * the `willFetch` branch and dispatches "updated" again at 597, then a FINAL
- * "updated" dispatch at 623 once the fetch settles — three renders for the
- * opening keystroke, two for every keystroke after). `state.query.length >=
- * Infinity` is never true, so `exceedsMinQueryLength` is always false, which
- * takes the cheap synchronous branch (582-583) and skips both extra
- * dispatches — exactly one render per keystroke, matching how many times the
- * query actually changed.
+ * on top of the ONE dispatch `onStart` already gets for free. Verified line
+ * by line against the installed `@tiptap/suggestion@3.27.1`'s
+ * `dist/index.js` (compiled from `src/plugin/view.ts`):
+ * `dispatchStateUpdate("started", ...)` at line 588, the `if (!willFetch)`
+ * branch point at line 591, a duplicate `dispatchStateUpdate("updated", ...)`
+ * at line 597 (fired unconditionally before the fetch even starts), and a
+ * FINAL `dispatchStateUpdate("updated", ...)` at line 624 once the fetch
+ * settles — three renders for the opening keystroke, two for every keystroke
+ * after. `state.query.length >= Infinity` is never true, so
+ * `exceedsMinQueryLength` is always false, which takes the cheap synchronous
+ * branch (lines 592-593) and skips both extra dispatches — exactly one
+ * render per keystroke, matching how many times the query actually changed.
+ * `minQueryLength` is consumed only by `createSuggestionView`
+ * (`view.ts:124-127`) — it never reaches `createSuggestionState` (which owns
+ * `char`/`allowedPrefixes`/`startOfLine`/`findSuggestionMatch`, i.e. the
+ * trigger-matching this task exists to fix) or `createSuggestionProps`
+ * (which owns `handleKeyDown`/decorations), so this is scoped purely to the
+ * redundant fetch/render cycle and touches neither.
  */
 export function baseSuggestion<TSelected>(
   char: string,

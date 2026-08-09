@@ -70,6 +70,51 @@ describe('MenuNavState — hasRows tracks ROWS, never a bare "match is active" f
 
     expect(calls).toEqual([]);
   });
+
+  // Fix round 2, Open 2 — the latent re-arm race: a `setRows` call arriving
+  // AFTER `close()` (e.g. a stale MentionMenuHost effect still in flight when
+  // an outside-click/exit transaction lands) must not silently flip
+  // `hasRows` back to `true` with no menu open. Deterministic, unlike the
+  // real race — this drives the exact sequence by hand.
+  test('a setRows(non-empty) call arriving AFTER close() does not re-arm hasRows', () => {
+    const calls: boolean[] = [];
+    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+
+    nav.open('foo');
+    nav.close();
+    nav.setRows(['a', 'b']); // arrives too late — the menu is already closed
+
+    expect(calls).toEqual([]); // no stray `true`
+    expect(nav.getRows()).toEqual([]);
+    expect(nav.getSelectedRow()).toBeUndefined();
+  });
+
+  test('setRows before the first open() is also a no-op', () => {
+    const calls: boolean[] = [];
+    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+
+    nav.setRows(['a']);
+
+    expect(calls).toEqual([]);
+    expect(nav.getRows()).toEqual([]);
+  });
+
+  test('open() after a stray post-close setRows still starts clean', () => {
+    const calls: boolean[] = [];
+    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+
+    nav.open('foo');
+    nav.close();
+    nav.setRows(['stale']); // ignored — see the test above
+
+    nav.open('bar');
+    expect(nav.getRows()).toEqual([]);
+    expect(calls).toEqual([]);
+
+    nav.setRows(['fresh']);
+    expect(calls).toEqual([true]);
+    expect(nav.getSelectedRow()).toBe('fresh');
+  });
 });
 
 describe('MenuNavState — selection index: reset on query change, clamp otherwise', () => {

@@ -38,6 +38,21 @@ export class MenuNavState<TRow> {
   private selectedIndex = 0;
   private lastQuery: string | null = null;
   private hasRows = false;
+  /**
+   * Fix round 2 — latent re-arm race: `setRows` is the only place `hasRows`
+   * can flip back to `true`, and nothing previously stopped it from doing
+   * that AFTER `close()`. Reaching it needs a `setRows` call to land in the
+   * gap between `close()` running and whatever queued it being torn down —
+   * plausible whenever a match-ending transaction (e.g.
+   * `dismissOnOutsideClick`, which dispatches exit at an arbitrary time) lands
+   * while `MentionMenuHost`'s effect is still pending. Once mis-armed, NOTHING
+   * would clear it again until the next `open()` — Enter would silently stop
+   * doing anything (no submit, no selection) with no menu even open, the
+   * exact original bug one layer removed. `setRows` is a no-op whenever the
+   * state isn't open — the only two things that can end that no-op window are
+   * `open()` (starts it) and `close()` (ends it).
+   */
+  private isOpen = false;
   private readonly onHasRowsChange?: (hasRows: boolean) => void;
 
   constructor(options: MenuNavStateOptions = {}) {
@@ -46,6 +61,7 @@ export class MenuNavState<TRow> {
 
   /** Call once when a new trigger match starts (the menu just opened). */
   open(query: string): void {
+    this.isOpen = true;
     this.rows = [];
     this.selectedIndex = 0;
     this.lastQuery = query;
@@ -79,8 +95,14 @@ export class MenuNavState<TRow> {
    * under a stationary query) and is the single source of truth for
    * `onHasRowsChange` — see that option's own doc comment for why this must
    * be driven from here, not from `open`/`close`.
+   *
+   * A no-op while closed (fix round 2, Open 2) — a stray call arriving after
+   * `close()` (a plausible race: `MentionMenuHost`'s effect still pending
+   * when an exit transaction lands) must not silently re-arm `hasRows` with
+   * no menu open. See `isOpen`'s own field comment.
    */
   setRows(rows: TRow[]): void {
+    if (!this.isOpen) return;
     this.rows = rows;
     this.selectedIndex = clampSelection(this.selectedIndex, rows.length);
     this.setHasRows(rows.length > 0);
@@ -90,9 +112,12 @@ export class MenuNavState<TRow> {
    * Call once when the menu closes (Escape, dismissal, or the trigger text
    * stopped matching). Unconditionally forces `hasRows` back to `false`,
    * regardless of how many rows existed the instant before closing — this is
-   * what stops a stale `true` from lingering past the menu actually closing.
+   * what stops a stale `true` from lingering past the menu actually closing —
+   * and closes the `isOpen` window `setRows` checks, so anything that was
+   * already in flight and arrives afterward cannot re-arm it either.
    */
   close(): void {
+    this.isOpen = false;
     this.rows = [];
     this.selectedIndex = 0;
     this.lastQuery = null;
