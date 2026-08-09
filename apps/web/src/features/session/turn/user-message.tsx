@@ -42,7 +42,12 @@ import {
   isTextPart,
   splitUserParts,
 } from '@/ui';
-import { FileTileBody, TILE_INTERACTIVE, TILE_SURFACE } from '../attachment-tile';
+import {
+  FILE_TILE_SURFACE,
+  FileTileBody,
+  TILE_INTERACTIVE,
+  TILE_SURFACE,
+} from '../attachment-tile';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -599,10 +604,7 @@ export function MessageAttachments({
                 e.stopPropagation();
                 if (file.path) openFileInComputer(file.path);
               }}
-              className={cn(
-                'border-border bg-background relative block h-20 min-w-40 shrink-0 overflow-hidden rounded-md border',
-                canOpen && TILE_INTERACTIVE,
-              )}
+              className={cn(FILE_TILE_SURFACE, canOpen && TILE_INTERACTIVE)}
             >
               <FileTileBody filename={file.filename} pending={pending || file.pending} />
             </button>

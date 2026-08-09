@@ -29,6 +29,20 @@ export const TILE_SURFACE =
   'border-border bg-background relative block size-20 shrink-0 overflow-hidden rounded-md border';
 
 /**
+ * The OTHER shape: every non-image file — a wider rectangle, not the square.
+ * A filename tile as narrow as the image square would either truncate to
+ * nothing or force a name to wrap across more lines than the two-line clamp
+ * allows, so non-image tiles get the extra width instead.
+ *
+ * Kept as its own constant (not folded into `TILE_SURFACE`) for the same
+ * reason `TILE_SURFACE` exists at all: one definition, shared by the sent
+ * message and the composer preview, so a future edit to the file-tile shape
+ * cannot land in one surface without the other.
+ */
+export const FILE_TILE_SURFACE =
+  'border-border bg-background relative block h-20 min-w-40 shrink-0 overflow-hidden rounded-md border';
+
+/**
  * The press/hover feel every attachment tile shares — a file pill, an image
  * tile and a composer preview tile all answer the pointer the same way, so
  * the block reads as one set of controls rather than several.

@@ -1,11 +1,11 @@
 'use client';
 
 /**
- * The composer's attachment preview — the same square tile the sent message
- * uses (`FileTileBody` / `TILE_SURFACE` in `../attachment-tile`), plus the two
- * things a not-yet-sent file needs that a sent one never does: a corner
- * remove button, and — since there is no server thumbnail yet — a client-side
- * peek at what the file actually contains.
+ * The composer's attachment preview — the same tiles the sent message uses
+ * (`FileTileBody` / `TILE_SURFACE` / `FILE_TILE_SURFACE` in
+ * `../attachment-tile`), plus the two things a not-yet-sent file needs that a
+ * sent one never does: a corner remove button, and — since there is no server
+ * thumbnail yet — a client-side peek at what the file actually contains.
  *
  * Replaces `attachment-preview.tsx`'s 120px name-bar card, which looked
  * nothing like how the same file rendered a moment later once the message
@@ -21,7 +21,7 @@ import { XIcon as X } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import { convertHeicBlobToJpeg, isHeicFile } from '@/lib/utils/heic-convert';
 
-import { FileTileBody, TILE_INTERACTIVE, TILE_SURFACE } from '../attachment-tile';
+import { FILE_TILE_SURFACE, FileTileBody, TILE_SURFACE } from '../attachment-tile';
 import {
   fileExtension,
   isPreviewableTextExtension,
@@ -77,6 +77,45 @@ function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
 }
 
 /**
+ * Icon + filename in front, a faint peek at the file's own text behind —
+ * split out from `AttachmentFileTile` below so the stacking order is
+ * testable by passing `preview` directly, with no `FileReader` effect
+ * needed to exercise it.
+ *
+ * Both children get an explicit, differing `z-index` (`z-0` / `z-10`) rather
+ * than relying on source order. Without that: `FileTileBody`'s content is
+ * in-flow and non-positioned, while the preview is `absolute` — and CSS
+ * paints positioned content after in-flow content regardless of which comes
+ * first in the markup, so the preview would land ON TOP of the icon and
+ * filename, not behind them. Two siblings with different non-auto z-index
+ * values stack by that value alone, independent of DOM order, so stating
+ * `z-10` on `FileTileBody`'s wrapper makes "this one wins" a fact of the
+ * markup instead of an accident of paint-order rules.
+ */
+export function FileTileWithPreview({
+  filename,
+  preview,
+}: {
+  filename: string;
+  preview: string | null;
+}) {
+  return (
+    <>
+      {preview && (
+        <div className="text-muted-foreground/60 pointer-events-none absolute inset-0 z-0 overflow-hidden p-2 select-none">
+          <pre className="m-0 overflow-hidden p-0 font-mono text-[7px] leading-[1.35] whitespace-pre">
+            {preview}
+          </pre>
+        </div>
+      )}
+      <div className="relative z-10 size-full">
+        <FileTileBody filename={filename} />
+      </div>
+    </>
+  );
+}
+
+/**
  * A locally attached non-image file: the named tile, with a faint peek at the
  * file's own first ~12 lines behind the icon when it is source/text (carried
  * over verbatim from the old `attachment-preview.tsx` — the sent message never
@@ -94,18 +133,7 @@ function AttachmentFileTile({ af, name }: { af: AttachedFile; name: string }) {
     reader.readAsText(af.file.slice(0, 2048));
   }, [af, ext]);
 
-  return (
-    <>
-      {textPreview && (
-        <div className="absolute inset-0 overflow-hidden p-2 opacity-40">
-          <pre className="text-muted-foreground pointer-events-none m-0 overflow-hidden p-0 font-mono text-[7px] leading-[1.35] whitespace-pre select-none">
-            {textPreview}
-          </pre>
-        </div>
-      )}
-      <FileTileBody filename={name} />
-    </>
-  );
+  return <FileTileWithPreview filename={name} preview={textPreview} />;
 }
 
 export function AttachmentTiles({
@@ -122,27 +150,40 @@ export function AttachmentTiles({
       {files.map((af, i) => {
         const name = attachmentName(af);
         return (
-          <li key={i} className="group relative contents">
-            <div title={name} className={cn(TILE_SURFACE, TILE_INTERACTIVE)}>
-              {af.isImage ? (
-                <AttachmentImageTile af={af} name={name} />
-              ) : (
-                <AttachmentFileTile af={af} name={name} />
-              )}
+          // `li` stays `display: contents` (no box of its own — matches the
+          // pattern `turn/user-message.tsx` uses for its own `<li>`s), so it
+          // is transparent to the `ul`'s flex-wrap layout. Its child below is
+          // the REAL positioned box: `relative`, but deliberately NOT the
+          // `overflow-hidden` tile div itself — the remove button's negative
+          // corner offset needs to sit outside the tile's edge, and nesting
+          // it inside an `overflow-hidden` ancestor would clip that corner
+          // off. This is the same two-box split `attachment-preview.tsx` used
+          // (an outer plain `relative` wrapper, an inner `overflow-hidden`
+          // thumbnail box) — `relative` on a `contents` element is inert, so
+          // that split has to live one level in from the `<li>`, not on it.
+          <li key={i} className="contents">
+            <div className="group relative">
+              <div title={name} className={af.isImage ? TILE_SURFACE : FILE_TILE_SURFACE}>
+                {af.isImage ? (
+                  <AttachmentImageTile af={af} name={name} />
+                ) : (
+                  <AttachmentFileTile af={af} name={name} />
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemove(i)}
+                aria-label={`Remove ${name}`}
+                className={cn(
+                  'border-card absolute -top-1.5 -right-1.5 z-10 flex size-5 items-center justify-center',
+                  'rounded-full border-2 bg-black text-white dark:bg-white dark:text-black',
+                  'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
+                  '[@media(pointer:coarse)]:opacity-100',
+                )}
+              >
+                <X className="size-3" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => onRemove(i)}
-              aria-label={`Remove ${name}`}
-              className={cn(
-                'border-card absolute -top-1.5 -right-1.5 z-10 flex size-5 items-center justify-center',
-                'rounded-full border-2 bg-black text-white dark:bg-white dark:text-black',
-                'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
-                '[@media(pointer:coarse)]:opacity-100',
-              )}
-            >
-              <X className="size-3" />
-            </button>
           </li>
         );
       })}
