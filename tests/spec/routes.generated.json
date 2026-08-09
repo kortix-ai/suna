@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 564,
+  "count": 565,
   "routes": [
     {
       "method": "GET",
@@ -869,6 +869,10 @@
     {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/pipedream/apps"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/pipedream/sections"
     },
     {
       "method": "GET",
