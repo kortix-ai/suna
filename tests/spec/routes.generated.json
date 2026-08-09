@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 564,
+  "count": 565,
   "routes": [
     {
       "method": "GET",
@@ -2049,6 +2049,10 @@
     {
       "method": "GET",
       "path": "/v1/setup-links/connectors/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup-links/connectors/:token/finalize"
     },
     {
       "method": "POST",

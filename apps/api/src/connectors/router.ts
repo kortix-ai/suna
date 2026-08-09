@@ -382,8 +382,16 @@ export interface ConnectorRouterDeps {
     slug: string,
     userId: string,
   ): Promise<{ connected: boolean; accountId?: string } | null>;
-  /** Pipedream webhook: verify sig + finalize. Returns false on bad signature. */
-  pipedreamWebhook?(externalUserId: string, sig: string | null): Promise<boolean>;
+  /**
+   * Pipedream webhook: verify sig + finalize. `ok:false` = the signature (or the
+   * connector/authorization binding the id names) did not check out → 401.
+   * `ok:true, connected:false` = the signature was good but Pipedream still
+   * reports no account for that external user id → 503, never a silent 200.
+   */
+  pipedreamWebhook?(
+    externalUserId: string,
+    sig: string | null,
+  ): Promise<{ ok: boolean; connected: boolean }>;
   /** Browse the Pipedream app catalogue (search + paginate). */
   listPipedreamApps?(
     query: string | undefined,
@@ -1812,6 +1820,14 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   );
 
   // ── Pipedream webhook (no user auth — HMAC-signed) ────────────────────────
+  //
+  // AUXILIARY redundancy, not the authoritative path. Every surface that starts
+  // a Pipedream connect also calls an explicit finalize afterwards (the web
+  // overlay hits POST .../connect/finalize; the hosted setup-link page hits
+  // POST /v1/setup-links/connectors/:token/finalize). This webhook exists so a
+  // connect that completes while nobody is polling still lands. It performs NO
+  // session notification — the finalize route owns that, because only it knows
+  // which session asked for the connector.
   app.openapi(
     createRoute({
       method: 'post',
@@ -1824,7 +1840,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
       responses: {
         200: json(OkSchema, 'Accepted'),
-        ...errors(400, 401, 501),
+        ...errors(400, 401, 501, 503),
       },
     }),
     // Manual parse kept: webhook tolerates an unparseable body (defaults to {})
@@ -1838,10 +1854,33 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       } catch {
         body = {};
       }
-      const extUserId = typeof body?.external_user_id === 'string' ? body.external_user_id : '';
+      // A real Pipedream CONNECTION_ERROR payload carries no `account`, so
+      // there is no external user id to finalize and nothing to retry. Ack it
+      // (a non-2xx would only look like an outage on their side) and log the
+      // reason so a failing connect is still visible in our logs.
+      if (body?.event === 'CONNECTION_ERROR') {
+        console.warn('[pipedream] connect failed', {
+          error: body?.error ?? null,
+          connectSessionId: body?.connect_session_id ?? null,
+          environment: body?.environment ?? null,
+        });
+        return c.json({ ok: true, ignored: true });
+      }
+      // Pipedream's real CONNECTION_SUCCESS nests the id at `account.external_id`.
+      // `external_user_id` at the top level is the legacy/back-compat shape we
+      // shipped against first — keep accepting it, prefer it when both exist.
+      const extUserId =
+        (typeof body?.external_user_id === 'string' && body.external_user_id) ||
+        (typeof body?.account?.external_id === 'string' && body.account.external_id) ||
+        '';
       if (!extUserId) return c.json({ error: 'missing external_user_id' }, 400);
-      const ok = await deps.pipedreamWebhook(extUserId, sig);
-      return ok ? c.json({ ok: true }) : c.json({ error: 'invalid signature' }, 401);
+      const result = await deps.pipedreamWebhook(extUserId, sig);
+      if (!result.ok) return c.json({ error: 'invalid signature' }, 401);
+      // Signature checked out but Pipedream still reports no account for that
+      // external user id (eventual consistency outlived the bounded retry).
+      // Say so instead of acking a connect that was never persisted.
+      if (!result.connected) return c.json({ error: 'account not yet visible' }, 503);
+      return c.json({ ok: true });
     },
   );
 

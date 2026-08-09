@@ -1779,11 +1779,12 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     : undefined,
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
-        if (!verifyWebhookSig(extUserId, sig)) return false;
+        const rejected = { ok: false, connected: false } as const;
+        if (!verifyWebhookSig(extUserId, sig)) return rejected;
         const [projectId, slug, identityId] = extUserId.split(':');
-        if (!projectId || !slug) return false;
+        if (!projectId || !slug) return rejected;
         const conn = await loadPipedreamConnector(projectId, slug);
-        if (!conn) return false;
+        if (!conn) return rejected;
         if (identityId) {
           const [connection] = await db
             .select({
@@ -1810,7 +1811,10 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
               actingPrincipalIsServiceAccount: false,
             })
           ) {
-            await finalizePipedreamConnectionAuthorization({
+            // Propagate `connected` — a finalize that found no account is NOT
+            // an accepted webhook. Swallowing it here is what let every failed
+            // finalize look like a success at the route.
+            const authorized = await finalizePipedreamConnectionAuthorization({
               projectId,
               slug,
               app: conn.app,
@@ -1818,19 +1822,19 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
               connectionId: connection.connectionId,
               createdBy: null,
             });
-            return true;
+            return { ok: true, connected: authorized.connected };
           }
-          return false;
+          return rejected;
         }
-        if (conn.authorizationStrategy !== 'project') return false;
-        await finalizePipedreamConnection({
+        if (conn.authorizationStrategy !== 'project') return rejected;
+        const shared = await finalizePipedreamConnection({
           projectId,
           slug,
           app: conn.app,
           connectorId: conn.connectorId,
           userId: null,
         });
-        return true;
+        return { ok: true, connected: shared.connected };
       }
     : undefined,
   listPipedreamApps: pipedreamConfigured()
