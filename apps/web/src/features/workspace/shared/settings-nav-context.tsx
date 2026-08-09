@@ -1,22 +1,28 @@
 'use client';
 
 /**
- * Panel-agnostic navigation surface for the section/tab views shared between
- * the legacy Customize overlay (`customize/customize-panel.tsx`, backed by
- * `stores/customize-store.ts`) and the new Settings overlay
- * (`settings/settings-panel.tsx`, backed by `stores/settings-panel-store.ts`).
+ * Panel-agnostic navigation surface for the section/tab views mounted under
+ * the Settings overlay (`settings/settings-panel.tsx`, backed by
+ * `stores/settings-panel-store.ts`). Until the settings-panel cutover, this
+ * same surface also served the legacy Customize overlay
+ * (the legacy Customize panel, backed by the legacy Customize store) —
+ * both panels provided their own adapter over their own store, so the shared
+ * `customize/sections/**` views never had to import either store directly.
+ * The legacy overlay and its adapter (`buildCustomizeSettingsNav`) are gone;
+ * `settings-panel.tsx`'s `buildSettingsPanelSettingsNav` is the only
+ * provider left, but this context stays panel-agnostic on purpose — a future
+ * second host is exactly as easy to add as the first one was.
  *
  * Five views under `features/workspace/customize/sections/**` used to import
  * `useCustomizeStore` directly, but for exactly ONE thing: panel navigation
  * (which tab is active, whether the panel is open, and how to jump
  * elsewhere). That direct import is what stopped them from ever mounting
  * under the new panel — they would read the legacy store, which the new
- * panel never touches, and silently do nothing.
+ * panel never touched, and silently do nothing.
  *
- * This context breaks that coupling. Each panel provides an adapter over its
- * own store (`customize-panel.tsx`'s `buildCustomizeSettingsNav`,
- * `settings-panel.tsx`'s `buildSettingsPanelSettingsNav`); the five views
- * read only `useSettingsNav()`, never a store directly.
+ * This context breaks that coupling. The panel provides an adapter over its
+ * own store (`settings-panel.tsx`'s `buildSettingsPanelSettingsNav`); the
+ * five views read only `useSettingsNav()`, never a store directly.
  *
  * `activeTab` (and `navigate`'s `tab` argument) is typed `string`, NOT
  * `CustomizeSection` or `SettingsTab`. The two panels speak different tab
@@ -80,8 +86,7 @@ export function useSettingsNav(): SettingsNav {
   if (!ctx) {
     throw new Error(
       'useSettingsNav() was called outside a SettingsNavProvider. Render this view under ' +
-        'CustomizPanel (customize/customize-panel.tsx) or SettingsPanel ' +
-        '(settings/settings-panel.tsx), which provide it — or wrap it in a ' +
+        'SettingsPanel (settings/settings-panel.tsx), which provides it — or wrap it in a ' +
         '<SettingsNavProvider value={...}> in a test.',
     );
   }

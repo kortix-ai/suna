@@ -18,7 +18,37 @@
  * section — like the standalone Files page — hides for plain members by design.
  */
 
-import type { CustomizeSection } from '@/lib/customize-sections';
+/**
+ * The internal gating-key vocabulary for `CUSTOMIZE_SECTION_ACCESS` below —
+ * previously imported from the legacy Customize-sections module (the legacy Customize
+ * overlay's OWN section-id space), which was deleted when the settings-panel
+ * cutover retired that overlay. This union lives here now because gating is
+ * the only thing it still does: `settings-panel.tsx`'s `GATED_TAB_SECTION`
+ * maps a `SettingsTab` onto one of these ids to reuse the IAM read leaf below
+ * — the ids themselves never reach the UI as tab names anymore.
+ */
+export type CustomizeSection =
+  | 'git'
+  | 'review'
+  | 'commands'
+  | 'marketplace'
+  | 'secrets'
+  | 'llm-management'
+  | 'llm-overview'
+  | 'llm-providers'
+  | 'llm-logs'
+  | 'llm-budgets'
+  | 'llm-keys'
+  | 'llm-api'
+  | 'computers'
+  | 'members'
+  | 'schedules'
+  | 'webhooks'
+  | 'channels'
+  | 'voice'
+  | 'sandbox'
+  | 'settings'
+  | 'upgrade';
 
 export const PROJECT_ACTIONS = {
   PROJECT_READ: 'project.read',

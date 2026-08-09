@@ -1,15 +1,19 @@
 'use client';
 
 /**
- * The merged settings overlay shell — ported from
- * `customize/customize-panel.tsx` onto one vertical `Tabs` root instead of a
- * hand-rolled rail-button/section switch. Every comment below that isn't
- * about the Tabs wiring itself is carried forward from that file because it
- * documents a real bug that was fixed there; this is a port, not a rewrite.
+ * The merged settings overlay shell — ported from the legacy Customize
+ * overlay's panel onto one vertical `Tabs` root instead of a hand-rolled
+ * rail-button/section switch. Every comment below that isn't about the Tabs
+ * wiring itself is carried forward from that file because it documents a
+ * real bug that was fixed there; this is a port, not a rewrite.
  *
- * `customize-panel.tsx` stays live and mounted — this component is mounted
- * nowhere yet (see the settings-panel plan, Task 5 / 5b). Deleting the old
- * panel and flipping the mount is a later task.
+ * **Task 5b — the cutover.** The legacy Customize panel is deleted;
+ * `ProjectShell` now mounts THIS panel instead (see
+ * `project-layout/project-shell.tsx`). Every literal `openCustomize(...)`
+ * call site was repointed to `openSettings(...)` against
+ * `stores/settings-panel-store.ts`, and every `/customize/*` route now
+ * redirects to its `/settings/*` equivalent via `legacySectionRedirect` —
+ * see that task's report for the full file list.
  *
  * Tab-pane CONTENT is intentionally NOT wired here. Every pane below renders
  * a bare `SettingsSectionHeader` as a placeholder; `features/workspace/
@@ -18,17 +22,17 @@
  * `customize/sections/**` views directly here was originally blocked:
  * `gateway-view.tsx` (`LlmManagementView`), `connectors-view.tsx`,
  * `members-view.tsx`, `secrets-view.tsx`, and `marketplace-section-
- * button.tsx` all read `useCustomizeStore` directly for panel navigation
- * (which tab is active, whether the panel is open, how to jump elsewhere).
- * Mounting them under THIS panel would have made them read the wrong store
- * — the legacy one, which this panel never opens.
+ * button.tsx` all read the legacy Customize store directly for panel
+ * navigation (which tab is active, whether the panel is open, how to jump
+ * elsewhere). Mounting them under THIS panel would have made them read the
+ * wrong store — the legacy one, which this panel never opened.
  *
  * That blocker is gone: all five now read `useSettingsNav()` (see
  * `features/workspace/shared/settings-nav-context.tsx`) instead of a store
  * directly, and THIS panel already provides it below (`buildSettingsPanel-
  * SettingsNav` / `<SettingsNavProvider>`).
  *
- * **Task 5b2 update.** Fifteen of `customize-panel.tsx`'s `SectionContent`
+ * **Task 5b2 update.** Fifteen of the legacy panel's `SectionContent`
  * cases (fourteen `case` labels plus the `llm-*` prefix branch) are now
  * wired onto their mapped tab via `SettingsTabPane` below: `commands`,
  * `marketplace`, `secrets`, `channels`, `voice`, `computers`, `schedules`,
@@ -84,9 +88,12 @@ import { SettingsView } from '@/features/workspace/customize/sections/view/setti
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { SettingsNavProvider, type SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
-import type { CustomizeSection } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib/project-actions';
+import {
+  CUSTOMIZE_SECTION_GATE_ACTIONS,
+  isCustomizeSectionVisible,
+  type CustomizeSection,
+} from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
@@ -227,7 +234,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   // Distinct from `llmGatewayAvailable` above (which only affects rail
   // visibility, per `rail.ts`'s comment — the Models row always shows).
   // `llmGatewayEnabled` gates the Models tab's actual CONTENT, mirroring
-  // `customize-panel.tsx`'s `if (section.startsWith('llm-') &&
+  // the legacy panel's `if (section.startsWith('llm-') &&
   // !llmGatewayEnabled) return null;` exactly.
   const llmGatewayEnabled = isLlmGatewayEnabled(project);
   const voiceEnabled = project?.experimental?.voice ?? false;
@@ -564,7 +571,7 @@ export function SettingsPanelShell({
  * describe block for why this is explicit rather than left to Radix's own
  * `TabsContent` behaviour.
  *
- * The switch below is the Task 5b2 mapping of `customize-panel.tsx`'s
+ * The switch below is the Task 5b2 mapping of the legacy panel's
  * `SectionContent` (14 `case` labels + the `llm-*` prefix branch) onto the
  * new tab ids. A tab NOT listed here — `profile`, `preferences`, `connected`,
  * `snapshots`, `billing`, `usage`, `groups`, `roles`, `identity`, `audit`,
@@ -608,7 +615,7 @@ function SettingsTabPane({
       case 'computers':
         return <ComputersView projectId={projectId} />;
       case 'models':
-        // Mirrors `customize-panel.tsx`'s
+        // Mirrors the legacy panel's
         // `if (section.startsWith('llm-') && !llmGatewayEnabled) return null;`
         // — renders nothing (not the placeholder) while disabled.
         return llmGatewayEnabled ? <LlmManagementView projectId={projectId} /> : null;

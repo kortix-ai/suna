@@ -135,7 +135,7 @@ function formatDate(input: string | null | undefined) {
  * `openCustomize`) deliberately does NOT replicate that reset: doing it
  * uniformly there would reintroduce, for Connectors' "Open Computers" and
  * `marketplace-section-button.tsx`, exactly the wide-reset regression
- * `navigate` was built to avoid (see `customize-panel.tsx`'s
+ * `navigate` was built to avoid (see the legacy panel's
  * `buildCustomizeSettingsNav` doc comment). So this view owns clearing the
  * intent it consumes — the moment it's shown, not on some later unrelated
  * navigation.

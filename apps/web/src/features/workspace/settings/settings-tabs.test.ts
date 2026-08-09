@@ -116,7 +116,7 @@ describe('legacySectionRedirect', () => {
     expect(legacySectionRedirect('p1', 'nope')).toBeNull();
   });
 
-  // Coverage carried forward from the retired lib/customize-sections.test.ts —
+  // Coverage carried forward from the retired legacy Customize-sections test —
   // cases the spec test above doesn't exercise but the old suite caught.
   test('the graduated agent/agents spellings both redirect', () => {
     expect(legacySectionRedirect('p1', 'agent')).toBe('/projects/p1/agent');

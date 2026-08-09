@@ -1,63 +1,62 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { useCustomizeStore } from '@/stores/customize-store';
-import { buildCustomizeSettingsNav } from '@/features/workspace/customize/customize-panel';
+import { buildSettingsPanelSettingsNav } from '@/features/workspace/settings/settings-panel';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { consumeMembersTabIntent } from './members-view';
 
 /**
  * Regression pin for a real review finding on this task: `membersTab` is a
  * one-shot deep-link intent, not persistent state. A first draft cleared it
- * only as a side effect of `openCustomize`, which `navigate()` deliberately
+ * only as a side effect of `openSettings`, which `navigate()` deliberately
  * doesn't replicate (see `consumeMembersTabIntent`'s doc comment in
  * `members-view.tsx`) — so a stale `'invite'` request could survive an
  * unrelated `navigate()` call and replay on a later, unconnected visit to
  * Members. This test reproduces the reviewer's exact reachable sequence
- * against the real `useCustomizeStore` + the real `buildCustomizeSettingsNav`
- * adapter, standing in for `MembersView`'s own mount-time effect via
- * `consumeMembersTabIntent` (the same function the component calls).
+ * against the real `useSettingsPanelStore` + the real
+ * `buildSettingsPanelSettingsNav` adapter — `MembersView` mounts under the
+ * Settings overlay now (see `settings-panel.tsx`'s `SettingsTabPane`), so
+ * this is the live store behind it, standing in for `MembersView`'s own
+ * mount-time effect via `consumeMembersTabIntent` (the same function the
+ * component calls).
  */
 beforeEach(() => {
-  useCustomizeStore.setState({
-    open: false,
-    section: 'secrets',
-    llmProvidersTab: 'catalog',
-    membersTab: 'people',
-  });
+  useSettingsPanelStore.setState({ open: false, tab: 'secrets', membersTab: 'people' });
 });
 
 describe('consumeMembersTabIntent — the reviewer-found sequence', () => {
   test('a stale "invite" request does not survive an unrelated navigate() and replay on a later Members mount', () => {
-    // Step 1: command palette "Invite members" -> openCustomize('members', { membersTab: 'invite' })
-    useCustomizeStore.getState().openCustomize('members', { membersTab: 'invite' });
-    expect(useCustomizeStore.getState().membersTab).toBe('invite');
+    // Step 1: command palette "Invite members" -> openSettings('members', { membersTab: 'invite' })
+    useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
+    expect(useSettingsPanelStore.getState().membersTab).toBe('invite');
 
     // MembersView mounts for the first time here. Its effect calls exactly
     // this function with the nav it was just handed.
-    let nav = buildCustomizeSettingsNav(useCustomizeStore.getState());
+    let nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
     const firstMountResult = consumeMembersTabIntent({
       membersTab: nav.membersTab,
       activeTab: nav.activeTab,
       navigate: nav.navigate,
     });
     expect(firstMountResult).toBe('invite'); // MembersView shows Invite right now
-    expect(useCustomizeStore.getState().membersTab).toBe('people'); // ...and the intent is already cleared
+    expect(useSettingsPanelStore.getState().membersTab).toBe('people'); // ...and the intent is already cleared
 
-    // Step 2: rail click to Secrets. Rail buttons call setSection directly —
+    // Step 2: rail click to Secrets. Rail buttons call setTab directly —
     // untouched by this task, and irrelevant to membersTab either way.
-    useCustomizeStore.getState().setSection('secrets');
-    expect(useCustomizeStore.getState().membersTab).toBe('people');
+    useSettingsPanelStore.getState().setTab('secrets');
+    expect(useSettingsPanelStore.getState().membersTab).toBe('people');
 
-    // Step 3: Secrets' "Manage providers" -> navigate('llm-providers'), the
-    // new shared-nav call. Confirms it does not touch membersTab (nothing
+    // Step 3: Secrets' "Manage providers" -> navigate('models'), the shared-nav
+    // call (the merged panel folds every legacy `llm-*` sub-section into the
+    // single `models` tab). Confirms it does not touch membersTab (nothing
     // left to touch — already cleared in step 1's mount).
-    nav = buildCustomizeSettingsNav(useCustomizeStore.getState());
-    nav.navigate('llm-providers');
-    expect(useCustomizeStore.getState().section).toBe('llm-providers');
-    expect(useCustomizeStore.getState().membersTab).toBe('people');
+    nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
+    nav.navigate('models');
+    expect(useSettingsPanelStore.getState().tab).toBe('models');
+    expect(useSettingsPanelStore.getState().membersTab).toBe('people');
 
-    // Step 4: back to Members. SectionContent unmounts/remounts MembersView.
-    useCustomizeStore.getState().setSection('members');
-    nav = buildCustomizeSettingsNav(useCustomizeStore.getState());
+    // Step 4: back to Members. The tab pane unmounts/remounts MembersView.
+    useSettingsPanelStore.getState().setTab('members');
+    nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
     expect(nav.membersTab).toBe('people'); // NOT a stale 'invite'
 
     const secondMountResult = consumeMembersTabIntent({
@@ -110,8 +109,8 @@ describe('consumeMembersTabIntent — field mapping', () => {
 
 describe('consumeMembersTabIntent — strict-mode double invocation', () => {
   test('calling it twice with the same stale "invite" snapshot is idempotent on the real store', () => {
-    useCustomizeStore.getState().openCustomize('members', { membersTab: 'invite' });
-    const nav = buildCustomizeSettingsNav(useCustomizeStore.getState());
+    useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
+    const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
     // React strict-mode's double effect invocation reuses the SAME render's
     // closure for both calls — the store update from the first call hasn't
     // flowed back through a new render yet, so both calls see the identical
@@ -121,6 +120,6 @@ describe('consumeMembersTabIntent — strict-mode double invocation', () => {
     expect(consumeMembersTabIntent(snapshot)).toBe('invite');
     expect(consumeMembersTabIntent(snapshot)).toBe('invite');
 
-    expect(useCustomizeStore.getState().membersTab).toBe('people');
+    expect(useSettingsPanelStore.getState().membersTab).toBe('people');
   });
 });

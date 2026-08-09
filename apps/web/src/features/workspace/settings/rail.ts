@@ -57,7 +57,7 @@ type LegacyLlmSubTab =
  * `models` stands in for every `llm-*` sub-page so a deep-link into an LLM
  * sub-page (`llm-logs`, `llm-budgets`, ...) still lights up the single
  * Models rail entry, exactly like the old rail's `llm-management` stand-in
- * (see `customize/rail.ts`). Every other item matches its own tab 1:1.
+ * (see the legacy Customize rail). Every other item matches its own tab 1:1.
  */
 export function isRailItemActive(
   item: RailItem,
@@ -76,7 +76,7 @@ const VOICE_ITEM: RailItem = { tab: 'voice', label: 'Voice', icon: AudioLines };
  * The Upgrades tab is always reachable (it hosts the one-off registry
  * upgrade runner) and lives pinned at the very bottom of the rail — out of
  * the scrolling groups (see the desktop footer / mobile tail in whatever
- * consumes `railGroups`). Mirrors `customize/rail.ts`'s `UPGRADE_ITEM`.
+ * consumes `railGroups`). Mirrors the legacy Customize rail's `UPGRADE_ITEM`.
  */
 export const UPGRADE_ITEM: RailItem = {
   tab: 'upgrades',
@@ -153,7 +153,7 @@ export interface RailFlags {
  * Each group accumulates ALL of its optional items in one pass — a group is
  * never returned early on the first flag that matches, or a second
  * flag-gated item in the same group would be silently dropped. This is the
- * exact bug `customize/rail.ts:110` documents: Marketplace defaults ON for
+ * exact bug the legacy Customize rail once documented: Marketplace defaults ON for
  * effectively every project, so an early return on the Agent group's first
  * matching flag made Review (and Voice) unreachable.
  */

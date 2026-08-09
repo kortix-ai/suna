@@ -1,40 +1,37 @@
 'use client';
 
 /**
- * /projects/[id]/settings — entry point into the merged Settings overlay
+ * /projects/[id]/settings — deep-link entry into the merged Settings overlay
  * (see `features/workspace/settings/settings-panel.tsx`), opened on its
  * default tab.
  *
- * This does NOT follow `customize/page.tsx`'s "set store state, then
- * `router.replace` away to a real destination" shape, and that's a
- * deliberate departure worth calling out: `CustomizePanel` works that way
- * because it's mounted once, persistently, in the project layout — any
- * route under `/projects/[id]/*` already has it behind it, so the redirect
- * page's only job is to set state and bounce to a page that actually
- * renders something. `SettingsPanel` isn't mounted anywhere else yet (that
- * lands in Task 5b, alongside deleting `CustomizePanel`) — so if this page
- * bounced away without rendering it, nothing would ever show. Until then,
- * this route (and its `[tab]` sibling, and the projectless `/settings/[tab]`
- * route) IS the mount point: it renders `SettingsPanel` directly so a direct
- * link or a reload actually shows the overlay.
+ * Mirrors `customize/page.tsx`'s "set store state, then `router.replace` away
+ * to a real destination" shape. That used to NOT be true here: this page
+ * used to render `SettingsPanel` directly, because the panel wasn't mounted
+ * anywhere else yet. Now that `ProjectShell` mounts `SettingsPanel`
+ * persistently (see the settings-panel plan, Task 5b), rendering it a SECOND
+ * time here would stack two full-viewport `Modal`s on the same store. This
+ * page's only job is to set state and bounce to a page that actually renders
+ * something — closing the overlay from here now lands on the project home
+ * behind it, not a blank page.
  */
 
 import { useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 
-import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
 import { DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 export default function ProjectSettingsPage() {
   const params = useParams<{ id: string }>();
   const projectId = params?.id ?? '';
+  const router = useRouter();
 
   useEffect(() => {
     if (!projectId) return;
     useSettingsPanelStore.getState().openSettings(DEFAULT_SETTINGS_TAB);
-  }, [projectId]);
+    router.replace(`/projects/${projectId}`);
+  }, [projectId, router]);
 
-  if (!projectId) return null;
-  return <SettingsPanel projectId={projectId} />;
+  return null;
 }

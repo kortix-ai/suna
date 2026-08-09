@@ -267,9 +267,9 @@ function ListSkeleton({ rows = 6 }: { rows?: number }) {
 // ---------------------------------------------------------------------------
 
 export function ChangesView({ projectId }: { projectId: string }) {
-  // Reads the SAME qk.project.detail(projectId) entry customize-panel.tsx
+  // Reads the SAME qk.project.detail(projectId) entry the legacy panel
   // already mounts whenever the panel is open (this view only renders while
-  // that panel is open — see customize-panel.tsx's `detail` query). A
+  // that panel is open — see the legacy panel's `detail` query). A
   // `select` projection over that shared key, not a private per-view key:
   // sharing the key means this is a cache hit, not a second `getProject`
   // request for data the parent already holds. (This view is not wired into

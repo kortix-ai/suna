@@ -143,7 +143,7 @@ describe('SettingsPanelShell — pane wiring', () => {
  * Task 5b2 — proof that real tab-pane content is gated on the ACTIVE tab.
  *
  * Every one of the fifteen views wired onto a tab this task ports from
- * `customize-panel.tsx`'s `SectionContent` switch calls `useQuery` /
+ * The legacy panel's `SectionContent` switch calls `useQuery` /
  * `useProjectCan` (react-query) synchronously in its own function body —
  * confirmed by grepping each file (see the task report's table). None of the
  * `render(...)` calls below provide a `QueryClientProvider`, so react-query
@@ -227,7 +227,7 @@ describe('SettingsPanelShell — real tab content gating', () => {
   }
 
   test('models renders nothing while the llm gateway is disabled for the project, mirroring the legacy `llm-*` guard', () => {
-    // `SectionContent` in customize-panel.tsx returns null outright for an
+    // `SectionContent` in the legacy panel returns null outright for an
     // `llm-*` section when `!llmGatewayEnabled` — it does not fall back to a
     // placeholder header. Since the view is never invoked here, this must
     // not throw, and the active pane must render no heading at all.
@@ -301,7 +301,7 @@ describe('SettingsPanelShell — mobile', () => {
 /**
  * `buildSettingsPanelSettingsNav` is the pure adapter `SettingsPanel` uses to
  * build the `SettingsNav` value it hands down through `SettingsNavProvider`
- * — the new panel's counterpart to `customize-panel.tsx`'s
+ * — the new panel's counterpart to the legacy panel's
  * `buildCustomizeSettingsNav`. `navigate` writes through the real store
  * (same idiom as `stores/settings-panel-store.test.ts`), so these reset it
  * between tests rather than mocking it.
@@ -317,6 +317,11 @@ describe('buildSettingsPanelSettingsNav', () => {
     expect(nav.activeTab).toBe('members');
     expect(nav.membersTab).toBe('invite');
     expect(nav.llmProvidersTab).toBeUndefined();
+  });
+
+  test('reports isOpen: false verbatim — it does not coerce a closed panel to true', () => {
+    const nav = buildSettingsPanelSettingsNav({ open: false, tab: 'secrets', membersTab: 'people' });
+    expect(nav.isOpen).toBe(false);
   });
 
   test('navigate() switches the tab on the live store without touching open', () => {

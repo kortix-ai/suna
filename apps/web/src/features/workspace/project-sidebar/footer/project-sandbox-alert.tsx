@@ -24,7 +24,7 @@ import {
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   type ProjectSandboxHealth,
   type SandboxRuntimeStatus,
@@ -153,7 +153,7 @@ function SandboxAlertContent({
   severity: SandboxAlertSeverity;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const openSettings = useSettingsPanelStore((s) => s.openSettings);
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   const status = selectSandboxStatus(health);
   const failure = selectCurrentSandboxFailure(health);
@@ -175,7 +175,7 @@ function SandboxAlertContent({
             variant="transparent"
             size="sm"
             className="text-foreground/70 m-0 inline-flex h-fit w-fit p-0 align-baseline text-xs"
-            onClick={() => openCustomize('sandbox')}
+            onClick={() => openSettings('sandbox')}
           >
             Details
           </Button>
@@ -198,7 +198,7 @@ function SandboxAlertContent({
               variant="link"
               size="sm"
               className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
-              onClick={() => openCustomize('sandbox')}
+              onClick={() => openSettings('sandbox')}
             >
               Details
             </Button>

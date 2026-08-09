@@ -32,13 +32,13 @@ import {
   sessionLastActivityAt,
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { resolveSettingsOverlayHref } from '@/features/workspace/settings/settings-tabs';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   type ExperimentalFeatureKey,
   type KortixAccount,
@@ -1114,7 +1114,7 @@ export function CommandPalette() {
   }, [currentSessionId, close]);
 
   const handleInviteMembers = useCallback(() => {
-    useCustomizeStore.getState().openCustomize('members', { membersTab: 'invite' });
+    useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
     close();
   }, [close]);
 
@@ -1218,12 +1218,12 @@ export function CommandPalette() {
         case 'navigate': {
           const href = item.href || '';
 
-          // See resolveCustomizeOverlayHref's doc comment for why a stale
-          // `/customize/<graduated-or-unknown-section>` href must fall through
+          // See resolveSettingsOverlayHref's doc comment for why a stale
+          // `/settings/<graduated-or-unknown-tab>` href must fall through
           // to router.push below instead of opening the overlay.
-          const overlayMatch = resolveCustomizeOverlayHref(href);
+          const overlayMatch = resolveSettingsOverlayHref(href);
           if (overlayMatch.opensOverlay) {
-            useCustomizeStore.getState().openCustomize(overlayMatch.section);
+            useSettingsPanelStore.getState().openSettings(overlayMatch.tab);
             close();
             break;
           }

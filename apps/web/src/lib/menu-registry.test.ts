@@ -135,9 +135,9 @@ describe('graduated capability entries are not shadowed by Customize', () => {
     expect(matchesPaletteQuery(customizeItem!, 'agents')).toBe(false);
   });
 
-  test('Connectors and Skills navigate to standalone pages; Commands opens Customize', () => {
+  test('Connectors and Skills navigate to standalone pages; Commands opens Settings', () => {
     expect(skillsItem!.href).toBe('/projects/{projectId}/skills');
-    expect(commandsItem!.href).toBe('/projects/{projectId}/customize/commands');
+    expect(commandsItem!.href).toBe('/projects/{projectId}/settings/instructions');
     expect(connectorsItem!.href).toBe('/projects/{projectId}/connectors');
   });
 

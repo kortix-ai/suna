@@ -36,7 +36,6 @@ import { GatewayRouting } from '@/features/workspace/customize/sections/view/gat
 import { useModelDefaults } from '@kortix/sdk/react';
 import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
-import type { CustomizeSection } from '@/lib/customize-sections';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
@@ -64,7 +63,27 @@ const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'api', label: 'API' },
 ];
 
-const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
+/**
+ * The legacy Customize overlay's `llm-*` `CustomizeSection` ids. The new
+ * Settings overlay's `SettingsTab` union has no equivalent — every one of
+ * these collapses into the single `models` tab at the redirect
+ * (`settings-tabs.ts`'s `RENAMED_TABS`), so `activeTab` is never one of them
+ * while mounted there; this map only fires while mounted under the legacy
+ * panel (deleted once the cutover is complete) or for a raw deep-link value
+ * that slips through before a redirect resolves. Kept local (not imported
+ * from the legacy Customize-sections module, which no longer exists) since nothing
+ * else needs this exact 7-member set.
+ */
+type LegacyLlmSubTab =
+  | 'llm-management'
+  | 'llm-overview'
+  | 'llm-providers'
+  | 'llm-logs'
+  | 'llm-budgets'
+  | 'llm-keys'
+  | 'llm-api';
+
+const TAB_BY_SECTION: Partial<Record<LegacyLlmSubTab, LlmTab>> = {
   'llm-management': 'providers',
   'llm-providers': 'providers',
   'llm-overview': 'overview',
@@ -77,7 +96,7 @@ const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
 export function LlmManagementView({ projectId }: { projectId: string }) {
   const { isOpen: open, activeTab: section, llmProvidersTab } = useSettingsNav();
   const [tab, setTab] = useState<LlmTab>(
-    () => TAB_BY_SECTION[section as CustomizeSection] ?? 'providers',
+    () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
   );
 
   // The project default is the single model authority for this project. Account
@@ -106,7 +125,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
   // tab. Plain in-view tab clicks stay local and never move the main rail.
   useEffect(() => {
-    const next = TAB_BY_SECTION[section as CustomizeSection];
+    const next = TAB_BY_SECTION[section as LegacyLlmSubTab];
     if (next) setTab(next);
   }, [section]);
 

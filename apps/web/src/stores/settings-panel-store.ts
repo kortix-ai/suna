@@ -11,7 +11,7 @@
  * you never lose your place. ESC / backdrop closes it and you're exactly
  * where you were.
  *
- * This is a NEW store, alongside `stores/customize-store.ts` — it is not a
+ * This is a NEW store, alongside the legacy Customize store — it is not a
  * rename and not a re-export shim of it. The legacy store keeps the legacy
  * panel working (`CustomizeSection` ids: `git`, `commands`, `settings`,
  * `llm-management`, `upgrade`, ...) until the cutover task deletes both the
@@ -25,7 +25,7 @@ import { DEFAULT_SETTINGS_TAB, type SettingsTab } from '@/features/workspace/set
 
 /** Sub-tab to land on inside the Members section when deep-linking there.
  *  "People" is the primary surface, so it's the default. Mirrors
- *  `customize-store.ts`'s `MembersTab` — kept as an independent declaration
+ *  the legacy Customize store's `MembersTab` — kept as an independent declaration
  *  rather than an import, so the two stores stay decoupled while they coexist. */
 export type MembersTab = 'people' | 'invite';
 

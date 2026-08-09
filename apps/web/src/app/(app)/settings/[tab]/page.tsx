@@ -9,45 +9,40 @@
  * which is why this route exists with no `[id]` segment at all rather than
  * defaulting to some remembered project.
  *
- * Decision: `SettingsPanel`'s `projectId` prop is already optional and the
- * component already degrades gracefully with it unset — no project-detail
- * query runs, the IAM caps probe stays disabled, and `isTabAllowed` fails
- * open (shows every tab) because `capsResolved` can never become true
- * without a project. So this route passes no `projectId` at all rather than
- * inventing a "last active project" lookup or redirecting to a project
- * picker: nothing in this task's scope establishes what "no project
- * selected" should redirect to, the tabs this route exists for (profile,
- * billing, ...) are account-scoped and don't need one, and project-scoped
- * tabs opened from here just render their (currently placeholder) pane with
- * no project data until a real project is chosen some other way. Revisit
- * this if/when a project-scoped tab is opened from here and needs one.
+ * This page used to render `SettingsPanel` directly (with no `projectId`),
+ * because nothing else mounted the panel yet. `ProjectShell` now mounts
+ * `SettingsPanel` persistently on every `/projects/[id]/*` route, so this
+ * page's job is the same as its two project-scoped siblings: set store state,
+ * then leave. There is no project-scoped page to bounce back to from here —
+ * this route has no `[id]` — so it resolves through `PROJECT_LANDING_PATH`,
+ * the same id-free landing door every other "we don't know which project"
+ * caller uses (see `lib/onboarding/landing-destination.ts`). It paints
+ * instantly and lands on a real project page, which mounts the panel and
+ * shows the overlay already open on the requested tab — this is what fixes
+ * the previous "closing the overlay leaves a blank page" bug: this route no
+ * longer stays mounted long enough for that blank page to exist.
  *
- * Same parse-or-redirect shape as `projects/[id]/settings/[tab]`, adapted
- * for having no bare `/settings` landing route to fall back to: an
- * unparseable segment redirects to `/settings/<DEFAULT_SETTINGS_TAB>`
- * instead.
+ * An unparseable segment still opens the overlay — on the default tab,
+ * rather than bouncing to `/settings/<default>` first, since either way this
+ * page immediately leaves for `PROJECT_LANDING_PATH`.
  */
 
 import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 
-import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
 import { DEFAULT_SETTINGS_TAB, parseSettingsTab } from '@/features/workspace/settings/settings-tabs';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 export default function SettingsTabPage() {
   const params = useParams<{ tab: string }>();
-  const tab = parseSettingsTab(params?.tab);
+  const tab = parseSettingsTab(params?.tab) ?? DEFAULT_SETTINGS_TAB;
   const router = useRouter();
 
   useEffect(() => {
-    if (!tab) {
-      router.replace(`/settings/${DEFAULT_SETTINGS_TAB}`);
-      return;
-    }
     useSettingsPanelStore.getState().openSettings(tab);
+    router.replace(PROJECT_LANDING_PATH);
   }, [tab, router]);
 
-  if (!tab) return null;
-  return <SettingsPanel />;
+  return null;
 }
