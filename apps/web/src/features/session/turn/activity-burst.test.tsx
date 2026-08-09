@@ -1,6 +1,7 @@
 import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import type { Part, ToolPart } from '@/ui';
+import { PencilSimpleIcon, ReadCvLogoIcon, TerminalWindowIcon } from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
@@ -11,7 +12,7 @@ import {
   burstFailureCount,
   burstIsRunning,
 } from './activity-burst';
-import { ActivityStep } from './activity-step';
+import { ActivityStep, iconFor } from './activity-step';
 import { mergeBurstSteps } from './merge-steps';
 import { stepLabel } from './step-label';
 
@@ -705,6 +706,19 @@ describe('chain rail', () => {
     const markup = railStep(false);
     expect(markup).toContain('group-data-[state=open]/step:block');
     expect(markup).toContain('group-has-[[data-state=open]]/step:block');
+  });
+});
+
+describe('step family glyphs', () => {
+  test('a read row leads with the read mark, not a generic page', () => {
+    // The row says WHICH kind of work it was; the chip inside it still says
+    // which kind of file (see attachment-icon.test.ts).
+    expect(iconFor(tool('1', 'read', { status: 'completed' }))).toBe(ReadCvLogoIcon);
+  });
+
+  test('the other families are untouched', () => {
+    expect(iconFor(tool('1', 'write', { status: 'completed' }))).toBe(PencilSimpleIcon);
+    expect(iconFor(tool('2', 'bash', { status: 'completed' }))).toBe(TerminalWindowIcon);
   });
 });
 

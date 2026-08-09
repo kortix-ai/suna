@@ -3,11 +3,11 @@
 /** One row inside a burst: icon, verb, object, and the tool's own result. */
 
 import {
-  FileTextIcon,
   FolderOpenIcon,
   GlobeIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
+  ReadCvLogoIcon,
   StackIcon,
   TerminalWindowIcon,
   UsersThreeIcon,
@@ -22,7 +22,7 @@ import { normalizeActivityToolName } from '../session-activity-groups';
 import { stepLabel } from './step-label';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  read: FileTextIcon,
+  read: ReadCvLogoIcon,
   write: PencilSimpleIcon,
   edit: PencilSimpleIcon,
   apply_patch: PencilSimpleIcon,

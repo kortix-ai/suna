@@ -46,11 +46,10 @@ function withProviders(node: ReactNode) {
   );
 }
 
-// show/show-user drives its INLINE (chat) surface with a scalloped panel
-// shell: left tab = file name, right tab = toolbar, content always visible.
-// The PANEL surface keeps its bespoke fill-the-pane rendering byte-for-byte —
-// tool-part-renderer.tsx special-cases show/show-user as `fillsPanel` because
-// the preview IS the payload there.
+// show/show-user drives its INLINE (chat) surface with a plain card: header
+// row (title + toolbar) and always-visible payload. The PANEL surface keeps
+// its bespoke fill-the-pane rendering — tool-part-renderer.tsx special-cases
+// show/show-user as `fillsPanel` because the preview IS the payload there.
 
 function makePart(input: Record<string, unknown>): ToolPart {
   return {
@@ -72,32 +71,25 @@ const PART = makePart({
   content: 'Hello from the payload.',
 });
 
-describe('ShowTool drives its inline surface with a scalloped panel; panel stays visually identical', () => {
-  test('inline surface renders the scalloped shell with the title tab and payload visible', () => {
+describe('ShowTool drives its inline surface with a plain card; panel stays visually identical', () => {
+  test('inline surface renders a plain card with the title and payload visible', () => {
     const html = renderToStaticMarkup(withProviders(<ShowTool part={PART} />));
 
     // Still tagged `tool-trigger` so activity-step.tsx's descendant size
     // overrides keep applying.
     expect(html).toContain('data-component="tool-trigger"');
 
-    // Scalloped shell chrome: the tab and the content plane share one
-    // `bg-secondary` fill, joined by the concave edge that makes the tab read
-    // as raised out of the panel instead of stacked on top of it.
+    // Plain card chrome: one rounded secondary surface, no tab/scallop edges.
     expect(html).toContain('bg-secondary');
-    expect(html).toContain('rounded-t-lg');
-    expect(html).toContain('M0 0C0 32 16 64 38 64L0 64Z');
+    expect(html).toContain('rounded-lg');
+    expect(html).not.toContain('rounded-t-lg');
+    expect(html).not.toContain('viewBox="0 0 38 64"');
 
-    // This fixture has no inline toolbar, so the content plane's top-right is
-    // exposed and rounds itself; the left tab covers the top-left.
-    expect(html).toContain('rounded-b-lg');
-    expect(html).toContain('rounded-tr-lg');
-
-    // Left tab label is the payload's resolved title (mirrors `showLabel`-style
+    // Header label is the payload's resolved title (mirrors `showLabel`-style
     // precedence: title > description > basename/domain, never a raw path/URL).
     expect(html).toContain('Quarterly Report Draft');
-    expect(html).toContain('aria-current="page"');
 
-    // Always open: the payload lives in the content plane, not behind a disclosure.
+    // Always open: the payload lives in the card body, not behind a disclosure.
     expect(html).toContain('Hello from the payload.');
     expect(html).not.toContain('aria-expanded');
   });
@@ -118,10 +110,9 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
     expect(html).toContain('flex min-h-0 flex-1 flex-col');
     expect(html).toContain('min-h-0 flex-1 overflow-hidden');
 
-    // No scallop shell on the panel surface — the preview still fills the
+    // No inline card shell on the panel surface — the preview still fills the
     // pane directly, unwrapped.
     expect(html).not.toContain('data-component="tool-trigger"');
-    expect(html).not.toContain('aria-current="page"');
 
     expect(html).toContain('Hello from the payload.');
   });
@@ -155,7 +146,7 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
     expect(html).toContain('px-5 py-4');
   });
 
-  test('inline loading relies on the shell header chrome — no duplicate loading card', () => {
+  test('inline loading relies on the card header — no duplicate loading card', () => {
     const runningPart = {
       type: 'tool',
       tool: 'show',
@@ -171,15 +162,15 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
       ),
     );
 
-    // The left scallop tab carries the running indicator itself, so the
-    // bespoke panel loading card must not render a second one inline.
+    // The header carries the running indicator itself, so the bespoke panel
+    // loading card must not render a second one inline.
     expect(html).toContain('data-component="tool-trigger"');
     expect(html).toContain('animate-spinner-orbit');
     expect(html).not.toContain('bg-card');
     expect(html).not.toContain('px-5 py-4');
   });
 
-  test('a title-less unsafe url never leaks into the left tab label', () => {
+  test('a title-less unsafe url never leaks into the header label', () => {
     const part = makePart({
       type: 'url',
       url: '/internal/session/abc?token=secret123',
@@ -189,12 +180,12 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
 
     // showDomain() echoes unparseable input verbatim; the safeHttpUrl gate
     // must degrade a relative/non-http(s) url to the literal 'Link' instead
-    // on the always-visible left tab — never the raw path or token.
+    // on the always-visible header — never the raw path or token.
     expect(html).toContain('title="Link"');
     expect(html).toMatch(/title="Link"[^>]*>Link</);
-    // The tab's title attr is the safe label; a raw relative URL must not be
-    // the tab's `title=` value (body content may still render the url string
-    // via ShowContentRenderer — that is a separate surface).
+    // The header's title attr is the safe label; a raw relative URL must not be
+    // the `title=` value (body content may still render the url string via
+    // ShowContentRenderer — that is a separate surface).
     expect(html).not.toContain('title="/internal/session/abc?token=secret123"');
   });
 
@@ -209,7 +200,7 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
       // exact regression this task fixes: a completed `show` never vanishes.
       expect(html).not.toBe('');
 
-      // The shell still holds the tool's place in the transcript with the title.
+      // The card still holds the tool's place in the transcript with the title.
       expect(html).toContain('data-component="tool-trigger"');
       expect(html).toContain('Report');
     } finally {
@@ -217,7 +208,7 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
     }
   });
 
-  test('file-backed inline show places toolbar actions in the right scallop tab', () => {
+  test('file-backed inline show places toolbar actions in the card header', () => {
     const part = makePart({
       type: 'file',
       path: '/workspace/report.pdf',
@@ -225,10 +216,9 @@ describe('ShowTool drives its inline surface with a scalloped panel; panel stays
     });
     const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
 
-    // Left tab: title. Right tab: file actions (Refresh / Full screen / Open).
+    // Header: title + file actions (Refresh / Full screen / Open).
     expect(html).toContain('Report');
     expect(html).toContain('aria-label="Refresh"');
-    // Two scallop SVGs — one on each tab edge.
-    expect(html.match(/viewBox="0 0 38 64"/g)?.length).toBe(2);
+    expect(html).not.toContain('viewBox="0 0 38 64"');
   });
 });

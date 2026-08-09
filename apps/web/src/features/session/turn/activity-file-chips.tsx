@@ -146,9 +146,7 @@ function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) =
         aria-label={`Open ${filename}`}
         onClick={() => onOpen(path)}
         className={cn(
-          'border-border bg-background flex max-w-full items-center gap-3 rounded-md border p-1.5 py-1 pr-3',
-          'hover:bg-muted/50 cursor-pointer transition-colors active:scale-[0.97]',
-          'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
+          'border-border bg-background hover:bg-muted/50 focus-visible:ring-ring/50 flex max-w-full cursor-pointer items-center gap-3 rounded-md border p-1.5 py-1 pr-3 shadow-xs transition-colors focus-visible:ring-2 focus-visible:outline-none active:scale-[0.97]',
         )}
       >
         <span className="bg-muted flex size-9 flex-none items-center justify-center rounded-sm">
