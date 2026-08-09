@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v9';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v10';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -216,7 +216,7 @@ function platinumWarmEntrypoint(): string {
     'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 &',
     "timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'",
     'docker info >/dev/null',
-    'pnpm exec supabase start',
+    'pnpm exec supabase start --ignore-health-check',
     'docker image ls -q | sort -u | wc -l > /workspace/.kortix-ci-warm-ready',
     "grep -Eq '^[1-9][0-9]*$' /workspace/.kortix-ci-warm-ready",
     'docker image ls --digests',
@@ -310,14 +310,12 @@ export function buildWorkerScript(input: {
 }): string {
   const command = ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])];
   const testCommand = command.map(shellQuote).join(' ');
-  const needsWeb = input.testArgs.includes('--full') || input.testArgs.includes('--browser-only');
   return `#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT=/workspace/suna
 LOG=/workspace/kortix-test.log
 STATUS=/workspace/kortix-test.exit
-DEV_LOG=/workspace/kortix-dev.log
 ARTIFACT=/workspace/kortix-test-results.tar.gz
 
 exec > >(tee -a "$LOG") 2>&1
@@ -327,7 +325,7 @@ finish() {
   local code="$1"
   set +e
   mkdir -p "$ROOT/tests/test-results/platinum"
-  for source in "$LOG" "$DEV_LOG" /workspace/dockerd.log /workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log; do
+  for source in "$LOG" /workspace/dockerd.log /workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log; do
     if [[ -f "$source" ]]; then
       cp "$source" "$ROOT/tests/test-results/platinum/$(basename "$source")"
     fi
@@ -377,25 +375,6 @@ fi
 echo "[platinum-ci] docker_ready=1"
 docker network inspect bridge --format '{{.Driver}}' | grep -qx bridge
 echo "[platinum-ci] docker_bridge_ready=1"
-
-${needsWeb ? `export KORTIX_SESSION_ID=platinum-ci
-export KORTIX_DEV_TUNNEL=0
-export KORTIX_STRIPE_LISTEN=0
-nohup pnpm dev > "$DEV_LOG" 2>&1 &
-for _ in $(seq 1 360); do
-  if curl -fsS http://127.0.0.1:8008/v1/health >/dev/null 2>&1 && curl -fsS http://localhost:3000 >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-curl -fsS http://127.0.0.1:8008/v1/health >/dev/null
-curl -fsS http://localhost:3000 >/dev/null
-supabase_container="$(docker ps --filter 'name=supabase_db_' --format '{{.ID}}' | head -n 1)"
-test -n "$supabase_container"
-supabase_network="$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$supabase_container")"
-test "$(docker network inspect "$supabase_network" --format '{{.Driver}}')" = "bridge"
-echo "[platinum-ci] supabase_bridge_ready=1 container=$supabase_container network=$supabase_network"
-echo "[platinum-ci] local_web_ready=1"` : ''}
 
 ${testCommand}
 `;

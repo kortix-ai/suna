@@ -80,6 +80,7 @@ Keep the test command unchanged. GitHub Actions invokes
   checkout into the base.
 - Pre-pull Supabase images during the stateful capture. Remove the temporary
   database before capture.
+- Ignore initial Supabase service health only until migrations create the schema.
 - Keep `/workspace/suna` warm. Fetch and force-checkout the requested SHA into
   it, then validate the lockfile with an offline install.
 - Request Platinum's `kernel_modules: container` template profile.

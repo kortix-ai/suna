@@ -28,8 +28,8 @@ afterEach(() => {
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v9-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v9-bbbbbbbbbbbbbbbb-base');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -47,7 +47,7 @@ describe('Platinum CI worker plan', () => {
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
     expect(JSON.stringify(spec.steps)).toContain('playwright install --with-deps chromium');
     expect(JSON.stringify(spec.steps)).toContain('git init /workspace/suna');
-    expect(spec.entrypoint).toContain('supabase start');
+    expect(spec.entrypoint).toContain('supabase start --ignore-health-check');
     expect(spec.entrypoint).toContain('supabase stop --no-backup');
     expect(spec.entrypoint).toContain('.kortix-ci-warm-ready');
     expect(spec.entrypoint).not.toMatch(/\$[A-Za-z_({!]/);
@@ -152,17 +152,17 @@ describe('Platinum CI worker plan', () => {
     expect(script).toContain('pnpm install --offline --frozen-lockfile');
     expect(script).not.toContain('rm -rf "$ROOT"');
     expect(script).toContain(`if [[ "$actual_sha" != '${sha}' ]]`);
-    expect(script).toContain('nohup pnpm dev');
+    expect(script).not.toContain('nohup pnpm dev');
     expect(script).toContain('modprobe "$module"');
     expect(script).toContain('container_modules_ready=1');
     expect(script).toContain('seq 1 180');
     expect(script).toContain('docker_bridge_ready=1');
-    expect(script).toContain('supabase_bridge_ready=1');
+    expect(script).not.toContain('supabase_bridge_ready=1');
     expect(script).toContain('tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results');
     expect(script).toContain('tests/test-results/platinum');
   });
 
-  test('does not start the web stack for the default core run', () => {
+  test('lets the root runner own the local stack for every mode', () => {
     const script = buildWorkerScript({
       repository: 'kortix-ai/suna',
       ref: sha,

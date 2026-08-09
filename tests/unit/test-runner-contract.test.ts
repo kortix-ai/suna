@@ -20,6 +20,12 @@ describe('local test runner contract', () => {
     expect(testsPackage.scripts.test).toContain('vitest run');
   });
 
+  it('starts a fresh Supabase stack before migrations without waiting on schema health', () => {
+    const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
+
+    expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
+  });
+
   it('snapshots fixture counts into results before teardown starts', () => {
     const runner = readFileSync(resolve(root, 'tests/src/core/runner.ts'), 'utf8');
     const fixtureSnapshot = runner.indexOf('fixtureStats: world.fixtureStats()');

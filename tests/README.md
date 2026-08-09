@@ -57,13 +57,18 @@ commits reuse it.
 
 The worker fetches the requested ref into that warm checkout. It force-checks
 out the exact SHA and runs `pnpm install --offline --frozen-lockfile`. It starts
-dockerd against the captured image store. `pnpm dev` creates a fresh Supabase
-database from current migrations without registry pulls. Source changes do not
-require a template rebuild.
+dockerd against the captured image store. The root runner creates fresh
+Supabase containers, applies current migrations, and owns the API, gateway, and
+web processes. Source changes do not require a template rebuild.
 
 The base template requests Platinum's `kernel_modules: container` profile.
 The capture and worker load those modules before they start dockerd. This
 infrastructure does not change test logic.
+
+The capture and fresh local stack use Supabase's `--ignore-health-check` only
+before migrations. This prevents PostgREST from rejecting a new database before
+the `kortix` schema exists. The runner still requires migrations and service
+readiness before it starts flows.
 
 The worker logs whether Platinum used `via=restore` or `via=cold-boot`. It waits
 for the warm marker before it runs tests. It fetches the requested public Git

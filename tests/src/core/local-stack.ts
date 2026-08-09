@@ -127,7 +127,11 @@ export async function ensureLocalSupabase(
     if (!options.autoStart) throw error;
   }
 
-  const command = [...localSupabaseCommand(topology), "start"];
+  const command = [
+    ...localSupabaseCommand(topology),
+    "start",
+    "--ignore-health-check",
+  ];
   const started = Bun.spawn(command, {
     cwd: topology.root,
     stdin: "ignore",
