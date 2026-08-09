@@ -32,17 +32,21 @@ def not_actions(body: str) -> set[str]:
     return set(re.findall(r'"([^"]+)"', match.group(1)))
 
 
-def test_password_only_sessions_cannot_remove_mfa():
+def test_password_only_sessions_cannot_manage_mfa_devices():
     actions = not_actions(resource_body("mfa_required"))
-    unsafe = {"iam:DeactivateMFADevice", "iam:DeleteVirtualMFADevice"}
-    assert actions.isdisjoint(unsafe), f"non-MFA exemptions permit factor removal: {actions & unsafe}"
+    unsafe = {
+        "iam:CreateVirtualMFADevice",
+        "iam:DeleteVirtualMFADevice",
+        "iam:EnableMFADevice",
+        "iam:DeactivateMFADevice",
+        "iam:ResyncMFADevice",
+    }
+    assert actions.isdisjoint(unsafe), f"non-MFA exemptions permit factor management: {actions & unsafe}"
 
 
-def test_first_enrollment_remains_available():
+def test_non_mfa_session_can_discover_devices_and_request_session_token():
     actions = not_actions(resource_body("mfa_required"))
     required = {
-        "iam:CreateVirtualMFADevice",
-        "iam:EnableMFADevice",
         "iam:ListMFADevices",
         "iam:ListVirtualMFADevices",
         "sts:GetSessionToken",

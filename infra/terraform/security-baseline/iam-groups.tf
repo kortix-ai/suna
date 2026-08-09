@@ -69,9 +69,11 @@ resource "aws_iam_policy" "mfa_self_manage" {
 # (e.g. `ino` today) can still act on every permitted resource, which is what
 # the resource-level failure flagged.
 #
-# Standard AWS MFA-enforcement pattern: Effect = Deny, NotAction = the MFA +
-# password + GetSessionToken first-enrollment surface (so a user without MFA
-# can enroll their first device and mint an MFA-authenticated session), Condition
+# MFA enforcement uses Effect = Deny and limits NotAction to read-only MFA
+# discovery, password management, and GetSessionToken. MFA device lifecycle
+# actions require an MFA-authenticated session or administrator recovery.
+# This prevents a password-only session from adding a second attacker-controlled
+# factor to a user who already has MFA. The condition is
 # BoolIfExists { aws:MultiFactorAuthPresent = false }. BoolIfExists (not Bool)
 # is deliberate: an unauthenticated STS GetSessionToken call carries no MFA
 # context at all, and BoolIfExists treats a missing key the same as false, so
@@ -100,9 +102,6 @@ resource "aws_iam_policy" "mfa_required" {
         Sid    = "DenyAllWithoutMFA"
         Effect = "Deny"
         NotAction = [
-          "iam:CreateVirtualMFADevice",
-          "iam:EnableMFADevice",
-          "iam:ResyncMFADevice",
           "iam:ListMFADevices",
           "iam:ListVirtualMFADevices",
           "iam:ChangePassword",
@@ -198,11 +197,10 @@ locals {
     # self-scoped policy keeps DCF-776 satisfied with no member named in TF.
     # See aws_iam_policy.mfa_self_manage above.
     mfa-self-manage = {
-      # Self-service MFA enrollment (Allow side) + MFA enforcement (Deny side).
-      # mfa_self_manage lets a member enroll their own MFA device + manage their
-      # login profile; mfa_required DENIES every other action until they do
-      # (DCF-67). Device removal also requires an MFA-authenticated session, so
-      # password-only sessions cannot replace an enrolled factor.
+      # Self-service MFA management (Allow side) + MFA enforcement (Deny side).
+      # mfa_required gates every MFA device lifecycle action behind an
+      # MFA-authenticated session. First enrollment and lost-device recovery
+      # therefore require an administrator instead of trusting one password.
       policies = [
         aws_iam_policy.mfa_self_manage.arn,
         aws_iam_policy.mfa_required.arn
