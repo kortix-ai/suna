@@ -1,24 +1,19 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+/**
+ * `NotificationToggle` — one labeled switch row. This file used to also
+ * export a full `NotificationsTab` (the enable-notifications switch plus the
+ * per-event toggle groups) that backed the legacy user-settings modal.
+ * Task 10 deleted that modal; `NotificationsTab` lost its only
+ * consumer and was removed with it — same treatment as `AppearanceTab` in
+ * `appearance-tab.tsx`, see that file's header for the reasoning this
+ * mirrors. This file survives because `NotificationToggle` still has a real,
+ * live consumer: `features/workspace/settings/tabs/preferences-tab.tsx`.
+ */
+
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
-import { useWebNotificationStore } from '@/stores/web-notification-store';
-import {
-  BellIcon as BellSolid,
-  CheckCircleIcon as CheckCircleSolid,
-  WarningIcon as DangerTriangleSolid,
-  EyeSlashIcon as EyeOffSolid,
-  QuestionIcon as QuestionCircleSolid,
-  ShieldCheckIcon as ShieldCheckSolid,
-  SpeakerHighIcon as Volume2,
-  type Icon as IconType,
-  type Icon as LucideIcon,
-  type Icon as MynaIcon,
-} from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
-import { useEffect } from 'react';
+import { type Icon as IconType, type Icon as LucideIcon, type Icon as MynaIcon } from '@phosphor-icons/react';
 
 interface NotificationToggleProps {
   icon: LucideIcon | MynaIcon | IconType;
@@ -29,9 +24,7 @@ interface NotificationToggleProps {
   disabled?: boolean;
   /**
    * Prefixes the generated `id`/`htmlFor` pair. Defaults to `''` — this
-   * component's original behavior, `id={label}` — so `NotificationsTab`
-   * below (which still backs the live legacy `SidePanelUserSettings`) is
-   * byte-identical to before this prop was added. `features/workspace/
+   * component's original behavior, `id={label}`. `features/workspace/
    * settings/tabs/preferences-tab.tsx` passes `pref-notif-` so its copy of
    * this row can mount in the same document as this one (both are reachable
    * from the same account, e.g. one open in a background tab) without two
@@ -71,151 +64,3 @@ export function NotificationToggle({
   );
 }
 
-export function NotificationsTab() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const permission = useWebNotificationStore((s) => s.permission);
-  const preferences = useWebNotificationStore((s) => s.preferences);
-  const toggleEnabled = useWebNotificationStore((s) => s.toggleEnabled);
-  const setPreference = useWebNotificationStore((s) => s.setPreference);
-  const syncPermission = useWebNotificationStore((s) => s.syncPermission);
-
-  useEffect(() => {
-    syncPermission();
-  }, [syncPermission]);
-
-  const supported = isNotificationSupported();
-
-  const handleTestNotification = () => {
-    sendWebNotification(
-      {
-        type: 'completion',
-        title: 'Test Notification',
-        body: 'Notifications are working correctly!',
-        tag: 'test',
-      },
-      true,
-    );
-  };
-
-  return (
-    <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
-      {!supported ? (
-        <div className="rounded-lg border p-4">
-          <p className="text-muted-foreground text-sm">
-            {tHardcodedUi.raw(
-              'componentsSettingsUserSettingsModal.line1082JsxTextYourBrowserDoesNotSupportNotifications',
-            )}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="rounded-lg border">
-            <NotificationToggle
-              icon={BellSolid}
-              label={tHardcodedUi.raw(
-                'componentsSettingsUserSettingsModal.line1091JsxAttrLabelEnableNotifications',
-              )}
-              description={
-                permission === 'granted'
-                  ? 'Browser permission granted'
-                  : permission === 'denied'
-                    ? 'Blocked by browser — update in browser site settings'
-                    : 'Will request browser permission when enabled'
-              }
-              enabled={preferences.enabled}
-              onToggle={() => toggleEnabled()}
-            />
-          </div>
-
-          {preferences.enabled && (
-            <>
-              <div className="flex flex-col space-y-3">
-                <label className="text-muted-foreground text-sm font-medium">
-                  {tHardcodedUi.raw(
-                    'componentsSettingsUserSettingsModal.line1108JsxTextNotificationTypes',
-                  )}
-                </label>
-                <div className="divide-y rounded-lg border">
-                  <NotificationToggle
-                    icon={CheckCircleSolid}
-                    label={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1112JsxAttrLabelTaskCompletions',
-                    )}
-                    description={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1113JsxAttrDescriptionWhenASessionFinishesItsTask',
-                    )}
-                    enabled={preferences.onCompletion}
-                    onToggle={(v) => setPreference('onCompletion', v)}
-                  />
-                  <NotificationToggle
-                    icon={DangerTriangleSolid}
-                    label="Errors"
-                    description={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1120JsxAttrDescriptionWhenASessionEncountersAnError',
-                    )}
-                    enabled={preferences.onError}
-                    onToggle={(v) => setPreference('onError', v)}
-                  />
-                  <NotificationToggle
-                    icon={QuestionCircleSolid}
-                    label="Questions"
-                    description={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1127JsxAttrDescriptionWhenKortixNeedsYourInputToContinue',
-                    )}
-                    enabled={preferences.onQuestion}
-                    onToggle={(v) => setPreference('onQuestion', v)}
-                  />
-                  <NotificationToggle
-                    icon={ShieldCheckSolid}
-                    label={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1133JsxAttrLabelPermissionRequests',
-                    )}
-                    description={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1134JsxAttrDescriptionWhenKortixNeedsPermissionToUseATool',
-                    )}
-                    enabled={preferences.onPermission}
-                    onToggle={(v) => setPreference('onPermission', v)}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col space-y-3">
-                <label className="text-muted-foreground text-sm font-medium">Behavior</label>
-                <div className="divide-y rounded-lg border">
-                  <NotificationToggle
-                    icon={EyeOffSolid}
-                    label={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1147JsxAttrLabelOnlyWhenTabIsHidden',
-                    )}
-                    description={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1148JsxAttrDescriptionOnlyNotifyWhenYouReOnAnotherTab',
-                    )}
-                    enabled={preferences.onlyWhenHidden}
-                    onToggle={(v) => setPreference('onlyWhenHidden', v)}
-                  />
-                  <NotificationToggle
-                    icon={Volume2}
-                    label={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1154JsxAttrLabelNotificationSound',
-                    )}
-                    description={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1155JsxAttrDescriptionPlayASoundWhenANotificationIsSent',
-                    )}
-                    enabled={preferences.playSound}
-                    onToggle={(v) => setPreference('playSound', v)}
-                  />
-                </div>
-              </div>
-
-              <Button onClick={handleTestNotification} variant="outline" size="sm">
-                {tHardcodedUi.raw(
-                  'componentsSettingsUserSettingsModal.line1164JsxTextSendTestNotification',
-                )}
-              </Button>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}

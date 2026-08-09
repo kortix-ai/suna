@@ -32,20 +32,19 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import { Monitor } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
+import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { isBillingEnabled } from '@/lib/config';
 import { openExternalRoute } from '@/lib/desktop';
-import { type SettingsTabId } from '@/lib/menu-registry';
 import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { resetClientState } from '@/lib/utils/reset-client-state';
-import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { listAccounts } from '@kortix/sdk';
 import {
   ArticleIcon,
@@ -146,8 +145,6 @@ export function UserMenu({
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const accountsQuery = useQuery({
@@ -182,11 +179,8 @@ export function UserMenu({
     requestAnimationFrame(() => fn());
   };
 
-  const openUserSettings = (tab: SettingsTabId) =>
-    deferAfterClose(() => {
-      setSettingsTab(tab);
-      setSettingsOpen(true);
-    });
+  const openUserSettings = (tab: SettingsTab) =>
+    deferAfterClose(() => useSettingsPanelStore.getState().openSettings(tab));
 
   const openLogoutConfirm = () => deferAfterClose(() => setLogoutConfirmOpen(true));
 
@@ -332,9 +326,7 @@ export function UserMenu({
         {isBillingEnabled() && canManageBilling && (
           <DropdownMenuItem
             onClick={() =>
-              deferAfterClose(() =>
-                useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
-              )
+              deferAfterClose(() => useSettingsPanelStore.getState().openSettings('billing'))
             }
             size="sm"
           >
@@ -419,11 +411,6 @@ export function UserMenu({
         dropdown
       )}
 
-      <SidePanelUserSettings
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        defaultTab={settingsTab}
-      />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
         <AlertDialogContent>

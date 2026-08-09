@@ -7,12 +7,13 @@
  *
  * Ported from `features/accounts/settings/general-tab.tsx` (avatar upload,
  * name save, account deletion) and `features/accounts/settings/
- * security-tab.tsx` (MFA factor list and TOTP enrollment — `FactorRow` and
- * `totpQrSrc` are reused directly from there; the surrounding query/mutation
- * plumbing is re-created here against the same `supabaseMFAService` calls,
- * since `SecurityTab` doesn't export a header-less body to mount as-is).
- * Both source files stay in place — they still back the legacy
- * `SidePanelUserSettings` surface until Task 10 retires it.
+ * security-tab.tsx` (MFA factor list and TOTP enrollment). Task 10 deleted
+ * `security-tab.tsx` and the legacy user-settings modal that consumed it: the MFA
+ * query/mutation orchestration that both files had duplicated now lives in
+ * `hooks/account/use-mfa.ts` (see that file's header for the before/after
+ * diff), and `FactorRow` / `totpQrSrc` — the pure view pieces `security-
+ * tab.tsx` exported — moved down into this file, since this is their only
+ * remaining consumer.
  *
  * No password-change control: `security-tab.tsx` only ever held MFA
  * enrollment, and no password surface exists anywhere in this codebase (see
@@ -26,11 +27,18 @@
  * the active one — so opening the panel never fires this tab's fetches.
  */
 
-import { PlusIcon as Plus, ShieldCheckIcon as ShieldCheck } from '@phosphor-icons/react';
+import {
+  KeyIcon as KeyRound,
+  PlusIcon as Plus,
+  ShieldCheckIcon as ShieldCheck,
+  DeviceMobileIcon as Smartphone,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -49,17 +57,64 @@ import {
   useDeleteAccountImmediately,
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
-import { FactorRow, totpQrSrc } from '@/features/accounts/settings/security-tab';
-import { invalidateTokenCache } from '@/lib/auth-token';
+import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
-import { supabaseMFAService } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
 
 const PROFILE_QUERY_KEY = ['account', 'profile'] as const;
-const MFA_FACTORS_QUERY_KEY = ['mfa-factors'] as const;
-const MFA_AAL_QUERY_KEY = ['mfa-aal'] as const;
+
+/** Supabase hands the TOTP QR back as an SVG data URL (or raw SVG in older
+ *  versions) — normalize both into something an <img> can render. Moved
+ *  here from `security-tab.tsx` (Task 10); this is its only consumer. */
+export function totpQrSrc(qr: string): string {
+  if (qr.startsWith('data:')) return qr;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(qr)}`;
+}
+
+/** One enrolled factor row — pure view, exported for render tests. Moved
+ *  here from `security-tab.tsx` (Task 10); this is its only consumer. */
+export function FactorRow({
+  factor,
+  onRemove,
+}: {
+  factor: { id: string; friendly_name?: string; factor_type?: string; status?: string };
+  onRemove: (id: string) => void;
+}) {
+  const Icon = factor.factor_type === 'phone' ? Smartphone : KeyRound;
+  return (
+    <div className="border-border/60 bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
+          <Icon className="text-muted-foreground size-4" />
+        </span>
+        <div className="min-w-0">
+          <div className="text-foreground truncate text-sm font-medium">
+            {factor.friendly_name ||
+              (factor.factor_type === 'phone' ? 'Phone' : 'Authenticator app')}
+          </div>
+          <div className="text-muted-foreground text-xs">
+            {factor.factor_type === 'phone' ? 'SMS' : 'Authenticator app (TOTP)'}
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Badge variant={factor.status === 'verified' ? 'kortix' : 'outline'} size="xs">
+          {factor.status}
+        </Badge>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Remove factor"
+          onClick={() => onRemove(factor.id)}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function getInitials(name: string): string {
   return (
@@ -73,12 +128,6 @@ function getInitials(name: string): string {
 }
 
 type DeletionType = 'grace-period' | 'immediate';
-
-export interface EnrollingFactor {
-  factorId: string;
-  qr: string;
-  secret?: string;
-}
 
 export interface ProfileTabViewProps {
   // Profile picture
@@ -671,69 +720,10 @@ export function ProfileTab() {
   };
 
   // --- Two-factor authentication --------------------------------------
-  const factorsQuery = useQuery({
-    queryKey: MFA_FACTORS_QUERY_KEY,
-    queryFn: () => supabaseMFAService.listFactors(),
-    staleTime: 10_000,
-  });
-  const aalQuery = useQuery({
-    queryKey: MFA_AAL_QUERY_KEY,
-    queryFn: () => supabaseMFAService.getAAL(),
-    staleTime: 10_000,
-  });
-
-  const [enrolling, setEnrolling] = useState<EnrollingFactor | null>(null);
-  const [enrollCode, setEnrollCode] = useState('');
-  const [removeFactorTarget, setRemoveFactorTarget] = useState<string | null>(null);
-
-  const startEnrollMutation = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await supabase.auth.mfa.enroll({
-        factorType: 'totp',
-        friendlyName: `Authenticator (${new Date().toISOString().slice(0, 10)})`,
-      });
-      if (error) throw new Error(error.message);
-      if (!data?.totp?.qr_code) throw new Error('Enrollment returned no QR code');
-      return { factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret };
-    },
-    onSuccess: (data) => {
-      setEnrolling(data);
-      setEnrollCode('');
-    },
-    onError: (error: Error) => errorToast(error.message || 'Could not start enrollment'),
-  });
-
-  const removeFactorMutation = useMutation({
-    mutationFn: (factorId: string) => supabaseMFAService.unenrollFactor(factorId),
-    onSuccess: () => {
-      successToast('Factor removed');
-      setRemoveFactorTarget(null);
-      queryClient.invalidateQueries({ queryKey: MFA_FACTORS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: MFA_AAL_QUERY_KEY });
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to remove factor'),
-  });
-
-  const verifyEnrollMutation = useMutation({
-    mutationFn: async () => {
-      if (!enrolling) throw new Error('No enrollment in progress');
-      await supabaseMFAService.challengeAndVerify({ factor_id: enrolling.factorId, code: enrollCode });
-    },
-    onSuccess: () => {
-      invalidateTokenCache();
-      successToast('Authenticator enrolled — this session is now MFA-verified');
-      setEnrolling(null);
-      setEnrollCode('');
-      queryClient.invalidateQueries();
-    },
-    onError: (error: Error) => errorToast(error.message || 'Code did not verify'),
-  });
-
-  const handleCancelEnroll = () => {
-    // Abandoning enrollment leaves an unverified factor behind — clean it up.
-    if (enrolling) removeFactorMutation.mutate(enrolling.factorId);
-    setEnrolling(null);
-  };
+  // See hooks/account/use-mfa.ts — the factors/aal queries and the enroll /
+  // verify / remove / cancel-enroll mutations live there now, shared with
+  // every other MFA-managing surface instead of re-implemented per tab.
+  const mfa = useMfa();
 
   // --- Delete account ---------------------------------------------------
   const { data: deletionStatus, isLoading: isCheckingDeletionStatus } = useAccountDeletionStatus();
@@ -805,22 +795,22 @@ export function ProfileTab() {
       isSavingName={saveNameMutation.isPending}
       onSaveName={() => saveNameMutation.mutate(nameDraft)}
       userEmail={profileQuery.data?.email ?? ''}
-      factors={factorsQuery.data?.factors ?? []}
-      factorsLoading={factorsQuery.isLoading}
-      sessionVerified={aalQuery.data?.current_level === 'aal2'}
-      removeFactorTarget={removeFactorTarget}
-      onRequestRemoveFactor={setRemoveFactorTarget}
-      onCancelRemoveFactor={() => setRemoveFactorTarget(null)}
-      onConfirmRemoveFactor={() => removeFactorTarget && removeFactorMutation.mutate(removeFactorTarget)}
-      isRemovingFactor={removeFactorMutation.isPending}
-      enrolling={enrolling}
-      enrollCode={enrollCode}
-      onEnrollCodeChange={setEnrollCode}
-      onStartEnroll={() => startEnrollMutation.mutate()}
-      isStartingEnroll={startEnrollMutation.isPending}
-      onVerifyEnroll={() => verifyEnrollMutation.mutate()}
-      isVerifyingEnroll={verifyEnrollMutation.isPending}
-      onCancelEnroll={handleCancelEnroll}
+      factors={mfa.factors}
+      factorsLoading={mfa.factorsLoading}
+      sessionVerified={mfa.sessionVerified}
+      removeFactorTarget={mfa.removeFactorTarget}
+      onRequestRemoveFactor={mfa.setRemoveFactorTarget}
+      onCancelRemoveFactor={() => mfa.setRemoveFactorTarget(null)}
+      onConfirmRemoveFactor={mfa.confirmRemoveFactor}
+      isRemovingFactor={mfa.isRemovingFactor}
+      enrolling={mfa.enrolling}
+      enrollCode={mfa.enrollCode}
+      onEnrollCodeChange={mfa.setEnrollCode}
+      onStartEnroll={mfa.startEnroll}
+      isStartingEnroll={mfa.isStartingEnroll}
+      onVerifyEnroll={mfa.verifyEnroll}
+      isVerifyingEnroll={mfa.isVerifyingEnroll}
+      onCancelEnroll={mfa.cancelEnroll}
       accountDeletionSupported={accountDeletionSupported}
       hasPendingDeletion={deletionStatus?.has_pending_deletion ?? false}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}

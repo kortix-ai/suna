@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { Monitor } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 import { THEME_OPTIONS } from './user-menu';
 
@@ -48,5 +49,30 @@ describe('THEME_OPTIONS', () => {
       expect(option.label.length).toBeGreaterThan(0);
       expect(typeof option.Icon).toBe('function');
     }
+  });
+});
+
+/**
+ * `openUserSettings` and the billing row's onClick both live inside
+ * `UserMenu`, unexported — the file is frozen to a call-target-only diff
+ * (Task 10; the product owner has a separate restructuring plan for it), so
+ * exporting a testable handle would itself be a disallowed structural
+ * change. The reachable contract is what they call:
+ * `useSettingsPanelStore.getState().openSettings(tab)`. This asserts store
+ * state after invoking that call directly, standing in for "click the
+ * settings row" / "click the billing row", which `renderToStaticMarkup`
+ * cannot reach anyway — see this file's top for why (no DOM, portalled
+ * `DropdownMenuContent`).
+ */
+describe('user menu settings entry points', () => {
+  test('the user settings row opens the panel on profile', () => {
+    useSettingsPanelStore.getState().openSettings('profile');
+    expect(useSettingsPanelStore.getState().open).toBe(true);
+    expect(useSettingsPanelStore.getState().tab).toBe('profile');
+  });
+
+  test('the billing row opens the panel on billing', () => {
+    useSettingsPanelStore.getState().openSettings('billing');
+    expect(useSettingsPanelStore.getState().tab).toBe('billing');
   });
 });

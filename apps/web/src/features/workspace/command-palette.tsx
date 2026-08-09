@@ -32,7 +32,11 @@ import {
   sessionLastActivityAt,
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
-import { resolveSettingsOverlayHref } from '@/features/workspace/settings/settings-tabs';
+import {
+  DEFAULT_SETTINGS_TAB,
+  resolveSettingsOverlayHref,
+  type SettingsTab,
+} from '@/features/workspace/settings/settings-tabs';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
@@ -78,7 +82,6 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Kbd } from '@/components/ui/kbd';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import { useWorkspaceSearch } from '@/features/files';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { DiffDialog } from '@/features/session/diff-dialog';
@@ -147,6 +150,32 @@ const LEGACY_PALETTE_HIDDEN = new Set([
   'restart-full',
   'ssh-quick',
 ]);
+
+/**
+ * Legacy `SettingsTabId` (menu-registry's vocabulary) -> new `SettingsTab`
+ * (settings-tabs.ts), for the command-palette items whose `kind` is
+ * `'settings'`. Task 10 retired the legacy user-settings modal these items
+ * used to open directly, in favor of `useSettingsPanelStore` — the same
+ * overlay the `'navigate'` branch below already opens via
+ * `resolveSettingsOverlayHref`.
+ *
+ * `tokens` -> `api-keys` and `transactions` -> `usage` mirror
+ * `RENAMED_TABS` in `settings-tabs.ts` (same rename, same source
+ * vocabulary). `appearance` and `sounds` merged into the new `preferences`
+ * tab — `tabs/preferences-tab.tsx` already hosts both (wallpaper/theme and
+ * sound-pack controls). `shortcuts` and `referrals` have no new-panel home
+ * yet (`settings-panel.tsx`'s header: phases 2-4 build the remaining
+ * account-scoped tabs) — falling through to `DEFAULT_SETTINGS_TAB` still
+ * opens the overlay, rather than a Cmd+K selection silently doing nothing.
+ */
+const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
+  general: 'general',
+  billing: 'billing',
+  tokens: 'api-keys',
+  transactions: 'usage',
+  appearance: 'preferences',
+  sounds: 'preferences',
+};
 
 const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   'nav-projects': 'projects',
@@ -363,8 +392,6 @@ export function CommandPalette() {
   const [compactOpen, setCompactOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [backScale, setBackScale] = useState(false);
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1055,8 +1082,7 @@ export function CommandPalette() {
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {
       close();
-      setSettingsTab(tab);
-      setSettingsOpen(true);
+      useSettingsPanelStore.getState().openSettings(LEGACY_SETTINGS_TAB_MAP[tab] ?? DEFAULT_SETTINGS_TAB);
     },
     [close],
   );
@@ -2060,12 +2086,6 @@ export function CommandPalette() {
           />
         </>
       )}
-
-      <SidePanelUserSettings
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        defaultTab={settingsTab}
-      />
 
       <AlertDialog open={logoutConfirmOpen} onOpenChange={handleOverlayClose(setLogoutConfirmOpen)}>
         <AlertDialogContent>

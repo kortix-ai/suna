@@ -10,9 +10,12 @@
  * menu's theme submenu can never drift apart — see that file's comment next
  * to the export. `user-menu.tsx` itself is untouched by this task.
  *
- * Ported from five `features/accounts/settings/*.tsx` files, which still
- * back the legacy `SidePanelUserSettings` surface until a later task retires
- * it:
+ * Ported from five `features/accounts/settings/*.tsx` files. Task 10 deleted
+ * their legacy modal consumer; `appearance-tab.tsx` and `notifications-tab.tsx`
+ * survive as the home for `WallpaperCard` / `NotificationToggle` (their
+ * full-page `AppearanceTab` / `NotificationsTab` components, which had no
+ * remaining consumer once the modal was deleted, were removed — see that
+ * task's report):
  * - `appearance-tab.tsx` — theme + wallpaper. `WallpaperCard` is exported
  *   from there and reused directly here (only the `export` keyword changed
  *   on that file); this tab does NOT carry the Session-panel or Layout
@@ -20,8 +23,8 @@
  *   not user preferences, and have no home in this task's six-section list.
  * - `notifications-tab.tsx` — `NotificationToggle` is exported from there and
  *   reused directly here (same treatment as `WallpaperCard` above; only the
- *   `export` keyword and an `idPrefix` prop were added, both no-ops for
- *   `NotificationsTab` itself — see that file's comment on the prop).
+ *   `export` keyword and an `idPrefix` prop were added, both no-ops for the
+ *   original component itself — see that file's comment on the prop).
  * - `sounds-tab.tsx`, `keyboard-shortcuts-tab.tsx`, `language-switcher.tsx`
  *   — no exported pieces worth reusing (each is a single self-contained
  *   component with no sub-parts split out), so their JSX bodies are
