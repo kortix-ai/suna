@@ -5,6 +5,7 @@ import {
   buildProvisionPayload,
   filterCreatableAccounts,
   isSubmittable,
+  resolveDefaultCreatableAccountId,
 } from './new-workspace-form';
 import type { KortixAccount } from '@kortix/sdk';
 
@@ -49,6 +50,69 @@ describe('filterCreatableAccounts', () => {
 
   test('one owner + one member account leaves exactly one creatable — AccountPicker (accounts.length < 2) renders nothing', () => {
     expect(filterCreatableAccounts([owner, member])).toHaveLength(1);
+  });
+});
+
+describe('resolveDefaultCreatableAccountId', () => {
+  const team: KortixAccount = {
+    account_id: 'a-team',
+    name: 'Acme',
+    account_role: 'owner',
+  };
+  const personal: KortixAccount = {
+    account_id: 'a-personal',
+    name: 'jay@kortix.ai',
+    slug: 'jay',
+    account_role: 'owner',
+    is_primary_owner: true,
+  };
+
+  test('returns null when there are no creatable accounts', () => {
+    expect(resolveDefaultCreatableAccountId([], 'jay@kortix.ai')).toBeNull();
+  });
+
+  test('prefers the account whose name matches the signed-in email (case-insensitive)', () => {
+    expect(resolveDefaultCreatableAccountId([team, personal], 'Jay@Kortix.ai')).toBe(
+      'a-personal',
+    );
+  });
+
+  test('falls back to slug match against the email or its local-part', () => {
+    const bySlug: KortixAccount = {
+      account_id: 'a-slug',
+      name: 'Personal',
+      slug: 'jay@kortix.ai',
+      account_role: 'owner',
+    };
+    expect(resolveDefaultCreatableAccountId([team, bySlug], 'jay@kortix.ai')).toBe('a-slug');
+
+    const byLocal: KortixAccount = {
+      account_id: 'a-local',
+      name: 'Personal',
+      slug: 'jay',
+      account_role: 'admin',
+    };
+    expect(resolveDefaultCreatableAccountId([team, byLocal], 'jay@kortix.ai')).toBe('a-local');
+  });
+
+  test('falls back to is_primary_owner when nothing matches the email', () => {
+    const primary: KortixAccount = {
+      account_id: 'a-primary',
+      name: 'Me',
+      account_role: 'owner',
+      is_primary_owner: true,
+    };
+    expect(resolveDefaultCreatableAccountId([team, primary], 'other@kortix.ai')).toBe(
+      'a-primary',
+    );
+  });
+
+  test('falls back to the first creatable account when nothing else matches', () => {
+    expect(resolveDefaultCreatableAccountId([team, admin], null)).toBe('a-team');
+  });
+
+  test('returns the sole creatable account even with no email', () => {
+    expect(resolveDefaultCreatableAccountId([personal], null)).toBe('a-personal');
   });
 });
 

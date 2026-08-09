@@ -68,18 +68,19 @@ describe('/new page: no invented constraints', () => {
 });
 
 describe('/new page: escape hatch for a user with zero workspaces', () => {
-  test('shows the signed-in email next to a Log out control, unconditionally rendered', () => {
-    expect(code).toContain('user?.email');
+  test('shows the create-into AccountPicker (email fallback) next to a Log out control, unconditionally rendered', () => {
+    expect(code).toContain('<AccountPicker');
+    expect(code).toContain('fallbackLabel={user?.email}');
     expect(code).toContain('Log out');
     expect(code).toContain('signOut()');
 
     // Rendered ahead of the <form>, not gated behind form state — a user
     // blocked by an invalid/incomplete form must still be able to leave.
     const formIndex = code.indexOf('<form');
-    const emailIndex = code.indexOf('user?.email');
+    const pickerIndex = code.indexOf('<AccountPicker');
     expect(formIndex).toBeGreaterThan(0);
-    expect(emailIndex).toBeGreaterThan(0);
-    expect(emailIndex).toBeLessThan(formIndex);
+    expect(pickerIndex).toBeGreaterThan(0);
+    expect(pickerIndex).toBeLessThan(formIndex);
   });
 });
 
@@ -87,6 +88,7 @@ describe('/new page: uses the shared form model, not local rules', () => {
   test('imports and calls the shared validator and submittability check', () => {
     expect(code).toContain('isSubmittable');
     expect(code).toContain('validateWorkspaceName');
+    expect(code).toContain('resolveDefaultCreatableAccountId');
     expect(code).toContain("from '@/features/workspace/new/new-workspace-form'");
     expect(code).toContain("from '@/features/workspace/new/workspace-name'");
   });
@@ -95,7 +97,7 @@ describe('/new page: uses the shared form model, not local rules', () => {
     // Job 2's whole point: the Task-11 placeholder `isSubmittable(state, 1)`
     // is gone, replaced by the real query-derived count plus an explicit
     // loading gate — not just `isSubmittable`'s own internal floor.
-    expect(code).toContain('isSubmittable(state, creatableAccounts.length)');
+    expect(code).toContain('isSubmittable(effectiveState, creatableAccounts.length)');
     expect(code).not.toContain('isSubmittable(state, 1)');
     // Fix round 1 regression pin: the RAW (unfiltered) account count must
     // never drive the gate — an account the user cannot create in would then
@@ -150,10 +152,10 @@ describe('/new page: ProjectIconField wiring', () => {
 
 
 /**
- * The form's field group: the outermost `<div>` that holds the icon, the name
- * and the account together. Found by content rather than by class so the
- * group's cosmetic spacing can change without breaking every assertion about
- * its structure.
+ * The form's field group: the outermost `<div>` that holds the icon and the
+ * name together. Found by content rather than by class so the group's cosmetic
+ * spacing can change without breaking every assertion about its structure.
+ * Account picking lives in the top bar, not here.
  */
 function findFieldGroup(source: string): number {
   const iconAt = source.indexOf('<ProjectIconField');
@@ -161,7 +163,7 @@ function findFieldGroup(source: string): number {
   let from = source.lastIndexOf('<div', iconAt);
   while (from > 0) {
     const element = elementText(source, 'div', from);
-    if (element.includes('<ProjectIconField') && element.includes('<AccountPicker')) return from;
+    if (element.includes('<ProjectIconField') && element.includes('<Input')) return from;
     from = source.lastIndexOf('<div', from - 1);
   }
   return -1;
@@ -237,19 +239,20 @@ describe('/new page: layout shape (design is a release gate here)', () => {
     expect(code).not.toContain('{showIcon ? <AdvancedFields');
   });
 
-  test('icon, name and account sit in one field group; submit is a sibling below it', () => {
+  test('icon and name sit in one field group; submit is a sibling below it', () => {
     // Located structurally, not by its spacing class: the wrapper's
     // `space-y-*` is cosmetic and has been retuned twice, and a test that fails
     // on a spacing tweak is one people learn to edit rather than read. The group
-    // is defined by what it CONTAINS — the icon, the name and the account —
-    // which is the property these assertions are actually about.
+    // is defined by what it CONTAINS — the icon and the name — which is the
+    // property these assertions are actually about. Account picking moved to
+    // the top bar.
     const groupStart = findFieldGroup(code);
     expect(groupStart).toBeGreaterThan(0);
     const group = elementText(code, 'div', groupStart);
 
     expect(group).toContain('<ProjectIconField');
     expect(group).toContain('<Input');
-    expect(group).toContain('<AccountPicker');
+    expect(group).not.toContain('<AccountPicker');
     // Not "one panel with a footer" — the submit control is not a descendant.
     expect(group).not.toContain('type="submit"');
 
@@ -262,32 +265,28 @@ describe('/new page: layout shape (design is a release gate here)', () => {
 });
 
 describe('/new page: AccountPicker wiring', () => {
-  test('renders AccountPicker in the field group, wired to the CREATABLE accounts list and state.accountId', () => {
-    // Located structurally, not by its spacing class: the wrapper's
-    // `space-y-*` is cosmetic and has been retuned twice, and a test that fails
-    // on a spacing tweak is one people learn to edit rather than read. The group
-    // is defined by what it CONTAINS — the icon, the name and the account —
-    // which is the property these assertions are actually about.
-    const groupStart = findFieldGroup(code);
-    expect(groupStart).toBeGreaterThan(0);
-    const card = elementText(code, 'div', groupStart);
-
-    // Paired presence check: it lives INSIDE the card, not bolted on beside
-    // it — same field-group treatment as the name field and Advanced.
-    expect(card).toContain('<AccountPicker');
-    const pickers = card.match(/<AccountPicker[\s\S]*?\/>/g) ?? [];
+  test('renders AccountPicker in the top bar, wired to the CREATABLE accounts list and state.accountId', () => {
+    const pickers = code.match(/<AccountPicker[\s\S]*?\/>/g) ?? [];
     expect(pickers).toHaveLength(1);
     const picker = pickers[0]!;
 
-    // Fix round 1: the picker must receive the FILTERED list, not the raw
-    // one — offering an account the user cannot create in is a choice that
-    // can only 403.
+    // Lives ahead of the form — top-bar escape / identity chrome, not a form
+    // field. Same filter + state wiring as before.
+    const formIndex = code.indexOf('<form');
+    const pickerIndex = code.indexOf('<AccountPicker');
+    expect(pickerIndex).toBeGreaterThan(0);
+    expect(pickerIndex).toBeLessThan(formIndex);
+
     expect(picker).toContain('accounts={creatableAccounts}');
     expect(picker).not.toContain('accounts={accounts}');
-    expect(picker).toContain('value={state.accountId}');
+    // Effective id = explicit pick OR email-matched / primary default.
+    expect(picker).toContain('value={effectiveAccountId}');
     expect(picker).toContain(
       "onChange={(accountId) => setState((s) => ({ ...s, accountId }))}",
     );
+    expect(picker).toContain('fallbackLabel={user?.email}');
+    expect(code).toContain('resolveDefaultCreatableAccountId(creatableAccounts, user?.email)');
+    expect(code).toContain('void create(effectiveState)');
   });
 
   test('imports AccountPicker from its own module, not re-implemented inline', () => {
@@ -301,10 +300,9 @@ describe('/new page: AccountPicker wiring', () => {
     // two different lists (e.g. a second, slightly different filter for one
     // of the two call sites).
     const creatableRefs = code.match(/creatableAccounts/g) ?? [];
-    // Declaration + AccountPicker's `accounts={creatableAccounts}` +
-    // isSubmittable's `creatableAccounts.length` + the zero-state note's
-    // `creatableAccounts.length === 0` guard = 4 occurrences.
-    expect(creatableRefs).toHaveLength(4);
+    // Declaration + default resolver + AccountPicker accounts= +
+    // isSubmittable length + zero-state note length === 0 = 5.
+    expect(creatableRefs).toHaveLength(5);
   });
 });
 

@@ -23,6 +23,7 @@ import {
   INITIAL_FORM_STATE,
   filterCreatableAccounts,
   isSubmittable,
+  resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { ProvisionProgress } from '@/features/workspace/new/provision-progress';
@@ -119,8 +120,9 @@ const ICON_WIDTH = '2.5rem';
  * charset/length check and the submit gate come from the shared form model.
  *
  * `/new` is also where `/projects` sends an account with zero workspaces
- * (Task 8), so a user must never be trapped here — the signed-in email and a
- * `Log out` control sit top-right, independent of the form below.
+ * (Task 8), so a user must never be trapped here — the create-into account
+ * picker (or email fallback) sits top-left and a `Log out` control sits
+ * top-right, independent of the form below.
  */
 export function NewWorkspacePage() {
   const { user, signOut } = useAuth();
@@ -172,6 +174,18 @@ export function NewWorkspacePage() {
   // the user can pick" and "what gates submit" disagree.
   const creatableAccounts = filterCreatableAccounts(accounts);
 
+  // Pre-select the personal / email-matching account when the user has not
+  // picked yet. Derived, not Effect-written — this page forbids useEffect
+  // (no eager side effects on mount). `isSubmittable` and submit both read
+  // the effective id so multi-account users are not blocked on "Choose an
+  // account" when a clear default exists.
+  const defaultAccountId = resolveDefaultCreatableAccountId(creatableAccounts, user?.email);
+  const effectiveAccountId = state.accountId ?? defaultAccountId;
+  const effectiveState: NewWorkspaceFormState = {
+    ...state,
+    accountId: effectiveAccountId,
+  };
+
   // `accountsQuery.isLoading` is checked here AS WELL AS inside
   // `isSubmittable`'s own `accountCount < 1` floor. Belt and braces on
   // purpose, not redundant: during the loading window `creatableAccounts` is
@@ -193,7 +207,7 @@ export function NewWorkspacePage() {
   // it. `AdvancedFields` explains this inline and links to the real GitHub
   // connect flow instead of shipping a form that would 400.
   const canSubmit =
-    isSubmittable(state, creatableAccounts.length) &&
+    isSubmittable(effectiveState, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
     state.source === 'managed' &&
     !submitting;
@@ -202,22 +216,32 @@ export function NewWorkspacePage() {
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
       {/* No `relative` on <main> on purpose: with no positioned ancestor in
           this tree, `absolute` resolves against the initial containing block —
-          the true top-right of the page — rather than the right edge of the
-          centered max-w-md column. Sits ahead of the <form> so it renders and
-          stays reachable regardless of form state. */}
-      <div className="absolute top-4 right-6 flex items-center gap-3">
-        <span className="text-muted-foreground max-w-40 truncate text-xs">{user?.email}</span>
+          the true viewport edges — rather than the right edge of the centered
+          max-w-md column. `inset-x-0` + padding (not `w-full` + `right-*`) so
+          the row spans the viewport without overflowing left. Sits ahead of
+          the <form> so it stays reachable regardless of form state. */}
+      <div className="absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
+        {/* Create-into account lives here — not in the form body. One account
+            collapses to muted identity text (email when none); two or more
+            opens the Select on click. */}
+        <AccountPicker
+          accounts={creatableAccounts}
+          value={effectiveAccountId}
+          onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
+          fallbackLabel={user?.email}
+          className="min-w-0"
+        />
         {/* `text-muted-foreground hover:text-foreground` (not the bare `ghost`
             default) so this reads as one quiet secondary row at rest, same
             treatment as `(auth)/auth/phone-verification/page.tsx:223-227` —
             otherwise it sits at full-contrast `text-foreground` beside the
-            email's dim `text-xs text-muted-foreground` and reads louder than
-            the page's actual primary action. */}
+            identity's dim muted text and reads louder than the page's actual
+            primary action. */}
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground shrink-0"
           onClick={() => void signOut()}
         >
           Log out
@@ -272,7 +296,7 @@ export function NewWorkspacePage() {
                   event.preventDefault();
                   setTouched(true);
                   if (!canSubmit) return;
-                  void create(state);
+                  void create(effectiveState);
                 }}
               >
                 {state.templateId && (
@@ -324,7 +348,12 @@ export function NewWorkspacePage() {
                       keystroke and make the reveal start from a ledge. The
                       spacing lives INSIDE the collapsing box as `pr-3`, which
                       border-box sizing clamps to nothing at `width: 0`. */}
-                  <div className="grid grid-cols-[auto_1fr] items-end">
+                  <div
+                    className={cn(
+                      'grid grid-cols-[auto_1fr] items-end',
+                      state.icon && 'gap-1.5',
+                    )}
+                  >
                     <m.div
                       // ONE element, always mounted, retargeting its width —
                       // NOT an AnimatePresence enter/exit. Mount/unmount
@@ -409,11 +438,6 @@ export function NewWorkspacePage() {
                     </p>
                   ) : null}
 
-                  <AccountPicker
-                    accounts={creatableAccounts}
-                    value={state.accountId}
-                    onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
-                  />
                   {/* `isSubmittable`'s `accountCount < 1` floor already disables
                       the button here — this note is what stops that disabled
                       button from being unexplained. Gated on
@@ -422,14 +446,14 @@ export function NewWorkspacePage() {
                       every user regardless of their real access. Plain muted
                       text in the field group's own flow, same treatment as
                       `AdvancedFields`' GitHub-source note — no `InfoBanner`, no
-                      second card. */}
+                      second card. Account picking itself lives in the top bar. */}
                   {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
                     <p className="text-muted-foreground text-xs">
                       You need owner or admin access in an account to create a workspace.
                     </p>
                   ) : null}
 
- <AdvancedFields state={state} onChange={setState} /> 
+                  <AdvancedFields state={state} onChange={setState} />
                 </div>
 
                 <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">

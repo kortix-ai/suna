@@ -301,7 +301,7 @@ export function ProjectIconField({
                   <EntityAvatar
                     label={fallbackLabel}
                     size="md"
-                    className="size-full rounded-md text-xl"
+                    className="size-full rounded-md text-lg"
                   />
                 ) : (
                   <SmileyIcon className="text-muted-foreground size-4" />

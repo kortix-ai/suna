@@ -113,11 +113,6 @@ export function AdvancedFields({
             ))}
           </SelectContent>
         </Select>
-        {/* No per-source description. Every option but "Kortix managed" is
-              disabled, so a paragraph explaining the one selectable choice was
-              restating the label underneath itself. `GitHubSourceNote` still
-              fires for the disabled sources, where there IS something the label
-              cannot say. */}
         {state.source !== 'managed' ? <GitHubSourceNote accountId={state.accountId} /> : null}
       </div>
 

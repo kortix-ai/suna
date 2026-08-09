@@ -8,6 +8,7 @@ import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-
 import {
   buildProvisionPayload,
   filterCreatableAccounts,
+  resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { onboardingPath } from '@/features/workspace/new/onboarding-param';
@@ -84,8 +85,9 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
  * the server and 403 "Owner or admin role required" — precisely the failure
  * the picker's owner/admin filter (Task 12) exists to prevent, reopened
  * through the server's default path. So the fallback is
- * `creatableAccounts[0]?.account_id`, matched to the SAME filtered list the
- * picker itself renders from — never the raw, unfiltered account list.
+ * `resolveDefaultCreatableAccountId` (email match → primary owner → first
+ * creatable) against the SAME filtered list the picker itself renders from —
+ * never the raw, unfiltered account list.
  *
  * Extracted out of `buildCreatePayload` (below) as its own function so the
  * account a create actually targets is resolved in exactly one place.
@@ -93,8 +95,13 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
 export function resolveTargetAccountId(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
+  email?: string | null,
 ): string | undefined {
-  return state.accountId ?? creatableAccounts[0]?.account_id;
+  return (
+    state.accountId ??
+    resolveDefaultCreatableAccountId(creatableAccounts, email) ??
+    undefined
+  );
 }
 
 /** The exact `POST /projects/provision` request body for one create attempt. */

@@ -1,29 +1,18 @@
 'use client';
 
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import type { KortixAccount } from '@kortix/sdk';
 
 /**
  * Which account owns the new workspace.
  *
- * Renders NOTHING for a user with one account. A select with a single option
- * is a decision the user cannot make — it costs a row of vertical space and a
- * beat of "wait, is this important?" to say nothing. The overwhelming
- * majority of users have one account, so the plain page must actually be
- * plain.
- *
- * Rendered as a third field inside the page's existing `bg-popover rounded-md
- * border` card (`new-workspace-page.tsx`) — same `flex flex-col gap-1.5`
- * field-group shape and `Label` treatment as the name field and the Advanced
- * disclosure beside it. Never a second card: `card.tsx:35` — `<Card>` is a
- * transparent, borderless grid system, not a bordered panel, and Task 11 next
- * to this one already had to fix a card-inside-a-card.
- *
- * `EntityAvatar` at `size="sm"` — the same size `workspace-menu-section.tsx` uses
- * for its own account/workspace rows, so the two surfaces share one tile
- * scale, and it sits correctly beside this default `h-9` `SelectTrigger`.
+ * Lives in the `/new` top bar — a quiet clickable identity row, not a labeled
+ * form field. One account is not a decision: the trigger collapses to static
+ * muted text (or `null` when there is nothing to show). Two or more opens a
+ * Select on click, same interaction shape as `AccountSwitcher` in the app
+ * header, toned down to match the bar's secondary chrome.
  *
  * Takes `accounts` as-is and offers every one of them — it does NOT filter by
  * role. The caller (`new-workspace-page.tsx`) is responsible for passing only
@@ -35,40 +24,61 @@ export function AccountPicker({
   accounts,
   value,
   onChange,
+  fallbackLabel,
+  className,
 }: {
   accounts: KortixAccount[];
   value: string | null;
   onChange: (accountId: string) => void;
+  /** Shown when there is no selected/sole account (typically the signed-in email). */
+  fallbackLabel?: string | null;
+  className?: string;
 }) {
-  if (accounts.length < 2) return null;
+  const selectedByValue = accounts.find((account) => account.account_id === value) ?? null;
+  // One account is not a pick — show it as identity. Two or more: only paint
+  // a name once the user (or an explicit value) has actually chosen.
+  const identityAccount = selectedByValue ?? (accounts.length === 1 ? accounts[0]! : null);
+  const label = identityAccount?.name || fallbackLabel || null;
 
-  const selected = accounts.find((account) => account.account_id === value) ?? null;
+  if (accounts.length < 2) {
+    if (!label) return null;
+    return (
+      <span className={cn('text-muted-foreground min-w-0 truncate text-sm', className)}>
+        {label}
+      </span>
+    );
+  }
 
   return (
-    <div className="flex flex-col space-y-3">
-      <Label htmlFor="workspace-account">Account</Label>
-      <Select value={value ?? undefined} onValueChange={onChange}>
-        <SelectTrigger id="workspace-account" className="w-full" size="md">
-          {selected ? (
+    <Select value={value ?? undefined} onValueChange={onChange}>
+      <SelectTrigger
+        id="workspace-account"
+        variant="transparent"
+        size="sm"
+        aria-label="Account"
+        className={cn(
+          'text-muted-foreground hover:text-foreground h-8 max-w-[min(100%,16rem)] min-w-0 px-2',
+          className,
+        )}
+      >
+        {selectedByValue ? (
+          <span className="text-muted-foreground flex min-w-0 items-center gap-2 truncate text-sm">
+            {selectedByValue.name}
+          </span>
+        ) : (
+          <span className="text-muted-foreground truncate text-sm">Choose an account</span>
+        )}
+      </SelectTrigger>
+      <SelectContent align="start">
+        {accounts.map((account) => (
+          <SelectItem key={account.account_id} value={account.account_id}>
             <span className="flex min-w-0 items-center gap-2">
-              <EntityAvatar label={selected.name} size="sm" />
-              <span className="truncate">{selected.name}</span>
+              <EntityAvatar label={account.name} size="xs" />
+              <span className="truncate">{account.name}</span>
             </span>
-          ) : (
-            <span className="text-muted-foreground">Choose an account</span>
-          )}
-        </SelectTrigger>
-        <SelectContent>
-          {accounts.map((account) => (
-            <SelectItem key={account.account_id} value={account.account_id}>
-              <span className="flex min-w-0 items-center gap-2">
-                <EntityAvatar label={account.name} size="sm" />
-                <span className="truncate">{account.name}</span>
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

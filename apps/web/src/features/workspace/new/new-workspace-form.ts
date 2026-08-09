@@ -52,7 +52,51 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
 export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
   return accounts.filter(
     (account) => account.account_role === 'owner' || account.account_role === 'admin',
-  );
+  ).map((account) => ({
+    ...account,
+    name: account.name.trim().replaceAll('\'s Account', ''),
+  }));
+}
+
+/**
+ * Which creatable account `/new` should pre-select.
+ *
+ * Preference order:
+ * 1. Account `name` equals the signed-in email (case-insensitive) — the
+ *    personal / bootstrapped account is often titled with the email.
+ * 2. Account `slug` equals the email or its local-part.
+ * 3. `is_primary_owner` — same proxy marketplace/install dialogs use when
+ *    there is no `personal_account` flag on the API.
+ * 4. The first creatable account.
+ *
+ * Pure and Effect-free so `/new` can derive the default without writing to
+ * state on mount (the page forbids `useEffect`).
+ */
+export function resolveDefaultCreatableAccountId(
+  accounts: KortixAccount[],
+  email?: string | null,
+): string | null {
+  if (accounts.length === 0) return null;
+  if (accounts.length === 1) return accounts[0]!.account_id;
+
+  const normalized = email?.trim().toLowerCase() ?? '';
+  if (normalized) {
+    const byName = accounts.find((account) => account.name.trim().toLowerCase() === normalized);
+    if (byName) return byName.account_id;
+
+    const localPart = normalized.split('@')[0] ?? '';
+    const bySlug = accounts.find((account) => {
+      const slug = account.slug?.trim().toLowerCase() ?? '';
+      if (!slug) return false;
+      return slug === normalized || (localPart.length > 0 && slug === localPart);
+    });
+    if (bySlug) return bySlug.account_id;
+  }
+
+  const primary = accounts.find((account) => account.is_primary_owner);
+  if (primary) return primary.account_id;
+
+  return accounts[0]!.account_id;
 }
 
 export function isSubmittable(state: NewWorkspaceFormState, accountCount: number): boolean {
