@@ -129,6 +129,7 @@
  */
 
 import { ScheduleView } from '@/components/projects/schedule-view';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
@@ -997,14 +998,9 @@ function RailTriggerBody({
       {Icon && <Icon className="size-4 shrink-0" />}
       <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
       {showCount ? (
-        <span
-          className={cn(
-            'bg-kortix-base/15 text-kortix-base shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
-            !horizontal && 'ml-auto',
-          )}
-        >
+        <Badge variant="kortix" size="xs" className={cn('tabular-nums', !horizontal && 'ml-auto')}>
           {count}
-        </span>
+        </Badge>
       ) : attention ? (
         <span
           aria-hidden

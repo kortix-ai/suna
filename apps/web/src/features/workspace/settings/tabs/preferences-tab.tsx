@@ -354,7 +354,7 @@ export function PreferencesTabView({
               </span>
             </div>
 
-            <div className="divide-y rounded-lg border">
+            <div className="divide-y rounded-md border">
               {SOUND_EVENTS.map((event) => {
                 const enabled = soundEvents[event.id] !== false;
                 return (
@@ -397,14 +397,14 @@ export function PreferencesTabView({
           description="Browser notifications for what happens in your sessions."
         />
         {!notificationsSupported ? (
-          <div className="rounded-lg border p-4">
+          <div className="rounded-md border p-4">
             <p className="text-muted-foreground text-sm">
               Your browser does not support notifications.
             </p>
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="rounded-lg border">
+            <div className="rounded-md border">
               <NotificationToggle
                 icon={BellSolid}
                 label="Enable notifications"
@@ -427,7 +427,7 @@ export function PreferencesTabView({
                   <label className="text-muted-foreground text-sm font-medium">
                     Notification types
                   </label>
-                  <div className="divide-y rounded-lg border">
+                  <div className="divide-y rounded-md border">
                     {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
                       <NotificationToggle
                         key={toggle.key}
@@ -444,7 +444,7 @@ export function PreferencesTabView({
 
                 <div className="flex flex-col space-y-3">
                   <label className="text-muted-foreground text-sm font-medium">Behavior</label>
-                  <div className="divide-y rounded-lg border">
+                  <div className="divide-y rounded-md border">
                     {NOTIFICATION_BEHAVIOR_TOGGLES.map((toggle) => (
                       <NotificationToggle
                         key={toggle.key}
@@ -487,7 +487,7 @@ export function PreferencesTabView({
           </RadioGroup>
         </div>
 
-        <div className="divide-y rounded-lg border">
+        <div className="divide-y rounded-md border">
           {shortcuts.map((s) => (
             <div key={s.label} className="flex items-center justify-between px-3 py-2.5">
               <span className="text-foreground text-sm">{s.label}</span>

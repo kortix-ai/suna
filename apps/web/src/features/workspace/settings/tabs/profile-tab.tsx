@@ -86,7 +86,7 @@ export function FactorRow({
   return (
     <div className="border-border/60 bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
+        <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm">
           <Icon className="text-muted-foreground size-4" />
         </span>
         <div className="min-w-0">
@@ -356,15 +356,19 @@ export function ProfileTabView({
             className="flex-1"
           />
           {verified.length > 0 && (
-            <span
+            <Badge
+              variant="outline"
+              size="xs"
               className={cn(
-                'mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-                sessionVerified ? 'bg-kortix-green/15 text-kortix-green' : 'text-muted-foreground border',
+                'mt-0.5 shrink-0 gap-1',
+                sessionVerified
+                  ? 'border-transparent bg-kortix-green/15 text-kortix-green'
+                  : 'text-muted-foreground',
               )}
             >
               <ShieldCheck className="size-3.5" />
               {sessionVerified ? 'Session verified' : 'Enrolled'}
-            </span>
+            </Badge>
           )}
         </div>
 
@@ -387,7 +391,7 @@ export function ProfileTabView({
           <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
             <div>
               <h4 className="text-foreground text-sm font-medium">Scan with your authenticator app</h4>
-              <p className="text-muted-foreground mt-1 text-xs">
+              <p className="text-muted-foreground mt-1 text-xs text-pretty">
                 Use 1Password, Google Authenticator, or any TOTP app — then enter the 6-digit code it
                 shows.
               </p>
@@ -462,7 +466,7 @@ export function ProfileTabView({
           description="Permanently remove your account and everything it owns."
         />
         {!accountDeletionSupported ? (
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-xs text-pretty">
             Account deletion isn&apos;t available on this deployment. Contact support to close your
             account.
           </p>
@@ -488,7 +492,7 @@ export function ProfileTabView({
           </InfoBanner>
         ) : (
           <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
-            <p className="text-muted-foreground min-w-0 text-xs">
+            <p className="text-muted-foreground min-w-0 text-xs text-pretty">
               This deletes every agent, thread, credential, and subscription tied to your account. This
               cannot be undone.
             </p>
