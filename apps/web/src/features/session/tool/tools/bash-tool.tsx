@@ -194,9 +194,9 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 </TextShimmer>
               </>
             ) : (
-              <span className="min-w-0 truncate text-xs" title={command}>
+              <span className="flex min-w-0 items-center gap-2 truncate text-xs" title={command}>
                 <span className="text-foreground">Ran command</span>{' '}
-                <span className="text-muted-foreground font-mono">{commandPreview}</span>
+                <span className="text-muted-foreground/60 font-mono">{commandPreview}</span>
               </span>
             )}
           </div>
