@@ -647,9 +647,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp -v artifacts/kortix-* release/
+          cp -v ./artifacts/kortix-* release/
           cd release
-          sha256sum * > SHA256SUMS
+          sha256sum ./* > SHA256SUMS
           ls -lh
 
       - name: Create GitHub Release
@@ -692,8 +692,8 @@ jobs:
             exit 0
           fi
           cd desktop-artifacts
-          sha256sum * > DESKTOP-SHA256SUMS
-          gh release upload "${{ needs.version.outputs.tag }}" * --clobber --repo "$GITHUB_REPOSITORY"
+          sha256sum ./* > DESKTOP-SHA256SUMS
+          gh release upload "${{ needs.version.outputs.tag }}" ./* --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -747,9 +747,10 @@ jobs:
     # TEMPORARILY DISABLED. Prod is broadly diverged from the migration baseline
     # (e.g. execution_status / sandbox_provider enum values the canonical schema
     # defines but prod lacks). Reconciling that is a separate, deliberate effort;
-    # until then this presence check blocks every prod roll. Re-enable by flipping
-    # `if` back to the default and restoring `verify-schema` in deploy-ecs.needs.
-    if: false
+    # until then this presence check blocks every prod roll. Re-enable with the
+    # repository variable ENABLE_PROD_SCHEMA_GATE=true and restore
+    # `verify-schema` in deploy-ecs.needs.
+    if: vars.ENABLE_PROD_SCHEMA_GATE == 'true'
     needs: migrate-db
     runs-on: ubuntu-latest
     services:
