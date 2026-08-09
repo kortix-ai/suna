@@ -1448,11 +1448,11 @@ function SessionTurnImpl({
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             onClick={handleCopy}
             aria-label={copied ? 'Copied' : 'Copy response'}
           >
-            <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+            <span className="relative inline-flex shrink-0 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
                 <m.span
                   key={copied ? 'check' : 'copy'}
@@ -1463,9 +1463,9 @@ function SessionTurnImpl({
                   className="absolute inset-0 inline-flex items-center justify-center"
                 >
                   {copied ? (
-                    <CheckIcon className="text-foreground size-4" />
+                    <CheckIcon className="text-foreground/70 size-[1.05rem]" />
                   ) : (
-                    <Copy className="size-4" />
+                    <Copy className="text-foreground/70 size-[1.05rem]" />
                   )}
                 </m.span>
               </AnimatePresence>
