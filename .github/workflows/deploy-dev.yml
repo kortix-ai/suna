@@ -10,9 +10,8 @@ name: Deploy Dev
 #                   via ECS Fargate. dev-api.kortix.com
 #                   is a Cloudflare Worker routing to the ECS service
 #                   (see infra/cloudflare/workers/api-router).
-#   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest (image is for
-#                   self-hosters). dev.kortix.com itself is deployed by Vercel
-#                   from `main` via Vercel's own Git integration — no deploy step.
+#   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest, deployed to
+#                   the dedicated kortix-dev-web ECS Fargate service.
 #   - CLI         → 4 cross-compiled binaries published to the mutable
 #                   `dev-latest` GitHub prerelease (default API base dev-api).
 #
@@ -81,6 +80,14 @@ jobs:
             frontend:
               - 'apps/web/**'
               - 'packages/**'
+              - 'infra/scripts/ecs-deploy.sh'
+              - 'infra/scripts/render-web-env.mjs'
+              - 'infra/scripts/sync-web-env.sh'
+              - 'infra/terraform/environments/dev/**'
+              - 'infra/terraform/environments/dev-web/**'
+              - 'infra/terraform/modules/ecs-api/**'
+              - 'infra/terraform/security-baseline/iam-gha-ecs-deploy.tf'
+              - '.github/workflows/deploy-dev.yml'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'VERSION'
@@ -518,13 +525,14 @@ jobs:
           echo "✓ kortix/kortix-gateway:dev → dev-${SHA8}"
 
   # ── Build + push the multi-arch frontend image ──────────────────────────────
-  # dev.kortix.com is served by Vercel (auto-deploys from `main`); this image is
-  # for self-hosters, so there is no deploy step here.
+  # The same immutable image serves Dev ECS and the self-host distribution.
   build-frontend:
     name: Build frontend image (multi-arch)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
     steps:
       - uses: actions/checkout@v7
         with: { submodules: false }
@@ -540,10 +548,13 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
           NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_URL: http://localhost:3000
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
           NEXT_PUBLIC_BILLING_ENABLED: "false"
           NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.dev-version.outputs.version }}
+          NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.sha }}
           NEXT_OUTPUT: standalone
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -563,22 +574,106 @@ jobs:
           tags: |
             kortix/kortix-frontend:dev-latest
       - name: Retag :dev-latest → :dev-<sha8>
+        id: tag
         run: |
           set -euo pipefail
           SHA8="${GITHUB_SHA::8}"
           docker buildx imagetools create \
             --tag "kortix/kortix-frontend:dev-${SHA8}" \
             "kortix/kortix-frontend:dev-latest"
+          echo "image=kortix/kortix-frontend:dev-${SHA8}" >> "$GITHUB_OUTPUT"
           echo "Pushed kortix/kortix-frontend:dev-${SHA8} + :dev-latest"
 
+  deploy-web-ecs:
+    name: Deploy frontend to dev (ECS Fargate)
+    needs: [detect-changes, dev-version, build-frontend]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      DOTENV_PRIVATE_KEY_DEV: ${{ secrets.WEB_DOTENV_PRIVATE_KEY_DEV }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 22 }
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Sync the encrypted Dev web profile to Secrets Manager
+        run: |
+          set -euo pipefail
+          test -n "${DOTENV_PRIVATE_KEY_DEV:-}" || {
+            echo "::error::WEB_DOTENV_PRIVATE_KEY_DEV is not configured."
+            exit 1
+          }
+          npx --yes @dotenvx/dotenvx@1.75.1 run \
+            -f apps/web/.env.dev -- bash infra/scripts/sync-web-env.sh dev
+      - name: Roll the Dev web service onto the immutable image
+        run: |
+          bash infra/scripts/ecs-deploy.sh \
+            dev \
+            "${{ needs.build-frontend.outputs.image }}" \
+            --service web \
+            --version "${{ needs.dev-version.outputs.version }}"
+
+  verify-web-dev:
+    name: Verify frontend Dev ECS and public behavior
+    needs: [detect-changes, dev-version, deploy-web-ecs]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_COMMIT: ${{ github.sha }}
+      EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
+      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+    steps:
+      - name: Require ECS origin and public frontend parity
+        run: |
+          set -euo pipefail
+          test -n "${WEB_PROTECTION_PASSWORD:-}" || {
+            echo "::error::WEB_PROTECTION_PASSWORD is not configured."
+            exit 1
+          }
+          endpoints=(
+            "origin|https://dev-web-ecs-fargate.kortix.com"
+            "public|https://dev.kortix.com"
+          )
+          for attempt in $(seq 1 40); do
+            all_match=true
+            for item in "${endpoints[@]}"; do
+              name="${item%%|*}"
+              base="${item#*|}"
+              body="$(curl -fsS --max-time 15 "$base/api/health" || true)"
+              commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
+              version="$(jq -r '.version // empty' <<<"$body" 2>/dev/null || true)"
+              anonymous_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
+              protected_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/" || true)"
+              echo "(${attempt}/40) ${name}: commit=${commit:-?} version=${version:-?} anonymous=${anonymous_status:-?} protected=${protected_status:-?}"
+              if [ "$commit" != "$EXPECTED_COMMIT" ] \
+                || [ "$version" != "$EXPECTED_VERSION" ] \
+                || [ "$anonymous_status" != "401" ] \
+                || { [ "$protected_status" != "200" ] && [ "$protected_status" != "307" ] && [ "$protected_status" != "308" ]; }; then
+                all_match=false
+              fi
+            done
+            if [ "$all_match" = true ]; then
+              echo "Dev ECS origin and dev.kortix.com serve ${EXPECTED_COMMIT}."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Frontend Dev parity failed for ${EXPECTED_COMMIT}."
+          exit 1
+
   # ── Move the self-host `:dev` channel tag onto the image that just built ────
-  # Frontend has no separate "deploy" job in this pipeline (dev.kortix.com is
-  # Vercel's own Git integration off `main`, not this image) — the image build
-  # succeeding IS the self-host artifact's release event, so gate on
-  # build-frontend directly.
   promote-dev-channel-frontend:
     name: Move :dev → this build (frontend)
-    needs: [detect-changes, build-frontend]
+    needs: [detect-changes, build-frontend, verify-web-dev]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:

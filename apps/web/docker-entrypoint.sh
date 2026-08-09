@@ -19,6 +19,14 @@
 
 set -e
 
+# ECS injects the web profile as one Secrets Manager JSON document. Expand it
+# in memory before reading any runtime values. Explicit task-definition values
+# win. Do not write the decrypted profile to disk or print its values.
+if [ -n "${KORTIX_ENV_JSON:-}" ]; then
+  eval "$(node /hydrate-environment-secret.mjs)"
+  unset KORTIX_ENV_JSON
+fi
+
 BUNDLE_DIR="/app/apps/web/.next"
 
 # ── Well-known build-time placeholders (must match build-local-images.sh) ──────
@@ -83,6 +91,7 @@ fi
 # that may be baked in from .env during local builds.
 DEV_ANON_KEYS="$BAKED_ANON_KEY"
 # Supabase CLI default publishable key pattern (sb_publishable_*)
+# shellcheck disable=SC2013 # Matches contain no whitespace and become a word list below.
 for dev_key in $(grep -roh 'sb_publishable_[A-Za-z0-9_-]\{1,50\}' "$BUNDLE_DIR" 2>/dev/null | sort -u); do
   DEV_ANON_KEYS="$DEV_ANON_KEYS $dev_key"
 done
@@ -119,12 +128,12 @@ fi
 # boolean checks: BILLING_ENABLED:!0 (true) or BILLING_ENABLED:!1 (false).
 if [ "$RUNTIME_BILLING" = "false" ] && grep -rq 'BILLING_ENABLED:!0' "$BUNDLE_DIR" 2>/dev/null; then
   echo "[entrypoint] Billing: ON (baked) -> OFF (runtime)"
-  find "$BUNDLE_DIR" -name '*.js' | xargs grep -rl 'BILLING_ENABLED:!0' 2>/dev/null | \
+  find "$BUNDLE_DIR" -name '*.js' -type f -exec grep -l 'BILLING_ENABLED:!0' {} + 2>/dev/null | \
     while read -r f; do sed -i 's|BILLING_ENABLED:!0|BILLING_ENABLED:!1|g' "$f"; done
   needs_rewrite=true
 elif [ "$RUNTIME_BILLING" = "true" ] && grep -rq 'BILLING_ENABLED:!1' "$BUNDLE_DIR" 2>/dev/null; then
   echo "[entrypoint] Billing: OFF (baked) -> ON (runtime)"
-  find "$BUNDLE_DIR" -name '*.js' | xargs grep -rl 'BILLING_ENABLED:!1' 2>/dev/null | \
+  find "$BUNDLE_DIR" -name '*.js' -type f -exec grep -l 'BILLING_ENABLED:!1' {} + 2>/dev/null | \
     while read -r f; do sed -i 's|BILLING_ENABLED:!1|BILLING_ENABLED:!0|g' "$f"; done
   needs_rewrite=true
 else

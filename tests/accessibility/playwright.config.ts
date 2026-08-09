@@ -1,8 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL || 'http://localhost:3000';
-// Lets CI browser tests pass through Vercel deployment protection (SSO) on staging.
-const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+const environmentProtectionPassword = process.env.WEB_PROTECTION_PASSWORD;
 
 export default defineConfig({
   testDir: '.',
@@ -23,8 +22,8 @@ export default defineConfig({
   outputDir: '../test-results/accessibility/artifacts',
   use: {
     baseURL,
-    extraHTTPHeaders: vercelBypass
-      ? { 'x-vercel-protection-bypass': vercelBypass }
+    httpCredentials: environmentProtectionPassword
+      ? { username: 'kortix', password: environmentProtectionPassword }
       : undefined,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
