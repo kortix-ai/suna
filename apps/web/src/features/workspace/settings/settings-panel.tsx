@@ -155,6 +155,25 @@
  * tab). With every piece of `SettingsView` rehomed, the file itself is
  * deleted. `snapshots` remains the only true placeholder tab.
  *
+ * **Task 19 update.** `members` is rewired from `MembersView`
+ * (`customize/sections/view/members-view.tsx`) to the real `MembersTab` (see
+ * `tabs/members-tab.tsx`) — one unified table (`GET /projects/:id/access`,
+ * one query, not two) with an Account role column and a Workspace access
+ * column, plus pending invites and access requests below it. Project-scoped
+ * (`projectId`), same shape as `general`/`experimental` above.
+ * `MembersView` is NOT deleted or rehomed by this task — its Files list
+ * covers only this file plus the two new tab files — so
+ * `MembersView`, and everything only IT called
+ * (`ProjectGroupGrantsCard`'s bulk group-access grants, `ResourceAccessCard`'s
+ * per-agent/skill scoping, `ProjectRoleAssignmentsCard`'s custom-role
+ * bindings, `consumeMembersTabIntent`'s Invite deep-link target), has no
+ * other caller after this change — the only real import/mount site
+ * (`<MembersView projectId={projectId} />`, formerly right here) is gone;
+ * `grep -n "^import.*MembersView\|<MembersView" src -r` now matches nothing
+ * outside comment prose — reported here, not silently left dangling. See
+ * `tabs/members-tab.tsx`'s own header comment for the full accounting of
+ * what did and didn't come along.
+ *
  * **Every pane must not fetch unless its tab is active** (see this file's
  * plan and `settings-panel.test.tsx`'s "real tab content gating" describe
  * block for the proof): `SettingsTabPane` renders `null` for every tab that
@@ -189,7 +208,6 @@ import { ChannelsView } from '@/features/workspace/customize/sections/view/chann
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
-import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
@@ -224,6 +242,13 @@ import { ExperimentalTab } from './tabs/experimental-tab';
 import { GeneralTab } from './tabs/general-tab';
 import { GroupsTab } from './tabs/groups-tab';
 import { IdentityTab } from './tabs/identity-tab';
+// Aliased: `@/stores/settings-panel-store` already exports a TYPE named
+// `MembersTab` ('people' | 'invite', the deep-link intent — imported below
+// as `type MembersTab`), which collides with this file's own component
+// name. Only this import site needs the alias; `tabs/members-tab.tsx` keeps
+// the un-aliased `MembersTab` name, matching every sibling tab's naming
+// convention (`GeneralTab`, `ApiKeysTab`, …).
+import { MembersTab as MembersTabPane } from './tabs/members-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
 import { RolesTab } from './tabs/roles-tab';
@@ -1007,7 +1032,7 @@ function SettingsTabPane({
       case 'experimental':
         return <ExperimentalTab projectId={projectId} />;
       case 'members':
-        return <MembersView projectId={projectId} />;
+        return <MembersTabPane projectId={projectId} />;
       case 'secrets':
         return <SecretsView projectId={projectId} />;
       case 'channels':
