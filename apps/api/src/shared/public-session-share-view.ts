@@ -26,8 +26,15 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { db } from './db';
-import { isPlaceholderOpencodeTitle } from '../projects/lib/opencode-title';
-import { sandboxOpencodeEndpoint, listSandboxOpencodeSessions, resolveRootSessionId } from '../projects/opencode-mapping';
+import {
+  isPlaceholderOpencodeTitle,
+  runtimeRootTitleFromSnapshot,
+} from '../projects/lib/opencode-title';
+import {
+  sandboxOpencodeEndpoint,
+  listSandboxOpencodeSessions,
+  resolveRootSessionId,
+} from '../projects/opencode-mapping';
 import type { PublicShareRow } from './session-public-shares';
 
 const WORKSPACE_DIRECTORY = '/workspace';
@@ -53,6 +60,7 @@ export async function getPublicSessionInfo(sessionId: string): Promise<PublicSes
     .select({
       sessionId: projectSessions.sessionId,
       status: projectSessions.status,
+      opencodeSessionId: projectSessions.opencodeSessionId,
       metadata: projectSessions.metadata,
       createdAt: projectSessions.createdAt,
       updatedAt: projectSessions.updatedAt,
@@ -68,12 +76,19 @@ export async function getPublicSessionInfo(sessionId: string): Promise<PublicSes
   // anonymous viewer a frozen "New session - …" as if it were a real title.
   const rawAutoName = typeof metadata.name === 'string' ? metadata.name : null;
   const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
+  // Same read-time preference as the authenticated serializer: the runtime's
+  // root-conversation title (what the session header shows) over the generated
+  // auto title; a user rename still wins.
+  const runtimeTitle = runtimeRootTitleFromSnapshot(
+    metadata.opencode_sessions,
+    row.opencodeSessionId,
+  );
 
   return {
     ok: true,
     session: {
       session_id: row.sessionId,
-      title: customName ?? autoName,
+      title: customName ?? runtimeTitle ?? autoName,
       status: row.status,
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
@@ -128,7 +143,9 @@ type RawPart = {
 function normalizeMessageList(payload: unknown): RawMessage[] {
   const list = Array.isArray(payload)
     ? payload
-    : typeof payload === 'object' && payload && Array.isArray((payload as { messages?: unknown }).messages)
+    : typeof payload === 'object' &&
+        payload &&
+        Array.isArray((payload as { messages?: unknown }).messages)
       ? (payload as { messages: unknown[] }).messages
       : [];
   return list.filter((m): m is RawMessage => typeof m === 'object' && m !== null);
@@ -167,8 +184,17 @@ function compactMessage(msg: RawMessage): CompactPublicMessage {
   };
 }
 
-function unavailable(reason: string, opencodeSessionId: string | null = null): PublicSessionTranscript {
-  return { available: false, reason, opencode_session_id: opencodeSessionId, message_count: 0, messages: [] };
+function unavailable(
+  reason: string,
+  opencodeSessionId: string | null = null,
+): PublicSessionTranscript {
+  return {
+    available: false,
+    reason,
+    opencode_session_id: opencodeSessionId,
+    message_count: 0,
+    messages: [],
+  };
 }
 
 /**
@@ -232,7 +258,10 @@ export async function getPublicSessionMessages(
     };
   }
   if (!endpoint) {
-    return { ok: true, transcript: unavailable('Sandbox credentials unavailable', opencodeSessionId) };
+    return {
+      ok: true,
+      transcript: unavailable('Sandbox credentials unavailable', opencodeSessionId),
+    };
   }
 
   try {
@@ -245,10 +274,19 @@ export async function getPublicSessionMessages(
       signal: AbortSignal.timeout(8_000),
     });
     if (res.status === 503) {
-      return { ok: true, transcript: unavailable('OpenCode is not ready in the sandbox yet', opencodeSessionId) };
+      return {
+        ok: true,
+        transcript: unavailable('OpenCode is not ready in the sandbox yet', opencodeSessionId),
+      };
     }
     if (!res.ok) {
-      return { ok: true, transcript: unavailable(`OpenCode messages unavailable: HTTP ${res.status}`, opencodeSessionId) };
+      return {
+        ok: true,
+        transcript: unavailable(
+          `OpenCode messages unavailable: HTTP ${res.status}`,
+          opencodeSessionId,
+        ),
+      };
     }
     const payload = (await res.json().catch(() => null)) as unknown;
     const rawMessages = normalizeMessageList(payload).slice(-MAX_MESSAGES);

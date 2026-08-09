@@ -12,6 +12,37 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-09 — session `session-title-sidebar-sync` claim
+
+No **Now** task claimed. User-directed fix: the sidebar/tab never converge to the
+runtime session title the header shows.
+
+Claimed SDK scope:
+
+- `react/use-opencode-events/helpers.ts`: new module-internal `realRuntimeTitle`
+  + `patchKortixSessionTitleMirrors` — on a `session.updated`/`session.created`
+  title change, patch the cached Kortix session reads (`name` on rows matching
+  `opencode_session_id`, `custom_name` untouched) before the existing
+  `refetchKortixSessionMirrors` reconciliation refetch.
+- `react/use-opencode-events/handle-event.ts`: wire both call sites.
+- Doc-only precedence update on `ProjectSession.name` (`core/rest/projects-client/sessions.ts`).
+- No published export name changed; no package.json change.
+
+RED: 4 new tests in `handle-event.test.ts` (`kortix session title mirroring`) —
+patch test failed against the unpatched handler (`Expected "Runtime Title",
+Received "Generated Title"`), guards passed.
+
+GREEN:
+
+- `bun test packages/sdk/src/react/use-opencode-events/`: `39 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` (package + examples).
+- `pnpm --filter @kortix/sdk test`: `1829 pass`, `2 skip`, `0 fail`, `7044 expect()` calls, 141 files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import passed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-09 — session `computers-connector-grouping` claim
 
 No **Now** task claimed. This is the user-directed Computers connector profile refactor.
