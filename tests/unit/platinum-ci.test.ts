@@ -210,6 +210,7 @@ describe('Platinum CI worker plan', () => {
     expect(delays).toEqual([1_000, 2_000]);
     expect(isRetryablePlatinumError(new PlatinumHttpError('bad request', 400))).toBe(false);
     expect(isRetryablePlatinumError(new PlatinumHttpError('gateway timeout', 504))).toBe(true);
+    expect(isRetryablePlatinumError(new SyntaxError('truncated JSON response'))).toBe(true);
     expect(isRetryablePlatinumError(
       new PlatinumHttpError('500: {"error":"The operation was aborted."}', 500),
     )).toBe(true);

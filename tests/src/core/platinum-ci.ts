@@ -9,7 +9,7 @@ export const PLATINUM_CI_BUN_VERSION = '1.3.14';
 export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
 
 const POLL_MS = 3_000;
-const TEMPLATE_TIMEOUT_MS = 20 * 60_000;
+const TEMPLATE_TIMEOUT_MS = 45 * 60_000;
 const WARM_PREPARE_TIMEOUT_MS = 20 * 60_000;
 const WORKER_TIMEOUT_MS = 3 * 60 * 60_000;
 const LOG_CHUNK_BYTES = 1024 * 1024;
@@ -68,7 +68,7 @@ export function isRetryablePlatinumError(error: unknown): boolean {
     return TRANSIENT_STATUS_CODES.has(error.status)
       || (error.status === 500 && /operation was aborted/i.test(error.message));
   }
-  if (error instanceof SyntaxError) return false;
+  if (error instanceof SyntaxError) return true;
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   return /abort|connection reset|econnreset|fetch failed|network|socket|timed?\s*out/i.test(message);
 }
