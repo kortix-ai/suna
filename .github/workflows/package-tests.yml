@@ -109,12 +109,16 @@ jobs:
               && mv /tmp/pkg-bak.json package.json )
             if [ "$dir" = "agent-tunnel" ]; then
               help="$(node packages/agent-tunnel/dist/agent-cli.js help)"
-              for expected in 'connect' 'run' 'install-service' 'service-status' 'uninstall-service' '--daemon' '--keep-awake'; do
+              for expected in 'connect' 'run' 'install-service' 'service-status' 'uninstall-service' '--daemon' '--foreground'; do
                 grep -F -- "$expected" <<<"$help" >/dev/null || {
                   echo "::error::Packed agent-tunnel CLI help is missing '$expected'."
                   exit 1
                 }
               done
+              if grep -F -- '--keep-awake' <<<"$help" >/dev/null; then
+                echo "::error::Packed agent-tunnel CLI still exposes the removed keep-awake flag."
+                exit 1
+              fi
               fallback_help="$(node --input-type=module -e "delete globalThis.WebSocket; process.argv[2] = 'help'; await import('./packages/agent-tunnel/dist/agent-cli.js')")"
               grep -F -- 'install-service' <<<"$fallback_help" >/dev/null || {
                 echo "::error::Packed agent-tunnel CLI cannot load its WebSocket fallback."
