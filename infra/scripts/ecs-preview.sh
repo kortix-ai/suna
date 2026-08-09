@@ -375,6 +375,10 @@ task = {
                 {"name": "NEXT_PUBLIC_BACKEND_URL", "value": backend_url},
                 {"name": "KORTIX_PUBLIC_BACKEND_URL", "value": backend_url},
                 {"name": "BACKEND_URL", "value": backend_url},
+                {
+                    "name": "KORTIX_PUBLIC_VERSION",
+                    "value": f"pr-{family.removeprefix('kortix-pr-')}",
+                },
                 {"name": "WEB_PROTECTION_ENABLED", "value": "true"},
             ],
             "secrets": [{"name": "KORTIX_ENV_JSON", "valueFrom": web_secret}],
