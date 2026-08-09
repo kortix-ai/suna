@@ -247,13 +247,29 @@ jobs:
                 '{key:$k,value:$v,type:"plain",target:["preview"],gitBranch:$b}')")"
             [ "$code" = 200 ] || [ "$code" = 201 ] || { jq . "/tmp/env-${key}.json"; exit 1; }
           done
-          project="$(curl -fsS "${api}/v9/projects/${PROJECT_ID}?teamId=${TEAM_ID}" "${auth[@]}")"
+          project_code="$(curl -sS -o /tmp/vercel-project.json -w '%{http_code}' \
+            "${api}/v9/projects/${PROJECT_ID}?teamId=${TEAM_ID}" "${auth[@]}")"
+          if [ "$project_code" != 200 ]; then
+            jq '{error}' /tmp/vercel-project.json
+            echo "::error::Vercel project lookup returned HTTP ${project_code}."
+            exit 1
+          fi
+          project="$(</tmp/vercel-project.json)"
           name="$(printf '%s' "$project" | jq -r .name)"
           repo_id="$(printf '%s' "$project" | jq -r '.link.repoId')"
-          deployment="$(curl -fsS -X POST "${api}/v13/deployments?teamId=${TEAM_ID}&forceNew=1&skipAutoDetectionConfirmation=1" \
+          [ -n "$name" ] && [ "$name" != null ] || { echo "::error::Vercel project response has no name."; exit 1; }
+          [ -n "$repo_id" ] && [ "$repo_id" != null ] || { echo "::error::Vercel project response has no GitHub repoId."; exit 1; }
+          deployment_code="$(curl -sS -o /tmp/vercel-deployment.json -w '%{http_code}' -X POST \
+            "${api}/v13/deployments?teamId=${TEAM_ID}&forceNew=1&skipAutoDetectionConfirmation=1" \
             "${auth[@]}" -H 'Content-Type: application/json' \
             -d "$(jq -n --arg n "$name" --argjson r "$repo_id" --arg b "$BRANCH" \
               '{name:$n,target:"preview",gitSource:{type:"github",repoId:$r,ref:$b}}')")"
+          if [ "$deployment_code" != 200 ] && [ "$deployment_code" != 201 ]; then
+            jq '{error}' /tmp/vercel-deployment.json
+            echo "::error::Vercel deployment creation returned HTTP ${deployment_code}."
+            exit 1
+          fi
+          deployment="$(</tmp/vercel-deployment.json)"
           deployment_id="$(printf '%s' "$deployment" | jq -r '.id // error("Vercel deployment response has no id")')"
           frontend="https://$(printf '%s' "$deployment" | jq -r '.url // error("Vercel deployment response has no URL")')"
           ready=false
