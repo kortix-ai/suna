@@ -902,13 +902,11 @@ function InlineTriggerTitle({
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {trigger.subtitle &&
             (running ? (
-              <TextShimmer className="min-w-0 truncate font-mono text-sm">
-                {trigger.subtitle}
-              </TextShimmer>
+              <TextShimmer className="min-w-0 truncate text-sm">{trigger.subtitle}</TextShimmer>
             ) : (
               <span
                 className={cn(
-                  'text-muted-foreground min-w-0 truncate font-mono text-sm',
+                  'text-muted-foreground min-w-0 truncate text-sm',
                   onSubtitleClick &&
                     'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                 )}
@@ -929,7 +927,7 @@ function InlineTriggerTitle({
             <>
               {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
               <span
-                className="text-muted-foreground/60 min-w-0 truncate font-mono text-sm"
+                className="text-muted-foreground/40 min-w-0 truncate  text-sm"
                 title={args.join(' · ')}
               >
                 {args.join(' · ')}

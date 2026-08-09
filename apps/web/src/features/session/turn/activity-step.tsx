@@ -3,6 +3,7 @@
 /** One row inside a burst: icon, verb, object, and the tool's own result. */
 
 import {
+  FilesIcon,
   FolderOpenIcon,
   GlobeIcon,
   MagnifyingGlassIcon,
@@ -37,6 +38,11 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   scrape: GlobeIcon,
   scrape_webpage: GlobeIcon,
   task: UsersThreeIcon,
+  // Without an entry here `skill` fell through to the generic `StackIcon`
+  // fallback — the same mark every unrecognised tool gets, so a skills row said
+  // nothing more than "some tool ran". `Files` is stacked pages: several of a
+  // thing, which is exactly what a grouped skills row is.
+  skill: FilesIcon,
 };
 
 /** Exported so a group row can lead with the same glyph its members carry. */

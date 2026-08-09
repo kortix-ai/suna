@@ -1,7 +1,13 @@
 import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import type { Part, ToolPart } from '@/ui';
-import { PencilSimpleIcon, ReadCvLogoIcon, TerminalWindowIcon } from '@phosphor-icons/react';
+import {
+  FilesIcon,
+  PencilSimpleIcon,
+  ReadCvLogoIcon,
+  StackIcon,
+  TerminalWindowIcon,
+} from '@phosphor-icons/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
@@ -716,9 +722,21 @@ describe('step family glyphs', () => {
     expect(iconFor(tool('1', 'read', { status: 'completed' }))).toBe(ReadCvLogoIcon);
   });
 
+  test('a skills row leads with the stacked-pages mark', () => {
+    // It had no entry at all, so it fell through to the generic `StackIcon`
+    // fallback — the mark every unrecognised tool gets.
+    expect(iconFor(tool('1', 'skill', { status: 'completed' }))).toBe(FilesIcon);
+  });
+
   test('the other families are untouched', () => {
     expect(iconFor(tool('1', 'write', { status: 'completed' }))).toBe(PencilSimpleIcon);
     expect(iconFor(tool('2', 'bash', { status: 'completed' }))).toBe(TerminalWindowIcon);
+  });
+
+  test('an unrecognised tool still gets the generic fallback', () => {
+    // The fallback must stay reachable — that is what makes the named entries
+    // above meaningful rather than decorative.
+    expect(iconFor(tool('1', 'some_unknown_mcp_tool', { status: 'completed' }))).toBe(StackIcon);
   });
 });
 

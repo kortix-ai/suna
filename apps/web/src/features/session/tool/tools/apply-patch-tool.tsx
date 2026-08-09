@@ -104,7 +104,6 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
       trigger={{
         title: triggerTitle,
         subtitle: triggerSubtitle,
-        args: triggerArgs,
       }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}

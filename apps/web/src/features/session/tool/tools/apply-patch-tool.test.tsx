@@ -47,10 +47,12 @@ describe('ApplyPatchTool trigger', () => {
     expect(text).not.toContain('Apply Patch');
   });
 
-  test('the diff stat survives — it is the only size signal on a closed row', () => {
-    // `args` was once silently commented out, which dropped +N/−N from every
-    // patch row with nothing failing and no test noticing.
-    expect(rowText(render(part(ADDS)))).toContain('+4');
+  test('a closed row still carries a size signal', () => {
+    // This guarded the `+N`/`−N` diff stat, which was once silently commented
+    // out of the trigger with nothing failing. The stat has since been removed
+    // deliberately (`args` dropped from the trigger), so what the row owes the
+    // reader is the COUNT — the one thing left that says how big the change is.
+    expect(rowText(render(part(ADDS)))).toContain('4 files');
   });
 
   test('one file names itself', () => {
