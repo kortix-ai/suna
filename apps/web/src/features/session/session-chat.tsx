@@ -50,11 +50,8 @@ import {
 } from '@/features/session/question-prompt';
 import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
 import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
-import {
-  type AttachedFile,
-  SessionChatInput,
-  type TrackedMention,
-} from '@/features/session/session-chat-input';
+import { Composer as SessionChatInput } from '@/features/session/composer/composer';
+import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -71,7 +68,6 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import { errorToast, infoToast } from '@/components/ui/toast';
-import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/runtime-files';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
@@ -3333,14 +3329,6 @@ export function SessionChat({
     ],
   );
 
-  const handleFileSearch = useCallback(async (query: string): Promise<string[]> => {
-    try {
-      return await searchWorkspaceFiles(query);
-    } catch {
-      return [];
-    }
-  }, []);
-
   const pathname = usePathname();
   const router = useRouter();
 
@@ -3989,7 +3977,6 @@ export function SessionChat({
                 messages={messages}
                 sessionId={sessionId}
                 projectId={projectId}
-                onFileSearch={handleFileSearch}
                 providers={providers}
                 modelRequired
                 modelsLoading={providersLoading}

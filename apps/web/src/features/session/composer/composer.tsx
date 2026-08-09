@@ -33,8 +33,15 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
-import type { Command } from '@kortix/sdk/react';
+import type {
+  Agent,
+  Command,
+  MessageWithParts,
+  ProviderListResponse,
+  Session,
+} from '@kortix/sdk/react';
 import { useRuntimeSessions } from '@kortix/sdk/react';
+import type { JSONContent } from '@tiptap/core';
 
 import {
   ArrowUpLeftIcon as ArrowUpLeft,
@@ -45,11 +52,12 @@ import {
 
 import { extractClipboardFiles } from '../clipboard-files';
 import {
+  mergeFailedSubmissionDocument,
   mergeFailedSubmissionFiles,
-  mergeFailedSubmissionText,
 } from '../composer-draft-recovery';
 import { resolveComposerResetOnSend } from '../composer-reset';
 import { shouldQueueInsteadOfSend } from '../message-queue-boundary';
+import type { FlatModel } from '../model-flatten';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
@@ -57,8 +65,8 @@ import {
   resolveAvailableSelectedModel,
 } from '../model-availability';
 import { ModelConnectionBar } from '../model-connection-gate';
+import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
-import type { SessionChatInputProps } from '../session-chat-input';
 
 import { AttachmentTiles } from './attachment-tiles';
 import { ComposerToolbar } from './composer-toolbar';
@@ -67,7 +75,158 @@ import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import type { SlashAction } from './menus/slash-actions';
 import { QueuedMessages, type QueuedMessageView } from './queued-messages';
-import type { AttachedFile } from './types';
+import type { AttachedFile, TrackedMention } from './types';
+
+/**
+ * The public prop surface — Task 13: moved here verbatim from
+ * `../session-chat-input.tsx` (which used to define `SessionChatInputImpl`
+ * against it) now that this component IS the live implementation and that
+ * file is a pure re-export barrel. One field dropped in the move:
+ * `onFileSearch`. It was accepted and silently ignored by this component
+ * since Task 12 (`composer/hooks/use-file-search.ts` is a closed surface
+ * that always calls `searchWorkspaceFiles` directly, with no override
+ * parameter) — wiring it would have bypassed that hook's server-keyed
+ * cache and reintroduced the per-composer staleness Task 2 removed. Its one
+ * real caller, `session-chat.tsx`'s `handleFileSearch`, was already
+ * byte-identical to the built-in fallback, so removing the prop is a no-op
+ * for every existing caller — see `session-chat.tsx`'s own diff in this
+ * task for the matching removal.
+ */
+export interface SessionChatInputProps {
+  onSend: (
+    text: string,
+    files?: AttachedFile[],
+    mentions?: TrackedMention[],
+  ) => void | Promise<void>;
+  isBusy?: boolean;
+  /**
+   * Messages queued while `isBusy` was true — held client-side (mirrors
+   * Claude Code/Codex) and flushed one at a time by the parent at the next
+   * safe boundary instead of interleaving into the live turn. When present
+   * alongside `onQueueMessage`, submitting while busy enqueues instead of
+   * sending immediately.
+   */
+  queuedMessages?: QueuedMessageView[];
+  /** Sends that failed for good. Rendered below the queue with a retry — they
+   *  must never sit at the head holding up everything behind them. */
+  failedQueuedMessages?: QueuedMessageView[];
+  /** The queued message currently on the wire. Cannot be edited, moved or removed. */
+  queueInFlightId?: string | null;
+  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  onRemoveQueuedMessage?: (id: string) => void;
+  onEditQueuedMessage?: (id: string, text: string) => void;
+  onReorderQueuedMessage?: (id: string, toIndex: number) => void;
+  /** Stop the running turn and send this queued message immediately. */
+  onSendQueuedMessageNow?: (id: string) => void;
+  onRetryQueuedMessage?: (id: string) => void;
+  onStop?: () => void;
+  /**
+   * Render the stop button in its disabled state even without an `onStop` — used
+   * by the instant session shell while the computer is still booting, so the
+   * busy input shows a (non-clickable) stop button instead of nothing at all.
+   */
+  stopDisabled?: boolean;
+  /**
+   * The send is in flight but hasn't navigated/settled yet — swap the send
+   * button for a spinner (used by the project-home composer while the session
+   * create POST round-trips). Distinct from `isBusy`, which means "the agent is
+   * running" and shows a stop button instead.
+   */
+  isSending?: boolean;
+  agents?: Agent[];
+  selectedAgent?: string | null;
+  onAgentChange?: (agentName: string | null | undefined) => void;
+  /** Show the selected agent but prevent switching inside an immutable session. */
+  agentSelectorLocked?: boolean;
+  commands?: Command[];
+  onCommand?: (command: Command, args?: string) => void;
+  models?: FlatModel[];
+  selectedModel?: { providerID: string; modelID: string } | null;
+  onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
+  /** Optional "set as default" controls for the model picker (account/per-agent). */
+  modelDefaultControls?: ModelDefaultControls;
+  variants?: string[];
+  selectedVariant?: string | null;
+  onVariantChange?: (variant: string | null | undefined) => void;
+  messages?: MessageWithParts[];
+  /** Session ID — used for message queue, todo chip, and mention filtering */
+  sessionId?: string;
+  /** Project ID — lets the reasoning-effort control read/write this
+   *  project's per-model generation config (see reasoning-effort-selector.tsx). */
+  projectId?: string;
+  /** If true, disables the input (e.g. during session creation redirect) */
+  disabled?: boolean;
+  /**
+   * Clear the composer optimistically on send (default true). Set false when the
+   * send navigates the composer away (project-home → new session): the component
+   * is about to unmount, so clearing first only flashes an empty box before the
+   * route swaps — and would discard the user's text if the send is gated (e.g. a
+   * paywall) instead of navigating. The instant session shell then carries the
+   * message across as its optimistic turn, so the text reads as "moving" into the
+   * thread rather than vanishing.
+   */
+  clearOnSend?: boolean;
+  /** If true, a concrete model must be selected before a chat/command send. */
+  modelRequired?: boolean;
+  /** True while the provider/model catalog is still being fetched — suppresses
+   *  the full-block "connect a model" gate so it doesn't flash for accounts
+   *  that do have models but are mid-load (e.g. sandbox still warming up). */
+  modelsLoading?: boolean;
+  /** Auto-focus the textarea on mount (default: true on desktop) */
+  autoFocus?: boolean;
+  placeholder?: string;
+  /** Imperative draft prefill used by parent composers for starter prompts or
+   * failed first-turn recovery. Recovery merges instead of overwriting any
+   * draft the user typed while the request was in flight. */
+  prefill?: {
+    text: string;
+    id: number;
+    files?: AttachedFile[];
+    mode?: 'replace' | 'merge';
+  } | null;
+
+  /** Full provider list response (for connect/manage provider dialogs) */
+  providers?: ProviderListResponse;
+
+  /** Sub-session context — renders an inline indicator inside the input card */
+  threadContext?: {
+    parentTitle: string;
+    onBackToParent: () => void;
+  };
+
+  /** Callback when the context usage indicator is clicked */
+  onContextClick?: () => void;
+
+  /** Slot rendered inside the input card, above the textarea (e.g. queue chip) */
+  inputSlot?: React.ReactNode;
+
+  /** Slot rendered inline in the bottom toolbar, just left of the voice button */
+  toolbarSlot?: React.ReactNode;
+
+  /** Extra classes for the input card — e.g. a radius override for the
+   *  project-home hero composer (`rounded-xl`). The drag overlay follows. */
+  cardClassName?: string;
+
+  /** Reply context — shows a banner in the input indicating what's being replied to */
+  replyTo?: { text: string } | null;
+  /** Callback to clear the reply context */
+  onClearReply?: () => void;
+  /** When true, a structured question is active — send submits a custom answer instead of a chat message */
+  lockForQuestion?: boolean;
+  /** When true, a connector action is awaiting your approval — the run is paused,
+   *  so the composer is locked until you approve/deny it above. */
+  lockForApproval?: boolean;
+  /** Called instead of onSend when lockForQuestion is true and the user submits text */
+  onCustomAnswer?: (text: string) => void;
+  /** Label for the send button when a question is active (e.g. "Next", "Submit"). Null = default arrow icon. */
+  questionButtonLabel?: string | null;
+  /** Whether the question action can be performed (controls send button disabled state during questions). */
+  questionCanAct?: boolean;
+  /** Called when the send button is clicked during a question and there's no text (i.e. the action is next/submit, not a custom answer). */
+  onQuestionAction?: () => void;
+  /** Number of ESC presses so far (0 = none, 1 = first, 2 = second). Triple-ESC to stop. */
+  escCount?: number;
+}
 
 /** Stable empty list — mirrors `session-chat-input.tsx`'s `EMPTY_QUEUE`, same
  *  reasoning (never hand a fresh array to a memoized child). */
@@ -83,13 +242,19 @@ const EMPTY_QUEUE: QueuedMessageView[] = [];
  * to open the `/` palette, and selecting a COMMAND row from it would
  * re-stage — silently discarding the args being typed. Passing this empty
  * list while staged empties the Commands/Skills/MCP sections, which is the
- * part that could re-stage; the `/` menu can still surface its own
- * `SLASH_ACTIONS` (switch-model, switch-agent, ...) while staged, since
- * those are a fixed list internal to `composer/menus/slash-controller.ts`
- * with no override this file can reach — but selecting one of those never
- * re-stages a command, so the specific discard-args bug is closed.
+ * part that could re-stage.
+ *
+ * Task 13 closes the rest of it: round 1's fix left the `/` menu's Actions
+ * section (switch-model, switch-agent, ...) still populated while staged,
+ * because `SLASH_ACTIONS` was a fixed default `composer-editor.tsx` never
+ * overrode. Selecting an action never re-staged a command, so it wasn't the
+ * data-loss bug — but the menu still visibly opened over a staged command's
+ * argument field, which reads as broken. `EMPTY_ACTIONS`, passed alongside
+ * `EMPTY_COMMANDS` below, empties that section too, so the `/` palette is
+ * genuinely fully suppressed while a command is staged.
  */
 const EMPTY_COMMANDS: Command[] = [];
+const EMPTY_ACTIONS: SlashAction[] = [];
 
 /**
  * `ComposerEditor` (`./editor/composer-editor.tsx`) wraps `@tiptap/react` +
@@ -114,33 +279,51 @@ function ComposerEditorFallback() {
 }
 
 /**
- * Fix round 1, Minor: `ComposerEditorHandle.setContent` always ends with
- * `editor.commands.focus('end')` (composer-editor.tsx, closed to this
- * task) — every call moves focus AND the caret into the editor, with no
- * way to opt out. That's correct for prefill (the old code focused the
- * textarea there too) and for `onTypeAhead` (the editor IS the intended
- * focus target). It is a regression for failed-send recovery and the
- * question-unlock restore: the old code's equivalents
- * (`setText(current => merge(...))`, `setText(saved)`) never moved focus,
- * so a user reading something else in the transcript when a send failed,
- * or when a question resolved, kept their attention where they'd put it.
- * This snapshots whatever had focus before the call and restores it
- * afterward whenever the editor itself wasn't already the focus target —
- * the only way to counteract a forced-focus primitive from outside it.
+ * Fix round 1, Minor: `ComposerEditorHandle.setContent`/`setDocument` always
+ * end with `editor.commands.focus('end')` (composer-editor.tsx) — every call
+ * moves focus AND the caret into the editor, with no way to opt out. That's
+ * correct for prefill (the old code focused the textarea there too) and for
+ * `onTypeAhead` (the editor IS the intended focus target). It is a
+ * regression for failed-send recovery and the question-unlock restore: the
+ * old code's equivalents (`setText(current => merge(...))`, `setText(saved)`)
+ * never moved focus, so a user reading something else in the transcript when
+ * a send failed, or when a question resolved, kept their attention where
+ * they'd put it. This snapshots whatever had focus before the call and
+ * restores it afterward whenever the editor itself wasn't already the focus
+ * target — the only way to counteract a forced-focus primitive from outside
+ * it. Generic over which handle method actually applies the change, since
+ * Task 13 needs this for both the doc-based restore (mention-preserving
+ * recovery, question-unlock) below.
  */
-function setContentWithoutStealingFocus(
+function withoutStealingFocus(
   handle: ComposerEditorHandle | null,
-  text: string,
-  mode: 'replace' | 'merge',
+  apply: (handle: ComposerEditorHandle) => void,
 ): void {
   if (!handle) return;
   const el = handle.getElement();
   const wasFocused = !!el && (document.activeElement === el || el.contains(document.activeElement));
   const previouslyFocused = wasFocused ? null : (document.activeElement as HTMLElement | null);
-  handle.setContent(text, mode);
+  apply(handle);
   if (!wasFocused) {
     previouslyFocused?.focus?.();
   }
+}
+
+/**
+ * The mention-preserving counterpart to `handle.setContent` — Task 13. Used
+ * by the failed-send recovery merge and the question-unlock restore, both of
+ * which now snapshot/restore the full ProseMirror document (`getDocument`/
+ * `setDocument`) instead of plain text, specifically so any mention ATOM
+ * nodes present survive the round trip. See `ComposerEditorHandle.
+ * getDocument`'s own doc comment (composer-editor.tsx) for why `setContent`
+ * cannot do this.
+ */
+function setDocumentWithoutStealingFocus(
+  handle: ComposerEditorHandle | null,
+  doc: JSONContent,
+  mode: 'replace' | 'merge',
+): void {
+  withoutStealingFocus(handle, (h) => h.setDocument(doc, mode));
 }
 
 function ComposerImpl({
@@ -181,14 +364,6 @@ function ComposerImpl({
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
-  // `onFileSearch` is NOT wired. The `@` menu's file search
-  // (`composer/hooks/use-file-search.ts`) is a closed surface for this task
-  // and always calls `searchWorkspaceFiles` directly — it takes no override.
-  // `session-chat.tsx` is the one real caller passing a custom
-  // `onFileSearch` (`handleFileSearch`) today; once Task 13 swaps this
-  // component in, that override is silently unused. Flagged in the task
-  // report — fixing it needs a new parameter on `useFileSearch`, out of
-  // scope for a closed file.
   providers,
   threadContext,
   onContextClick,
@@ -220,7 +395,11 @@ function ComposerImpl({
   const cardRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
-  const savedTextBeforeQuestionRef = useRef('');
+  // The full ProseMirror document, not text — Task 13. `null` means "nothing
+  // to restore" (either not currently locked, or the draft was empty when
+  // it got saved). See the `lockForQuestion` effect below for why this has
+  // to be a document snapshot, not a string.
+  const savedDocBeforeQuestionRef = useRef<JSONContent | null>(null);
 
   // ── The editor: dynamically loaded, imperative handle only. ─────────────
   const editorRef = useRef<ComposerEditorHandle | null>(null);
@@ -538,21 +717,21 @@ function ComposerImpl({
     () => ({ current: editorElement }),
     [editorElement],
   );
-  // Fix round 1, Important: redirecting into a NON-empty, unfocused editor
-  // (an everyday state — type something, click a message to read it, type
-  // again) and inserting via `setContent(char, 'merge')` splits the
-  // document at whatever the stale cursor position happens to be
-  // (`insertContent([{type:'paragraph'}, ...])`, per composer-editor.tsx) —
-  // real corruption, not a display quirk. The handle exposes no raw
-  // "insert inline at cursor" primitive, so the only content-safe fix
-  // available from this file is to redirect ONLY while the editor is
-  // empty — the overwhelming common case for this feature (nothing typed
-  // yet) — and otherwise just let the focus move `useComposerFocus` already
-  // performed stand, dropping the keystroke instead of risking the draft.
+  // Fix round 1, Important (superseded — Task 13): redirecting into a
+  // NON-empty, unfocused editor and inserting via `setContent(char, 'merge')`
+  // used to split the document at whatever the stale cursor position
+  // happened to be (`insertContent([{type:'paragraph'}, ...])`) — real
+  // corruption, not a display quirk. Round 1's fix gated the redirect on
+  // `isEmpty()` and dropped the keystroke otherwise, because the handle
+  // exposed no "insert inline at cursor" primitive. `insertAtCursor` (Task
+  // 13, `ComposerEditorHandle`) is that primitive — it inserts literal text
+  // at the CURRENT selection without moving focus to the end, exactly what
+  // the old plain `<textarea>`'s `setRangeText` did. `useComposerFocus`
+  // already focuses the element (via the DOM) before calling this, so
+  // ProseMirror's existing selection is wherever the user's cursor actually
+  // was — the empty-only gate is no longer needed.
   const handleTypeAhead = useCallback((char: string) => {
-    if (editorRef.current?.isEmpty()) {
-      editorRef.current.setContent(char, 'merge');
-    }
+    editorRef.current?.insertAtCursor(char);
   }, []);
   useComposerFocus({
     ref: composerFocusRef,
@@ -638,16 +817,28 @@ function ComposerImpl({
   }, [prefillId, prefillText, prefillFiles, prefillMode, editorElement]);
 
   // ── Question lock: save/restore the draft, ported from
-  // session-chat-input.tsx:383-394. Loses mention richness in the saved
-  // draft (folds back in as plain "@label" text) for the same reason as the
-  // failed-send recovery below — documented there and in the task report.
+  // session-chat-input.tsx:383-394.
+  //
+  // Task 13 fix — mention-preserving recovery: the version this replaced
+  // saved `getContent().text` (a STRING) and restored it via `setContent`,
+  // which flattens every mention into plain, unlinked "@label" text on the
+  // way in AND has no way to turn that text back into mention atom nodes on
+  // the way out. A question appearing mid-draft — @-mention a file, then a
+  // question interrupts, then it resolves — used to come back with the
+  // mention text still visible but its structured entry gone, so the next
+  // send's `<file_ref>` block silently omitted it. Snapshotting/restoring
+  // the full document (`getDocument`/`setDocument`) instead carries the
+  // mention atom nodes through untouched. `isEmpty()` (not a truthy-string
+  // check) decides whether there's anything worth saving, matching the old
+  // code's "only restore if something was there" intent exactly.
   useEffect(() => {
     if (lockForQuestion) {
-      savedTextBeforeQuestionRef.current = editorRef.current?.getContent().text ?? '';
+      const wasEmpty = editorRef.current?.isEmpty() ?? true;
+      savedDocBeforeQuestionRef.current = wasEmpty ? null : (editorRef.current?.getDocument() ?? null);
       editorRef.current?.clear();
-    } else if (savedTextBeforeQuestionRef.current) {
-      setContentWithoutStealingFocus(editorRef.current, savedTextBeforeQuestionRef.current, 'replace');
-      savedTextBeforeQuestionRef.current = '';
+    } else if (savedDocBeforeQuestionRef.current) {
+      setDocumentWithoutStealingFocus(editorRef.current, savedDocBeforeQuestionRef.current, 'replace');
+      savedDocBeforeQuestionRef.current = null;
     }
   }, [lockForQuestion]);
 
@@ -745,6 +936,12 @@ function ComposerImpl({
 
     const filesToSend = attachedFiles.length > 0 ? [...attachedFiles] : undefined;
     const mentionsToSend = content.mentions.length > 0 ? [...content.mentions] : undefined;
+    // Snapshot the actual document — not just its text — BEFORE `reset.clear`
+    // below wipes it. This is what the catch block restores from on a
+    // failed send; see its own comment for why a document snapshot, not a
+    // string, is required to bring mentions back.
+    const submittedDoc = editorRef.current?.getDocument() ?? null;
+    const submittedIsEmpty = editorRef.current?.isEmpty() ?? true;
 
     const reset = resolveComposerResetOnSend(clearOnSend, attachedFiles);
     if (reset.clear) {
@@ -768,21 +965,37 @@ function ComposerImpl({
       await onSend(trimmed, filesToSend, mentionsToSend);
       for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
     } catch {
-      // Restore the submitted draft, merged with whatever the user typed
-      // while the request was in flight — same order as the original
-      // (`${submitted}\n\n${current}`, via `mergeFailedSubmissionText`
-      // itself, not the handle's `setContent(..., 'merge')`, whose insert
-      // order is reversed — see the task report). Mentions from the failed
-      // send fold back in as plain "@label" text: `ComposerEditorHandle`
-      // has no primitive to reinsert a mention ATOM node at an arbitrary
-      // position, only `setContent(text, mode)`, so the retry's structured
-      // mention payload is not restored — the visible text is, and stays
-      // readable. Documented in the task report as a follow-up needing a
-      // small extension to the (closed, for this task) editor handle.
-      if (clearOnSend) {
-        const currentText = editorRef.current?.getContent().text ?? '';
-        const merged = mergeFailedSubmissionText(currentText, trimmed);
-        setContentWithoutStealingFocus(editorRef.current, merged, 'replace');
+      // Task 13 fix — mention-preserving recovery. Restore the submitted
+      // draft, merged with whatever the user typed while the request was in
+      // flight, same order as the original (`${submitted}\n\n${current}`).
+      // The version this replaced restored via `setContent`, string-only:
+      // it kept the TEXT readable but any mention the failed send carried
+      // — or that the user typed into the retry meanwhile — flattened to
+      // plain "@label" text with no way back to a mention atom node.
+      // `getContent().mentions` for the RETRY send is derived exclusively
+      // from atom nodes still present in the document (`serialize.ts`), so
+      // a flattened retry silently sent no `<file_ref>`/`<agent_ref>`/
+      // `<session_ref>` block at all — the agent never saw the mention.
+      // `mergeFailedSubmissionDocument` operates on the actual ProseMirror
+      // JSON (`submittedDoc`, snapshotted above before the clear) instead,
+      // so every mention atom node from both sides survives the merge.
+      if (clearOnSend && submittedDoc) {
+        const currentDoc = editorRef.current?.getDocument() ?? submittedDoc;
+        const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
+        const merged = mergeFailedSubmissionDocument(
+          currentDoc,
+          currentIsEmpty,
+          submittedDoc,
+          submittedIsEmpty,
+        );
+        // Skip the imperative call entirely when nothing actually changes —
+        // `setDocument` always dispatches a transaction and resets the
+        // cursor to the end, which would needlessly disturb an in-progress
+        // retry draft that didn't need restoring (the files-only-send case:
+        // `mergeFailedSubmissionDocument` returns `currentDoc` unchanged).
+        if (merged !== currentDoc) {
+          setDocumentWithoutStealingFocus(editorRef.current, merged, 'replace');
+        }
         setAttachedFiles((current) => mergeFailedSubmissionFiles(current, filesToSend ?? []));
       }
     }
@@ -899,9 +1112,10 @@ function ComposerImpl({
           )}
 
           {/* Attached files — AttachmentTiles (assigned item 6), replacing
-              the old AttachmentPreview. `attachment-preview.tsx` is not
-              deleted; Task 13 owns that once every consumer of the old
-              composer has moved. */}
+              the old AttachmentPreview. `attachment-preview.tsx` (along with
+              `mention-popover.tsx` and `slash-command-popover.tsx`) was
+              deleted in Task 13, once this component became the only live
+              composer and they had no remaining reference. */}
           <AttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
 
           {stagedCommand && (
@@ -959,6 +1173,7 @@ function ComposerImpl({
                 sessions={allSessions ?? []}
                 currentSessionId={sessionId}
                 commands={stagedCommand ? EMPTY_COMMANDS : commands}
+                actions={stagedCommand ? EMPTY_ACTIONS : undefined}
                 onSelectCommand={handleSelectCommand}
                 onSelectAction={handleSelectAction}
               />

@@ -10,6 +10,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'rea
 import { createMentionSuggestion } from '../menus/mention-controller';
 import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashAction } from '../menus/slash-actions';
+import { SLASH_ACTIONS } from '../menus/slash-actions';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
 import { MentionNode } from './mention-node';
@@ -26,6 +27,48 @@ export interface ComposerEditorHandle {
    * scope for this task.
    */
   setContent(text: string, mode?: 'replace' | 'merge'): void;
+  /**
+   * The JSON-content-aware counterpart to `getContent`/`setContent` — Task
+   * 13. `getContent().mentions` is a ONE-WAY projection: it's derived by
+   * walking the live document for `mention` atom nodes (`serialize.ts`) and
+   * has no path back to those nodes from the returned `{ text, mentions }`
+   * pair. A caller that snapshots via `getContent()` and later tries to
+   * restore via `setContent(text, mode)` therefore can never bring the
+   * mention nodes back — `setContent` only ever builds plain paragraph text
+   * (`textToParagraphs`, below), never atoms. `getDocument`/`setDocument`
+   * round-trip the actual ProseMirror JSON, atoms included, which is what a
+   * failed-send retry or a question-lock save/restore needs: the mentions
+   * the user typed must survive the round trip, not flatten into `"@label"`
+   * text that the next send's `<file_ref>`/`<agent_ref>`/`<session_ref>`
+   * blocks (built from the STRUCTURED `mentions` array, not the text) would
+   * then be missing entirely.
+   */
+  getDocument(): JSONContent;
+  /**
+   * `mode` mirrors `setContent`'s: `'replace'` (default) swaps the whole
+   * document; `'merge'` concatenates `doc.content` as a new paragraph after
+   * whatever's already there (a ProseMirror fragment concat, not a string
+   * concat — this is what keeps mention atoms intact through a merge, unlike
+   * `setContent('merge')`'s `textToParagraphs`, which only ever knows how to
+   * build plain text).
+   */
+  setDocument(doc: JSONContent, mode?: 'replace' | 'merge'): void;
+  /**
+   * Insert literal text at the CURRENT cursor/selection — Task 13. The old
+   * plain `<textarea>` gave this for free via `setRangeText`; nothing here
+   * replaced it until now. `setContent(char, 'merge')` cannot substitute:
+   * its `merge` mode always inserts a NEW paragraph and force-focuses the
+   * end of the document (see that method's own callers), which is correct
+   * for a multi-line draft restore but wrong for a single redirected
+   * keystroke — it would split whatever the user was mid-typing at their
+   * actual (possibly mid-document) cursor position. This inserts inline,
+   * at the selection, and does not move focus itself (the caller —
+   * `useComposerFocus`'s `onTypeAhead` — has already focused the element
+   * via the DOM before this fires, so the existing ProseMirror selection is
+   * exactly where the old textarea's `selectionStart` would have pointed).
+   * A no-op on an empty string (ProseMirror text nodes must be non-empty).
+   */
+  insertAtCursor(text: string): void;
   clear(): void;
   focus(): void;
   isEmpty(): boolean;
@@ -77,6 +120,18 @@ export interface ComposerEditorProps {
    * `menus/slash-actions.ts` for the full list.
    */
   onSelectAction?: (action: SlashAction) => void;
+  /**
+   * Overrides the `/` menu's Actions section — Task 13. Defaults to
+   * `SLASH_ACTIONS` (`menus/slash-actions.ts`), same as before this prop
+   * existed. `slash-controller.ts`'s `buildSlashSections` already took an
+   * `actions` override (`slash-items.ts`, "overridable for tests"), but
+   * nothing threaded it through from a host until now — passing `commands={
+   * []}` while a command is staged emptied the Commands/Skills/MCP sections
+   * but left Actions (switch-model, switch-agent, ...) fully populated, so
+   * the `/` palette still opened over a staged command's argument field.
+   * Pass `[]` to suppress the menu completely in that state.
+   */
+  actions?: SlashAction[];
 }
 
 /**
@@ -166,6 +221,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       commands,
       onSelectCommand,
       onSelectAction,
+      actions,
     },
     ref,
   ) {
@@ -220,6 +276,15 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     useEffect(() => {
       commandsRef.current = commands ?? [];
     }, [commands]);
+
+    // Same live-getter reasoning as commandsRef — defaults to SLASH_ACTIONS
+    // (buildSlashSections' own default, made explicit here rather than left
+    // implicit) so an unset `actions` prop is byte-identical to before this
+    // prop existed.
+    const actionsRef = useRef(actions ?? SLASH_ACTIONS);
+    useEffect(() => {
+      actionsRef.current = actions ?? SLASH_ACTIONS;
+    }, [actions]);
 
     const onSelectCommandRef = useRef(onSelectCommand);
     useEffect(() => {
@@ -310,6 +375,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           'slashSuggestion',
           createSlashSuggestion({
             getCommands: () => commandsRef.current,
+            getActions: () => actionsRef.current,
             onSelectCommand: (command) => onSelectCommandRef.current?.(command),
             onSelectAction: (action) => onSelectActionRef.current?.(action),
             onHasRowsChange: (hasRows) => {
@@ -369,6 +435,28 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             editor.commands.setContent({ type: 'doc', content: paragraphs });
           }
           editor.commands.focus('end');
+        },
+        getDocument: () => (editor ? (editor.getJSON() as JSONContent) : EMPTY_DOC),
+        setDocument: (doc, mode = 'replace') => {
+          if (!editor) return;
+          const content = doc.content ?? [];
+          if (mode === 'merge' && !editor.isEmpty) {
+            editor.commands.insertContent([{ type: 'paragraph' }, ...content]);
+          } else {
+            editor.commands.setContent({ type: 'doc', content });
+          }
+          editor.commands.focus('end');
+        },
+        insertAtCursor: (text) => {
+          if (!editor || !text) return;
+          const segments = text.split('\n');
+          const content: JSONContent[] = [];
+          segments.forEach((segment, i) => {
+            if (segment) content.push({ type: 'text', text: segment });
+            if (i < segments.length - 1) content.push({ type: 'hardBreak' });
+          });
+          if (content.length === 0) return;
+          editor.commands.insertContent(content);
         },
         clear: () => editor?.commands.setContent(EMPTY_DOC),
         focus: () => editor?.commands.focus('end'),

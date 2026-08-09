@@ -15,6 +15,14 @@ export const SLASH_PLUGIN_KEY = new PluginKey('slashSuggestion');
 
 export interface CreateSlashSuggestionOptions {
   getCommands: () => Command[];
+  /**
+   * Live source for the `/` menu's Actions section — defaults to
+   * `SLASH_ACTIONS` (`slash-items.ts`'s own default) when omitted, so
+   * existing callers that don't pass this see no change. `composer.tsx`
+   * (Task 13) passes `[]` while a command is staged, so selecting a Commands
+   * row can't discard the args being typed.
+   */
+  getActions?: () => SlashAction[];
   /** A real OpenCode command was picked. This STAGES it — mirrors the live
    *  `handleSelectCommand` (session-chat-input.tsx:875-883): the host shows
    *  an args input and waits for a submit, it does not run the command here. */
@@ -60,7 +68,11 @@ export function createSlashSuggestion(
   const onSelect = (row: SlashRow) => latestCommand?.(row);
 
   const recompute = (query: string): SlashSection[] => {
-    const sections = buildSlashSections({ commands: opts.getCommands(), query });
+    const sections = buildSlashSections({
+      commands: opts.getCommands(),
+      actions: opts.getActions?.(),
+      query,
+    });
     nav.setRows(sections.flatMap((s) => s.rows));
     return sections;
   };
