@@ -19,7 +19,6 @@ import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import Loading from '@/components/ui/loading';
 import {
   PreviewImage,
   PreviewImageContent,
@@ -28,7 +27,7 @@ import {
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { useSandboxImageSrc } from '@/features/session/sandbox-image';
 import { cn } from '@/lib/utils';
-import { getFileIcon, getFilename, getFileType } from '@/lib/utils/file-utils';
+import { getFilename } from '@/lib/utils/file-utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
@@ -43,6 +42,7 @@ import {
   isTextPart,
   splitUserParts,
 } from '@/ui';
+import { FileTileBody, TILE_INTERACTIVE, TILE_SURFACE } from '../attachment-tile';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -447,49 +447,14 @@ export function planAttachmentGrid(
   };
 }
 
-/**
- * The press/hover feel every attachment shares — a file pill, an image row and
- * an image tile all answer the pointer the same way, so the block reads as one
- * set of controls rather than three.
- */
-const ATTACHMENT_INTERACTIVE =
-  'hover:bg-muted/50 cursor-pointer transition-colors active:scale-[0.97]';
-
-/**
- * Every attachment is the same square tile — the picture if we have one, an
- * icon with the name in the bottom corner otherwise. One shape is the whole
- * idea: there is no rows-vs-tiles mode to pick, nothing reflows when a file
- * joins a message, and a filename's length can never set a tile's width.
- */
-const TILE_SURFACE =
-  'border-border bg-background relative block size-20 shrink-0 overflow-hidden rounded-md border';
-
 /** True when we can actually paint this attachment rather than name it. */
 const isImageAttachment = (file: NormalizedAttachment) =>
   Boolean(file.mime?.startsWith('image/') && file.src);
 
-/**
- * A named attachment: icon top-left, filename along the bottom.
- *
- * Two lines, bottom-aligned, because the name is the only thing distinguishing
- * one document from another — `AdmitCard-260411128971.pdf` truncated to a single
- * line is indistinguishable from its siblings.
- */
-function FileTileBody({ file, pending }: { file: NormalizedAttachment; pending?: boolean }) {
-  const Icon = getFileIcon(getFileType(file.filename));
-  return (
-    <span className="flex size-full flex-col justify-between gap-1 p-2">
-      {pending ? (
-        <Loading className="text-muted-foreground size-5 shrink-0" variant="spokes" />
-      ) : (
-        <Icon className="text-muted-foreground size-5 shrink-0" />
-      )}
-      <span className="text-foreground line-clamp-2 text-left text-xs leading-tight break-all">
-        {file.filename}
-      </span>
-    </span>
-  );
-}
+// TILE_SURFACE, TILE_INTERACTIVE and FileTileBody (icon top-left, filename
+// two-line-clamped along the bottom) live in `../attachment-tile` — shared
+// with the composer's preview tiles so the two can never drift apart. See
+// that module for why.
 
 /**
  * An image attachment: a square tile that opens full-size on click.
@@ -523,7 +488,7 @@ function AttachmentImage({
     // falls back to the named tile, so the tile always says which it is.
     return (
       <span title={file.filename} className={className}>
-        <FileTileBody file={file} pending={pending || isLoading || file.pending} />
+        <FileTileBody filename={file.filename} pending={pending || isLoading || file.pending} />
       </span>
     );
   }
@@ -601,7 +566,7 @@ export function MessageAttachments({
                 aria-label={`Show ${hidden} more attachment${hidden === 1 ? '' : 's'}`}
                 className={cn(
                   TILE_SURFACE,
-                  ATTACHMENT_INTERACTIVE,
+                  TILE_INTERACTIVE,
                   'text-muted-foreground flex items-center justify-center text-sm font-medium',
                 )}
               >
@@ -617,7 +582,7 @@ export function MessageAttachments({
               <AttachmentImage
                 file={file}
                 pending={pending}
-                className={cn(TILE_SURFACE, ATTACHMENT_INTERACTIVE)}
+                className={cn(TILE_SURFACE, TILE_INTERACTIVE)}
               />
             </li>
           );
@@ -636,10 +601,10 @@ export function MessageAttachments({
               }}
               className={cn(
                 'border-border bg-background relative block h-20 min-w-40 shrink-0 overflow-hidden rounded-md border',
-                canOpen && ATTACHMENT_INTERACTIVE,
+                canOpen && TILE_INTERACTIVE,
               )}
             >
-              <FileTileBody file={file} pending={pending || file.pending} />
+              <FileTileBody filename={file.filename} pending={pending || file.pending} />
             </button>
           </li>
         );
