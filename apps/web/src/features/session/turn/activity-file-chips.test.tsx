@@ -23,7 +23,7 @@ const read = (id: string, filePath: string): ToolPart =>
  *  of files the row actually opened. */
 const chipCount = (markup: string) => markup.split('aria-label="Open ').length - 1;
 
-const render = (parts: Part[], { open = true, running = false } = {}) =>
+const render = (parts: Part[], { open = true, running = false, bare = false } = {}) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
@@ -31,6 +31,7 @@ const render = (parts: Part[], { open = true, running = false } = {}) =>
           <ActivityFileChipStep
             parts={parts}
             running={running}
+            bare={bare}
             sessionId="session-1"
             disableNavigation
           />
@@ -90,6 +91,13 @@ describe('ActivityFileChipStep', () => {
     expect(markup).toContain('Read 3 files');
     expect(chipCount(markup)).toBe(0);
     expect(markup).not.toContain('package.json');
+  });
+
+  test('a bare row keeps the indent that gives the chain rail its lane', () => {
+    // A bare row drops the ICON, not the rail. The rail runs at `left-2`, so a
+    // chip flush to the margin has the hairline through its left edge.
+    const markup = render([read('1', '/workspace/pdf.ts')], { bare: true });
+    expect(markup).toContain('pl-7');
   });
 
   test('a run of one is still a file — one chip, singular label', () => {

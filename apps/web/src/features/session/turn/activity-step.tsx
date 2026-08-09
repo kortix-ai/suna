@@ -149,9 +149,10 @@ function ActivityStepImpl({
         // left an expanded command's block 6px left of every other row's
         // content in the same chain. One override is half an override.
         //
-        // 1.75rem = the 16px icon + the 12px `gap-3` above. A bare row has no
-        // icon, so its text starts at the margin and its card has to as well.
-        hideIcon ? '[--tool-indent:0rem]' : '[--tool-indent:1.75rem]',
+        // 1.75rem = the 16px icon + the 12px `gap-3` above. A bare row hides the
+        // icon but keeps this: the chain rail still runs at `left-2`, so a card
+        // at the margin would have the hairline cutting through it.
+        '[--tool-indent:1.75rem]',
       )}
     >
       <ToolPartRenderer part={part} sessionId={sessionId} disableNavigation={disableNavigation} />

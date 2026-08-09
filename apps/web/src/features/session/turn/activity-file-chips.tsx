@@ -144,7 +144,7 @@ function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) =
         aria-label={`Open ${filename}`}
         onClick={() => onOpen(path)}
         className={cn(
-          'border-border bg-background flex max-w-full items-center gap-3 rounded-md border p-1.5 pr-3 py-1',
+          'border-border bg-background flex max-w-full items-center gap-3 rounded-md border p-1.5 py-1 pr-3',
           'hover:bg-muted/50 cursor-pointer transition-colors active:scale-[0.97]',
           'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
         )}
@@ -353,10 +353,11 @@ function ActivityFileChipStepImpl({
         {/* `pl-7` puts the files under the LABEL (size-4 icon + gap-3), clear of
 				    the chain rail at `left-2` — the indent is what says they belong to
 				    the row above rather than to the chain. */}
-        {/* Bare drops the indent with the icon it was measured from: `pl-7` is
-					  the icon's 16px plus the 12px gap, so with no icon it is 28px of
-					  nothing, pushing the files off the margin the rest of the turn keeps. */}
-        <div className={cn('mt-3 space-y-3', !bare && 'pl-7')}>
+        {/* The indent survives a bare row even though the icon it was measured
+					  from does not. The chain rail runs at `left-2`, so content flush to
+					  the margin puts the hairline 8px inside it — straight through the
+					  left edge of the first chip. 28px is the lane the rail needs. */}
+        <div className="mt-3 space-y-3 pl-7">
           {paths.length > 0 && (
             <ul className="flex flex-wrap gap-2">
               {paths.map((path) => (

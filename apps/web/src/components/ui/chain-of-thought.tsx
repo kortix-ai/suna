@@ -56,6 +56,14 @@ export type ChainOfThoughtStepProps = React.ComponentProps<typeof Disclosure>;
  * hairline on the 8px centre of the 16px leading icon, the column every step's
  * icon occupies; `top-[1.6rem]` clears that icon so the rail reads as hanging
  * from it rather than striking through it.
+ *
+ * A row that leads with no icon — the bare single-step burst — still draws it.
+ * The rail's job is to tie content to the row above it, and that is true whether
+ * or not the row happens to show a glyph. What such a row must NOT do is let its
+ * content start at the margin: the hairline then lands 8px INSIDE the content
+ * and strikes through the left edge of the file chip. The indent is what gives
+ * the rail its lane, so bare rows keep it (`pl-7` / `--tool-indent`) even though
+ * they drop the icon that indent was originally measured from.
  */
 export function ChainOfThoughtStep({ children, className, ...props }: ChainOfThoughtStepProps) {
   return (
@@ -63,7 +71,7 @@ export function ChainOfThoughtStep({ children, className, ...props }: ChainOfTho
       <div
         aria-hidden
         className={cn(
-          'bg-muted-foreground/15 absolute top-[1.6rem] bottom-0 left-2 w-[0.7px]',
+          'bg-muted-foreground/15 absolute top-[1.6rem] bottom-0 left-2 w-[1px]',
           'hidden group-data-[state=open]/step:block',
           'group-has-[[data-state=open]]/step:block',
         )}

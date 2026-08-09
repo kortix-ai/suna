@@ -708,6 +708,69 @@ describe('chain rail', () => {
   });
 });
 
+describe('bare row alignment', () => {
+  /**
+   * A bare row hides its ICON but keeps its rail, so the two have to agree about
+   * the same 28px lane: the rail hangs at `left-2`, and content flush to the
+   * margin puts that hairline 8px inside it — straight through the left edge of
+   * the file chip. The indent is what the rail runs in.
+   */
+  const renderBare = (parts: Part[]) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <ActivityBurst parts={parts} sessionId="session-1" working={false} disableNavigation />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  const RAIL_SHOWS = 'group-data-[state=open]/step:block';
+
+  const write = (id: string, path: string) =>
+    tool(id, 'write', {
+      status: 'completed',
+      output: 'ok',
+      input: { filePath: path },
+      time: { start: 1, end: 2 },
+    });
+
+  test('a bare row still draws the rail', () => {
+    const markup = renderBare([write('1', '/workspace/pdf.ts')]);
+    // The row IS bare: no summary line above it.
+    expect(markup).not.toContain('Completed 1 step');
+    expect(markup).toContain(RAIL_SHOWS);
+  });
+
+  test('a bare TOOL row keeps its card indent for the same reason', () => {
+    const markup = renderBare([
+      tool('1', 'bash', {
+        status: 'completed',
+        output: 'ok',
+        input: { command: 'ls' },
+        time: { start: 1, end: 2 },
+      }),
+    ]);
+    // The icon is hidden…
+    expect(markup).toContain('&gt;span:first-child]:hidden');
+    // …but the card still sits in the rail's lane, never at 0.
+    expect(markup).toContain('[--tool-indent:1.75rem]');
+    expect(markup).not.toContain('[--tool-indent:0rem]');
+  });
+
+  test('a bare THOUGHT keeps both the rail and the indent', () => {
+    const markup = renderBare([
+      {
+        id: 'r',
+        type: 'reasoning',
+        text: 'Weighing two schemas',
+        time: { start: 1, end: 2 },
+      } as unknown as Part,
+    ]);
+    expect(markup).toContain('Thinking');
+    expect(markup).toContain(RAIL_SHOWS);
+  });
+});
+
 describe('chain alignment', () => {
   /**
    * A tool row's card has to land in the same column as every other row's
@@ -747,7 +810,9 @@ describe('chain alignment', () => {
     expect(markup).toContain('[--tool-indent:1.75rem]');
   });
 
-  test('a BARE row has no icon, so its card starts at the margin', () => {
+  test('a BARE row hides its icon but keeps the card in the rail lane', () => {
+    // The icon goes; the indent must not. The chain rail still runs at `left-2`,
+    // so a card at the margin would have the hairline cutting through it.
     const markup = wrap(
       <ChainOfThoughtStep>
         <ActivityStep
@@ -759,7 +824,9 @@ describe('chain alignment', () => {
         />
       </ChainOfThoughtStep>,
     );
-    expect(markup).toContain('[--tool-indent:0rem]');
+    expect(markup).toContain('&gt;span:first-child]:hidden');
+    expect(markup).toContain('[--tool-indent:1.75rem]');
+    expect(markup).not.toContain('[--tool-indent:0rem]');
   });
 
   test('the card reads the variable rather than a hardcoded 22px', () => {

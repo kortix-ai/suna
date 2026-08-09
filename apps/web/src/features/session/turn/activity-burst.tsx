@@ -156,7 +156,7 @@ function ThoughtChainStepImpl({
           </div>
         </DisclosureTrigger>
         <DisclosureContent>
-          <div className={cn('mt-3', !bare && 'pl-7')}>
+          <div className="mt-3 pl-7">
             <ThoughtStepBody texts={texts} running={running} />
           </div>
         </DisclosureContent>
