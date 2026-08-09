@@ -347,11 +347,13 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
-- GitHub Actions runs `pnpm test -- --full` inside a disposable persistent
-  Platinum sandbox through `.github/workflows/test.yml`. The persistent type
-  selects Platinum's stateful-restore path. CI must fetch and verify the exact
-  SHA, upload `tests/test-results`, and delete the sandbox.
-- The Platinum CI worker is infrastructure only. Do not add CI-only test logic.
+- GitHub Actions runs `pnpm test -- --full` inside a disposable warm sandbox
+  through `.github/workflows/test.yml`. Set `provider` to `platinum`, `daytona`,
+  or `auto`. Auto tries Platinum first. It uses Daytona only when Platinum
+  infrastructure throws. A non-zero test exit does not trigger fallback.
+- Both providers fetch and verify the exact SHA, upload `tests/test-results`,
+  and delete the sandbox. The sandbox worker is infrastructure only. Do not add
+  CI-only test logic.
 
 ### Product flow source of truth
 

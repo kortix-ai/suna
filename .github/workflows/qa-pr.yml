@@ -4,6 +4,16 @@ on:
   pull_request:
     branches: [main, staging, prod]
   workflow_dispatch:
+    inputs:
+      provider:
+        description: Sandbox provider for this run.
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - platinum
+          - daytona
 
 concurrency:
   group: qa-pr-${{ github.ref }}
@@ -15,6 +25,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       mode: full
+      provider: ${{ inputs.provider || 'auto' }}
       artifact-name: qa-pr-results
       retention-days: 14
     secrets: inherit

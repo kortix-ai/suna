@@ -68,16 +68,35 @@ work.
 Each root run writes a benchmark to
 `tests/test-results/local/benchmark-<timestamp>.json`.
 
-## Run CI on Platinum
+## Run CI in a warm sandbox
 
 Keep the test command unchanged. GitHub Actions invokes
-`bun tests/bin/platinum-ci.ts`, and the Platinum worker runs `pnpm test` or
-`pnpm test -- --full` at the exact requested SHA.
+`bun tests/bin/sandbox-ci.ts`, and the selected worker runs `pnpm test` or
+`pnpm test -- --full` at the exact requested SHA. Select `auto`, `platinum`, or
+`daytona` with `TEST_SANDBOX_PROVIDER`.
+
+- Use `auto` by default. Try Platinum first when its key exists.
+- Fall back to Daytona only when the Platinum runner throws an infrastructure
+  error. Return a non-zero test exit without fallback.
+- Keep provider selection in sandbox infrastructure. Keep test behavior in the
+  unchanged root command.
+- Give each provider one content-addressed warm image per lockfile hash.
+- Bake Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and the warm
+  checkout into the provider image.
+- Pre-pull Supabase images before capturing the warm image.
+- Fetch the public pull-request or branch ref inside the sandbox.
+- Verify the full 40-character SHA before installing or testing.
+- Run the offline lockfile install before starting the root command.
+- Stream the worker log and download `tests/test-results` before deletion.
+- Delete the sandbox in an unconditional cleanup path.
+- Retry transient provider failures with bounded backoff.
+- Fail the workflow when sandbox deletion exhausts its retry budget.
+- Keep product sandbox-lifecycle flows separate from the CI worker sandbox.
+
+For Platinum:
 
 - Use one `kortix-ci-v*` template per `pnpm-lock.yaml` hash.
 - Build one OCI base and one stateful derived template per lockfile hash.
-- Bake Node, Bun, pnpm, Docker, Chromium, linked `node_modules`, and the warm
-  checkout into the base.
 - Pre-pull Supabase images during the stateful capture. Remove the temporary
   database before capture.
 - Ignore initial Supabase service health only until migrations create the schema.
@@ -88,16 +107,22 @@ Keep the test command unchanged. GitHub Actions invokes
 - Request Platinum's `kernel_modules: container` template profile.
 - Load the injected container modules before starting dockerd.
 - Record `via=restore` or `via=cold-boot` for every worker benchmark.
-- Fetch the public pull-request or branch ref inside the sandbox.
-- Verify the full 40-character SHA before installing or testing.
 - Use a persistent 8 vCPU, 16 GiB RAM, 50 GiB disk worker for Platinum's
   stateful restore path. Treat it as disposable and always delete it.
 - Stream the worker log through the Platinum file API.
-- Download `tests/test-results` before deleting the sandbox.
-- Delete the sandbox in an unconditional cleanup path.
-- Retry transient provider failures with bounded backoff.
-- Fail the workflow when sandbox deletion exhausts its retry budget.
-- Keep product sandbox-lifecycle flows separate from the CI worker sandbox.
+
+For Daytona:
+
+- Build one OCI base snapshot and one warm captured snapshot per lockfile hash.
+- Use `DAYTONA_CI_TARGET`, then `DAYTONA_TARGET`, to select the nested-Docker
+  region. Do not reuse the product `DAYTONA_WARM_TARGET`.
+- Start nested Docker in a temporary builder and pull the Supabase images.
+- Stop Supabase and dockerd before capturing the warm snapshot.
+- Require the warm marker after restore before starting tests.
+- Use a private 6 vCPU, 12 GiB RAM, 40 GiB disk worker. These are the current
+  Daytona organization maxima.
+- Label the worker with the repository, SHA, run ID, and run attempt.
+- Delete only a worker whose exact name and labels match the cleanup request.
 
 Do not add CI-only test logic. Change `pnpm test` when local and CI behavior
 must change together.

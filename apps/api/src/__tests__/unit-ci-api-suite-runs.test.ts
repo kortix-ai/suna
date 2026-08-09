@@ -13,22 +13,23 @@ const packageJson = JSON.parse(read('apps/api/package.json')) as {
   scripts: Record<string, string>;
 };
 
-const platinumJob = workflow.slice(workflow.indexOf('\n  platinum:'));
+const sandboxJob = workflow.slice(workflow.indexOf('\n  sandbox:'));
 
 describe('the kortix-api suite actually runs on pull requests', () => {
-  test('the reusable workflow runs the root suite on an exact-SHA Platinum worker', () => {
-    expect(platinumJob).toContain('bun tests/bin/platinum-ci.ts --full');
-    expect(platinumJob).toContain('PLATINUM_TEST_SHA:');
-    expect(platinumJob).toContain('PLATINUM_TEST_REF:');
+  test('the reusable workflow runs the root suite on an exact-SHA sandbox worker', () => {
+    expect(sandboxJob).toContain('bun tests/bin/sandbox-ci.ts --full');
+    expect(sandboxJob).toContain('SANDBOX_TEST_SHA:');
+    expect(sandboxJob).toContain('SANDBOX_TEST_REF:');
+    expect(sandboxJob).toContain('TEST_SANDBOX_PROVIDER:');
   });
 
-  test('the Platinum job never receives the dotenvx master key', () => {
-    expect(platinumJob).not.toContain('DOTENV_PRIVATE_KEY:');
+  test('the sandbox job never receives the dotenvx master key', () => {
+    expect(sandboxJob).not.toContain('DOTENV_PRIVATE_KEY:');
   });
 
-  test('the Platinum job has an independent cancellation cleanup step', () => {
-    expect(platinumJob).toContain('if: always()');
-    expect(platinumJob).toContain('bun tests/bin/platinum-ci-cleanup.ts');
+  test('the sandbox job has an independent provider-neutral cleanup step', () => {
+    expect(sandboxJob).toContain('if: always()');
+    expect(sandboxJob).toContain('bun tests/bin/sandbox-ci-cleanup.ts');
   });
 
   test('full mode reaches every package and app test through package-quality', () => {

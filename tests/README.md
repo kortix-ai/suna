@@ -41,21 +41,27 @@ tests/test-results/local/benchmark-<timestamp>.json
 The file contains the Git SHA, total duration, lane duration, command, and exit
 code.
 
-## Platinum CI workers
+## Sandbox CI workers
 
 GitHub Actions uses `.github/workflows/test.yml` for PR, staging, and release
-tests. The workflow starts a persistent Platinum sandbox and runs the same
-`pnpm test -- --full` command inside it. The persistent type selects Platinum's
-working stateful-restore path. The worker remains disposable. Both the runner
-and workflow cleanup delete it after every result.
+tests. The workflow runs the same `pnpm test -- --full` command in Platinum or
+Daytona. Set `provider` to `auto`, `platinum`, or `daytona`. Auto tries Platinum
+first. It falls back to Daytona only when Platinum infrastructure throws. A
+non-zero test exit returns directly and does not trigger fallback.
 
-The template name includes the `pnpm-lock.yaml` hash. Platinum first builds a
-base OCI template with pinned Node, Bun, pnpm, Docker, Chromium, linked
-`node_modules`, and a warm `/workspace/suna` checkout. Platinum then derives a
-stateful template from that base. The stateful capture boots nested Docker,
-pulls the exact Supabase images, removes the temporary Supabase database, and
-captures the prepared disk. A lockfile change creates one new pair. Other
-commits reuse it.
+Both providers use a content-addressed warm image. The image name includes the
+`pnpm-lock.yaml` hash. Both images contain pinned Node, Bun, pnpm, Docker,
+Chromium, linked `node_modules`, a warm checkout, and pre-pulled Supabase images.
+Each worker fetches the requested ref, verifies the exact SHA, runs an offline
+lockfile install, starts nested Docker, and invokes the unchanged root command.
+Both runners stream logs, download `tests/test-results`, and delete the worker.
+
+### Platinum
+
+Platinum first builds a base OCI template. It then derives a stateful template.
+The stateful capture boots nested Docker, pulls the Supabase images, removes the
+temporary Supabase database, and captures the prepared disk. A lockfile change
+creates one new pair. Other commits reuse it.
 
 The worker fetches the requested ref into that warm checkout. It force-checks
 out the exact SHA and runs `pnpm install --offline --frozen-lockfile`. It starts
@@ -86,6 +92,28 @@ The control client retries `502`, `503`, `504`, `524`, the provider's transient
 `500 operation was aborted` response, timeouts, and connection resets. It uses
 bounded exponential backoff. Sandbox deletion uses eight attempts. A failed
 deletion fails the workflow and keeps the exact sandbox ID in the log.
+
+### Daytona
+
+Daytona first builds an OCI base snapshot. It starts a temporary builder from
+that base. The builder starts nested Docker, pulls the Supabase images, stops
+Supabase and dockerd, writes a warm marker, and captures the warm snapshot.
+`DAYTONA_CI_TARGET` selects the nested-Docker region. It falls back to
+`DAYTONA_TARGET`, then `us`. Do not reuse the product `DAYTONA_WARM_TARGET`.
+That product variable can select a different sandbox class or region.
+
+The disposable worker uses 6 vCPU, 12 GiB RAM, and 40 GiB disk. These are the
+current Daytona organization maxima. The worker is private.
+Its labels include the repository, exact SHA, workflow run ID, and run attempt.
+The cleanup command deletes only the exact worker whose name and labels match.
+
+Run a provider explicitly from a checkout with the provider key loaded:
+
+```bash
+TEST_SANDBOX_PROVIDER=platinum bun tests/bin/sandbox-ci.ts --full
+TEST_SANDBOX_PROVIDER=daytona bun tests/bin/sandbox-ci.ts --full
+TEST_SANDBOX_PROVIDER=auto bun tests/bin/sandbox-ci.ts --full
+```
 
 ## Product flows
 

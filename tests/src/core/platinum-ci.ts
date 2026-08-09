@@ -343,9 +343,15 @@ export function buildWorkerScript(input: {
   ref: string;
   sha: string;
   testArgs: string[];
+  provider?: 'platinum' | 'daytona';
 }): string {
+  const provider = input.provider ?? 'platinum';
   const command = ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])];
   const testCommand = command.map(shellQuote).join(' ');
+  const providerLogs =
+    provider === 'daytona'
+      ? '/workspace/daytona-bootstrap.log /workspace/daytona-warm.log /workspace/daytona-dockerd.log'
+      : '/workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log';
   return `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -362,10 +368,10 @@ rm -f "$STATUS" "$ARTIFACT"
 finish() {
   local code="$1"
   set +e
-  mkdir -p "$ROOT/tests/test-results/platinum"
-  for source in "$LOG" /workspace/dockerd.log /workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log; do
+  mkdir -p "$ROOT/tests/test-results/${provider}"
+  for source in "$LOG" /workspace/dockerd.log ${providerLogs}; do
     if [[ -f "$source" ]]; then
-      cp "$source" "$ROOT/tests/test-results/platinum/$(basename "$source")"
+      cp "$source" "$ROOT/tests/test-results/${provider}/$(basename "$source")"
     fi
   done
   tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results
@@ -373,10 +379,10 @@ finish() {
 }
 trap 'code=$?; finish "$code"' EXIT
 
-echo "[platinum-ci] repository=${input.repository}"
-echo "[platinum-ci] ref=${input.ref}"
-echo "[platinum-ci] expected_sha=${input.sha}"
-echo "[platinum-ci] command=${command.join(' ')}"
+echo "[${provider}-ci] repository=${input.repository}"
+echo "[${provider}-ci] ref=${input.ref}"
+echo "[${provider}-ci] expected_sha=${input.sha}"
+echo "[${provider}-ci] command=${command.join(' ')}"
 
 test -d "$ROOT/.git"
 git -C "$ROOT" remote set-url origin ${shellQuote(`https://github.com/${input.repository}.git`)}
@@ -385,10 +391,10 @@ git -C "$ROOT" checkout --detach --force FETCH_HEAD
 git -C "$ROOT" clean -ffd
 actual_sha="$(git -C "$ROOT" rev-parse HEAD)"
 if [[ "$actual_sha" != ${shellQuote(input.sha)} ]]; then
-  echo "[platinum-ci] expected ${input.sha}, got $actual_sha" >&2
+  echo "[${provider}-ci] expected ${input.sha}, got $actual_sha" >&2
   exit 2
 fi
-echo "[platinum-ci] exact_sha=$actual_sha"
+echo "[${provider}-ci] exact_sha=$actual_sha"
 
 cd "$ROOT"
 corepack enable
@@ -397,7 +403,7 @@ pnpm install --offline --frozen-lockfile
 for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do
   modprobe "$module"
 done
-echo "[platinum-ci] container_modules_ready=1"
+echo "[${provider}-ci] container_modules_ready=1"
 
 if ! docker info >/dev/null 2>&1; then
   nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &
@@ -410,9 +416,9 @@ if ! docker info >/dev/null 2>&1; then
   tail -n 240 /workspace/dockerd.log >&2 || true
   exit 3
 fi
-echo "[platinum-ci] docker_ready=1"
+echo "[${provider}-ci] docker_ready=1"
 docker network inspect bridge --format '{{.Driver}}' | grep -qx bridge
-echo "[platinum-ci] docker_bridge_ready=1"
+echo "[${provider}-ci] docker_bridge_ready=1"
 
 ${testCommand}
 `;
