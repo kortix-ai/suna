@@ -1,8 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ProjectAccessMember } from '@kortix/sdk';
+import type { AccountInvitation, ProjectAccessMember } from '@kortix/sdk';
 
 import { MembersTabView } from './members-tab';
+
+const accountInvite = (o: Partial<AccountInvitation>): AccountInvitation => ({
+  invite_id: 'ainv1',
+  email: 'invitee@kortix.com',
+  initial_role: 'member',
+  invited_by: 'u0',
+  created_at: '2026-01-01T00:00:00Z',
+  expires_at: '2026-02-01T00:00:00Z',
+  invite_url: 'https://kortix.com/invite/ainv1',
+  ...o,
+});
 
 /**
  * `MembersTabView` is the pure, props-only half — see this tab's header
@@ -246,5 +257,81 @@ describe('MembersTabView', () => {
     const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
     expect(out).not.toContain('Pending invites');
     expect(out).not.toContain('Access requests');
+  });
+
+  // ── JAY-548: account invites + leave account (rehomed from
+  // accounts/[id]/page.tsx — see members-tab.tsx's header comment). ──
+
+  test('account invites render below the table, under a title distinct from "Pending invites"', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({})]}
+        accountId="acc1"
+        accountInvites={[accountInvite({ email: 'joiner@kortix.com' })]}
+      />,
+    );
+    expect(out).toContain('Account invites');
+    expect(out).toContain('joiner@kortix.com');
+    expect(out.indexOf('Account invites')).toBeGreaterThan(out.indexOf('Account role'));
+  });
+
+  test('account invites section is absent with no accountId, even with invites data', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountInvites={[accountInvite({})]} />,
+    );
+    expect(out).not.toContain('Account invites');
+  });
+
+  test('account invites section is absent with an accountId but nothing pending', () => {
+    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} accountId="acc1" />);
+    expect(out).not.toContain('Account invites');
+  });
+
+  test('resend/cancel controls on an account invite gate on canManageAccountInvites, NOT canManageMembers', () => {
+    const withoutPerm = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({})]}
+        accountId="acc1"
+        accountInvites={[accountInvite({})]}
+        canManageMembers
+        canManageAccountInvites={false}
+      />,
+    );
+    expect(withoutPerm).not.toContain('>Resend<');
+    expect(withoutPerm).not.toContain('>Cancel<');
+
+    const withPerm = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({})]}
+        accountId="acc1"
+        accountInvites={[accountInvite({})]}
+        canManageMembers={false}
+        canManageAccountInvites
+      />,
+    );
+    expect(withPerm).toContain('>Resend<');
+    expect(withPerm).toContain('>Cancel<');
+  });
+
+  test('leave account section renders only when an accountId is resolved', () => {
+    const withAccount = renderToStaticMarkup(<MembersTabView members={[member({})]} accountId="acc1" />);
+    const withoutAccount = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
+    expect(withAccount).toContain('Leave account');
+    expect(withoutAccount).not.toContain('Leave account');
+  });
+
+  test('the Leave button is disabled when the viewer is the last owner', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountId="acc1" isLastOwner />,
+    );
+    expect(out).toContain('disabled=""');
+    expect(out).toContain("only owner");
+  });
+
+  test('the Leave button is enabled when the viewer is not the last owner', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountId="acc1" isLastOwner={false} />,
+    );
+    expect(out).not.toContain('disabled=""');
   });
 });

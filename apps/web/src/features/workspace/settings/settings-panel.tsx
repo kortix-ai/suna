@@ -1057,7 +1057,7 @@ function SettingsTabPane({
       case 'experimental':
         return <ExperimentalTab projectId={projectId} />;
       case 'members':
-        return <MembersTabPane projectId={projectId} />;
+        return <MembersTabPane projectId={projectId} accountId={accountId} />;
       case 'secrets':
         return <SecretsView projectId={projectId} />;
       case 'channels':

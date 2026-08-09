@@ -115,12 +115,88 @@
  * real DOM. `members-tab.test.tsx` covers what the pure view can prove
  * statically: table shape, column presence, gated controls, and the pending
  * invites / access requests sections below it.
+ *
+ * **JAY-548 — two more orphans closed: `listAccountInvites`,
+ * `cancelAccountInvite`, `resendAccountInvite`, `leaveAccount`.** Verified
+ * before writing any of this: `grep -rn "listAccountInvites\|
+ * cancelAccountInvite\|resendAccountInvite\|leaveAccount\b" src --include=
+ * "*.tsx" --include="*.ts"` matched exactly one caller for each — all four
+ * inside `accounts/[id]/page.tsx` (`leaveAccount` at :1119,
+ * `listAccountInvites` at :2084, `resendAccountInvite` at :2092,
+ * `cancelAccountInvite` at :2116) — the page JAY-505 deletes. These are
+ * ACCOUNT-scoped (this account's own membership/invitations), a different
+ * axis from every `project*` field above (this project's access to THIS
+ * project). There is no separate "account members" settings tab in
+ * `settings-tabs.ts`'s `SettingsTab` union — `members` is the merged
+ * vocabulary for both, so both surfaces live here, not on a new tab.
+ *
+ * *Account invites* (`accountInvites`/`canManageAccountInvites`/
+ * `onResendAccountInvite`/`onRequestCancelAccountInvite`/…) reproduces
+ * `page.tsx`'s `PendingInvitesSection` (:2057-2233): same fields
+ * (`invite.initial_role`, `invite.expires_at`, no `invite_expired` flag —
+ * `AccountInvitation` doesn't carry one, unlike `PendingProjectInvite`), same
+ * "list renders for anyone, actions gate on `member.invite`" shape (the
+ * source's `invitesQuery` has no `canManage`-gated `enabled` clause — only
+ * the row's dropdown menu is gated on `canManage={canInviteMember}`,
+ * preserved here as `canManageAccountInvites` via
+ * `usePermission(accountId, 'member.invite')`). Titled "Account invites",
+ * NOT "Pending invites" — that title is already taken by the project-invites
+ * section above it; two sections with the same title one screen apart would
+ * read as one broken list. Row actions are "Resend"/"Cancel" inline buttons
+ * (this file's own established row dialect, matching the project pending-
+ * invites section above), not the source's three-item dropdown (which also
+ * offered "Copy invite link") — the task brief names exactly two actions,
+ * cancel and resend, so the third is not reproduced.
+ *
+ * *Leave account* (`leaveAccountOpen`/`isLastOwner`/`onOpenLeaveAccount`/…)
+ * reproduces `page.tsx`'s self-row "Leave team" menu item (:1565-1577,
+ * `leaveMutation` at :1118-1128) as its own standalone section instead — the
+ * source's per-row-kebab composition doesn't fit here: this table's rows are
+ * PROJECT access grants keyed by member, not "which accounts am I in", so
+ * there is no natural per-row slot for a self-referential account action.
+ * **Self-directed — no permission probe gates it, on purpose (this task's
+ * own explicit call-out).** `member.invite`/`member.remove` gate inviting or
+ * removing SOMEONE ELSE; leaving your own account is a different thing
+ * entirely and is not an IAM leaf at all. The only thing that can disable
+ * the control is `isLastOwner` (`page.tsx`'s own `disabled={isLastOwner}` on
+ * the menu item, :1570) — computed from the SAME account roster this file's
+ * own table already renders (`accessQuery.data.members`, every account
+ * member with `account_role` — see this file's own "one list" reasoning
+ * above), not a second `listAccountMembers` fetch (that function is out of
+ * this task's four-function scope and still has its own separate live
+ * caller in `page.tsx`).
+ *
+ * **Confirm-before-destroy — the task's own explicit constraint, not
+ * `page.tsx`'s.** Cancelling an account invite and leaving an account both
+ * go through `ConfirmDialog` with `confirmVariant="destructive"`, even
+ * though `page.tsx`'s own two dialogs for these (:2212-2230, :1666-1679)
+ * omit `confirmVariant` (default, non-destructive styling) — this file's
+ * task brief calls both destructive explicitly (leaving removes your own
+ * access), so that is preserved here over the source's own choice.
+ *
+ * **`accountId` is resolved via `useSettingsAccountId`, never
+ * `project?.account_id` alone** — same shape (and same fixed bug) every
+ * other account-scoped tab in this panel uses; see `use-settings-account-id
+ * .ts`'s header comment and `organization-tab.tsx`'s. It is a SEPARATE value
+ * from `project?.account_id` (read off this file's own `projectQuery`
+ * below), which still feeds ONLY the three rehomed cards' gates, unchanged —
+ * the two are never conflated.
+ *
+ * `members-tab.test.tsx`'s new cases cover the same axis as everything
+ * above: the "Account invites" vs "Pending invites" title split, the
+ * `canManageAccountInvites`-not-`canManageMembers` row-action gate, the
+ * `accountId`-gated visibility of both new sections, and the
+ * `isLastOwner`-disabled Leave button. The mutations' real network round
+ * trips remain untestable here for the same reason as everything else in
+ * this file (no DOM testing library).
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 // Reused, not reimplemented — see `MembersTabInner`'s "Invite deep-link
 // intent" comment below for why this stays imported from `members-view.tsx`
@@ -182,6 +258,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useCopy } from '@/hooks/use-copy';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { usePermission } from '@/lib/use-permission';
 import {
   createPolicy,
   deletePolicy,
@@ -196,23 +273,29 @@ import {
 import {
   approveProjectAccessRequest,
   attachGroupToProject,
+  cancelAccountInvite,
   createProjectResourceGrant,
   deleteProjectResourceGrant,
   detachGroupFromProject,
+  getAccount,
   getProject,
   inviteProjectMember,
   isInviteSent,
+  leaveAccount,
+  listAccountInvites,
   listPendingProjectInvites,
   listProjectAccess,
   listProjectAccessRequests,
   listProjectGroupGrants,
   listProjectResourceGrants,
   rejectProjectAccessRequest,
+  resendAccountInvite,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
   revokeProjectAccess,
   updateProjectAccess,
   updateProjectGroupGrant,
+  type AccountInvitation,
   type PendingProjectInvite,
   type ProjectAccessRequest,
   type ProjectAccessMember,
@@ -243,6 +326,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { memberAccessLabel } from './member-access-label';
 import { toArray } from '@/features/workspace/customize/shared/utils';
+import { useSettingsAccountId } from '../use-settings-account-id';
 
 const NO_ACCESS = '__none__';
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
@@ -319,6 +403,56 @@ export interface MembersTabViewProps {
   accessRequestBusyIds?: Set<string>;
   onApproveRequest?: (request: ProjectAccessRequest) => void;
   onRejectRequest?: (request: ProjectAccessRequest) => void;
+
+  /** The account this project belongs to — resolved via
+   *  `useSettingsAccountId` in `MembersTab`, same shape every other
+   *  account-scoped settings tab uses (see `organization-tab.tsx`'s header
+   *  comment). Gates whether the two ACCOUNT-scoped sections below render at
+   *  all: both need an account id to fetch or mutate against. Distinct from
+   *  every `project*` field above — those are keyed on `projectId`, these on
+   *  this account. */
+  accountId?: string;
+
+  /** `listAccountInvites` — pending invitations to JOIN THIS ACCOUNT
+   *  (`initial_role`, no `project_role`). A different list from
+   *  `pendingInvites` above, which is project access invites
+   *  (`listPendingProjectInvites`) — see this file's header comment,
+   *  "JAY-548". Section title is "Account invites" specifically so it never
+   *  reads as the same list as "Pending invites". */
+  accountInvites?: AccountInvitation[];
+  isAccountInvitesLoading?: boolean;
+  accountInviteBusyIds?: Set<string>;
+  /** `member.invite` — the SAME leaf `accounts/[id]/page.tsx` gated
+   *  `PendingInvitesSection`'s resend/cancel controls on (`canInvite`,
+   *  `ACCOUNT_PERMISSION_PROBES`'s `member.invite`). Preserved exactly, not
+   *  re-derived from `canManageMembers` (a different, project-scoped leaf).
+   *  Gates the row actions only — the list itself renders for anyone, same
+   *  as the source (`invitesQuery` there has no `canManage`-gated `enabled`
+   *  clause). */
+  canManageAccountInvites?: boolean;
+  onResendAccountInvite?: (invite: AccountInvitation) => void;
+  onRequestCancelAccountInvite?: (invite: AccountInvitation) => void;
+  cancelAccountInviteTarget?: AccountInvitation | null;
+  onCancelCancelAccountInvite?: () => void;
+  onConfirmCancelAccountInvite?: () => void;
+  isCancelAccountInvitePending?: boolean;
+
+  /** `leaveAccount` — self-directed, see this file's header comment,
+   *  "JAY-548". NO permission probe gates this — a member leaving their own
+   *  account is not the same permission as inviting or removing someone
+   *  else (`member.invite`/`member.remove`), so it is never gated on
+   *  `canManageMembers`/`canManageAccountInvites`. The only thing that can
+   *  disable it is `isLastOwner` — computed from the SAME account roster
+   *  this tab's own table already renders (`accessQuery.data.members`,
+   *  every account member with `account_role`), not a second fetch. */
+  accountName?: string;
+  isAccountRosterLoading?: boolean;
+  isLastOwner?: boolean;
+  leaveAccountOpen?: boolean;
+  onOpenLeaveAccount?: () => void;
+  onCancelLeaveAccount?: () => void;
+  onConfirmLeaveAccount?: () => void;
+  isLeaveAccountPending?: boolean;
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -359,9 +493,33 @@ export function MembersTabView({
   accessRequestBusyIds = new Set(),
   onApproveRequest = () => {},
   onRejectRequest = () => {},
+  accountId,
+  accountInvites = [],
+  isAccountInvitesLoading = false,
+  accountInviteBusyIds = new Set(),
+  canManageAccountInvites = false,
+  onResendAccountInvite = () => {},
+  onRequestCancelAccountInvite = () => {},
+  cancelAccountInviteTarget = null,
+  onCancelCancelAccountInvite = () => {},
+  onConfirmCancelAccountInvite = () => {},
+  isCancelAccountInvitePending = false,
+  accountName,
+  isAccountRosterLoading = false,
+  isLastOwner = false,
+  leaveAccountOpen = false,
+  onOpenLeaveAccount = () => {},
+  onCancelLeaveAccount = () => {},
+  onConfirmLeaveAccount = () => {},
+  isLeaveAccountPending = false,
 }: MembersTabViewProps) {
   const showPendingInvites = isPendingInvitesLoading || pendingInvites.length > 0;
   const showAccessRequests = isAccessRequestsLoading || accessRequests.length > 0;
+  // Both new sections need an account id to fetch/mutate against — hidden
+  // entirely (not a skeleton) while it's unresolved, same as every other
+  // account-scoped tab in this panel treats a missing accountId.
+  const showAccountInvites = !!accountId && (isAccountInvitesLoading || accountInvites.length > 0);
+  const showLeaveAccount = !!accountId;
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-10 px-6 py-10">
@@ -636,6 +794,117 @@ export function MembersTabView({
         </section>
       ) : null}
 
+      {/* JAY-548 — the two orphaned account-scoped surfaces from
+          `accounts/[id]/page.tsx` (`listAccountInvites`/`cancelAccountInvite`/
+          `resendAccountInvite`/`leaveAccount`), rehomed below this project's
+          own pending-invites/access-requests sections. See this file's header
+          comment. Distinct title from "Pending invites" above — that section
+          is project access invites, this one is account membership
+          invites. */}
+      {showAccountInvites ? (
+        <section className="space-y-4">
+          <SettingsSectionHeader
+            title="Account invites"
+            description="Invitations to join this account, awaiting sign-up."
+          />
+          {isAccountInvitesLoading ? (
+            <Skeleton className="h-14 w-full rounded-md" />
+          ) : (
+            <ul className="space-y-2">
+              {accountInvites.map((invite) => {
+                const busy = accountInviteBusyIds.has(invite.invite_id);
+                return (
+                  <li key={invite.invite_id} className={MEMBER_ROW}>
+                    <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                      <Mail className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-foreground truncate text-sm font-medium">
+                          {invite.email}
+                        </span>
+                        <Badge variant="outline" size="sm" className="capitalize">
+                          {invite.initial_role}
+                        </Badge>
+                      </div>
+                      <InlineMeta>
+                        <span className="tabular-nums">Invited {formatDate(invite.created_at)}</span>
+                        <span className="inline-flex items-center gap-1 tabular-nums">
+                          <Clock className="size-3" />
+                          Expires {formatDate(invite.expires_at)}
+                        </span>
+                      </InlineMeta>
+                    </div>
+                    {busy ? (
+                      <Loading className="text-muted-foreground shrink-0" />
+                    ) : canManageAccountInvites ? (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onResendAccountInvite(invite)}
+                          className="gap-1.5"
+                        >
+                          <RefreshCw className="size-3.5" />
+                          Resend
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onRequestCancelAccountInvite(invite)}
+                          className="gap-1.5"
+                        >
+                          <X className="size-3.5" />
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
+
+      {showLeaveAccount ? (
+        <section className="space-y-4">
+          <SettingsSectionHeader title="Leave account" />
+          {isAccountRosterLoading ? (
+            <Skeleton className="h-[58px] w-full rounded-md" />
+          ) : (
+            <div className="bg-popover rounded-md border px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-foreground text-sm font-medium">
+                    Leave {accountName || 'this account'}
+                  </p>
+                  <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+                    {isLastOwner
+                      ? "You're the only owner — promote another member before you leave."
+                      : "You'll lose access to this account and its projects."}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="shrink-0 gap-1.5"
+                  disabled={isLastOwner}
+                  onClick={onOpenLeaveAccount}
+                  title={isLastOwner ? "You're the only owner of this account." : undefined}
+                >
+                  {isLeaveAccountPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                  Leave
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
+
       <ConfirmDialog
         open={removeTarget !== null}
         onOpenChange={(open) => {
@@ -674,20 +943,79 @@ export function MembersTabView({
         onConfirm={onConfirmRevokeInvite}
       />
 
+      <ConfirmDialog
+        open={cancelAccountInviteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) onCancelCancelAccountInvite();
+        }}
+        title="Cancel invite"
+        description={
+          cancelAccountInviteTarget ? (
+            <span>
+              Revoke the pending invite for{' '}
+              <strong>{cancelAccountInviteTarget.email}</strong>? They&apos;ll need a new invite to
+              join.
+            </span>
+          ) : null
+        }
+        confirmLabel="Cancel invite"
+        confirmVariant="destructive"
+        isPending={isCancelAccountInvitePending}
+        onConfirm={onConfirmCancelAccountInvite}
+      />
+
+      <ConfirmDialog
+        open={leaveAccountOpen}
+        onOpenChange={(open) => {
+          if (!open) onCancelLeaveAccount();
+        }}
+        title="Leave account"
+        description={
+          <span>
+            You&apos;ll lose access to <strong>{accountName || 'this account'}</strong> and its
+            projects.
+          </span>
+        }
+        confirmLabel="Leave"
+        confirmVariant="destructive"
+        isPending={isLeaveAccountPending}
+        onConfirm={onConfirmLeaveAccount}
+      />
+
       {inviteDialogSlot}
     </div>
   );
 }
 
-/** Container entry point. Every hook below only runs while this tab is
- *  actually mounted — `SettingsTabPane` in `settings-panel.tsx` guarantees
- *  that only happens while this tab is the active one. */
-export function MembersTab({ projectId }: { projectId: string }) {
-  return <MembersTabInner projectId={projectId} />;
+/** Container entry point. Resolves the account id once (same
+ *  `useSettingsAccountId` shape as `organization-tab.tsx`/`billing-tab.tsx`/
+ *  every other account-scoped tab — never `project?.account_id` alone, see
+ *  that hook's header comment for why), then hands off to `MembersTabInner`
+ *  so every hook below only runs while this tab is actually mounted —
+ *  `SettingsTabPane` in `settings-panel.tsx` guarantees that only happens
+ *  while this tab is the active one. */
+export function MembersTab({ projectId, accountId }: { projectId: string; accountId?: string }) {
+  const resolvedAccountId = useSettingsAccountId(accountId);
+  return <MembersTabInner projectId={projectId} accountId={resolvedAccountId} />;
 }
 
-function MembersTabInner({ projectId }: { projectId: string }) {
+function MembersTabInner({
+  projectId,
+  accountId,
+}: {
+  projectId: string;
+  /** Resolved via `useSettingsAccountId` in `MembersTab` above — feeds ONLY
+   *  the two new account-scoped sections (account invites, leave account).
+   *  Deliberately separate from `project?.account_id` below (from this
+   *  file's own `projectQuery`), which feeds the three REHOMED cards' gates
+   *  — those are preserved exactly as `members-view.tsx` passed them and
+   *  must not be re-derived from a different source. See this file's header
+   *  comment, "JAY-548". */
+  accountId: string | undefined;
+}) {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { user } = useAuth();
   // Invite deep-link intent (e.g. Cmd+K "Invite members" —
   // `command-palette.tsx:1146`, `openSettings('members', { membersTab:
   // 'invite' })`). `membersTab` is a ONE-SHOT instruction, not persistent
@@ -899,6 +1227,105 @@ function MembersTabInner({ projectId }: { projectId: string }) {
     onError: (error: Error) => errorToast(error.message || 'Failed to decline request'),
   });
 
+  // ── JAY-548: the two account-scoped surfaces orphaned by
+  // `accounts/[id]/page.tsx`'s deletion — see this file's header comment. ──
+
+  // member.invite — the SAME leaf `page.tsx`'s `canInviteMember`
+  // (`ACCOUNT_PERMISSION_PROBES`) gated `PendingInvitesSection`'s row
+  // actions on. A DIFFERENT leaf from `canManageMembers` above
+  // (`project.members.manage`) — never re-derived from it.
+  const { allowed: canManageAccountInvites } = usePermission(accountId, 'member.invite');
+
+  // Account name — only for this tab's own "Leave {name}" copy and the
+  // leave-confirm dialog. Same `['account', accountId]` key
+  // `organization-tab.tsx`/`groups-tab.tsx` use, so it's warm if the viewer
+  // already opened one of those tabs this session.
+  const accountQuery = useQuery({
+    queryKey: ['account', accountId],
+    queryFn: () => getAccount(accountId!),
+    enabled: !!accountId,
+    staleTime: 30_000,
+  });
+
+  const accountInvitesQuery = useQuery({
+    queryKey: ['account-invites', accountId],
+    queryFn: () => listAccountInvites(accountId!),
+    enabled: !!accountId,
+    staleTime: 20_000,
+  });
+
+  function invalidateAccountInvites() {
+    queryClient.invalidateQueries({ queryKey: ['account-invites', accountId] });
+  }
+
+  const [accountInviteBusyIds, setAccountInviteBusyIds] = useState<Set<string>>(() => new Set());
+  const markAccountInviteBusy = (id: string) =>
+    setAccountInviteBusyIds((prev) => new Set(prev).add(id));
+  const clearAccountInviteBusy = (id: string) =>
+    setAccountInviteBusyIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+  const resendAccountInviteMutation = useMutation({
+    mutationFn: (inviteId: string) => resendAccountInvite(accountId!, inviteId),
+    onMutate: (inviteId) => markAccountInviteBusy(inviteId),
+    onSettled: (_data, _error, inviteId) => clearAccountInviteBusy(inviteId),
+    onSuccess: (result) => {
+      if (result.email_sent) {
+        successToast('Invite email sent');
+      } else {
+        warningToast('Email skipped — copy the invite link to share manually', {
+          duration: 8_000,
+          button: (
+            <Button size="sm" onClick={() => copy(result.invite_url)}>
+              Copy link
+            </Button>
+          ),
+        });
+      }
+      invalidateAccountInvites();
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to resend invite'),
+  });
+
+  const [cancelAccountInviteTarget, setCancelAccountInviteTarget] =
+    useState<AccountInvitation | null>(null);
+  const cancelAccountInviteMutation = useMutation({
+    mutationFn: (inviteId: string) => cancelAccountInvite(accountId!, inviteId),
+    onMutate: (inviteId) => markAccountInviteBusy(inviteId),
+    onSettled: (_data, _error, inviteId) => clearAccountInviteBusy(inviteId),
+    onSuccess: () => {
+      successToast('Invite cancelled');
+      invalidateAccountInvites();
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to cancel invite'),
+  });
+
+  // leaveAccount — self-directed (see this file's header comment). NO
+  // permission probe gates this: whether the CURRENT user can leave their
+  // own account is not an IAM leaf at all, just "are you the sole owner".
+  // `isLastOwner` is computed from the SAME account roster the table above
+  // already renders (`accessQuery.data.members` — every account member,
+  // with `account_role`, per this file's header comment) rather than a
+  // second fetch.
+  const accountRoster = accessQuery.data?.members ?? [];
+  const currentAccountRole = accountRoster.find((m) => m.user_id === user?.id)?.account_role;
+  const ownerCount = accountRoster.filter((m) => m.account_role === 'owner').length;
+  const isLastOwner = currentAccountRole === 'owner' && ownerCount <= 1;
+
+  const [leaveAccountOpen, setLeaveAccountOpen] = useState(false);
+  const leaveAccountMutation = useMutation({
+    mutationFn: () => leaveAccount(accountId!),
+    onSuccess: () => {
+      successToast(`Left ${accountQuery.data?.name ?? 'account'}`);
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      router.push('/accounts');
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to leave account'),
+  });
+
   return (
     <MembersTabView
       isLoading={accessQuery.isLoading}
@@ -981,6 +1408,33 @@ function MembersTabInner({ projectId }: { projectId: string }) {
           />
         ) : undefined
       }
+      accountId={accountId}
+      accountInvites={accountInvitesQuery.data ?? []}
+      isAccountInvitesLoading={!!accountId && accountInvitesQuery.isLoading}
+      accountInviteBusyIds={accountInviteBusyIds}
+      canManageAccountInvites={canManageAccountInvites}
+      onResendAccountInvite={(invite) => resendAccountInviteMutation.mutate(invite.invite_id)}
+      onRequestCancelAccountInvite={(invite) => setCancelAccountInviteTarget(invite)}
+      cancelAccountInviteTarget={cancelAccountInviteTarget}
+      onCancelCancelAccountInvite={() => setCancelAccountInviteTarget(null)}
+      onConfirmCancelAccountInvite={() => {
+        if (!cancelAccountInviteTarget) return;
+        const target = cancelAccountInviteTarget;
+        setCancelAccountInviteTarget(null);
+        cancelAccountInviteMutation.mutate(target.invite_id);
+      }}
+      isCancelAccountInvitePending={cancelAccountInviteMutation.isPending}
+      accountName={accountQuery.data?.name}
+      isAccountRosterLoading={!!accountId && accessQuery.isLoading}
+      isLastOwner={isLastOwner}
+      leaveAccountOpen={leaveAccountOpen}
+      onOpenLeaveAccount={() => setLeaveAccountOpen(true)}
+      onCancelLeaveAccount={() => setLeaveAccountOpen(false)}
+      onConfirmLeaveAccount={() => {
+        setLeaveAccountOpen(false);
+        leaveAccountMutation.mutate();
+      }}
+      isLeaveAccountPending={leaveAccountMutation.isPending}
     />
   );
 }
