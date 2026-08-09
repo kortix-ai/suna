@@ -29,7 +29,7 @@ afterEach(() => {
 
 describe('Platinum CI worker plan', () => {
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v11-bbbbbbbbbbbbbbbb');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v12-bbbbbbbbbbbbbbbb');
     expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
@@ -59,7 +59,7 @@ describe('Platinum CI worker plan', () => {
     expect(buildPlatinumWarmTemplateRequest(lockHash)).toEqual({
       name: platinumTemplateName(lockHash),
       capture_condition: {
-        cmd: 'test -s /workspace/.kortix-ci-warm-ready',
+        cmd: 'test -s /workspace/.kortix-ci-warm-ready && ! pgrep -x dockerd >/dev/null && test ! -S /var/run/docker.sock',
         timeoutSec: 2_700,
       },
       default_cpu: 8,

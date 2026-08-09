@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v11';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v12';
 const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v10';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
@@ -18,6 +18,8 @@ const LOG_CHUNK_BYTES = 1024 * 1024;
 const API_MAX_ATTEMPTS = 6;
 const CLEANUP_MAX_ATTEMPTS = 8;
 const TRANSIENT_STATUS_CODES = new Set([502, 503, 504, 524]);
+const WARM_READY_COMMAND =
+  'test -s /workspace/.kortix-ci-warm-ready && ! pgrep -x dockerd >/dev/null && test ! -S /var/run/docker.sock';
 
 export interface PlatinumCiInput {
   apiUrl: string;
@@ -293,7 +295,7 @@ export function buildPlatinumWarmTemplateRequest(lockHash: string): {
   return {
     name: platinumTemplateName(lockHash),
     capture_condition: {
-      cmd: 'test -s /workspace/.kortix-ci-warm-ready',
+      cmd: WARM_READY_COMMAND,
       timeoutSec: WARM_PREPARE_TIMEOUT_MS / 1000,
     },
     default_cpu: 8,
@@ -696,6 +698,11 @@ async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<
   while (Date.now() < deadline) {
     try {
       if (await stat(api, sandboxId, '/workspace/.kortix-ci-warm-ready', 1)) {
+        const ready = await exec(api, sandboxId, ['bash', '-lc', WARM_READY_COMMAND], true);
+        if (ready.exit_code !== 0) {
+          await Bun.sleep(POLL_MS);
+          continue;
+        }
         const marker = new TextDecoder().decode(
           await api.read(sandboxId, '/workspace/.kortix-ci-warm-ready', undefined, undefined, 1),
         ).trim();
@@ -732,13 +739,14 @@ async function exec(
   sandboxId: string,
   command: string[],
   retry = false,
-): Promise<PlatinumExecResult['result']> {
+): Promise<NonNullable<PlatinumExecResult['result']>> {
   const response = await api.json<PlatinumExecResult>(`/v1/sandboxes/${sandboxId}/exec`, {
     method: 'POST',
     body: JSON.stringify({ cmd: command, timeout_ms: 300_000 }),
   }, { retry });
   if (response.error) throw new Error(response.error);
   if (response.result?.error) throw new Error(response.result.error);
+  if (!response.result) throw new Error('Platinum exec response did not include a result');
   return response.result;
 }
 
