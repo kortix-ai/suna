@@ -1,48 +1,39 @@
 'use client';
 
 /**
- * /settings/[tab] — deep-link entry into the merged Settings overlay with NO
+ * `/settings/[tab]` — deep-link into the merged Settings overlay with NO
  * project context (e.g. `/settings/profile`, `/settings/billing`). This is
- * the account-scoped door into the same overlay the two `/projects/[id]/
- * settings*` routes open project-scoped — see the "You group" tabs
- * (profile, preferences, connected, billing, usage, ...) in `settings-tabs.ts`,
- * which is why this route exists with no `[id]` segment at all rather than
- * defaulting to some remembered project.
+ * the account-scoped door into the same overlay the two
+ * `/projects/[id]/settings*` routes open project-scoped — see the "You" and
+ * "Organization" rail groups in `rail.ts`, which is why this route exists
+ * with no `[id]` segment at all rather than defaulting to some remembered
+ * project.
  *
- * This page used to render `SettingsPanel` directly (with no `projectId`),
- * because nothing else mounted the panel yet. `ProjectShell` now mounts
- * `SettingsPanel` persistently on every `/projects/[id]/*` route, so this
- * page's job is the same as its two project-scoped siblings: set store state,
- * then leave. There is no project-scoped page to bounce back to from here —
- * this route has no `[id]` — so it resolves through `PROJECT_LANDING_PATH`,
- * the same id-free landing door every other "we don't know which project"
- * caller uses (see `lib/onboarding/landing-destination.ts`). It paints
- * instantly and lands on a real project page, which mounts the panel and
- * shows the overlay already open on the requested tab — this is what fixes
- * the previous "closing the overlay leaves a blank page" bug: this route no
- * longer stays mounted long enough for that blank page to exist.
+ * **History, because it has flipped twice.** It first rendered `SettingsPanel`
+ * directly, which left a blank page once the overlay was closed (nothing sat
+ * behind it). It was then changed to set store state and bounce to
+ * `PROJECT_LANDING_PATH`, letting `ProjectShell` mount the panel. That fixed
+ * the blank page but routed every visitor through `/projects/start`, the door
+ * that PROVISIONS a first project — the exact opposite of what the sign-in
+ * redirect for a user without app access needs. It now renders the panel
+ * directly again, with the blank page fixed properly instead of avoided. The
+ * reasoning lives in one place: `standalone-settings-route.tsx`'s header.
  *
- * An unparseable segment still opens the overlay — on the default tab,
- * rather than bouncing to `/settings/<default>` first, since either way this
- * page immediately leaves for `PROJECT_LANDING_PATH`.
+ * An unparseable segment opens the panel on the account-scoped default rather
+ * than 404ing, matching how the project-scoped sibling treats one.
  */
 
-import { useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 
-import { DEFAULT_SETTINGS_TAB, parseSettingsTab } from '@/features/workspace/settings/settings-tabs';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { parseSettingsTab } from '@/features/workspace/settings/settings-tabs';
+import {
+  STANDALONE_DEFAULT_SETTINGS_TAB,
+  StandaloneSettingsRoute,
+} from '@/features/workspace/settings/standalone-settings-route';
 
 export default function SettingsTabPage() {
   const params = useParams<{ tab: string }>();
-  const tab = parseSettingsTab(params?.tab) ?? DEFAULT_SETTINGS_TAB;
-  const router = useRouter();
+  const tab = parseSettingsTab(params?.tab) ?? STANDALONE_DEFAULT_SETTINGS_TAB;
 
-  useEffect(() => {
-    useSettingsPanelStore.getState().openSettings(tab);
-    router.replace(PROJECT_LANDING_PATH);
-  }, [tab, router]);
-
-  return null;
+  return <StandaloneSettingsRoute tab={tab} />;
 }

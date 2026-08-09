@@ -352,7 +352,20 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/accounts',
+    // Selecting this in the palette opens the in-palette account switcher
+    // (`SUBMENU_PAGE_BY_ID` in command-palette.tsx), so this href is the routed
+    // fallback for any surface that consumes the registry without that picker —
+    // same arrangement as `proj-sessions` below.
+    //
+    // It used to be `/accounts`, the page JAY-505 deletes. The account-scoped
+    // surfaces (Organization, Billing, Usage, Groups, Roles, Identity, Audit)
+    // live in the settings panel now, and `/settings/*` mounts that panel
+    // without a project. Note the fallback path changes shape as well as
+    // destination: `handleRegistryItem` runs `resolveSettingsOverlayHref` first
+    // (command-palette.tsx), so a `/settings/<tab>` href OPENS THE OVERLAY on
+    // that tab in place rather than navigating away, which is what the
+    // `/accounts` href used to do.
+    href: '/settings/organization',
     keywords: 'accounts teams organizations members switch manage',
   },
   {

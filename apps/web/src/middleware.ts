@@ -140,6 +140,11 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
 const DESKTOP_ALLOWED_ROUTES = [
   '/projects',
   '/accounts',
+  // `/projects/[id]/settings*` rides the `/projects` prefix; the account-scoped
+  // `/settings/*` mount has no `[id]` segment, so without its own entry the
+  // desktop shell bounces it to the landing door — including the post-sign-in
+  // redirect to `/settings/billing`.
+  '/settings',
   '/invites',
   '/admin',
   '/setup',

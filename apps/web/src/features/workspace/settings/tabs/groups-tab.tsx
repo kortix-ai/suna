@@ -80,16 +80,16 @@
  *   24-29`). So a SUCCESSFUL `listAccounts` response is never an empty
  *   array for an authenticated user — confirmed by reading the route, not
  *   assumed.
- * - `SettingsPanel` (which mounts this tab) is only ever mounted by
- *   `ProjectShell` (`features/workspace/project-layout/project-shell.tsx:
- *   185,195` — `ProjectSidebar` and `SettingsPanel` as siblings).
- *   `app/(app)/settings/[tab]/page.tsx` never mounts `SettingsPanel` itself
- *   — it sets store state and immediately bounces to a project route
- *   (see that file's own header comment). `ProjectSidebar` renders
- *   `UserMenu`, which owns the SAME `['accounts']` query
- *   (`features/layout/user-menu.tsx:150-161`) that self-heals
- *   `selectedAccountId` once it resolves. So every reachable mount of this
- *   tab already has that identical query running alongside it.
+ * - `SettingsPanel` has TWO mounts, and both run the seeding query beside
+ *   this tab. `ProjectShell` (`features/workspace/project-layout/
+ *   project-shell.tsx:185,195` — `ProjectSidebar` and `SettingsPanel` as
+ *   siblings) renders `UserMenu`, and `app/(app)/settings*` renders
+ *   `StandaloneSettingsRoute` with no sidebar and therefore no `UserMenu`.
+ *   Both reach the same `['accounts']` query and the same self-heal, because
+ *   it was extracted out of `UserMenu` into
+ *   `hooks/account/use-ensure-selected-account.ts` and both mounts call it.
+ *   (JAY-547 — before that, the standalone route bounced to a project route
+ *   instead of mounting the panel, so `UserMenu` was the only path.)
  *
  * Conclusion: "resolved to genuinely zero accounts" is unreachable for a
  * successful fetch — but the FETCH ITSELF can fail (network/API outage) and

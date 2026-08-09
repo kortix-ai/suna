@@ -10,7 +10,11 @@ export function automaticMaintenanceConfig(): MaintenanceConfig {
 }
 
 export function isMaintenanceProductRoute(pathname: string): boolean {
-  return ['/projects', '/accounts', '/invites'].some(
+  // `/settings` earns its entry the same way `/accounts` did: the sign-in
+  // redirect for an account with no app access lands there
+  // (`app/(auth)/auth/callback/route.ts`), so leaving it out would walk that
+  // user straight past a blocking maintenance screen.
+  return ['/projects', '/accounts', '/invites', '/settings'].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }

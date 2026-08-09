@@ -42,6 +42,7 @@ import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { resetClientState } from '@/lib/utils/reset-client-state';
+import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
@@ -141,7 +142,7 @@ export function UserMenu({
   const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
   const { theme, setTheme, resolvedTheme } = useTheme();
-  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const { selectedAccountId } = useCurrentAccountStore();
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -152,13 +153,12 @@ export function UserMenu({
     queryFn: listAccounts,
     staleTime: 60_000,
   });
-  useEffect(() => {
-    const accounts = accountsQuery.data;
-    if (!accounts?.length) return;
-    if (!selectedAccountId || !accounts.find((a) => a.account_id === selectedAccountId)) {
-      setSelectedAccountId(accounts[0].account_id);
-    }
-  }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+  // Extracted verbatim to `hooks/account/use-ensure-selected-account.ts` so the
+  // standalone `/settings` route — which mounts `SettingsPanel` with no sidebar
+  // and therefore no `UserMenu` — can run the same seeding instead of copying
+  // it. Same `['accounts']` key and `staleTime` as the query above, so the two
+  // callers share one fetch.
+  useEnsureSelectedAccount();
 
   // In the collapsed sidebar's hover flyout, the menu content portals outside
   // the panel — hovering it fires the panel's pointer-leave and would collapse

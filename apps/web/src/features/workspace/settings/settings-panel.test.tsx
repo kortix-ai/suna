@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Modal } from '@/components/ui/modal';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
+  ACCOUNT_SCOPED_SETTINGS_TABS,
   ACCOUNT_TAB_PERMISSION,
   buildSettingsPanelSettingsNav,
   isSettingsTabAllowed,
@@ -12,7 +13,7 @@ import {
   type SettingsTabAllowedParams,
 } from './settings-panel';
 import { UPGRADE_ITEM, railGroups } from './rail';
-import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS, type SettingsTab } from './settings-tabs';
 import type { RailItem } from './type';
 
 /**
@@ -463,6 +464,10 @@ describe('isSettingsTabAllowed — account-scoped gating (Task 13b)', () => {
 
   function paramsFor(overrides: Partial<SettingsTabAllowedParams> = {}): SettingsTabAllowedParams {
     return {
+      // The project-scoped mount is the default here: every case below this
+      // helper predates the standalone `/settings` route and asserts the
+      // in-project rail. The project-less mount has its own describe block.
+      hasProject: true,
       projectCapsResolved: true,
       projectCan: () => true,
       accountPermsResolved: true,
@@ -705,5 +710,85 @@ describe('buildSettingsPanelSettingsNav', () => {
     const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
     nav.navigate('general');
     expect(useSettingsPanelStore.getState().membersTab).toBe('invite');
+  });
+});
+
+/**
+ * JAY-547 — the project-less mount.
+ *
+ * `SettingsPanel` now has two mounts: `ProjectShell` (with a `projectId`) and
+ * `app/(app)/settings*` (without one). `SettingsTabPane` handles eleven tabs
+ * ABOVE its `if (projectId) { switch ... }` guard and every other tab inside
+ * it, so on the project-less mount every tab inside that guard renders a bare
+ * placeholder header. `ACCOUNT_SCOPED_SETTINGS_TABS` + the `hasProject` param
+ * are what keep those rows out of the rail instead of showing ~17 rows that
+ * open onto a title and nothing else.
+ *
+ * The first case below is the one that matters long-term: it is derived from
+ * `SETTINGS_TABS`, so a tab added to the panel later is covered without
+ * anyone remembering to extend this file.
+ */
+describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
+  function paramsFor(overrides: Partial<SettingsTabAllowedParams> = {}): SettingsTabAllowedParams {
+    return {
+      hasProject: false,
+      projectCapsResolved: true,
+      projectCan: () => true,
+      accountPermsResolved: true,
+      accountCan: () => true,
+      billingEnabled: true,
+      ...overrides,
+    };
+  }
+
+  test('with no project, exactly the account-scoped tabs are allowed', () => {
+    const allowed = SETTINGS_TABS.filter((tab) => isSettingsTabAllowed(tab, paramsFor()));
+    expect([...allowed].sort()).toEqual([...ACCOUNT_SCOPED_SETTINGS_TABS].sort());
+  });
+
+  test('every project-scoped tab is hidden with no project, however permissive the probes', () => {
+    const projectScoped = SETTINGS_TABS.filter(
+      (tab) => !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab),
+    );
+    // Non-empty, or the assertion below would pass vacuously.
+    expect(projectScoped.length).toBeGreaterThan(0);
+    for (const tab of projectScoped) {
+      expect(
+        isSettingsTabAllowed(
+          tab,
+          paramsFor({ projectCapsResolved: false, projectCan: () => true, accountCan: () => true }),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  test('the scope gate does not fail open while a probe is unresolved', () => {
+    // Every OTHER gate in this function fails open on an unresolved probe.
+    // This one must not: "no project is mounted" is known synchronously and is
+    // never pending, so `general` stays hidden even in the optimistic window.
+    expect(
+      isSettingsTabAllowed(
+        'general',
+        paramsFor({ accountPermsResolved: false, projectCapsResolved: false }),
+      ),
+    ).toBe(false);
+  });
+
+  test('the pinned Upgrades tab is project-scoped, so it drops off the rail too', () => {
+    expect(isSettingsTabAllowed('upgrades', paramsFor())).toBe(false);
+    expect(isSettingsTabAllowed('upgrades', paramsFor({ hasProject: true }))).toBe(true);
+  });
+
+  test('with a project, the scope gate changes nothing — every tab is judged on its own gates', () => {
+    for (const tab of SETTINGS_TABS) {
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(true);
+    }
+  });
+
+  test('account-scoped tabs still answer to their own permission gate with no project', () => {
+    // The scope gate ADMITS these tabs; it must not also grant them.
+    expect(isSettingsTabAllowed('billing', paramsFor({ accountCan: () => false }))).toBe(false);
+    expect(isSettingsTabAllowed('billing', paramsFor({ billingEnabled: false }))).toBe(false);
+    expect(isSettingsTabAllowed('billing', paramsFor())).toBe(true);
   });
 });

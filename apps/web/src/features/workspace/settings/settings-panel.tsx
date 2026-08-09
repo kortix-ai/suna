@@ -425,7 +425,40 @@ const ACCOUNT_TAB_PROBES = ACCOUNT_TAB_GATE_ACTIONS.map((action) => ({ action })
  * `tabs/usage-tab.tsx`'s own header comment ("Deliberately NOT combined with
  * `isBillingEnabled()`... session costs stay available with billing off").
  */
+/**
+ * The tabs `SettingsTabPane` renders WITHOUT a `projectId`.
+ *
+ * Not a judgement call — this list is read off `SettingsTabPane` below, where
+ * every one of these tabs is handled ABOVE the `if (projectId) { switch ... }`
+ * guard, and every other tab is handled inside it. A tab inside that guard
+ * renders the bare `SettingsSectionHeader` placeholder when no project is
+ * selected: a row that opens onto a title and nothing else.
+ *
+ * `SettingsPanel` is mounted two ways — by `ProjectShell` with a project, and
+ * by `app/(app)/settings*` without one (see
+ * `standalone-settings-route.tsx`). Only the second can hit this, so the
+ * project-scoped rail is unchanged by construction. Keep this in sync with
+ * `SettingsTabPane`: moving a tab across that guard means moving it here.
+ */
+export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
+  'profile',
+  'preferences',
+  'connected',
+  'organization',
+  'billing',
+  'usage',
+  'groups',
+  'roles',
+  'identity',
+  'audit',
+  'api-keys',
+];
+
 export interface SettingsTabAllowedParams {
+  /** Whether the panel was mounted with a project. `false` on the standalone
+   *  `/settings` route, which has no `[id]` segment at all — see
+   *  `ACCOUNT_SCOPED_SETTINGS_TABS`. */
+  hasProject: boolean;
   projectCapsResolved: boolean;
   projectCan: (action: ProjectAction) => boolean;
   accountPermsResolved: boolean;
@@ -437,6 +470,12 @@ export interface SettingsTabAllowedParams {
 }
 
 export function isSettingsTabAllowed(tab: SettingsTab, params: SettingsTabAllowedParams): boolean {
+  // Scope gate — a third axis, independent of both permission and the
+  // deployment flag, and NOT a fail-open probe: "this panel has no project" is
+  // known synchronously from the mount, never pending. See
+  // `ACCOUNT_SCOPED_SETTINGS_TABS`.
+  if (!params.hasProject && !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab)) return false;
+
   // Deployment-flag gate — a separate axis from permission, checked first
   // and only for `billing`. See this function's header comment, "Fix round 1".
   if (tab === 'billing' && !params.billingEnabled) return false;
@@ -580,13 +619,14 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   const isTabAllowed = useCallback(
     (t: SettingsTab) =>
       isSettingsTabAllowed(t, {
+        hasProject: !!projectId,
         projectCapsResolved: capsResolved,
         projectCan: (action) => caps[action]?.allowed === true,
         accountPermsResolved,
         accountCan,
         billingEnabled,
       }),
-    [caps, capsResolved, accountPermsResolved, accountCan, billingEnabled],
+    [projectId, caps, capsResolved, accountPermsResolved, accountCan, billingEnabled],
   );
 
   const tunnelEnabled = project?.experimental?.agent_tunnel ?? false;
