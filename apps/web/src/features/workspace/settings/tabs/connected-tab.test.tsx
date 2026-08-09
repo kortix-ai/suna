@@ -74,6 +74,37 @@ describe('ConnectedAccountsTabView', () => {
     );
     expect(out).not.toContain('manage all');
   });
+
+  // Task 545 — `GitHubAppSetupCard` (the self-host GitHub App setup card)
+  // rehomed here so it survives the accounts-page deletion ticket. It's
+  // passed as a slot rather than imported directly (see this file's header
+  // comment): the real card needs a `QueryClientProvider`, which
+  // `renderToStaticMarkup` doesn't provide, so these tests stand a marker
+  // `<div>` in for it — same pattern `api-keys-tab.test.tsx` uses for its
+  // slots.
+  test('the GitHub App setup slot renders immediately after the GitHub section — matches page.tsx:579-583', () => {
+    const out = renderToStaticMarkup(
+      <ConnectedAccountsTabView
+        canManageAccount
+        githubStatus="connected"
+        githubInstallationName="github.com/acme"
+        githubAppSetupSlot={<div>github-app-setup-marker</div>}
+      />,
+    );
+    expect(out).toContain('github-app-setup-marker');
+    expect(out.indexOf('GitHub')).toBeLessThan(out.indexOf('github-app-setup-marker'));
+    expect(out.indexOf('github-app-setup-marker')).toBeLessThan(out.indexOf('ChatGPT'));
+  });
+
+  test('the GitHub App setup slot is absent without account.write, same as the GitHub row it pairs with', () => {
+    const out = renderToStaticMarkup(
+      <ConnectedAccountsTabView
+        canManageAccount={false}
+        githubAppSetupSlot={<div>github-app-setup-marker</div>}
+      />,
+    );
+    expect(out).not.toContain('github-app-setup-marker');
+  });
 });
 
 // The `resolveConnectedAccountsId` resolver tests that used to live here

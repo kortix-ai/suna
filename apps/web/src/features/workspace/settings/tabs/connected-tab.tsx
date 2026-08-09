@@ -107,8 +107,26 @@
  *    `GitHubConnectionCard` surface) whenever `installations.length > 1`.
  *    The row's Disconnect button still only ever targets the primary
  *    (first) installation; the link is how a user reaches the rest.
+ *
+ * **Task 545 — `GitHubAppSetupCard` rehomed here.** `apps/web/src/app/(app)/
+ * accounts/[id]/page.tsx:579-583` pairs `GitHubConnectionCard` with
+ * `GitHubAppSetupCard` (`@/components/iam/github-app-setup-card`, the
+ * self-host GitHub App setup flow — manifest / existing-App-credentials /
+ * PAT), both gated on `canWriteAccount` (`account.write`). Before this task
+ * `GitHubAppSetupCard` was mounted ONLY on that accounts page, which a later
+ * ticket deletes wholesale — that would have dropped the card with no build
+ * error, since the import dies with the deleted file. It is now also
+ * rendered here, immediately after the GitHub section, under the same
+ * `canManageAccount` (`account.write`) gate — via `githubAppSetupSlot`, a
+ * slot prop rather than a direct import in `ConnectedAccountsTabView`,
+ * because the real card owns `useQuery`/`useMutation`/router hooks of its
+ * own and needs a `QueryClientProvider`, same reasoning as
+ * `chatgptConnectSlot` above. `github-app-setup-card.tsx` itself is
+ * untouched — the accounts page still imports and renders it directly until
+ * the deletion ticket runs.
  */
 
+import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import {
   ChatGptSubscriptionConnect,
   CODEX_AUTH_JSON_SECRET_NAME,
@@ -166,6 +184,17 @@ export interface ConnectedAccountsTabViewProps {
    *  installation. Required to render the link; the link is omitted
    *  without it even if the count is > 0. */
   githubManageAllHref?: string;
+  /** The self-host GitHub App setup card (`GitHubAppSetupCard`, `@/
+   *  components/iam/github-app-setup-card`) — same pairing and the same
+   *  `account.write` gate `apps/web/src/app/(app)/accounts/[id]/page.tsx`
+   *  uses for its `git` section (`page.tsx:579-583`: `GitHubConnectionCard`
+   *  then `GitHubAppSetupCard`, both under `canWriteAccount`). Rendered as a
+   *  slot, not imported directly, because the real card owns its own
+   *  `useQuery`/`useMutation`/router hooks and needs a `QueryClientProvider`
+   *  — the same reason `chatgptConnectSlot` above is a slot rather than a
+   *  direct import. Left `undefined` by default so the bare view keeps
+   *  rendering under `renderToStaticMarkup` with no providers. */
+  githubAppSetupSlot?: ReactNode;
 
   // ChatGPT — project-scoped.
   chatgptStatus?: ProviderRowStatus;
@@ -196,6 +225,7 @@ export function ConnectedAccountsTabView({
   isGitHubActionPending = false,
   githubOtherInstallationsCount = 0,
   githubManageAllHref,
+  githubAppSetupSlot,
   chatgptStatus = 'disconnected',
   chatgptConnectSlot,
   onConnectChatGpt = () => {},
@@ -262,24 +292,29 @@ export function ConnectedAccountsTabView({
 
   return (
     <div className="mx-auto w-full max-w-lg space-y-8 px-6 py-10">
-      {/* 1. GitHub — account-scoped, hidden entirely without account.write. */}
+      {/* 1. GitHub — account-scoped, hidden entirely without account.write.
+          Paired with the self-host GitHub App setup card immediately after,
+          same order and same gate as page.tsx:579-583. */}
       {canManageAccount ? (
-        <section className="space-y-3">
-          <SettingsSectionHeader title="GitHub" description={githubDescription} action={githubAction} />
-          {githubStatus === 'loading' ? <Skeleton className="h-14 w-full" /> : null}
-          {githubStatus === 'error' && githubError ? (
-            <InfoBanner tone="warning">{githubError}</InfoBanner>
-          ) : null}
-          {githubStatus === 'connected' && githubOtherInstallationsCount > 0 && githubManageAllHref ? (
-            <a
-              href={githubManageAllHref}
-              className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
-            >
-              +{githubOtherInstallationsCount} more installation
-              {githubOtherInstallationsCount === 1 ? '' : 's'} on this account — manage all
-            </a>
-          ) : null}
-        </section>
+        <>
+          <section className="space-y-3">
+            <SettingsSectionHeader title="GitHub" description={githubDescription} action={githubAction} />
+            {githubStatus === 'loading' ? <Skeleton className="h-14 w-full" /> : null}
+            {githubStatus === 'error' && githubError ? (
+              <InfoBanner tone="warning">{githubError}</InfoBanner>
+            ) : null}
+            {githubStatus === 'connected' && githubOtherInstallationsCount > 0 && githubManageAllHref ? (
+              <a
+                href={githubManageAllHref}
+                className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+              >
+                +{githubOtherInstallationsCount} more installation
+                {githubOtherInstallationsCount === 1 ? '' : 's'} on this account — manage all
+              </a>
+            ) : null}
+          </section>
+          {githubAppSetupSlot}
+        </>
       ) : null}
 
       {/* 2. ChatGPT — project-scoped. */}
@@ -428,6 +463,7 @@ export function ConnectedAccountsTab({
       isGitHubActionPending={disconnectGitHubMutation.isPending}
       githubOtherInstallationsCount={otherInstallationsCount}
       githubManageAllHref={resolvedAccountId ? `/accounts/${resolvedAccountId}?tab=git` : undefined}
+      githubAppSetupSlot={canManageAccount ? <GitHubAppSetupCard canManage={canManageAccount} /> : undefined}
       chatgptStatus={chatgptStatus}
       chatgptConnectSlot={
         projectId ? <ChatGptSubscriptionConnect projectId={projectId} /> : undefined
