@@ -211,14 +211,15 @@ describe('SettingsPanelShell — real tab content gating', () => {
   test('a still-placeholder active tab renders cleanly, even though every real-view tab exists as an inactive sibling', () => {
     expect(() =>
       render({
-        // `billing` is still a genuinely unbuilt placeholder — `profile`,
-        // `preferences`, and `connected` moved into `REAL_VIEW_TABS`-
-        // equivalent coverage below once Task 7, Task 8, and Task 9 wired
-        // them to their real views. Confirmed by grep: `grep -n "'connected'"
+        // `usage` is still a genuinely unbuilt placeholder — `profile`,
+        // `preferences`, `connected`, and (Task 11) `billing` moved into
+        // `REAL_VIEW_TABS`-equivalent coverage below once each was wired to
+        // its real view. Confirmed by grep: `grep -n "'billing'"
         // settings-panel.test.tsx` before this change showed only this one
-        // reference — `connected` was never exercised anywhere else in this
-        // file, so moving the placeholder example doesn't drop coverage.
-        tab: 'billing',
+        // placeholder reference plus `buildSettingsPanelSettingsNav`'s
+        // arbitrary-tab-id test further down (unrelated to placeholder
+        // status) — so moving this example to `usage` doesn't drop coverage.
+        tab: 'usage',
         projectId: 'p1',
         llmGatewayEnabled: true,
         groups: allFlagsOnGroups,
@@ -274,6 +275,23 @@ describe('SettingsPanelShell — real tab content gating', () => {
 
   test('connected mounts its real view even with no project id — it is account-scoped like profile/preferences, unlike every REAL_VIEW_TABS entry below', () => {
     expect(() => render({ tab: 'connected', projectId: undefined, accountId: undefined })).toThrow();
+  });
+
+  test('activating billing mounts its real view — it probes billing.write with no auth context present, so it throws', () => {
+    expect(() =>
+      render({
+        tab: 'billing',
+        projectId: 'p1',
+        accountId: 'a1',
+        llmGatewayEnabled: true,
+        groups: allFlagsOnGroups,
+        allItems: allFlagsOnItems,
+      }),
+    ).toThrow();
+  });
+
+  test('billing mounts its real view even with no project id — it is account-scoped like profile/preferences/connected, unlike every REAL_VIEW_TABS entry below', () => {
+    expect(() => render({ tab: 'billing', projectId: undefined, accountId: undefined })).toThrow();
   });
 
   for (const tab of REAL_VIEW_TABS) {
