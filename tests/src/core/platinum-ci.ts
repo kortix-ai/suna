@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v7';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v8';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -196,21 +196,24 @@ function platinumWarmEntrypoint(): string {
     'exec >>/workspace/kortix-template-warm.log 2>&1',
     'cd /workspace/suna',
     'rm -f /workspace/.kortix-ci-warm-ready /var/run/docker.pid /var/run/docker.sock',
-    'for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module"; done',
+    'modprobe overlay',
+    'modprobe bridge',
+    'modprobe br_netfilter',
+    'modprobe veth',
+    'modprobe nf_tables',
+    'modprobe ip_tables',
+    'modprobe iptable_nat',
     'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 &',
-    'dockerd_pid=$!',
-    'for _ in $(seq 1 180); do docker info >/dev/null 2>&1 && break; sleep 1; done',
+    "timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'",
     'docker info >/dev/null',
     'pnpm exec supabase start',
-    'image_count="$(docker image ls -q | sort -u | wc -l)"',
-    'test "$image_count" -gt 0',
+    'docker image ls -q | sort -u | wc -l > /workspace/.kortix-ci-warm-ready',
+    "grep -Eq '^[1-9][0-9]*$' /workspace/.kortix-ci-warm-ready",
     'docker image ls --digests',
     'pnpm exec supabase stop --no-backup',
-    'kill -TERM "$dockerd_pid"',
-    'for _ in $(seq 1 60); do kill -0 "$dockerd_pid" 2>/dev/null || break; sleep 1; done',
-    '! kill -0 "$dockerd_pid" 2>/dev/null',
+    'pkill -TERM -x dockerd',
+    "timeout 60 sh -c 'while pgrep -x dockerd >/dev/null; do sleep 1; done'",
     'rm -f /var/run/docker.pid /var/run/docker.sock',
-    'printf "images=%s\\n" "$image_count" > /workspace/.kortix-ci-warm-ready',
     'exec sleep infinity',
   ].join('\n');
 }
