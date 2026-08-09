@@ -21,15 +21,16 @@ pnpm test                       # Fast local core
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
-pnpm test -- --browser-only    # Browser journeys; pnpm dev must be running
+pnpm test -- --browser-only    # Browser journeys with the deterministic local stack
 pnpm test -- --full            # Core, browser, and every app/package test
 ```
 
-`--full` requires the local stack. Run `pnpm dev` in the primary checkout. In
-an isolated worktree, run `pnpm worktree start <name> --billing`; external
-Stripe webhook flows remain excluded. The runner reads the current worktree
-ports from `.kortix-worktree.json`. The primary checkout defaults to web
-`3000`, API `8008`, gateway `8090`, and Supabase `54321`.
+Browser and full modes start local Supabase, apply migrations, and start the
+deterministic API, gateway, and web processes. The runner stops only processes
+that it owns. It rejects an ordinary development API because that process can
+use live provider settings. The runner reads worktree ports from
+`.kortix-worktree.json`. The primary checkout defaults to web `3000`, API
+`8008`, gateway `8090`, and Supabase `54321`.
 
 Every root run writes a machine-readable benchmark to:
 

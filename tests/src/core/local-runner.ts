@@ -1,8 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+  ensureLocalMigrations,
+  ensureLocalStack,
+  ensureLocalSupabase,
+  ensureLocalWeb,
   readLocalSupabaseEnvironment,
   resolveLocalTopology,
+  type LocalStackHandle,
+  type LocalSupabaseHandle,
 } from "./local-stack";
 import { localWebUrl } from "./local-profile";
 
@@ -209,15 +215,41 @@ export async function runLocalTests(
 ): Promise<number> {
   const plan = buildLocalTestPlan(args);
   const startedAt = performance.now();
+  let localSupabase: LocalSupabaseHandle | null = null;
+  let localStack: LocalStackHandle | null = null;
+  let localWeb: LocalStackHandle | null = null;
   console.log(
     `[test] mode=${plan.mode} lanes=${plan.lanes.map((lane) => lane.name).join(",")}`,
   );
   const results: LaneResult[] = [];
-  for (const [index, stage] of plan.stages.entries()) {
-    console.log(
-      `[test] stage=${index + 1}/${plan.stages.length} lanes=${stage.map((lane) => lane.name).join(",")}`,
-    );
-    results.push(...(await Promise.all(stage.map((lane) => runLane(root, lane)))));
+  try {
+    if (plan.mode === "browser" || plan.mode === "full") {
+      const topology = resolveLocalTopology(root);
+      localSupabase = await ensureLocalSupabase(topology, { autoStart: true });
+      await ensureLocalMigrations(topology, localSupabase.environment);
+      localStack = await ensureLocalStack(topology, {
+        autoStart: true,
+        supabase: localSupabase.environment,
+      });
+      localWeb = await ensureLocalWeb(topology, {
+        autoStart: true,
+        supabase: localSupabase.environment,
+      });
+      console.log(
+        `[test] product-stack api=${localStack.started ? "started" : "reused"} web=${localWeb.started ? "started" : "reused"}`,
+      );
+    }
+
+    for (const [index, stage] of plan.stages.entries()) {
+      console.log(
+        `[test] stage=${index + 1}/${plan.stages.length} lanes=${stage.map((lane) => lane.name).join(",")}`,
+      );
+      results.push(...(await Promise.all(stage.map((lane) => runLane(root, lane)))));
+    }
+  } finally {
+    if (localWeb?.started) await localWeb.stop();
+    if (localStack?.started) await localStack.stop();
+    if (localSupabase?.started) await localSupabase.stop();
   }
   const durationMs = performance.now() - startedAt;
   const failed = results.filter((result) => result.exitCode !== 0);

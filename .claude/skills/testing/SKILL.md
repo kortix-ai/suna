@@ -41,16 +41,15 @@ pnpm test                       # Local REST/CLI flows + SDK + runner units + co
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
-pnpm test -- --browser-only    # Browser only; pnpm dev must be running
-pnpm test -- --full            # Browser plus all app/package tests; pnpm dev required
+pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
+pnpm test -- --full            # Browser plus all app/package tests
 ```
 
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
 Do not replace this package contract with a separate CI workflow.
 
-For an isolated worktree, start its stack with
-`pnpm worktree start <name> --billing`. This exposes local billing routes
-without requiring Stripe webhook forwarding.
+Browser and full modes start local Supabase, migrations, API, gateway, and web.
+They reuse a running API only when it proves the deterministic test profile.
 
 Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
 `pnpm test -- --full` for testing infrastructure, broad refactors, and release

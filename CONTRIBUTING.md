@@ -56,12 +56,12 @@ pnpm test                       # Local REST/CLI flows, SDK, runner units, route
 pnpm test -- --id ACC-4        # One product flow
 pnpm test -- --domain access   # One product domain
 pnpm test -- --sdk-only        # SDK only
-pnpm test -- --browser-only    # Browser only; start pnpm dev first
-pnpm test -- --full            # Browser and all app/package tests; start pnpm dev first
+pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
+pnpm test -- --full            # Browser and all app/package tests
 ```
 
-For an isolated worktree, start its stack with
-`pnpm worktree start <name> --billing` before browser or full tests.
+Browser and full modes start local Supabase, migrations, API, gateway, and web.
+Stop an ordinary development stack before either command.
 
 **Test-driven expectation:** when you add or change an HTTP route under `apps/api/src/**`,
 add or update the matching `ke2e` flow in `tests/src/flows/` and keep its `meta.routes` in

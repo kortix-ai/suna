@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
+  localWebUrl,
   type LocalSupabaseEnvironment,
   type LocalWorktreeConfig,
 } from "./local-profile";
@@ -28,6 +29,8 @@ export interface LocalStackHandle {
   started: boolean;
   stop(): Promise<void>;
 }
+
+export const LOCAL_TEST_PROFILE_HEADER = "x-kortix-local-test-profile";
 
 export interface LocalSupabaseHandle extends LocalStackHandle {
   environment: LocalSupabaseEnvironment;
@@ -197,14 +200,20 @@ export async function localApiHealthy(apiUrl: string): Promise<boolean> {
   }
 }
 
-export async function localApiAcceptsFlowKey(apiUrl: string): Promise<boolean> {
+export async function localApiUsesTestProfile(
+  apiUrl: string,
+  request: typeof fetch = fetch,
+): Promise<boolean> {
   try {
     const origin = apiUrl.replace(/\/v1\/?$/, "");
-    const response = await fetch(`${origin}/metrics`, {
+    const response = await request(`${origin}/metrics`, {
       headers: { authorization: `Bearer ${LOCAL_FLOW_INTERNAL_SERVICE_KEY}` },
       signal: AbortSignal.timeout(2_000),
     });
-    return response.status === 200 || response.status === 404;
+    return (
+      (response.status === 200 || response.status === 404) &&
+      response.headers.get(LOCAL_TEST_PROFILE_HEADER) === "1"
+    );
   } catch {
     return false;
   }
@@ -221,6 +230,77 @@ export async function localGatewayHealthy(gatewayUrl: string): Promise<boolean> 
   }
 }
 
+export async function localWebHealthy(webUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(webUrl, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function ensureLocalWeb(
+  topology: LocalTopology,
+  options: { autoStart: boolean; supabase: LocalSupabaseEnvironment },
+): Promise<LocalStackHandle> {
+  const webPort = topology.marker?.ports.web ?? 3000;
+  const webUrl = localWebUrl(webPort);
+  if (await localWebHealthy(webUrl)) {
+    return { started: false, stop: async () => {} };
+  }
+  if (!options.autoStart) {
+    throw new Error(`local web is not running at ${webUrl}`);
+  }
+
+  const { API_URL, ANON_KEY } = options.supabase;
+  if (!API_URL || !ANON_KEY) {
+    throw new Error("local Supabase environment is incomplete");
+  }
+  const web = Bun.spawn(["pnpm", "--filter", "Kortix-Computer-Frontend", "dev"], {
+    cwd: topology.root,
+    env: {
+      ...process.env,
+      WEB_PORT: String(webPort),
+      KORTIX_API_PROXY_TARGET: topology.apiUrl.replace(/\/v1$/, ""),
+      NEXT_PUBLIC_BACKEND_URL: topology.apiUrl,
+      KORTIX_PUBLIC_BACKEND_URL: topology.apiUrl,
+      BACKEND_URL: topology.apiUrl,
+      SUPABASE_URL: API_URL,
+      NEXT_PUBLIC_SUPABASE_URL: API_URL,
+      KORTIX_PUBLIC_SUPABASE_URL: API_URL,
+      SUPABASE_ANON_KEY: ANON_KEY,
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
+      KORTIX_PUBLIC_SUPABASE_ANON_KEY: ANON_KEY,
+      NEXT_PUBLIC_APP_URL: webUrl,
+      KORTIX_PUBLIC_APP_URL: webUrl,
+      NEXT_PUBLIC_URL: webUrl,
+      NEXT_PUBLIC_BILLING_ENABLED: "false",
+    },
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  const deadline = Date.now() + 180_000;
+  while (Date.now() < deadline) {
+    if (await localWebHealthy(webUrl)) {
+      return {
+        started: true,
+        stop: async () => stopOwnedStack(web),
+      };
+    }
+    if (web.exitCode !== null) {
+      throw new Error(`local web exited with code ${web.exitCode} before readiness`);
+    }
+    await Bun.sleep(250);
+  }
+
+  await stopOwnedStack(web);
+  throw new Error(`local web did not become ready at ${webUrl} within 180s`);
+}
+
 export async function ensureLocalStack(
   topology: LocalTopology,
   options: { autoStart: boolean; supabase: LocalSupabaseEnvironment },
@@ -228,9 +308,9 @@ export async function ensureLocalStack(
   const gatewayUrl = `http://127.0.0.1:${topology.marker?.ports.gateway ?? 8090}`;
   const apiWasHealthy = await localApiHealthy(topology.apiUrl);
   const gatewayWasHealthy = await localGatewayHealthy(gatewayUrl);
-  if (apiWasHealthy && !(await localApiAcceptsFlowKey(topology.apiUrl))) {
+  if (apiWasHealthy && !(await localApiUsesTestProfile(topology.apiUrl))) {
     throw new Error(
-      `local API at ${topology.apiUrl} does not use the test-safe local configuration; restart it with pnpm dev or pnpm worktree start`,
+      `local API at ${topology.apiUrl} does not use the deterministic test profile; stop that development stack and rerun pnpm test`,
     );
   }
   if (apiWasHealthy && gatewayWasHealthy) {
@@ -259,6 +339,7 @@ export async function ensureLocalStack(
           ENV_MODE: "local",
           INTERNAL_KORTIX_ENV: "dev",
           KORTIX_LOCAL_DEV: "1",
+          KORTIX_LOCAL_TEST_PROFILE: "1",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),
@@ -267,6 +348,7 @@ export async function ensureLocalStack(
           KORTIX_PUBLIC_BACKEND_URL: topology.apiUrl,
           BACKEND_URL: topology.apiUrl,
           FRONTEND_URL: `http://127.0.0.1:${webPort}`,
+          CORS_ALLOWED_ORIGINS: localWebUrl(webPort),
           DATABASE_URL: DB_URL,
           SUPABASE_URL: API_URL,
           SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
@@ -278,7 +360,9 @@ export async function ensureLocalStack(
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
           KORTIX_WORKERS_ENABLED: "false",
           KORTIX_BILLING_INTERNAL_ENABLED: "true",
-          ALLOWED_SANDBOX_PROVIDERS: "daytona",
+          ALLOWED_SANDBOX_PROVIDERS: "platinum,daytona",
+          PLATINUM_API_KEY: "local-test-provider-disabled",
+          PLATINUM_API_URL: "http://127.0.0.1:1",
           DAYTONA_API_KEY: "local-test-provider-disabled",
           DAYTONA_SERVER_URL: "http://127.0.0.1:1",
           DAYTONA_TARGET: "local-test-provider-disabled",

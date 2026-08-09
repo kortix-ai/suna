@@ -515,6 +515,9 @@ app.get('/metrics', (c) => {
   if (!hasInternalObservabilityAuth(c)) {
     return c.text('unauthorized\n', 401);
   }
+  if (process.env.KORTIX_LOCAL_TEST_PROFILE === '1') {
+    c.header('x-kortix-local-test-profile', '1');
+  }
   if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
   c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return c.body(renderMetrics());

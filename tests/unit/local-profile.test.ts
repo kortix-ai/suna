@@ -8,6 +8,8 @@ import {
   planLocalFlows,
 } from "../src/core/local-profile";
 import {
+  LOCAL_TEST_PROFILE_HEADER,
+  localApiUsesTestProfile,
   localMigrationPlan,
   localTopology,
   parseSupabaseEnvironment,
@@ -141,5 +143,23 @@ describe("ke2e local profile", () => {
     expect(() => localMigrationPlan(localTopology("/repo", null), {})).toThrow(
       "local Supabase environment is missing DB_URL",
     );
+  });
+
+  it("reuses only an API that proves the deterministic local test profile", async () => {
+    const profiled = await localApiUsesTestProfile(
+      "http://127.0.0.1:23608/v1",
+      async () =>
+        new Response("metrics disabled", {
+          status: 404,
+          headers: { [LOCAL_TEST_PROFILE_HEADER]: "1" },
+        }),
+    );
+    const ordinaryDev = await localApiUsesTestProfile(
+      "http://127.0.0.1:23608/v1",
+      async () => new Response("metrics", { status: 200 }),
+    );
+
+    expect(profiled).toBe(true);
+    expect(ordinaryDev).toBe(false);
   });
 });

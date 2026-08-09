@@ -339,12 +339,12 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   concurrently.
 - `pnpm test -- --id ACC-4` runs one flow. `--domain access` runs one domain.
 - `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
-- `pnpm test -- --browser-only` runs Playwright browser journeys. Start
-  `pnpm dev` first.
-- `pnpm test -- --full` adds browser journeys and every app/package test. Start
-  `pnpm dev` first.
-- In an isolated worktree, start the stack with
-  `pnpm worktree start <name> --billing` before browser or full tests.
+- `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
+  deterministic local stack.
+- `pnpm test -- --full` adds browser journeys and every app/package test. It
+  starts the deterministic local stack.
+- Browser and full modes reuse only a running API that proves the deterministic
+  test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
 - GitHub Actions runs `pnpm test -- --full` inside an ephemeral Platinum

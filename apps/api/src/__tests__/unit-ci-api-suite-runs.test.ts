@@ -9,6 +9,9 @@ const workflow = read('.github/workflows/test.yml');
 const packageQuality = read('tests/bin/package-quality.ts');
 const testScript = read('apps/api/scripts/test.sh');
 const envTest = read('apps/api/scripts/test.env');
+const packageJson = JSON.parse(read('apps/api/package.json')) as {
+  scripts: Record<string, string>;
+};
 
 const platinumJob = workflow.slice(workflow.indexOf('\n  platinum:'));
 
@@ -33,6 +36,10 @@ describe('the kortix-api suite actually runs on pull requests', () => {
     const runLine = testScript.split('\n').find((line) => line.trim().startsWith('exec bun test'));
     expect(runLine).toContain('--env-file=scripts/test.env');
     expect(runLine).not.toContain('dotenvx');
+  });
+
+  test('the dev process does not reload .env after dotenvx injects launch overrides', () => {
+    expect(packageJson.scripts.dev).toContain('bun --no-env-file run --hot src/index.ts');
   });
 
   test('a suite that discovers no files refuses to report success', () => {
