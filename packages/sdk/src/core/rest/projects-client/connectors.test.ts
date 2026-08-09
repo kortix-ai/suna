@@ -19,6 +19,7 @@ import {
   listConnectors,
   listDiscoverConnectors,
   listPipedreamApps,
+  listPipedreamSections,
   pipedreamConnect,
   pipedreamConnectConnection,
   pipedreamFinalize,
@@ -573,6 +574,69 @@ test('listPipedreamApps tolerates an API build that reports no total', async () 
   nextResponse = { status: 200, body: { apps: [], hasMore: false } };
   const result = await listPipedreamApps('P1');
   expect(result.total).toBeUndefined();
+});
+
+test('listPipedreamApps accepts an options object with a category', async () => {
+  // Category filtering is served from the API's snapshot of the whole
+  // catalogue. Pipedream's own /apps endpoint accepts a category parameter and
+  // ignores it, so this parameter is meaningful only to the Kortix API.
+  nextResponse = { status: 200, body: { apps: [], categories: [], total: 0, hasMore: false, indexReady: true } };
+  await listPipedreamApps('P1', { q: 'sap', category: 'Business Management', cursor: '48', limit: 24 });
+  expect(last().url).toContain('q=sap');
+  expect(last().url).toContain('category=Business+Management');
+  expect(last().url).toContain('cursor=48');
+  expect(last().url).toContain('limit=24');
+});
+
+test('listPipedreamApps keeps the positional (q, cursor) signature working', async () => {
+  // Published API. The options object is additive; the old call shape must not
+  // change behaviour for any consumer pinned to the current major.
+  nextResponse = { status: 200, body: { apps: [], categories: [], total: 0, hasMore: false, indexReady: true } };
+  await listPipedreamApps('P1', 'slack', 'c1');
+  expect(last().url).toContain('q=slack');
+  expect(last().url).toContain('cursor=c1');
+  expect(last().url).not.toContain('category=');
+});
+
+test('listPipedreamApps surfaces the category facet and index readiness', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      apps: [],
+      categories: [{ key: 'Marketing', label: 'Marketing', count: 207 }],
+      total: 207,
+      hasMore: false,
+      indexReady: true,
+    },
+  };
+  const result = await listPipedreamApps('P1');
+  expect(result.categories).toEqual([{ key: 'Marketing', label: 'Marketing', count: 207 }]);
+  expect(result.indexReady).toBe(true);
+});
+
+test('listPipedreamSections GETs the browse page in one request', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      sections: [{ key: 'Marketing', label: 'Marketing', total: 207, apps: [] }],
+      categories: [],
+      indexReady: true,
+    },
+  };
+  const result = await listPipedreamSections('P1', { perCategory: 6, maxCategories: 12 });
+  expect(last().url).toContain('/connectors/projects/P1/pipedream/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  // The section states its category's TRUE size, not the length of `apps` —
+  // that is what lets a heading say "Marketing · 207" over six cards.
+  expect(result.sections[0]?.total).toBe(207);
+});
+
+test('listPipedreamSections GETs without a query string when unparameterised', async () => {
+  nextResponse = { status: 200, body: { sections: [], categories: [], indexReady: false } };
+  await listPipedreamSections('P1');
+  expect(last().url).not.toContain('?');
+  expect(last().method).toBe('GET');
 });
 
 test('listDiscoverConnectors GETs a searchable cursor page', async () => {

@@ -5,7 +5,16 @@ import { CapabilityRegistry } from './capabilities/index';
 import { createFilesystemCapability } from './capabilities/filesystem';
 import { createShellCapability } from './capabilities/shell';
 import { createDesktopCapability } from './capabilities/desktop';
-import { getServicePaths, getServiceStatus, installService, restartService, startService, stopService, uninstallService } from './service';
+import {
+  DEFAULT_INSTALL_BACKGROUND_SERVICE,
+  getServicePaths,
+  getServiceStatus,
+  installService,
+  restartService,
+  startService,
+  stopService,
+  uninstallService,
+} from './service';
 import { hostname, platform, arch, release } from 'os';
 import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync, renameSync } from 'fs';
 import { join } from 'path';
@@ -54,7 +63,6 @@ const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 type ConnectMode = {
   background: boolean;
-  keepAwake: boolean;
 };
 
 async function printStartup(config: { tunnelId: string; apiUrl: string }, capabilities: string[], version: string): Promise<void> {
@@ -193,10 +201,6 @@ function isTruthyFlag(value: string | undefined): boolean {
   return value === 'true' || value === '1' || value === 'yes';
 }
 
-function isFalseyFlag(value: string | undefined): boolean {
-  return value === 'false' || value === '0' || value === 'no';
-}
-
 function isInteractiveTerminal(): boolean {
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
@@ -212,6 +216,12 @@ async function promptYesNo(question: string, defaultValue: boolean): Promise<boo
       if (['n', 'no'].includes(answer)) return false;
       console.log(`  ${c.yellow}!${c.reset} Please answer yes or no.`);
     }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      process.stdout.write('\n');
+      process.exit(130);
+    }
+    throw error;
   } finally {
     rl.close();
   }
@@ -230,38 +240,34 @@ async function chooseConnectMode(flags: Record<string, string>): Promise<Connect
     isTruthyFlag(flags['no-background']);
 
   if (explicitBackground) {
-    return { background: true, keepAwake: isTruthyFlag(flags['keep-awake']) };
+    return { background: true };
   }
   if (explicitForeground) {
-    return { background: false, keepAwake: false };
+    return { background: false };
   }
   if (!isInteractiveTerminal()) {
-    return { background: false, keepAwake: false };
+    return { background: false };
   }
 
   console.log('');
   console.log(`  ${c.yellow}!${c.reset} ${c.bold}Security note${c.reset}`);
-  console.log(`  ${c.dim}Always-online keeps this computer reachable by approved Kortix agents after this terminal closes.${c.reset}`);
-  console.log(`  ${c.dim}Keep-awake is separate: it also asks the OS to avoid sleep while the tunnel service runs.${c.reset}`);
+  console.log(`  ${c.dim}Background mode starts at login, continues after this terminal closes, and restarts after failures.${c.reset}`);
+  console.log(`  ${c.dim}The computer must remain powered on, awake, and connected to the internet.${c.reset}`);
   console.log('');
 
-  const background = await promptYesNo('  Keep this computer always online in the background?', true);
-  if (!background) return { background: false, keepAwake: false };
-
-  let keepAwake = isTruthyFlag(flags['keep-awake']);
-  if (!keepAwake && !isFalseyFlag(flags['keep-awake'])) {
-    keepAwake = await promptYesNo('  Also keep this computer awake while the tunnel is running?', false);
-  }
-  return { background, keepAwake };
+  const background = await promptYesNo(
+    '  Install the background service now?',
+    DEFAULT_INSTALL_BACKGROUND_SERVICE,
+  );
+  return { background };
 }
 
-function installBackgroundService(mode: ConnectMode): void {
-  const status = installService({ keepAwake: mode.keepAwake });
+function installBackgroundService(): void {
+  const status = installService();
   console.log('');
   console.log(`  ${c.green}●${c.reset} ${c.bold}Background service installed${c.reset}`);
   if (status.path) console.log(`  ${c.dim}${status.path}${c.reset}`);
-  console.log(`  ${c.dim}Always-online: enabled${c.reset}`);
-  console.log(`  ${c.dim}Keep-awake: ${mode.keepAwake ? 'enabled' : 'disabled'}${c.reset}`);
+  console.log(`  ${c.dim}Starts at login and restarts after failures.${c.reset}`);
   if (status.detail) console.log(`  ${c.gray}${status.detail}${c.reset}`);
   console.log('');
 }
@@ -357,7 +363,7 @@ async function commandConnectDeviceAuth(config: TunnelConfig, flags: Record<stri
 
           const mode = await chooseConnectMode(flags);
           if (mode.background) {
-            installBackgroundService(mode);
+            installBackgroundService();
             return;
           }
 
@@ -408,7 +414,7 @@ async function commandConnect(flags: Record<string, string>): Promise<void> {
     const mode = await chooseConnectMode(flags);
     if (mode.background) {
       saveCredentials(config.tunnelId, config.token, config.apiUrl);
-      installBackgroundService(mode);
+      installBackgroundService();
       return;
     }
     startAgent(config);
@@ -498,7 +504,7 @@ function commandInstallService(flags: Record<string, string>): void {
     saveCredentials(config.tunnelId, config.token, config.apiUrl);
   }
 
-  const status = installService({ keepAwake: isTruthyFlag(flags['keep-awake']) });
+  const status = installService();
   console.log(JSON.stringify(status, null, 2));
 }
 
@@ -566,9 +572,8 @@ function showHelp(): void {
   console.log(`  ${c.white}--token${c.reset} ${c.dim}<token>${c.reset}       Skip device auth, connect directly`);
   console.log(`  ${c.white}--tunnel-id${c.reset} ${c.dim}<id>${c.reset}     Tunnel ID ${c.dim}(required with --token)${c.reset}`);
   console.log(`  ${c.white}--api-url${c.reset} ${c.dim}<url>${c.reset}       API URL ${c.dim}(default: http://localhost:8080)${c.reset}`);
-  console.log(`  ${c.white}--daemon${c.reset}             With connect: save credentials and install the 24/7 service`);
+  console.log(`  ${c.white}--daemon${c.reset}             With connect: skip the prompt and install the background service`);
   console.log(`  ${c.white}--foreground${c.reset}         With connect: skip prompts and run only in this terminal`);
-  console.log(`  ${c.white}--keep-awake${c.reset}         With service: also ask OS to avoid sleep while tunnel runs`);
   console.log('');
   console.log(`  ${c.dim}Config: ~/.agent-tunnel/config.json${c.reset}`);
   console.log(`  ${c.dim}powered by ${c.cyan}kortix${c.reset}`);
@@ -576,6 +581,11 @@ function showHelp(): void {
 }
 
 const { command, flags } = parseArgs(process.argv);
+
+if (Object.prototype.hasOwnProperty.call(flags, 'keep-awake')) {
+  console.error(`${c.red}${c.bold} error${c.reset} --keep-awake is not supported. Configure sleep behavior in the operating system.`);
+  process.exit(2);
+}
 
 switch (command) {
   case 'connect':
