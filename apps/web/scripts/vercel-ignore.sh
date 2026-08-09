@@ -64,12 +64,18 @@ esac
 
 # A per-PR / feature-branch preview. Build only when explicitly opted in:
 #   • branch named preview/*                       (no secret required), OR
+#   • the preview workflow sets its branch flag     (label-driven deploys), OR
 #   • the PR carries a "preview" label             (needs GITHUB_TOKEN, PR-read).
 case "$REF" in
   preview/*)
     echo "vercel-ignore: preview/* branch — building opt-in preview."
     exit 1 ;;
 esac
+
+if [ "${KORTIX_PREVIEW_ENABLED:-}" = "1" ]; then
+  echo "vercel-ignore: branch-scoped preview flag is enabled — building opt-in preview."
+  exit 1
+fi
 
 PR="${VERCEL_GIT_PULL_REQUEST_ID:-}"
 OWNER="${VERCEL_GIT_REPO_OWNER:-kortix-ai}"
