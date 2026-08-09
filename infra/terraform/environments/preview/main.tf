@@ -183,6 +183,13 @@ resource "aws_cloudwatch_log_group" "preview" {
   tags              = local.tags
 }
 
+resource "aws_cloudwatch_log_group" "waf" {
+  name              = "aws-waf-logs-${local.name}"
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.logs.arn
+  tags              = local.tags
+}
+
 resource "aws_kms_alias" "logs" {
   name          = "alias/${local.name}-logs"
   target_key_id = aws_kms_key.logs.key_id
@@ -431,6 +438,11 @@ resource "aws_wafv2_web_acl" "preview" {
 resource "aws_wafv2_web_acl_association" "preview" {
   resource_arn = aws_lb.preview.arn
   web_acl_arn  = aws_wafv2_web_acl.preview.arn
+}
+
+resource "aws_wafv2_web_acl_logging_configuration" "preview" {
+  resource_arn            = aws_wafv2_web_acl.preview.arn
+  log_destination_configs = [aws_cloudwatch_log_group.waf.arn]
 }
 
 resource "cloudflare_record" "preview_wildcard" {
