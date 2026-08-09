@@ -1,6 +1,6 @@
 'use client';
 
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -1151,7 +1151,7 @@ export function ConnectorDetail({
     connector.provider,
   );
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-  const setSection = useCustomizeStore((s) => s.setSection);
+  const { navigate } = useSettingsNav();
   const connected = usesProjectAuthorization && connector.secretSet;
   // The connection's connection_id — the reference a backend (Kortix as a Backend)
   // passes in `connector_bindings` to run a session AS this connection. It isn't
@@ -1450,7 +1450,7 @@ export function ConnectorDetail({
                 size="sm"
                 variant="outline"
                 className="shrink-0"
-                onClick={() => setSection('computers')}
+                onClick={() => navigate('computers')}
               >
                 <Monitor className="h-4 w-4" />
                 Open Computers

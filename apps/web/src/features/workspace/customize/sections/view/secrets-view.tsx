@@ -65,7 +65,7 @@ import CustomizeSectionWrapper from '@/features/workspace/customize/sections/com
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import {
   type ProjectSecret,
   type ProjectSecretsResponse,
@@ -150,7 +150,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
   const projectDetailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -210,7 +210,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   };
   const openProviderManagement = () => {
     if (llmGatewayEnabled) {
-      openCustomize('llm-providers');
+      navigate('llm-providers');
     } else {
       setProviderModalOpen(true);
     }

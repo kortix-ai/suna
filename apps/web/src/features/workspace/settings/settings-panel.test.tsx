@@ -1,8 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { Modal } from '@/components/ui/modal';
-import { SettingsPanelShell, type SettingsPanelShellProps } from './settings-panel';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import {
+  buildSettingsPanelSettingsNav,
+  SettingsPanelShell,
+  type SettingsPanelShellProps,
+} from './settings-panel';
 import { UPGRADE_ITEM, railGroups } from './rail';
 import { DEFAULT_SETTINGS_TAB } from './settings-tabs';
 import type { RailItem } from './type';
@@ -181,5 +186,49 @@ describe('SettingsPanelShell — mobile', () => {
 
   test('renders the close button', () => {
     expect(render({ isMobile: true })).toContain('aria-label="Close"');
+  });
+});
+
+/**
+ * `buildSettingsPanelSettingsNav` is the pure adapter `SettingsPanel` uses to
+ * build the `SettingsNav` value it hands down through `SettingsNavProvider`
+ * — the new panel's counterpart to `customize-panel.tsx`'s
+ * `buildCustomizeSettingsNav`. `navigate` writes through the real store
+ * (same idiom as `stores/settings-panel-store.test.ts`), so these reset it
+ * between tests rather than mocking it.
+ */
+describe('buildSettingsPanelSettingsNav', () => {
+  beforeEach(() => {
+    useSettingsPanelStore.setState({ open: false, tab: DEFAULT_SETTINGS_TAB, membersTab: 'people' });
+  });
+
+  test('maps open/tab/membersTab straight across, and llmProvidersTab is always undefined', () => {
+    const nav = buildSettingsPanelSettingsNav({ open: true, tab: 'members', membersTab: 'invite' });
+    expect(nav.isOpen).toBe(true);
+    expect(nav.activeTab).toBe('members');
+    expect(nav.membersTab).toBe('invite');
+    expect(nav.llmProvidersTab).toBeUndefined();
+  });
+
+  test('navigate() switches the tab on the live store without touching open', () => {
+    useSettingsPanelStore.setState({ open: true });
+    const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
+    nav.navigate('billing');
+    expect(useSettingsPanelStore.getState().tab).toBe('billing');
+    expect(useSettingsPanelStore.getState().open).toBe(true);
+  });
+
+  test('an explicit membersTab opt sets membersTab on the live store', () => {
+    const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
+    nav.navigate('members', { membersTab: 'invite' });
+    expect(useSettingsPanelStore.getState().tab).toBe('members');
+    expect(useSettingsPanelStore.getState().membersTab).toBe('invite');
+  });
+
+  test('omitting opts leaves membersTab untouched', () => {
+    useSettingsPanelStore.setState({ membersTab: 'invite' });
+    const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
+    nav.navigate('general');
+    expect(useSettingsPanelStore.getState().membersTab).toBe('invite');
   });
 });

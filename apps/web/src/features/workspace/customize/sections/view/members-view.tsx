@@ -79,7 +79,7 @@ import {
   type IamPolicy,
   type PrincipalType,
 } from '@/lib/iam-client';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import {
   approveProjectAccessRequest,
   attachGroupToProject,
@@ -130,7 +130,11 @@ export function MembersView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // Deep-link target tab (e.g. the palette's "Invite members" opens here). Plain
   // in-view tab clicks stay local; this only follows an external openCustomize.
-  const requestedTab = useCustomizeStore((s) => s.membersTab);
+  // `membersTab` is optional on the shared nav shape (a provider with no
+  // notion of it could omit it); both current adapters always set it, so the
+  // `?? 'people'` fallback is defensive, not a behavior change.
+  const { membersTab: requestedTabRaw } = useSettingsNav();
+  const requestedTab = (requestedTabRaw ?? 'people') as 'people' | 'invite';
   const [tab, setTab] = useState<'people' | 'invite'>(() => requestedTab);
 
   useEffect(() => {

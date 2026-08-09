@@ -17,6 +17,7 @@ import { SandboxView } from '@/features/workspace/customize/sections/view/sandbo
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
+import { SettingsNavProvider, type SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
@@ -24,7 +25,11 @@ import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
-import { useCustomizeStore } from '@/stores/customize-store';
+import {
+  useCustomizeStore,
+  type LlmProvidersTab,
+  type MembersTab,
+} from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
@@ -38,11 +43,60 @@ import { LlmManagementView } from './sections/gateway-view';
 import { ReviewView } from './sections/view/review-view';
 import type { RailItem } from './type';
 
+/**
+ * Adapts `useCustomizeStore`'s state into the panel-agnostic `SettingsNav`
+ * shape the five `customize/sections/**` views read instead of importing the
+ * store directly (see `settings-nav-context.tsx`'s header).
+ *
+ * `navigate` always calls the narrow `setSection` — never `openCustomize` —
+ * so it never force-resets `llmProvidersTab`/`membersTab` to their defaults
+ * as a side effect of an UNRELATED jump (e.g. Connectors' "Open Computers"
+ * button). That mirrors what every one of the five views' original direct
+ * calls actually did: `connectors-view.tsx` and `marketplace-section-
+ * button.tsx` called `setSection`; `secrets-view.tsx`'s `openCustomize
+ * ('llm-providers')` call is behaviorally identical to `setSection` here
+ * because no caller anywhere in the app ever sets `llmProvidersTab` away
+ * from its default `'catalog'` (grep confirms `llmProvidersTab:` is written
+ * only by `openCustomize`'s own default and by `customize-store.test.ts`) —
+ * see the task report for the full trace. Exported for a pure unit test
+ * (`customize-panel.test.ts`); no rendering required.
+ */
+export function buildCustomizeSettingsNav(state: {
+  open: boolean;
+  section: CustomizeSection;
+  membersTab: MembersTab;
+  llmProvidersTab: LlmProvidersTab;
+}): SettingsNav {
+  return {
+    activeTab: state.section,
+    isOpen: state.open,
+    membersTab: state.membersTab,
+    llmProvidersTab: state.llmProvidersTab,
+    navigate: (tab, opts) => {
+      useCustomizeStore.getState().setSection(tab as CustomizeSection);
+      if (opts?.membersTab) {
+        useCustomizeStore.setState({ membersTab: opts.membersTab as MembersTab });
+      }
+    },
+  };
+}
+
 export function CustomizPanel({ projectId }: { projectId: string }) {
   const open = useCustomizeStore((s) => s.open);
   const section = useCustomizeStore((s) => s.section);
   const setSection = useCustomizeStore((s) => s.setSection);
   const close = useCustomizeStore((s) => s.close);
+  // Read reactively (not via getState()) so a deep-link that changes either
+  // — e.g. the command palette's `openCustomize('members', { membersTab:
+  // 'invite' })` — re-renders this provider and propagates the new value to
+  // `useSettingsNav()` consumers. `buildCustomizeSettingsNav` itself only
+  // reads these as a snapshot; it doesn't subscribe.
+  const membersTab = useCustomizeStore((s) => s.membersTab);
+  const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
+  const settingsNav = useMemo(
+    () => buildCustomizeSettingsNav({ open, section, membersTab, llmProvidersTab }),
+    [open, section, membersTab, llmProvidersTab],
+  );
   const isMobile = useIsMobile();
 
   const detail = useQuery({
@@ -157,7 +211,8 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   }, [open, capsResolved, activeAllowed, allItems, section, setSection]);
 
   return (
-    <Modal open={open} onOpenChange={(next) => (next ? undefined : close())}>
+    <SettingsNavProvider value={settingsNav}>
+      <Modal open={open} onOpenChange={(next) => (next ? undefined : close())}>
       <ModalContent
         animation="none"
         showCloseButton={false}
@@ -308,7 +363,8 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
           </main>
         </div>
       </ModalContent>
-    </Modal>
+      </Modal>
+    </SettingsNavProvider>
   );
 }
 

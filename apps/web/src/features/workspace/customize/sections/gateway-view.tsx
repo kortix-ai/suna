@@ -10,9 +10,14 @@
  * Routing; this shared picker is the single project-default surface.
  *
  * The active tab is LOCAL state, so switching tabs never touches the main
- * Customize rail. Deep-links / `openCustomize('llm-providers')` set the store
- * section, which we read once (and follow on change) to pick the initial tab —
- * Providers is the default, core surface.
+ * Customize rail. Deep-links / `openCustomize('llm-providers')` set the
+ * hosting panel's section, read here via `useSettingsNav()` (once, and
+ * followed on change) to pick the initial tab — Providers is the default,
+ * core surface.
+ *
+ * This view reads `useSettingsNav()`, never a store directly, so it mounts
+ * under either the legacy Customize panel or the new Settings panel — see
+ * `features/workspace/shared/settings-nav-context.tsx`.
  */
 
 import { useEffect, useState } from 'react';
@@ -30,12 +35,13 @@ import { GatewayPlayground } from '@/features/workspace/customize/sections/view/
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
 import { useModelDefaults } from '@kortix/sdk/react';
 import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
+import type { ActiveTab } from '@/features/workspace/customize/sections/llm-provider/types';
 
 type LlmTab =
   | 'providers'
@@ -69,10 +75,10 @@ const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
 };
 
 export function LlmManagementView({ projectId }: { projectId: string }) {
-  const open = useCustomizeStore((s) => s.open);
-  const section = useCustomizeStore((s) => s.section);
-  const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
-  const [tab, setTab] = useState<LlmTab>(() => TAB_BY_SECTION[section] ?? 'providers');
+  const { isOpen: open, activeTab: section, llmProvidersTab } = useSettingsNav();
+  const [tab, setTab] = useState<LlmTab>(
+    () => TAB_BY_SECTION[section as CustomizeSection] ?? 'providers',
+  );
 
   // The project default is the single model authority for this project. Account
   // and platform defaults are display-only inheritance when no project value is
@@ -100,7 +106,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
   // tab. Plain in-view tab clicks stay local and never move the main rail.
   useEffect(() => {
-    const next = TAB_BY_SECTION[section];
+    const next = TAB_BY_SECTION[section as CustomizeSection];
     if (next) setTab(next);
   }, [section]);
 
@@ -150,7 +156,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           projectId={projectId}
           open={open}
           onOpenChange={() => {}}
-          defaultTab={llmProvidersTab}
+          defaultTab={llmProvidersTab as ActiveTab | undefined}
           canWrite={canWrite}
         />
       </TabsContent>

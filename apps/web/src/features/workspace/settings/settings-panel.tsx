@@ -15,12 +15,20 @@
  * a bare `SettingsSectionHeader` as a placeholder; `features/workspace/
  * settings/tabs/*.tsx` (one file per tab, added tab-by-tab in later tasks)
  * replaces each placeholder as it's built. Reusing the existing
- * `customize/sections/**` views directly here was considered and rejected:
- * `gateway-view.tsx` (`LlmManagementView`), `secrets-view.tsx`, and
- * `members-view.tsx` all read `useCustomizeStore` directly for their own
- * deep-link sub-state (which Providers/Members sub-tab to land on). Mounting
- * them under THIS panel would make them read the wrong store — the legacy
- * one, which this panel never opens.
+ * `customize/sections/**` views directly here was originally blocked:
+ * `gateway-view.tsx` (`LlmManagementView`), `connectors-view.tsx`,
+ * `members-view.tsx`, `secrets-view.tsx`, and `marketplace-section-
+ * button.tsx` all read `useCustomizeStore` directly for panel navigation
+ * (which tab is active, whether the panel is open, how to jump elsewhere).
+ * Mounting them under THIS panel would have made them read the wrong store
+ * — the legacy one, which this panel never opens.
+ *
+ * That blocker is gone: all five now read `useSettingsNav()` (see
+ * `features/workspace/shared/settings-nav-context.tsx`) instead of a store
+ * directly, and THIS panel already provides it below (`buildSettingsPanel-
+ * SettingsNav` / `<SettingsNavProvider>`), even though nothing here consumes
+ * it yet. Reusing them as real tab-pane content is still a later task — this
+ * file was only cleared to mount them, not told to.
  */
 
 import { Button } from '@/components/ui/button';
@@ -33,6 +41,7 @@ import { Close } from '@/features/icon/icons/close';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { RelatedProjectsSwitcher } from '@/features/workspace/customize/related-projects-switcher';
+import { SettingsNavProvider, type SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
@@ -40,7 +49,7 @@ import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 import { getProjectDetail, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
@@ -78,11 +87,52 @@ const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
   upgrades: 'upgrade',
 };
 
+/**
+ * Adapts `useSettingsPanelStore`'s state into the panel-agnostic
+ * `SettingsNav` shape the five `customize/sections/**` views will read once
+ * they're mounted here (Task 5b/later) — see `settings-nav-context.tsx`'s
+ * header. Nothing under this panel consumes it yet: no tab-pane content is
+ * wired up (see this file's top comment), so `<SettingsNavProvider>` below
+ * currently has no `useSettingsNav()` descendants. It's wired up now so a
+ * later task that mounts real content doesn't also have to remember to add
+ * the provider.
+ *
+ * `llmProvidersTab` has no equivalent field on this store (Task 4's finding,
+ * documented on `settings-panel-store.ts`), so it's always `undefined` here.
+ * Exported for a pure unit test; no rendering required.
+ */
+export function buildSettingsPanelSettingsNav(state: {
+  open: boolean;
+  tab: SettingsTab;
+  membersTab: MembersTab;
+}): SettingsNav {
+  return {
+    activeTab: state.tab,
+    isOpen: state.open,
+    membersTab: state.membersTab,
+    llmProvidersTab: undefined,
+    navigate: (tab, opts) => {
+      useSettingsPanelStore.getState().setTab(tab as SettingsTab);
+      if (opts?.membersTab) {
+        useSettingsPanelStore.setState({ membersTab: opts.membersTab as MembersTab });
+      }
+    },
+  };
+}
+
 export function SettingsPanel({ projectId }: { projectId?: string }) {
   const open = useSettingsPanelStore((s) => s.open);
   const tab = useSettingsPanelStore((s) => s.tab);
   const setTab = useSettingsPanelStore((s) => s.setTab);
   const close = useSettingsPanelStore((s) => s.close);
+  // Reactive (not getState()) so it re-renders this provider — and every
+  // useSettingsNav() consumer — when membersTab changes, e.g. a deep link
+  // opening straight to Invite.
+  const membersTab = useSettingsPanelStore((s) => s.membersTab);
+  const settingsNav = useMemo(
+    () => buildSettingsPanelSettingsNav({ open, tab, membersTab }),
+    [open, tab, membersTab],
+  );
   const isMobile = useIsMobile();
 
   const detail = useQuery({
@@ -191,19 +241,21 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   }, [open, capsResolved, activeAllowed, allItems, tab, setTab]);
 
   return (
-    <SettingsPanelView
-      open={open}
-      tab={tab}
-      onTabChange={setTab}
-      onOpenChange={(next) => (next ? undefined : close())}
-      isMobile={isMobile}
-      project={project}
-      groups={groups}
-      allItems={allItems}
-      upgradeAllowed={upgradeAllowed}
-      upgradeAttention={upgradeAttention}
-      reviewNeedsYou={reviewNeedsYou}
-    />
+    <SettingsNavProvider value={settingsNav}>
+      <SettingsPanelView
+        open={open}
+        tab={tab}
+        onTabChange={setTab}
+        onOpenChange={(next) => (next ? undefined : close())}
+        isMobile={isMobile}
+        project={project}
+        groups={groups}
+        allItems={allItems}
+        upgradeAllowed={upgradeAllowed}
+        upgradeAttention={upgradeAttention}
+        reviewNeedsYou={reviewNeedsYou}
+      />
+    </SettingsNavProvider>
   );
 }
 
