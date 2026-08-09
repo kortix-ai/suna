@@ -1257,12 +1257,28 @@ measured directly and which could only be source-verified — no browser and no
 profiler session were available (standing project constraint). Full method,
 commands and raw numbers: `.superpowers/sdd/2026-08-09-enhance-chat-input/task-15-report.md`.
 
+**Correction (recorded, not hidden).** This section originally reported a
+bundle cut (removing `Blockquote`/`Bold`/`Italic`/`Strike`/`Code`/`CodeBlock`/
+`Link`/`BulletList`/`OrderedList`/`ListItem` from `extensions.ts`) as the
+final state, bringing the delta to +102.9 KB gz. That cut has been
+**reverted**. Markdown support — input rules while typing plus correct
+serialization on send — is spec §2 Goal 4, an explicit user requirement
+("we need to make this essential input markdown-friendly. Markdown should be
+supported properly"), not a nice-to-have the compat matrix happened to omit.
+The compat matrix protects against the rewrite silently *dropping* something
+the old textarea composer had; markdown was never in the old composer, so its
+absence from the matrix means the matrix cannot speak for it, not that it is
+expendable. The 100 KB ceiling was an estimate written into the T15 brief
+before this branch existed; a written requirement outranks an estimate. All
+ten extensions are back, `@tiptap/starter-kit` (genuinely zero imports,
+independent of markdown) stays removed.
+
 | Target | Method | Result |
 |---|---|---|
 | React commits per keystroke: 1 → 0 | Source-verified | **0**, confirmed against installed `@tiptap/react` source (below) |
 | Commits per 60 s idle, empty composer: 10 → 0 | Source-verified (grep) | **0** — no `setInterval` anywhere in `composer/` |
 | `ModelSelector` renders per keystroke: 1 → 0 | Source-verified | **0** in steady state — boundary-only re-render, traced below |
-| Composer chunk (gz): baseline → ≤ baseline + 100 KB | **Measured**, two real builds | **+102.9 KB gz**, ~2.9 KB over the 100 KB ceiling after a bundle cut (was +136.0 KB before the cut) |
+| Composer chunk (gz), with markdown: baseline → ≤ baseline + 100 KB | **Measured**, real builds | **+136.0 KB gz — exceeds the 100 KB ceiling by ~36 KB. Open — see 7.2.** |
 | Mention menu open → first paint: — → < 100 ms warm | Not measurable here | Requires a browser; not attempted |
 
 ### 7.1 Bundle — measured, not estimated
@@ -1291,56 +1307,92 @@ carries the composer's TipTap/ProseMirror code.
    deleted that a path-scoped checkout doesn't remove on its own); confirm
    `git diff HEAD -- apps/web` is empty.
 
-Delta before any cut: **+136.0 KB gz — over the 100 KB ceiling by ~36 KB.**
+Delta with markdown, no cut: **+136.0 KB gz — over the 100 KB ceiling by
+~36 KB.**
 
-### 7.2 The cut, and the number after it
+### 7.2 The cut that was tried, reverted, and why — open decision for the user
 
-Per the plan, cut from `composer/editor/extensions.ts` and re-measure.
-`@tiptap/starter-kit` was confirmed to have zero real imports anywhere in
-`apps/web/src` (checked by symbol — `grep -rn "StarterKit"`, not by import
-path) before touching anything.
+Per the original T15 brief, a bundle cut was attempted: `Blockquote`,
+`Bold`, `Italic`, `Strike`, `Code`, `CodeBlock`, `Link`,
+`BulletList`/`OrderedList`/`ListItem` removed from `extensions.ts`,
+re-measured at **+102.9 KB gz** (−24.3%, still ~2.9 KB over the ceiling), and
+committed. **That commit has been reverted.** The cut's own reasoning — no
+compat-matrix row references these extensions, no test names them — was
+correct on its own terms, but the compat matrix was never the whole spec.
+Markdown support is spec §2 Goal 4, stated directly by the user, and every
+one of the ten cut extensions is part of that surface (bold/italic/strike/
+code-span/code-block/link/lists/blockquote are exactly the marks and nodes
+markdown input rules and serialization need). Cutting them for bundle budget
+would have shipped the branch without a stated requirement to hit an
+estimate. The estimate was wrong, not the requirement.
 
-**Removed from `extensions.ts`:** `Blockquote`, `Bold`, `Italic`, `Strike`,
-`Code`, `CodeBlock`, `Link`, `BulletList`/`OrderedList`/`ListItem`. **Kept:**
-`Document`, `Paragraph`, `Text`, `HardBreak`, `UndoRedo`, `Placeholder`.
+**All ten extensions are restored, byte-for-byte.** `extensions.ts` and
+`composer.tsx` are back to their pre-cut content (`git diff d6cbb35de9 --
+extensions.ts composer.tsx` is empty). The restore was done carefully: a
+first attempt re-added the eight package.json entries as fresh dependency
+specifiers, which caused `pnpm install` to re-resolve them against the
+registry — `^3`/`^3.14.0` ranges that had been pinned at `3.27.1` in the
+lockfile drifted to `3.29.2`, a real, unintended version bump (caught by
+diffing the resulting `pnpm-lock.yaml` against the pre-cut one). That attempt
+was discarded. The correct restore: `git checkout d6cbb35de9 --
+apps/web/package.json pnpm-lock.yaml` (byte-identical to the original,
+confirmed by diff), then remove only the `@tiptap/starter-kit` line and
+re-run `pnpm install`. The resulting lockfile diff against the original is
+minimal and exact: the `starter-kit` entry plus its four
+transitive-only-through-starter-kit dependencies
+(`extension-bullet-list`, `extension-list-item`, `extension-list-keymap`,
+`extension-ordered-list`) — nothing else moves. Rebuilding on this lockfile
+reproduced the composer chunk **byte-for-byte identical** to the original
+pre-cut measurement (`diff` on the two `.js` files: no output), which is the
+strongest possible confirmation that removing `starter-kit` costs nothing and
+that the restore is genuine, not approximate.
 
-This is safe against everything this document proves: the pre-rebuild
-composer was a plain `<textarea>` with **zero** rich-text formatting, so none
-of the 24 compat-matrix rows above reference bold, italic, lists, code spans,
-code blocks, blockquotes or links — cutting them removes capability the
-TipTap rebuild happened to add for free, not anything the old composer did.
-No test in `composer/` references any of these extensions by name (checked
-by grep before cutting), and the full suite is unchanged after the cut:
-**1394/1394 still pass.** `npx eslint composer/` stayed at 3 warnings / 0
-errors; `npx tsc --noEmit` stayed at 15 errors, none in `composer/`.
+`@tiptap/starter-kit` stays removed — confirmed zero real imports anywhere in
+`apps/web/src` (checked by symbol, `grep -rn "StarterKit"`, not by import
+path) both before the original cut and again after the revert, and it is
+orthogonal to markdown (nothing in `composer/` ever imported it; the mention
+node and markdown formatting are hand-assembled from individual `@tiptap/
+extension-*` packages, not the starter bundle).
 
-`package.json` was pruned to match — 9 `@tiptap/*` entries removed
-(`extension-blockquote`, `-bold`, `-code`, `-code-block`, `-italic`, `-link`,
-`-list`, `-strike`, `starter-kit`), each confirmed zero-importer by
-`require.resolve` after `pnpm install`. `pnpm-lock.yaml`: 153 lines removed,
-nothing else touched. `git diff --stat -- packages/sdk` stayed empty.
+**Gates after the full restore:** `bun test src/features/session` → 1394
+pass, 0 fail (unchanged). `npx eslint src/features/session/composer/` → 3
+warnings, 0 errors (unchanged). `npx tsc --noEmit` → 15 errors, none in
+`composer/` (unchanged). `git diff --stat -- packages/sdk` → empty.
 
-Rebuild, same marker sweep, exactly one match:
+**The honest trade-off, left open:**
 
-| Build | raw | gz |
-|---|---:|---:|
-| Pre-cut | 437,383 | 136,028 |
-| Post-cut | 338,231 | **102,937** |
-| Saved | −99,152 (−22.7%) | **−33,091 (−24.3%)** |
+| | Composer chunk (gz) | vs. 100 KB ceiling |
+|---|---:|---|
+| With markdown (required, spec §2 Goal 4) | **136.0 KB** | **+36 KB over** |
+| Without markdown (reverted; not shippable as final state) | 102.9 KB | +2.9 KB over |
 
-**Final: +102.9 KB gz, ~2.9 KB (≈2.9%) over the ≤ 100 KB ceiling.** A real
-24% reduction, and honestly still short of the target — reported as a miss,
-not rounded down. What's left in that chunk is `@tiptap/core` + `@tiptap/pm`
-(the ProseMirror engine) + `@tiptap/react` + `@tiptap/suggestion` +
-`MentionNode` + the `@`/`/` menu system (Tasks 6–8's actual deliverable,
-covering matrix rows 8, 9, 23, 24) + `Placeholder`/`HardBreak`/`UndoRedo`
-(back rows 3, 8, 10 and baseline undo/redo). None of that is cuttable without
-either gutting the feature this branch exists to ship or replacing TipTap
-entirely — a different, much larger undertaking, out of scope for a
-bundle-diet pass. No per-module byte breakdown was recoverable to find a
-smaller sub-cut: Turbopack strips module-path strings from production
-chunks, no source map ships alongside the deployed chunk, and this repo has
-no bundle analyzer installed.
+**The 100 KB ceiling was never achievable with ProseMirror plus the `@`/`/`
+menu system at all — even the maximal cut only reached 102.9 KB, still over
+budget.** The figure was an estimate written into the plan before any of
+this existed. This measurement falsifies it. That is a useful finding, not a
+failure of this task: closing the ~36 KB gap means either the user raises
+the budget, or the user drops the markdown requirement — **that decision
+belongs to the user, not to this task**, and is left open rather than
+resolved here.
+
+**What 136.0 KB gz buys, for the reader to weigh against the cost:** the
+ProseMirror editing engine, atomic mention badges that survive edits and
+merges as single units, the `@` and `/` menus (Tasks 6–8's actual
+deliverable, covering matrix rows 8, 9, 23, 24), markdown input rules and
+correct send-time serialization (spec §2 Goal 4), and the uncontrolled-editor
+architecture that removed per-keystroke React re-rendering across
+`ModelSelector`/`AgentSelector`/`VariantSelector`/`ReasoningEffortSelector`/
+`TokenProgress`/`VoiceRecorder` (§7.3 below) — a target this plan could not
+have hit with a controlled `<textarea>` + React state at all.
+
+**Real-world context, not a mitigation:** this chunk is **lazy-loaded**
+(`React.lazy()`, `composer.tsx:281`) — it is not part of the initial route
+paint. It loads when `ComposerEditorLazy`'s `Suspense` boundary first
+resolves (session/project pages that render the composer), not on every page
+in the app, and not before first paint on the pages that do. This changes
+*when* the cost is paid, not *whether* it is paid — 136 KB gz is still real
+transfer and parse cost for anyone who opens a composer, stated here as
+context for judging the number, not as a reason the ceiling doesn't apply.
 
 ### 7.3 Render metrics — source-verified against installed code
 
@@ -1401,7 +1453,7 @@ pre/post fix-round delta, not the whole-branch before):
 | | pass | fail | files |
 |---|---:|---:|---:|
 | Before (`1fd281f897`) | 1177 | 0 | 102 |
-| After (incl. this task's cut) | 1394 | 0 | 121 |
+| After (with markdown restored) | 1394 | 0 | 121 |
 | Net | **+217** | — | **+19** |
 
 **ESLint**, `npx eslint src/features/session/composer/`: **7 warnings, 0
@@ -1411,13 +1463,18 @@ errors → 3 warnings, 0 errors.**
 `composer/` on either end.
 
 **Net line delta**, `git diff --stat 1fd281f897 <tree>`:
-- Full scope (apps/web + lockfile + docs): **61 files, +9832 / −2078**
-- Composer + `session-chat-input.tsx` only: **46 files, +7205 / −1863**
+- Full scope (apps/web + lockfile + docs): **61 files, +10072 / −1993**
+  (includes this section's own growth — a moving target as the document is
+  edited, not a source code figure)
+- Composer + `session-chat-input.tsx` only, source only: **46 files, +7206 /
+  −1863** — unchanged from Task 14's own count, because `extensions.ts` and
+  `composer.tsx` are back to byte-identical with the pre-cut state.
 
-**Dependencies, net, branch-point → final:** **−4.** Added
-`@tiptap/extensions`, `@tiptap/suggestion` (+2); removed
-`@tiptap/extension-blockquote`, `-code-block`, `-link`, `-list`, `-strike`,
-`@tiptap/starter-kit` (−6, all present at the branch point already and now
-zero-importer). (`@tiptap/extension-mention`, added mid-plan and removed by
-Task 14, and `-bold`/`-code`/`-italic`, added by Task 3 and removed by this
-task, each net to zero and aren't double-counted here.)
+**Dependencies, net, branch-point → final:** **+4.** Added
+`@tiptap/extension-bold`, `-code`, `-italic`, `@tiptap/extensions`,
+`@tiptap/suggestion` (+5, all genuinely new to this branch, all required —
+`-bold`/`-code`/`-italic` are part of the markdown formatting set, kept);
+removed `@tiptap/starter-kit` (−1, present at the branch point, confirmed
+zero real imports both before Task 15's revert and after, unrelated to
+markdown). (`@tiptap/extension-mention`, added mid-plan and removed by Task
+14, nets to zero and isn't counted again here.)

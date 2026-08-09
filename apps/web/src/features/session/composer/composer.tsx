@@ -578,10 +578,10 @@ function ComposerImpl({
   // no suggestion menu is open" correct without this component needing any
   // channel into the menus' internal open/selected state — which
   // `composer-editor.tsx` does not expose, and modifying `composer/menus/`
-  // or `composer/editor/` is out of scope for this task. (Task 15 removed
-  // `@tiptap/extension-list` for bundle budget, so the `ListItem`
-  // Tab-to-indent interaction this comment used to describe no longer
-  // applies — there is no list node in the schema anymore.) Escape here
+  // or `composer/editor/` is out of scope for this task. This also composes
+  // correctly with `ListItem`'s own Tab-to-indent keymap
+  // (`@tiptap/extension-list`): inside a list item, Tab indents and is
+  // marked handled, so agent-cycling steps aside there too. Escape here
   // cancels a staged command, ported from session-chat-input.tsx:924-929.
   const cycleAgent = useCallback((): boolean => {
     if (primaryAgents.length <= 1 || !onAgentChange || agentSelectorLocked) return false;
