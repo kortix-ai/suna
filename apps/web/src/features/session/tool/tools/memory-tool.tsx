@@ -36,7 +36,10 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   const output = partOutput(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
-  const { openPreview } = useFilePreviewStore();
+  // Field selector, not the whole store: destructuring the hook subscribes this
+  // row to every field, so opening ONE file preview re-rendered every memory row
+  // on screen.
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
 
   const command = (input.command as string) || (streamingInput.command as string) || '';
   const path =
@@ -57,9 +60,16 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   const ext = (relPath.split('.').pop() || 'md').toLowerCase();
   const isFileTarget = command !== 'view' || /\.\w+$/.test(path);
 
-  const failed =
-    !!output &&
-    (/^no replacement was performed/i.test(output.trim()) || /did not appear/i.test(output));
+  // Both of these scan the whole output — `failed` copies it with `trim()`, and
+  // `isErrorOutput` runs `JSON.parse` over it. They live in the body, so a
+  // collapsed row paid for both on every re-render it did not ask for.
+  const failed = useMemo(
+    () =>
+      !!output &&
+      (/^no replacement was performed/i.test(output.trim()) || /did not appear/i.test(output)),
+    [output],
+  );
+  const errored = useMemo(() => isErrorOutput(output), [output]);
 
   const isStreaming = (status === 'pending' && running) || status === 'running';
 
@@ -69,7 +79,7 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   );
 
   let body: ReactNode = null;
-  if (status === 'completed' && isErrorOutput(output)) {
+  if (status === 'completed' && errored) {
     body = <ToolOutputFallback output={output} toolName="memory" />;
   } else if (command === 'view') {
     if (view?.type === 'dir') {

@@ -81,10 +81,12 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     };
   }, [output, sid]);
 
-  const headerArgs: string[] = [];
-  if (parsed?.hasConversation)
-    headerArgs.push(`${parsed.msgCount} msgs`, `${parsed.toolCount} tools`);
-  if (parsed?.compression) headerArgs.push('compressed');
+  const headerArgs = useMemo(() => {
+    const args: string[] = [];
+    if (parsed?.hasConversation) args.push(`${parsed.msgCount} msgs`, `${parsed.toolCount} tools`);
+    if (parsed?.compression) args.push('compressed');
+    return args;
+  }, [parsed]);
 
   const [showConv, setShowConv] = React.useState(false);
   const [showTodos, setShowTodos] = React.useState(true);

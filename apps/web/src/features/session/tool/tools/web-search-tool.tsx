@@ -73,7 +73,13 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
     () => queryResults.reduce((n, q) => n + q.sources.length, 0),
     [queryResults],
   );
-  const isError = status === 'completed' && isErrorOutput(output);
+  // `isErrorOutput` runs a second full `trim()` + `JSON.parse` over the same
+  // payload `parseWebSearchOutput` already parsed above — unmemoised, that was a
+  // whole extra parse of the search result set on every render.
+  const isError = useMemo(
+    () => status === 'completed' && isErrorOutput(output),
+    [status, output],
+  );
 
   // A non-technical reader doesn't need to be told this is "a web search" —
   // the magnifying-glass icon already says that. The row is just what was

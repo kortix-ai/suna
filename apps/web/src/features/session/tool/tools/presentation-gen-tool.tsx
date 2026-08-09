@@ -24,6 +24,31 @@ import { useContext, useMemo } from 'react';
 
 import { parsePresentationOutput } from '@/features/session/tool/shared/presentation-helpers';
 
+const ACTION_LABELS: Record<string, string> = {
+  create_slide: 'Create Slide',
+  list_slides: 'List Slides',
+  delete_slide: 'Delete Slide',
+  list_presentations: 'List',
+  delete_presentation: 'Delete',
+  validate_slide: 'Validate',
+  export_pdf: 'Export PDF',
+  export_pptx: 'Export PPTX',
+  preview: 'Preview',
+  serve: 'Serve',
+};
+
+// The actions that draw their own success line below; everything else falls
+// through to the generic one. Module-level so the render path stops rebuilding
+// the array on every frame.
+const ACTIONS_WITH_OWN_SUCCESS_LINE = [
+  'create_slide',
+  'validate_slide',
+  'preview',
+  'serve',
+  'export_pdf',
+  'export_pptx',
+];
+
 export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
@@ -58,21 +83,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
     return presentationName || action;
   }, [action, presentationName, slideTitle, slideNumber]);
 
-  const actionLabel = useMemo(() => {
-    const labels: Record<string, string> = {
-      create_slide: 'Create Slide',
-      list_slides: 'List Slides',
-      delete_slide: 'Delete Slide',
-      list_presentations: 'List',
-      delete_presentation: 'Delete',
-      validate_slide: 'Validate',
-      export_pdf: 'Export PDF',
-      export_pptx: 'Export PPTX',
-      preview: 'Preview',
-      serve: 'Serve',
-    };
-    return labels[action ?? ''] || action;
-  }, [action]);
+  const actionLabel = ACTION_LABELS[action ?? ''] || action;
 
   return (
     <BasicTool
@@ -164,14 +175,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
             </div>
           )}
 
-          {![
-            'create_slide',
-            'validate_slide',
-            'preview',
-            'serve',
-            'export_pdf',
-            'export_pptx',
-          ].includes(action as string) && (
+          {!ACTIONS_WITH_OWN_SUCCESS_LINE.includes(action as string) && (
             <div className="flex items-center gap-2 text-xs">
               <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">

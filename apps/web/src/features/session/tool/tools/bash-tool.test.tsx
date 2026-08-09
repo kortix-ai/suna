@@ -143,16 +143,24 @@ describe('BashTool command card geometry', () => {
   });
 });
 
-// The 22px indent lines a card up with the trigger row's TEXT column, which
-// exists only on the inline surface — the panel has no icon gutter and brings
-// its own `p-4`, so the same indent just pushed the card off its header.
+// The indent lines a card up with the trigger row's TEXT column, which exists
+// only on the inline surface — the panel has no icon gutter and brings its own
+// `p-4`, so the same indent just pushed the card off its header.
+//
+// The value is a variable with a 1.375rem (22px) default rather than a literal
+// `ml-5.5`, because a surface that overrides the row's `gap-1.5` moves the text
+// column the indent is supposed to match. The chain of thought does exactly
+// that (`turn/activity-step.tsx` forces `gap-3`), and a hardcoded 22px left the
+// card 6px short of every other row's content. Unset, the default is the same
+// 22px this suite has always asserted.
 describe('BashTool indent is surface-aware', () => {
   const part = makePart('echo hi', 'hi');
+  const INDENT = 'ml-[var(--tool-indent,1.375rem)]';
 
   test('inline keeps the icon-gutter indent', () => {
     const html = renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />));
 
-    expect(html).toContain('ml-5.5');
+    expect(html).toContain(INDENT);
   });
 
   test('the panel drops it', () => {
@@ -164,6 +172,7 @@ describe('BashTool indent is surface-aware', () => {
       ),
     );
 
-    expect(html).not.toContain('ml-5.5');
+    expect(html).not.toContain(INDENT);
+    expect(html).not.toContain('--tool-indent');
   });
 });

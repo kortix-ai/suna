@@ -29,12 +29,23 @@ import {
 import { useTranslations } from 'next-intl';
 import { useContext, useMemo } from 'react';
 
+/**
+ * The empty answers every "nothing parsed yet" branch shares.
+ *
+ * `?? []` / `?? {}` in the body hands back a fresh identity on every render of
+ * every connector row, and these sit on the streaming path where a row renders
+ * per token. Frozen so a caller cannot mutate what it thinks is its own.
+ */
+const EMPTY_ROWS = Object.freeze([]) as readonly Record<string, unknown>[];
+const EMPTY_ARGS = Object.freeze({}) as Record<string, unknown>;
+const EMPTY_INPUT_SCHEMA = Object.freeze({ type: 'object', properties: {} });
+
 export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
-  const connectors = (Array.isArray(parsed?.connectors) ? parsed!.connectors : []) as Array<
+  const connectors = (Array.isArray(parsed?.connectors) ? parsed!.connectors : EMPTY_ROWS) as Array<
     Record<string, unknown>
   >;
   const isStreaming = (status === 'pending' && running) || status === 'running';
@@ -43,7 +54,7 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     <BasicTool
       icon={<Plug className="size-3.5 flex-shrink-0" />}
       trigger={{
-        title: 'Connectors',
+        title: 'Connected apps',
         args: status === 'completed' ? [`${connectors.length} available`] : undefined,
       }}
       defaultOpen={defaultOpen}
@@ -90,10 +101,13 @@ ToolRegistry.register('kortix-connectors_connectors', ConnectorsTool);
 export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse`
+  // over it. Called straight from JSX it did that on every render.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
-  const matches = (Array.isArray(parsed?.matches) ? parsed!.matches : []) as Array<
+  const matches = (Array.isArray(parsed?.matches) ? parsed!.matches : EMPTY_ROWS) as Array<
     Record<string, unknown>
   >;
   const query = String(input.query ?? '').trim();
@@ -103,7 +117,7 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
     <BasicTool
       icon={<Search className="size-3.5 flex-shrink-0" />}
       trigger={{
-        title: 'Discover tools',
+        title: 'App actions',
         subtitle: query || undefined,
         args:
           status === 'completed'
@@ -115,7 +129,7 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
       locked={locked}
     >
       <div className="p-2.5">
-        {isErrorOutput(output) ? (
+        {outputIsError ? (
           <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
         ) : matches.length > 0 ? (
           <div className="space-y-1.5">
@@ -150,6 +164,9 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse`
+  // over it. Called straight from JSX it did that on every render.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
@@ -160,7 +177,7 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
     <BasicTool
       icon={<Code2 className="size-3.5 flex-shrink-0" />}
       trigger={{
-        title: 'Describe',
+        title: 'App details',
         subtitle: tool || undefined,
         args: parsed?.risk ? [String(parsed.risk)] : undefined,
       }}
@@ -169,7 +186,7 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
       locked={locked}
     >
       <div className="space-y-2.5 p-2.5">
-        {isErrorOutput(output) ? (
+        {outputIsError ? (
           <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
         ) : parsed ? (
           <>
@@ -187,7 +204,7 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
                 'autoFeaturesSessionToolRenderersJsxTextInputSchema878a1df6',
               )}
             >
-              <ConnectorJson value={parsed.inputSchema ?? { type: 'object', properties: {} }} />
+              <ConnectorJson value={parsed.inputSchema ?? EMPTY_INPUT_SCHEMA} />
             </ToolSection>
           </>
         ) : output ? (
@@ -204,12 +221,15 @@ ToolRegistry.register('kortix-connectors_describe', ConnectorDescribeTool);
 export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse`
+  // over it. Called straight from JSX it did that on every render.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseConnectorOutput(output), [output]);
   const connector = String(input.connector ?? '').trim();
   const action = String(input.action ?? '').trim();
-  const args = (input.args && typeof input.args === 'object' ? input.args : {}) as Record<
+  const args = (input.args && typeof input.args === 'object' ? input.args : EMPTY_ARGS) as Record<
     string,
     unknown
   >;
@@ -240,7 +260,7 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
     <BasicTool
       icon={<Terminal className="size-3.5 flex-shrink-0" />}
       trigger={{
-        title: 'Run tool',
+        title: 'Used an app',
         subtitle: ref || undefined,
         args: [
           ...(parsed?.risk ? [String(parsed.risk)] : []),
@@ -268,7 +288,7 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
           </ToolSection>
         )}
 
-        {isErrorOutput(output) ? (
+        {outputIsError ? (
           <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="call" />
         ) : parsed ? (
           <ToolSection label="Response">

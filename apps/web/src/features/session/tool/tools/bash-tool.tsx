@@ -127,7 +127,11 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     (metadata.command as string) ||
     (streamingInput.command as string) ||
     '';
-  const strippedOutput = output ? stripAnsi(output) : '';
+  // A full regex pass and a string copy over the whole output — a build log is
+  // routinely tens of kilobytes — ran on every render of every bash row, open or
+  // collapsed. It is also the dependency of the three parses below, so an
+  // unmemoised copy here made all of them miss as well.
+  const strippedOutput = useMemo(() => (output ? stripAnsi(output) : ''), [output]);
 
   const sessionMeta = useMemo(() => parseSessionMetadataOutput(strippedOutput), [strippedOutput]);
 
@@ -158,7 +162,9 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const isStalePending = !command && !running && (status === 'pending' || status === 'running');
 
-  const commandPreview = command.split('\n')[0] || '';
+  // Only the first line is ever drawn, but `.split` builds the whole array —
+  // a heredoc or a multi-line pipeline pays for every line it will not show.
+  const commandPreview = useMemo(() => command.split('\n')[0] || '', [command]);
 
   return (
     <BasicTool

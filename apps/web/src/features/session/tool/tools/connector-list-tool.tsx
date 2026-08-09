@@ -20,12 +20,15 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const output = partOutput(part);
   const filter = (input.filter as string) || '';
   const connectors = useMemo(() => parseConnectorListOutput(output || ''), [output]);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it. Called from the render body it did that on every frame of the stream.
+  const isError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
       icon={<Plug className="text-muted-foreground size-3.5" />}
       trigger={{
-        title: 'Connector List',
+        title: 'Connected apps',
         subtitle: filter
           ? `Filter: ${filter}`
           : `${connectors.length} connector${connectors.length !== 1 ? 's' : ''}`,
@@ -53,7 +56,7 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
             </div>
           ))}
         </div>
-      ) : isErrorOutput(output) ? (
+      ) : isError ? (
         <ToolOutputFallback output={output} toolName="connector_list" />
       ) : output ? (
         <div className="text-muted-foreground p-3 text-xs">No connectors found</div>

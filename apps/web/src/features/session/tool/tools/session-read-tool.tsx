@@ -64,11 +64,20 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
     return entries;
   }, [mode, output]);
 
-  const statusArgs: string[] = [];
-  if (parsed?.status) statusArgs.push(parsed.status);
-  if (parsed?.messages) statusArgs.push(`${parsed.messages} msgs`);
-  if (parsed?.toolCalls && parsed.toolCalls !== '0') statusArgs.push(`${parsed.toolCalls} tools`);
-  if (mode === 'search' && pattern) statusArgs.push(`/${pattern}/`);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it; the summary branch below asks for it on every render.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
+
+  // A fresh array handed to `BasicTool` every render — the one prop shape that
+  // defeats a memo boundary without changing anything a reader can see.
+  const statusArgs = useMemo(() => {
+    const args: string[] = [];
+    if (parsed?.status) args.push(parsed.status);
+    if (parsed?.messages) args.push(`${parsed.messages} msgs`);
+    if (parsed?.toolCalls && parsed.toolCalls !== '0') args.push(`${parsed.toolCalls} tools`);
+    if (mode === 'search' && pattern) args.push(`/${pattern}/`);
+    return args;
+  }, [parsed?.status, parsed?.messages, parsed?.toolCalls, mode, pattern]);
 
   return (
     <BasicTool
@@ -107,7 +116,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
             </div>
           ))}
         </div>
-      ) : isErrorOutput(output) ? (
+      ) : outputIsError ? (
         <ToolOutputFallback output={output} toolName="session_read" />
       ) : output ? (
         <OutputBlock text={output} markdown />

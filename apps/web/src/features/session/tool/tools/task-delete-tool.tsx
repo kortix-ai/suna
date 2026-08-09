@@ -10,12 +10,16 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
+import { useMemo } from 'react';
 
 export function TaskDeleteTool({ part, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const output = partOutput(part);
   const status = partStatus(part);
-  const isError = status === 'completed' && isErrorOutput(output);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it; this sits in the body, so it ran on every render of the row.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
+  const isError = status === 'completed' && outputIsError;
 
   return (
     <BasicTool

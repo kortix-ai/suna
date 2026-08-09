@@ -9,9 +9,9 @@
  *      reasoning in fragments; rendering a row per fragment turns a single
  *      train of thought into a wall of near-identical lines.
  *   3. A run of consecutive same-family tool calls collapses into ONE group
- *      row that opens to its members. The collapsed burst title already reads
- *      "Read 2 files, ran 2 commands"; expanding it to seven flat siblings
- *      un-groups exactly what the title just grouped.
+ *      row that opens to its members. Two reads and two commands are two pieces
+ *      of work, not four; expanding a burst to seven flat siblings un-groups
+ *      exactly what makes a 60-call run readable.
  *
  * Rule 3 reuses `groupSteps` — the same model the Easy action panel renders
  * from — rather than restating the family table here. There is one grouping

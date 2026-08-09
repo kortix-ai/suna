@@ -40,13 +40,19 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
     return entries;
   }, [output]);
 
-  const noWorkers = status === 'completed' && workers.length === 0 && !output.includes('ses_');
+  // Both scan the full output — `includes` walks it, `isErrorOutput` trims a
+  // copy of it and runs `JSON.parse`. Neither depends on render state, and the
+  // error branch below is the one taken whenever the regex above finds nothing.
+  const mentionsSession = useMemo(() => output.includes('ses_'), [output]);
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
+
+  const noWorkers = status === 'completed' && workers.length === 0 && !mentionsSession;
 
   return (
     <BasicTool
       icon={<Layers className="size-3.5 flex-shrink-0" />}
       trigger={{
-        title: 'Background Sessions',
+        title: 'Background work',
         subtitle: project || 'all projects',
         args: workers.length > 0 ? [`${workers.length} workers`] : noWorkers ? ['none'] : [],
       }}
@@ -72,7 +78,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
             </div>
           ))}
         </div>
-      ) : isErrorOutput(output) ? (
+      ) : outputIsError ? (
         <ToolOutputFallback output={output} toolName="session_list" />
       ) : output ? (
         <OutputBlock text={output} markdown />

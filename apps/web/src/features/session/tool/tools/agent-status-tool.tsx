@@ -35,6 +35,9 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
 
   const taskRows = useMemo(() => parseTaskRows(output), [output]);
   const cleanedOutput = useMemo(() => cleanWorkerOutput(output), [output]);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it, and the two branches below asked it twice per render.
+  const isError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <>
@@ -105,11 +108,9 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
           </div>
         )}
 
-        {!isRunning && isErrorOutput(output) && (
-          <ToolOutputFallback output={output} toolName="agent_status" />
-        )}
+        {!isRunning && isError && <ToolOutputFallback output={output} toolName="agent_status" />}
 
-        {!isRunning && !isErrorOutput(output) && taskRows.length === 0 && cleanedOutput && (
+        {!isRunning && !isError && taskRows.length === 0 && cleanedOutput && (
           <OutputBlock text={cleanedOutput} />
         )}
       </BasicTool>

@@ -18,6 +18,13 @@ import { ImageIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
+const TITLE_BY_ACTION: Record<string, string> = {
+  generate: 'Generate Image',
+  edit: 'Edit Image',
+  upscale: 'Upscale Image',
+  remove_bg: 'Remove Background',
+};
+
 export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
@@ -52,18 +59,11 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
 
   const displayImageSrc = directUrl || imageUrl || '';
 
-  const titleMap: Record<string, string> = {
-    generate: 'Generate Image',
-    edit: 'Edit Image',
-    upscale: 'Upscale Image',
-    remove_bg: 'Remove Background',
-  };
-
   return (
     <BasicTool
       icon={<ImageIcon className="size-3.5 flex-shrink-0" />}
       trigger={{
-        title: titleMap[action ?? ''] || 'Image Gen',
+        title: TITLE_BY_ACTION[action ?? ''] || 'Image Gen',
         subtitle: prompt?.slice(0, 60),
       }}
       defaultOpen={defaultOpen}

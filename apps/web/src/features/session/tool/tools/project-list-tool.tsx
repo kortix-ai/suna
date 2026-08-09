@@ -16,6 +16,9 @@ import { type ProjectEntry, parseProjectListOutput } from '@/lib/utils/kortix-to
 export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const output = partOutput(part);
   const projects = useMemo(() => parseProjectListOutput(output || ''), [output]);
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it, next to
+  // the list parse that is already memoised on the same string.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
@@ -27,7 +30,7 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
       defaultOpen={defaultOpen || projects.length === 0}
       forceOpen={forceOpen}
     >
-      {isErrorOutput(output) ? (
+      {errored ? (
         <ToolOutputFallback output={output} toolName="project_list" />
       ) : projects.length > 0 ? (
         <div className="space-y-0.5">

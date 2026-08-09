@@ -31,7 +31,7 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   FileTextIcon as FileText,
 } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
@@ -53,6 +53,7 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   }, [skillContent]);
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const openSheet = useCallback(() => setSheetOpen(true), []);
 
   const isCompleted = status === 'completed';
   const failure = useMemo(
@@ -75,7 +76,7 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         defaultOpen={defaultOpen}
         forceOpen={forceOpen}
         locked={locked}
-        onClick={() => setSheetOpen(true)}
+        onClick={openSheet}
         badge={isCompleted && skillFiles.length > 0 ? `${skillFiles.length} files` : undefined}
         rightAccessory={<ExternalLink />}
       >

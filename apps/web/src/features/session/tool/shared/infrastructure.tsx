@@ -307,7 +307,10 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
 
   return (
     <div
-      className={cn('relative w-full overflow-hidden bg-secondary', fill ? 'h-full' : 'aspect-video')}
+      className={cn(
+        'bg-secondary relative w-full overflow-hidden',
+        fill ? 'h-full' : 'aspect-video',
+      )}
     >
       {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
@@ -325,7 +328,7 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
           key={refreshKey}
           src={previewUrl}
           title={displayLabel}
-          className="absolute inset-0 h-full w-full border-0 bg-secondary"
+          className="bg-secondary absolute inset-0 h-full w-full border-0"
           sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
           onLoad={onLoad}
           onError={onError}
@@ -412,15 +415,61 @@ export function parsePartialJSON(raw: string): Record<string, unknown> {
   return result;
 }
 
-export function partStreamingInput(part: ToolPart): Record<string, unknown> {
-  const input = part.state.input ?? {};
-  if (Object.keys(input).length > 0) return input;
+/**
+ * The one empty object every "no input / no metadata yet" answer shares.
+ *
+ * `?? {}` looks free and is not: it hands back a NEW object on every call, and
+ * these two helpers are the first thing almost every one of the ~58 tool
+ * renderers does. A fresh identity there invalidates every `useMemo([input])`
+ * and `useMemo([metadata])` downstream — so the memos those components were
+ * carefully given could never hold, for any tool, on any render.
+ *
+ * Frozen so that a caller mutating what it believes is its own object fails
+ * loudly instead of quietly poisoning every other tool on the screen.
+ */
+const EMPTY_RECORD: Record<string, unknown> = Object.freeze({});
 
-  if ((part.state.status === 'pending' || part.state.status === 'running') && 'raw' in part.state) {
-    const raw = (part.state as any).raw as string;
-    if (raw) return parsePartialJSON(raw);
+function isEmptyObject(value: Record<string, unknown>): boolean {
+  for (const key in value) {
+    if (Object.hasOwn(value, key)) return false;
   }
-  return input;
+  return true;
+}
+
+/**
+ * A call's arguments, including the half-arrived ones — memoised per part.
+ *
+ * While a call streams, its arguments live in `state.raw` as incomplete JSON,
+ * and `parsePartialJSON` builds a fresh object out of it on every render. That
+ * object is the dependency of the `useMemo`s inside the tool components, so
+ * during exactly the period when a tool is doing the most re-rendering, all of
+ * its memoisation was guaranteed to miss.
+ *
+ * The cache is keyed on the part and guarded on BOTH `state` and the raw text,
+ * because a streaming part keeps its object while its buffer grows.
+ */
+const STREAMING_INPUT_CACHE = new WeakMap<
+  ToolPart,
+  { state: ToolPart['state']; raw: string; input: Record<string, unknown> }
+>();
+
+export function partStreamingInput(part: ToolPart): Record<string, unknown> {
+  const input = part.state.input;
+  // A settled call's `input` is already one stable object owned by the part.
+  if (input && !isEmptyObject(input)) return input;
+
+  if (part.state.status === 'pending' || part.state.status === 'running') {
+    const raw = 'raw' in part.state ? ((part.state as { raw?: string }).raw ?? '') : '';
+    if (raw) {
+      const cached = STREAMING_INPUT_CACHE.get(part);
+      if (cached && cached.state === part.state && cached.raw === raw) return cached.input;
+
+      const parsed = parsePartialJSON(raw);
+      STREAMING_INPUT_CACHE.set(part, { state: part.state, raw, input: parsed });
+      return parsed;
+    }
+  }
+  return input ?? EMPTY_RECORD;
 }
 
 export function partInput(part: ToolPart): Record<string, unknown> {
@@ -433,21 +482,40 @@ export function partMetadata(part: ToolPart): Record<string, unknown> {
     part.state.status === 'running' ||
     part.state.status === 'error'
   ) {
-    return (part.state.metadata as Record<string, unknown>) ?? {};
+    return (part.state.metadata as Record<string, unknown>) ?? EMPTY_RECORD;
   }
-  return {};
+  return EMPTY_RECORD;
 }
 
-export function partOutput(part: ToolPart): string {
-  if (part.state.status === 'completed') {
-    const raw = part.state.output ?? '';
+/**
+ * A completed tool's output, stripped of transport noise — memoised per part.
+ *
+ * Nine call sites read this (`read`, `bash`, `edit`, `write`, `apply_patch`,
+ * `web_search`, `generic`, `getToolDiagnostics`, the file-chip row), most of
+ * them in the component BODY, so they run whether the row is open or closed.
+ * Uncached, each call was two global regex passes plus a `trim()` over the whole
+ * output — three full scans and two string copies of a payload that is routinely
+ * tens of kilobytes, per row, per frame.
+ *
+ * Keyed the same way as `partOutcome`: a part is replaced rather than mutated
+ * when it changes, so the object identity IS the version, and the guard on
+ * `state` keeps the entry sound if a part object is ever reused.
+ */
+const OUTPUT_CACHE = new WeakMap<ToolPart, { state: ToolPart['state']; output: string }>();
 
-    return raw
-      .replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '')
-      .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
-      .trim();
-  }
-  return '';
+export function partOutput(part: ToolPart): string {
+  if (part.state.status !== 'completed') return '';
+
+  const cached = OUTPUT_CACHE.get(part);
+  if (cached && cached.state === part.state) return cached.output;
+
+  const output = (part.state.output ?? '')
+    .replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '')
+    .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
+    .trim();
+
+  OUTPUT_CACHE.set(part, { state: part.state, output });
+  return output;
 }
 
 export function partStatus(part: ToolPart): string {
@@ -525,12 +593,12 @@ export function ToolEmptyState({ message }: { message: string }) {
 // stops a tool whose output is the literal `null` from crashing turn render
 // (Better Stack patterns `487ae241…` / `ce68779d…`).
 export {
-  looksLikeError,
-  isErrorOutput,
-  partOutcome,
-  parseJsonFailure,
   cleanErrorMessage,
   formatJsonFailureOutput,
+  isErrorOutput,
+  looksLikeError,
+  parseJsonFailure,
+  partOutcome,
   type ToolOutcome,
 } from './tool-outcome';
 
@@ -792,11 +860,21 @@ const TOOL_ROW_CLASS = cn(
  * dead URL inside the card, so the summary row and the row it summarises say
  * the same thing with the same mark.
  */
+/**
+ * The verdict mark on a tool row.
+ *
+ * It carries an accessible name because for some rows it is the ONLY failure
+ * signal: a call that returned its error settles as `completed`, so the title
+ * still reads "Ran command" and the tint is all that says otherwise. Every other
+ * failure glyph in the turn is labelled (`activity-burst.tsx`,
+ * `activity-file-chips.tsx`); this one was the exception.
+ */
 function ToolOutcomeIcon({ outcome }: { outcome: Exclude<ToolOutcome, 'ok'> }) {
   return (
     <AlertTriangle
       weight="fill"
       data-tone={outcome}
+      aria-label={outcome === 'failed' ? 'This step failed' : 'This step partly failed'}
       className={cn(
         'size-4 shrink-0',
         outcome === 'failed' ? STATUS_TEXT.destructive : STATUS_TEXT.warning,
@@ -1190,8 +1268,17 @@ export function BasicTool({
  * `gap-1.5`, so the text column starts 22px in. (`bash` used to hardcode `ml-7`
  * against a `gap-3` that this row class does not have, which put its block 6px
  * past the text above it.)
+ *
+ * 22px is the DEFAULT, not the law, because the gap it derives from can be
+ * overridden by the surface. A tool row inside a chain of thought is forced to
+ * `gap-3` so its label lines up with the thought and file rows above it
+ * (`turn/activity-step.tsx`), which moves the text column to 28px and left the
+ * card 6px short — the same 6px error the note above records, mirrored. A
+ * hardcoded value cannot follow a gap it cannot see, so the surface sets
+ * `--tool-indent` alongside the gap it overrides and the two can no longer
+ * drift apart. Every other surface leaves the variable unset and gets 22px.
  */
-export const TOOL_INDENT = 'ml-5.5';
+export const TOOL_INDENT = 'ml-[var(--tool-indent,1.375rem)]';
 
 /**
  * The indent, or nothing, depending on which surface the tool is drawn on.

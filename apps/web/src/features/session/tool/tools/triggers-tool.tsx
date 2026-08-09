@@ -143,6 +143,12 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       });
   }, [output]);
 
+  // `isErrorOutput` trims the whole output and attempts a `JSON.parse` over it,
+  // and the fallback preview copies up to 3 KB. Both sat unmemoised in the render
+  // path, so a trigger list re-parsed itself on every frame of the streaming turn.
+  const isError = useMemo(() => isErrorOutput(output), [output]);
+  const outputPreview = useMemo(() => output.slice(0, 3000), [output]);
+
   return (
     <BasicTool
       icon={icon}
@@ -151,7 +157,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       forceOpen={forceOpen}
     >
       <div className="p-2">
-        {isErrorOutput(output) ? (
+        {isError ? (
           <ToolOutputFallback output={output} toolName="triggers" />
         ) : triggerLines.length > 0 ? (
           <div className="space-y-1">
@@ -192,7 +198,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
             )}
           </div>
         ) : output ? (
-          <OutputBlock text={output.slice(0, 3000)} />
+          <OutputBlock text={outputPreview} />
         ) : (
           <div className="p-3">
             <TextShimmer>

@@ -12,6 +12,56 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-10 — session `stream-cache-throttle` claim
+
+No **Now** task claimed. This is a user-directed browser performance fix in the
+sync store's `sessionStorage` mirror of in-progress assistant text.
+
+Claimed SDK scope:
+
+- Coalesce `writeStreamCache` writes instead of writing on every stream delta.
+- Preserve the regression guard, the payload shape, and every published export.
+- Add failing coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The `tdd` skill was invoked and its RED → GREEN → REFACTOR sequence followed.
+
+RED:
+
+- `a burst of deltas writes to sessionStorage once, not once per delta` failed
+  with `Expected: 1, Received: 20` — 20 deltas produced 20 `setItem` calls, each
+  preceded by a `getItem` + `JSON.parse` and followed by a `JSON.stringify` of
+  the whole accumulated response. Cost was quadratic in response length.
+
+GREEN:
+
+- Leading-plus-trailing throttle at `STREAM_CACHE_FLUSH_MS = 500`, matching the
+  IndexedDB transcript layer. The first delta still lands immediately; the rest
+  of a window collapse into one trailing write. `JSON.stringify` is deferred to
+  flush time, which is where the size-dependent cost lives.
+- The read-back that guarded against regressions now happens once per session
+  key per page instead of once per delta, held in a `WeakMap` keyed by the
+  storage object — so tests get fresh state from their own stub and the package
+  ships no test-only export.
+- A part switch flushes synchronously; the cache holds one entry per session, so
+  a new part must not wait out a window opened by the part it replaced.
+- `packages/sdk/src/browser/stores/sync-store.test.ts`: `77 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk test`: `1827 pass`, `2 skip`, `0 fail`, `7043 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- No published export name changed and the package version was not touched.
+
+One pre-existing test changed meaning and it is called out rather than buried:
+`message.part.delta accumulates text and writes the running total to
+sessionStorage` asserted the write was synchronous on every delta — which is the
+behaviour being fixed. Its assertion is unchanged (the running total reaches the
+cache); it now awaits the flush window. The only consumer reads this cache once
+after a refresh and already discards entries older than thirty minutes.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-09 — session `computers-connector-grouping` claim
 
 No **Now** task claimed. This is the user-directed Computers connector profile refactor.

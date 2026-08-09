@@ -34,8 +34,16 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
-  const description = getAgentCardLabel(input);
-  const verification = firstMeaningfulLine(input.verification_condition, 120);
+  // Both walk the input's prose: `getAgentCardLabel` tries up to five fields and
+  // `firstMeaningfulLine` splits each one on every newline before taking the
+  // first non-blank. A spawn carries a whole prompt, so that is a full scan plus
+  // a line array per render — and this row re-renders on every frame of the
+  // child session's stream, because `useRuntimeMessages` below subscribes to it.
+  const description = useMemo(() => getAgentCardLabel(input), [input]);
+  const verification = useMemo(
+    () => firstMeaningfulLine(input.verification_condition, 120),
+    [input],
+  );
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
 

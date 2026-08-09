@@ -104,18 +104,19 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const activePath = isCarousel ? currentItem?.path || '' : path;
   const activeTitle = isCarousel ? currentItem?.title || '' : title;
 
-  const activeHasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
-
-  const activeIsHtmlFilePath =
-    !!activePath &&
-    SHOW_HTML_EXT_RE.test(activePath) &&
-    (activeType === 'file' || activeType === 'html');
-
-  const resolvedPreviewUrl = activeHasLocalhostUrl
-    ? activeUrl
-    : activeIsHtmlFilePath
-      ? buildHtmlStaticUrl(activePath)
-      : '';
+  // Resolving the preview target parses `activeUrl` as a URL twice
+  // (`parseLocalhostUrl`, then `isAppRouteUrl`) and scans `activePath` with the
+  // extension regex. None of it depends on render state, so uncached it ran on
+  // every frame of every `show` row still mounted in the transcript.
+  const resolvedPreviewUrl = useMemo(() => {
+    const hasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
+    if (hasLocalhostUrl) return activeUrl;
+    const isHtmlFilePath =
+      !!activePath &&
+      SHOW_HTML_EXT_RE.test(activePath) &&
+      (activeType === 'file' || activeType === 'html');
+    return isHtmlFilePath ? buildHtmlStaticUrl(activePath) : '';
+  }, [activeUrl, activePath, activeType]);
   const isWebsitePreview = !!resolvedPreviewUrl;
 
   /**
@@ -145,14 +146,21 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   // so the type==='url' fallback is gated through `safeHttpUrl` first (the
   // same pattern show-content-renderer.tsx uses): a relative or non-http(s)
   // value never reaches the always-visible subtitle — it degrades to 'Link'.
-  const safeSubtitleUrl = type === 'url' ? safeHttpUrl(url) : null;
+  // Both steps construct a `URL`, and the title they feed is rendered on the
+  // always-visible tab, so this ran on every render regardless of the row's
+  // state — memoised on the two inputs that can actually move it.
+  const safeSubtitleUrl = useMemo(() => (type === 'url' ? safeHttpUrl(url) : null), [type, url]);
+  const subtitleDomain = useMemo(
+    () => (safeSubtitleUrl ? showDomain(safeSubtitleUrl) : ''),
+    [safeSubtitleUrl],
+  );
   const displayTitle = isCarousel
     ? title || `${items!.length} items`
     : title ||
       (type === 'error'
         ? 'Error'
         : type === 'url'
-          ? (safeSubtitleUrl && showDomain(safeSubtitleUrl)) || 'Link'
+          ? subtitleDomain || 'Link'
           : 'Output');
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
@@ -165,6 +173,13 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     fileActions
   );
   const hasInlineToolbar = !!inlineToolbar;
+
+  // `prefersPreviewLink` parses the candidate URL; it is an argument to the
+  // availability gate below, so it was re-parsed on every render.
+  const previewIsLinkOnly = useMemo(
+    () => prefersPreviewLink(preview.previewUrl),
+    [preview.previewUrl],
+  );
 
   let body: ReactNode;
 
@@ -188,7 +203,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
       contentStatus,
       isWebsitePreview,
       previewHasError: preview.hasError,
-      previewIsLinkOnly: prefersPreviewLink(preview.previewUrl),
+      previewIsLinkOnly,
     })
   ) {
     // The artifact didn't load (renamed/deleted file, dead preview). Never

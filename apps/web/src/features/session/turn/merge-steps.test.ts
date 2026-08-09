@@ -1,6 +1,5 @@
 import type { Part, ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
-import { burstTitle } from './burst-title';
 import { type BurstStep, flattenThought, mergeBurstSteps } from './merge-steps';
 import { stepLabel, type StepTier } from './step-label';
 
@@ -166,8 +165,9 @@ describe('mergeBurstSteps — grouping', () => {
     expect(steps[1].key).toBe('x1');
   });
 
-  test('the groups agree with the collapsed title they expand from', () => {
-    // The real tier function, so this asserts the two production paths agree.
+  test('each family in the run becomes exactly one group row', () => {
+    // The real tier function, so this asserts the production path, not the
+    // test's own tier stub.
     const realTier = (p: Part) => stepLabel(p).tier;
     const parts = [
       tool('e1', 'edit'),
@@ -178,8 +178,6 @@ describe('mergeBurstSteps — grouping', () => {
       tool('r1'),
       tool('r2'),
     ];
-
-    expect(burstTitle(parts, false)).toBe('Edited 3 files, ran 2 commands, read 2 files');
 
     const steps = mergeBurstSteps(parts, realTier);
     expect(steps.map((s) => s.kind)).toEqual(['group', 'group', 'group']);

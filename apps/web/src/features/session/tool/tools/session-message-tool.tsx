@@ -23,7 +23,7 @@ export function SessionMessageTool({ part }: ToolProps) {
     <BasicTool
       icon={<MessageCircle className="size-3.5 flex-shrink-0" />}
       trigger={{
-        title: 'Message → Session',
+        title: 'Messaged a session',
         subtitle: sid,
         args: isOk ? ['sent'] : status === 'error' ? ['failed'] : [],
       }}

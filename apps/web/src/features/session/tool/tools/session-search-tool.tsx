@@ -45,13 +45,18 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
     return results;
   }, [output]);
 
-  const noResults = status === 'completed' && hits.length === 0 && !isErrorOutput(output);
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it. It is
+  // read from the body (not from a branch), so it re-scanned the payload on
+  // every render, open or collapsed.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
+
+  const noResults = status === 'completed' && hits.length === 0 && !outputIsError;
 
   return (
     <BasicTool
       icon={<Search className="size-3.5 flex-shrink-0" />}
       trigger={{
-        title: 'Session Search',
+        title: 'Searched sessions',
         subtitle: query ? `"${query}"` : '',
         args: hits.length > 0 ? [`${hits.length} results`] : noResults ? ['no matches'] : [],
       }}

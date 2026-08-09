@@ -21,6 +21,10 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
   const output = partOutput(part);
   const status = partStatus(part);
   const query = (input.query as string) || '';
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it — the
+  // same payload the memo below already parsed once. Once per output, not once
+  // per render.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
 
   const { imageResults, isBatch, batchCount, displayQuery } = useMemo(() => {
     if (!output)
@@ -109,7 +113,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
       forceOpen={forceOpen}
       locked={locked}
     >
-      {status === 'completed' && isErrorOutput(output) ? (
+      {status === 'completed' && errored ? (
         <ToolOutputFallback output={output} toolName="image_search" />
       ) : imageResults.length > 0 ? (
         <ToolResultCard>

@@ -18,7 +18,7 @@ import {
   ArrowSquareOutIcon as ExternalLink,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FaviconAvatar } from '@/components/ui/favicon-avatar';
@@ -31,17 +31,39 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
   const status = partStatus(part);
   const url = (input.url as string) || '';
   const format = (input.format as string) || '';
-  const domain = url ? wsDomain(url) : '';
-  const safeUrl = safeHttpUrl(url);
+  // Both of these parse the URL. `new URL()` twice per render, per fetched page
+  // on screen, for a string that only changes when the part does.
+  const domain = useMemo(() => (url ? wsDomain(url) : ''), [url]);
+  const safeUrl = useMemo(() => safeHttpUrl(url), [url]);
   const [rawOpen, setRawOpen] = useState(false);
+  const openUrl = useCallback(() => openSafeExternalUrl(url), [url]);
 
-  const isHtml = format === 'html' || (!format && looksLikeHtml(output));
+  // `looksLikeHtml` lowercases the first 600 chars then runs a regex over the
+  // first 3000; `looksLikeError` copies the ENTIRE body via `trim()` before it
+  // can bail on length. A fetched page is routinely tens of kilobytes, and none
+  // of this was memoised — it ran on every render, open or collapsed.
+  const isHtml = useMemo(
+    () => format === 'html' || (!format && looksLikeHtml(output)),
+    [format, output],
+  );
   const readable = useMemo(
     () => (isHtml && output ? extractReadableHtml(output) : null),
     [isHtml, output],
   );
-  const isError = status !== 'running' && looksLikeError(output);
-  const errorSummary = isError ? output.replace(/^Error:\s*/i, '').trim() : '';
+  const isError = useMemo(
+    () => status !== 'running' && looksLikeError(output),
+    [status, output],
+  );
+  const errorSummary = useMemo(
+    () => (isError ? output.replace(/^Error:\s*/i, '').trim() : ''),
+    [isError, output],
+  );
+
+  // Both previews were sliced inline in JSX, so a 4 KB and an 8 KB string were
+  // copied per render — the raw one even while its disclosure stayed closed,
+  // because the children of `DisclosureContent` are built either way.
+  const readableText = useMemo(() => readable?.text.slice(0, 4000) ?? '', [readable]);
+  const rawHtmlPreview = useMemo(() => output.slice(0, 8000), [output]);
 
   // The page's own title + domain, favicon leading — not the verb "Web
   // Fetch". A non-technical reader recognizes a fetched page by its title,
@@ -59,7 +81,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
         args: format ? [format] : undefined,
       }}
       rightAccessory={safeUrl ? <ExternalLink /> : undefined}
-      onSubtitleClick={safeUrl ? () => openSafeExternalUrl(url) : undefined}
+      onSubtitleClick={safeUrl ? openUrl : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -110,7 +132,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
           </a>
 
           <p className="text-foreground/80 px-3 py-2 text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
-            {readable.text.slice(0, 4000) || 'No readable text content.'}
+            {readableText || 'No readable text content.'}
           </p>
 
           <Disclosure open={rawOpen} onOpenChange={setRawOpen}>
@@ -127,7 +149,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
             </DisclosureTrigger>
             <DisclosureContent>
               <pre className="text-muted-foreground/70 max-h-72 overflow-auto px-3 pb-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap">
-                {output.slice(0, 8000)}
+                {rawHtmlPreview}
               </pre>
             </DisclosureContent>
           </Disclosure>
