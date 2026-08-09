@@ -27,23 +27,20 @@
  * wording.** The brief describes "account writes gated on
  * `member.invite`/`member.update`/`member.remove` and workspace writes on
  * `project.member.write`". Checked directly against
- * `apps/api/src/projects/routes/r6.ts`: EVERY mutation this table (or the
- * sections below it) can trigger — invite (`:673`), list/revoke/resend a
- * pending invite (`:851`, `:941`, `:1012`), list/approve/reject an access
- * request (`:491`, `:533`), and update/revoke a member's own access
- * (`:1096`, `:1169`) — asserts the SAME single leaf:
- * `PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE` ('project.members.manage',
- * `lib/project-actions.ts:61`). `member.invite`/`member.update`/
- * `member.remove` are real leaves, but they gate the ACCOUNT-scoped routes
- * (`inviteAccountMember`/`updateAccountMemberRole`/`removeAccountMember`)
- * the legacy `accounts/[id]/page.tsx` members pane calls — a different data
- * source (`listAccountMembers`) this tab deliberately does not use (see
- * "one list" above). Gating THIS table's controls on those account leaves
- * would show a role-select/remove control to someone the server would
- * reject, or hide it from someone the server would allow — worse than
- * gating on the leaf the routes actually check. So every write control below
- * gates on ONE probe: `useProjectCan(projectId,
- * PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)`.
+ * `apps/api/src/projects/routes/r6.ts`: EVERY mutation this table's
+ * **workspace-access column** (or the project-scoped sections below it) can
+ * trigger — invite (`:673`), list/revoke/resend a pending invite (`:851`,
+ * `:941`, `:1012`), list/approve/reject an access request (`:491`, `:533`),
+ * and update/revoke a member's own access (`:1096`, `:1169`) — asserts the
+ * SAME single leaf: `PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE`
+ * ('project.members.manage', `lib/project-actions.ts:61`). So the workspace
+ * -access column, the invite-to-project dialog, and the pending-invites /
+ * access-requests sections below the table all gate on ONE probe:
+ * `useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)`. This is
+ * unchanged by JAY-549 below.
+ *
+ * `member.invite`/`member.update`/`member.remove` are a SEPARATE axis —
+ * see "JAY-549" further down for where they are now genuinely used.
  *
  * **This task's orphan — `ACCOUNT_ROLE_DESCRIPTORS`.** The brief frames this
  * as "referenced only by the legacy page's members pane" — checked, and
@@ -189,6 +186,121 @@
  * `isLastOwner`-disabled Leave button. The mutations' real network round
  * trips remain untestable here for the same reason as everything else in
  * this file (no DOM testing library).
+ *
+ * **JAY-549 — the three genuinely-orphaned functions, closed.** An earlier
+ * pass on this ticket claimed `inviteAccountMember`/`updateAccountMemberRole`/
+ * `removeAccountMember` were already called here. That claim was FALSE — it
+ * was based on `grep -rl` (file contains the string) rather than the call
+ * line, and the one hit was this file's own JSDoc *mentioning* the names in a
+ * sentence saying they were NOT used. Re-verified with line content before
+ * writing any of this:
+ * `grep -n "inviteAccountMember\|updateAccountMemberRole\|removeAccountMember"
+ * apps/web/src/app/(app)/accounts/[id]/page.tsx` — matches only inside
+ * `page.tsx`'s own `MembersCard`/`InviteMemberModal`/`BulkSetRoleDialog`
+ * (imports at :111,:116,:118; calls at :1095,:1108,:1696,:1716,:1760). This
+ * task adds the first other caller.
+ *
+ * These three are a THIRD axis, distinct from both `project.members.manage`
+ * (workspace-access column above) and `member.invite`-for-invites
+ * (`canManageAccountInvites`, JAY-548): they mutate the ACCOUNT roster
+ * itself — who is a member of this account at all, and at what account
+ * role. Gates are copied byte-for-byte from `page.tsx`'s
+ * `ACCOUNT_PERMISSION_PROBES` (`accounts/[id]/page.tsx:135-144,322-331`),
+ * never re-derived from `canManageMembers`/`canManageAccountInvites`:
+ * `canUpdateAccountRole` = `usePermission(accountId, 'member.update')`
+ * (`canUpdateMember` at `page.tsx:327`), `canRemoveFromAccount` =
+ * `usePermission(accountId, 'member.remove')` (`canRemoveMember` at
+ * `page.tsx:326`). Inviting reuses `canManageAccountInvites`
+ * (`member.invite`) as-is — it is the SAME leaf `page.tsx:325`'s
+ * `canInviteMember` used for both `MembersCard`'s Invite button and
+ * `PendingInvitesSection`'s row actions, so one probe correctly gates both
+ * surfaces here too.
+ *
+ * **Row-level, not a second list.** The table's existing "Account role"
+ * column gains its OWN controls, in place of the always-read-only `Badge`
+ * it rendered before this task — a compact `Select` (value bound to
+ * `member.account_role`, mirrors `page.tsx`'s "Change role" menu,
+ * `page.tsx:1532-1549`, current role selectable but a no-op since it's
+ * already selected) plus a small "Remove from account" icon button (mirrors
+ * `page.tsx:1552-1564`). This is the SAME row `memberAccessLabel` already
+ * renders — no second roster, matching this file's "one list, not a
+ * compromise" mandate at the top of this comment. Deliberately NOT a
+ * `DropdownMenu` kebab (tried first, reverted): `DropdownMenuContent` is
+ * Radix-portal-gated and renders nothing under `renderToStaticMarkup` while
+ * closed — confirmed directly, not assumed, by writing that version first
+ * and watching every content-text assertion fail with the trigger present
+ * but the menu items entirely absent from the static markup. A `Select`
+ * with `SelectValue` in the trigger (the SAME pattern the Workspace-access
+ * column already uses two columns over) renders its current value
+ * server-side with no open state required, so it is genuinely testable
+ * under this file's hard no-DOM-library constraint. Both controls are
+ * hidden for the viewer's OWN row (`currentUserId`), mirroring `page.tsx`'s
+ * per-row `!isSelf` guard on both controls (`page.tsx:1526`,`:1552`)
+ * exactly — a member's own account role/membership goes through the
+ * separate self-directed "Leave account" section (JAY-548) instead, never
+ * this row. "Remove from account" is additionally disabled for the
+ * account's last owner (`page.tsx:1557`'s `disabled={isLastOwner}`),
+ * computed from the SAME `members` array the table already renders (every
+ * row carries `account_role`) — no second `listAccountMembers` fetch (still
+ * out of this file's scope, still has its own live caller in `page.tsx`).
+ * Selecting a role does NOT mutate directly — `onValueChange` calls
+ * `onRequestAccountRoleChange`, which only STAGES the change; the `Select`'s
+ * own `value` prop stays bound to the unchanged `member.account_role` until
+ * the `ConfirmDialog` below is confirmed and the query re-fetches, so an
+ * unconfirmed pick visually reverts instead of looking silently applied.
+ *
+ * **Confirm-before-destroy.** `ConfirmDialog` gates both actions, per this
+ * task's explicit constraint — a role change (including self-demotion risk
+ * on the *next* viewer to look at this table) and a removal are both
+ * destructive and effectively irreversible without another owner's help.
+ * Role-change uses the default (non-destructive) `ConfirmDialog` variant,
+ * matching `page.tsx`'s own choice (`page.tsx:1621-1643` sets no
+ * `confirmVariant`); removal uses `confirmVariant="destructive"`, matching
+ * this file's OWN established dialect for every other removal dialog above
+ * (`onRequestRemove`'s "Remove member?", `onRequestRevokeInvite`'s "Revoke
+ * invitation?", `onRequestCancelAccountInvite`'s "Cancel invite") rather
+ * than `page.tsx`'s own non-destructive remove dialog (`page.tsx:1645-1664`
+ * also sets no `confirmVariant`) — consistency with this file's own pattern
+ * wins over byte-matching a source that predates this file's own destructive
+ * -variant convention.
+ *
+ * **Invite-to-account is a new, smaller dialog** (`InviteToAccountDialog`),
+ * not `page.tsx`'s `InviteMemberModal` ported verbatim — that source dialog
+ * is a bulk multi-email chip composer; this file's OWN established
+ * convention for its sibling `InviteMemberDialog` (invite-to-PROJECT, above)
+ * is already single-email, so the account counterpart matches that local
+ * precedent instead of the source's bulk UI, same reasoning this file's
+ * header comment already gives for not porting `members-view.tsx`'s bulk
+ * composer either. Role options are owner/admin/member (`page.tsx:2013-2019`
+ * order), copy sourced from `ACCOUNT_ROLE_DESCRIPTORS` — the same single
+ * source of truth `PermissionsHelpPopover` already renders via this file's
+ * own `permissionsHelpSlot`, so the invite dialog's role blurbs cannot drift
+ * from the popover's explainer copy. Mounted only once `accountId` resolves
+ * (same gate as every other account-scoped surface in this file).
+ * `page.tsx:1780-1834`'s per-item 409-vs-other-failure partial-success
+ * handling only exists because that dialog invites many emails at once; a
+ * single-email dialog has nothing to partially succeed, so it simplifies to
+ * one success/one error path, matching `InviteMemberDialog`'s own shape.
+ *
+ * The "Account invites" section header (JAY-548) now carries the Invite
+ * button, gated on `canManageAccountInvites` — the same `member.invite` leaf
+ * that already gated its row actions — so cancelling/resending an invite
+ * and creating one live under the same gate and the same section, closing
+ * the JAY-548 gap this ticket exists to fix ("cancel/resend shipped with no
+ * way to create one"). The section's visibility condition grows an OR-branch
+ * for `canManageAccountInvites` so an authorized viewer with zero pending
+ * invites still sees the header + Invite button, not just after the first
+ * invite exists — this cannot regress the JAY-548 tests, since every one of
+ * them either passes `canManageAccountInvites` as its (still-false) default
+ * or already satisfies the OR-condition's other two branches.
+ *
+ * `member-role-safety.test.ts` (`components/iam/`, NOT edited otherwise per
+ * this task's constraint) is repointed at this file instead of
+ * `readFileSync`-ing `page.tsx` — it now pins the same two invariants
+ * (role-change stages a `ConfirmDialog` rather than mutating on select; role
+ * copy has one source, `ACCOUNT_ROLE_DESCRIPTORS`) against this file's own
+ * `setAccountRoleChangeTarget`/`onConfirmAccountRoleChange`/
+ * `accountRoleMutation.mutate` shape.
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -208,6 +320,7 @@ import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context
 // from it doesn't change that.
 import { consumeMembersTabIntent } from '@/features/workspace/customize/sections/view/members-view';
 
+import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
@@ -279,6 +392,7 @@ import {
   detachGroupFromProject,
   getAccount,
   getProject,
+  inviteAccountMember,
   inviteProjectMember,
   isInviteSent,
   leaveAccount,
@@ -289,13 +403,16 @@ import {
   listProjectGroupGrants,
   listProjectResourceGrants,
   rejectProjectAccessRequest,
+  removeAccountMember,
   resendAccountInvite,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
   revokeProjectAccess,
+  updateAccountMemberRole,
   updateProjectAccess,
   updateProjectGroupGrant,
   type AccountInvitation,
+  type AccountRole,
   type PendingProjectInvite,
   type ProjectAccessRequest,
   type ProjectAccessMember,
@@ -453,6 +570,48 @@ export interface MembersTabViewProps {
   onCancelLeaveAccount?: () => void;
   onConfirmLeaveAccount?: () => void;
   isLeaveAccountPending?: boolean;
+
+  /** The signed-in viewer's own `user_id` — both account-role row controls
+   *  (below) are hidden entirely on this row, same as `page.tsx`'s per-row
+   *  `!isSelf` guard. See this file's header comment, "JAY-549". */
+  currentUserId?: string;
+  /** `member.update` — the SAME leaf `page.tsx`'s `canUpdateMember`
+   *  (`ACCOUNT_PERMISSION_PROBES`) gated the "Change role" submenu on. Turns
+   *  the "Account role" column's `Badge` into a `Select`. Distinct from
+   *  `canManageMembers`/`canManageAccountInvites` — never re-derived from
+   *  either. */
+  canUpdateAccountRole?: boolean;
+  /** `member.remove` — the SAME leaf `page.tsx`'s `canRemoveMember` gated
+   *  "Remove from team" on. Renders a "Remove from account" icon button
+   *  next to the role control. */
+  canRemoveFromAccount?: boolean;
+  /** user_id set — rows currently mid account-role-change or
+   *  account-removal. Separate from `pendingUserIds` above (that Set is for
+   *  the workspace-access column's own mutations) so an account-scope
+   *  mutation never shows a misleading "workspace access is changing"
+   *  spinner. */
+  accountPendingUserIds?: Set<string>;
+  accountRoleChangeTarget?: { member: ProjectAccessMember; role: AccountRole } | null;
+  onRequestAccountRoleChange?: (member: ProjectAccessMember, role: AccountRole) => void;
+  onCancelAccountRoleChange?: () => void;
+  onConfirmAccountRoleChange?: () => void;
+  isAccountRoleChangePending?: boolean;
+  accountRemoveTarget?: ProjectAccessMember | null;
+  onRequestRemoveFromAccount?: (member: ProjectAccessMember) => void;
+  onCancelRemoveFromAccount?: () => void;
+  onConfirmRemoveFromAccount?: () => void;
+  isAccountRemovePending?: boolean;
+
+  /** Opens `InviteToAccountDialog` — see this file's header comment,
+   *  "JAY-549". Gated on `canManageAccountInvites` (the "Account invites"
+   *  section header's own action slot), not a new probe: `member.invite` is
+   *  the SAME leaf `page.tsx:325`'s `canInviteMember` used for both the
+   *  Invite button and the pending-invite row actions. */
+  onOpenAccountInvite?: () => void;
+  /** `InviteToAccountDialog` — a slot for the same reason `inviteDialogSlot`
+   *  above is one (owns its own `useMutation`, can't render under
+   *  `renderToStaticMarkup`). */
+  accountInviteDialogSlot?: ReactNode;
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -512,14 +671,39 @@ export function MembersTabView({
   onCancelLeaveAccount = () => {},
   onConfirmLeaveAccount = () => {},
   isLeaveAccountPending = false,
+  currentUserId,
+  canUpdateAccountRole = false,
+  canRemoveFromAccount = false,
+  accountPendingUserIds = new Set(),
+  accountRoleChangeTarget = null,
+  onRequestAccountRoleChange = () => {},
+  onCancelAccountRoleChange = () => {},
+  onConfirmAccountRoleChange = () => {},
+  isAccountRoleChangePending = false,
+  accountRemoveTarget = null,
+  onRequestRemoveFromAccount = () => {},
+  onCancelRemoveFromAccount = () => {},
+  onConfirmRemoveFromAccount = () => {},
+  isAccountRemovePending = false,
+  onOpenAccountInvite = () => {},
+  accountInviteDialogSlot,
 }: MembersTabViewProps) {
   const showPendingInvites = isPendingInvitesLoading || pendingInvites.length > 0;
   const showAccessRequests = isAccessRequestsLoading || accessRequests.length > 0;
   // Both new sections need an account id to fetch/mutate against — hidden
   // entirely (not a skeleton) while it's unresolved, same as every other
-  // account-scoped tab in this panel treats a missing accountId.
-  const showAccountInvites = !!accountId && (isAccountInvitesLoading || accountInvites.length > 0);
+  // account-scoped tab in this panel treats a missing accountId. JAY-549
+  // adds an OR-branch: an authorized viewer with zero pending invites should
+  // still see the header + Invite button, not just after the first invite
+  // exists — see this file's header comment, "JAY-549".
+  const showAccountInvites =
+    !!accountId && (canManageAccountInvites || isAccountInvitesLoading || accountInvites.length > 0);
   const showLeaveAccount = !!accountId;
+  // Every account-owner row, for the per-row "last owner" guard on "Remove
+  // from account" — mirrors `page.tsx`'s own `isLastOwner` (computed inline
+  // per row there too), off the SAME `members` array this table already
+  // renders. See this file's header comment, "JAY-549".
+  const accountOwnerCount = members.filter((m) => m.account_role === 'owner').length;
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-10 px-6 py-10">
@@ -573,6 +757,17 @@ export function MembersTabView({
               const editable =
                 canManageMembers && !member.has_implicit_access && !isInheritedFromGroupOnly(member);
 
+              // JAY-549 — account-scope row actions. Hidden entirely on the
+              // viewer's own row (mirrors page.tsx's per-row `!isSelf`
+              // guard) — self goes through the separate "Leave account"
+              // section instead. See this file's header comment, "JAY-549".
+              const isSelfAccountRow = !!currentUserId && member.user_id === currentUserId;
+              const accountBusy = accountPendingUserIds.has(member.user_id);
+              const accountRoleEditable = canUpdateAccountRole && !isSelfAccountRow;
+              const accountRemovable = canRemoveFromAccount && !isSelfAccountRow;
+              const isLastAccountOwner =
+                member.account_role === 'owner' && accountOwnerCount === 1;
+
               return (
                 <TableRow key={member.user_id}>
                   <TableCell className="align-top whitespace-normal">
@@ -589,17 +784,59 @@ export function MembersTabView({
                     </div>
                   </TableCell>
                   <TableCell className="align-top">
-                    <Badge
-                      variant="outline"
-                      size="sm"
-                      className={
-                        member.account_role === 'owner'
-                          ? 'border-foreground/30 text-foreground capitalize'
-                          : 'capitalize'
-                      }
-                    >
-                      {member.account_role}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      {accountBusy ? (
+                        <Loading className="text-muted-foreground size-3.5 shrink-0" />
+                      ) : accountRoleEditable ? (
+                        <Select
+                          value={member.account_role}
+                          onValueChange={(next) =>
+                            onRequestAccountRoleChange(member, next as AccountRole)
+                          }
+                        >
+                          <SelectTrigger
+                            className="h-7 w-28 text-xs capitalize"
+                            aria-label={`Account role for ${userLabel(member)}`}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="owner">{ACCOUNT_ROLE_DESCRIPTORS.owner.label}</SelectItem>
+                            <SelectItem value="admin">{ACCOUNT_ROLE_DESCRIPTORS.admin.label}</SelectItem>
+                            <SelectItem value="member">{ACCOUNT_ROLE_DESCRIPTORS.member.label}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          size="sm"
+                          className={
+                            member.account_role === 'owner'
+                              ? 'border-foreground/30 text-foreground capitalize'
+                              : 'capitalize'
+                          }
+                        >
+                          {member.account_role}
+                        </Badge>
+                      )}
+                      {!accountBusy && accountRemovable ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onRequestRemoveFromAccount(member)}
+                          disabled={isLastAccountOwner}
+                          title={
+                            isLastAccountOwner
+                              ? 'The account needs at least one owner.'
+                              : 'Remove from account'
+                          }
+                          aria-label={`Remove ${userLabel(member)} from account`}
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="align-top">
                     <div className="flex flex-col gap-0.5">
@@ -806,9 +1043,24 @@ export function MembersTabView({
           <SettingsSectionHeader
             title="Account invites"
             description="Invitations to join this account, awaiting sign-up."
+            action={
+              canManageAccountInvites ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={onOpenAccountInvite}
+                  className="gap-1.5"
+                >
+                  <Plus className="size-3.5" />
+                  Invite
+                </Button>
+              ) : undefined
+            }
           />
           {isAccountInvitesLoading ? (
             <Skeleton className="h-14 w-full rounded-md" />
+          ) : accountInvites.length === 0 ? (
+            <p className="text-muted-foreground text-xs">No pending invites.</p>
           ) : (
             <ul className="space-y-2">
               {accountInvites.map((invite) => {
@@ -982,7 +1234,52 @@ export function MembersTabView({
         onConfirm={onConfirmLeaveAccount}
       />
 
+      {/* JAY-549 — see this file's header comment, "JAY-549". Role-change
+          uses the default (non-destructive) variant, matching page.tsx's own
+          choice; removal uses "destructive", matching this file's own
+          established dialect for every other removal dialog above. */}
+      <ConfirmDialog
+        open={accountRoleChangeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) onCancelAccountRoleChange();
+        }}
+        title="Change account role"
+        description={
+          accountRoleChangeTarget ? (
+            <span>
+              Change <strong>{userLabel(accountRoleChangeTarget.member)}</strong> to{' '}
+              <strong>{ACCOUNT_ROLE_DESCRIPTORS[accountRoleChangeTarget.role].label}</strong>.{' '}
+              {ACCOUNT_ROLE_DESCRIPTORS[accountRoleChangeTarget.role].blurb}
+            </span>
+          ) : null
+        }
+        confirmLabel="Change role"
+        isPending={isAccountRoleChangePending}
+        onConfirm={onConfirmAccountRoleChange}
+      />
+
+      <ConfirmDialog
+        open={accountRemoveTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) onCancelRemoveFromAccount();
+        }}
+        title="Remove from account?"
+        description={
+          accountRemoveTarget ? (
+            <span>
+              <strong>{userLabel(accountRemoveTarget)}</strong> will lose access to this account and
+              its projects immediately.
+            </span>
+          ) : null
+        }
+        confirmLabel="Remove"
+        confirmVariant="destructive"
+        isPending={isAccountRemovePending}
+        onConfirm={onConfirmRemoveFromAccount}
+      />
+
       {inviteDialogSlot}
+      {accountInviteDialogSlot}
     </div>
   );
 }
@@ -1326,6 +1623,64 @@ function MembersTabInner({
     onError: (error: Error) => errorToast(error.message || 'Failed to leave account'),
   });
 
+  // ── JAY-549: inviteAccountMember / updateAccountMemberRole /
+  // removeAccountMember — the three genuinely-orphaned functions this task
+  // exists to close. See this file's header comment, "JAY-549". Gates
+  // copied byte-for-byte from `page.tsx`'s `ACCOUNT_PERMISSION_PROBES`,
+  // never re-derived from `canManageMembers` (project.members.manage) or
+  // `canManageAccountInvites` above. ──
+
+  // member.update — page.tsx's canUpdateMember (`page.tsx:327`).
+  const { allowed: canUpdateAccountRole } = usePermission(accountId, 'member.update');
+  // member.remove — page.tsx's canRemoveMember (`page.tsx:326`).
+  const { allowed: canRemoveFromAccount } = usePermission(accountId, 'member.remove');
+
+  // Separate busy-set from `pendingUserIds` above — that one belongs to the
+  // workspace-access column's own mutations. Sharing it would show a
+  // misleading "workspace access is changing" spinner during an
+  // account-scope mutation.
+  const [accountPendingUserIds, setAccountPendingUserIds] = useState<Set<string>>(() => new Set());
+  const markAccountRowPending = (id: string) =>
+    setAccountPendingUserIds((prev) => new Set(prev).add(id));
+  const clearAccountRowPending = (id: string) =>
+    setAccountPendingUserIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+  const [accountRoleChangeTarget, setAccountRoleChangeTarget] = useState<{
+    member: ProjectAccessMember;
+    role: AccountRole;
+  } | null>(null);
+  const accountRoleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: AccountRole }) =>
+      updateAccountMemberRole(accountId!, userId, role),
+    onMutate: ({ userId }) => markAccountRowPending(userId),
+    onSettled: (_data, _error, vars) => clearAccountRowPending(vars.userId),
+    onSuccess: () => {
+      successToast('Role updated');
+      // listProjectAccess left-joins account_role — invalidating the SAME
+      // query the table already reads re-fetches this row's new role.
+      invalidateAccess();
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to update role'),
+  });
+
+  const [accountRemoveTarget, setAccountRemoveTarget] = useState<ProjectAccessMember | null>(null);
+  const accountRemoveMutation = useMutation({
+    mutationFn: (userId: string) => removeAccountMember(accountId!, userId),
+    onMutate: (userId) => markAccountRowPending(userId),
+    onSettled: (_data, _error, userId) => clearAccountRowPending(userId),
+    onSuccess: () => {
+      successToast('Removed from account');
+      invalidateAccess();
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to remove member'),
+  });
+
+  const [accountInviteOpen, setAccountInviteOpen] = useState(false);
+
   return (
     <MembersTabView
       isLoading={accessQuery.isLoading}
@@ -1435,6 +1790,41 @@ function MembersTabInner({
         leaveAccountMutation.mutate();
       }}
       isLeaveAccountPending={leaveAccountMutation.isPending}
+      currentUserId={user?.id}
+      canUpdateAccountRole={canUpdateAccountRole}
+      canRemoveFromAccount={canRemoveFromAccount}
+      accountPendingUserIds={accountPendingUserIds}
+      accountRoleChangeTarget={accountRoleChangeTarget}
+      onRequestAccountRoleChange={(member, role) => setAccountRoleChangeTarget({ member, role })}
+      onCancelAccountRoleChange={() => setAccountRoleChangeTarget(null)}
+      onConfirmAccountRoleChange={() => {
+        if (!accountRoleChangeTarget) return;
+        const { member, role } = accountRoleChangeTarget;
+        setAccountRoleChangeTarget(null);
+        accountRoleMutation.mutate({ userId: member.user_id, role });
+      }}
+      isAccountRoleChangePending={accountRoleMutation.isPending}
+      accountRemoveTarget={accountRemoveTarget}
+      onRequestRemoveFromAccount={(member) => setAccountRemoveTarget(member)}
+      onCancelRemoveFromAccount={() => setAccountRemoveTarget(null)}
+      onConfirmRemoveFromAccount={() => {
+        if (!accountRemoveTarget) return;
+        const target = accountRemoveTarget;
+        setAccountRemoveTarget(null);
+        accountRemoveMutation.mutate(target.user_id);
+      }}
+      isAccountRemovePending={accountRemoveMutation.isPending}
+      onOpenAccountInvite={() => setAccountInviteOpen(true)}
+      accountInviteDialogSlot={
+        accountId ? (
+          <InviteToAccountDialog
+            accountId={accountId}
+            open={accountInviteOpen}
+            onOpenChange={setAccountInviteOpen}
+            onInvited={invalidateAccountInvites}
+          />
+        ) : undefined
+      }
     />
   );
 }
@@ -1537,6 +1927,139 @@ function InviteMemberDialog({
                 <ProjectRoleSelectItem role="member" />
                 <ProjectRoleSelectItem role="editor" />
                 <ProjectRoleSelectItem role="manager" />
+              </SelectContent>
+            </Select>
+          </Field>
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
+          <Button
+            type="button"
+            variant="outline-ghost"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => mutation.mutate()}
+            disabled={!canSubmit}
+            className="gap-1.5"
+          >
+            {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
+            Invite
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}
+
+/** Invite-to-ACCOUNT composer — a single email + `AccountRole`, mirroring
+ *  `InviteMemberDialog` above's shape rather than `page.tsx`'s
+ *  `InviteMemberModal` (bulk multi-email chip composer) ported verbatim.
+ *  See this file's header comment, "JAY-549", for why. Calls
+ *  `inviteAccountMember` — the first other caller besides `page.tsx`. Owns
+ *  its own `useMutation`, so it's a slot on `MembersTabView`
+ *  (`accountInviteDialogSlot`), same reasoning as `inviteDialogSlot`. */
+function InviteToAccountDialog({
+  accountId,
+  open,
+  onOpenChange,
+  onInvited,
+}: {
+  accountId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onInvited: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<AccountRole>('member');
+  const { copy } = useCopy({
+    successMessage: 'Invite link copied',
+    errorMessage: 'Could not copy link',
+  });
+
+  const mutation = useMutation({
+    mutationFn: () => inviteAccountMember(accountId, { email: email.trim(), role }),
+    onSuccess: (result) => {
+      if (result.status === 'pending') {
+        if (result.email_sent) {
+          successToast(`Invite sent to ${result.email}`);
+        } else {
+          const inviteUrl = result.invite_url;
+          warningToast('Invite created — email skipped. Share the link manually.', {
+            duration: 10_000,
+            button: (
+              <Button size="sm" onClick={() => copy(inviteUrl)}>
+                Copy link
+              </Button>
+            ),
+          });
+        }
+      } else {
+        successToast(`Added ${result.email}`);
+      }
+      onInvited();
+      setEmail('');
+      setRole('member');
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      const status = (error as Error & { status?: number }).status;
+      errorToast(
+        status === 409
+          ? `${email.trim()} is already a member of this account.`
+          : error.message || 'Failed to invite member',
+      );
+    },
+  });
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const canSubmit = EMAIL_RE.test(email.trim()) && !mutation.isPending;
+
+  return (
+    <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>Invite to account</ModalTitle>
+          <ModalDescription>They&apos;ll get account access at the role you pick.</ModalDescription>
+        </ModalHeader>
+        <ModalBody className="space-y-4">
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="invite-account-email">Email</FieldLabel>
+            <Input
+              id="invite-account-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="teammate@example.com"
+              disabled={mutation.isPending}
+              autoFocus
+              variant="popover"
+            />
+          </Field>
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="invite-account-role">Role</FieldLabel>
+            <Select
+              value={role}
+              onValueChange={(next) => setRole(next as AccountRole)}
+              disabled={mutation.isPending}
+            >
+              <SelectTrigger id="invite-account-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">
+                  {ACCOUNT_ROLE_DESCRIPTORS.member.label} — {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                </SelectItem>
+                <SelectItem value="admin">
+                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                </SelectItem>
+                <SelectItem value="owner">
+                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label} — {ACCOUNT_ROLE_DESCRIPTORS.owner.blurb}
+                </SelectItem>
               </SelectContent>
             </Select>
           </Field>

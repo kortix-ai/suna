@@ -334,4 +334,135 @@ describe('MembersTabView', () => {
     );
     expect(out).not.toContain('disabled=""');
   });
+
+  // ── JAY-549: inviteAccountMember / updateAccountMemberRole /
+  // removeAccountMember — see members-tab.tsx's header comment, "JAY-549".
+  // The ConfirmDialogs staged by these controls are untestable here for the
+  // same reason every other ConfirmDialog in this file is (AlertDialog's
+  // portal gates on a mounted flag — never rendered by `renderToStaticMarkup`,
+  // confirmed directly: no existing test in this file queries `removeTarget`/
+  // `revokeInviteTarget`/`cancelAccountInviteTarget`'s dialog content either).
+  // These tests cover what the pure view CAN prove statically: which control
+  // renders, for whom, and its disabled state. ──
+
+  test('the account role is a read-only Badge, not a Select, when canUpdateAccountRole is false', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({ user_id: 'u1', email: 'other@kortix.com' })]}
+        currentUserId="viewer"
+      />,
+    );
+    expect(out).not.toContain('Account role for other@kortix.com');
+    expect(out).not.toContain('role="combobox"');
+  });
+
+  test('the account role becomes a Select for another member when canUpdateAccountRole is true', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({ user_id: 'u1', email: 'other@kortix.com' })]}
+        currentUserId="viewer"
+        canUpdateAccountRole
+      />,
+    );
+    expect(out).toContain('Account role for other@kortix.com');
+    expect(out).toContain('role="combobox"');
+  });
+
+  test('a "Remove from account" button renders for another member when canRemoveFromAccount is true', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({ user_id: 'u1', email: 'other@kortix.com' })]}
+        currentUserId="viewer"
+        canRemoveFromAccount
+      />,
+    );
+    expect(out).toContain('Remove other@kortix.com from account');
+  });
+
+  test('no "Remove from account" button when canRemoveFromAccount is false', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({ user_id: 'u1', email: 'other@kortix.com' })]}
+        currentUserId="viewer"
+      />,
+    );
+    expect(out).not.toContain('Remove other@kortix.com from account');
+  });
+
+  test('both account-role controls are hidden on the viewer\'s own row, even with both permissions', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({ user_id: 'viewer', email: 'self@kortix.com' })]}
+        currentUserId="viewer"
+        canUpdateAccountRole
+        canRemoveFromAccount
+      />,
+    );
+    expect(out).not.toContain('Account role for self@kortix.com');
+    expect(out).not.toContain('Remove self@kortix.com from account');
+    // Falls back to the read-only Badge on the viewer's own row.
+    expect(out).toContain('member');
+  });
+
+  test('a busy account row shows a spinner instead of either control', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({ user_id: 'u1', email: 'busy@kortix.com' })]}
+        currentUserId="viewer"
+        canUpdateAccountRole
+        canRemoveFromAccount
+        accountPendingUserIds={new Set(['u1'])}
+      />,
+    );
+    expect(out).not.toContain('Account role for busy@kortix.com');
+    expect(out).not.toContain('Remove busy@kortix.com from account');
+  });
+
+  test('"Remove from account" is disabled for the account\'s sole owner', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({ user_id: 'u1', email: 'owner@kortix.com', account_role: 'owner' })]}
+        currentUserId="viewer"
+        canRemoveFromAccount
+      />,
+    );
+    expect(out).toContain('The account needs at least one owner.');
+  });
+
+  test('"Remove from account" is enabled for an owner when a second owner exists', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[
+          member({ user_id: 'u1', email: 'owner1@kortix.com', account_role: 'owner' }),
+          member({ user_id: 'u2', email: 'owner2@kortix.com', account_role: 'owner' }),
+        ]}
+        currentUserId="viewer"
+        canRemoveFromAccount
+      />,
+    );
+    expect(out).not.toContain('The account needs at least one owner.');
+    expect(out).toContain('Remove owner1@kortix.com from account');
+    expect(out).toContain('Remove owner2@kortix.com from account');
+  });
+
+  test('renders the account invite dialog slot', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView accountInviteDialogSlot={<div>account-invite-dialog-marker</div>} />,
+    );
+    expect(out).toContain('account-invite-dialog-marker');
+  });
+
+  test('the "Account invites" section shows an Invite button gated on canManageAccountInvites, even with zero invites', () => {
+    const withoutPerm = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountId="acc1" canManageAccountInvites={false} />,
+    );
+    expect(withoutPerm).not.toContain('Account invites');
+
+    const withPerm = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountId="acc1" canManageAccountInvites />,
+    );
+    expect(withPerm).toContain('Account invites');
+    expect(withPerm).toContain('No pending invites.');
+    expect(withPerm).toContain('>Invite<');
+  });
 });
