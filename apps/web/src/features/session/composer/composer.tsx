@@ -404,7 +404,11 @@ function ComposerImpl({
   // caches on the open transition so a skill, agent, or command created
   // after page load shows up without a reload.
   const [menuOpen, setMenuOpen] = useState(false);
-  useMenuRevalidation(menuOpen);
+  // `projectId` — the same prop `session-chat.tsx`/`composer-chat-input.tsx`/
+  // `instant-session-shell.tsx` already pass to `useRuntimeAgents({ projectId })`
+  // (see `menuRevalidationKeys`'s doc comment, `hooks/use-file-search.ts`, for
+  // why the agents cache key depends on it).
+  useMenuRevalidation(menuOpen, projectId);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);

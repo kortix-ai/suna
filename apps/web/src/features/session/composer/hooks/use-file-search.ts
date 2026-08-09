@@ -3,7 +3,8 @@
 import { useEffect, useRef } from 'react';
 
 import { searchWorkspaceFiles } from '@/features/files';
-import { runtimeKeys, useActiveSandboxProxyContext } from '@kortix/sdk/react';
+import { qk, runtimeKeys, useActiveSandboxProxyContext } from '@kortix/sdk/react';
+import type { QueryKey } from '@tanstack/react-query';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useDebouncedValue } from './use-debounced-value';
@@ -132,6 +133,61 @@ export function isMenuOpenTransition(wasOpen: boolean, isOpen: boolean): boolean
 }
 
 /**
+ * Task 9, fix round 1: the set of cache-key prefixes `useMenuRevalidation`
+ * invalidates on the `@`/`/` menu's open transition. Extracted as its own
+ * pure function — same reasoning as `isMenuOpenTransition` above — so the
+ * key SELECTION is directly testable, not just asserted by code review.
+ *
+ * Commands has exactly ONE query-key shape: `useOpenCodeCommands`
+ * (`use-opencode-sessions/commands.ts`) never branches, so the bare
+ * `['opencode', 'commands']` prefix always reaches it.
+ *
+ * Agents does NOT have one shape. `useOpenCodeAgents`
+ * (`use-opencode-sessions/agents.ts:42-46`) branches on `projectId`:
+ *
+ * ```ts
+ * queryKey: projectId
+ *   ? [...qk.project.detail(projectId), 'agents']   // ['kx','project',<id>,'detail','agents']
+ *   : directory
+ *     ? [...opencodeKeys.agents(), 'dir', directory] // ['opencode','agents',<server>,'dir',<dir>]
+ *     : opencodeKeys.agents()                        // ['opencode','agents',<server>]
+ * ```
+ *
+ * The bare `['opencode', 'agents']` prefix (`runtimeKeys.agents()` minus its
+ * trailing server segment) DOES reach the `directory` and no-argument
+ * branches — both start with `opencodeKeys.agents()`, so it's a genuine
+ * prefix of both. It is DISJOINT AT SEGMENT 0 from the `projectId` branch's
+ * `['kx', 'project', ...]` shape — no amount of prefix-matching bridges
+ * `'opencode'` and `'kx'`. Every real composer call site passes `projectId`
+ * (`instant-session-shell.tsx:88`, `composer-chat-input.tsx:108`,
+ * `session-chat.tsx:1641`), so invalidating only the bare prefix was a
+ * SILENT no-op for agents in every actual composer — commands and skills
+ * refreshed, agents did not, and nothing about `invalidateQueries` failing
+ * to match anything ever surfaces an error.
+ *
+ * Fixed by also invalidating the exact nested key
+ * `[...qk.project.detail(projectId), 'agents']` whenever a `projectId` is
+ * known — not the broader `qk.project.detail(projectId)` prefix itself,
+ * which would ALSO refetch the (heavier) project detail payload and touch
+ * every other `detail(id)` consumer (`useProjectConfig`, the model picker,
+ * ...), not just agents. Built through the public `qk` (`@kortix/sdk/react`)
+ * the exact same way `agents.ts` itself builds it, not a hand-typed
+ * `['kx', 'project', ...]` literal — see `use-file-search.test.ts` for the
+ * test that binds this to `qk.project.detail` directly, so a future
+ * reshuffle of `useOpenCodeAgents`'s branching can't repeat this silently.
+ */
+export function menuRevalidationKeys(projectId?: string | null): QueryKey[] {
+  const keys: QueryKey[] = [
+    runtimeKeys.agents().slice(0, -1),
+    runtimeKeys.commands().slice(0, -1),
+  ];
+  if (projectId) {
+    keys.push([...qk.project.detail(projectId), 'agents']);
+  }
+  return keys;
+}
+
+/**
  * Task 9. The user's own words: "we should get the latest updated skills
  * and files whenever we type @. We need proper caching also, some level of
  * caching and revalidation, like query revalidate."
@@ -144,36 +200,30 @@ export function isMenuOpenTransition(wasOpen: boolean, isOpen: boolean): boolean
  * untouched (zero diff) rather than lowering that value for every
  * downstream install. This hook is the host-side revalidation Infinity
  * asks for: call it with whether the `@`/`/` menu is currently open (OR'd
- * across both — see `composer-editor.tsx`'s `onMenuOpenChange`), and on the
- * closed->open transition it invalidates both caches so a skill, agent, or
- * command created after page load is in the list the next time either menu
- * opens, without a full reload.
+ * across both — see `composer-editor.tsx`'s `onMenuOpenChange`) and the
+ * active `projectId` (`composer.tsx`'s own prop — the same value every
+ * composer call site already passes to `useRuntimeAgents`), and on the
+ * closed->open transition it invalidates every cache-key shape
+ * `menuRevalidationKeys` names, so a skill, agent, or command created after
+ * page load is in the list the next time either menu opens, without a full
+ * reload.
  *
- * Invalidates by the two-segment PREFIX (`['opencode', 'agents']` /
- * `['opencode', 'commands']`), not the full three-segment key `runtimeKeys`
- * itself returns (`[..., activeServerKey()]`) — `invalidateQueries` prefix-
- * matches by default, so the shorter key reaches every sandbox's cache
- * entry, not just whichever one happens to be active this render. Derived
- * from the real `runtimeKeys.agents()`/`.commands()` (public API,
- * `use-opencode-sessions/keys.ts:128,135`) by dropping the trailing
- * server-scope segment, rather than a hand-copied literal — so a rename of
- * the leading `'opencode'`/`'agents'`/`'commands'` segments (which would be
- * a breaking SDK change under that package's own naming rules, and thus
- * rare) still can't drift silently out of step with this file. An
- * `invalidateQueries` call against a key that no longer matches anything
- * fails with no error and no warning — it just leaves the menus stale
- * forever — which is exactly why this reads the key from the SDK instead of
- * re-typing the strings.
+ * This fires 2 `invalidateQueries` calls with no `projectId` (agents,
+ * commands) and 3 with one (agents, commands, project-scoped agents) — MORE
+ * calls than a naive read of "invalidate the agents cache" suggests, and
+ * that is correct: `menuRevalidationKeys`'s own doc comment is the reason
+ * why one key alone cannot reach every branch `useOpenCodeAgents` can take.
  */
-export function useMenuRevalidation(isOpen: boolean): void {
+export function useMenuRevalidation(isOpen: boolean, projectId?: string | null): void {
   const queryClient = useQueryClient();
   const wasOpenRef = useRef(false);
 
   useEffect(() => {
     if (isMenuOpenTransition(wasOpenRef.current, isOpen)) {
-      queryClient.invalidateQueries({ queryKey: runtimeKeys.agents().slice(0, -1) });
-      queryClient.invalidateQueries({ queryKey: runtimeKeys.commands().slice(0, -1) });
+      for (const queryKey of menuRevalidationKeys(projectId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
     }
     wasOpenRef.current = isOpen;
-  }, [isOpen, queryClient]);
+  }, [isOpen, projectId, queryClient]);
 }

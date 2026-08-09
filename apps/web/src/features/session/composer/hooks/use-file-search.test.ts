@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { runtimeKeys } from '@kortix/sdk/react';
+import { qk, runtimeKeys } from '@kortix/sdk/react';
 
 import {
   canKeepPlaceholderFiles,
   composerFileSearchKey,
   isMenuOpenTransition,
+  menuRevalidationKeys,
 } from './use-file-search';
 
 /**
@@ -125,5 +126,96 @@ describe('the agents/commands cache-key prefixes useMenuRevalidation invalidates
 
   test('runtimeKeys.commands() drops to the 2-segment ["opencode", "commands"] prefix', () => {
     expect(runtimeKeys.commands().slice(0, -1)).toEqual(['opencode', 'commands']);
+  });
+});
+
+/**
+ * Fix round 1. The previous version of this file only checked the fact
+ * above — a fact about the SDK's raw literal, true and IRRELEVANT to
+ * whether `useMenuRevalidation` actually reaches the cache the live
+ * composer subscribes through. It passed while the bug below was present.
+ *
+ * `useOpenCodeAgents` (`packages/sdk/src/react/use-opencode-sessions/
+ * agents.ts:42-46`) does not have one query-key shape — it branches on
+ * `projectId`:
+ *
+ *   projectId  -> [...qk.project.detail(projectId), 'agents']   ('kx' root)
+ *   directory  -> [...opencodeKeys.agents(), 'dir', directory]  ('opencode' root)
+ *   neither    -> opencodeKeys.agents()                          ('opencode' root)
+ *
+ * Every real composer call site passes `projectId`
+ * (`instant-session-shell.tsx:88`, `composer-chat-input.tsx:108`,
+ * `session-chat.tsx:1641`), which routes through the FIRST branch — a
+ * completely different root segment ('kx', not 'opencode') than the bare
+ * `runtimeKeys.agents()` prefix `menuRevalidationKeys` used to invalidate
+ * alone. `realAgentsQueryKeyFor` below reproduces all three shapes (using
+ * the SDK's own public `qk`/`runtimeKeys`, not hand-typed arrays) so these
+ * tests assert `menuRevalidationKeys` actually reaches each one, not just
+ * that its own literal looks plausible in isolation.
+ */
+describe('menuRevalidationKeys', () => {
+  /** Mirrors TanStack Query's default `invalidateQueries` partial-match
+   *  semantics closely enough for this test: `prefix` matches `key` when
+   *  every element of `prefix` strictly equals the corresponding element of
+   *  `key`, in order. Every segment involved here is a plain string, so this
+   *  is sufficient without importing query-core's internal `partialMatchKey`. */
+  function prefixMatches(prefix: readonly unknown[], key: readonly unknown[]): boolean {
+    return prefix.every((segment, i) => segment === key[i]);
+  }
+
+  /** The exact query-key SHAPES `useOpenCodeAgents` can produce, reproduced
+   *  via the same public building blocks (`qk`, `runtimeKeys`) the real hook
+   *  uses — this is what "the key the composer's real
+   *  `useRuntimeAgents({ projectId })` call resolves to" means concretely. */
+  function realAgentsQueryKeyFor(args: {
+    projectId?: string;
+    directory?: string;
+  }): readonly unknown[] {
+    if (args.projectId) return [...qk.project.detail(args.projectId), 'agents'];
+    if (args.directory) return [...runtimeKeys.agents(), 'dir', args.directory];
+    return runtimeKeys.agents();
+  }
+
+  test('with no projectId, invalidates exactly the bare agents/commands prefixes', () => {
+    expect(menuRevalidationKeys()).toEqual([
+      ['opencode', 'agents'],
+      ['opencode', 'commands'],
+    ]);
+  });
+
+  test('reaches the no-argument branch of the real useOpenCodeAgents key', () => {
+    const realKey = realAgentsQueryKeyFor({});
+    expect(menuRevalidationKeys().some((prefix) => prefixMatches(prefix, realKey))).toBe(true);
+  });
+
+  test('reaches the directory-scoped branch of the real useOpenCodeAgents key', () => {
+    const realKey = realAgentsQueryKeyFor({ directory: '/workspace' });
+    expect(menuRevalidationKeys().some((prefix) => prefixMatches(prefix, realKey))).toBe(true);
+  });
+
+  // THE regression this whole round exists to fix. Before this test existed,
+  // `menuRevalidationKeys` (then hard-coded to just the two bare prefixes)
+  // passed every other test in this file while silently failing to reach
+  // this branch — the ONE every real composer instance actually uses.
+  test('reaches the projectId-scoped branch of the real useOpenCodeAgents key — the CRITICAL fix', () => {
+    const realKey = realAgentsQueryKeyFor({ projectId: 'proj-123' });
+    const keys = menuRevalidationKeys('proj-123');
+    expect(keys.some((prefix) => prefixMatches(prefix, realKey))).toBe(true);
+  });
+
+  test('the projectId-scoped key is built through the SDK\'s own qk.project.detail, not a hand-typed literal', () => {
+    expect(menuRevalidationKeys('proj-123')).toContainEqual([
+      ...qk.project.detail('proj-123'),
+      'agents',
+    ]);
+  });
+
+  test('omitting projectId (undefined or null) does not add the project-scoped key', () => {
+    expect(menuRevalidationKeys(undefined)).toHaveLength(2);
+    expect(menuRevalidationKeys(null)).toHaveLength(2);
+  });
+
+  test('an empty-string projectId is treated as "no project", same as undefined', () => {
+    expect(menuRevalidationKeys('')).toHaveLength(2);
   });
 });
