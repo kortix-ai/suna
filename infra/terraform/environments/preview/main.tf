@@ -107,6 +107,9 @@ resource "aws_iam_role_policy_attachment" "execution" {
 }
 
 resource "aws_iam_role_policy" "execution_logs_kms" {
+  #checkov:skip=CKV_AWS_109:The execution role receives only cryptographic data-plane actions on this one preview log key.
+  #checkov:skip=CKV_AWS_111:The execution role cannot change the key or its policy.
+  #checkov:skip=CKV_AWS_356:The policy is restricted to the preview log key ARN.
   name = "preview-logs-kms"
   role = aws_iam_role.execution.id
   policy = jsonencode({
@@ -202,6 +205,7 @@ resource "aws_security_group" "alb" {
 
 #trivy:ignore:AVD-AWS-0104 Preview tasks call external HTTPS APIs and PostgreSQL through the existing dev NAT gateway; those services have no stable CIDR allowlist.
 resource "aws_security_group" "service" {
+  #checkov:skip=CKV2_AWS_5:Per-PR ECS services attach this shared security group out-of-band in ecs-preview.sh.
   name        = "${local.name}-service"
   description = "Ingress from the preview ALB only"
   vpc_id      = data.aws_vpc.dev.id
@@ -369,6 +373,7 @@ resource "aws_lb_listener" "https" {
 }
 
 resource "aws_wafv2_web_acl_association" "preview" {
+  #checkov:skip=CKV2_AWS_31:The existing account-wide regional WAF is managed outside this root and includes the AWS managed known-bad-inputs rule group.
   resource_arn = aws_lb.preview.arn
   web_acl_arn  = var.preview_waf_arn
 }
@@ -399,6 +404,9 @@ resource "aws_iam_role" "github_preview_deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           "token.actions.githubusercontent.com:sub" = "repo:kortix-ai/suna:pull_request"
         }
+        StringLike = {
+          "token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/*"
+        }
       }
     }]
   })
@@ -406,7 +414,8 @@ resource "aws_iam_role" "github_preview_deploy" {
 }
 
 resource "aws_iam_role_policy" "github_preview_deploy" {
-  #checkov:skip=CKV_AWS_355:ECS task-definition registration and AWS describe/list APIs do not support resource-level permissions. Mutations are scoped to preview names, cluster, listener, and roles.
+  #checkov:skip=CKV_AWS_355:ECS registration and describe/list APIs do not support resource-level permissions. Mutations are scoped to preview names, tags, cluster, listener, and roles.
+  #checkov:skip=CKV_AWS_111:Write actions are restricted by preview resource names, request/resource tags, the one listener, and two preview roles.
   name = "preview-lifecycle"
   role = aws_iam_role.github_preview_deploy.id
   policy = jsonencode({
