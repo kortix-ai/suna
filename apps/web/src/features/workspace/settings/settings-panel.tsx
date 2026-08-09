@@ -121,8 +121,18 @@
  * `!!entitlements?.auditAccess` (`:309`) — its own leaf, not `rbac`
  * (Groups/Roles) and not `sso || scim` (Identity) — showing
  * `EnterpriseUpsell` in place of the real log on a non-entitled account,
- * same mechanism split as `groups`/`roles`/`identity`. `api-keys` is the
- * only account-scoped tab left as a placeholder.
+ * same mechanism split as `groups`/`roles`/`identity`.
+ *
+ * **Task 16 update.** `api-keys` is wired to the real `ApiKeysTab` (see
+ * `tabs/api-keys-tab.tsx`) and added to `ACCOUNT_TAB_PERMISSION` — same
+ * `account.write` whole-tab gate as `billing`/`usage`/`identity`
+ * (`app/(app)/accounts/[id]/page.tsx:362 tokens: canWriteAccount === true`).
+ * Unlike `audit`/`identity`, it has no separate entitlement content-gate —
+ * the source page's `tokens` branch is a single `canWriteAccount` condition
+ * around two cards, nothing else — so its content is unconditional once past
+ * the whole-tab gate, same single-probe shape as `billing`/`usage`. Every
+ * account-scoped tab this panel builds is now wired; no placeholder remains
+ * among them.
  *
  * **Every pane must not fetch unless its tab is active** (see this file's
  * plan and `settings-panel.test.tsx`'s "real tab content gating" describe
@@ -186,6 +196,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import { ApiKeysTab } from './tabs/api-keys-tab';
 import { AuditTab } from './tabs/audit-tab';
 import { BillingTab } from './tabs/billing-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
@@ -268,17 +279,19 @@ const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
  * `rbac` and NOT `sso || scim` — handled entirely inside `AuditTab`, same
  * mechanism split as `groups`/`roles`/`identity`.
  *
- * `api-keys` stays absent — it is still a placeholder (see
- * `SettingsTabPane` below) with no container to enforce a gate yet.
- * `isTabAllowed` falls through to "allowed" for it, same as the pre-13b
- * default; the task that wires its real content is expected to add an
- * entry here alongside it, the same way `billing`/`usage`/`roles`/
- * `identity`/`audit` did.
+ * **Task 16 update.** `api-keys` is wired to the real `ApiKeysTab` (see
+ * `tabs/api-keys-tab.tsx`) and added below — same `account.write` whole-tab
+ * gate as `billing`/`usage`/`identity`
+ * (`app/(app)/accounts/[id]/page.tsx:362 tokens: canWriteAccount === true`),
+ * with no separate entitlement content-gate on top (see that file's header
+ * comment for why `tokens` differs from `audit`/`identity` on this point).
+ * No account-scoped tab is left as a placeholder after this task.
  */
 export const ACCOUNT_TAB_PERMISSION: Partial<Record<SettingsTab, string>> = {
   billing: 'account.write',
   usage: 'account.write',
   roles: 'role.create',
+  'api-keys': 'account.write',
   identity: 'account.write',
   audit: 'audit.read',
 };
@@ -871,13 +884,13 @@ export function SettingsPanelShell({
  * `TabsContent` behaviour.
  *
  * `profile`, `preferences`, `connected` (Task 9), `billing` (Task 11),
- * `usage` (Task 12), `groups`/`roles` (Task 13), `identity` (Task 14), and
- * `audit` (Task 15) are handled above the switch (account-scoped, no
- * `projectId` needed). The switch below is the Task 5b2 mapping of the
- * legacy panel's `SectionContent` (14 `case` labels + the `llm-*` prefix
- * branch) onto the new tab ids. A tab NOT listed here or above —
- * `snapshots`, `api-keys`, `experimental` — is a genuinely new surface with
- * no legacy source to port; it keeps the placeholder header until a later
+ * `usage` (Task 12), `groups`/`roles` (Task 13), `identity` (Task 14),
+ * `audit` (Task 15), and `api-keys` (Task 16) are handled above the switch
+ * (account-scoped, no `projectId` needed). The switch below is the Task 5b2
+ * mapping of the legacy panel's `SectionContent` (14 `case` labels + the
+ * `llm-*` prefix branch) onto the new tab ids. A tab NOT listed here or
+ * above — `snapshots`, `experimental` — is a genuinely new surface with no
+ * legacy source to port; it keeps the placeholder header until a later
  * phase builds it. `snapshots` in
  * particular is HALF of the legacy `sandbox` case
  * (`SandboxView` renders templates and the build log together); splitting
@@ -956,6 +969,13 @@ function SettingsTabPane({
   // `rbac` and not `sso`/`scim`).
   if (item.tab === 'audit') {
     return <AuditTab accountId={accountId} />;
+  }
+  // Same shape as `billing`/`usage`/`identity` above — see
+  // `tabs/api-keys-tab.tsx`'s header comment. Renders nothing at all
+  // without `account.write` on the resolved account; unlike `audit`/
+  // `identity`, its content has no separate entitlement gate on top.
+  if (item.tab === 'api-keys') {
+    return <ApiKeysTab accountId={accountId} />;
   }
 
   if (projectId) {

@@ -453,8 +453,15 @@ describe('isSettingsTabAllowed — account-scoped gating (Task 13b)', () => {
     };
   }
 
-  test('billing, usage, roles, identity, and audit are the only gated account tabs', () => {
-    expect(gatedAccountTabs.sort()).toEqual(['audit', 'billing', 'identity', 'roles', 'usage']);
+  test('billing, usage, roles, identity, audit, and api-keys are the only gated account tabs', () => {
+    expect(gatedAccountTabs.sort()).toEqual([
+      'api-keys',
+      'audit',
+      'billing',
+      'identity',
+      'roles',
+      'usage',
+    ]);
   });
 
   test('permitted: every account-gated tab shows once its permission resolves allowed', () => {
@@ -504,8 +511,9 @@ describe('isSettingsTabAllowed — account-scoped gating (Task 13b)', () => {
     ).toBe(true);
   });
 
-  test('api-keys is still a placeholder — no gate wired yet, always allowed', () => {
-    expect(isSettingsTabAllowed('api-keys', paramsFor({ accountCan: () => false }))).toBe(true);
+  test('api-keys is gated on account.write (Task 16) — no longer an always-allowed placeholder', () => {
+    expect(isSettingsTabAllowed('api-keys', paramsFor({ accountCan: () => false }))).toBe(false);
+    expect(isSettingsTabAllowed('api-keys', paramsFor({ accountCan: () => true }))).toBe(true);
   });
 
   test('audit is gated on audit.read (Task 15) — no longer an always-allowed placeholder', () => {
