@@ -16,17 +16,50 @@ export function extractSkillFiles(output: string): string[] {
 }
 
 /**
- * The skill's base directory, as the tool itself reported it.
+ * Every place the skill tool might have told us where the skill lives.
  *
- * `input.dir` is not dependable — the skill tool lives in the OpenCode runtime,
- * not in this repo, and a call can arrive with a name and nothing else. What the
- * output always carries is a `Base directory:` line, which is why `SkillTool`
- * has always had to strip it out of the markdown before rendering. Reading it is
- * strictly better than trusting an input field that may be absent.
+ * The producer is the OpenCode runtime, not this repo, so its exact payload
+ * cannot be read from source — which is precisely why this probes rather than
+ * assumes. The first attempt keyed off `input.dir` alone, that field was absent
+ * in practice, and clicking a skill silently did nothing.
+ *
+ * Three sources, and the tag attributes are the one the old code was already
+ * hinting at: `extractSkillContent` matches `<skill_content[^>]*>`, and nobody
+ * writes `[^>]*` for a tag that has no attributes.
+ */
+function attributeDir(output: string): string {
+  const tag = output.match(/<skill_content([^>]*)>/);
+  if (!tag) return '';
+  for (const key of ['dir', 'directory', 'path', 'base', 'baseDir', 'base_dir']) {
+    const found = tag[1].match(new RegExp(`\\b${key}\\s*=\\s*["']([^"']+)["']`, 'i'));
+    if (found?.[1]?.trim()) return found[1].trim();
+  }
+  return '';
+}
+
+/** The `Base directory:` line the component already strips out of the markdown. */
+function labelledDir(output: string): string {
+  const match = output.match(/^\s*(?:Base directory|Directory|Skill directory)\s*:\s*(.+?)\s*$/im);
+  return match ? match[1].trim() : '';
+}
+
+/**
+ * The skill's base directory, from wherever the tool happened to put it.
  */
 export function extractSkillBaseDir(output: string): string {
-  const match = output.match(/^\s*Base directory:\s*(.+?)\s*$/m);
-  return match ? match[1].trim().replace(/\/+$/, '') : '';
+  return (attributeDir(output) || labelledDir(output)).replace(/\/+$/, '');
+}
+
+/**
+ * The directory carried on the call's INPUT, under any of the names the runtime
+ * might use. Same reasoning as above: probe, do not assume.
+ */
+export function skillInputDir(input: Record<string, unknown>): string {
+  for (const key of ['dir', 'directory', 'path', 'skillPath', 'location']) {
+    const value = input[key];
+    if (typeof value === 'string' && value.trim()) return value.trim().replace(/\/+$/, '');
+  }
+  return '';
 }
 
 /**
@@ -46,12 +79,12 @@ export function extractSkillBaseDir(output: string): string {
  * the same absolute sandbox path a `read` call would have used.
  */
 export function skillDocumentPath(output: string, inputDir?: string): string | null {
-  const base = (inputDir?.trim() || extractSkillBaseDir(output)).replace(/\/+$/, '');
+  const base = inputDir?.trim().replace(/\/+$/, '') || extractSkillBaseDir(output);
 
   const listed = extractSkillFiles(output).find((f) => /(^|\/)SKILL\.md$/i.test(f));
   if (listed) {
     if (listed.startsWith('/')) return listed;
-    return base ? `${base}/${listed}` : null;
+    if (base) return `${base}/${listed}`;
   }
 
   return base ? `${base}/SKILL.md` : null;

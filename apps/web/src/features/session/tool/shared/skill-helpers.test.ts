@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractSkillBaseDir, skillDocumentPath } from './skill-helpers';
+import { extractSkillBaseDir, skillDocumentPath, skillInputDir } from './skill-helpers';
 
 const DIR = '/workspace/.opencode/skill/webapp';
 
@@ -59,5 +59,48 @@ describe('skillDocumentPath', () => {
     // The row must not offer a click it cannot honour.
     expect(skillDocumentPath(output('# Webapp'))).toBeNull();
     expect(skillDocumentPath(output('# Webapp'), '   ')).toBeNull();
+  });
+});
+
+describe('skillDocumentPath — payload shapes the runtime might send', () => {
+  // The producer is the OpenCode runtime, not this repo, so the exact shape
+  // cannot be read from source. Every plausible one must resolve, because the
+  // first attempt handled exactly one of them and did nothing for the rest.
+
+  test('a dir attribute on the tag', () => {
+    const out = `<skill_content name="webapp" dir="${DIR}">\n# Webapp\n</skill_content>`;
+    expect(skillDocumentPath(out)).toBe(`${DIR}/SKILL.md`);
+  });
+
+  test('a path attribute, single-quoted', () => {
+    const out = `<skill_content path='${DIR}'>\n# Webapp\n</skill_content>`;
+    expect(skillDocumentPath(out)).toBe(`${DIR}/SKILL.md`);
+  });
+
+  test('a baseDir attribute with a trailing slash', () => {
+    const out = `<skill_content baseDir="${DIR}/">\n# Webapp\n</skill_content>`;
+    expect(skillDocumentPath(out)).toBe(`${DIR}/SKILL.md`);
+  });
+
+  test('a "Directory:" label rather than "Base directory:"', () => {
+    expect(skillDocumentPath(output(`Directory: ${DIR}`))).toBe(`${DIR}/SKILL.md`);
+  });
+
+  test('the tag attribute wins over a stale label', () => {
+    const out = `<skill_content dir="${DIR}">\nBase directory: /somewhere/else\n</skill_content>`;
+    expect(skillDocumentPath(out)).toBe(`${DIR}/SKILL.md`);
+  });
+});
+
+describe('skillInputDir', () => {
+  test('finds the directory under any of the names the runtime may use', () => {
+    expect(skillInputDir({ dir: DIR })).toBe(DIR);
+    expect(skillInputDir({ directory: DIR })).toBe(DIR);
+    expect(skillInputDir({ path: DIR })).toBe(DIR);
+    expect(skillInputDir({ skillPath: `${DIR}/` })).toBe(DIR);
+  });
+
+  test('an input with only a name yields nothing', () => {
+    expect(skillInputDir({ name: 'webapp' })).toBe('');
   });
 });

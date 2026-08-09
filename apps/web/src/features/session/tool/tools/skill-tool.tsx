@@ -16,6 +16,7 @@ import {
   extractSkillContent,
   extractSkillFiles,
   skillDocumentPath,
+  skillInputDir,
 } from '@/features/session/tool/shared/skill-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
@@ -29,7 +30,8 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
 
   const skillName = (input.name as string) || 'skill';
-  const skillDir = (input.dir as string) || '';
+  // `input.dir` is only one of the names the runtime may use — see `skillInputDir`.
+  const skillDir = skillInputDir(input);
 
   const skillContent = useMemo(() => extractSkillContent(output), [output]);
   const skillFiles = useMemo(() => extractSkillFiles(output), [output]);
