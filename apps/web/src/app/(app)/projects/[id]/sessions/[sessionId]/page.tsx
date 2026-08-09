@@ -27,6 +27,7 @@ import {
   canMountSessionChat,
   canShowSessionChat,
   findInitialSessionPin,
+  gatedRuntimeError,
 } from '@/features/session/session-load-state';
 import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
@@ -749,7 +750,18 @@ function ActiveSessionChat({
   const runtimeSessions = sessionState.runtimeSessions;
   const sessionsLoading = sessionState.runtimeSessionsLoading;
   const sessionsListed = sessionState.runtimeSessionsListed;
-  const runtimeError = sessionState.runtimeError;
+  // Gate on `phase`, not the raw field: `sessionState.runtimeError` can be a
+  // benign 503 racing a live `/start` wake (a parked sandbox resuming), which
+  // `derivePhase` (@kortix/sdk) holds as `'starting'` until `/start` itself
+  // settles or gives up (~61.5s worst case). Reading the raw field rendered
+  // the panic card — and marked `chatShowable` below true, ending the loading
+  // skeleton with nothing to show — for every such race; `phase === 'error'`
+  // is the SDK's own answer to "is this real." `canShowSessionChat` below
+  // gets this SAME gated value, so both consumers agree.
+  const runtimeError = gatedRuntimeError({
+    phase: sessionState.phase,
+    runtimeError: sessionState.runtimeError,
+  });
 
   const restart = useRestartProjectSession(projectId, sessionId);
 

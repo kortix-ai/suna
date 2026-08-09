@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../connectors/sync';
-import { projectFeatureEnabled } from '../experimental/for-project';
+import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { saveTeamsInstall, setTeamsCatalogAppId, setTeamsOrgInstalled } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
 
@@ -136,7 +136,7 @@ teamsOauthApp.get('/callback', async (c: any) => {
 
   // The flag is per project, so it can only be read once the signed state
   // tells us which project this consent belongs to.
-  if (!(await projectFeatureEnabled(state.projectId, 'teams'))) {
+  if (!(await projectFeatureFlagEnabled(state.projectId, 'teams'))) {
     return c.redirect(dest('disabled'), 302);
   }
 

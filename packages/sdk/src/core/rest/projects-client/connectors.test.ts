@@ -423,6 +423,36 @@ test('getConnectorConfig GETs the config, url-encoding a slug with special chara
   expect(result.slug).toBe('my app/v1');
 });
 
+test('computer connector config exposes its assigned machine ids', async () => {
+  const tunnelIds = [
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222',
+  ];
+  nextResponse = {
+    status: 200,
+    body: {
+      slug: 'studio-computers',
+      name: 'Studio computers',
+      provider: 'computer',
+      platform: null,
+      credentialMode: 'shared',
+      authorizationStrategy: 'project',
+      app: null,
+      account: null,
+      url: null,
+      transport: null,
+      endpoint: null,
+      baseUrl: null,
+      spec: null,
+      tunnelIds,
+      auth: { type: 'none', in: 'header', name: null, prefix: null },
+      headers: {},
+    },
+  };
+  const result = await getConnectorConfig('P1', 'studio-computers');
+  expect(result.tunnelIds).toEqual(tunnelIds);
+});
+
 test('setConnectorName PUTs { name }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorName('P1', 'slack', 'Team Slack');
@@ -454,6 +484,20 @@ test('createConnector POSTs the draft as the raw body', async () => {
   await createConnector('P1', draft);
   expect(last().url).toContain('/connectors/projects/P1/connectors');
   expect(last().url).not.toContain('/executor/');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual(draft);
+});
+
+test('createConnector sends a Computers profile machine allowlist', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const draft: import('./connectors').ConnectorDraftInput = {
+    slug: 'studio-computers',
+    name: 'Studio computers',
+    provider: 'computer',
+    tunnel_ids: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
+    create_only: true,
+  };
+  await createConnector('P1', draft);
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(draft);
 });

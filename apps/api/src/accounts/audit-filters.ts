@@ -65,14 +65,21 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   if (input.correlationId) push(eq(auditEvents.correlationId, input.correlationId));
 
   if (input.actionPrefix) {
-    push(
-      input.actionPrefix.includes('.') && !input.actionPrefix.endsWith('.')
-        ? or(
-            eq(auditEvents.action, input.actionPrefix),
-            like(auditEvents.action, `${input.actionPrefix}.%`),
-          )
-        : like(auditEvents.action, `${input.actionPrefix}%`),
-    );
+    // `computer.*` was the pre-profile audit namespace. Computer operations are
+    // connector activity now. Keep historical rows inside the Connectors filter
+    // while every new writer emits `connector.computer.*`.
+    if (input.actionPrefix === 'connector.') {
+      push(or(like(auditEvents.action, 'connector.%'), like(auditEvents.action, 'computer.%')));
+    } else {
+      push(
+        input.actionPrefix.includes('.') && !input.actionPrefix.endsWith('.')
+          ? or(
+              eq(auditEvents.action, input.actionPrefix),
+              like(auditEvents.action, `${input.actionPrefix}.%`),
+            )
+          : like(auditEvents.action, `${input.actionPrefix}%`),
+      );
+    }
   }
 
   if (input.resourceType) {

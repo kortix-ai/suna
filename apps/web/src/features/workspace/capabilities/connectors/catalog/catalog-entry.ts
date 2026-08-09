@@ -37,7 +37,22 @@ interface CatalogEntryFields {
  */
 export type CatalogEntry =
   | (CatalogEntryFields & { source: 'discover'; connector: DiscoverConnector })
-  | (CatalogEntryFields & { source: 'easy-connect'; app: PipedreamApp });
+  | (CatalogEntryFields & { source: 'easy-connect'; app: PipedreamApp })
+  | (CatalogEntryFields & { source: 'computer' });
+
+/** Native platform provider. The tunnel fleet is its account directory. */
+export function computersCatalogEntry(): CatalogEntry {
+  return {
+    source: 'computer',
+    key: 'computer:computers',
+    slug: 'computers',
+    name: 'Computers',
+    description: 'Use selected local machines through the secure Kortix tunnel.',
+    icon: null,
+    categories: ['developer-tools'],
+    popularity: null,
+  };
+}
 
 export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogEntry {
   return {
@@ -103,6 +118,7 @@ export function foldKey(value: string): string {
 export function connectedCatalogKeys(connectors: readonly AdminConnector[]): ReadonlySet<string> {
   const keys = new Set<string>();
   for (const connector of connectors) {
+    keys.add(`provider:${connector.provider}`);
     keys.add(foldKey(connector.slug));
     if (connector.name?.trim()) keys.add(foldKey(connector.name));
   }
@@ -114,6 +130,7 @@ export function isCatalogEntryConnected(
   entry: CatalogEntry,
   connectedKeys: ReadonlySet<string>,
 ): boolean {
+  if (entry.source === 'computer') return connectedKeys.has('provider:computer');
   return connectedKeys.has(foldKey(entry.slug)) || connectedKeys.has(foldKey(entry.name));
 }
 

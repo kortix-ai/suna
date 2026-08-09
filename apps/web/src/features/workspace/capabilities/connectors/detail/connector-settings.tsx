@@ -30,14 +30,12 @@ export interface ConnectorSettingsProps {
 /**
  * Settings — who the connector runs as, and removing it.
  *
- * `connectorTabs` already restricts this tab to writers and drops it for
- * `computer` connectors, so neither is re-checked here.
+ * `connectorTabs` already restricts this tab to writers.
  *
  * Two rows, one shape: label, statement, trailing control. Every row is a
  * `bg-popover rounded-md border px-4 py-3` box, so they line up as one wall.
  *
- * Renaming is not here — it lives in the modal header (`HeaderName`), so
- * `computer` connectors keep it without having a Settings tab.
+ * Renaming is not here — it lives in the modal header (`HeaderName`).
  */
 export function ConnectorSettings({
   projectId,
@@ -96,7 +94,7 @@ export function ConnectorSettings({
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">Remove connector</p>
               <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                Its saved connections and tool rules are deleted too.
+                Its assignments, saved connections, and tool rules are deleted too.
               </p>
             </div>
             <Button
@@ -119,8 +117,8 @@ export function ConnectorSettings({
         title={`Remove ${displayName}?`}
         description={
           <>
-            This deletes <code className="font-mono">{connector.slug}</code>, its saved connections
-            and its tool rules. This can’t be undone.
+            This deletes <code className="font-mono">{connector.slug}</code>, its assignments, saved
+            connections, and tool rules. This can’t be undone.
           </>
         }
         confirmLabel="Remove connector"

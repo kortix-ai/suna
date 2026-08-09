@@ -30,7 +30,8 @@ export async function awaitTerminalStage(
     sleepFn?: (ms: number) => Promise<void>;
   },
 ): Promise<SessionStartResult> {
-  if (opts.waitMs <= 0 || isTerminalStage(initial.stage)) return initial;
+  if (opts.waitMs <= 0 || isTerminalStage(initial.stage) || initial.retriable === false)
+    return initial;
   const now = opts.now ?? Date.now;
   const sleepFn = opts.sleepFn ?? defaultSleep;
   const pollMs = opts.pollMs ?? START_AWAIT_POLL_MS;
@@ -41,7 +42,7 @@ export async function awaitTerminalStage(
     const next = await resolve();
     if (!next) break;
     current = next;
-    if (isTerminalStage(current.stage)) break;
+    if (isTerminalStage(current.stage) || current.retriable === false) break;
   }
   return current;
 }

@@ -63,7 +63,11 @@ export function connectorConfig(
         // No credential and no base URL — the gateway routes `tunnel` bindings
         // through the shared tunnel RPC core, not executeCall. Carry explicit
         // `none` auth so authOf() resolves hasAuth=false.
-        return { auth: { type: 'none', in: 'header', name: null, prefix: null } };
+        return {
+          tunnel_ids: spec.tunnelIds ?? (spec.tunnelId ? [spec.tunnelId] : []),
+          computer_profile: true,
+          auth: { type: 'none', in: 'header', name: null, prefix: null },
+        };
       default:
         return {};
     }

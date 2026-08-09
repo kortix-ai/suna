@@ -31,11 +31,7 @@ import {
  * (router.ts) wires real DB/secret deps. `enforcePolicies` exists for back-compat
  * with the original allow-all engine; production sets it true.
  */
-import {
-  type DefaultMode,
-  type Policy,
-  resolveEffectiveAction,
-} from './policy';
+import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
 import { connectorRequestDigest } from './request-digest';
 import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
@@ -50,15 +46,10 @@ export interface GatewayConnector {
   connectionMetadata?: Record<string, unknown>;
   slug: string;
   provider:
-    | 'pipedream'
-    | 'mcp'
-    | 'openapi'
-    | 'postman'
-    | 'graphql'
-    | 'http'
-    | 'channel'
-    | 'computer';
+    'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: string | null;
+  /** Server-side machine allowlist for a Computers connector profile. */
+  tunnelIds?: string[] | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ConnectorAuth;
@@ -201,15 +192,15 @@ export interface GatewayDeps {
   }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
-   * connectors. Resolves the `selector` (machine name/id, or null = sole online)
-   * to a machine scoped to `accountId`, then relays `method` through the tunnel
-   * permission/relay/audit core. `list_computers` is handled inside (no relay).
+   * connectors. Verifies the selected machine belongs to both `accountId` and
+   * the connector profile allowlist, then relays through the tunnel core.
    */
   executeComputerCall?(input: {
     accountId: string;
     projectId: string;
     sessionId: string | null;
     actorUserId: string;
+    allowedTunnelIds: string[] | null;
     selector: string | null;
     method: string;
     args: Record<string, unknown>;
@@ -235,7 +226,12 @@ export interface GatewayDeps {
 /** Result of a `computer` connector call (gateway maps it onto a CallResult). */
 export type ComputerCallOutcome =
   | { ok: true; data: unknown }
-  | { ok: false; kind: 'permission_required'; requestId: string; message: string }
+  | {
+      ok: false;
+      kind: 'permission_required';
+      requestId: string;
+      message: string;
+    }
   | { ok: false; kind: 'no_machine'; message: string }
   | { ok: false; kind: 'error'; message: string };
 
@@ -306,7 +302,10 @@ async function resolveConnectorForCall(
       SLACK_CHANNEL_CONNECTOR_SLUG,
     );
     if (channelConnector?.enabled && channelConnector.provider === 'channel') {
-      return { slug: SLACK_CHANNEL_CONNECTOR_SLUG, connector: channelConnector };
+      return {
+        slug: SLACK_CHANNEL_CONNECTOR_SLUG,
+        connector: channelConnector,
+      };
     }
   }
 
@@ -316,7 +315,10 @@ async function resolveConnectorForCall(
       EMAIL_CHANNEL_CONNECTOR_SLUG,
     );
     if (channelConnector?.enabled && channelConnector.provider === 'channel') {
-      return { slug: EMAIL_CHANNEL_CONNECTOR_SLUG, connector: channelConnector };
+      return {
+        slug: EMAIL_CHANNEL_CONNECTOR_SLUG,
+        connector: channelConnector,
+      };
     }
   }
 
@@ -424,13 +426,17 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
 
   const connector = resolved.connector;
   if (!connector || !connector.enabled) {
-    await audit(deps, input, null, 'denied', null, { reason: 'connector_not_found' });
+    await audit(deps, input, null, 'denied', null, {
+      reason: 'connector_not_found',
+    });
     return { status: 'denied', reason: 'connector_not_found' };
   }
 
   const action = await deps.loadAction(connector.connectorId, input.actionPath);
   if (!action) {
-    await audit(deps, input, connector, 'denied', null, { reason: 'action_not_found' });
+    await audit(deps, input, connector, 'denied', null, {
+      reason: 'action_not_found',
+    });
     return { status: 'denied', reason: 'action_not_found' };
   }
 
@@ -558,12 +564,12 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // digest after the decision callback asks the session to continue.
       const carriedOver = deps.consumeApprovedExecution
         ? await deps.consumeApprovedExecution({
-              sessionId: input.sessionId ?? null,
-              actingUserId: input.subject.userId,
-              connectorId: connector.connectorId,
-              // The audit-row form (see audit() below), NOT the relative form.
-              actionPath: `${input.connectorSlug}.${input.actionPath}`,
-              requestDigest,
+            sessionId: input.sessionId ?? null,
+            actingUserId: input.subject.userId,
+            connectorId: connector.connectorId,
+            // The audit-row form (see audit() below), NOT the relative form.
+            actionPath: `${input.connectorSlug}.${input.actionPath}`,
+            requestDigest,
           })
         : false;
       if (carriedOver) {
@@ -619,24 +625,33 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   try {
-    // Computer (Agent Computer Tunnel): relay through the shared tunnel RPC core
-    // instead of an HTTP call. The machine selector rides in `args.computer`.
+    // Computers (Agent Computer Tunnel): relay through the shared tunnel RPC
+    // core. The connector profile owns the machine allowlist.
     if (connector.provider === 'computer') {
       if (action.binding.kind !== 'tunnel') {
         throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
       }
       if (!deps.executeComputerCall) throw new Error('computer runner not wired');
-      const { computer: selectorRaw, ...rest } = executionArgs;
+      if (connector.tunnelIds && connector.tunnelIds.length === 0) {
+        return {
+          status: 'error',
+          reason: 'computer connector has no assigned machines',
+        };
+      }
       const selector =
-        typeof selectorRaw === 'string' && selectorRaw.trim() ? selectorRaw.trim() : null;
+        typeof executionArgs.computer === 'string' ? executionArgs.computer.trim() || null : null;
+      const callArgs = Object.fromEntries(
+        Object.entries(executionArgs).filter(([key]) => key !== 'computer'),
+      );
       const outcome = await deps.executeComputerCall({
         accountId: input.accountId,
         projectId: input.projectId,
         sessionId: input.sessionId ?? null,
         actorUserId: input.subject.userId,
+        allowedTunnelIds: connector.tunnelIds ?? null,
         selector,
         method: action.binding.method,
-        args: rest,
+        args: callArgs,
       });
       if (outcome.ok) {
         await audit(deps, input, connector, 'ok', action.risk, {
@@ -677,7 +692,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         args: executionArgs,
       });
       if (outcome.ok) {
-        await audit(deps, input, connector, 'ok', action.risk, { op: action.binding.op });
+        await audit(deps, input, connector, 'ok', action.risk, {
+          op: action.binding.op,
+        });
         return { status: 'ok', data: outcome.data, risk: action.risk };
       }
       await audit(deps, input, connector, 'error', action.risk, {

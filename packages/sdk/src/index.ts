@@ -138,8 +138,12 @@ export {
   parseBillingError,
   isBillingError,
   formatBillingErrorForUI,
+  FEATURE_DISABLED_CODE,
+  isFeatureDisabledError,
+  featureDisabledKey,
   type ApiErrorFields,
   type BillingErrorUI,
+  type FeatureDisabledError,
 } from './core/http/api/errors';
 
 /**

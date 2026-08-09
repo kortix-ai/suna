@@ -22,7 +22,7 @@ import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
-import type { ExperimentalFeatureKey } from '@kortix/sdk';
+import type { FeatureFlagKey } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   SquaresFourIcon as Blocks,
@@ -41,9 +41,11 @@ import {
   GitPullRequestIcon as GitPullRequest,
   GlobeIcon as Globe,
   HashIcon as Hash,
+  TrayIcon as Inbox,
   KeyboardIcon as Keyboard,
   KeyIcon as KeyRound,
   StackIcon as Layers,
+  WaveformIcon as Waveform,
   SquaresFourIcon as LayoutDashboard,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
@@ -187,10 +189,12 @@ export interface MenuItemDef {
    *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
    *  project-paradigm surfaces (Board today; Milestones, Team later). */
   requiresProjectsFlag?: boolean;
-  /** If set, item is only shown when the named per-project experimental
-   *  feature is enabled (mirrors the Customize rail gating). The palette
-   *  resolves it against the active project's experimental flags. */
-  requiresExperimental?: ExperimentalFeatureKey;
+  /** If set, the item is only shown when the named per-project FEATURE FLAG is
+   *  enabled (mirrors the Customize rail gating). A disabled feature's surface
+   *  is invisible, so EVERY registry consumer must honour this — the command
+   *  palette and the right sidebar both filter on it, fail-closed while the
+   *  project detail is unresolved. */
+  requiresFlag?: FeatureFlagKey;
 }
 
 // ============================================================================
@@ -410,6 +414,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
+    requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   {
@@ -520,7 +525,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/marketplace',
     requiresProject: true,
-    requiresExperimental: 'marketplace',
+    requiresFlag: 'marketplace',
     keywords: 'marketplace store install templates agents skills browse project customize',
   },
   {
@@ -532,7 +537,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/llm-management',
     requiresProject: true,
-    requiresExperimental: 'llm_gateway',
+    requiresFlag: 'llm_gateway',
     keywords:
       'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
   },
@@ -545,9 +550,34 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/computers',
     requiresProject: true,
-    requiresExperimental: 'agent_tunnel',
+    requiresFlag: 'agent_tunnel',
     keywords:
       'computers tunnel machines connect reverse local devices remote agent access project customize',
+  },
+  {
+    id: 'proj-review',
+    label: 'Customize · Review Center',
+    icon: Inbox,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/review',
+    requiresProject: true,
+    requiresFlag: 'review_center',
+    keywords:
+      'review center inbox approvals change requests approve reject needs you project customize',
+  },
+  {
+    id: 'proj-voice',
+    label: 'Customize · Voice',
+    icon: Waveform,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/voice',
+    requiresProject: true,
+    requiresFlag: 'voice',
+    keywords: 'voice call speak spoken conversation livekit bot name project customize',
   },
   {
     id: 'proj-members',

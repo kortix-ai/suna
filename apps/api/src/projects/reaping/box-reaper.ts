@@ -125,7 +125,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
           // round-trip, so this decision is provisional: stopExpiredBox re-reads
           // the deadline against a fresh clock immediately before issuing the
           // stop, and returns 'skipped' if a prompt arrived in the meantime.
-          const outcome = await stopExpiredBox(row, now);
+          const outcome = await stopExpiredBox(row, now, 'deadline_expired');
           result[outcome] += 1;
           if (outcome === 'stopped') result.billingClosed += 1;
           continue;
@@ -145,6 +145,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
               sandboxId: row.sandboxId,
               sessionId: row.sessionId,
               externalId: row.externalId,
+              stopReason: 'provider_reconcile',
               now,
             });
             result.reconciled += 1;
@@ -154,7 +155,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             // A provider 404 can be a transient archive/restore observation.
             // Preserve the established identity; never turn this signal into a
             // fresh, empty sandbox for the same session.
-            await preserveEstablishedRuntime(row, 'provider_reported_removed', now);
+            await preserveEstablishedRuntime(row, 'provider_reported_removed', 'provider_removed', now);
             invalidateProviderCache(row.externalId);
             result.reconciled += 1;
             result.billingClosed += 1;

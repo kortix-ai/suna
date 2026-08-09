@@ -144,6 +144,61 @@ export class RequestTooLargeError extends Error {
 }
 
 // ============================================================================
+// Feature-flag gate
+// ============================================================================
+
+/**
+ * The machine-readable `code` every flag-gated route rejects with. Mirrors
+ * `FEATURE_DISABLED_CODE` in `apps/api/src/feature-flags/gate.ts`. Clients
+ * branch on this, never on the prose in `error`.
+ */
+export const FEATURE_DISABLED_CODE = 'feature_disabled' as const;
+
+/**
+ * An {@link ApiError} produced by the server's one feature-flag gate: HTTP 403
+ * with `{ error, code: 'feature_disabled', feature }`. `feature` is the flag
+ * key, so a host can name the feature and point at Customize → Feature flags.
+ */
+export interface FeatureDisabledError extends ApiError {
+  status: 403;
+  code: typeof FEATURE_DISABLED_CODE;
+  feature: string;
+}
+
+/** Read the gate body off whichever field `makeRequest` populated. */
+function featureDisabledBody(error: unknown): Record<string, unknown> | null {
+  if (!(error instanceof ApiError)) return null;
+  if (error.status !== 403 || error.code !== FEATURE_DISABLED_CODE) return null;
+  const body = (error as { details?: unknown }).details ?? (error as { data?: unknown }).data;
+  return body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+}
+
+/**
+ * True when `error` is the server's 403 feature-flag gate. Narrows to
+ * {@link FeatureDisabledError} so `.feature` is typed at the call site.
+ *
+ * Note the `feature` key is read from the response BODY and hoisted onto the
+ * error, because `ApiError` only lifts `status`/`code`/`details` itself.
+ */
+export function isFeatureDisabledError(error: unknown): error is FeatureDisabledError {
+  const body = featureDisabledBody(error);
+  if (!body) return false;
+  if (typeof body.feature === 'string' && !(error as FeatureDisabledError).feature) {
+    (error as { feature?: string }).feature = body.feature;
+  }
+  return true;
+}
+
+/** The gated flag's key, or `null` when `error` is not a feature-flag gate. */
+export function featureDisabledKey(error: unknown): string | null {
+  const body = featureDisabledBody(error);
+  if (!body) return null;
+  const fromError = (error as { feature?: unknown }).feature;
+  if (typeof fromError === 'string') return fromError;
+  return typeof body.feature === 'string' ? body.feature : null;
+}
+
+// ============================================================================
 // Error Parsing
 // ============================================================================
 

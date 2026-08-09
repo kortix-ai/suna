@@ -43,6 +43,7 @@ import { isTunnelToken, isKortixToken, hashSecretKey, deriveSigningKey } from '.
 import { validateSecretKey } from '../repositories/api-keys';
 import { getSupabase } from '../shared/supabase';
 import { db } from '../shared/db';
+import { reconcileComputerConnectors } from '../connectors/sync';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
 
@@ -69,10 +70,12 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
       const [row] = await db
         .select()
         .from(tunnelConnections)
-        .where(and(
-          eq(tunnelConnections.tunnelId, tunnelId),
-          eq(tunnelConnections.setupTokenHash, tokenHash),
-        ));
+        .where(
+          and(
+            eq(tunnelConnections.tunnelId, tunnelId),
+            eq(tunnelConnections.setupTokenHash, tokenHash),
+          ),
+        );
       if (row) {
         accountId = row.accountId;
         tunnel = row;
@@ -83,7 +86,10 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
     } else {
       try {
         const supabase = getSupabase();
-        const { data: { user }, error } = await supabase.auth.getUser(token);
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser(token);
         if (!error && user) accountId = user.id;
       } catch {}
     }
@@ -94,10 +100,9 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
       const [row] = await db
         .select()
         .from(tunnelConnections)
-        .where(and(
-          eq(tunnelConnections.tunnelId, tunnelId),
-          eq(tunnelConnections.accountId, accountId),
-        ));
+        .where(
+          and(eq(tunnelConnections.tunnelId, tunnelId), eq(tunnelConnections.accountId, accountId)),
+        );
       tunnel = row;
     }
 
@@ -137,6 +142,10 @@ function startTunnelService(): void {
 
       if (accountId) {
         notifyTunnelEvent(accountId, 'tunnel_connected', { tunnelId });
+        // The first real handshake is the materialization boundary. Device
+        // approval creates an offline row before this point and must not expose
+        // a connector for a machine that never connected.
+        void reconcileComputerConnectors(accountId);
       }
 
       // Sync active permissions to the agent
@@ -149,10 +158,7 @@ function startTunnelService(): void {
         })
         .from(tunnelPermissions)
         .where(
-          and(
-            eq(tunnelPermissions.tunnelId, tunnelId),
-            eq(tunnelPermissions.status, 'active'),
-          ),
+          and(eq(tunnelPermissions.tunnelId, tunnelId), eq(tunnelPermissions.status, 'active')),
         );
 
       tunnelRelay.sendNotification(tunnelId, 'tunnel.permissions.sync', {
@@ -190,8 +196,9 @@ function startTunnelService(): void {
 
   tunnelRelay.on('message:pong', async ({ tunnelId, params }) => {
     try {
-      markTunnelRelayOwner(tunnelId, { status: 'online' })
-        .catch((err) => console.warn(`[tunnel-heartbeat] DB update failed for ${tunnelId}:`, err));
+      markTunnelRelayOwner(tunnelId, { status: 'online' }).catch((err) =>
+        console.warn(`[tunnel-heartbeat] DB update failed for ${tunnelId}:`, err),
+      );
 
       const mi = params?.machineInfo;
       if (mi && typeof mi === 'object' && (mi as any).hostname) {
@@ -220,10 +227,7 @@ function startTunnelService(): void {
         .update(tunnelPermissions)
         .set({ status: 'expired', updatedAt: new Date() })
         .where(
-          and(
-            eq(tunnelPermissions.status, 'active'),
-            lt(tunnelPermissions.expiresAt, new Date()),
-          ),
+          and(eq(tunnelPermissions.status, 'active'), lt(tunnelPermissions.expiresAt, new Date())),
         );
 
       // Expire pending device auth requests
@@ -255,17 +259,14 @@ function stopTunnelService(): void {
   console.log('[TUNNEL] Tunnel service stopped');
 }
 
-function getTunnelServiceStatus(): { enabled: boolean; connectedAgents: number } {
+function getTunnelServiceStatus(): {
+  enabled: boolean;
+  connectedAgents: number;
+} {
   return {
     enabled: config.TUNNEL_ENABLED,
     connectedAgents: tunnelRelay.getConnectedCount(),
   };
 }
 
-export {
-  tunnelApp,
-  wsHandlers,
-  startTunnelService,
-  stopTunnelService,
-  getTunnelServiceStatus,
-};
+export { tunnelApp, wsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus };

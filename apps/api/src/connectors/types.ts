@@ -41,9 +41,9 @@ export type ActionBinding =
   | { kind: 'graphql'; operation: 'query' | 'mutation'; field: string }
   | { kind: 'mcp'; tool: string }
   | { kind: 'http'; method: string; path: string }
-  // Agent Computer Tunnel: relay an RPC (`fs.read`, `desktop.cua.click`, the
-  // meta `list_computers`, …) to a connected machine. The gateway routes these
-  // through the shared tunnel RPC core instead of executeCall. See
+  // Agent Computer Tunnel: relay one machine-bound RPC (`fs.read`,
+  // `desktop.cua.click`, …). The gateway routes these through the shared tunnel
+  // RPC core instead of executeCall. See
   // docs/specs/computer-connector.md.
   | { kind: 'tunnel'; method: string }
   // Voice channel action (`spawn_room`, `join_gmeet`, `join_zoom`, …): server-
@@ -63,7 +63,12 @@ export interface PipedreamActionLike {
   key: string;
   name: string;
   description?: string;
-  params?: Array<{ name: string; type: string; required?: boolean; description?: string }>;
+  params?: Array<{
+    name: string;
+    type: string;
+    required?: boolean;
+    description?: string;
+  }>;
 }
 
 /** A declared HTTP route (provider=http, from `.kortix/connectors/*.http.toml`). */

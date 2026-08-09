@@ -24,8 +24,8 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { ShareOption, SubjectPicker } from '@/features/workspace/shared/sharing-picker';
-import { useAppsFeatureEnabled } from '@/hooks/projects/use-apps-feature-enabled';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import {
   CLIPBOARD_IFRAME_ALLOW,
@@ -35,13 +35,18 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   createAppAccessSession,
-  updateExperimentalFeature,
   type App,
   type AppAccessConfig,
   type AppAccessMode,
   type AppDeployment,
 } from '@kortix/sdk';
-import { qk, useAppAccess, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
+import {
+  qk,
+  useAppAccess,
+  useAppDeployments,
+  useFeatureFlag,
+  useProjectApps,
+} from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
   CaretDownIcon,
@@ -151,20 +156,14 @@ function AppPreview({
 }
 
 export function AppsView({ projectId }: { projectId: string }) {
-  const appsGate = useAppsFeatureEnabled(projectId);
+  // One gating primitive, fail-closed. Apps NEVER enables itself from here:
+  // activation lives only in Customize → Feature flags, so this page has no
+  // mutation and no self-enable button.
+  const appsGate = useFeatureFlag(projectId, 'apps');
   const apps = useProjectApps(appsGate.enabled ? projectId : null);
-  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
-  const enableApps = useMutation({
-    mutationFn: () => updateExperimentalFeature(projectId, 'apps', true),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
-      successToast('Apps enabled for this project');
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to enable Apps'),
-  });
 
   useEffect(() => {
     const target = searchParams.get('open_app');
@@ -207,32 +206,10 @@ export function AppsView({ projectId }: { projectId: string }) {
           ))}
         </ul>
       ) : !appsGate.enabled ? (
-        <div className="bg-popover rounded-md border px-4 py-5">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <p className="text-foreground text-sm font-medium">Enable Apps for this project</p>
-              <p className="text-muted-foreground max-w-xl text-xs text-pretty">
-                Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable
-                URLs. Each App wakes on its next request and suspends after its idle timeout.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="shrink-0"
-              disabled={!canWrite || enableApps.isPending}
-              onClick={() => enableApps.mutate()}
-            >
-              {enableApps.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Enable Apps
-            </Button>
-          </div>
-          {!canWrite ? (
-            <p className="text-muted-foreground mt-3 text-xs">
-              A project manager must enable this experimental feature.
-            </p>
-          ) : null}
-        </div>
+        <FeatureGateScreen
+          featureName="Apps"
+          description="Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Each App wakes on its next request and suspends after its idle timeout."
+        />
       ) : apps.isLoading ? (
         <ul className="grid gap-4 md:grid-cols-2">
           {Array.from({ length: 2 }).map((_, index) => (

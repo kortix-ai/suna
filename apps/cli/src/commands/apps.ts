@@ -160,9 +160,12 @@ async function context(options: ContextOptions): Promise<{
   const project = await withKortixScope(resolved.auth, () =>
     kortix.project(resolved.projectId).get(),
   );
+  // Client-side pre-check: saves a wasted round trip when the flag is off. The
+  // wording matches the server's gate verbatim (feature-flags/gate.ts), so the
+  // user reads the same sentence whichever side rejects.
   if (project.experimental?.apps !== true) {
     process.stderr.write(
-      `${status.err('Apps is not enabled for this project.')} Enable Apps in Project Settings → Experimental.\n`,
+      `${status.err('Apps is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
     );
     return null;
   }

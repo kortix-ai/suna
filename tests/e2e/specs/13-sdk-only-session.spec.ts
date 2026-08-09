@@ -440,8 +440,8 @@ test.describe.serial('13 — SDK-only web session', () => {
     await expect(input).toBeVisible({ timeout: 120_000 });
     const agentPicker = page.getByRole('button', { name: 'Agent picker' });
     await agentPicker.click();
-    await page.getByText('memory-reflector', { exact: true }).click();
-    await expect(agentPicker).toContainText('memory-reflector');
+    await page.getByText('harness-reflector', { exact: true }).click();
+    await expect(agentPicker).toContainText('harness-reflector');
     await input.fill('Reply with exactly one word: PONG');
 
     const mismatchResponse = page.waitForResponse((response) => (

@@ -76,6 +76,23 @@ function canonicalDraftFromReplacement(replacement: SessionScopeInput): SessionS
   return draft;
 }
 
+function canonicalCommittedDraft(
+  replacement: SessionScopeInput,
+  source: SessionScopeDraft,
+): SessionScopeDraft {
+  const draft = canonicalDraftFromReplacement(replacement);
+  if (source.connector_bindings_inherited && source.connector_bindings !== undefined) {
+    draft.connector_bindings = Object.fromEntries(
+      Object.entries(source.connector_bindings).map(([alias, binding]) => [
+        alias,
+        { connection_id: binding.connection_id },
+      ]),
+    );
+    draft.connector_bindings_inherited = true;
+  }
+  return draft;
+}
+
 export function createNewSessionScopeInitialization(catalog: SessionScopeSelectionCatalog): {
   draft: SessionScopeDraft;
   commit: SessionScopeCommit | undefined;
@@ -89,7 +106,7 @@ export function createNewSessionScopeInitialization(catalog: SessionScopeSelecti
   return {
     draft,
     commit: {
-      draft: canonicalDraftFromReplacement(replacement),
+      draft: canonicalCommittedDraft(replacement, draft),
       availability,
     },
   };
@@ -109,7 +126,7 @@ export async function commitSessionScopeDraft({
   const replacement = buildSessionScopeReplacement(draft, previousScope, availability);
   if (!sessionId) {
     onCommittedDraft?.({
-      draft: canonicalDraftFromReplacement(replacement),
+      draft: canonicalCommittedDraft(replacement, draft),
       availability,
     });
     return undefined;

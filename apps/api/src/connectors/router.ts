@@ -24,6 +24,8 @@ import {
 import type { AgentGrant } from '@kortix/db';
 import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
+import { featureDisabledBody } from '../feature-flags/gate';
+import type { FeatureFlagKey } from '../feature-flags/registry';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { isAllowedSourceValidationError } from '../marketplace/catalog';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -182,7 +184,11 @@ interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
-type CrudOutcome = { ok: true; sync?: SyncResult } | { ok: false; error: string; status: number };
+type CrudOutcome =
+  | { ok: true; sync?: SyncResult }
+  // `body` overrides the default `{ error }` envelope when the failure carries a
+  // machine-readable contract (today: the `feature_disabled` 403).
+  | { ok: false; error: string; status: number; body?: Record<string, unknown> };
 
 import {
   type PolicyArgCondition,
@@ -223,6 +229,13 @@ export interface ConnectorRouterDeps {
   listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]>;
   /** Private raw-byte staging used by the MCP attachment transport. */
   attachmentStore?: ConnectorAttachmentStore;
+  /**
+   * Per-project feature-flag state. Injected (not imported) so this router
+   * stays free of the DB import graph and the in-memory e2e keeps driving the
+   * real HTTP layer. Required, not optional: a new deps implementation must
+   * decide what the gated routes see rather than silently opening them.
+   */
+  featureFlagEnabled(projectId: string, key: FeatureFlagKey): Promise<boolean>;
   /** Admin auth: resolve user + verify project access, or null for 401/403. */
   resolveAdmin(
     c: Context,
@@ -328,6 +341,7 @@ export interface ConnectorRouterDeps {
     endpoint: string | null;
     baseUrl: string | null;
     spec: string | null;
+    tunnelIds?: string[];
     auth: {
       type:
         | 'none'
@@ -777,6 +791,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
+      // Flag gate AFTER authz: a non-admin still learns nothing.
+      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
+        return c.json(featureDisabledBody('connectors_api_discover'), 403);
+      }
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
         return c.json(
@@ -837,6 +855,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
+      // Flag gate AFTER authz: a non-admin still learns nothing.
+      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
+        return c.json(featureDisabledBody('connectors_api_discover'), 403);
+      }
       if (!deps.getDiscoverConnector) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
         return c.json(await deps.getDiscoverConnector(c.req.query('id')));
@@ -1097,7 +1119,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         const result = await deps.createConnector(projectId, admin.accountId, body);
         return result.ok
           ? c.json({ ok: true, sync: result.sync, authDiscovery })
-          : c.json({ error: result.error }, result.status as 400 | 409 | 502);
+          : c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);
       } catch (err) {
         const validation = allowedSourceValidationResponse(c, err);
         if (validation) return validation;

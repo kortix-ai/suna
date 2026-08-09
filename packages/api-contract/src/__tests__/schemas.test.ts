@@ -4,6 +4,8 @@ import {
   ConnectionSchema,
   ConnectionMetadataSchema,
   EXPERIMENTAL_FEATURE_KEYS,
+  FEATURE_FLAG_KEYS,
+  FeatureFlagStabilitySchema,
   ErrorEnvelopeSchema,
   OkResponseSchema,
   OAuth2ApplicationInputSchema,
@@ -624,8 +626,8 @@ describe('envelopes', () => {
     ).not.toThrow();
   });
 
-  test('experimental keys stay in sync with the map schema', () => {
-    expect(EXPERIMENTAL_FEATURE_KEYS).toEqual([
+  test('feature flag keys stay in sync with the map schema', () => {
+    expect(FEATURE_FLAG_KEYS).toEqual([
       'agent_tunnel',
       'marketplace',
       'connectors_api_discover',
@@ -637,6 +639,15 @@ describe('envelopes', () => {
       'meta_agent',
       'apps',
     ]);
+  });
+
+  test('EXPERIMENTAL_FEATURE_KEYS is a deprecated alias of the same list', () => {
+    expect(EXPERIMENTAL_FEATURE_KEYS).toBe(FEATURE_FLAG_KEYS);
+  });
+
+  test('stability admits stable — a settled feature can still ship behind a flag', () => {
+    expect(FeatureFlagStabilitySchema.options).toEqual(['experimental', 'beta', 'stable']);
+    expect(FeatureFlagStabilitySchema.options).toContain('stable');
   });
 
   test('sharing intent normalizes readonly member lists', () => {

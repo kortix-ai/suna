@@ -7,7 +7,7 @@ const item = (section: RailItem['section']): RailItem => ({ section, label: sect
 const flags = (overrides: Partial<RailFlags> = {}): RailFlags => ({
   tunnelEnabled: false,
   marketplaceEnabled: false,
-  llmGatewayAvailable: false,
+  llmGatewayEnabled: false,
   voiceEnabled: false,
   reviewEnabled: false,
   ...overrides,
@@ -91,7 +91,7 @@ describe('railGroups', () => {
 
   test('every Connect flag adds its own item independently', () => {
     const sections = sectionsOf(
-      flags({ voiceEnabled: true, tunnelEnabled: true, llmGatewayAvailable: true }),
+      flags({ voiceEnabled: true, tunnelEnabled: true, llmGatewayEnabled: true }),
     );
     expect(sections).toContain('voice');
     expect(sections).toContain('computers');
@@ -105,7 +105,7 @@ describe('railGroups', () => {
         marketplaceEnabled: true,
         voiceEnabled: true,
         tunnelEnabled: true,
-        llmGatewayAvailable: true,
+        llmGatewayEnabled: true,
       }),
     );
     expect(new Set(sections).size).toBe(sections.length);
@@ -125,7 +125,7 @@ describe('capability sections', () => {
       flags({
         tunnelEnabled: true,
         marketplaceEnabled: true,
-        llmGatewayAvailable: true,
+        llmGatewayEnabled: true,
         voiceEnabled: true,
         reviewEnabled: true,
       }),

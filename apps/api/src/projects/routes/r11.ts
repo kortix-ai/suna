@@ -8,6 +8,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { relayReviewCard } from '../../channels/turn-relay';
+import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -48,7 +49,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ review_items: z.array(AnyObject) }), 'Review items'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -62,6 +63,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_READ,
     );
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const segment = normalizeString(c.req.query('segment'))?.toLowerCase();
     if (segment && !SEGMENTS.includes(segment as (typeof SEGMENTS)[number])) {
@@ -167,7 +170,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ review_item: AnyObject }), 'Review item'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -181,6 +184,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_READ,
     );
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const item = await getReviewItemById(c.req.param('reviewItemId'), projectId);
     if (!item) return c.json({ error: 'Review item not found' }, 404);
@@ -202,7 +207,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(AnyObject, 'The created review item'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -221,6 +226,8 @@ projectsApp.openapi(
     );
     // Agent-side gate: submitting a reviewable is the agent's intended path.
     assertAgentScope(c, 'project.review.submit');
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const kind = normalizeString(body.kind);
     if (!isSubmittableKind(kind)) {
@@ -296,7 +303,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(AnyObject, 'The updated review item'),
-      ...errors(400, 404, 409),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -312,6 +319,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
     );
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const verdict = normalizeString(body.verdict);
     if (!isReviewVerdict(verdict)) {
@@ -352,7 +361,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ updated: z.number(), review_items: z.array(AnyObject) }), 'Bulk result'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -367,6 +376,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
     );
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const verdict = normalizeString(body.verdict);
     if (!isReviewVerdict(verdict)) {

@@ -1,4 +1,4 @@
-// Projects — project CRUD, detail, experimental features, warm pool, onboarding.
+// Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import type { SandboxProviderName } from '../platform-client/types';
@@ -12,8 +12,17 @@ import {
   unwrap,
 } from './shared';
 
-/** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey =
+/**
+ * Stable ids for the platform's per-project feature flags (mirrors
+ * `apps/api/src/feature-flags/registry.ts` and `FeatureFlagMapSchema` in
+ * `@kortix/api-contract`).
+ *
+ * The union is hand-written on purpose: this package is framework-free AND
+ * dependency-light, and importing `@kortix/api-contract` would drag zod into
+ * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
+ * the same list, so other packages can assert the two have not drifted.
+ */
+export type FeatureFlagKey =
   | 'agent_tunnel'
   | 'marketplace'
   | 'connectors_api_discover'
@@ -25,12 +34,37 @@ export type ExperimentalFeatureKey =
   | 'meta_agent'
   | 'apps';
 
-/** One experimental feature as described by the API catalog. */
-export interface ExperimentalFeatureView {
-  key: ExperimentalFeatureKey;
+/**
+ * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
+ * union above. Cross-package drift tests compare this against the API's
+ * `FEATURE_FLAG_KEYS`.
+ */
+export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
+  'agent_tunnel',
+  'marketplace',
+  'connectors_api_discover',
+  'agentmail_email',
+  'teams',
+  'voice',
+  'llm_gateway',
+  'review_center',
+  'meta_agent',
+  'apps',
+] as const;
+
+/**
+ * How mature a flag is. This is a per-flag BADGE, not the name of the system:
+ * the system is "Feature flags", and a flag can be `stable` and still ship
+ * behind a switch.
+ */
+export type FeatureFlagStability = 'experimental' | 'beta' | 'stable';
+
+/** One feature flag as described by the API catalog. */
+export interface FeatureFlagView {
+  key: FeatureFlagKey;
   name: string;
   description: string;
-  stability: 'experimental' | 'beta';
+  stability: FeatureFlagStability;
   /** Platform supports it (operator env). When false the UI hides the toggle. */
   available: boolean;
   /** Effective per-project state (the switch position). */
@@ -38,6 +72,12 @@ export interface ExperimentalFeatureView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
 }
+
+/** @deprecated Renamed to {@link FeatureFlagKey}. Removed in the next major. */
+export type ExperimentalFeatureKey = FeatureFlagKey;
+
+/** @deprecated Renamed to {@link FeatureFlagView}. Removed in the next major. */
+export type ExperimentalFeatureView = FeatureFlagView;
 
 /** A project's named-glyph icon. `name` is a Phosphor identifier from the
  *  server's fixed catalogue; `color` is one of eight palette names. */
@@ -60,11 +100,12 @@ export interface KortixProject {
   updated_at: string;
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
-  /** Effective on/off for each experimental feature for THIS project. */
-  experimental?: Record<ExperimentalFeatureKey, boolean>;
-  /** Full experimental-feature catalog (drives Customize → Settings →
-   *  Experimental). Self-describing so the UI never hard-codes the list. */
-  experimental_features?: ExperimentalFeatureView[];
+  /** Effective on/off for each feature flag for THIS project. The field name is
+   *  a stable wire detail — the system is called "Feature flags". */
+  experimental?: Record<FeatureFlagKey, boolean>;
+  /** Full feature-flag catalog (drives Customize → Feature flags).
+   *  Self-describing so the UI never hard-codes the list. */
+  experimental_features?: FeatureFlagView[];
   /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
   warm_pool?: { enabled: boolean; size: number };
   /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
@@ -714,12 +755,35 @@ export async function updateProject(projectId: string, input: Partial<ProjectInp
   return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
 }
 
-/** Toggle an experimental feature for a project (Customize → Settings →
- *  Experimental). Pass `enabled: null` to clear the override and fall back to
- *  the operator default. */
+/**
+ * Toggle a feature flag for a project (Customize → Feature flags). Pass
+ * `enabled: null` to clear the override and fall back to the operator default.
+ *
+ * Hits the CANONICAL `PATCH /projects/:id/features` route.
+ */
+export async function updateFeatureFlag(
+  projectId: string,
+  feature: FeatureFlagKey,
+  enabled: boolean | null,
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/features`, {
+      feature,
+      enabled,
+    }),
+  );
+}
+
+/**
+ * @deprecated Renamed to {@link updateFeatureFlag}. Removed in the next major.
+ *
+ * Deliberately NOT re-pointed at the canonical `/features` route: this alias
+ * exists for consumers pinned to an older deployed API that only serves
+ * `/projects/:id/experimental`. Changing its wire path would break them.
+ */
 export async function updateExperimentalFeature(
   projectId: string,
-  feature: ExperimentalFeatureKey,
+  feature: FeatureFlagKey,
   enabled: boolean | null,
 ) {
   return unwrap(

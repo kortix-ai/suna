@@ -322,7 +322,7 @@ const envSchema = z.object({
   ),
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
   // Whether the Teams channel is offered is NOT an operator env var — it is the
-  // per-project `teams` experimental feature (experimental/features.ts).
+  // per-project `teams` feature flag (feature-flags/registry.ts).
   TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────

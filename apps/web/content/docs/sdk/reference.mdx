@@ -259,7 +259,7 @@ agent, a skill, a secret) instead of the whole project.
 | `connections.updateCredential(connectionId, input)` | rotate a connection credential |
 | `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
 
-`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under Customize → Settings → Experimental → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
+`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under Customize → Feature flags → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 
 | method | what |
 | --- | --- |
@@ -423,10 +423,25 @@ Account, agent, and project-scoped model defaults, resolved by the gateway.
 then sets it as `default_agent` in the project's `kortix.yaml`. New sessions
 prefer this agent unless a user picks another one.
 
-#### `p.updateExperimentalFeature` — feature flags
+#### `p.updateFeatureFlag` — feature flags
 
-`p.updateExperimentalFeature(feature, enabled)` toggles an experimental
-feature for the project. Pass `enabled: null` to clear the override.
+`p.updateFeatureFlag(feature, enabled)` turns one feature flag on or off for the
+project. Pass `enabled: null` to clear the override and fall back to the
+platform default. It calls the canonical `PATCH /v1/projects/:id/features`.
+
+`feature` is one of `FEATURE_FLAG_KEYS` (exported from `@kortix/sdk`, typed as
+`FeatureFlagKey`). The caller needs the project's `project.customize.write`
+permission; the route answers `403` otherwise.
+
+Every flag-gated route rejects the same way while the flag is off: HTTP `403`
+with `{ error, code: "feature_disabled", feature }`. Use `isFeatureDisabledError(error)`
+to branch on it and `featureDisabledKey(error)` to read the flag key — never
+match on the message text.
+
+`p.updateExperimentalFeature(feature, enabled)` is the **deprecated** alias. It
+keeps calling the deprecated route alias `PATCH /v1/projects/:id/experimental`
+so consumers pinned to an older deployed API keep working. Use
+`p.updateFeatureFlag` in new code.
 
 #### `p.sandbox` — templates and snapshot builds
 

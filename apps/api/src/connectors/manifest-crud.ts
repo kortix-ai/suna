@@ -11,7 +11,8 @@ import { connectors, projects, projectSessionConnectorBindings } from '@kortix/d
  * docs/specs/connector.md §3, §5–6.
  */
 import { and, eq } from 'drizzle-orm';
-import { resolveExperimentalFeature } from '../experimental/features';
+import { featureDisabledBody } from '../feature-flags/gate';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import {
   type ConnectorAuthorizationStrategy,
   type ConnectorPolicyAction,
@@ -84,7 +85,9 @@ export interface ConnectorDraft {
 
 export type CrudResult =
   | { ok: true; sync?: SyncResult }
-  | { ok: false; error: string; status: number };
+  // `body` overrides the default `{ error }` envelope when the failure has a
+  // machine-readable contract (today: the `feature_disabled` 403).
+  | { ok: false; error: string; status: number; body?: Record<string, unknown> };
 
 function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
   const entry: Record<string, unknown> = { slug: d.slug, provider: d.provider };
@@ -193,13 +196,10 @@ export async function upsertConnectorInManifest(
   if (
     draft.provider === 'channel' &&
     draft.platform === 'email' &&
-    !resolveExperimentalFeature(row.metadata, 'agentmail_email')
+    !resolveFeatureFlag(row.metadata, 'agentmail_email')
   ) {
-    return {
-      ok: false,
-      error: 'AgentMail Email is experimental and must be enabled for this project',
-      status: 403,
-    };
+    const disabled = featureDisabledBody('agentmail_email');
+    return { ok: false, error: disabled.error, status: 403, body: disabled };
   }
 
   let gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>;
@@ -509,6 +509,8 @@ export interface ConnectorConfigView {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
+  /** Platform-managed Computers profiles only. Manifest connectors omit it. */
+  tunnelIds?: string[];
   auth: {
     type:
       | 'none'

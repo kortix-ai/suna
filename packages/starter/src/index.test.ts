@@ -285,6 +285,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-apps',
       'kortix-computer',
       'kortix-connectors',
+      'kortix-harness-refinement',
       'kortix-marketplace',
       'kortix-voice',
       'kortix-memory',
@@ -297,7 +298,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect(isKortixManagedSkillName('kortix-system')).toBe(true);
     expect(isKortixManagedSkillName('agent-browser')).toBe(false);
     expect(isKortixManagedSkillName('kortix')).toBe(false);
-    expect(isKortixManagedSkillName('memory-reflector')).toBe(false);
+    expect(isKortixManagedSkillName('harness-reflector')).toBe(false);
     expect(isKortixManagedSkillName('web_search')).toBe(false);
   });
 

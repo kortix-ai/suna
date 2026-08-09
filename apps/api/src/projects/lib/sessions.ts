@@ -264,7 +264,7 @@ export async function buildSessionSandboxEnvVars(input: {
   agentName: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
-  /** Resolved per-project `llm_gateway` experimental flag. Gateway ON →
+  /** Resolved per-project `llm_gateway` feature flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
    *  OFF (default) → native BYOK providers must reach opencode, so the deny
    *  list is empty. Mirrors the conditional KORTIX_LLM_* injection at provision. */

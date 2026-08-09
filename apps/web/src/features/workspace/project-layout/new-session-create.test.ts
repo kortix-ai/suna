@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
+import { createNewSessionScopeInitialization } from '@/features/session/scope/session-scope-toolbar';
+
 import { buildNewSessionCreateInput } from './new-session-create';
 
 describe('buildNewSessionCreateInput', () => {
@@ -13,15 +15,17 @@ describe('buildNewSessionCreateInput', () => {
   });
 
   it('carries the sandbox slug through alongside the agent', () => {
-    expect(
-      buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' }),
-    ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22' });
+    expect(buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' })).toEqual({
+      agent_name: 'builder',
+      sandbox_slug: 'node22',
+    });
   });
 
   it('forces the fixed meta sandbox when the meta agent is selected', () => {
-    expect(
-      buildNewSessionCreateInput({ agent: 'meta', sandbox_slug: 'node22' }),
-    ).toEqual({ agent_name: 'meta', sandbox_slug: 'meta' });
+    expect(buildNewSessionCreateInput({ agent: 'meta', sandbox_slug: 'node22' })).toEqual({
+      agent_name: 'meta',
+      sandbox_slug: 'meta',
+    });
   });
 
   it('binds only the sandbox slug when no agent is picked', () => {
@@ -61,6 +65,68 @@ describe('buildNewSessionCreateInput', () => {
       connector_bindings: {
         mail: { connection_id: 'connection-mail-private' },
       },
+      inherit_unbound: false,
+    });
+  });
+
+  it('leaves untouched connector defaults to server-side resolution', () => {
+    const initialization = createNewSessionScopeInitialization({
+      secrets: { status: 'ready', items: [] },
+      connector_connections: {
+        status: 'ready',
+        items: [
+          {
+            slug: 'computer',
+            name: 'Computer',
+            authorization_strategy: 'project',
+            connections: [
+              {
+                connection_id: 'connection-computer-default',
+                label: 'Project computer',
+                is_default: true,
+              },
+            ],
+          },
+          {
+            slug: 'gmail',
+            name: 'Gmail',
+            authorization_strategy: 'user',
+            connections: [
+              {
+                connection_id: 'connection-gmail-default',
+                label: 'Personal Gmail',
+                is_default: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(
+      buildNewSessionCreateInput({
+        agent: 'kortix',
+        scope: initialization.commit,
+      }),
+    ).toEqual({
+      agent_name: 'kortix',
+    });
+  });
+
+  it('keeps an explicit empty connector selection fail-closed', () => {
+    expect(
+      buildNewSessionCreateInput({
+        agent: 'kortix',
+        scope: {
+          draft: {
+            connector_bindings: {},
+          },
+          availability: { secrets: true, connector_bindings: true },
+        },
+      }),
+    ).toEqual({
+      agent_name: 'kortix',
+      connector_bindings: {},
       inherit_unbound: false,
     });
   });
