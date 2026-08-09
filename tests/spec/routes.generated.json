@@ -872,6 +872,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/pipedream/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/policies"
     },
     {
