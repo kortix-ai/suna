@@ -484,14 +484,14 @@ function ActivityBurstImpl({
           position — which would snap shut a row the reader had just opened and
           throw away the tool renderer's own scroll state. So bare swaps the
           trigger's CONTENTS for an empty node, never the node itself. */}
-      <DisclosureTrigger>
+      <DisclosureTrigger className='select-none'>
         {bare ? (
           <div className="hidden" aria-hidden />
         ) : (
           <div
             className={cn(
               'text-muted-foreground/70 hover:text-muted-foreground',
-              'flex w-full cursor-pointer items-center gap-1.5',
+              'flex w-full cursor-pointer items-center gap-2',
               'text-left text-sm transition-colors',
             )}
           >
