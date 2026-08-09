@@ -302,6 +302,7 @@ flow(
   'CONN-15',
   {
     domain: 'connectors',
+    serial: true,
     routes: [
       'PATCH /v1/projects/:projectId/features',
       'GET /v1/connectors/projects/:projectId/discover/connectors',

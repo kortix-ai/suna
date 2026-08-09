@@ -72,4 +72,13 @@ describe('local test runner contract', () => {
     expect(agentPackage.scripts.test).toBe('bun test --parallel=4');
     expect(dbPackage.scripts.test).toBe('bun test --parallel=2 --max-concurrency 2');
   });
+
+  it('keeps connector discovery convergence out of the parallel API lane', () => {
+    const source = readFileSync(resolve(root, 'tests/src/flows/connectors.flow.ts'), 'utf8');
+    const start = source.indexOf("'CONN-15'");
+    const end = source.indexOf("'CONN-12'", start);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(source.slice(start, end)).toContain('serial: true');
+  });
 });

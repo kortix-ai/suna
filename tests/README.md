@@ -50,18 +50,22 @@ working stateful-restore path. The worker remains disposable. Both the runner
 and workflow cleanup delete it after every result.
 
 The template name includes the `pnpm-lock.yaml` hash. Platinum first builds a
-base OCI template with pinned Node, Bun, pnpm, Docker, Chromium, linked
+base OCI template with pinned Node, Bun, pnpm, Docker, Chromium, `psql`, linked
 `node_modules`, and a warm `/workspace/suna` checkout. Platinum then derives a
 stateful template from that base. The stateful capture boots nested Docker,
-pulls the exact Supabase images, removes the temporary Supabase database, and
-captures the prepared disk. A lockfile change creates one new pair. Other
-commits reuse it.
+pulls the exact Supabase images plus `postgres:16-alpine` for database-package
+integration tests, removes the temporary Supabase database, and captures the
+prepared disk. A lockfile change creates one new pair. Other commits reuse it.
 
 The worker fetches the requested ref into that warm checkout. It force-checks
 out the exact SHA and runs `pnpm install --offline --frozen-lockfile`. It starts
 dockerd against the captured image store. The root runner creates fresh
 Supabase containers, applies current migrations, and owns the API, gateway, and
 web processes. Source changes do not require a template rebuild.
+
+The worker fixes `HOME=/root` before the offline install. This keeps pnpm on the
+same store path that the base template used. It prevents pnpm from discarding
+the baked `node_modules` trees after a stateful restore.
 
 The base template requests Platinum's `kernel_modules: container` profile.
 The capture and worker load those modules before they start dockerd. This
