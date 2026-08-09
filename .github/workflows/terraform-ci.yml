@@ -40,6 +40,8 @@ jobs:
         run: terraform fmt -check -recursive infra/terraform
       - name: nacl auditor unit tests
         run: python3 infra/terraform/scripts/test_audit_nacl_admin_ports.py
+      - name: MFA enforcement policy regression tests
+        run: python3 infra/terraform/scripts/test_mfa_enforcement_policy.py
       - name: terraform validate (every root)
         run: |
           set -euo pipefail

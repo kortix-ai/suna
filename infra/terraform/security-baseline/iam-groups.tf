@@ -70,8 +70,8 @@ resource "aws_iam_policy" "mfa_self_manage" {
 # the resource-level failure flagged.
 #
 # Standard AWS MFA-enforcement pattern: Effect = Deny, NotAction = the MFA +
-# password + GetSessionToken self-enrollment surface (so a user without MFA
-# can still enroll their first device and mint an MFA'd session), Condition
+# password + GetSessionToken first-enrollment surface (so a user without MFA
+# can enroll their first device and mint an MFA-authenticated session), Condition
 # BoolIfExists { aws:MultiFactorAuthPresent = false }. BoolIfExists (not Bool)
 # is deliberate: an unauthenticated STS GetSessionToken call carries no MFA
 # context at all, and BoolIfExists treats a missing key the same as false, so
@@ -101,9 +101,7 @@ resource "aws_iam_policy" "mfa_required" {
         Effect = "Deny"
         NotAction = [
           "iam:CreateVirtualMFADevice",
-          "iam:DeleteVirtualMFADevice",
           "iam:EnableMFADevice",
-          "iam:DeactivateMFADevice",
           "iam:ResyncMFADevice",
           "iam:ListMFADevices",
           "iam:ListVirtualMFADevices",
@@ -203,8 +201,8 @@ locals {
       # Self-service MFA enrollment (Allow side) + MFA enforcement (Deny side).
       # mfa_self_manage lets a member enroll their own MFA device + manage their
       # login profile; mfa_required DENIES every other action until they do
-      # (DCF-67). Together: a user with no MFA can do exactly one thing — enroll
-      # an MFA device — and once enrolled, the deny lifts for MFA'd sessions.
+      # (DCF-67). Device removal also requires an MFA-authenticated session, so
+      # password-only sessions cannot replace an enrolled factor.
       policies = [
         aws_iam_policy.mfa_self_manage.arn,
         aws_iam_policy.mfa_required.arn
