@@ -114,8 +114,10 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
  * Customize overlay; `tokens` -> `api-keys` and `transactions` -> `usage`
  * come from the old account settings surface (`SettingsTabId` in
  * `lib/menu-registry.ts`); `git` -> `repositories` is a rename within
- * Customize; every `llm-*` sub-section collapses into the single `models`
- * tab.
+ * Customize; `upgrade` (singular, the old Customize id) -> `upgrades`
+ * (plural, the new tab id) so a bookmarked `/customize/upgrade` still
+ * resolves instead of silently 404ing; every `llm-*` sub-section collapses
+ * into the single `models` tab.
  */
 const RENAMED_TABS: Record<string, SettingsTab> = {
   commands: 'instructions',
@@ -123,6 +125,7 @@ const RENAMED_TABS: Record<string, SettingsTab> = {
   git: 'repositories',
   tokens: 'api-keys',
   transactions: 'usage',
+  upgrade: 'upgrades',
   'llm-management': 'models',
   'llm-overview': 'models',
   'llm-providers': 'models',

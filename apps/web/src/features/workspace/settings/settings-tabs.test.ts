@@ -55,6 +55,10 @@ describe('legacySectionRedirect', () => {
     expect(legacySectionRedirect('p1', 'git')).toBe('/projects/p1/settings/repositories');
   });
 
+  test('the old singular upgrade folds into the new plural upgrades tab', () => {
+    expect(legacySectionRedirect('p1', 'upgrade')).toBe('/projects/p1/settings/upgrades');
+  });
+
   test('graduated capability pages still leave the overlay', () => {
     expect(legacySectionRedirect('p1', 'skills')).toBe('/projects/p1/skills');
     expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/agent');
