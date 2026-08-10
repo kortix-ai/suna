@@ -102,6 +102,34 @@ jobs:
             echo "No RELEASE_SOURCE_SHA (legacy release) — will use legacy dev fallback images"
           fi
 
+  # ── Apply production Terraform before any image rolls ───────────────────────
+  # Scope: environments/prod-web only. environments/prod reads an
+  # operator-local, gitignored terraform.tfvars (it pins api_image to the
+  # release tag and sets api_environment), so CI would plan against inputs no
+  # operator ever used. That root stays manual until those inputs move into
+  # variables this workflow supplies — see terraform-apply.yml.
+  #
+  # Skipped while TF_APPLY_ROLE_ARN_PROD is unset, so merging this before the
+  # IAM role exists cannot break a release. Once set, a failed apply blocks the
+  # release: shipping an image onto infrastructure that failed to converge is
+  # exactly the state this pipeline exists to prevent.
+  terraform-prod:
+    name: Apply prod Terraform
+    needs: version
+    if: vars.TF_APPLY_ROLE_ARN_PROD != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/prod-web
+      aws_region: eu-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_PROD }}
+      github_environment: prod
+      trusted_branch: prod
+      cloudflare: true
+    secrets: inherit
+
   # ── Raise the "release in progress" banner ──────────────────────────────────
   # Show users a CRITICAL banner for the duration of the rollout (non-dismissible
   # for members; admins can still dismiss). Best-effort and non-blocking: it never
@@ -812,7 +840,16 @@ jobs:
   # active backend serves old code.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
-    needs: [version, retag-images, verify-image-commits, migrate-db]
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod]
+    # `always()` is required because terraform-prod is SKIPPED while
+    # TF_APPLY_ROLE_ARN_PROD is unset. Every other upstream stays required, so
+    # this remains the hard gate described above.
+    if: >-
+      ${{ always()
+        && needs.retag-images.result == 'success'
+        && needs.verify-image-commits.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → ECS deploy role
