@@ -5,6 +5,7 @@ import { PROVIDER_NOTES } from './provider-branding';
 import {
   FIRST_CLASS_PROVIDER_IDS,
   ProviderConnectView,
+  providerKeyFieldId,
   type ProviderConnectRow,
   type ProviderConnectViewProps,
 } from './provider-connect';
@@ -22,7 +23,7 @@ function row(overrides: Partial<ProviderConnectRow> & { id: string }): ProviderC
   return {
     label: overrides.id,
     note: PROVIDER_NOTES[overrides.id],
-    envVars: [`${overrides.id.toUpperCase()}_API_KEY`],
+    envVars: [`${overrides.id.toUpperCase().replace(/-/g, '_')}_API_KEY`],
     helpUrl: null,
     connected: false,
     modelCount: 0,
@@ -153,6 +154,122 @@ describe('ProviderConnectView — More providers (section 3)', () => {
     const disclosure = out.indexOf('data-more-providers');
     expect(lastFirstClass).toBeGreaterThan(-1);
     expect(disclosure).toBeGreaterThan(lastFirstClass);
+  });
+});
+
+describe('ProviderConnectView — the long-tail detail path', () => {
+  /**
+   * `ProviderDetail` (the browse-before-you-connect model list) was re-homed
+   * here out of the deleted `catalog-tab.tsx`. It is reachable only through a
+   * three-condition gate — `onOpenDetail && row.modelCount > 0`, the disclosure
+   * open, and `detailProviderId` set — so without these tests the whole
+   * capability could be deleted and every other test would still pass. That is
+   * exactly the hole six orphans have shipped through in this effort.
+   */
+  const GROQ = row({ id: 'groq', label: 'Groq', modelCount: 12 });
+
+  test('a long-tail row with models offers the detail affordance', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView
+        {...props({ more: [GROQ], moreOpen: true, onOpenDetail: () => {} })}
+      />,
+    );
+    expect(out).toContain('12 models');
+  });
+
+  test('no affordance when the row declares no models', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView
+        {...props({
+          more: [row({ id: 'groq', label: 'Groq', modelCount: 0 })],
+          moreOpen: true,
+          onOpenDetail: () => {},
+        })}
+      />,
+    );
+    expect(out).not.toContain('0 model');
+  });
+
+  test('no affordance when the host supplies no onOpenDetail', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({ more: [GROQ], moreOpen: true })} />,
+    );
+    expect(out).not.toContain('12 models');
+  });
+
+  test('the detail REPLACES the search and the row list inside the disclosure', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView
+        {...props({
+          more: [GROQ],
+          moreOpen: true,
+          onOpenDetail: () => {},
+          detailProviderId: 'groq',
+          detailSlot: <div>provider-detail-marker</div>,
+        })}
+      />,
+    );
+    expect(out).toContain('provider-detail-marker');
+    // The detail owns the whole disclosure body while it is open.
+    expect(out).not.toContain('data-provider-search');
+    expect(out).not.toContain('data-provider-row="groq"');
+    // Still inside the disclosure, never a dialog.
+    expect(out.indexOf('provider-detail-marker')).toBeGreaterThan(
+      out.indexOf('data-more-providers-trigger'),
+    );
+    expect(out).not.toContain('role="dialog"');
+  });
+
+  test('the detail never opens over the first-class rows', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView
+        {...props({
+          more: [GROQ],
+          moreOpen: true,
+          detailProviderId: 'groq',
+          detailSlot: <div>provider-detail-marker</div>,
+        })}
+      />,
+    );
+    for (const id of FIRST_CLASS_PROVIDER_IDS) {
+      expect(out).toContain(`data-provider-row="${id}"`);
+    }
+  });
+
+  test('providerKeyFieldId is the one id the row and the detail both use', () => {
+    // `ProviderDetail`'s Connect closes the detail and focuses the row's field
+    // by this id. If the row stopped using it the focus would silently no-op.
+    expect(providerKeyFieldId('anthropic', 'ANTHROPIC_API_KEY')).toBe(
+      'provider-connect-anthropic-ANTHROPIC_API_KEY',
+    );
+    const out = renderToStaticMarkup(
+      <ProviderConnectView
+        {...props({
+          firstClass: [row({ id: 'anthropic', label: 'Anthropic' })],
+        })}
+      />,
+    );
+    expect(out).toContain(`id="${providerKeyFieldId('anthropic', 'ANTHROPIC_API_KEY')}"`);
+    expect(out).toContain(`for="${providerKeyFieldId('anthropic', 'ANTHROPIC_API_KEY')}"`);
+  });
+});
+
+describe('ProviderConnectView — subtitles', () => {
+  /**
+   * `PROVIDER_NOTES` has 7 keys. The long tail is ~40 providers. Rendering
+   * `PROVIDER_NOTES[id]` alone left every one of them with no subtitle, which
+   * `catalog-tab.tsx` did not do — it showed `provider.hint` on every row.
+   */
+  test('a long-tail row renders the subtitle it was given', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView
+        {...props({
+          more: [row({ id: 'groq', label: 'Groq', note: 'Llama 3.3 70B, +8 more' })],
+          moreOpen: true,
+        })}
+      />,
+    );
+    expect(out).toContain('Llama 3.3 70B, +8 more');
   });
 });
 

@@ -55,8 +55,10 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Field, FieldLabel } from '@/components/ui/field';
 import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
 import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
@@ -78,12 +80,14 @@ import {
   providerDisconnectPlan,
 } from '@/features/workspace/customize/sections/llm-provider/utils';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
+import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { cn } from '@/lib/utils';
 import { deleteProjectProviderOAuth, deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk';
 import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
+  KeyIcon as Key,
   MagnifyingGlassIcon as Search,
   PlusIcon as Plus,
   PlugsIcon as Unplug,
@@ -92,18 +96,33 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 /**
  * The three providers JAY-510 makes first-class: "Anthropic (Claude), OpenAI
- * (ChatGPT), Google Gemini". Deliberately NOT `POPULAR_PROVIDER_IDS`, which is
- * a six-member SORT key for the long tail (`provider-branding.tsx:10-17`) and
+ * (ChatGPT), Google Gemini". Deliberately NOT `POPULAR_PROVIDER_IDS`
+ * (`provider-branding.tsx:10-17`), which is a different, six-member list that
  * also carries `github-copilot`, `openrouter` and `vercel`. Those three stay in
- * More providers, ranked first by that same sort key.
+ * More providers, in catalog order.
  */
 export const FIRST_CLASS_PROVIDER_IDS = ['anthropic', 'openai', 'google'] as const;
+
+/**
+ * The DOM id of one credential input. Defined once because two places must
+ * agree on it: the row that renders the field, and `ProviderDetail`'s Connect
+ * button, which closes the detail and focuses that field.
+ */
+export function providerKeyFieldId(providerId: string, envVar: string): string {
+  return `provider-connect-${providerId}-${envVar}`;
+}
 
 /** Everything one provider row needs. Plain data — the view holds no hooks. */
 export interface ProviderConnectRow {
   id: string;
   label: string;
-  /** `PROVIDER_NOTES[id]`, rendered verbatim. Undefined for the long tail. */
+  /**
+   * The row subtitle. `PROVIDER_NOTES[id]` verbatim where that 7-key map has an
+   * entry; otherwise the catalog's own derived `hint`. Without the fallback
+   * every long-tail provider (groq, xai, deepseek, mistral, bedrock, …) would
+   * render with no subtitle at all — a content regression against
+   * `catalog-tab.tsx`, which showed `{provider.hint}` on every row.
+   */
   note?: string;
   /** Credential fields the row collects. One for all three first-class ids. */
   envVars: string[];
@@ -224,18 +243,24 @@ function ProviderRow({
         >
           {row.envVars.map((envVar) => (
             <Field key={envVar} className="min-w-0 flex-1">
-              <FieldLabel htmlFor={`provider-connect-${row.id}-${envVar}`} className="sr-only">
+              {/* The label is the ONLY accessible name — an `aria-label` on the
+                  input would override it and leave this element inert. */}
+              <FieldLabel htmlFor={providerKeyFieldId(row.id, envVar)} className="sr-only">
                 {row.label} {prettyFieldLabel(envVar)}
               </FieldLabel>
-              <Input
-                id={`provider-connect-${row.id}-${envVar}`}
-                type="text"
-                autoComplete="off"
-                aria-label={`${row.label} ${prettyFieldLabel(envVar)}`}
-                placeholder={row.placeholders?.[envVar] ?? envVar}
-                value={values[`${row.id}:${envVar}`] ?? ''}
-                onChange={(event) => onValueChange(row.id, envVar, event.target.value)}
-              />
+              <InputGroup>
+                <InputGroupAddon align="inline-start">
+                  <Key className="size-3.5 shrink-0" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  id={providerKeyFieldId(row.id, envVar)}
+                  type="text"
+                  autoComplete="off"
+                  placeholder={row.placeholders?.[envVar] ?? envVar}
+                  value={values[`${row.id}:${envVar}`] ?? ''}
+                  onChange={(event) => onValueChange(row.id, envVar, event.target.value)}
+                />
+              </InputGroup>
             </Field>
           ))}
           <Button type="submit" size="sm" disabled={pending || !filled} className="shrink-0">
@@ -408,10 +433,14 @@ function ConnectedProviderList({
   projectId,
   connectedProviders,
   canWrite,
+  onDisconnected,
 }: {
   projectId: string;
   connectedProviders: LlmProviderEntry[];
   canWrite: boolean;
+  /** Settles any pending connect for the same provider — see the derivation of
+   *  `pendingProviderId` in `ProviderConnect`. */
+  onDisconnected?: (providerId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -428,6 +457,7 @@ function ConnectedProviderList({
     onSuccess: (provider) => {
       successToast(`${provider.label} disconnected`);
       setConfirmId(null);
+      onDisconnected?.(provider.id);
       queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId);
     },
@@ -576,7 +606,7 @@ function toRow(entry: LlmProviderEntry, connectedIds: Set<string>): ProviderConn
   return {
     id: entry.id,
     label: entry.label,
-    note: PROVIDER_NOTES[entry.id],
+    note: PROVIDER_NOTES[entry.id] ?? entry.hint,
     envVars: entry.envVars,
     helpUrl: entry.helpUrl,
     connected: connectedIds.has(entry.id),
@@ -608,7 +638,11 @@ export function ProviderConnect({
   const [values, setValues] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
-  const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
+  // The connect we are waiting on. The VISIBLE pending flag is DERIVED from it
+  // below rather than cleared from inside an effect — that synchronous
+  // `setState` in an effect body is what `react-hooks/set-state-in-effect`
+  // flags, and it cost an extra render too.
+  const [pendingRequest, setPendingRequest] = useState<string | null>(null);
   const [detailProviderId, setDetailProviderId] = useState<string | null>(null);
   const detailEntry = detailProviderId ? (LLM_PROVIDER_BY_ID.get(detailProviderId) ?? null) : null;
 
@@ -616,6 +650,12 @@ export function ProviderConnect({
     () => new Set(connectedProviders.map((provider) => provider.id)),
     [connectedProviders],
   );
+
+  // Pending ends the moment the provider shows up in the connected list.
+  // `pendingRequest` is additionally cleared on a disconnect, so connecting X
+  // and later disconnecting X cannot revive a stale spinner on that row.
+  const pendingProviderId =
+    pendingRequest && !connectedIds.has(pendingRequest) ? pendingRequest : null;
 
   const firstClass = useMemo(
     () =>
@@ -667,7 +707,7 @@ export function ProviderConnect({
         for (const envVar of entry.envVars) delete next[`${entry.id}:${envVar}`];
         return next;
       });
-      setPendingProviderId(entry.id);
+      setPendingRequest(entry.id);
       queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
       refreshProjectProviderState(queryClient, projectId, { expectProviderId: entry.id });
     },
@@ -675,22 +715,19 @@ export function ProviderConnect({
       errorToast(err instanceof Error ? err.message : 'Failed to save credentials'),
   });
 
-  // Clear the row's pending state once the provider actually shows up as
-  // connected, and warn if the refresh never lands. Same contract as the
-  // deleted modal's `pendingProviderId` effect (`llm-provider-modal.tsx:90-105`),
-  // minus the full-surface takeover it used to render.
+  // Warn if the refresh never lands. Same contract as the deleted modal's
+  // `pendingProviderId` effect (`llm-provider-modal.tsx:90-105`), minus the
+  // full-surface takeover it used to render. No synchronous `setState` in the
+  // effect body — the success path is the derivation above; this only writes
+  // from inside the timeout callback.
   useEffect(() => {
     if (!pendingProviderId) return;
-    if (connectedIds.has(pendingProviderId)) {
-      setPendingProviderId(null);
-      return;
-    }
     const timeout = window.setTimeout(() => {
-      setPendingProviderId(null);
+      setPendingRequest(null);
       warningToast('The key was saved, but the connected provider list did not refresh.');
     }, CONNECTION_REFRESH_TIMEOUT_MS);
     return () => window.clearTimeout(timeout);
-  }, [connectedIds, pendingProviderId]);
+  }, [pendingProviderId]);
 
   const handleValueChange = useCallback((providerId: string, envVar: string, value: string) => {
     setValues((current) => ({ ...current, [`${providerId}:${envVar}`]: value }));
@@ -734,6 +771,7 @@ export function ProviderConnect({
             projectId={projectId}
             connectedProviders={connectedProviders}
             canWrite={canWrite}
+            onDisconnected={() => setPendingRequest(null)}
           />
         ) : undefined
       }
@@ -744,10 +782,7 @@ export function ProviderConnect({
               // The ONLY live provider subscription flow in the repo. Anthropic
               // has no OAuth anywhere — see this file's header comment.
               openai: (
-                <ChatGptSubscriptionConnect
-                  projectId={projectId}
-                  onConnected={setPendingProviderId}
-                />
+                <ChatGptSubscriptionConnect projectId={projectId} onConnected={setPendingRequest} />
               ),
             }
           : undefined
@@ -761,7 +796,21 @@ export function ProviderConnect({
             isConnected={connectedIds.has(detailEntry.id)}
             canWrite={canWrite}
             onBack={() => setDetailProviderId(null)}
-            onConnect={() => setDetailProviderId(null)}
+            // The credential field lives on the row BEHIND this detail, so
+            // Connect closes the detail and puts the caret in it. A button
+            // labelled "Connect" that only closes a panel is worse than none.
+            // `focusWithoutScroll` per repo convention — the field sits inside
+            // the panel's overflow-hidden scroller.
+            onConnect={() => {
+              const envVar = detailEntry.envVars[0];
+              setDetailProviderId(null);
+              if (!envVar) return;
+              requestAnimationFrame(() =>
+                focusWithoutScroll(
+                  document.getElementById(providerKeyFieldId(detailEntry.id, envVar)),
+                ),
+              );
+            }}
           />
         ) : undefined
       }

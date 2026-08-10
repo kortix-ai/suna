@@ -24,9 +24,8 @@
 import { Modal, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProviderConnect } from '@/features/providers/provider-connect';
-import { useEffect, useState } from 'react';
 import { ModelsTab } from './models-tab';
-import type { ActiveTab, ProjectProviderModalProps } from './types';
+import type { ProjectProviderModalProps } from './types';
 import { pickInitialTab } from './utils';
 
 export type { ProjectProviderModalProps } from './types';
@@ -38,12 +37,6 @@ export function ProjectProviderModal({
   defaultTab,
   canWrite = false,
 }: ProjectProviderModalProps) {
-  const [activeTab, setActiveTab] = useState<ActiveTab>(() => pickInitialTab(defaultTab));
-
-  useEffect(() => {
-    if (open) setActiveTab(pickInitialTab(defaultTab));
-  }, [open, defaultTab]);
-
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="flex h-[min(680px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-[600px] flex-col gap-0 overflow-hidden p-0 lg:max-w-[600px]">
@@ -53,9 +46,17 @@ export function ProjectProviderModal({
             Connect providers. Keys are stored per project and shared with everyone on it.
           </ModalDescription>
         </ModalHeader>
+        {/* UNCONTROLLED, keyed on the caller's request. The pre-image held the
+            active tab in state and re-seeded it from an effect on every open —
+            a synchronous `setState` in an effect body (React Compiler's
+            `react-hooks/set-state-in-effect`) plus an extra render. Remounting
+            on `${open}-${defaultTab}` gives the identical behaviour with no
+            state and no effect: reopening resets to the requested tab, and a
+            switch the user makes persists for as long as the modal stays
+            open. */}
         <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as ActiveTab)}
+          key={`${open}-${defaultTab ?? ''}`}
+          defaultValue={pickInitialTab(defaultTab)}
           className="flex min-h-0 flex-1 flex-col gap-0"
         >
           <div className="flex items-center gap-3 px-5 pb-3">
