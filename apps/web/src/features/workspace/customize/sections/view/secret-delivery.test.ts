@@ -7,8 +7,15 @@ import {
   canSaveSecretDelivery,
   connectorBindingChanges,
   connectorBindingOptions,
+  missingAgentGrantNotice,
+  networkBoundaryAvailability,
+  networkBoundaryBlockedReason,
+  readSecretDeliverySync,
+  secretDeliveryBlockedReason,
   secretDeliveryOptions,
   secretDeliveryPresentation,
+  secretDeliverySyncWarning,
+  shouldWarnMissingAgentGrant,
 } from './secret-delivery';
 
 describe('brokerConsumerForSecret', () => {
@@ -70,24 +77,214 @@ describe('secretDeliveryPresentation', () => {
   });
 });
 
+describe('networkBoundaryAvailability', () => {
+  test('requires the workspace itself to run on Platinum', () => {
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'platinum',
+      }),
+    ).toBe('available');
+  });
+
+  test('reports a platform-capable but unpinned workspace separately', () => {
+    // The live dev state: Platinum is offered, the workspace runs on Daytona, so
+    // no header is injected.
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: null,
+      }),
+    ).toBe('workspace_not_pinned');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'daytona',
+      }),
+    ).toBe('workspace_not_pinned');
+  });
+
+  test('reports a deployment without Platinum as unsupported', () => {
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona'],
+        default_sandbox_provider: 'daytona',
+      }),
+    ).toBe('unsupported');
+    expect(networkBoundaryAvailability(undefined)).toBe('unsupported');
+    expect(networkBoundaryAvailability(null)).toBe('unsupported');
+  });
+});
+
+describe('networkBoundaryBlockedReason', () => {
+  test('names the exact fix for an unpinned workspace', () => {
+    expect(networkBoundaryBlockedReason('workspace_not_pinned')).toBe(
+      'This workspace does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
+    );
+  });
+
+  test('keeps the deployment wording, and says nothing when delivery works', () => {
+    expect(networkBoundaryBlockedReason('unsupported')).toBe('Not available in this deployment.');
+    expect(networkBoundaryBlockedReason('available')).toBeNull();
+  });
+});
+
 describe('secretDeliveryOptions', () => {
-  test('offers the HTTPS broker and enables network delivery when the deployment supports it', () => {
-    const options = secretDeliveryOptions('runtime', 'available', true);
+  test('offers the HTTPS broker and enables network delivery when the workspace runs on Platinum', () => {
+    const options = secretDeliveryOptions('runtime', 'available', 'available');
     expect(options.map(({ strategy, disabled }) => ({ strategy, disabled }))).toEqual([
       { strategy: 'runtime', disabled: false },
       { strategy: 'broker', disabled: false },
       { strategy: 'egress', disabled: false },
       { strategy: 'denied', disabled: false },
     ]);
+    expect(options[2]?.disabledReason).toBeNull();
   });
 
   test('keeps network delivery disabled when Platinum is unavailable', () => {
-    expect(secretDeliveryOptions('broker', 'available', false)[1]?.disabled).toBe(false);
-    expect(secretDeliveryOptions('egress', 'available', false)[2]?.disabled).toBe(true);
+    expect(secretDeliveryOptions('broker', 'available', 'unsupported')[1]?.disabled).toBe(false);
+    expect(secretDeliveryOptions('egress', 'available', 'unsupported')[2]).toMatchObject({
+      disabled: true,
+      disabledReason: 'Not available in this deployment.',
+    });
+  });
+
+  test('disables network delivery on an unpinned workspace and states the fix', () => {
+    expect(secretDeliveryOptions('runtime', 'available', 'workspace_not_pinned')[2]).toMatchObject({
+      disabled: true,
+      disabledReason:
+        'This workspace does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
+    });
   });
 
   test('disables a selected non-runtime policy when the server marks it unavailable', () => {
-    expect(secretDeliveryOptions('broker', 'unavailable', true)[1]?.disabled).toBe(true);
+    expect(secretDeliveryOptions('broker', 'unavailable', 'available')[1]).toMatchObject({
+      disabled: true,
+      disabledReason: 'Not available in this deployment.',
+    });
+  });
+});
+
+describe('secretDeliveryBlockedReason', () => {
+  test('reports the blocked verdict only on the exact reason', () => {
+    expect(
+      secretDeliveryBlockedReason({
+        identifier: 'BOUNDARY_TEST',
+        delivery_blocked_reason: 'no_agent_grant',
+      }),
+    ).toBe('no_agent_grant');
+  });
+
+  test('stays silent on null, absent, and unrecognized values', () => {
+    // Tri-state: null covers "granted", "not applicable" AND "we could not
+    // tell" — warning on uncertainty is worse than not warning.
+    expect(
+      secretDeliveryBlockedReason({ identifier: 'BOUNDARY_TEST', delivery_blocked_reason: null }),
+    ).toBeNull();
+    expect(secretDeliveryBlockedReason({ identifier: 'BOUNDARY_TEST' })).toBeNull();
+    expect(
+      secretDeliveryBlockedReason({
+        identifier: 'BOUNDARY_TEST',
+        delivery_blocked_reason: 'manifest_unreadable',
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('shouldWarnMissingAgentGrant', () => {
+  test('warns for the delivery modes that need a named agent grant', () => {
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'egress')).toBe(true);
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'broker')).toBe(true);
+  });
+
+  test('stays silent for runtime, disabled, and an unblocked secret', () => {
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'runtime')).toBe(false);
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'denied')).toBe(false);
+    expect(shouldWarnMissingAgentGrant(null, 'egress')).toBe(false);
+  });
+});
+
+describe('missingAgentGrantNotice', () => {
+  test('names the identifier, the manifest fix, and rejects the "all" shorthand', () => {
+    const notice = missingAgentGrantNotice('BOUNDARY_TEST');
+    expect(notice.title).toBe('No agent can receive this secret');
+    expect(notice.body).toContain('BOUNDARY_TEST');
+    expect(notice.body).toContain('kortix.yaml');
+    expect(notice.body).toContain('"secrets: all" does not grant this delivery mode');
+    expect(notice.manifest).toBe(
+      'kortix_version: 2\nagents:\n  my-agent:\n    secrets: [BOUNDARY_TEST]',
+    );
+  });
+});
+
+describe('secret delivery sync', () => {
+  const sync = (overrides: Record<string, unknown> = {}) => ({
+    delivery_sync: {
+      ok: false,
+      targeted: 2,
+      synced: 1,
+      failed: 1,
+      failures: [{ session_id: 'ses_1', sandbox_id: 'sbx_1', reason: 'sandbox unreachable: 502' }],
+      ...overrides,
+    },
+  });
+
+  test('reads the block a secret write returns', () => {
+    expect(readSecretDeliverySync(sync())).toEqual({
+      ok: false,
+      targeted: 2,
+      synced: 1,
+      failed: 1,
+      failures: [{ session_id: 'ses_1', sandbox_id: 'sbx_1', reason: 'sandbox unreachable: 502' }],
+    });
+  });
+
+  test('reports nothing for an absent, null, or unrecognized block', () => {
+    expect(readSecretDeliverySync({ identifier: 'BOUNDARY_TEST' })).toBeNull();
+    expect(readSecretDeliverySync({ delivery_sync: null })).toBeNull();
+    expect(readSecretDeliverySync({ delivery_sync: { targeted: 2 } })).toBeNull();
+    expect(readSecretDeliverySync(null)).toBeNull();
+  });
+
+  test('warns with the session count and the first failure reason verbatim', () => {
+    expect(secretDeliverySyncWarning('BOUNDARY_TEST', sync())).toEqual({
+      message: 'Saved BOUNDARY_TEST, but it is not applied to 1 running session',
+      description: 'sandbox unreachable: 502',
+    });
+    expect(
+      secretDeliverySyncWarning(
+        'BOUNDARY_TEST',
+        sync({
+          failed: 2,
+          failures: [
+            { session_id: 'ses_1', sandbox_id: null, reason: 'first reason' },
+            { session_id: 'ses_2', sandbox_id: 'sbx_2', reason: 'second reason' },
+          ],
+        }),
+      ),
+    ).toEqual({
+      message: 'Saved BOUNDARY_TEST, but it is not applied to 2 running sessions',
+      description: 'first reason',
+    });
+  });
+
+  test('falls back to the targeted count and a plain reason when the block is thin', () => {
+    expect(secretDeliverySyncWarning('BOUNDARY_TEST', sync({ failed: 0, failures: [] }))).toEqual({
+      message: 'Saved BOUNDARY_TEST, but it is not applied to 2 running sessions',
+      description: 'No failure reason was reported.',
+    });
+    expect(
+      secretDeliverySyncWarning('BOUNDARY_TEST', sync({ targeted: 0, failed: 0, failures: [] })),
+    ).toEqual({
+      message: 'Saved BOUNDARY_TEST, but it is not applied to the running sessions',
+      description: 'No failure reason was reported.',
+    });
+  });
+
+  test('stays silent on a successful sync and on a response without the block', () => {
+    expect(secretDeliverySyncWarning('BOUNDARY_TEST', sync({ ok: true, failed: 0 }))).toBeNull();
+    expect(secretDeliverySyncWarning('BOUNDARY_TEST', { delivery_sync: null })).toBeNull();
+    expect(secretDeliverySyncWarning('BOUNDARY_TEST', { identifier: 'BOUNDARY_TEST' })).toBeNull();
   });
 });
 

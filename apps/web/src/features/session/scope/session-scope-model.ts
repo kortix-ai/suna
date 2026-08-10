@@ -1,9 +1,9 @@
 import type {
-  WorkspaceAdminConnector,
   Connection,
-  WorkspaceSecret,
   SessionScope,
   SessionScopeInput,
+  WorkspaceAdminConnector,
+  WorkspaceSecret,
 } from '@kortix/sdk';
 
 export interface SessionScopeDraft {
@@ -94,10 +94,28 @@ function cloneBindings(
   );
 }
 
-function grantIncludes(grant: SessionScopeGrant, value: string): boolean {
+/**
+ * Connector grant membership. Exact match, on purpose: the server compares
+ * canonical slugs with a plain `includes` (`agentMayUseConnector`), so a looser
+ * match here would offer a connector the call gate then rejects.
+ */
+function connectorGrantIncludes(grant: SessionScopeGrant, slug: string): boolean {
   if (grant === 'none') return false;
   if (grant === 'all' || grant == null) return true;
-  return grant.includes(value);
+  return grant.includes(slug);
+}
+
+/**
+ * Secret grant membership. Case-INSENSITIVE, matching the server
+ * (`agentMayUseEnv`, and `listAdmits` in the delivery rule). The grant is the
+ * hand-written `secrets:` list from kortix.yaml, so its case need not match the
+ * stored identifier. An exact match here hid secrets the server does deliver.
+ */
+function secretGrantIncludes(grant: SessionScopeGrant, identifier: string): boolean {
+  if (grant === 'none') return false;
+  if (grant === 'all' || grant == null) return true;
+  const target = identifier.toUpperCase();
+  return grant.some((entry) => entry.toUpperCase() === target);
 }
 
 export function createSessionScopeDraft(
@@ -197,7 +215,7 @@ export function buildSessionScopeSelectionCatalog(
             .filter(
               (secret) =>
                 secret.effective_source !== 'none' &&
-                grantIncludes(input.grants?.secrets, secret.identifier),
+                secretGrantIncludes(input.grants?.secrets, secret.identifier),
             )
             .map((secret) => ({
               identifier: secret.identifier,
@@ -222,7 +240,7 @@ export function buildSessionScopeSelectionCatalog(
         .filter(
           (connector) =>
             connector.status !== 'disabled' &&
-            grantIncludes(input.grants?.connectors, connector.slug),
+            connectorGrantIncludes(input.grants?.connectors, connector.slug),
         )
         .map((connector) => {
           const ownerType = connector.authorizationStrategy === 'user' ? 'member' : 'workspace';

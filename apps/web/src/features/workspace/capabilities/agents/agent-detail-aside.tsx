@@ -9,8 +9,8 @@
  * modal — it calls `onEditConfig`, and the page swaps the editor into the
  * detail modal's source pane (`paneOverride`).
  *
- * `AgentConfigEditor` is the real editor for a v2 (kortix.yaml) project; the
- * `fallback` below is what a v1 project still gets — the legacy model + scope
+ * `AgentConfigEditor` is the real editor for a v2 (kortix.yaml) workspace; the
+ * `fallback` below is what a v1 workspace still gets — the legacy model + scope
  * cards. We degrade, never blank the pane.
  */
 
@@ -30,8 +30,8 @@ import {
   listWorkspaceAccess,
   listWorkspaceResourceGrants,
   listWorkspaceSecrets,
-  type WorkspaceConfigSummary,
   setAgentScope,
+  type WorkspaceConfigSummary,
 } from '@kortix/sdk';
 import { contract, qk, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import { CheckIcon as Check, UserIcon as User, UsersIcon as Users } from '@phosphor-icons/react';
@@ -43,7 +43,7 @@ type Agent = WorkspaceConfigSummary['agents'][number];
 /**
  * The whole aside, for one agent. `config` supplies the workspace's declared
  * skills for the governance picker — `toArray` because the API can return
- * `skills` as undefined for a repo-less / capability-gated project, and
+ * `skills` as undefined for a repo-less / capability-gated workspace, and
  * `.map` on that throws (the chunk-22256 Sentry cluster).
  */
 export function AgentDetailAside({
@@ -136,7 +136,7 @@ function AgentAssignments({ workspaceId, agentName }: { workspaceId: string; age
 /**
  * Which model this agent runs on. Sets the per-agent gateway default (scope=agent,
  * DB-backed, instant — no git commit). When unset, the agent falls back to the
- * project → account → platform default. Manager-gated; everyone else sees the
+ * workspace → account → platform default. Manager-gated; everyone else sees the
  * read-only resolved model.
  */
 function AgentModel({ workspaceId, agentName }: { workspaceId: string; agentName: string }) {
@@ -293,10 +293,10 @@ function AgentScopeCard({
     ...contract('config'),
   });
 
-  const secretOptions = useMemo(() => {
-    const names = new Set((secretsQuery.data?.items ?? []).map((s) => s.name));
-    return [...names].sort().map((name) => ({ id: name, label: name }));
-  }, [secretsQuery.data]);
+  const secretOptions = useMemo(
+    () => buildSecretScopeOptions(secretsQuery.data?.items ?? []),
+    [secretsQuery.data],
+  );
   const connectorOptions = useMemo(
     () =>
       (connectorsQuery.data?.connectors ?? [])
@@ -343,6 +343,7 @@ function AgentScopeCard({
         emptyLabel="No secrets in this workspace yet."
         value={env}
         options={secretOptions}
+        match="case-insensitive"
         onChange={setEnv}
       />
       <ScopeEditor
@@ -383,6 +384,103 @@ function AgentScopeCard({
   );
 }
 
+/** One row of a `ScopeEditor` checklist. `id` is the exact string written into
+ *  the manifest grant; `hint` is context that helps a human recognise the row
+ *  and is never part of the grant. */
+export interface ScopeOption {
+  id: string;
+  label: string;
+  hint?: string;
+}
+
+/**
+ * The Secrets checklist, built from the workspace's secrets.
+ *
+ * Keyed on IDENTIFIER, never on `name`. Every consumer of the grant matches by
+ * identifier — `listAdmits` in the delivery rule and `agentMayUseEnv` in the
+ * agent-scope gate — and `name` is the env var KEY, which is NOT unique. Keying
+ * on the key wrote a grant nothing matched, and collapsed two secrets that share
+ * one key into a single row that could not be granted separately. The key is
+ * still what the user reads on the sandbox side, so it stays visible as a hint
+ * whenever it differs from the identifier.
+ */
+export function buildSecretScopeOptions(
+  items: readonly { identifier: string; name: string }[],
+): ScopeOption[] {
+  return items
+    .map((s) => ({
+      id: s.identifier,
+      label: s.identifier,
+      hint: s.name === s.identifier ? undefined : s.name,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * How a manifest grant entry is paired with a checklist option. It must mirror
+ * the server gate for that resource: secrets are case-insensitive
+ * (`agentMayUseEnv`, and `listAdmits` in the delivery rule), connector slugs are
+ * exact (`agentMayUseConnector`).
+ */
+export type ScopeMatch = 'exact' | 'case-insensitive';
+
+export interface ScopeChecklistRow extends ScopeOption {
+  selected: boolean;
+  /** Declared in the manifest but not a resource in this workspace — a deleted
+   *  secret, or a typo. Shown so it can be removed. */
+  orphan: boolean;
+}
+
+const scopeMatchKey = (id: string, match: ScopeMatch) =>
+  match === 'exact' ? id : id.toUpperCase();
+
+/**
+ * The checklist rows for one grant: every workspace resource, plus any declared
+ * entry that no longer maps to one.
+ *
+ * With one exact rule for both resource kinds, a hand-written lowercase
+ * `secrets:` entry that the server DOES honour rendered as an unticked row plus
+ * a second row flagged "missing" — the editor calling a working grant broken.
+ */
+export function buildScopeChecklist(
+  value: AgentGrantSet,
+  options: ScopeOption[],
+  match: ScopeMatch = 'exact',
+): ScopeChecklistRow[] {
+  const declared = value === 'all' ? [] : value;
+  const declaredKeys = new Set(declared.map((id) => scopeMatchKey(id, match)));
+  const optionKeys = new Set(options.map((o) => scopeMatchKey(o.id, match)));
+  const orphans = declared.filter((id) => !optionKeys.has(scopeMatchKey(id, match)));
+  return [
+    ...options.map((o) => ({
+      ...o,
+      selected: declaredKeys.has(scopeMatchKey(o.id, match)),
+      orphan: false,
+    })),
+    ...orphans.map((id) => ({ id, label: id, selected: true, orphan: true })),
+  ];
+}
+
+/**
+ * The grant after ticking or unticking one row.
+ *
+ * Unticking drops every entry that MATCHES, not just the byte-identical one: the
+ * row shows the option's id while the manifest may spell the same grant in
+ * another case, and leaving that spelling behind keeps the grant live under a
+ * checkbox that now reads as off.
+ */
+export function toggleScopeSelection(
+  value: AgentGrantSet,
+  id: string,
+  match: ScopeMatch = 'exact',
+): string[] {
+  const declared = value === 'all' ? [] : value;
+  const key = scopeMatchKey(id, match);
+  const next = declared.filter((entry) => scopeMatchKey(entry, match) !== key);
+  if (next.length === declared.length) next.push(id);
+  return next;
+}
+
 /** True when two grant sets mean the same thing (order-insensitive). */
 function grantSetEqual(a: AgentGrantSet, b: AgentGrantSet): boolean {
   if (a === 'all' || b === 'all') return a === b;
@@ -393,8 +491,10 @@ function grantSetEqual(a: AgentGrantSet, b: AgentGrantSet): boolean {
 
 /**
  * Three-way scope control: All · Specific · None. In "Specific" mode it shows a
- * checklist of the workspace's secrets/connectors; a declared name that no longer
- * exists as a resource still shows (flagged) so it can be removed.
+ * checklist of the workspace's secrets/connectors; a declared id that no longer
+ * exists as a resource still shows (flagged) so it can be removed. Rows and
+ * toggles come from `buildScopeChecklist` / `toggleScopeSelection`, which own
+ * the per-resource `ScopeMatch` rule.
  */
 function ScopeEditor({
   label,
@@ -402,13 +502,15 @@ function ScopeEditor({
   emptyLabel,
   value,
   options,
+  match = 'exact',
   onChange,
 }: {
   label: string;
   allLabel: string;
   emptyLabel: string;
   value: AgentGrantSet;
-  options: { id: string; label: string }[];
+  options: ScopeOption[];
+  match?: ScopeMatch;
   onChange: (v: AgentGrantSet) => void;
 }) {
   // "Specific" with nothing selected yet is a real UI state the value type can't
@@ -420,14 +522,7 @@ function ScopeEditor({
   const [wantSpecific, setWantSpecific] = useState(value !== 'all' && value.length > 0);
   const mode: 'all' | 'specific' | 'none' =
     value === 'all' ? 'all' : value.length > 0 || wantSpecific ? 'specific' : 'none';
-  const selected = value === 'all' ? new Set<string>() : new Set(value);
-  const optionIds = new Set(options.map((o) => o.id));
-  // Selected names that aren't in the current option list (deleted resource, or
-  // typed via kortix.yaml) — keep them visible so they can be unchecked.
-  const orphanRows = [...selected]
-    .filter((id) => !optionIds.has(id))
-    .map((id) => ({ id, label: id }));
-  const rows = [...options, ...orphanRows];
+  const rows = buildScopeChecklist(value, options, match);
 
   const pick = (m: 'all' | 'specific' | 'none') => {
     setWantSpecific(m === 'specific');
@@ -437,12 +532,7 @@ function ScopeEditor({
     // above keeps us in specific mode even while the list is empty.
     onChange(value === 'all' ? [] : value);
   };
-  const toggle = (id: string) => {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    onChange([...next]);
-  };
+  const toggle = (id: string) => onChange(toggleScopeSelection(value, id, match));
 
   return (
     <div className="space-y-2">
@@ -476,35 +566,38 @@ function ScopeEditor({
           <p className="text-muted-foreground text-xs">{emptyLabel}</p>
         ) : (
           <div className="border-border/60 max-h-44 overflow-y-auto rounded-md border p-1">
-            {rows.map((o) => {
-              const isSel = selected.has(o.id);
-              const isOrphan = !optionIds.has(o.id);
-              return (
-                <button
-                  key={o.id}
-                  type="button"
-                  aria-pressed={isSel}
-                  onClick={() => toggle(o.id)}
+            {rows.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                aria-pressed={o.selected}
+                onClick={() => toggle(o.id)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors',
+                  o.selected ? 'bg-secondary' : 'hover:bg-muted/50',
+                )}
+              >
+                <span
                   className={cn(
-                    'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors',
-                    isSel ? 'bg-secondary' : 'hover:bg-muted/50',
+                    'flex size-4 shrink-0 items-center justify-center rounded border',
+                    o.selected
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border/70',
                   )}
                 >
-                  <span
-                    className={cn(
-                      'flex size-4 shrink-0 items-center justify-center rounded border',
-                      isSel
-                        ? 'border-foreground bg-foreground text-background'
-                        : 'border-border/70',
-                    )}
-                  >
-                    {isSel && <Check className="size-3" />}
+                  {o.selected && <Check className="size-3" />}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
+                {/* The env var KEY, shown only when it differs from the id the
+                    grant is written with — the sandbox side of the same secret. */}
+                {o.hint ? (
+                  <span className="text-muted-foreground max-w-[40%] shrink-0 truncate font-mono">
+                    {o.hint}
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
-                  {isOrphan && <span className="text-kortix-orange">missing</span>}
-                </button>
-              );
-            })}
+                ) : null}
+                {o.orphan && <span className="text-kortix-orange">missing</span>}
+              </button>
+            ))}
           </div>
         ))}
     </div>

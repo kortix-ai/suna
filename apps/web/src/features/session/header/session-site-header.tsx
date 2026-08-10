@@ -2,7 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import { sessionDisplayLabel } from '@/components/workspaces/session-label';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -15,6 +14,7 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { sessionDisplayLabel } from '@/components/workspaces/session-label';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
@@ -32,6 +32,7 @@ import {
 import { RenameSessionModal } from '@/features/workspace/workspace-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/workspace-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/workspace-sidebar/modal/share-session-modal';
+import { getSessionDisplayTitle } from '@/features/workspace/workspace-sidebar/workspace-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/workspaces/use-session-config-freshness';
 import { cn } from '@/lib/utils';
 import {
@@ -134,8 +135,27 @@ export function SessionSiteHeader({
     enabled: isWorkspaceSession,
     ...contract('inventory'),
   });
-  const workspaceSession = workspaceSessions?.find((s) => s.session_id === workspaceSessionId) ?? null;
+  const workspaceSession =
+    workspaceSessions?.find((s) => s.session_id === workspaceSessionId) ?? null;
   const canShare = !!workspaceSession && workspaceSession.can_manage_sharing !== false;
+
+  /**
+   * The name shown in the header, matched to the sidebar row.
+   *
+   * `sessionTitle` is OPENCODE's `session.title` — the summary it writes for
+   * itself ("Greeting"). The sidebar shows Kortix's session name ("Just A
+   * Simple Hey"), and a rename only ever touches that one, so the two drifted
+   * apart the moment opencode auto-titled: the same session read as two
+   * different things depending on where you looked.
+   *
+   * Uses the SIDEBAR's helper, not `sessionDisplayLabel`, so the two strings
+   * cannot diverge on the fallback either — they differ for an untitled session
+   * ("New session" vs a branch/id slice).
+   *
+   * Falls back to the prop when there is no workspace session: the share viewer
+   * and the instant shell render this header without one.
+   */
+  const headerTitle = workspaceSession ? getSessionDisplayTitle(workspaceSession) : sessionTitle;
 
   const restartMutation = useMutation({
     mutationFn: () => restartWorkspaceSession(workspaceId!, workspaceSessionId!),
@@ -318,7 +338,7 @@ export function SessionSiteHeader({
                   variant="ghost"
                   className="text-foreground/80 hover:text-foreground data-[state=open]:bg-card group h-auto min-w-0 shrink justify-start gap-3 rounded-md px-2.5 py-1 transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] has-[>svg]:px-2.5"
                 >
-                  <span className="min-w-0 truncate">{sessionTitle}</span>
+                  <span className="min-w-0 truncate">{headerTitle}</span>
                   <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]:rotate-180" />
                 </Button>
               </DropdownMenuTrigger>
@@ -477,7 +497,7 @@ export function SessionSiteHeader({
           <SessionDeleteModal
             workspaceId={workspaceId!}
             sessionId={workspaceSessionId!}
-            sessionLabel={sessionTitle}
+            sessionLabel={headerTitle}
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
             onDeleted={() => router.push(`/workspaces/${workspaceId}`)}
