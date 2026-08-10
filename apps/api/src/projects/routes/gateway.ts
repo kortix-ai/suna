@@ -1095,7 +1095,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     effective: {
       defaultModel: effectiveDefault,
       defaultModelSource,
-      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL,
+      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL ?? null,
       defaultFallback: {
         models: [...(route.fallbackModels ?? [])],
         fallbackOn: route.fallbackOn ?? 'transient',
@@ -1103,7 +1103,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     },
     platform: {
       defaultModel: platformDefaultModelId(),
-      visionModel: config.LLM_GATEWAY_VISION_MODEL,
+      visionModel: config.LLM_GATEWAY_VISION_MODEL ?? null,
       defaultFallback: operatorFallbackFor(platformDefaultModelId()),
     },
     capabilities: { write: canWrite },

@@ -203,16 +203,26 @@ describe('Platinum CI worker plan', () => {
     expect(script).toContain('tests/test-results/platinum');
   });
 
-  test('lets the root runner own the local stack for every mode', () => {
+  test('prestarts only the disposable browser database and leaves product processes to the root runner', () => {
     const script = buildWorkerScript({
+      repository: 'kortix-ai/suna',
+      ref: sha,
+      sha,
+      testArgs: ['--browser-only'],
+    });
+
+    expect(script).toContain('pnpm exec supabase start --ignore-health-check');
+    expect(script).toContain('supabase_prestarted=1');
+    expect(script).toContain("'pnpm' 'test' '--' '--browser-only'");
+    expect(script).not.toContain('nohup pnpm dev');
+
+    const coreScript = buildWorkerScript({
       repository: 'kortix-ai/suna',
       ref: sha,
       sha,
       testArgs: [],
     });
-
-    expect(script).toContain("'pnpm' 'test'");
-    expect(script).not.toContain('nohup pnpm dev');
+    expect(coreScript).not.toContain('supabase_prestarted=1');
   });
 
   test('detaches the worker with the Platinum-supported setsid contract', () => {

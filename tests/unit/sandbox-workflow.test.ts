@@ -6,13 +6,21 @@ const root = resolve(import.meta.dirname, '../..');
 const testWorkflow = readFileSync(resolve(root, '.github/workflows/tests.yml'), 'utf8');
 
 describe('sandbox test workflow', () => {
-  test('runs three root lanes at the pull request head SHA', () => {
+  test('runs four root workers at the pull request head SHA', () => {
     expect(testWorkflow).toContain(
       'SANDBOX_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}',
     );
-    expect(testWorkflow).toContain('lane: [core, browser, packages]');
+    expect(testWorkflow).toContain('- lane: core');
+    expect(testWorkflow).toContain('- lane: browser-1');
+    expect(testWorkflow).toContain('- lane: browser-2');
+    expect(testWorkflow).toContain('- lane: packages');
     expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts ;;');
-    expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts --browser-only');
+    expect(testWorkflow).toContain(
+      'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=1/2',
+    );
+    expect(testWorkflow).toContain(
+      'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2',
+    );
     expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts --packages-only');
     expect(testWorkflow).toContain('timeout-minutes: 90');
     expect(testWorkflow).toContain('SANDBOX_TEST_RUN_ID: ${{ github.run_id }}-${{ matrix.lane }}');
@@ -92,19 +100,23 @@ describe('sandbox test workflow', () => {
     expect(release).not.toContain('mode: full');
   });
 
-  test('has one automatic local-suite caller and one deployed release caller', () => {
+  test('has one automatic local-suite caller and two intentional deployed targets', () => {
     const workflowRoot = resolve(root, '.github/workflows');
     const workflows = readdirSync(workflowRoot)
       .filter((name) => /\.ya?ml$/.test(name))
-      .map((name) => readFileSync(resolve(workflowRoot, name), 'utf8'));
+      .map((name) => ({ name, source: readFileSync(resolve(workflowRoot, name), 'utf8') }));
 
     expect(
-      workflows.filter((workflow) =>
-        workflow.includes('uses: ./.github/workflows/tests.yml'),
+      workflows.filter(({ source }) =>
+        source.includes('uses: ./.github/workflows/tests.yml'),
       ),
     ).toHaveLength(1);
-    expect(
-      workflows.filter((workflow) => workflow.includes('pnpm test -- --target-full')),
-    ).toHaveLength(1);
+    const targetFullCallers = workflows.filter(({ source }) =>
+      source.includes('pnpm test -- --target-full'),
+    );
+    expect(targetFullCallers.map(({ name }) => name).sort()).toEqual([
+      'deploy-preview.yml',
+      'tests-release.yml',
+    ]);
   });
 });

@@ -185,8 +185,14 @@ export function managedModels(): Record<string, GatewayModel> {
   // catalog must never advertise a model that request-time resolution refuses.
   if (SERVED_MANAGED_MODELS.length === 0) return out;
   // The managed lineup is curated and its slugs don't all exist on models.dev
-  // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision + limit are explicit
-  // on each model. All current managed models support reasoning/tools/temperature.
+  // (z-ai≠zhipuai), so vision + limit are explicit on each model and always
+  // win. Everything else (temperature, reasoning_options, structured_output,
+  // ...) comes from the model's REAL catalog record via its pricingRef when
+  // that resolves — hardcoding `temperature: true` here is exactly the bug
+  // class the sandbox fallback catalog documents: gpt-5.6-luna REJECTS a
+  // client-sent temperature, so advertising support makes OpenCode send one
+  // and 400 every turn. Unresolvable refs (glm-5.2) keep the permissive
+  // defaults.
   for (const m of SERVED_MANAGED_MODELS) {
     const cost = m.pricing
       ? {
@@ -200,13 +206,17 @@ export function managedModels(): Record<string, GatewayModel> {
             : {}),
         }
       : undefined;
+    const real = catalogModelForWireModel(m.id);
+    const caps = real && real.attachment !== undefined ? capabilitiesOf(real) : undefined;
     out[m.id] = {
       name: m.name,
       provider: m.providerBrand ?? KORTIX_PROVIDER_ID,
       reasoning: true,
       tool_call: true,
-      attachment: m.vision,
       temperature: true,
+      ...(caps ?? {}),
+      // Curated fields always win over the models.dev record.
+      attachment: m.vision,
       limit: m.limit,
       ...(cost ? { cost } : {}),
     };

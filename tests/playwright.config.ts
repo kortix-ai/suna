@@ -6,10 +6,9 @@ const environmentProtectionPassword = process.env.WEB_PROTECTION_PASSWORD;
 export function resolveBrowserWorkers(value: string | undefined, ci: boolean): number {
   const configuredWorkers = Number.parseInt(value ?? '', 10);
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
-  // Daytona provides the organization maximum of 12 GiB. Two browsers can
-  // make Next dev compile separate project routes concurrently and kill the
-  // web process. One worker keeps the local black-box stack stable. Deployed
-  // target runs set E2E_BROWSER_WORKERS explicitly.
+  // The warm Daytona lane has 6 vCPU and 12 GiB RAM. One worker keeps cold
+  // Next.js route compilation below the guest memory limit. Deployed target
+  // runs can override this independently.
   if (ci) return 1;
   return 4;
 }

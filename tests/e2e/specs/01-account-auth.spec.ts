@@ -37,6 +37,7 @@ async function requestEmailAuthentication(page: Page, email: string) {
     name: "Continue",
     exact: true,
   });
+  await expect(continueButton).toBeEnabled();
   let submitted = false;
   for (let attempt = 1; attempt <= 3 && !submitted; attempt += 1) {
     const formRequest = page
@@ -47,7 +48,7 @@ async function requestEmailAuthentication(page: Page, email: string) {
       )
       .then(() => true)
       .catch(() => false);
-    await continueButton.click();
+    await page.getByLabel("Email").press("Enter");
     submitted = await formRequest;
     if (!submitted) {
       await expect(continueButton).toBeEnabled();
