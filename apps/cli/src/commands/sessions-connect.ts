@@ -9,6 +9,7 @@ import {
 import { takeFlagValue } from '../command-helpers.ts';
 import { ensureOpencodeBin, isValidOpencodeVersion } from '../opencode-bin.ts';
 import { C, help, status } from '../style.ts';
+import { pickConnectSessionId } from './home.ts';
 import {
   ensureOpencodeSession,
   loadSessionForChat,
@@ -23,6 +24,10 @@ const CONNECT_HELP = help`Usage: kortix sessions connect [<session-id>] [options
 Attach your local OpenCode TUI to the OpenCode server already running inside a
 Kortix session sandbox. The CLI opens a local loopback proxy, injects your
 Kortix auth token, then runs \`opencode attach\` against it.
+
+With no session id on an interactive terminal, opens a picker: running
+sessions attach immediately, stopped ones are restarted and awaited, and
+"+ New session" provisions a fresh sandbox first.
 
 The \`opencode\` binary is managed for you: the CLI downloads the exact version
 the session's server runs (cached under ~/.kortix/opencode/<version>/) so the
@@ -75,11 +80,15 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (proxyPort === null) return 2;
 
   const opts: CtxOpts = { projectArg, hostArg };
-  const sessionId = await resolveRunningSessionId(
-    positional[0],
-    opts,
-    'Pick a session to connect to',
-  );
+  // No id + a real terminal → the full picker (running, dormant-with-restart,
+  // or a fresh session). Non-TTY keeps the deterministic most-recent-running
+  // resolution so agents / pipes / CI never block on a prompt.
+  const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  const sessionId = positional[0]
+    ? positional[0]
+    : tty
+      ? await pickConnectSessionId(opts)
+      : await resolveRunningSessionId(undefined, opts, 'Pick a session to connect to');
   if (!sessionId) return 1;
 
   // A session id may belong to a different project (or host) than the one

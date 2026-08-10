@@ -1,85 +1,27 @@
-import { loadAuth } from '../api/auth.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, status } from '../style.ts';
-import { selectFromList } from '../tui-select.ts';
-import { runSessionsConnect } from './sessions-connect.ts';
+import { type SelectItem, selectFromList } from '../tui-select.ts';
 import { prepareClientCreatedBranch } from './sessions.ts';
 
 type Ctx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
+type CtxOpts = { projectArg?: string; hostArg?: string };
+
 /** Session states a picked row has to traverse before `connect` can attach. */
 const DORMANT: ReadonlySet<ProjectSession['status']> = new Set(['stopped', 'completed', 'failed']);
 
+export type ConnectPickerChoice = ProjectSession | 'new';
+
 /**
- * Bare `kortix` on an interactive terminal: pick a session in the bound
- * project — running ones attach immediately, dormant ones are booted first,
- * or start a fresh one — then hand the terminal to the full OpenCode TUI via
- * `sessions connect`.
- *
- * Returns the sentinel `'landing'` when this flow does not apply (non-TTY, or
- * not logged in) so `main` can fall back to the classic landing screen —
- * scripts that run bare `kortix` for the command list keep working, and a
- * logged-out human still gets the "run `kortix login`" landing instead of an
- * error.
+ * Picker rows for `kortix connect` with no session id: running sessions first
+ * (most recent first), then still-booting ones, then a bounded tail of dormant
+ * ones (connect restarts those), and always a "start fresh" row.
  */
-export async function runHome(): Promise<number | 'landing'> {
-  if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) return 'landing';
-  if (!loadAuth()?.token) return 'landing';
-
-  // From here on this IS the connect command: resolveProjectContext prints its
-  // own guidance (and interactively binds a default project when none is
-  // linked), so a failure is a real error, not a landing fallback.
-  const ctx = await resolveProjectContext({});
-  if (!ctx) return 1;
-
-  let sessions: ProjectSession[];
-  try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-
-  const chosen = await pickSession(sessions);
-  if (chosen === null) {
-    process.stderr.write(
-      `${C.dim}Nothing selected. Run ${C.reset}${C.cyan}kortix help${C.reset}${C.dim} for all commands.${C.reset}\n`,
-    );
-    return 0;
-  }
-
-  let sessionId: string;
-  if (chosen === 'new') {
-    const created = await createSession(ctx);
-    if (!created) return 1;
-    sessionId = created;
-    if (!(await waitUntilReady(ctx, sessionId))) return 1;
-  } else {
-    sessionId = chosen.session_id;
-    if (chosen.status !== 'running') {
-      if (DORMANT.has(chosen.status)) {
-        try {
-          await ctx.client.post(`/projects/${ctx.projectId}/sessions/${sessionId}/restart`, {});
-        } catch (err) {
-          return surfaceApiError(err);
-        }
-      }
-      if (!(await waitUntilReady(ctx, sessionId))) return 1;
-    }
-  }
-
-  return runSessionsConnect([sessionId, '--project', ctx.projectId]);
-}
-
-async function pickSession(sessions: ProjectSession[]): Promise<ProjectSession | 'new' | null> {
-  if (sessions.length === 0) {
-    const start = await confirm('No sessions in this project yet — start one now?', true, {
-      onEndOfInput: false,
-    });
-    return start ? 'new' : null;
-  }
-
+export function buildConnectPickerItems(
+  sessions: ProjectSession[],
+): SelectItem<ConnectPickerChoice>[] {
   const byRecency = (a: ProjectSession, b: ProjectSession) =>
     Date.parse(b.updated_at) - Date.parse(a.updated_at);
   const running = sessions.filter((s) => s.status === 'running').sort(byRecency);
@@ -91,20 +33,79 @@ async function pickSession(sessions: ProjectSession[]): Promise<ProjectSession |
     .sort(byRecency)
     .slice(0, 15);
 
-  const row = (s: ProjectSession, hint: string) => ({
-    value: s as ProjectSession | 'new',
+  const row = (s: ProjectSession, hint: string): SelectItem<ConnectPickerChoice> => ({
+    value: s,
     label: s.name ?? s.session_id.split('-')[0] ?? s.session_id,
     sublabel: `${s.status} · ${s.session_id.split('-')[0]} · ${s.branch_name}${hint}`,
   });
 
-  return selectFromList<ProjectSession | 'new'>({
-    title: 'Connect to a session',
-    items: [
-      ...running.map((s) => row(s, '')),
-      ...booting.map((s) => row(s, ' · waits for boot')),
-      ...dormant.map((s) => row(s, ' · starts it first')),
-      { value: 'new', label: '+ New session', sublabel: 'fresh sandbox on this project' },
-    ],
+  return [
+    ...running.map((s) => row(s, '')),
+    ...booting.map((s) => row(s, ' · waits for boot')),
+    ...dormant.map((s) => row(s, ' · starts it first')),
+    { value: 'new', label: '+ New session', sublabel: 'fresh sandbox on this project' },
+  ];
+}
+
+/**
+ * Interactive session selection for `kortix connect` when no id was given:
+ * pick a session in the bound project — dormant ones are restarted and
+ * awaited, `+ New session` provisions a fresh sandbox — and return the id the
+ * caller should attach to. Returns null after printing its own message when
+ * the user cancels or a boot fails.
+ */
+export async function pickConnectSessionId(opts: CtxOpts): Promise<string | null> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return null;
+
+  let sessions: ProjectSession[];
+  try {
+    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+  } catch (err) {
+    surfaceApiError(err);
+    return null;
+  }
+
+  const chosen = await pickSession(sessions);
+  if (chosen === null) {
+    process.stderr.write(`${C.dim}Nothing selected.${C.reset}\n`);
+    return null;
+  }
+
+  if (chosen === 'new') {
+    const created = await createSession(ctx);
+    if (!created) return null;
+    if (!(await waitUntilReady(ctx, created))) return null;
+    return created;
+  }
+
+  if (chosen.status !== 'running') {
+    if (DORMANT.has(chosen.status)) {
+      try {
+        await ctx.client.post(
+          `/projects/${ctx.projectId}/sessions/${chosen.session_id}/restart`,
+          {},
+        );
+      } catch (err) {
+        surfaceApiError(err);
+        return null;
+      }
+    }
+    if (!(await waitUntilReady(ctx, chosen.session_id))) return null;
+  }
+  return chosen.session_id;
+}
+
+async function pickSession(sessions: ProjectSession[]): Promise<ConnectPickerChoice | null> {
+  if (sessions.length === 0) {
+    const start = await confirm('No sessions in this project yet — start one now?', true, {
+      onEndOfInput: false,
+    });
+    return start ? 'new' : null;
+  }
+  return selectFromList<ConnectPickerChoice>({
+    title: 'Pick a session to connect to',
+    items: buildConnectPickerItems(sessions),
   });
 }
 
@@ -153,7 +154,7 @@ async function waitUntilReady(ctx: Ctx, sessionId: string): Promise<boolean> {
     if (stage === 'failed' || stage === 'stopped') {
       process.stderr.write(
         `${status.err(`Session did not start (${stage}${reason ? `: ${reason}` : ''}).`)}\n` +
-          `  ${C.dim}Try ${C.reset}${C.cyan}kortix sessions restart ${sessionId}${C.reset}${C.dim}, then ${C.reset}${C.cyan}kortix${C.reset}${C.dim} again.${C.reset}\n`,
+          `  ${C.dim}Try ${C.reset}${C.cyan}kortix sessions restart ${sessionId}${C.reset}${C.dim}, then ${C.reset}${C.cyan}kortix connect${C.reset}${C.dim} again.${C.reset}\n`,
       );
       return false;
     }
