@@ -300,7 +300,17 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             is exactly when the admin is pasting these values into the IdP. It
             tucks itself away automatically on the first successful sync. */}
         <div className="border-border border-t">
-          <Disclosure className="group" open={tokens.length > 0 && freshness === 'never'}>
+          {/* `defaultOpen` + `key`, not `open`: this wants a derived STARTING
+              value the admin can then override, which a controlled `open` with
+              no `onOpenChange` cannot express — it would now freeze the trigger.
+              The key re-seeds it when the prompt condition actually flips, so it
+              still opens on a fresh token and tucks away after the first sync,
+              while a manual collapse in between sticks. */}
+          <Disclosure
+            key={tokens.length > 0 && freshness === 'never' ? 'awaiting-first-sync' : 'synced'}
+            className="group"
+            defaultOpen={tokens.length > 0 && freshness === 'never'}
+          >
             <DisclosureTrigger>
               <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
