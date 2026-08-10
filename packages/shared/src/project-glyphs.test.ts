@@ -28,7 +28,7 @@ describe('the glyph catalogue', () => {
     // The flat list is what the validator allowlists; the groups are what the
     // grid renders. A name in one but not the other is either an unpickable
     // glyph or an unsavable one.
-    const grouped = WORKSPACE_GLYPH_GROUPS.flatMap((g) => g.names).sort();
+    const grouped: string[] = WORKSPACE_GLYPH_GROUPS.flatMap((g) => g.names).sort();
     expect(grouped).toEqual([...WORKSPACE_GLYPH_NAMES].sort());
   });
 
@@ -40,7 +40,7 @@ describe('the glyph catalogue', () => {
     expect(WORKSPACE_GLYPH_COLORS).toHaveLength(8);
     expect(new Set(WORKSPACE_GLYPH_COLORS).size).toBe(8);
     // grey is deliberate: it makes "no colour" a real choice rather than an
-    // absence, so a glyph project never has to look decorated.
+    // absence, so a workspace glyph never has to look decorated.
     expect(WORKSPACE_GLYPH_COLORS).toContain('grey');
   });
 

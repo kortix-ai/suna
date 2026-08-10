@@ -7,7 +7,7 @@
  *   - SHIP-7  `ship -n/--dry-run`  → prints would-be calls, NO side effects.
  *             (Logged in; the managed first-ship dry-run resolves the account via
  *             GET /accounts/me then prints the plan and returns before any write.)
- *   - SHIP-8  guards: not a Kortix dir → error; not logged in → "run kortix login".
+ *   - SHIP-8  guards: not a Kortix workspace → error; not logged in → "run kortix login".
  *             (Both are checked before any API call → pure-local, exit 1.)
  *   - ship --help → exit 0 (pure local).
  *
@@ -120,8 +120,8 @@ flow('SHIP-8', { domain: 'cli', routes: [] }, async (ctx) => {
       const r = await sb.run(['ship']);
       check('exit 1', r.exitCode === 1, 1, r.exitCode);
       check(
-        'says not a Kortix project',
-        /not a kortix project/i.test(r.all),
+        'says not a Kortix workspace',
+        /not a kortix workspace/i.test(r.all),
         true,
         r.stderr.slice(0, 200),
       );
@@ -603,18 +603,21 @@ flow(
     ],
   },
   async (ctx) => {
-    // A CR needs a real project with a pushed base + a head branch (a session
-    // branch). We provision the project via the API fixture (managed git), then
+    // A CR needs a real workspace with a pushed base + a head branch (a session
+    // branch). We provision the workspace via the API fixture (managed git), then
     // drive the CLI cr subcommands against it with KORTIX_PROJECT_ID + a
-    // project-scoped token in the env (the in-sandbox contract the CLI reads).
+    // workspace-scoped token in the env (the legacy in-sandbox contract).
     const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-cr9') });
-    const project = await ctx.fixtures.project({
+    const workspace = await ctx.fixtures.project({
       name: ctx.fixtures.name('cli-cr9-proj'),
       seed: true,
     });
-    // A session creates the head branch the CR will propose.
-    const session = await ctx.fixtures.session(project, {
+    // A session creates the head branch the CR will propose. Select Daytona on
+    // this session request. An unrelated platform-default outage must not hide
+    // the legacy daemon auto-clone compatibility assertion.
+    const session = await ctx.fixtures.session(workspace, {
       prompt: 'ke2e cr-9 head branch',
+      provider: 'daytona',
     });
 
     const started = await waitFor(
@@ -623,7 +626,7 @@ flow(
           '/v1/projects/:workspaceId/sessions/:sessionId/start',
           {},
           {
-            params: { workspaceId: project.id, sessionId: session.id },
+            params: { workspaceId: workspace.id, sessionId: session.id },
             query: { wait_ms: '8000' },
             timeoutMs: 25_000,
           },
@@ -634,14 +637,20 @@ flow(
       },
       {
         until: (body) =>
-          body?.stage === 'ready' &&
-          Boolean(body?.sandbox?.external_id ?? body?.sandbox?.externalId),
+          body?.stage === 'failed' ||
+          (body?.stage === 'ready' &&
+            Boolean(body?.sandbox?.external_id ?? body?.sandbox?.externalId)),
         timeoutMs: 660_000,
         intervalMs: 3_000,
         description: `CR-9 session runtime ready for ${session.id}`,
         retryOnError: isKe2eRetryableError,
       },
     );
+    if (started.stage !== 'ready') {
+      throw new Error(
+        `CR-9 session runtime failed before readiness: ${JSON.stringify(started).slice(0, 500)}`,
+      );
+    }
     const sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
     const fileName = `ke2e-cr-${Date.now()}.md`;
     const form = new FormData();
@@ -663,8 +672,13 @@ flow(
       .post(
         '/v1/projects/:workspaceId/sessions/:sessionId/commit-push',
         { message: 'Add change request fixture' },
-        { params: { workspaceId: project.id, sessionId: session.id } },
+        { params: { workspaceId: workspace.id, sessionId: session.id } },
       );
+    if (committed.statusCode !== 200) {
+      throw new Error(
+        `CR-9 commit-push returned HTTP ${committed.statusCode}: ${committed.text().slice(0, 500)}`,
+      );
+    }
     committed.status(200).body().has('$.committed', true).has('$.pushed', true);
 
     const sb = new CliSandbox('cr9');
@@ -673,7 +687,7 @@ flow(
     //   KORTIX_CLI_TOKEN (project-scoped PAT) + KORTIX_PROJECT_ID.
     const crEnv = {
       KORTIX_CLI_TOKEN: pat,
-      KORTIX_PROJECT_ID: project.id,
+      KORTIX_PROJECT_ID: workspace.id,
       KORTIX_API_URL: ctx.env.apiUrl,
     };
     try {

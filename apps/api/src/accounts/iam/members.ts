@@ -21,6 +21,10 @@ import {
   resourceTypeForAction,
 } from '../../iam';
 import { resolveBatchProbes } from './batch-probes';
+import {
+  normalizePermissionResourceType,
+  serializePermissionResourceType,
+} from './resource-type-compat';
 import { listGroupsForMember } from '../../repositories/iam';
 import {
   iamRouter,
@@ -30,7 +34,6 @@ import {
   ProjectAccessSchema,
   EffectiveResultSchema,
   EffectiveBatchResultSchema,
-  isResourceType,
 } from './app';
 import { auditIam, readBody } from './helpers';
 
@@ -369,11 +372,14 @@ iamRouter.openapi(
 
   const scope = c.req.query('resourceType');
   const id = c.req.query('resourceId');
+  const normalizedScope = normalizePermissionResourceType(scope);
 
   let target: Parameters<typeof authorize>[3];
-  if (scope && isResourceType(scope) && scope !== 'account') {
+  if (scope && normalizedScope && normalizedScope !== 'account') {
     if (!id) return c.json({ error: 'resourceId required when resourceType is specified' }, 400);
-    target = { type: scope, id } as Parameters<typeof authorize>[3];
+    target = { type: normalizedScope, id } as Parameters<typeof authorize>[3];
+  } else if (scope !== undefined && normalizedScope === undefined) {
+    return c.json({ error: 'resourceType is not a known resource type' }, 400);
   } else {
     target = { type: 'account' };
   }
@@ -383,7 +389,7 @@ iamRouter.openapi(
     allowed: result.allowed,
     reason: result.reason ?? null,
     action,
-    resource_type: resourceTypeForAction(action),
+    resource_type: serializePermissionResourceType(resourceTypeForAction(action), scope),
   });
   },
 );
@@ -440,6 +446,7 @@ iamRouter.openapi(
     target: Parameters<typeof authorize>[3];
   };
   const parsed: ParsedProbe[] = [];
+  const requestedScopes: unknown[] = [];
   for (let i = 0; i < rawProbes.length; i++) {
     const p = rawProbes[i];
     if (!p || typeof p !== 'object') {
@@ -455,16 +462,17 @@ iamRouter.openapi(
     const id =
       (p as { resourceId?: unknown; resource_id?: unknown }).resourceId ??
       (p as { resource_id?: unknown }).resource_id;
+    const normalizedScope = normalizePermissionResourceType(scope);
     let target: Parameters<typeof authorize>[3];
-    if (typeof scope === 'string' && isResourceType(scope) && scope !== 'account') {
+    if (typeof scope === 'string' && normalizedScope && normalizedScope !== 'account') {
       if (typeof id !== 'string' || !id) {
         return c.json(
           { error: `probes[${i}].resourceId required when resourceType is set` },
           400,
         );
       }
-      target = { type: scope, id } as Parameters<typeof authorize>[3];
-    } else if (scope !== undefined && scope !== 'account' && typeof scope === 'string') {
+      target = { type: normalizedScope, id } as Parameters<typeof authorize>[3];
+    } else if (scope !== undefined && normalizedScope === undefined) {
       // Caller passed something for resourceType but it's not a valid enum.
       return c.json(
         { error: `probes[${i}].resourceType is not a known resource type` },
@@ -474,6 +482,7 @@ iamRouter.openapi(
       target = { type: 'account' };
     }
     parsed.push({ action, target });
+    requestedScopes.push(scope);
   }
 
   // Per-probe isolation: a transient `authorize` failure degrades to
@@ -481,7 +490,7 @@ iamRouter.openapi(
   // batch as an opaque 500. See resolveBatchProbes. The structured log keeps
   // the signal visible to ops without paging Sentry as an error pattern
   // (mirrors the request-deadline 503 de-noise in PR #4524 / #4531).
-  const results = await resolveBatchProbes(
+  const results = (await resolveBatchProbes(
     parsed,
     authorize,
     targetUserId,
@@ -491,7 +500,13 @@ iamRouter.openapi(
         `effective:batch probe failed — degraded to allowed:false [${ctx.errorName}]`,
         ctx,
       ),
-  );
+  )).map((result, index) => ({
+    ...result,
+    resource_type: serializePermissionResourceType(
+      result.resource_type,
+      requestedScopes[index],
+    ),
+  }));
 
   return c.json({ results });
   },

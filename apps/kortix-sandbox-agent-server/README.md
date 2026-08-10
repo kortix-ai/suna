@@ -34,8 +34,8 @@ in-process daemon.
    It only reads files off disk, so it comes up first and stays up regardless
    of repo/opencode state — previews work while the agent is still booting.
    Non-fatal: a bind failure is logged and `static_web_port` reports `null`.
-3. If `KORTIX_PROJECT_AUTO_CLONE=1`, `git clone` the project repo to
-   `/workspace/.kortix` and check out the requested branch. Failures are
+3. If `KORTIX_WORKSPACE_AUTO_CLONE=1`, clone the Workspace repository to
+   `/workspace` and check out the requested branch. Failures are
    logged but non-fatal — the daemon still serves `/kortix/health`.
 4. Inject managed system skills into `.kortix/opencode/skills`.
 5. Resolve `OPENCODE_CONFIG_DIR`.
@@ -105,6 +105,8 @@ KORTIX_DEFAULT_BRANCH=main
 KORTIX_BRANCH_FETCH_ATTEMPTS=60
 KORTIX_BRANCH_FETCH_DELAY=0.25
 KORTIX_DEFAULT_OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
+KORTIX_WORKSPACE_AUTO_CLONE=0
+# Deprecated compatibility alias for older API and sandbox releases:
 KORTIX_PROJECT_AUTO_CLONE=0
 KORTIX_REPO_URL=
 KORTIX_BRANCH_NAME=
@@ -126,7 +128,7 @@ The binary built on macOS will not execute locally; that's expected. To
 smoke-test the daemon on macOS, run from source:
 
 ```
-KORTIX_PROJECT_AUTO_CLONE=0 KORTIX_SERVICE_PORT=9999 bun run src/main.ts
+KORTIX_WORKSPACE_AUTO_CLONE=0 KORTIX_SERVICE_PORT=9999 bun run src/main.ts
 curl -s http://localhost:9999/kortix/health
 ```
 

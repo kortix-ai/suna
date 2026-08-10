@@ -562,7 +562,7 @@ workspaceRoutesApp.openapi(
         content: {
           'application/json': {
             schema: z.object({
-              scope: z.enum(['project', 'member']),
+              scope: z.enum(['workspace', 'member']),
               subject_user_id: z.string().nullable().optional(),
               limit_usd: z.number().positive(),
               period: z.enum(['day', 'week', 'month']).optional(),
@@ -583,7 +583,8 @@ workspaceRoutesApp.openapi(
     }
 
     const body = await c.req.json();
-    const scope = body.scope as 'project' | 'member';
+    const scope = body.scope as 'workspace' | 'member';
+    const storageScope = scope === 'workspace' ? 'project' : scope;
     const subjectUserId = scope === 'member' ? (body.subject_user_id ?? null) : null;
     if (scope === 'member' && !subjectUserId) {
       return c.json({ error: 'subject_user_id is required for a member budget' }, 400);
@@ -598,7 +599,7 @@ workspaceRoutesApp.openapi(
       .where(
         and(
           eq(gatewayBudgets.workspaceId, workspaceId),
-          eq(gatewayBudgets.scope, scope),
+          eq(gatewayBudgets.scope, storageScope),
           subjectUserId
             ? eq(gatewayBudgets.subjectUserId, subjectUserId)
             : sql`${gatewayBudgets.subjectUserId} is null`,
@@ -614,7 +615,7 @@ workspaceRoutesApp.openapi(
     } else {
       await db.insert(gatewayBudgets).values({
         workspaceId,
-        scope,
+        scope: storageScope,
         subjectUserId,
         limitUsd: limit,
         period,

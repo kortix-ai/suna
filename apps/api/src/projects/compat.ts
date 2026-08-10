@@ -88,6 +88,19 @@ export function toWorkspaceRequestPayload(value: unknown): unknown {
 }
 
 export const projectRequestCompatibility: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const url = new URL(c.req.raw.url);
+  let queryChanged = false;
+  for (const [key, child] of url.searchParams.entries()) {
+    if (WORKSPACE_VALUE_KEYS.has(key) && child === 'project') {
+      url.searchParams.set(key, 'workspace');
+      queryChanged = true;
+    }
+  }
+  if (queryChanged) {
+    c.req.raw = new Request(url, c.req.raw);
+    c.req.bodyCache = {};
+  }
+
   const contentType = c.req.header('content-type') ?? '';
   if (
     c.req.method !== 'GET' &&

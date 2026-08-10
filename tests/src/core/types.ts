@@ -89,8 +89,11 @@ export interface Fixtures {
    * mutate the project's base branch or project-wide Git configuration.
    */
   sharedSeededProject(): Promise<CreatedProject>;
-  /** Create a session in a project (provisions a real sandbox). */
-  session(project: CreatedProject, opts?: { prompt?: string }): Promise<CreatedSession>;
+  /** Create a session in a workspace (provisions a real sandbox). */
+  session(
+    workspace: CreatedProject,
+    opts?: { prompt?: string; provider?: string },
+  ): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;
   /** Create a team account with member/role helpers (auto-torn-down). */

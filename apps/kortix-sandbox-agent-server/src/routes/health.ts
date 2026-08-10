@@ -34,7 +34,11 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
+    const body = readFileSync('/etc/pt-env', 'utf8')
+    const canonical = body.match(/^KORTIX_WORKSPACE_AUTO_CLONE=(\S+)/m)?.[1]
+    if (canonical !== undefined) return canonical === '1' || canonical === 'true'
+    const legacy = body.match(/^KORTIX_PROJECT_AUTO_CLONE=(\S+)/m)?.[1]
+    return legacy === '1' || legacy === 'true'
   } catch {
     return false
   }

@@ -74,6 +74,10 @@ export class ResourceStack {
         // Lives inside the ephemeral sandbox; reclaimed when the session/sandbox
         // is deleted. Tracked only for report context — no standalone teardown.
         break;
+      case "cli-sandbox":
+        // Every CliSandbox is disposed by its flow's `finally` block. Keep the
+        // tracked row for report context without reporting a false resource leak.
+        break;
       default:
         log.warn(`no teardown handler for resource kind "${r.kind}" (${r.id})`);
     }

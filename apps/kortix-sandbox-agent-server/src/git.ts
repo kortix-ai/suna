@@ -684,7 +684,7 @@ async function swapStageIntoTarget(stage: string, target: string): Promise<void>
  */
 export async function materializeRepo(cfg: Config): Promise<void> {
   if (!cfg.repoUrl) {
-    throw new Error('KORTIX_PROJECT_AUTO_CLONE is enabled but KORTIX_REPO_URL is unset')
+    throw new Error('KORTIX_WORKSPACE_AUTO_CLONE is enabled but KORTIX_REPO_URL is unset')
   }
 
   const target = cfg.projectTarget

@@ -8,7 +8,7 @@ import type { projectSessions, sessionSandboxes } from '@kortix/db';
 type WorkspaceSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
 
-export type WorkspaceSessionListScope = 'visible' | 'project';
+export type WorkspaceSessionListScope = 'visible' | 'workspace';
 
 export interface SessionInventoryItem {
   row: WorkspaceSessionRow;
@@ -83,7 +83,7 @@ export function selectSessionRowsForViewer(input: {
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
-  if (input.scope === 'project' && !input.canManageWorkspace) {
+  if (input.scope === 'workspace' && !input.canManageWorkspace) {
     return { authorized: false, items: [] };
   }
 
@@ -109,7 +109,7 @@ export function selectSessionRowsForViewer(input: {
     return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
   });
 
-  if (input.scope === 'project') {
+  if (input.scope === 'workspace') {
     return { authorized: true, items };
   }
 

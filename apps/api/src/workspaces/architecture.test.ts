@@ -43,6 +43,7 @@ const APPROVED_PROJECT_IDENTIFIERS = new Set([
   'LegacyProjectSession',
   // Legacy environment names remain paired with canonical Workspace names.
   'KORTIX_PROJECT_ID',
+  'KORTIX_PROJECT_AUTO_CLONE',
   'KORTIX_PROJECT_SECRET_NAMES',
   'KORTIX_PROJECT_SECRETS_REVISION',
 ]);

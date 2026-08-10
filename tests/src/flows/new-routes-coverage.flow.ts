@@ -88,6 +88,8 @@ flow(
       'GET /v1/projects/:workspaceId/gateway/budgets',
       'PUT /v1/projects/:workspaceId/gateway/budgets',
       'DELETE /v1/projects/:workspaceId/gateway/budgets/:budgetId',
+      'GET /v1/workspaces/:workspaceId/gateway/budgets',
+      'PUT /v1/workspaces/:workspaceId/gateway/budgets',
       'GET /v1/projects/:workspaceId/gateway/keys',
       'POST /v1/projects/:workspaceId/gateway/keys',
       'DELETE /v1/projects/:workspaceId/gateway/keys/:keyId',
@@ -132,6 +134,27 @@ flow(
         params: { ...params, budgetId: ZERO_UUID },
       });
       del.status([200, 403, 404]);
+    });
+    await ctx.step('legacy Project and canonical Workspace budget scopes coexist', async () => {
+      const legacy = await owner.put(
+        '/v1/projects/:workspaceId/gateway/budgets',
+        { scope: 'project', limit_usd: 2 },
+        { params },
+      );
+      legacy.status(200).body().has('$.ok', true);
+
+      const canonical = await owner.put(
+        '/v1/workspaces/:workspaceId/gateway/budgets',
+        { scope: 'workspace', limit_usd: 3 },
+        { params },
+      );
+      canonical.status(200).body().has('$.ok', true);
+
+      const canonicalRead = await owner.get(
+        '/v1/workspaces/:workspaceId/gateway/budgets',
+        { params },
+      );
+      canonicalRead.status(200).body().has('$.budgets[0].scope', 'workspace');
     });
     await ctx.step('gateway key management reaches auth/validation boundary', async () => {
       const list = await owner.get('/v1/projects/:workspaceId/gateway/keys', { params });

@@ -90,6 +90,16 @@ test('Project request compatibility translates entity fields but preserves manif
   expect(await response.json()).toEqual({ owner_type: 'workspace' });
 });
 
+test('Project request compatibility translates legacy Project query values', async () => {
+  const app = new Hono();
+  app.use('*', projectRequestCompatibility);
+  app.get('/', (c) => c.json({ scope: c.req.query('scope') }));
+
+  const response = await app.request('/?scope=project');
+
+  expect(await response.json()).toEqual({ scope: 'workspace' });
+});
+
 test('projectResponseCompatibility maps JSON and preserves status and headers', async () => {
   const app = new Hono();
   app.use('*', projectResponseCompatibility);

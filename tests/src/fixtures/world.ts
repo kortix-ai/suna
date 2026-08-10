@@ -277,7 +277,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       // field now that the HTTP boundary rejects unknown create properties.
       const res = await adminClient.post(
         '/v1/projects/:workspaceId/sessions',
-        { initial_prompt: opts?.prompt ?? 'noop' },
+        {
+          initial_prompt: opts?.prompt ?? 'noop',
+          ...(opts?.provider ? { provider: opts.provider } : {}),
+        },
         {
           params: { workspaceId: project.id },
         },

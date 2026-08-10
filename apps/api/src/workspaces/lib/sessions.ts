@@ -500,7 +500,11 @@ export async function buildSessionSandboxEnvVars(input: {
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
     // agent workspace mode cannot re-enable the daemon's automatic clone.
     ...(input.platformMetaAgent
-      ? { KORTIX_WORKSPACE_AUTO_CLONE: '0', KORTIX_META_AGENT: '1' }
+      ? {
+          KORTIX_WORKSPACE_AUTO_CLONE: '0',
+          KORTIX_PROJECT_AUTO_CLONE: '0',
+          KORTIX_META_AGENT: '1',
+        }
       : {}),
   };
 }

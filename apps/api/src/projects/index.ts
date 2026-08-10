@@ -33,9 +33,10 @@ export {
   type GitProxyAuth,
   withWorkspaceGitAuth,
 } from '../workspaces';
-import { projectResponseCompatibility } from './compat';
+import { projectRequestCompatibility, projectResponseCompatibility } from './compat';
 
 export const projectsApp = new Hono<AppEnv>();
+projectsApp.use('*', projectRequestCompatibility);
 projectsApp.use('*', projectResponseCompatibility);
 projectsApp.route('/', workspaceRoutesApp);
 

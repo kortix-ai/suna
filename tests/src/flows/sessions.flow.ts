@@ -37,7 +37,10 @@ flow(
     domain: 'sessions',
     requires: ['daytona', 'funded'],
     timeoutMs: 120_000,
-    routes: ['GET /v1/projects/:workspaceId/sessions'],
+    routes: [
+      'GET /v1/projects/:workspaceId/sessions',
+      'GET /v1/workspaces/:workspaceId/sessions',
+    ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -45,6 +48,24 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:workspaceId/sessions', { params: { workspaceId: p.id } });
+      r.status(200);
+    });
+    await ctx.step('legacy Project inventory scope remains accepted', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:workspaceId/sessions', {
+          params: { workspaceId: p.id },
+          query: { scope: 'project' },
+        });
+      r.status(200);
+    });
+    await ctx.step('canonical Workspace inventory scope is accepted', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/workspaces/:workspaceId/sessions', {
+          params: { workspaceId: p.id },
+          query: { scope: 'workspace' },
+        });
       r.status(200);
     });
   },

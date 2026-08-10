@@ -461,11 +461,11 @@ flow(
   },
 );
 
-// PROJ-27 — model-defaults CRUD. GET reads the platform/account/project/agent
-// defaults; PUT upserts one scope (agent requires agentName); DELETE clears
-// one scope by query. PUT rejects models that the account cannot serve. The
-// flow reads the current project picker and selects a managed model from that
-// served catalog. Full set → read-back → clear lifecycle on scope=project.
+// PROJ-27 — model-defaults CRUD through canonical Workspace and legacy Project
+// entry points. GET reads the platform/account/workspace/agent defaults; PUT
+// upserts one scope (agent requires agentName); DELETE clears one scope by
+// query. PUT rejects models that the account cannot serve. The flow reads the
+// legacy picker for a managed model, then proves both complete lifecycles.
 flow(
   'PROJ-27',
   {
@@ -476,6 +476,9 @@ flow(
       'GET /v1/projects/:workspaceId/model-defaults',
       'PUT /v1/projects/:workspaceId/model-defaults',
       'DELETE /v1/projects/:workspaceId/model-defaults',
+      'GET /v1/workspaces/:workspaceId/model-defaults',
+      'PUT /v1/workspaces/:workspaceId/model-defaults',
+      'DELETE /v1/workspaces/:workspaceId/model-defaults',
     ],
   },
   async (ctx) => {
@@ -557,6 +560,40 @@ flow(
         .as(ctx.P.OWNER)
         .get('/v1/projects/:workspaceId/model-defaults', { params: { workspaceId: p.id } });
       r.status(200).body().has('$.projectDefault', null);
+    });
+    await ctx.step('canonical PUT scope=workspace sets the same stored default', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/workspaces/:workspaceId/model-defaults',
+          { scope: 'workspace', model: servableModel },
+          { params: { workspaceId: p.id } },
+        );
+      r.status(200)
+        .body()
+        .has('$.ok', true)
+        .has('$.scope', 'workspace')
+        .has('$.model', servableModel);
+    });
+    await ctx.step('canonical GET returns Workspace field names', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/workspaces/:workspaceId/model-defaults', {
+          params: { workspaceId: p.id },
+        });
+      r.status(200)
+        .body()
+        .has('$.workspaceDefault', servableModel)
+        .has('$.resolvedForCaller', servableModel);
+    });
+    await ctx.step('canonical DELETE scope=workspace clears the override', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/workspaces/:workspaceId/model-defaults', {
+          params: { workspaceId: p.id },
+          query: { scope: 'workspace' },
+        });
+      r.status(200).body().has('$.ok', true).has('$.scope', 'workspace');
     });
     await ctx.step('DELETE with an invalid scope → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:workspaceId/model-defaults', {

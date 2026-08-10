@@ -24,8 +24,8 @@ function readWorkspaceRoute(name: string): string {
   return readFileSync(join(import.meta.dir, '../workspaces/routes', name), 'utf8');
 }
 
-describe('kortix-projects SQL safety', () => {
-  test('project session sandbox lookup uses Drizzle query builder instead of interpolated SQL', () => {
+describe('Kortix Workspace SQL safety', () => {
+  test('Workspace session sandbox lookup uses Drizzle query builder instead of interpolated SQL', () => {
     const source = readWorkspacesSource();
 
     expect(source).toContain('from(sessionSandboxes)');
@@ -38,10 +38,10 @@ describe('kortix-projects SQL safety', () => {
   });
 });
 
-describe('kortix-projects authorization safety', () => {
-  test('session inventory requires project.session.read before querying sessions', () => {
+describe('Kortix Workspace authorization safety', () => {
+  test('session inventory checks the Workspace session-read action before querying sessions', () => {
     const source = readWorkspaceRoute('r7.ts');
-    const routeStart = source.indexOf('// GET /v1/projects/:workspaceId/sessions');
+    const routeStart = source.indexOf('// GET /v1/workspaces/:workspaceId/sessions');
     const routeEnd = source.indexOf("path: '/{workspaceId}/sessions/{sessionId}'", routeStart);
     const route = source.slice(routeStart, routeEnd);
     const capabilityGate = route.indexOf(

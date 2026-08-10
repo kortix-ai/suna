@@ -44,7 +44,7 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
-  test('manager project scope includes inaccessible, unavailable, and soft-deleted rows', () => {
+  test('manager workspace scope includes inaccessible, unavailable, and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
     const deleted = row('deleted', {
@@ -57,7 +57,7 @@ describe('selectSessionRowsForViewer', () => {
 
     const selected = selectSessionRowsForViewer({
       rows: [privateOther, stoppedWithoutRuntime, deleted],
-      scope: 'project',
+      scope: 'workspace',
       canManageWorkspace: true,
       subject,
       grantsBySession: new Map(),
@@ -86,10 +86,10 @@ describe('selectSessionRowsForViewer', () => {
     });
   });
 
-  test('project scope is denied without project-management rights', () => {
+  test('workspace scope is denied without workspace-management rights', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('private-other', { createdBy: OTHER_ID })],
-      scope: 'project',
+      scope: 'workspace',
       canManageWorkspace: false,
       subject,
       grantsBySession: new Map(),

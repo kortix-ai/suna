@@ -43,6 +43,9 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: input.apiUrl,
     KORTIX_WORKSPACE_AUTO_CLONE: allowsFullRepository ? '1' : '0',
+    // Rolling image compatibility. Deployed daemons before the Workspace
+    // rename read only KORTIX_PROJECT_AUTO_CLONE.
+    KORTIX_PROJECT_AUTO_CLONE: allowsFullRepository ? '1' : '0',
     ...(input.workspaceMode ? { KORTIX_WORKSPACE_MODE: input.workspaceMode } : {}),
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().

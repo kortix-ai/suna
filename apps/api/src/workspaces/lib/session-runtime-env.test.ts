@@ -58,6 +58,7 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 
     expect(env.KORTIX_WORKSPACE_MODE).toBe('runtime');
     expect(env.KORTIX_WORKSPACE_AUTO_CLONE).toBe('0');
+    expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
     expect(env).not.toHaveProperty('KORTIX_REPO_URL');
     expect(env).not.toHaveProperty('KORTIX_DEFAULT_BRANCH');
     expect(env).not.toHaveProperty('KORTIX_BASE_REF');
@@ -72,6 +73,7 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 
     expect(env.KORTIX_WORKSPACE_MODE).toBe('read');
     expect(env.KORTIX_WORKSPACE_AUTO_CLONE).toBe('0');
+    expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('0');
     expect(env).not.toHaveProperty('KORTIX_REPO_URL');
     expect(env).not.toHaveProperty('KORTIX_DEFAULT_BRANCH');
     expect(env).not.toHaveProperty('KORTIX_BASE_REF');
@@ -84,6 +86,7 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
       buildSessionRuntimeEnv({ ...BASE_INPUT, workspaceMode: 'branch' }),
     ]) {
       expect(env.KORTIX_WORKSPACE_AUTO_CLONE).toBe('1');
+      expect(env.KORTIX_PROJECT_AUTO_CLONE).toBe('1');
       expect(env.KORTIX_REPO_URL).toBe(BASE_INPUT.repoUrl);
       expect(env.KORTIX_DEFAULT_BRANCH).toBe(BASE_INPUT.baseRef);
       expect(env.KORTIX_BASE_REF).toBe(BASE_INPUT.baseRef);
@@ -93,10 +96,10 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 });
 
 describe('buildSessionRuntimeEnv — Workspace identity', () => {
-  test('emits the canonical identifier and the Workspace compatibility alias', () => {
+  test('emits the canonical identifier and the Project compatibility alias', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
 
     expect(env.KORTIX_WORKSPACE_ID).toBe(BASE_INPUT.workspaceId);
-    expect(env.KORTIX_WORKSPACE_ID).toBe(BASE_INPUT.workspaceId);
+    expect(env.KORTIX_PROJECT_ID).toBe(BASE_INPUT.workspaceId);
   });
 });

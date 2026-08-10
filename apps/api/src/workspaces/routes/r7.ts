@@ -867,7 +867,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/sessions
+// GET /v1/workspaces/:workspaceId/sessions
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -879,7 +879,7 @@ workspaceRoutesApp.openapi(
       request: {
         params: z.object({ workspaceId: z.string() }),
         query: z.object({
-          scope: z.enum(['visible', 'project']).optional(),
+          scope: z.enum(['visible', 'workspace']).optional(),
         }),
       },
     responses: {

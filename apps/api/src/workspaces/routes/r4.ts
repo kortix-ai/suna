@@ -2974,10 +2974,10 @@ workspaceRoutesApp.openapi(
 
 // ─── Default model preferences (account-scoped) ─────────────────────────────
 // The gateway is the source of truth for concrete model defaults. These routes
-// manage account, project, and agent defaults. Stored values are gateway wire
+// manage account, workspace, and agent defaults. Stored values are gateway wire
 // models (bare managed id, BYOK `provider/model`, or `codex/…`).
 
-// GET /v1/projects/:workspaceId/model-defaults
+// GET /v1/workspaces/:workspaceId/model-defaults
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'get',
@@ -3002,7 +3002,7 @@ workspaceRoutesApp.openapi(
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId, workspaceId);
     const freeTier = !(await accountMayUseManagedModels(ownerAccountId));
-    // Honest project-level resolution (project → account → platform) + where it
+    // Honest workspace-level resolution (workspace → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · workspace default". The
     // authoritative per-request resolution still happens in the gateway.
     const resolved = await resolveEffectiveModel({
@@ -3025,12 +3025,12 @@ workspaceRoutesApp.openapi(
 );
 
 const ModelDefaultBody = z.object({
-  scope: z.enum(['account', 'agent', 'project']),
+  scope: z.enum(['account', 'agent', 'workspace']),
   agentName: z.string().min(1).max(128).optional(),
   model: z.string().min(1).max(128),
 });
 
-// PUT /v1/projects/:workspaceId/model-defaults
+// PUT /v1/workspaces/:workspaceId/model-defaults
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'put',
@@ -3052,7 +3052,7 @@ workspaceRoutesApp.openapi(
   }),
   async (c: any) => {
     const workspaceId = c.req.param('workspaceId');
-    // Floor 'read'; project.customize.write is the real gate.
+    // Floor 'read'; the Workspace customize action is the real gate.
     const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertWorkspaceCapability(
@@ -3095,11 +3095,12 @@ workspaceRoutesApp.openapi(
       );
     }
 
+    const storageScope = scope === 'workspace' ? 'project' : scope;
     await upsertAccountModelPreference({
       accountId: ownerAccountId,
-      scope,
-      // agent → agent name; project → the workspace id; account → '' (in the repo).
-      scopeKey: scope === 'agent' ? agentName : scope === 'project' ? workspaceId : undefined,
+      scope: storageScope,
+      // agent → agent name; workspace → the workspace id; account → '' (in the repo).
+      scopeKey: scope === 'agent' ? agentName : scope === 'workspace' ? workspaceId : undefined,
       // agent-scope pins are workspace-scoped — see repositories/model-preferences.ts.
       workspaceId: scope === 'agent' ? workspaceId : undefined,
       model,
@@ -3115,7 +3116,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// DELETE /v1/projects/:workspaceId/model-defaults?scope=account|agent&agentName=
+// DELETE /v1/workspaces/:workspaceId/model-defaults?scope=account|agent|workspace&agentName=
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'delete',
@@ -3126,7 +3127,7 @@ workspaceRoutesApp.openapi(
     request: {
       params: z.object({ workspaceId: z.string() }),
       query: z.object({
-        scope: z.enum(['account', 'agent', 'project']),
+        scope: z.enum(['account', 'agent', 'workspace']),
         agentName: z.string().min(1).max(128).optional(),
       }),
     },
@@ -3140,7 +3141,7 @@ workspaceRoutesApp.openapi(
   }),
   async (c: any) => {
     const workspaceId = c.req.param('workspaceId');
-    // Floor 'read'; project.customize.write is the real gate.
+    // Floor 'read'; the Workspace customize action is the real gate.
     const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertWorkspaceCapability(
@@ -3153,9 +3154,9 @@ workspaceRoutesApp.openapi(
     const ownerAccountId = loaded.row.accountId as string;
     const scope = c.req.query('scope');
     const agentName = c.req.query('agentName');
-    if (scope !== 'account' && scope !== 'agent' && scope !== 'project') {
+    if (scope !== 'account' && scope !== 'agent' && scope !== 'workspace') {
       return c.json(
-        { error: "scope must be 'account', 'agent', or 'project'", code: 'invalid_scope' },
+        { error: "scope must be 'account', 'agent', or 'workspace'", code: 'invalid_scope' },
         400,
       );
     }
@@ -3165,10 +3166,11 @@ workspaceRoutesApp.openapi(
         400,
       );
     }
-    const scopeKey = scope === 'agent' ? agentName : scope === 'project' ? workspaceId : undefined;
+    const scopeKey = scope === 'agent' ? agentName : scope === 'workspace' ? workspaceId : undefined;
+    const storageScope = scope === 'workspace' ? 'project' : scope;
     await deleteAccountModelPreference({
       accountId: ownerAccountId,
-      scope,
+      scope: storageScope,
       scopeKey,
       workspaceId: scope === 'agent' ? workspaceId : undefined,
     });
