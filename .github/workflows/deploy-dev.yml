@@ -137,6 +137,7 @@ jobs:
             else
               api=true
               apps_router=true
+              gateway=true
               frontend=true
               terraform=true
             fi

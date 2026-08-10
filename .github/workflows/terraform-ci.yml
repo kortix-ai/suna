@@ -11,6 +11,15 @@ on:
     paths:
       - "infra/terraform/**"
       - ".github/workflows/terraform-ci.yml"
+      # The `preview runtime contract tests` step below asserts the security
+      # invariants of the pull request preview pipeline. Those invariants now
+      # live in the workflow and the sandbox preview runtime, not only in
+      # Terraform, so a change to either must run this gate.
+      - "infra/scripts/**"
+      - ".github/workflows/deploy-preview.yml"
+      - "tests/bin/sandbox-preview.ts"
+      - "tests/src/core/sandbox-preview*.ts"
+      - "tests/src/core/preview-stack.ts"
   schedule:
     - cron: "0 7 * * *"
   workflow_dispatch:
