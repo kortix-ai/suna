@@ -135,7 +135,7 @@ suite('credit RPC overload resolution (throwaway Postgres)', () => {
     const overloads = atomicOverloads().filter((row) => row.name === 'atomic_use_credits');
     expect(overloads).toHaveLength(1);
     expect(overloads[0].args).toBe(
-      'p_account_id uuid, p_amount numeric, p_description text, p_ledger_type text',
+      'p_account_id uuid, p_amount numeric, p_description text, p_ledger_type text, p_idempotency_key text',
     );
   });
 

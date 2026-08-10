@@ -23,6 +23,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
@@ -273,6 +274,7 @@ export function SqliteRenderer({
   // ── Initialize database ───────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+    const abortController = new AbortController();
 
     async function init() {
       setIsLoading(true);
@@ -280,7 +282,16 @@ export function SqliteRenderer({
 
       try {
         const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
-        const blob = await readFileAsBlob(filePath);
+        const blob = await readRuntimeFileWithRetry(
+          filePath,
+          async () => {
+            const blob = await readFileAsBlob(filePath);
+            if (!blob.size) throw new Error('Empty database file');
+            return blob;
+          },
+          undefined,
+          abortController.signal,
+        );
         const arrayBuffer = await blob.arrayBuffer();
 
         if (cancelled) return;
@@ -351,6 +362,7 @@ export function SqliteRenderer({
         }
         setIsLoading(false);
       } catch (e: unknown) {
+        if (abortController.signal.aborted) return;
         console.error('[SqliteRenderer] Error:', e);
         if (!cancelled) {
           setError((e as Error)?.message || 'Failed to load database');
@@ -363,6 +375,7 @@ export function SqliteRenderer({
 
     return () => {
       cancelled = true;
+      abortController.abort();
       if (dbRef.current) {
         try {
           dbRef.current.close();
@@ -668,7 +681,11 @@ export function SqliteRenderer({
     (async () => {
       try {
         const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
-        const blob = await readFileAsBlob(filePath);
+        const blob = await readRuntimeFileWithRetry(filePath, async () => {
+          const blob = await readFileAsBlob(filePath);
+          if (!blob.size) throw new Error('Empty database file');
+          return blob;
+        });
         const arrayBuffer = await blob.arrayBuffer();
         if (!arrayBuffer.byteLength) throw new Error('Empty file');
 
@@ -916,11 +933,7 @@ export function SqliteRenderer({
                   'componentsFileRenderersSqliteRenderer.line816JsxAttrTitleSaveToFileS',
                 )}
               >
-                {isSaving ? (
-                  <Loading className="h-3 w-3" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
+                {isSaving ? <Loading className="h-3 w-3" /> : <Save className="h-3 w-3" />}
                 Save
               </Button>
             </>

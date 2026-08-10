@@ -43,7 +43,7 @@ variable "container_port" {
 }
 
 variable "container_name" {
-  description = "Name of the single container in the task (also the awslogs stream prefix). 'api' for the API service, 'gateway' for the gateway."
+  description = "Name of the single container in the task and awslogs stream prefix."
   type        = string
   default     = "api"
 }
@@ -166,6 +166,12 @@ variable "alb_ingress_cidrs" {
   description = "CIDRs allowed to hit the ALB. Lock to Cloudflare ranges in prod; 0.0.0.0/0 by default."
   type        = list(string)
   default     = ["0.0.0.0/0"]
+}
+
+variable "enable_postgres_egress" {
+  description = "Permit direct PostgreSQL egress on port 5432. Disable for services such as the web frontend."
+  type        = bool
+  default     = true
 }
 
 variable "tags" {

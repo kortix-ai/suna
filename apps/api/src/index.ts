@@ -515,6 +515,9 @@ app.get('/metrics', (c) => {
   if (!hasInternalObservabilityAuth(c)) {
     return c.text('unauthorized\n', 401);
   }
+  if (process.env.KORTIX_LOCAL_TEST_PROFILE === '1') {
+    c.header('x-kortix-local-test-profile', '1');
+  }
   if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
   c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return c.body(renderMetrics());
@@ -1262,16 +1265,19 @@ console.log(`
 ╚═══════════════════════════════════════════════════════════╝
 `);
 
-// Load LLM pricing from models.dev (non-blocking if it fails).
-// Awaited so pricing is available before the first billing request.
-await initModelPricing().catch((err) =>
-  console.error('[startup] Model pricing init failed (will retry in 24h):', err),
-);
-runtimeModelCatalog
-  .start()
-  .catch((err) =>
-    console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+// Local REST tests use the bundled model catalog and never contact models.dev.
+if (process.env.KORTIX_MODEL_PRICING_LIVE_ENABLED !== '0') {
+  await initModelPricing().catch((err) =>
+    console.error('[startup] Model pricing init failed (will retry in 24h):', err),
   );
+}
+if (process.env.KORTIX_MODEL_CATALOG_LIVE_ENABLED !== '0') {
+  runtimeModelCatalog
+    .start()
+    .catch((err) =>
+      console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+    );
+}
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;

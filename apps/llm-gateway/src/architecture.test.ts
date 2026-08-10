@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const appRoot = resolve(import.meta.dir, '..');
@@ -16,23 +16,27 @@ function sourceFiles(root: string): string[] {
 }
 
 describe('gateway catalog boundary', () => {
-  test('core and standalone gateway have no llm-catalog package dependency', () => {
-    for (const root of [appRoot, coreRoot]) {
-      const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
-        dependencies?: Record<string, string>;
-        devDependencies?: Record<string, string>;
-      };
-      expect(pkg.dependencies?.['@kortix/llm-catalog']).toBeUndefined();
-      expect(pkg.devDependencies?.['@kortix/llm-catalog']).toBeUndefined();
-    }
+  test('the standalone gateway delegates catalog capability handling to core', () => {
+    const pkg = JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    expect(pkg.dependencies?.['@kortix/llm-catalog']).toBeUndefined();
+    expect(pkg.devDependencies?.['@kortix/llm-catalog']).toBeUndefined();
   });
 
-  test('core and standalone source never import the product catalog', () => {
-    const offenders = [join(appRoot, 'src'), join(coreRoot, 'src')]
-      .flatMap(sourceFiles)
-      .filter((file) => /(?:from\s*|import\s*)[('"`]@kortix\/llm-catalog/.test(
-        readFileSync(file, 'utf8'),
-      ));
-    expect(offenders).toEqual([]);
+  test('catalog imports stay inside the core AI-SDK transport', () => {
+    const appImports = sourceFiles(join(appRoot, 'src')).filter((file) =>
+      /(?:from\s*|import\s*)[('"`]@kortix\/llm-catalog/.test(readFileSync(file, 'utf8')),
+    );
+    expect(appImports).toEqual([]);
+
+    const coreImports = sourceFiles(join(coreRoot, 'src')).filter((file) =>
+      /(?:from\s*|import\s*)[('"`]@kortix\/llm-catalog/.test(readFileSync(file, 'utf8')),
+    );
+    expect(coreImports.length).toBeGreaterThan(0);
+    expect(
+      coreImports.every((file) => file.startsWith(join(coreRoot, 'src', 'transports', 'ai-sdk'))),
+    ).toBe(true);
   });
 });

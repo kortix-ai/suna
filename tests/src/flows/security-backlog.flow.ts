@@ -7,9 +7,8 @@
  * rejection (401/403/404/400) or a redaction — nothing here provisions a
  * sandbox or spends credits.
  *
- * Ported in INTENT (not code) from the old reference tree under
- * tests/security-audit/ + tests/e2e/ — the original mock/unit security checks
- * become real over-the-wire requests here.
+ * These flows replace the former mock security suites with real over-the-wire
+ * requests.
  *
  * Boundary source of truth: apps/api/src/middleware/auth.ts
  *   - apiKeyAuth / supabaseAuth / combinedAuth: missing/garbage/expired bearer
@@ -23,7 +22,7 @@
  *   - project webhooks (/v1/webhooks/*): unsigned/foreign → 400/401/403/404.
  *
  * Spec IDs authored here: SEC-4, SEC-A, SEC-B, SEC-C, SEC-D, SEC-E, SEC-F,
- * SEC-G, SEC-H, SEC-I.
+ * SEC-G, SEC-H, SEC-I, SEC-J.
  */
 import { flow } from '../core/flow';
 
@@ -173,7 +172,7 @@ flow(
         .as(ctx.P.OWNER)
         .post('/v1/accounts/tokens', { name: ctx.fixtures.name('sec-b-revoke') });
       r.status(201).body().exists('$.secret_key').exists('$.token_id');
-      const j = r.json<any>();
+      const j = r.json<{ secret_key: string; token_id: string }>();
       secret = j.secret_key;
       tokenId = j.token_id;
     });
@@ -291,7 +290,7 @@ flow(
           { params: { projectId: projA.id } },
         );
       r.status(201).body().exists('$.secret_key').has('$.project_id', projA.id);
-      const j = r.json<any>();
+      const j = r.json<{ secret_key: string; token_id: string }>();
       secret = j.secret_key;
       tokenId = j.token_id;
     });
@@ -518,7 +517,7 @@ flow(
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
       r.status(200).body().exists('$.events');
-      const events = r.json<any>()?.events;
+      const events = r.json<{ events?: unknown[] }>()?.events;
       if (!Array.isArray(events) || events.length === 0) {
         throw new Error('SEC-H: expected at least one audit event after a state-changing mutation');
       }
@@ -569,5 +568,147 @@ flow(
         void saw429;
       },
     );
+  },
+);
+
+// SEC-J replaces the former standalone pentest runner. It keeps the unique
+// transport-hardening assertions inside the same black-box REST runner as every
+// other API contract. Auth boundaries and webhook signatures remain in SEC-A
+// through SEC-I. This flow covers the former runner's remaining behavior.
+flow(
+  'SEC-J',
+  {
+    domain: 'security',
+    routes: [
+      'GET /health',
+      'GET /v1/health',
+      'POST /v1/access/check-email',
+      'GET /v1/accounts/me',
+      'POST /v1/router/chat/completions',
+    ],
+  },
+  async (ctx) => {
+    const secretPattern =
+      /(postgres(?:ql)?:\/\/|DATABASE_URL|SUPABASE_SERVICE_ROLE_KEY|INTERNAL_SERVICE_KEY|STRIPE_SECRET_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|kortix_(?:pat|sa|sb|tnl)_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.)/i;
+
+    await ctx.step('public health responses expose no secrets or framework header', async () => {
+      for (const path of ['/health', '/v1/health']) {
+        const response = await ctx.client.get(path);
+        response.status(200);
+        if (secretPattern.test(response.text())) {
+          throw new Error(`${path} exposed secret-looking material`);
+        }
+        if (response.header('x-powered-by')) {
+          throw new Error(`${path} exposed x-powered-by=${response.header('x-powered-by')}`);
+        }
+        if (/(express|hono|bun|node|uvicorn|gunicorn)/i.test(response.header('server') ?? '')) {
+          throw new Error(`${path} exposed server=${response.header('server')}`);
+        }
+      }
+    });
+
+    await ctx.step('sensitive filesystem paths never return file contents', async () => {
+      for (const path of [
+        '/.env',
+        '/.git/config',
+        '/package.json',
+        '/v1/.env',
+        '/v1/../.env',
+        '/%2e%2e/%2e%2e/etc/passwd',
+      ]) {
+        const response = await ctx.client.get(path);
+        response.status([400, 401, 403, 404]);
+        if (/root:.*:0:0|private_key|BEGIN [A-Z ]*PRIVATE KEY/i.test(response.text())) {
+          throw new Error(`${path} exposed sensitive file content`);
+        }
+        if (secretPattern.test(response.text())) {
+          throw new Error(`${path} exposed secret-looking material`);
+        }
+      }
+    });
+
+    await ctx.step('malicious origins never receive permissive CORS', async () => {
+      for (const origin of [
+        'https://evil.com',
+        'null',
+        'https://kortix.com.evil.com',
+        'http://kortix.com',
+        'https://k0rtix.com',
+      ]) {
+        const response = await ctx.client.request('OPTIONS', '/v1/accounts/me', {
+          headers: {
+            origin,
+            'access-control-request-method': 'GET',
+            'access-control-request-headers': 'authorization,content-type',
+          },
+        });
+        const allowOrigin = response.header('access-control-allow-origin') ?? '';
+        if (allowOrigin === '*' || allowOrigin === origin) {
+          throw new Error(`${origin} received access-control-allow-origin=${allowOrigin}`);
+        }
+      }
+    });
+
+    await ctx.step('adversarial email payloads return no 5xx, reflection, or secrets', async () => {
+      for (const body of [
+        { email: "' OR 1=1 --" },
+        { email: '<script>alert(1)</script>' },
+        { email: '../../../../etc/passwd' },
+        { email: `${'a'.repeat(4096)}@example.com` },
+        { __proto__: { polluted: true }, email: 'pentest@example.com' },
+      ]) {
+        const response = await ctx.client.post('/v1/access/check-email', body);
+        if (response.statusCode >= 500) {
+          throw new Error(`adversarial email payload returned ${response.statusCode}`);
+        }
+        if (/<script>alert\(1\)<\/script>/i.test(response.text())) {
+          throw new Error('access/check-email reflected an XSS payload');
+        }
+        if (secretPattern.test(response.text())) {
+          throw new Error('access/check-email exposed secret-looking material');
+        }
+      }
+    });
+
+    await ctx.step('content-type confusion returns no 5xx', async () => {
+      for (const candidate of [
+        {
+          contentType: 'application/xml',
+          body: '<root><email>x@example.com</email></root>',
+        },
+        {
+          contentType: 'application/x-www-form-urlencoded',
+          body: 'email=x@example.com&role=admin',
+        },
+        { contentType: 'text/plain', body: 'not-json' },
+      ]) {
+        const response = await ctx.client.post('/v1/access/check-email', candidate.body, {
+          raw: true,
+          headers: { 'content-type': candidate.contentType },
+        });
+        if (response.statusCode >= 500) {
+          throw new Error(`${candidate.contentType} returned ${response.statusCode}`);
+        }
+      }
+    });
+
+    await ctx.step('HTTP method fuzzing never bypasses account authentication', async () => {
+      for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+        const response = await ctx.client.request(
+          method,
+          '/v1/accounts/me',
+          method === 'GET' ? undefined : { body: {} },
+        );
+        response.status([401, 403, 404, 405]);
+      }
+    });
+
+    await ctx.step('the router cannot act as an anonymous upstream relay', async () => {
+      const response = await ctx.client.post('/v1/router/chat/completions', {
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'pentest' }],
+      });
+      response.status([401, 403, 404]);
+    });
   },
 );

@@ -9,6 +9,7 @@ const mockConfig = {
   AWS_SES_SECRET_ACCESS_KEY: '',
   RESEND_API_KEY: '',
   RESEND_FROM_EMAIL: '',
+  MAILPIT_API_URL: '',
   MAILTRAP_API_TOKEN: '',
   MAILTRAP_FROM_EMAIL: 'noreply@example.test',
   MAILTRAP_FROM_NAME: 'Kortix Test',
@@ -46,6 +47,7 @@ beforeEach(() => {
   mockConfig.AWS_SES_SECRET_ACCESS_KEY = '';
   mockConfig.RESEND_API_KEY = '';
   mockConfig.RESEND_FROM_EMAIL = '';
+  mockConfig.MAILPIT_API_URL = '';
   mockConfig.MAILTRAP_API_TOKEN = '';
   delete process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
   delete process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
@@ -105,6 +107,23 @@ describe('configuredEmailProviders', () => {
   test('recognizes the ECS task-role credential endpoint as SES configuration', () => {
     process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI = '/v2/credentials/test';
     expect(configuredEmailProviders()).toEqual(['ses']);
+  });
+
+  test('mailpit leg stores the complete transactional message for local flows', async () => {
+    mockConfig.MAILPIT_API_URL = 'http://127.0.0.1:54324';
+    mockConfig.EMAIL_PROVIDER_ORDER = 'mailpit';
+    const result = await sendEmail(MSG);
+    expect(result).toEqual({ ok: true, provider: 'mailpit', status: 200 });
+    expect(calls[0].url).toBe('http://127.0.0.1:54324/api/v1/send');
+    const payload = JSON.parse(String(calls[0].init.body));
+    expect(payload).toEqual({
+      From: { Email: 'noreply@example.test', Name: 'Kortix Test' },
+      To: [{ Email: 'user@example.test' }],
+      Subject: 'Test',
+      HTML: '<p>hello</p>',
+      Text: '',
+      Tags: ['unit-test'],
+    });
   });
 });
 

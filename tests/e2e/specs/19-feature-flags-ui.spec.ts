@@ -86,10 +86,11 @@ async function dismissOnboarding(page: Page): Promise<void> {
  * then the rail's "Feature flags" item selects the section.
  */
 async function openFeatureFlags(page: Page): Promise<Locator> {
-  await page
+  const settings = page
     .locator('[data-slot="sidebar"]')
-    .getByRole("button", { name: "Settings" })
-    .click();
+    .getByRole("button", { name: "Settings" });
+  await expect(settings).toBeVisible({ timeout: 60_000 });
+  await settings.click();
   const panel = page.getByRole("dialog");
   await expect(panel).toBeVisible();
   await panel.getByRole("button", { name: "Feature flags" }).click();

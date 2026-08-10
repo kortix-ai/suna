@@ -1,4 +1,9 @@
 import { locales, type Locale } from '@/i18n/config';
+import {
+  authorizeEnvironment,
+  deriveEnvironmentAccessCookie,
+  ENVIRONMENT_ACCESS_COOKIE,
+} from '@/lib/environment-protection';
 import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
@@ -99,10 +104,7 @@ const PUBLIC_ROUTES = [
 
 // Visual, static public canvases do not need Supabase session reads. Keep them
 // reachable even when local encrypted env vars are not available.
-const STATIC_PUBLIC_ROUTES = [
-  '/game-of-life',
-  '/rauch',
-];
+const STATIC_PUBLIC_ROUTES = ['/game-of-life', '/rauch'];
 
 const MARKDOWN_NEGOTIATION_ROUTES = new Set([
   '/',
@@ -158,6 +160,64 @@ const DESKTOP_ALLOWED_ROUTES = [
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Dev and staging run behind one shared HTTP Basic credential. Read through
+  // dynamic keys so the standalone container uses ECS runtime values instead of
+  // build-time replacements. The gate fails closed when enabled without a secret.
+  const protectionEnabled = Reflect.get(process.env, 'WEB_PROTECTION_ENABLED') as
+    | string
+    | undefined;
+  const protectionPassword = Reflect.get(process.env, 'WEB_PROTECTION_PASSWORD') as
+    | string
+    | undefined;
+  const authorization = request.headers.get('authorization');
+  const accessCookie = request.cookies.get(ENVIRONMENT_ACCESS_COOKIE)?.value;
+  const expectedAccessCookie =
+    protectionEnabled === 'true' && protectionPassword
+      ? await deriveEnvironmentAccessCookie(protectionPassword)
+      : undefined;
+  const protection = authorizeEnvironment({
+    enabled: protectionEnabled,
+    password: protectionPassword,
+    authorization,
+    accessCookie,
+    expectedAccessCookie,
+    pathname,
+  });
+  if (!protection.allowed) {
+    const configurationError = protection.reason === 'configuration_error';
+    return new NextResponse(
+      configurationError ? 'Environment protection is not configured.' : 'Authentication required.',
+      {
+        status: configurationError ? 503 : 401,
+        headers: configurationError
+          ? { 'Cache-Control': 'no-store' }
+          : {
+              'Cache-Control': 'no-store',
+              'WWW-Authenticate': 'Basic realm="Kortix test environment", charset="UTF-8"',
+            },
+      },
+    );
+  }
+
+  const finalizeEnvironmentAccess = (response: NextResponse) => {
+    if (
+      protectionEnabled === 'true' &&
+      protection.source === 'basic' &&
+      expectedAccessCookie &&
+      accessCookie !== expectedAccessCookie
+    ) {
+      response.cookies.set(ENVIRONMENT_ACCESS_COOKIE, expectedAccessCookie, {
+        domain: '.kortix.com',
+        httpOnly: true,
+        maxAge: 60 * 60 * 24 * 7,
+        path: '/',
+        sameSite: 'lax',
+        secure: true,
+      });
+    }
+    return response;
+  };
+
   // Public HTML pages have canonical Markdown representations. Rewrite only
   // explicit Markdown requests. Browsers keep the normal HTML representation.
   if (
@@ -174,9 +234,11 @@ export async function middleware(request: NextRequest) {
     markdownUrl.searchParams.set('path', pathname);
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-kortix-markdown-path', pathname);
-    return NextResponse.rewrite(markdownUrl, {
-      request: { headers: requestHeaders },
-    });
+    return finalizeEnvironmentAccess(
+      NextResponse.rewrite(markdownUrl, {
+        request: { headers: requestHeaders },
+      }),
+    );
   }
 
   // Skip middleware for static files, API routes, and telemetry endpoints.
@@ -190,7 +252,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/monitoring') || // Sentry error tracking tunnel (Better Stack)
     pathname.startsWith('/_betterstack') // Better Stack browser telemetry proxy
   ) {
-    return NextResponse.next();
+    return finalizeEnvironmentAccess(NextResponse.next());
   }
 
   // ── Terms of Service → public Drive file (permanent 308) ────────────────
@@ -203,7 +265,7 @@ export async function middleware(request: NextRequest) {
   // external URL that needs no session. See `lib/legal-terms-redirect.ts`.
   const termsDestination = legalTermsRedirectUrl(pathname, request.nextUrl.searchParams);
   if (termsDestination) {
-    return NextResponse.redirect(termsDestination, 308);
+    return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
   }
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
@@ -237,7 +299,7 @@ export async function middleware(request: NextRequest) {
           // send them back once the lockdown is lifted.
           const maintenanceUrl = new URL('/maintenance', request.url);
           maintenanceUrl.searchParams.set('from', pathname + (request.nextUrl.search || ''));
-          return NextResponse.redirect(maintenanceUrl);
+          return finalizeEnvironmentAccess(NextResponse.redirect(maintenanceUrl));
         }
       }
     } catch {
@@ -266,7 +328,7 @@ export async function middleware(request: NextRequest) {
       });
 
       console.log('🔄 Redirecting Supabase verification from root to /auth/callback');
-      return NextResponse.redirect(callbackUrl);
+      return finalizeEnvironmentAccess(NextResponse.redirect(callbackUrl));
     }
   }
 
@@ -292,7 +354,9 @@ export async function middleware(request: NextRequest) {
       // Supabase user is fetched below, so there is no identity here to check
       // the cookie against — and an unowned cookie read is exactly the bug that
       // sent one account into another account's project. The door re-resolves.
-      return NextResponse.redirect(new URL(PROJECT_LANDING_PATH, request.url));
+      return finalizeEnvironmentAccess(
+        NextResponse.redirect(new URL(PROJECT_LANDING_PATH, request.url)),
+      );
     }
   }
 
@@ -320,12 +384,14 @@ export async function middleware(request: NextRequest) {
       // Do not persist it: language only changes permanently via profile settings.
       response.headers.set('x-locale', locale);
 
-      return response;
+      return finalizeEnvironmentAccess(response);
     }
   }
 
-  if (STATIC_PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
-    return NextResponse.next();
+  if (
+    STATIC_PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))
+  ) {
+    return finalizeEnvironmentAccess(NextResponse.next());
   }
 
   // Create a single Supabase client instance that we'll reuse
@@ -422,7 +488,10 @@ export async function middleware(request: NextRequest) {
       /invalid.*(jwt|token)/i.test(message)
     ) {
       for (const { name } of request.cookies.getAll()) {
-        if (name === KORTIX_SUPABASE_AUTH_COOKIE || name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)) {
+        if (
+          name === KORTIX_SUPABASE_AUTH_COOKIE ||
+          name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
+        ) {
           supabaseResponse.cookies.delete(name);
         }
       }
@@ -442,12 +511,16 @@ export async function middleware(request: NextRequest) {
 
   // FAST PATH: authenticated users hitting the homepage go straight to a project.
   if (pathname === '/' && user) {
-    return redirectPreservingSession(new URL(defaultLandingPath, request.url));
+    return finalizeEnvironmentAccess(
+      redirectPreservingSession(new URL(defaultLandingPath, request.url)),
+    );
   }
 
   // Desktop shell never shows the marketing homepage — bounce into the product.
   if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return redirectPreservingSession(new URL(defaultLandingPath, request.url));
+    return finalizeEnvironmentAccess(
+      redirectPreservingSession(new URL(defaultLandingPath, request.url)),
+    );
   }
 
   // Self-host: when the landing/marketing site is disabled
@@ -461,14 +534,17 @@ export async function middleware(request: NextRequest) {
   // (KORTIX_PUBLIC_/NEXT_PUBLIC_ set at `docker run`) is what must win here,
   // same convention as the Supabase vars below.
   const disableLandingPage =
-    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE || process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
+    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE ||
+      process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
   if (disableLandingPage) {
     const isMarketingContent =
       pathname === '/' ||
-      SELF_HOST_MARKETING_ONLY.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+      SELF_HOST_MARKETING_ONLY.some(
+        (route) => pathname === route || pathname.startsWith(`${route}/`),
+      );
     if (isMarketingContent) {
-      return redirectPreservingSession(
-        new URL(user ? defaultLandingPath : '/auth', request.url),
+      return finalizeEnvironmentAccess(
+        redirectPreservingSession(new URL(user ? defaultLandingPath : '/auth', request.url)),
       );
     }
   }
@@ -481,7 +557,7 @@ export async function middleware(request: NextRequest) {
     if (pathname === '/') {
       supabaseResponse.headers.set('Link', AGENT_DISCOVERY_LINK_HEADER);
     }
-    return supabaseResponse;
+    return finalizeEnvironmentAccess(supabaseResponse);
   }
 
   // Everything else requires authentication - reuse the user we already fetched
@@ -496,13 +572,13 @@ export async function middleware(request: NextRequest) {
       // browser bounces to /auth still carrying the poisoned cookie, and the
       // auth page's own client-side session check has to rediscover the same
       // invalidity from scratch before it can show a usable form.
-      return redirectPreservingSession(url);
+      return finalizeEnvironmentAccess(redirectPreservingSession(url));
     }
 
-    return supabaseResponse;
+    return finalizeEnvironmentAccess(supabaseResponse);
   } catch (error) {
     console.error('Middleware error:', error);
-    return supabaseResponse;
+    return finalizeEnvironmentAccess(supabaseResponse);
   }
 }
 
