@@ -10,22 +10,22 @@ Helm, and Kubernetes are not part of the current deployment path. Commit
 
 ## Environments
 
-| Environment | Source | API | ECS frontend | Vercel frontend |
+| Environment | Source | API | Frontend | Vercel status |
 | --- | --- | --- | --- | --- |
-| Preview | PR with `preview` label | `pr-<number>.preview-api.kortix.com` | `pr-<number>.preview.kortix.com` | PR-specific Vercel URL |
-| Dev | `main` | `dev-api.kortix.com` | `dev-fe-ecs.kortix.com` | `dev.kortix.com` |
-| Staging | `staging` | `staging-api.kortix.com` | `staging-fe-ecs.kortix.com` | `staging.kortix.com` |
-| Production | `prod` | `api.kortix.com` | `prod-fe-ecs.kortix.com` | `kortix.com` |
+| Preview | PR with `preview` label | `pr-<number>.preview-api.kortix.com` | `pr-<number>.preview.kortix.com` on ECS | Disabled |
+| Dev | `main` | `dev-api.kortix.com` | `dev.kortix.com` on ECS | Disabled |
+| Staging | `staging` | `staging-api.kortix.com` | `staging-fe-ecs.kortix.com` on ECS | `staging.kortix.com` |
+| Production | `prod` | `api.kortix.com` | `prod-fe-ecs.kortix.com` on ECS | `kortix.com` |
 
-The permanent Vercel hostnames remain active during the ECS frontend migration.
-The `*-fe-ecs.kortix.com` hostnames provide parallel ECS validation.
+Dev and previews are ECS-only. Staging and production retain their parallel
+Vercel and `*-fe-ecs.kortix.com` paths.
 
 ## Deployment workflows
 
 | Workflow | Role |
 | --- | --- |
-| `deploy-preview.yml` | Builds PR-specific API, gateway, and frontend images. It deploys an isolated ECS service and a parallel Vercel preview. It verifies both paths and removes resources after unlabel or close. |
-| `deploy-dev.yml` | Builds changed dev images, applies dev migrations, rolls the changed ECS services, and verifies the ECS and Vercel frontend paths. |
+| `deploy-preview.yml` | Builds PR-specific API, gateway, and frontend images. It deploys and verifies one isolated ECS service. It removes resources after unlabel or close. |
+| `deploy-dev.yml` | Builds changed dev images, applies dev migrations, rolls the changed ECS services, publishes canonical frontend DNS, and verifies ECS. |
 | `build-staging.yml` | Builds immutable staging release-candidate images. |
 | `deploy-staging.yml` | Applies staging migrations, rolls staging ECS services, and verifies the staging targets. |
 | `promote.yml` | Opens a reviewed release PR from staging into `prod`. It does not deploy. |
@@ -41,19 +41,17 @@ approves the exact head SHA. A new commit tears down the old preview and removes
 the label. A writer or administrator must review the new SHA and reapply it.
 
 1. Three unprivileged jobs build fixed-tag API, gateway, and frontend archives.
-   They receive no Docker Hub, AWS, Vercel, or application secrets.
+   They receive no Docker Hub, AWS, or application secrets.
 2. A trusted job publishes the archives without starting their containers.
 3. Terraform creates PR-specific listener rules, target groups, and DNS records.
 4. The workflow deploys one ECS Fargate service for the pull request.
-5. The workflow creates the parallel Vercel preview.
-6. Verification checks the API commit, frontend commit, runtime URLs, password
+5. Verification checks the API commit, frontend commit, runtime URLs, password
    gate, shared parent-domain cookie, and black-box API flows.
-7. One sticky pull-request comment publishes the API, health, ECS frontend, and
-   Vercel frontend URLs.
+6. One sticky pull-request comment publishes the API, health, and frontend URLs.
 
 Removing the label or closing the pull request destroys the ECS service, task
-definitions, listener rules, target groups, DNS records, and Vercel branch
-configuration. A daily reconciliation run removes leaked preview resources.
+definitions, listener rules, target groups, and DNS records. A daily
+reconciliation run removes leaked preview resources.
 
 Preview compute is isolated per pull request. Preview database and Supabase
 state are shared with dev.

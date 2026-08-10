@@ -9,7 +9,7 @@ const ENVIRONMENTS = {
   },
   dev: {
     canonicalHost: 'dev.kortix.com',
-    ecsHost: 'dev-fe-ecs.kortix.com',
+    ecsHost: 'dev.kortix.com',
     apiHost: 'dev-api.kortix.com',
     protected: true,
   },
@@ -106,7 +106,9 @@ export function renderWebEnvironment(name, environment = process.env) {
   }
 
   const optionalKeys =
-    name === 'preview' ? OPTIONAL_KEYS.filter((key) => !PREVIEW_DENIED_KEYS.has(key)) : OPTIONAL_KEYS;
+    name === 'preview'
+      ? OPTIONAL_KEYS.filter((key) => !PREVIEW_DENIED_KEYS.has(key))
+      : OPTIONAL_KEYS;
   for (const key of optionalKeys) {
     const value = environment[key];
     if (value && value !== '-') payload[key] = value;

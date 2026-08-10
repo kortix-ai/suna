@@ -101,8 +101,8 @@ module "dns" {
   zone_id = var.cloudflare_zone_id
 
   records = {
-    dev-fe-ecs = {
-      name    = "dev-fe-ecs"
+    dev = {
+      name    = "dev"
       type    = "CNAME"
       value   = module.web.alb_dns_name
       proxied = true

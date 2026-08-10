@@ -265,6 +265,7 @@ jobs:
           api_host="pr-${NUM}.preview-api.kortix.com"
           web_host="pr-${NUM}.preview.kortix.com"
           for _ in $(seq 1 30); do
+            cookie_jar="$(mktemp)"
             api_health="$(curl -fsS --max-time 8 "https://${api_host}/v1/health" 2>/dev/null || true)"
             api_environment="$(printf '%s' "$api_health" | jq -r '.environment // empty' 2>/dev/null || true)"
             api_commit="$(printf '%s' "$api_health" | jq -r '.commit // empty' 2>/dev/null || true)"
@@ -272,15 +273,18 @@ jobs:
             web_commit="$(printf '%s' "$web_health" | jq -r '.commit // empty' 2>/dev/null || true)"
             anonymous="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "https://${web_host}/" || true)"
             wrong="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -u 'kortix:wrong-password' "https://${web_host}/" || true)"
-            protected="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -u "kortix:${WEB_PROTECTION_PASSWORD}" "https://${web_host}/" || true)"
-            runtime="$(curl -fsS --max-time 8 -u "kortix:${WEB_PROTECTION_PASSWORD}" "https://${web_host}/api/runtime-config" 2>/dev/null || true)"
-            echo "api_environment=${api_environment:-?} api_commit=${api_commit:-?} web_commit=${web_commit:-?} anonymous=${anonymous:-?} wrong=${wrong:-?} protected=${protected:-?}"
+            protected="$(curl -sS -c "$cookie_jar" -o /dev/null -w '%{http_code}' --max-time 8 -u "kortix:${WEB_PROTECTION_PASSWORD}" "https://${web_host}/" || true)"
+            cookie_only="$(curl -sS -b "$cookie_jar" -o /dev/null -w '%{http_code}' --max-time 8 "https://${web_host}/" || true)"
+            runtime="$(curl -fsS -b "$cookie_jar" --max-time 8 "https://${web_host}/api/runtime-config" 2>/dev/null || true)"
+            rm -f "$cookie_jar"
+            echo "api_environment=${api_environment:-?} api_commit=${api_commit:-?} web_commit=${web_commit:-?} anonymous=${anonymous:-?} wrong=${wrong:-?} protected=${protected:-?} cookie_only=${cookie_only:-?}"
             if [ "$api_environment" = "preview" ] \
               && [ "$api_commit" = "$COMMIT" ] \
               && [ "$web_commit" = "$COMMIT" ] \
               && [ "$anonymous" = 401 ] \
               && [ "$wrong" = 401 ] \
               && { [ "$protected" = 200 ] || [ "$protected" = 307 ] || [ "$protected" = 308 ]; } \
+              && { [ "$cookie_only" = 200 ] || [ "$cookie_only" = 307 ] || [ "$cookie_only" = 308 ]; } \
               && grep -q "https://${api_host}/v1" <<<"$runtime" \
               && grep -q "https://${web_host}" <<<"$runtime"; then
               printf '%s\n' "$api_health" > /tmp/preview-health.json
@@ -299,8 +303,7 @@ jobs:
           body="$(printf '%s\n' "$marker" '## Preview environment - live' '' \
             "- **Backend:** https://${host}" \
             "- **Health:** https://${host}/v1/health" \
-            "- **ECS frontend:** https://${web}" \
-            '- **Vercel frontend:** deployment is building' '' \
+            "- **Frontend:** https://${web}" '' \
             '_One isolated Fargate task with API, gateway, and frontend; automatic close/unlabel teardown._')"
           id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
@@ -309,130 +312,6 @@ jobs:
           else
             gh api -X POST "repos/${REPO}/issues/${NUM}/comments" -f body="$body" >/dev/null
           fi
-
-  wire:
-    name: Wire preview frontend to preview backend
-    needs: deploy
-    runs-on: ubuntu-latest
-    env:
-      NUM: ${{ github.event.pull_request.number }}
-      COMMIT: ${{ github.event.pull_request.head.sha }}
-      GH_TOKEN: ${{ github.token }}
-      REPO: ${{ github.repository }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
-      ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
-      PREVIEW_FLAG_KEY: KORTIX_PREVIEW_APPROVED_SHA
-      BRANCH: ${{ github.event.pull_request.head.ref }}
-    steps:
-      - name: Revalidate exact SHA before Vercel mutation
-        run: |
-          set -euo pipefail
-          current="$(gh api "repos/${REPO}/pulls/${NUM}" --jq .head.sha)"
-          [ "$current" = "$COMMIT" ] || {
-            echo "::error::Approved SHA ${COMMIT} is stale; current head is ${current}."
-            exit 1
-          }
-          labels="$(gh api "repos/${REPO}/issues/${NUM}/labels" --jq 'map(.name) | join(" ")')"
-          [[ " $labels " == *" preview "* ]] || {
-            echo "::error::The preview label was removed before Vercel wiring."
-            exit 1
-          }
-      - name: Require Vercel credentials
-        run: |
-          set -euo pipefail
-          for name in VERCEL_TOKEN PROJECT_ID TEAM_ID; do
-            [ -n "${!name:-}" ] || { echo "::error::$name is required for preview wiring."; exit 1; }
-          done
-      - name: Upsert branch-scoped backend URLs and redeploy
-        env:
-          NUM: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          auth=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
-          api="https://api.vercel.com"
-          backend="https://pr-${NUM}.preview-api.kortix.com/v1"
-          for key_value in \
-            "NEXT_PUBLIC_BACKEND_URL|${backend}" \
-            "KORTIX_PUBLIC_BACKEND_URL|${backend}" \
-            "${PREVIEW_FLAG_KEY}|${COMMIT}"; do
-            key="${key_value%%|*}"
-            value="${key_value#*|}"
-            code="$(curl -sS -o "/tmp/env-${key}.json" -w '%{http_code}' -X POST \
-              "${api}/v10/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}&upsert=true" \
-              "${auth[@]}" -H 'Content-Type: application/json' \
-              -d "$(jq -n --arg v "$value" --arg b "$BRANCH" --arg k "$key" \
-                '{key:$k,value:$v,type:"plain",target:["preview"],gitBranch:$b}')")"
-            [ "$code" = 200 ] || [ "$code" = 201 ] || { jq . "/tmp/env-${key}.json"; exit 1; }
-          done
-          project_code="$(curl -sS -o /tmp/vercel-project.json -w '%{http_code}' \
-            "${api}/v9/projects/${PROJECT_ID}?teamId=${TEAM_ID}" "${auth[@]}")"
-          if [ "$project_code" != 200 ]; then
-            jq '{error}' /tmp/vercel-project.json
-            echo "::error::Vercel project lookup returned HTTP ${project_code}."
-            exit 1
-          fi
-          project="$(</tmp/vercel-project.json)"
-          name="$(printf '%s' "$project" | jq -r .name)"
-          repo_id="$(printf '%s' "$project" | jq -r '.link.repoId')"
-          [ -n "$name" ] && [ "$name" != null ] || { echo "::error::Vercel project response has no name."; exit 1; }
-          [ -n "$repo_id" ] && [ "$repo_id" != null ] || { echo "::error::Vercel project response has no GitHub repoId."; exit 1; }
-          deployment_code="$(curl -sS -o /tmp/vercel-deployment.json -w '%{http_code}' -X POST \
-            "${api}/v13/deployments?teamId=${TEAM_ID}&forceNew=1&skipAutoDetectionConfirmation=1" \
-            "${auth[@]}" -H 'Content-Type: application/json' \
-            -d "$(jq -n --arg n "$name" --argjson r "$repo_id" --arg b "$BRANCH" --arg s "$COMMIT" \
-              '{name:$n,gitSource:{type:"github",repoId:$r,ref:$b,sha:$s}}')")"
-          if [ "$deployment_code" != 200 ] && [ "$deployment_code" != 201 ]; then
-            jq '{error}' /tmp/vercel-deployment.json
-            echo "::error::Vercel deployment creation returned HTTP ${deployment_code}."
-            exit 1
-          fi
-          deployment="$(</tmp/vercel-deployment.json)"
-          deployment_id="$(printf '%s' "$deployment" | jq -r '.id // error("Vercel deployment response has no id")')"
-          frontend="https://$(printf '%s' "$deployment" | jq -r '.url // error("Vercel deployment response has no URL")')"
-          ready=false
-          for _ in $(seq 1 60); do
-            current="$(curl -fsS "${api}/v13/deployments/${deployment_id}?teamId=${TEAM_ID}" "${auth[@]}")"
-            state="$(printf '%s' "$current" | jq -r '.readyState // .state // empty')"
-            deployed_sha="$(printf '%s' "$current" | jq -r '.meta.githubCommitSha // empty')"
-            deployed_branch="$(printf '%s' "$current" | jq -r '.meta.githubCommitRef // empty')"
-            if [ "$state" = "ERROR" ] || [ "$state" = "CANCELED" ]; then
-              echo "::error::Vercel deployment ${deployment_id} entered ${state}."
-              exit 1
-            fi
-            if [ "$state" = "READY" ] && [ "$deployed_sha" = "$COMMIT" ] && [ "$deployed_branch" = "$BRANCH" ]; then
-              ready=true
-              break
-            fi
-            sleep 10
-          done
-          [ "$ready" = true ] || { echo "::error::Vercel deployment was not READY for exact SHA ${COMMIT}."; exit 1; }
-          deployed_envs="$(curl -fsS "${api}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${auth[@]}")"
-          for key_value in \
-            "NEXT_PUBLIC_BACKEND_URL|${backend}" \
-            "KORTIX_PUBLIC_BACKEND_URL|${backend}" \
-            "${PREVIEW_FLAG_KEY}|${COMMIT}"; do
-            key="${key_value%%|*}"
-            value="${key_value#*|}"
-            count="$(printf '%s' "$deployed_envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$value" \
-              '[.envs[] | select(.key==$k and .gitBranch==$b and .value==$v)] | length')"
-            [ "$count" = 1 ] || {
-              echo "::error::${key} does not have the expected branch-scoped value for ${BRANCH}."
-              exit 1
-            }
-          done
-          curl -fsS --max-time 20 "$frontend" >/dev/null
-          marker='<!-- preview-status -->'
-          body="$(printf '%s\n' "$marker" '## Preview environment - live' '' \
-            "- **Backend:** https://pr-${NUM}.preview-api.kortix.com" \
-            "- **Health:** https://pr-${NUM}.preview-api.kortix.com/v1/health" \
-            "- **ECS frontend:** https://pr-${NUM}.preview.kortix.com" \
-            "- **Vercel frontend:** ${frontend}" '' \
-            '_One isolated Fargate task plus a parallel Vercel frontend; automatic close, unlabel, or new-commit teardown._')"
-          id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
-            --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
-          [ -z "$id" ] || gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
 
   teardown:
     name: Tear down preview and invalidate stale approval
@@ -454,12 +333,6 @@ jobs:
       NUM: ${{ github.event.pull_request.number }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
-      ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
-      PREVIEW_FLAG_KEY: KORTIX_PREVIEW_APPROVED_SHA
-      BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -470,36 +343,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Delete isolated Fargate resources
         run: bash infra/scripts/ecs-preview.sh teardown "$NUM"
-      - name: Delete branch-scoped Vercel environment
-        run: |
-          set -euo pipefail
-          for name in VERCEL_TOKEN PROJECT_ID TEAM_ID; do
-            [ -n "${!name:-}" ] || { echo "::error::$name is required for deterministic teardown."; exit 1; }
-          done
-          auth=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
-          api="https://api.vercel.com"
-          envs="$(curl -fsS "${api}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${auth[@]}")"
-          backend="https://pr-${NUM}.preview-api.kortix.com/v1"
-          deleted=0
-          conflicts=0
-          for key in $ENV_KEYS; do
-            expected="$backend"
-            ids="$(printf '%s' "$envs" | jq -r --arg k "$key" --arg b "$BRANCH" \
-              --arg v "$expected" '.envs[] | select(.key==$k and .gitBranch==$b and .value==$v) | .id')"
-            conflicts="$((conflicts + $(printf '%s' "$envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$expected" \
-              '[.envs[] | select(.key==$k and .gitBranch==$b and .value!=$v)] | length')))"
-            for id in $ids; do
-              curl -fsS -X DELETE "${api}/v9/projects/${PROJECT_ID}/env/${id}?teamId=${TEAM_ID}" "${auth[@]}" >/dev/null
-              deleted=$((deleted + 1))
-            done
-          done
-          approval_ids="$(printf '%s' "$envs" | jq -r --arg k "$PREVIEW_FLAG_KEY" --arg b "$BRANCH" \
-            '.envs[] | select(.key==$k and .gitBranch==$b) | .id')"
-          for id in $approval_ids; do
-            curl -fsS -X DELETE "${api}/v9/projects/${PROJECT_ID}/env/${id}?teamId=${TEAM_ID}" "${auth[@]}" >/dev/null
-            deleted=$((deleted + 1))
-          done
-          echo "Deleted ${deleted} Vercel variables owned by PR ${NUM}; preserved ${conflicts} variables with a different backend value."
       - name: Remove stale preview approval
         if: github.event.action == 'synchronize'
         run: |
@@ -513,8 +356,7 @@ jobs:
           id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           body="$(printf '%s\n' "$marker" '## Preview environment - torn down' '' \
-            'The ECS service, two listener rules, two target groups, and task definitions were deleted.' \
-            'Vercel cleanup deleted only branch variables whose value still targeted this PR backend.')"
+            'The ECS service, two listener rules, two target groups, and task definitions were deleted.')"
           [ -z "$id" ] || gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
 
   reconcile:

@@ -53,7 +53,6 @@ describe('sandbox test workflow', () => {
     const workflowRoot = resolve(root, '.github/workflows');
     const workflows = readdirSync(workflowRoot)
       .filter((name) => /\.ya?ml$/.test(name))
-      .filter((name) => name !== 'retire-qa-portal.yml')
       .map((name) => readFileSync(resolve(workflowRoot, name), 'utf8'))
       .join('\n');
 

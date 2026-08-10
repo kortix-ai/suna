@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 const ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || 'af378d3df4e4dd5052a1fcbf263b685d';
 
 const ECS_WEB_HOSTS = {
-  dev: 'dev-fe-ecs.kortix.com',
+  dev: 'dev.kortix.com',
   staging: 'staging-fe-ecs.kortix.com',
   prod: 'prod-fe-ecs.kortix.com',
 };
@@ -14,13 +14,16 @@ export function webDnsRecord(environment, target) {
   if (!/^[a-z0-9.-]+\.elb\.amazonaws\.com$/.test(target)) {
     throw new Error('target must be an AWS ELB hostname');
   }
+  const canonical = environment === 'dev';
   return {
     type: 'CNAME',
     name: host,
     content: target,
     proxied: true,
     ttl: 1,
-    comment: `Kortix ${environment} frontend on ECS Fargate; canonical remains on Vercel`,
+    comment: canonical
+      ? 'Kortix dev frontend on ECS Fargate; canonical ECS endpoint'
+      : `Kortix ${environment} frontend on ECS Fargate; canonical remains on Vercel`,
   };
 }
 
@@ -44,7 +47,10 @@ async function cloudflare(path, options = {}) {
 
 export async function syncWebDns(environment, target) {
   const record = webDnsRecord(environment, target);
-  const query = new URLSearchParams({ type: record.type, name: record.name });
+  // Query by name, not type. The Dev cutover converts the existing Vercel A
+  // record to an ECS CNAME in place. A type-filtered query would miss it and
+  // attempt to create a conflicting record.
+  const query = new URLSearchParams({ name: record.name });
   const existing = await cloudflare(`/zones/${ZONE_ID}/dns_records?${query}`);
   if (existing.length > 1) throw new Error(`multiple DNS records exist for ${record.name}`);
   const current = existing[0];
