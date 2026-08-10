@@ -768,7 +768,17 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (tunnelEnabled && !raw.TUNNEL_SIGNING_SECRET) {
     issues.push({
       var: 'TUNNEL_SIGNING_SECRET',
-      message: 'Required when tunnel is enabled — used for HMAC signing key derivation',
+      message: 'Required when tunnel is enabled — protects device-handoff token derivation',
+      level: 'error',
+    });
+  } else if (
+    tunnelEnabled &&
+    typeof raw.TUNNEL_SIGNING_SECRET === 'string' &&
+    Buffer.byteLength(raw.TUNNEL_SIGNING_SECRET, 'utf8') < 24
+  ) {
+    issues.push({
+      var: 'TUNNEL_SIGNING_SECRET',
+      message: 'Must contain at least 24 bytes of secret material',
       level: 'error',
     });
   }

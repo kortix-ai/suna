@@ -66,7 +66,7 @@ describe('computerCatalog()', () => {
   });
 
   test('label', () => {
-    expect(computerLabel()).toBe('Computers');
+    expect(computerLabel()).toBe('Computer Tunnel');
   });
 });
 

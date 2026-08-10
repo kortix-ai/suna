@@ -515,6 +515,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|router|models|:model",
   "POST|v1|router|web-search",
   "GET|v1|setup-links|connectors|:token",
+  "POST|v1|setup-links|connectors|:token|finalize",
   "POST|v1|setup-links|connectors|:token|start",
   "GET|v1|setup-links|secret|:token",
   "POST|v1|setup-links|secret|:token",

@@ -63,6 +63,31 @@ describe('host boundary transport', () => {
     expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
   });
 
+  test('connector setup-link finalize POSTs anonymously and returns the connected flag', async () => {
+    responseFactory = () => Response.json({ connected: true });
+
+    const result = await boundary.finalizeConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    expect(result).toEqual({ connected: true });
+    expect(requests[0]?.url).toBe(
+      'https://api.example.test/v1/setup-links/connectors/connect-token/finalize',
+    );
+    expect(requests[0]?.init?.method).toBe('POST');
+    expect(requests[0]?.init?.headers).not.toHaveProperty('Authorization');
+  });
+
+  test('connector setup-link finalize reports a still-pending connect as connected:false', async () => {
+    responseFactory = () => Response.json({ connected: false });
+
+    const result = await boundary.finalizeConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    expect(result).toEqual({ connected: false });
+  });
+
   test('audit export sends project and session reconstruction filters', async () => {
     responseFactory = () =>
       new Response('', {

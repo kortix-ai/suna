@@ -109,3 +109,39 @@ describe('stepLabel', () => {
     expect(stepLabel(toolWithInput('read', ['a', 'b'])).object).toBeUndefined();
   });
 });
+
+/**
+ * The row said `Searched site:daytona.io Daytona sandboxes` — the model's
+ * engine syntax, shown verbatim to a reader who never typed it. `shorten`
+ * treats a query the way it treats a path: the row names what was worked ON,
+ * not the argument the tool was handed. Rules live in `search-query.ts`.
+ */
+describe('stepLabel drops search operators', () => {
+  test('a site: scope becomes English', () => {
+    expect(stepLabel(tool('web_search', { query: 'site:daytona.io Daytona sandboxes' })).object).toBe(
+      'Daytona sandboxes on daytona.io',
+    );
+  });
+
+  test('engine-only operators are dropped', () => {
+    expect(stepLabel(tool('web_search', { query: 'filetype:pdf annual report' })).object).toBe(
+      'annual report',
+    );
+  });
+
+  test('a plain query is untouched', () => {
+    expect(stepLabel(tool('web_search', { query: 'Daytona developer infrastructure' })).object).toBe(
+      'Daytona developer infrastructure',
+    );
+  });
+
+  test('memory_search reads its query the same way', () => {
+    expect(stepLabel(tool('memory_search', { query: 'deploy checklist' })).object).toBe(
+      'deploy checklist',
+    );
+  });
+
+  test('a query of nothing but operators never blanks the row', () => {
+    expect(stepLabel(tool('web_search', { query: 'filetype:pdf' })).object).toBe('filetype:pdf');
+  });
+});

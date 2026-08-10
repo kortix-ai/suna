@@ -1,3 +1,5 @@
+import { isShowPayloadEmpty } from './show-availability';
+
 export function normalizeActivityToolName(toolName: string | undefined): string {
   return (toolName ?? '').replace(/^oc-/, '').replace(/-/g, '_');
 }
@@ -45,12 +47,58 @@ export function writeActivityGroupLabel(count: number, running: boolean): string
  * render nothing when expanded, since they are neither tool nor reasoning
  * parts. Filtering them here, at the one place both segmentation and title
  * counting read from, fixes both problems at once.
+ *
+ * A settled `show` with no artifact belongs to the same category (see
+ * `isEmptyShowPart`), and for the same structural reason: returning `null` from
+ * the renderer is not enough. The step still wraps it in a row, the chain still
+ * draws its rail, and the reader gets a blank gap where a deliverable should
+ * be. The part has to be dropped before segmentation, not after.
  */
-export function isInvisibleActivityPart(part: { type?: string; text?: string }): boolean {
+export function isInvisibleActivityPart(part: ActivityPartLike): boolean {
   if (part.type === 'snapshot' || part.type === 'patch') return true;
   if (part.type === 'step-start' || part.type === 'step-finish') return true;
   if (part.type === 'text' && !part.text?.trim()) return true;
+  if (isEmptyShowPart(part)) return true;
   return false;
+}
+
+/** The fields this module reads off a part. Deliberately structural — the turn
+ *  modules pass real `Part`s, the tests pass literals. */
+export interface ActivityPartLike {
+  type?: string;
+  text?: string;
+  tool?: string;
+  state?: { status?: string; input?: Record<string, unknown> | null } | null;
+}
+
+/**
+ * A settled `show` that handed over nothing.
+ *
+ * The show tool rejects a call missing its required field and returns an error
+ * string, but the tool part keeps the arguments the model sent — so the chat
+ * drew a card with a header and an empty body. That reads as a broken UI, not
+ * as a failed call, and there is nothing inside it to read.
+ *
+ * Two deliberate limits on when this fires:
+ *
+ *   - **`completed` only.** A `pending`/`running` call has not finished
+ *     streaming its arguments; its input is empty because it has not arrived
+ *     yet, and hiding it would make the row flicker in mid-turn. The running
+ *     card carries its own spinner and stays.
+ *   - **Never `error`.** A call whose STATE is an error renders the failure
+ *     card from `ToolPartRenderer`, which is real content about a real event.
+ *     Failures stay visible; only the blank card goes.
+ *
+ * No `type === 'tool'` check is needed: only a tool part carries `tool`, so a
+ * text/reasoning/snapshot part normalizes to `''` and falls out on the name.
+ * That keeps this callable from `shouldShowToolPartInActionsPanel`, which is
+ * handed a `Pick<ToolPart, 'tool' | 'state'>` with no `type` on it.
+ */
+export function isEmptyShowPart(part: ActivityPartLike): boolean {
+  const name = normalizeActivityToolName(part.tool);
+  if (name !== 'show' && name !== 'show_user') return false;
+  if (part.state?.status !== 'completed') return false;
+  return isShowPayloadEmpty(part.state?.input);
 }
 
 /**

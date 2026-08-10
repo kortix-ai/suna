@@ -429,7 +429,7 @@ function FileBody({
     // an agent file looks like.
     const { frontmatter, body } = parseFrontmatter(content);
     return (
-      <div className="p-10">
+      <div className="p-6">
         {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
         {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
             escaped text rather than becoming live DOM. */}

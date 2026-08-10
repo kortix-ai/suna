@@ -64,15 +64,24 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
     return entries;
   }, [mode, output]);
 
-  const statusArgs: string[] = [];
-  if (parsed?.status) statusArgs.push(parsed.status);
-  if (parsed?.messages) statusArgs.push(`${parsed.messages} msgs`);
-  if (parsed?.toolCalls && parsed.toolCalls !== '0') statusArgs.push(`${parsed.toolCalls} tools`);
-  if (mode === 'search' && pattern) statusArgs.push(`/${pattern}/`);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it; the summary branch below asks for it on every render.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
+
+  // A fresh array handed to `BasicTool` every render — the one prop shape that
+  // defeats a memo boundary without changing anything a reader can see.
+  const statusArgs = useMemo(() => {
+    const args: string[] = [];
+    if (parsed?.status) args.push(parsed.status);
+    if (parsed?.messages) args.push(`${parsed.messages} msgs`);
+    if (parsed?.toolCalls && parsed.toolCalls !== '0') args.push(`${parsed.toolCalls} tools`);
+    if (mode === 'search' && pattern) args.push(`/${pattern}/`);
+    return args;
+  }, [parsed?.status, parsed?.messages, parsed?.toolCalls, mode, pattern]);
 
   return (
     <BasicTool
-      icon={<Glasses className="size-3.5 flex-shrink-0" />}
+      icon={<Glasses className="size-3.5 shrink-0" />}
       trigger={{
         title: `Session · ${modeLabel}`,
         subtitle: sid,
@@ -89,7 +98,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
               key={i}
               className="border-border/10 flex items-start gap-0 border-b last:border-b-0"
             >
-              <span className="w-6 flex-shrink-0 py-1 text-center font-mono text-xs select-none">
+              <span className="w-6 shrink-0 py-1 text-center font-mono text-xs select-none">
                 {entry.status === 'completed' ? (
                   <Check className={cn('inline size-2.5', STATUS_TEXT.success)} />
                 ) : entry.status === 'pending' ? (
@@ -98,7 +107,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
                   <CircleAlert className={cn('inline size-2.5', STATUS_TEXT.destructive)} />
                 )}
               </span>
-              <span className="text-foreground/80 w-24 flex-shrink-0 truncate py-1 font-mono text-xs font-medium">
+              <span className="text-foreground/80 w-24 shrink-0 truncate py-1 font-mono text-xs font-medium">
                 {entry.tool}
               </span>
               <span className="text-muted-foreground/60 truncate py-1 pr-2 font-mono text-xs">
@@ -107,7 +116,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
             </div>
           ))}
         </div>
-      ) : isErrorOutput(output) ? (
+      ) : outputIsError ? (
         <ToolOutputFallback output={output} toolName="session_read" />
       ) : output ? (
         <OutputBlock text={output} markdown />

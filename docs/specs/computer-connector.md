@@ -1,4 +1,4 @@
-# Computers connector profiles
+# Computer Tunnel connector profiles
 
 **Status:** Implemented specification
 
@@ -6,17 +6,17 @@
 
 ## Goal
 
-Treat Computers as one regular connector provider. A connector profile selects
+Treat Computer Tunnel as one regular connector provider. A connector profile selects
 one or more machines that the project account or profile creator owns. Connector
 grants, tool policies, audit, and session exposure apply to the profile.
 
-The Computers page remains the account fleet surface. It pairs machines, shows
-online state, and manages tunnel capability permissions. Pairing does not grant
-any project access.
+The connector profile is the only fleet-management surface. It pairs machines,
+shows online state, selects profile membership, and manages tunnel capability
+permissions. Pairing does not grant project access.
 
 ## Product contract
 
-- Computers appears in the normal connector catalog.
+- Computer Tunnel appears in the normal connector catalog.
 - A user creates a connector profile and selects one or more paired machines.
 - One machine can belong to multiple connector profiles.
 - A project can contain multiple profiles with different or overlapping sets.
@@ -35,7 +35,7 @@ any project access.
 
 ## Identity and storage
 
-Computers profiles are project-scoped connector rows with these fixed values:
+Computer Tunnel profiles are project-scoped connector rows with these fixed values:
 
 ```text
 provider               computer
@@ -71,7 +71,7 @@ does not create a connector profile or grant access to a project.
 
 ## Catalog
 
-Every Computers profile receives the native catalog from
+Every Computer Tunnel profile receives the native catalog from
 `apps/api/src/connectors/computers.ts`:
 
 - `list_computers`
@@ -120,6 +120,14 @@ The direct `POST /v1/tunnel/rpc/:tunnelId` route and connector execution share
 `executeTunnelRpc`. Rate limits, tunnel permissions, relay errors, and tunnel
 audit behavior stay identical.
 
+Project PATs, sandbox keys, and service-account credentials cannot call the raw
+tunnel connection or RPC routes. They must use a Computer Tunnel connector profile.
+Interactive users, account PATs, and account API keys retain direct account-level
+fleet access. Organization owners and admins can use the organization fleet.
+Regular organization members can use and manage only personal machines through
+raw tunnel routes; assigned connector profiles remain available through normal
+connector grants and tool policy.
+
 ## Permission model
 
 Two permission layers remain intentional:
@@ -132,10 +140,26 @@ Two permission layers remain intentional:
 The connector profile authorizes membership in a machine set. Tunnel
 permissions remain specific to each machine.
 
+The local agent enforces each permission again. Server scope data cannot widen
+the local `allowedPaths`, `blockedPaths`, command, timeout, file-size, or desktop
+feature ceilings. Unknown methods, capabilities, fields, malformed scopes, and
+empty restriction arrays fail closed. An empty scope object is the only explicit
+unrestricted grant.
+
+Remote API URLs require HTTPS/WSS. Plain HTTP/WS is accepted only for loopback
+development. Browser-origin WebSocket upgrades are rejected because the tunnel
+agent protocol is CLI-only.
+
+Cross-replica RPC queue rows are ephemeral transport data. They can briefly
+contain raw parameters or results while a request moves between API replicas.
+The requester deletes terminal rows after consumption. The relay deletes all
+rows after their short `expires_at` window. Audit rows store only structural
+request summaries, result byte counts, and hashed error messages.
+
 ## Fleet lifecycle
 
-The Computers page manages account-level tunnel records. These events reconcile
-the connector materializer without changing profile membership:
+The Computer Tunnel profile manages account-level tunnel records. These events
+reconcile the connector materializer without changing profile membership:
 
 - the first authenticated WebSocket connection;
 - tunnel rename or capability update;
@@ -192,6 +216,6 @@ updated profiles always store `config.tunnel_ids`.
 9. Pairing a machine does not create a connector profile.
 10. Audit actions use `connector.computer.*` under the Connectors category.
 11. The Accounts tab can create and update one-machine and multi-machine sets.
-12. The deployed UI shows Computers in the normal connector catalog.
+12. The deployed UI shows Computer Tunnel in the normal connector catalog.
 13. A project admin can grant a computer from their personal account to an organization project.
 14. A machine owned by any other account fails closed.

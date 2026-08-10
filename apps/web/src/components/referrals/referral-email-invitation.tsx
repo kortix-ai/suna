@@ -189,7 +189,7 @@ export function ReferralEmailInvitation({ className }: ReferralEmailProps) {
 
         <Button
           variant="default"
-          className="h-10 w-[72px] flex-shrink-0 px-2 sm:w-auto sm:px-3"
+          className="h-10 w-[72px] shrink-0 px-2 sm:w-auto sm:px-3"
           onClick={sendAllEmails}
           disabled={!hasUnsentEmails || isSending}
         >

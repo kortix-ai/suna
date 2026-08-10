@@ -39,7 +39,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         <img
           src="/kortix-symbol.svg"
           alt="Kortix"
-          className="flex-shrink-0 invert dark:invert-0"
+          className="shrink-0 invert dark:invert-0"
           style={{ width: `${size * 0.5}px`, height: `${size * 0.5}px` }}
         />
       </div>

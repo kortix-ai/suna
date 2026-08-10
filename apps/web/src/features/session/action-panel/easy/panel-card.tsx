@@ -84,7 +84,7 @@ function CardTitleRow({
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className="text-foreground truncate text-sm font-semibold">{title}</span>
           {typeof count === 'number' && count > 0 && (
-            <Badge variant="secondary" size="sm" className="tabular-nums">
+            <Badge variant="secondary" size="tabular" className="tabular-nums">
               {count}
             </Badge>
           )}
@@ -125,25 +125,10 @@ export function PanelCard({
       open={expanded}
       onOpenChange={setExpanded}
       variant="outline"
-      // `shrink-0` by default: this card sits in a flex column (`EasyPanel`)
-      // alongside the others. Without it, the flexbox algorithm treats this
-      // element's automatic minimum size as 0 (the `overflow-hidden` here and
-      // inside `DisclosureContent` makes that the spec-mandated minimum) and
-      // will happily shrink it *below* its expanded content's real height
-      // whenever the column runs out of room — clipping a row in half.
-      //
-      // `fill` is the deliberate exception, and it is not just "drop
-      // shrink-0". Shrinking is only safe for a card that can SCROLL what no
-      // longer fits, so the two arrive together: `min-h-0` re-enables shrink
-      // (an explicit floor, since the automatic minimum is already 0 and would
-      // otherwise be clamped by `shrink-0`), `flex flex-col` lets the body own
-      // the leftover height, and `DisclosureContent` below becomes the scroll
-      // container. Removing either half reintroduces the clipping this guards.
       className={cn(
-        'bg-pane text-popover-foreground border-border rounded-[calc(var(--radius)-3px)] border shadow-xs ease-out overflow-hidden',
+        'bg-pane text-popover-foreground border-border overflow-hidden rounded-[calc(var(--radius)-3px)] border ease-out',
         fill ? 'flex min-h-0 flex-col' : 'shrink-0',
       )}
-      // bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border rounded-[calc(var(--radius)+0.2rem)] border shadow-lg ease-out
       transition={transition}
     >
       <DisclosureTrigger variant="outline">
@@ -184,27 +169,10 @@ export function PanelCard({
       </DisclosureTrigger>
       <DisclosureContent
         variant="outline"
-        // In `fill` mode this box HANDS DOWN height; it does not scroll. The
-        // scrolling belongs to the content — `OutputRows` puts a
-        // `FadedScrollArea` around its list — because only the content knows
-        // where its list ends, and the edge fades have to sit over the rows to
-        // mean anything. This element's job is to be a bounded flex parent so
-        // that scroll area has a definite height to fill.
-        //
-        // `min-h-0` WITHOUT `flex-1`, deliberately: this box may shrink, never
-        // grow. `flex-1` would make a COLLAPSED card still claim the column's
-        // leftover height and sit there as an empty rectangle under its own
-        // header. Shrink-only (`flex: 0 1 auto`) means the card is exactly as
-        // tall as its content until the column runs out of room.
-        //
-        // The base `overflow-hidden` this component sets stays and is wanted:
-        // it clips to the card's rounded corners while the child scrolls
-        // inside it.
-        //
-        // The header divider moves here too: left on the animated inner
-        // element it is the first thing to scroll away, leaving the header
-        // sitting on the list with nothing between them.
-        className={cn(fill && 'border-border flex min-h-0 flex-col border-t')}
+        className={cn(
+          fill && 'flex min-h-0 flex-col',
+          fill && expanded && 'border-border border-t',
+        )}
         contentClassName={contentClassName}
       >
         {isEmpty ? (

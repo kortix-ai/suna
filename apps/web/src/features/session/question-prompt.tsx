@@ -284,7 +284,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
       <div className="border-border/40 bg-muted/40 overflow-hidden rounded-2xl border">
         {/* Header row */}
         <div className="flex w-full items-center gap-2 px-3 py-1.5">
-          <MessageCircle className="text-muted-foreground size-3.5 flex-shrink-0" />
+          <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
           <span className="text-muted-foreground min-w-0 flex-1 truncate text-left text-xs">
             {isSingle ? '' : `${questions.length} questions \u00B7 `}
             <span className="text-foreground/80 truncate font-medium">{headerSummary}</span>
@@ -326,7 +326,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                   >
                     <span
                       className={cn(
-                        'flex size-3 flex-shrink-0 items-center justify-center rounded-sm border',
+                        'flex size-3 shrink-0 items-center justify-center rounded-sm border',
                         isAnswered
                           ? 'border-border bg-muted'
                           : tab === i
@@ -383,7 +383,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                     >
                       <span
                         className={cn(
-                          'flex size-3 flex-shrink-0 items-center justify-center rounded-sm border',
+                          'flex size-3 shrink-0 items-center justify-center rounded-sm border',
                           done ? 'border-border bg-muted' : 'border-border',
                         )}
                       >
@@ -440,7 +440,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                       >
                         <span
                           className={cn(
-                            'flex size-4 flex-shrink-0 items-center justify-center rounded-[4px] border transition-colors',
+                            'flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors',
                             isPicked
                               ? 'border-primary/50 bg-primary/10'
                               : 'border-border group-hover:border-foreground/30',

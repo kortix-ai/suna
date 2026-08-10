@@ -293,6 +293,52 @@ export async function pipedreamConnectUrl(
   return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app, redirects);
 }
 
+export interface PipedreamAccount {
+  id: string;
+  app: string;
+  appName: string;
+}
+
+/** Attempts + spacing for the account lookup below. Exported for the tests. */
+export const PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS = 3;
+export const PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS = 1200;
+
+/**
+ * Look up the account Pipedream just connected for an external user id.
+ *
+ * Pipedream's account list is eventually consistent: a finalize that runs
+ * immediately after the hosted connect page closes (or from the connect
+ * webhook, which fires at least as early) can read an EMPTY list for an account
+ * that exists a second later. That read is the only thing standing between a
+ * completed OAuth and a persisted credential, so a single empty read must not
+ * be treated as "not connected".
+ *
+ * Bounded on purpose: PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS reads, spaced
+ * PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS apart, returning as soon as one matches.
+ * `runtime` exists so tests inject the provider and the delay — nothing else
+ * passes it.
+ */
+export async function findPipedreamAccount(
+  extUserId: string,
+  app: string,
+  runtime: {
+    listAccounts?: (extUserId: string) => Promise<PipedreamAccount[]>;
+    sleep?: (ms: number) => Promise<void>;
+    attempts?: number;
+  } = {},
+): Promise<PipedreamAccount | null> {
+  const listAccounts = runtime.listAccounts ?? ((id: string) => getProvider().listAccounts(id));
+  const sleep = runtime.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const attempts = runtime.attempts ?? PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await sleep(PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS);
+    const accounts = await listAccounts(extUserId);
+    const match = accounts.find((a) => a.app === app) ?? accounts[0];
+    if (match) return match;
+  }
+  return null;
+}
+
 /**
  * After the user finishes 1-click connect, persist the account-id binding as a
  * credential on the connector — shared (userId null) or that member's own.
@@ -303,9 +349,19 @@ export async function finalizePipedreamConnection(opts: {
   app: string;
   connectorId: string;
   userId: string | null;
+  /**
+   * Lookup attempts override. A POLLING caller (the setup-link finalize route)
+   * passes 1 — its poll loop already is the retry, so the server must not stack
+   * a 2.4s three-read sweep on top of every poll. One-shot callers (webhook,
+   * authed finalize) keep the default bounded retry.
+   */
+  lookupAttempts?: number;
 }): Promise<{ connected: boolean; accountId?: string }> {
-  const accounts = await getProvider().listAccounts(externalUserId(opts.projectId, opts.slug, opts.userId));
-  const match = accounts.find((a) => a.app === opts.app) ?? accounts[0];
+  const match = await findPipedreamAccount(
+    externalUserId(opts.projectId, opts.slug, opts.userId),
+    opts.app,
+    { attempts: opts.lookupAttempts },
+  );
   if (!match) return { connected: false };
   await upsertCredential({ projectId: opts.projectId, connectorId: opts.connectorId, userId: opts.userId, value: match.id, kind: 'connection' });
   return { connected: true, accountId: match.id };
@@ -321,10 +377,10 @@ export async function finalizePipedreamConnectionAuthorization(opts: {
   connectionId: string;
   createdBy: string | null;
 }): Promise<{ connected: boolean; accountId?: string }> {
-  const accounts = await getProvider().listAccounts(
+  const match = await findPipedreamAccount(
     externalUserId(opts.projectId, opts.slug, opts.connectionId),
+    opts.app,
   );
-  const match = accounts.find((account) => account.app === opts.app) ?? accounts[0];
   if (!match) return { connected: false };
   await upsertConnectionCredential({
     projectId: opts.projectId,

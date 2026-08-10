@@ -267,7 +267,7 @@ function SandboxPreviewCard({
 
         <div className="flex items-center gap-3 px-3.5 py-2.5">
           {/* Status icon */}
-          <div className="relative flex-shrink-0">
+          <div className="relative shrink-0">
             <div
               className={cn(
                 'flex h-8 w-8 items-center justify-center rounded-lg border transition-colors',

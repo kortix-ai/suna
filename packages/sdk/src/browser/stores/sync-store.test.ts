@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { STREAM_CACHE_FLUSH_MS } from "./sync-store/stream-cache";
 import type {
 	AssistantMessage,
 	Message,
@@ -337,10 +338,13 @@ describe("useSyncStore — reset", () => {
 
 class MemoryStorage {
 	private map = new Map<string, string>();
+	/** How many times the store actually reached for storage. */
+	setItemCalls = 0;
 	getItem(key: string): string | null {
 		return this.map.has(key) ? (this.map.get(key) ?? null) : null;
 	}
 	setItem(key: string, value: string): void {
+		this.setItemCalls++;
 		this.map.set(key, value);
 	}
 	removeItem(key: string): void {
@@ -372,6 +376,68 @@ describe("stream-cache (via applyEvent message.part.updated / message.part.delta
 		return raw ? JSON.parse(raw) : null;
 	}
 
+	function storage(): MemoryStorage {
+		return (globalThis as GlobalWithDom).sessionStorage as unknown as MemoryStorage;
+	}
+
+	test("a burst of deltas writes to sessionStorage once, not once per delta", async () => {
+		// The cost this pins down: every delta used to do getItem + JSON.parse +
+		// JSON.stringify + setItem of the ENTIRE accumulated text, so a response
+		// cost O(n^2) synchronous storage work as it streamed.
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_burst", userMessage("msg_user"));
+
+		for (let i = 0; i < 20; i++) {
+			store.applyEvent({
+				id: `evt_${i}`,
+				type: "message.part.delta",
+				properties: {
+					messageID: "msg_asst",
+					partID: "prt_1",
+					sessionID: "ses_burst",
+					field: "text",
+					delta: "chunk ",
+				},
+			} as never);
+		}
+
+		// One leading write. The other 19 coalesce into a single trailing one.
+		expect(storage().setItemCalls).toBe(1);
+
+		// And nothing is lost: the final text lands once the window closes. The
+		// wait is derived from the implementation's own constant so the two
+		// cannot drift apart.
+		await new Promise((r) => setTimeout(r, STREAM_CACHE_FLUSH_MS + 50));
+		expect(readCache("ses_burst")?.text).toBe("chunk ".repeat(20));
+		expect(storage().setItemCalls).toBe(2);
+	});
+
+	test("a new part is written at once, not held behind the previous part's window", async () => {
+		// The cache holds ONE entry per session, so a part switch is a change of
+		// subject. Letting it wait out a window opened by the part it replaced
+		// would leave the cache describing text the reader can no longer see.
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "message.part.updated",
+			properties: { sessionID: "ses_1", time: Date.now(), part: textPart("prt_1", "msg_a", "first") },
+		} as never);
+		const afterFirst = storage().setItemCalls;
+
+		store.applyEvent({
+			id: "evt_2",
+			type: "message.part.updated",
+			properties: { sessionID: "ses_1", time: Date.now(), part: textPart("prt_2", "msg_a", "second") },
+		} as never);
+
+		// Synchronously, with no waiting.
+		expect(storage().setItemCalls).toBe(afterFirst + 1);
+		expect(readCache("ses_1")?.partID).toBe("prt_2");
+		expect(readCache("ses_1")?.text).toBe("second");
+	});
+
 	test("message.part.updated with a text part writes the streamed text to sessionStorage", () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", assistantMessage("msg_a"));
@@ -392,7 +458,7 @@ describe("stream-cache (via applyEvent message.part.updated / message.part.delta
 		expect(cached?.partID).toBe("prt_1");
 	});
 
-	test("message.part.delta accumulates text and writes the running total to sessionStorage", () => {
+	test("message.part.delta accumulates text and writes the running total to sessionStorage", async () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_user"));
 
@@ -419,6 +485,11 @@ describe("stream-cache (via applyEvent message.part.updated / message.part.delta
 			},
 		} as never);
 
+		// The assertion is unchanged — the running total reaches the cache. What
+		// changed is that it no longer arrives on the delta itself: writes are
+		// coalesced, so the second delta lands on the trailing flush. Asserting
+		// synchronous write-through was asserting the performance bug.
+		await new Promise((r) => setTimeout(r, STREAM_CACHE_FLUSH_MS + 50));
 		expect(readCache("ses_1")?.text).toBe("Hello");
 	});
 
