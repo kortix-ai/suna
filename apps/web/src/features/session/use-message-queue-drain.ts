@@ -35,7 +35,7 @@
  */
 
 import { useMessageQueueStore, type WebQueuedMessage } from '@/stores/message-queue-store';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createDrainMachine,
   planDrainTick,
@@ -53,13 +53,26 @@ export interface UseMessageQueueDrainOptions {
 
 export interface MessageQueueDrainControls {
   /**
-   * Stop auto-sending until the next enqueue or explicit send. Called when the
-   * user presses stop: "stop doing things" has to include the queue, or the
-   * interrupt is followed a beat later by exactly the message they were trying
-   * to get ahead of.
+   * Stop auto-sending until the next enqueue or an explicit `resume`. Called
+   * when the user presses stop: "stop doing things" has to include the queue,
+   * or the interrupt is followed a beat later by exactly the message they were
+   * trying to get ahead of.
    */
   pause: () => void;
   resume: () => void;
+  /**
+   * Whether the queue is held by a stop. **Render this.**
+   *
+   * A pause with nothing on screen to show for it is indistinguishable from a
+   * broken queue, and that is not hypothetical: messages queued before a stop
+   * sat untouched for as long as anyone waited, because the only thing that
+   * cleared the pause was queueing *another* message. The user sees their
+   * queue simply stop working, with no indication and no way out.
+   *
+   * Mirrored from the ref rather than replacing it: `tick` reads the ref so a
+   * pause takes effect in the same tick it is set, while this drives the paint.
+   */
+  paused: boolean;
 }
 
 function errorMessage(cause: unknown): string {
@@ -75,7 +88,14 @@ export function useMessageQueueDrain({
   const machineRef = useRef<DrainMachine>(createDrainMachine());
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pausedRef = useRef(false);
+  const [paused, setPaused] = useState(false);
   const sendingRef = useRef(false);
+
+  /** Keep the tick-visible ref and the render-visible state in lockstep. */
+  const setPausedState = useCallback((next: boolean) => {
+    pausedRef.current = next;
+    setPaused(next);
+  }, []);
 
   // Read inside callbacks rather than closed over, so the timer callback always
   // sees current values without re-creating itself on every render. Written in
@@ -182,22 +202,22 @@ export function useMessageQueueDrain({
     // behind messages that never drain. Whatever the stop meant, it did not
     // mean "discard what I type from now on".
     if (shouldClearPause(previousCountRef.current, pendingCount)) {
-      pausedRef.current = false;
+      setPausedState(false);
     }
     previousCountRef.current = pendingCount;
     tick();
-  }, [tick, pendingCount]);
+  }, [tick, pendingCount, setPausedState]);
 
   const pause = useCallback(() => {
-    pausedRef.current = true;
+    setPausedState(true);
     clearTimeout(timerRef.current);
-  }, []);
+  }, [setPausedState]);
 
   const resume = useCallback(() => {
-    pausedRef.current = false;
+    setPausedState(false);
     machineRef.current = createDrainMachine();
     tickRef.current();
-  }, []);
+  }, [setPausedState]);
 
-  return { pause, resume };
+  return { pause, resume, paused };
 }

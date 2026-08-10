@@ -103,6 +103,9 @@ export interface SessionChatInputProps {
   failedQueuedMessages?: QueuedMessageView[];
   /** The queued message currently on the wire. Cannot be edited, moved or removed. */
   queueInFlightId?: string | null;
+  /** The queue is held by a stop. Rendered, not silent — see QueuedMessages. */
+  queuePaused?: boolean;
+  onResumeQueue?: () => void;
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
@@ -226,6 +229,8 @@ function SessionChatInputImpl({
   queuedMessages,
   failedQueuedMessages,
   queueInFlightId = null,
+  queuePaused,
+  onResumeQueue,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
@@ -860,6 +865,8 @@ function SessionChatInputImpl({
     onQueueMessage,
     queuedMessages,
     queueInFlightId,
+    queuePaused,
+    onResumeQueue,
     onCommand,
     stagedCommand,
     attachedFiles,
@@ -1136,6 +1143,8 @@ function SessionChatInputImpl({
                 messages={queuedMessages ?? EMPTY_QUEUE}
                 failed={failedQueuedMessages}
                 inFlightId={queueInFlightId}
+                paused={queuePaused}
+                onResume={onResumeQueue}
                 onRemove={onRemoveQueuedMessage}
                 onEdit={onEditQueuedMessage}
                 onReorder={onReorderQueuedMessage}

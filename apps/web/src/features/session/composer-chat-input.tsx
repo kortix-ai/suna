@@ -57,6 +57,8 @@ export function ComposerChatInput({
   queuedMessages,
   failedQueuedMessages,
   queueInFlightId,
+  queuePaused,
+  onResumeQueue,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
@@ -95,6 +97,8 @@ export function ComposerChatInput({
   queuedMessages?: SessionChatInputProps['queuedMessages'];
   failedQueuedMessages?: SessionChatInputProps['failedQueuedMessages'];
   queueInFlightId?: SessionChatInputProps['queueInFlightId'];
+  queuePaused?: SessionChatInputProps['queuePaused'];
+  onResumeQueue?: SessionChatInputProps['onResumeQueue'];
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
@@ -183,6 +187,8 @@ export function ComposerChatInput({
       queuedMessages={queuedMessages}
       failedQueuedMessages={failedQueuedMessages}
       queueInFlightId={queueInFlightId}
+      queuePaused={queuePaused}
+      onResumeQueue={onResumeQueue}
       onQueueMessage={onQueueMessage}
       onRemoveQueuedMessage={onRemoveQueuedMessage}
       onEditQueuedMessage={onEditQueuedMessage}

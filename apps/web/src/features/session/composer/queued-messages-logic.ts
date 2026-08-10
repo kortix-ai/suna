@@ -19,6 +19,17 @@ export function queueSummaryLabel(count: number): string {
 }
 
 /**
+ * The announcement for a queue held by a stop.
+ *
+ * Distinct from `queueSummaryLabel` on purpose: "2 queued · sends when this turn
+ * ends" is a lie while the queue is paused, and it is exactly the lie that made
+ * a stopped queue look like a broken one.
+ */
+export function pausedSummaryLabel(count: number): string {
+  return `${count} queued · paused, will not send until resumed`;
+}
+
+/**
  * Where a row lands after an arrow-key move, or `null` if it cannot move.
  *
  * Deliberately does not wrap. Pressing up on the first row wrapping to the

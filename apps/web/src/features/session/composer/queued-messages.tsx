@@ -35,11 +35,17 @@ import { cn } from '@/lib/utils';
 import {
   ArrowClockwiseIcon,
   PaperclipIcon,
+  PauseIcon,
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { nextFocusAfterRemove, queueSummaryLabel, reorderTargetIndex } from './queued-messages-logic';
+import {
+  nextFocusAfterRemove,
+  pausedSummaryLabel,
+  queueSummaryLabel,
+  reorderTargetIndex,
+} from './queued-messages-logic';
 
 /** Structural, so callers do not have to import the store's types. */
 export interface QueuedMessageView {
@@ -60,6 +66,19 @@ export interface QueuedMessagesProps {
   onEdit?: (id: string, text: string) => void;
   onReorder?: (id: string, toIndex: number) => void;
   onRetry?: (id: string) => void;
+  /**
+   * The queue is held by a stop and will not send on its own.
+   *
+   * This has to be on screen. Pressing stop pauses the queue — reasonably, or
+   * the interrupt is followed a beat later by the message you were interrupting
+   * for — but until this existed the pause was completely silent. Messages
+   * queued before a stop sat there indefinitely, and the only thing that freed
+   * them was queueing another message, which nobody would guess. A queue that
+   * has stopped working is the single worst state this component can be in, so
+   * it is the one state that gets its own row.
+   */
+  paused?: boolean;
+  onResume?: () => void;
 }
 
 /**
@@ -283,6 +302,8 @@ export function QueuedMessages({
   onEdit,
   onReorder,
   onRetry,
+  paused = false,
+  onResume,
 }: QueuedMessagesProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const overflowing = useOverflowing(listRef, messages.length + failed.length);
@@ -309,14 +330,41 @@ export function QueuedMessages({
 
   if (messages.length === 0 && failed.length === 0) return null;
 
+  const showPaused = paused && messages.length > 0;
+
   return (
     <>
       {/* Announced politely: a queue that grows or drains while you are typing
           is a change screen-reader users otherwise have no way to notice. The
           sighted equivalent is the numbers, not a header. */}
       <p className="sr-only" aria-live="polite">
-        {queueSummaryLabel(messages.length)}
+        {showPaused ? pausedSummaryLabel(messages.length) : queueSummaryLabel(messages.length)}
       </p>
+
+      {/* Only rendered while the queue is actually stuck. This is a state plus
+          the way out of it, not a header — the collapsible summary that used to
+          live here was always present and told you nothing you could act on. */}
+      {showPaused && (
+        <div className="flex items-center gap-2 rounded-md border border-dashed px-2.5 py-1.5">
+          <PauseIcon className="text-muted-foreground/60 size-3 shrink-0" weight="fill" />
+          <span className="text-muted-foreground min-w-0 flex-1 text-xs">
+            Paused — stopped before these sent
+          </span>
+          {onResume && (
+            <button
+              type="button"
+              onClick={onResume}
+              className={cn(
+                'text-foreground shrink-0 cursor-pointer rounded-sm px-1.5 py-0.5 text-xs font-medium',
+                'hover:bg-muted-foreground/10 transition-[color,background-color,scale]',
+                'active:scale-[0.96]',
+              )}
+            >
+              Resume
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ONE list. Failures are rows in the queue that need attention, not a
           second queue below it. The cap keeps a long queue from pushing the
@@ -335,7 +383,7 @@ export function QueuedMessages({
               }
             : undefined
         }
-        className="max-h-40 space-y-1.5 overflow-y-auto"
+        className={cn('max-h-40 space-y-1.5 overflow-y-auto', paused && 'opacity-60')}
       >
         {messages.map((message, index) => (
           <QueuedRow
