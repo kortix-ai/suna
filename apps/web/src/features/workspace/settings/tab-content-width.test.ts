@@ -66,18 +66,29 @@ function firstContainerWidth(file: string): string | null {
   return match ? match[1] : null;
 }
 
+// NOTE: deliberately plain `for … of` + `test()`, not `test.each`. `test.each`
+// is what produces this app's known ~17-error `@types/bun` tsc baseline (see
+// the root CLAUDE.md); adding a fourth such file raised that baseline to 23 and
+// weakened the "exactly 17" gate every task in this effort is measured against.
+// The loop costs one line and keeps the gate meaningful.
 describe('settings tab content width', () => {
-  test.each(FORM_TABS)('%s is a form tab at max-w-2xl', (file) => {
-    expect(firstContainerWidth(file)).toBe('max-w-2xl');
-  });
+  for (const file of FORM_TABS) {
+    test(`${file} is a form tab at max-w-2xl`, () => {
+      expect(firstContainerWidth(file)).toBe('max-w-2xl');
+    });
+  }
 
-  test.each(TABLE_TABS)('%s is a table tab at max-w-4xl', (file) => {
-    expect(firstContainerWidth(file)).toBe('max-w-4xl');
-  });
+  for (const file of TABLE_TABS) {
+    test(`${file} is a table tab at max-w-4xl`, () => {
+      expect(firstContainerWidth(file)).toBe('max-w-4xl');
+    });
+  }
 
-  test.each(DELEGATING_TABS)('%s delegates its container to a child view', (file) => {
-    expect(firstContainerWidth(file)).toBeNull();
-  });
+  for (const file of DELEGATING_TABS) {
+    test(`${file} delegates its container to a child view`, () => {
+      expect(firstContainerWidth(file)).toBeNull();
+    });
+  }
 
   test('every tab file is classified — a new tab cannot silently pick its own width', () => {
     const onDisk = readdirSync(TABS_DIR)
