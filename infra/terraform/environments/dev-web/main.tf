@@ -68,6 +68,11 @@ data "aws_secretsmanager_secret" "web_env" {
   name = "kortix-dev-web-env"
 }
 
+data "aws_wafv2_web_acl" "regional" {
+  name  = "kortix-alb-waf"
+  scope = "REGIONAL"
+}
+
 module "web" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -93,6 +98,11 @@ module "web" {
   max_capacity     = 4
   use_fargate_spot = true
   tags             = local.tags
+}
+
+resource "aws_wafv2_web_acl_association" "web" {
+  resource_arn = module.web.alb_arn
+  web_acl_arn  = data.aws_wafv2_web_acl.regional.arn
 }
 
 module "dns" {

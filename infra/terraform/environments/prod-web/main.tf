@@ -68,6 +68,11 @@ data "aws_secretsmanager_secret" "web_env" {
   name = "kortix-prod-web-env"
 }
 
+data "aws_wafv2_web_acl" "regional" {
+  name  = "kortix-alb-waf"
+  scope = "REGIONAL"
+}
+
 module "certificate" {
   source      = "../../modules/acm-cloudflare"
   domain_name = "prod-fe-ecs.kortix.com"
@@ -100,6 +105,11 @@ module "web" {
   max_capacity     = 12
   use_fargate_spot = false
   tags             = local.tags
+}
+
+resource "aws_wafv2_web_acl_association" "web" {
+  resource_arn = module.web.alb_arn
+  web_acl_arn  = data.aws_wafv2_web_acl.regional.arn
 }
 
 module "dns" {
