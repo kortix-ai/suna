@@ -9,7 +9,7 @@ import {
   observePlatinumWorker,
 } from './platinum-ci';
 
-export const DAYTONA_CI_SNAPSHOT_VERSION = 'v1';
+export const DAYTONA_CI_SNAPSHOT_VERSION = 'v2';
 const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v1';
 
 const POLL_MS = 3_000;
@@ -501,6 +501,7 @@ pnpm exec supabase stop --no-backup
 pkill -TERM -x dockerd
 timeout 60 sh -c 'while pgrep -x dockerd >/dev/null || pgrep -x containerd >/dev/null; do sleep 1; done'
 rm -f /var/run/docker.pid /var/run/docker.sock
+rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes
 `;
 }
 

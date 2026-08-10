@@ -409,6 +409,7 @@ done
 echo "[${provider}-ci] container_modules_checked=1"
 
 if ! docker info >/dev/null 2>&1; then
+  ${provider === 'daytona' ? 'rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes' : ''}
   nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &
   for _ in $(seq 1 180); do
     docker info >/dev/null 2>&1 && break

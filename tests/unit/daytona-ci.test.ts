@@ -28,8 +28,8 @@ afterEach(() => {
 
 describe('Daytona CI worker plan', () => {
   test('uses one content-addressed warm snapshot for one lockfile', () => {
-    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v1');
-    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v1-bbbbbbbbbbbbbbbb');
+    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v2');
+    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v2-bbbbbbbbbbbbbbbb');
     expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v1-bbbbbbbbbbbbbbbb-base');
   });
 
@@ -58,6 +58,7 @@ describe('Daytona CI worker plan', () => {
     expect(script).toContain('modprobe "$module"');
     expect(script).toContain('pkill -TERM -x dockerd');
     expect(script).toContain('pgrep -x containerd');
+    expect(script).toContain('rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes');
   });
 
   test('creates an explicitly disposable Daytona worker', () => {
@@ -131,6 +132,7 @@ describe('Daytona CI worker plan', () => {
     expect(script).toContain("'pnpm' 'test' '--' '--full'");
     expect(script).toContain('[daytona-ci] exact_sha=');
     expect(script).toContain('tests/test-results/daytona');
+    expect(script).toContain('rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes');
     expect(script).not.toContain('tests/test-results/platinum');
   });
 
