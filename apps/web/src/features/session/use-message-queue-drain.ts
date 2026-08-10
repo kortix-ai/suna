@@ -4,6 +4,17 @@
  * Drives the queue: watches the gates, waits for a real end-of-turn, and sends
  * exactly one message when it arrives.
  *
+ * First come, first served. `queue[0]` goes out alone; everything behind it
+ * waits for the turn that message starts to finish, then the new head goes.
+ * That ordering IS the feature — merging the queue into one prompt would hand
+ * the agent several unrelated instructions at once and lose the sequence the
+ * user typed them in.
+ *
+ * What was broken was never the one-at-a-time rule. It was that the queue kept
+ * stopping: a latch that waited for a busy period the tab might never observe,
+ * and a gate that stayed closed forever after the stop button. Both are gone.
+ * See `message-queue-boundary.ts`.
+ *
  * All of the judgment lives in `message-queue-boundary.ts` as pure functions,
  * and the claim/complete/fail bookkeeping lives in the store. What is left here
  * is the part that genuinely needs React and a clock: re-evaluating when a gate
@@ -26,11 +37,9 @@
 import { useMessageQueueStore, type WebQueuedMessage } from '@/stores/message-queue-store';
 import { useCallback, useEffect, useRef } from 'react';
 import {
-  QUEUE_SETTLE_MS,
   createDrainMachine,
-  rearmDrainMachine,
+  planDrainTick,
   shouldClearPause,
-  stepDrainMachine,
   type DrainMachine,
   type QueueDrainGates,
 } from './message-queue-boundary';
@@ -92,11 +101,9 @@ export function useMessageQueueDrain({
       } catch (cause) {
         // Set it aside with its reason; never back at the head. Requeueing a
         // failure is how the queue used to wedge, and how a prompt the server
-        // already accepted got sent a second time.
+        // already accepted got sent a second time. The head moving on is the
+        // point: one bad message must not stop the queue.
         useMessageQueueStore.getState().fail(sessionId, errorMessage(cause));
-        // A failed send never made the session busy, so without this the
-        // machine waits forever for a turn that never started.
-        machineRef.current = rearmDrainMachine(machineRef.current);
       } finally {
         sendingRef.current = false;
         tickRef.current();
@@ -105,32 +112,34 @@ export function useMessageQueueDrain({
     [sessionId],
   );
 
+  // Every decision below is `planDrainTick`'s; what is left here is carrying it
+  // out. The store read, the timer and the claim are the only parts that
+  // genuinely cannot be a pure function.
   const tick = useCallback(() => {
     clearTimeout(timerRef.current);
-    if (sendingRef.current) return;
 
-    const queue = useMessageQueueStore.getState().getSessionQueue(sessionId);
-    if (queue.pending.length === 0) return;
-
-    const now = Date.now();
-    const { machine, dispatch } = stepDrainMachine(
-      machineRef.current,
-      { ...gatesRef.current, isPaused: gatesRef.current.isPaused || pausedRef.current },
-      now,
-    );
+    const { machine, action } = planDrainTick({
+      machine: machineRef.current,
+      gates: { ...gatesRef.current, isPaused: gatesRef.current.isPaused || pausedRef.current },
+      pendingCount: useMessageQueueStore.getState().getSessionQueue(sessionId).pending.length,
+      sending: sendingRef.current,
+      now: Date.now(),
+    });
     machineRef.current = machine;
 
-    if (dispatch) {
-      const claimed = useMessageQueueStore.getState().claimNext(sessionId);
-      if (claimed) void dispatchOne(claimed);
-      return;
-    }
-
-    // Armed but not settled yet — the gates are clear and staying clear is the
-    // only thing left to prove, and nothing else will re-render to tell us.
-    if (machine.clearSince !== null && machine.sawBusySinceDispatch) {
-      const remaining = Math.max(0, QUEUE_SETTLE_MS - (now - machine.clearSince));
-      timerRef.current = setTimeout(() => tickRef.current(), remaining + 1);
+    switch (action.kind) {
+      case 'dispatch': {
+        // The head, and only the head.
+        const claimed = useMessageQueueStore.getState().claimNext(sessionId);
+        if (claimed) void dispatchOne(claimed);
+        return;
+      }
+      case 'wait':
+        // Nothing else will re-render to say the gates stayed clear.
+        timerRef.current = setTimeout(() => tickRef.current(), action.ms + 1);
+        return;
+      case 'idle':
+        return;
     }
   }, [sessionId, dispatchOne]);
 
@@ -188,7 +197,7 @@ export function useMessageQueueDrain({
 
   const resume = useCallback(() => {
     pausedRef.current = false;
-    machineRef.current = rearmDrainMachine(machineRef.current);
+    machineRef.current = createDrainMachine();
     tickRef.current();
   }, []);
 
@@ -202,7 +211,7 @@ export function useMessageQueueDrain({
       // clear the pause the stop button just set, and claim it.
       pausedRef.current = false;
       useMessageQueueStore.getState().reorder(sessionId, id, 0);
-      machineRef.current = rearmDrainMachine(machineRef.current);
+      machineRef.current = createDrainMachine();
       const claimed = useMessageQueueStore.getState().claimNext(sessionId);
       if (claimed) await dispatchOne(claimed);
     },

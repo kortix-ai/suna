@@ -28,6 +28,7 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
+import { hasOpenAssistantTurn } from './assistant-turn-open';
 import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
@@ -2048,19 +2049,16 @@ export function SessionChat({
   const sessionStatus = sessionState?.status ?? syncStatus;
   const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
-  // Pending: last assistant message has no time.completed.
-  // Used as a SECONDARY signal — only contributes to busy when the
-  // server also says busy. Prevents the event-ordering race where
-  // session.idle arrives before message.updated sets time.completed.
-  const hasIncompleteAssistant = useMemo(() => {
-    if (!messages || messages.length === 0) return false;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].info.role === 'assistant') {
-        return !(messages[i].info as any).time?.completed;
-      }
-    }
-    return false;
-  }, [messages]);
+  // Pending: last assistant message is neither completed nor errored.
+  // Used as a SECONDARY signal for busy — only contributes when the server
+  // also says busy. Prevents the event-ordering race where session.idle
+  // arrives before message.updated sets time.completed.
+  //
+  // It is ALSO a queue drain gate, which is why "errored counts as ended"
+  // matters: an aborted turn keeps `time.completed` unset, so reading only
+  // that field left this true forever after the stop button and closed the
+  // gate permanently. See `assistant-turn-open.ts`.
+  const hasIncompleteAssistant = useMemo(() => hasOpenAssistantTurn(messages), [messages]);
 
   const hasPendingUserReply = useMemo(() => {
     if (!messages || messages.length === 0) return false;
@@ -3228,6 +3226,11 @@ export function SessionChat({
 
   const sendQueuedMessage = useCallback(
     async (message: WebQueuedMessage) => {
+      // ONE message. The queue is first-come-first-served: `queue[0]` goes out
+      // by itself, and the rest wait for the turn it starts to finish. Merging
+      // the queue into a single prompt would destroy that ordering and hand the
+      // agent several unrelated instructions at once.
+      //
       // Files that did not survive being stored carry no data — send the text
       // rather than a broken attachment. The composer shows the user that the
       // attachments were dropped.
