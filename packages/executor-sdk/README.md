@@ -10,7 +10,7 @@ const kortix = createKortix({
   getToken: async () => process.env.KORTIX_TOKEN ?? null,
 });
 
-const connectors = kortix.project(projectId).connectors;
+const connectors = kortix.workspace(workspaceId).connectors;
 await connectors.call('gmail.send_email', { to, subject, body });
 ```
 

@@ -178,7 +178,7 @@ export class ExecutorClient {
   ): Promise<ExecutorCallResult<T>> {
     if (opts.approvalExecutionId) {
       const path = this.workspaceId
-        ? `/connectors/projects/${encodeURIComponent(this.workspaceId)}/call`
+        ? `/connectors/workspaces/${encodeURIComponent(this.workspaceId)}/call`
         : '/connectors/call';
       return this.request<ExecutorCallResult<T>>(path, {
         method: 'POST',
