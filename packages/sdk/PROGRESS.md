@@ -12,6 +12,26 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-10 — session `workspace-refactor-managed-capabilities-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into PR #5480 after Main added managed-model capability and preview-stack work.
+
+Claimed SDK scope:
+
+- Preserve every published Project compatibility export and Workspace API.
+- Reconcile the SDK playground model-change example with Main's managed-model
+  capability behavior while using the canonical Workspace facade.
+- Preserve the release-managed package version and both public-surface snapshots.
+- Run SDK typecheck, the complete SDK suite, packed-install smoke, and the full
+  repository gate.
+
+The required `tdd` skill is unavailable in this session. This reconciliation
+does not add SDK runtime behavior. Existing compatibility and playground gates
+must remain green.
+
+**Status:** IN PROGRESS.
+
 ### 2026-08-10 — session `workspace-refactor-stream-reconciliation` claim
 
 No **Now** task claimed. This is the user-directed merge of current `origin/main`
