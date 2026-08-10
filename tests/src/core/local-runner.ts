@@ -154,12 +154,12 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       mode: 'full',
       lanes,
       // Four REST workers and two browsers contend for the same local API and
-      // database. Keep browser verification in its own stage. Package quality
-      // also stays exclusive because it starts disposable PostgreSQL containers.
+      // database. Keep browser verification after REST. Package quality uses
+      // separate disposable PostgreSQL ports, so it can overlap the browser
+      // lane without sharing product state.
       stages: [
         [fullFlows, runnerUnit, routeCoverage, worktreeUnit],
-        [fullBrowser],
-        [packageQuality],
+        [fullBrowser, packageQuality],
       ],
     };
   }
@@ -331,7 +331,7 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
         localWeb = null;
         localStack = null;
         localSupabase = null;
-        console.log('[test] product-stack stopped before package-quality');
+        console.log('[test] product-stack stopped after browser');
       }
     }
   } finally {

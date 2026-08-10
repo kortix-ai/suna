@@ -38,8 +38,7 @@ describe('local test runner', () => {
     expect(plan.lanes.at(-1)?.command).toEqual(['bun', 'tests/bin/package-quality.ts']);
     expect(plan.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
       ['api-cli-flows', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
-      ['browser'],
-      ['package-quality'],
+      ['browser', 'package-quality'],
     ]);
     expect(plan.stages[0]?.[0]?.command.slice(-2)).toEqual(['--api-workers', '4']);
     expect(plan.lanes.find((lane) => lane.name === 'browser')?.env).toEqual({
