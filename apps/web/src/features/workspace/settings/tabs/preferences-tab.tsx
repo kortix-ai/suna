@@ -282,7 +282,15 @@ export function PreferencesTabView({
       {/* 1. Theme */}
       <section className="space-y-3">
         <SettingsSectionHeader title="Theme" description="Choose how Kortix looks on this device." />
-        <div className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5">
+        {/* Concentric radius: the track pads its thumb by `p-0.5` (2px), and
+            `--radius-md` is defined as exactly 2px larger than `--radius-sm`
+            (globals.css:320-321). So `rounded-md` track around a `rounded-sm`
+            thumb nests exactly, rather than the thumb's corners cutting inside
+            the track's. Dropped a `shadow-custom` class from here: it is
+            defined nowhere in the repo — no CSS file, no `@theme`, no
+            `@utility` — so it emitted nothing and only implied a depth
+            treatment that was never applied. */}
+        <div className="bg-foreground/10 flex w-fit items-center gap-1 rounded-md p-0.5">
           {THEME_OPTIONS.map(({ value, label, Icon }) => (
             <button
               key={value}
