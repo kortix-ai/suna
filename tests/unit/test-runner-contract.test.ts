@@ -87,7 +87,9 @@ describe('local test runner contract', () => {
     );
     const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
 
-    expect(cliPackage.scripts.test).toContain('bun test --isolate --parallel=4');
+    expect(cliPackage.scripts.test).toContain(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
+    );
     expect(agentPackage.scripts.test).toBe('bun test');
     expect(dbPackage.scripts.test).toBe('bun test --parallel=2 --max-concurrency 2');
   });
