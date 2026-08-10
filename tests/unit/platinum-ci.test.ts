@@ -248,6 +248,25 @@ describe('Platinum CI worker plan', () => {
     expect(coreScript).not.toContain('supabase_prestarted=1');
   });
 
+  test('propagates the full-run SDK de-duplication flag into the package worker', () => {
+    const fullPackageScript = buildWorkerScript({
+      repository: 'kortix-ai/suna',
+      ref: sha,
+      sha,
+      testArgs: ['--packages-only'],
+      skipSdkPackageTests: true,
+    });
+    expect(fullPackageScript).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
+
+    const standalonePackageScript = buildWorkerScript({
+      repository: 'kortix-ai/suna',
+      ref: sha,
+      sha,
+      testArgs: ['--packages-only'],
+    });
+    expect(standalonePackageScript).not.toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
+  });
+
   test('detaches the worker with the Platinum-supported setsid contract', () => {
     const command = platinumWorkerLaunchCommand();
     expect(command).toContain('setsid -f /workspace/run-kortix-tests.sh');

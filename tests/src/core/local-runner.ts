@@ -171,7 +171,21 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       command: [...flows.command, '--api-workers', '4'],
     };
     const fullBrowser: LocalTestLane = { ...browser };
-    const lanes = [fullFlows, runnerUnit, routeCoverage, worktreeUnit, fullBrowser, packageQuality];
+    const fullPackageQuality: LocalTestLane = {
+      ...packageQuality,
+      // Full mode runs the SDK as a named lane. Keep package-only mode complete,
+      // but do not execute the same SDK tests twice inside one full run.
+      env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
+    };
+    const lanes = [
+      fullFlows,
+      sdk,
+      runnerUnit,
+      routeCoverage,
+      worktreeUnit,
+      fullBrowser,
+      fullPackageQuality,
+    ];
     return {
       mode: 'full',
       lanes,
@@ -179,9 +193,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
       stages: [
-        [fullFlows, runnerUnit, routeCoverage, worktreeUnit],
+        [fullFlows, sdk, runnerUnit, routeCoverage, worktreeUnit],
         [fullBrowser],
-        [packageQuality],
+        [fullPackageQuality],
       ],
     };
   }

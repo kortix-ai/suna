@@ -9,6 +9,7 @@ const repository = process.env.GITHUB_REPOSITORY || 'kortix-ai/suna';
 const runId = process.env.SANDBOX_TEST_RUN_ID || process.env.GITHUB_RUN_ID || `local-${Date.now()}`;
 const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
 const testArgs = process.argv.slice(2);
+const skipSdkPackageTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
 
 process.exitCode = await runSandboxCi({
   provider: parseSandboxCiProvider(process.env.TEST_SANDBOX_PROVIDER),
@@ -21,6 +22,7 @@ process.exitCode = await runSandboxCi({
     runId,
     runAttempt,
     testArgs,
+    skipSdkPackageTests,
     root,
   },
   daytona: {
@@ -34,6 +36,7 @@ process.exitCode = await runSandboxCi({
     runId,
     runAttempt,
     testArgs,
+    skipSdkPackageTests,
     root,
   },
 });
