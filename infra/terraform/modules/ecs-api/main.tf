@@ -338,7 +338,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 
 #trivy:ignore:AVD-AWS-0053 This public API origin must accept Cloudflare traffic; the ALB security group restricts ingress to var.alb_ingress_cidrs.
 resource "aws_lb" "this" {
-  #checkov:skip=CKV2_AWS_28:The compliance-monitoring stack associates every account ALB with the regional kortix-alb-waf ACL.
+  #checkov:skip=CKV2_AWS_28:Environment roots associate this output ALB with a regional WAF; legacy API roots use the compliance-monitoring association.
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
