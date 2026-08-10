@@ -128,38 +128,47 @@ async function runWorkspaceTests(
   );
 }
 
-await run(['node', 'scripts/stage-npm-publish.test.mjs']);
-await run(['node', 'scripts/publish-npm-package.test.mjs']);
+await Promise.all([
+  run(['node', 'scripts/stage-npm-publish.test.mjs']),
+  run(['node', 'scripts/publish-npm-package.test.mjs']),
+]);
 await rejectFocusedTests();
-await run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']);
-await run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']);
-for (const directory of ['llm-catalog', 'sdk', 'executor-sdk']) {
-  await verifyPublishablePackage(directory, false);
-}
-await verifyAgentTunnelCli();
+await Promise.all([
+  run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
+  run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
+]);
+await Promise.all([
+  ...['llm-catalog', 'sdk', 'executor-sdk'].map((directory) =>
+    verifyPublishablePackage(directory, false),
+  ),
+  verifyAgentTunnelCli(),
+]);
 
-// Keep process-heavy suites in explicit load classes. A generic workspace fan-out
-// makes their internal worker pools compete and breaks the repository's 5-second
-// performance contracts. The lanes still parallelize within each package.
-await runWorkspaceTests(['kortix-api'], 1, {
-  // Full mode runs beside the local product stack. Three isolated workers keep
-  // process-heavy Git tests inside their fixed 15-second performance contract.
-  KORTIX_API_TEST_WORKERS: '3',
-});
-await runWorkspaceTests(['@kortix/cli', '@kortix/sandbox-agent-server'], 2);
-await runWorkspaceTests(['@kortix/db'], 1);
-// These contracts apply the complete migration history to disposable Postgres
-// containers and verify billing rollups, RPC overloads, and worktree migration
-// behavior. Keep them in the canonical package lane instead of a second runner.
-await run(['bun', 'test', '--max-concurrency', '2', 'tests/migration']);
-await runWorkspaceTests(
-  [
-    './packages/**',
-    './apps/**',
-    '!kortix-api',
-    '!@kortix/cli',
-    '!@kortix/sandbox-agent-server',
-    '!@kortix/db',
-  ],
-  2,
-);
+// Run two explicit bounded waves. This avoids a generic workspace fan-out while
+// removing idle CPU time between independent load classes. The API has three
+// workers. The CLI has four. The agent server and pnpm each add one supervisor.
+await Promise.all([
+  runWorkspaceTests(['kortix-api'], 1, {
+    KORTIX_API_TEST_WORKERS: '3',
+  }),
+  runWorkspaceTests(['@kortix/cli', '@kortix/sandbox-agent-server'], 2),
+]);
+await Promise.all([
+  (async () => {
+    await runWorkspaceTests(['@kortix/db'], 1);
+    // These contracts apply the complete migration history to disposable
+    // PostgreSQL containers. Keep them after the DB package to bound Docker IO.
+    await run(['bun', 'test', '--max-concurrency', '2', 'tests/migration']);
+  })(),
+  runWorkspaceTests(
+    [
+      './packages/**',
+      './apps/**',
+      '!kortix-api',
+      '!@kortix/cli',
+      '!@kortix/sandbox-agent-server',
+      '!@kortix/db',
+    ],
+    2,
+  ),
+]);

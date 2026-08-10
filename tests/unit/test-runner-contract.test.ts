@@ -69,6 +69,7 @@ describe('local test runner contract', () => {
     expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
     expect(source).toContain("['@kortix/cli', '@kortix/sandbox-agent-server']");
     expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
+    expect(source.match(/await Promise\.all\(\[/g)).toHaveLength(5);
     expect(source).toContain("'!kortix-api'");
     expect(source).toContain("'!@kortix/db'");
   });
