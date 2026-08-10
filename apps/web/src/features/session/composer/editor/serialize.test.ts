@@ -120,3 +120,56 @@ describe('serializeDocument', () => {
     expect(serializeDocument(doc).text).toBe('line one\nline two');
   });
 });
+
+/**
+ * The `/` command chip. Everything here defends one invariant that the submit
+ * path relies on without re-checking it: when `commandName` is set, `text` IS
+ * the command's arguments — nothing to strip, nothing to re-parse.
+ */
+describe('serializeDocument — command chips', () => {
+  test('a command chip is reported as commandName and contributes no text', () => {
+    const doc = docWith(mentionJSON('command', 'deep-research'), textJSON(' the tiptap docs'));
+    const result = serializeDocument(doc);
+
+    expect(result.commandName).toBe('deep-research');
+    // Not "/deep-research the tiptap docs". `onCommand(command, args)` already
+    // carries the command; leaving it in the text too would send the agent the
+    // command name prepended to its own arguments.
+    expect(result.text).toBe('the tiptap docs');
+  });
+
+  test('a command chip is NOT a tracked mention', () => {
+    // If it leaked into `mentions` it would reach `buildFileRefsBlock` and the
+    // agent would be handed a `<file_ref>` for a path that does not exist.
+    const doc = docWith(mentionJSON('command', 'deep-research'), textJSON(' about '), mentionJSON('file', 'README.md'));
+    const result = serializeDocument(doc);
+
+    expect(result.mentions).toEqual([{ kind: 'file', label: 'README.md' }]);
+  });
+
+  test('a command chip with no arguments yields empty text, not whitespace', () => {
+    const doc = docWith(mentionJSON('command', 'compact'), textJSON(' '));
+    const result = serializeDocument(doc);
+
+    expect(result.commandName).toBe('compact');
+    expect(result.text).toBe('');
+  });
+
+  test('the FIRST command chip wins when a document somehow holds two', () => {
+    // Reordering which command runs behind the user's back is worse than
+    // ignoring the extra chip — see `collectCommandName`.
+    const doc = docWith(
+      mentionJSON('command', 'first'),
+      textJSON(' x '),
+      mentionJSON('command', 'second'),
+    );
+
+    expect(serializeDocument(doc).commandName).toBe('first');
+  });
+
+  test('a document with no command chip reports no commandName', () => {
+    const doc = docWith(textJSON('just a message'), mentionJSON('file', 'README.md'));
+
+    expect(serializeDocument(doc).commandName).toBeUndefined();
+  });
+});

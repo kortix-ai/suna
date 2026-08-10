@@ -26,27 +26,30 @@
  * root and were never session-chat-input-specific.
  */
 
-import type { RefObject } from 'react';
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import type { RefObject } from 'react';
+import {
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
-import type {
-  Agent,
-  Command,
-  MessageWithParts,
-  ProviderListResponse,
-  Session,
-} from '@kortix/sdk/react';
+import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
 import { useRuntimeSessions } from '@kortix/sdk/react';
 import type { JSONContent } from '@tiptap/core';
 
 import {
   ArrowUpLeftIcon as ArrowUpLeft,
   ArrowBendUpLeftIcon as Reply,
-  TerminalWindowIcon as Terminal,
   XIcon as X,
 } from '@phosphor-icons/react';
 
@@ -54,27 +57,28 @@ import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
 import { resolveComposerResetOnSend } from '../composer-reset';
 import { shouldQueueInsteadOfSend } from '../message-queue-boundary';
-import type { FlatModel } from '../model-flatten';
 import {
+  isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
-  isModelRequiredButUnavailable,
   resolveAvailableSelectedModel,
 } from '../model-availability';
 import { ModelConnectionBar } from '../model-connection-gate';
+import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 
 import { AttachmentTiles } from './attachment-tiles';
-import { ComposerToolbar } from './composer-toolbar';
 import {
   appendTranscribedText,
+  planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
   resolveEditorPlaceholder,
   shouldApplyPrefill,
   textToDocument,
 } from './composer-logic';
+import { ComposerToolbar } from './composer-toolbar';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
@@ -244,28 +248,24 @@ const EMPTY_QUEUE: QueuedMessageView[] = [];
 const EMPTY_DOCUMENT = textToDocument('');
 
 /**
- * Fix round 1, Important: `/` while a command is staged used to be
- * impossible — `session-chat-input.tsx:1001`'s `handleInput` gated slash
- * detection on `!stagedCommand` entirely, at the regex level, before any
- * popover could open. `ComposerEditor`'s `/` trigger has no such gate (it
- * reacts to the live document, not a "staged" concept the shell tracks
- * separately), so typing `/` while filling in a staged command's args used
- * to open the `/` palette, and selecting a COMMAND row from it would
- * re-stage — silently discarding the args being typed. Passing this empty
- * list while staged empties the Commands/Skills/MCP sections, which is the
- * part that could re-stage.
+ * The `/` command lives in the DOCUMENT, as an inline chip — not in this
+ * component's state.
  *
- * Task 13 closes the rest of it: round 1's fix left the `/` menu's Actions
- * section (switch-model, switch-agent, ...) still populated while staged,
- * because `SLASH_ACTIONS` was a fixed default `composer-editor.tsx` never
- * overrode. Selecting an action never re-staged a command, so it wasn't the
- * data-loss bug — but the menu still visibly opened over a staged command's
- * argument field, which reads as broken. `EMPTY_ACTIONS`, passed alongside
- * `EMPTY_COMMANDS` below, empties that section too, so the `/` palette is
- * genuinely fully suppressed while a command is staged.
+ * What it replaced, and why: picking a command used to clear the editor and
+ * store the `Command` in a `stagedCommand` state field, rendered as a banner
+ * above the input. Because the document knew nothing about it, the banner had
+ * to be defended — an empty command list AND an empty action list were fed to
+ * the `/` menu for as long as one was staged, so that picking a second command
+ * could not silently discard the arguments being typed for the first. The cost
+ * was the bug this replaces: after the first pick, pressing `/` did nothing
+ * at all, forever, because the menu it opened had zero rows to show.
+ *
+ * As a chip (`editor/mention-node.ts`'s `insertCommandChip`) none of that
+ * machinery is needed. The command is a node like an `@` mention is a node:
+ * it survives undo, backspace deletes it whole, the surrounding text is its
+ * arguments, and `/` keeps working because there is no state left to protect.
+ * `getContent().commandName` is how this component reads it back at submit.
  */
-const EMPTY_COMMANDS: Command[] = [];
-const EMPTY_ACTIONS: SlashAction[] = [];
 
 /**
  * `ComposerEditor` (`./editor/composer-editor.tsx`) wraps `@tiptap/react` +
@@ -286,7 +286,9 @@ const ComposerEditorLazy = lazy(() =>
 /** Reserves the loaded editor's own min-height so the Suspense fallback
  *  doesn't shift layout once the real chunk resolves. */
 function ComposerEditorFallback() {
-  return <div className="min-h-[3rem]" aria-hidden />;
+  // Must equal the real editor's `min-h` (`editor/composer-editor.tsx`), or
+  // the card visibly resizes the moment the lazy chunk resolves.
+  return <div className="min-h-[1.5em]" aria-hidden />;
 }
 
 /**
@@ -389,9 +391,23 @@ function ComposerImpl({
 }: SessionChatInputProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
+  /**
+   * Where the `/` menu renders — an element above the composer card, not the
+   * caret. `@tiptap/suggestion` resolves this with `document.querySelector` at
+   * mount time (see `menus/mount.ts`), so it has to be a selector, and it has
+   * to be unique per composer instance: two composers on one page sharing an
+   * id would race for the same dock and the second would swallow the first's
+   * menu.
+   *
+   * `useId()` yields React's own collision-free value (`«r3»` in React 19),
+   * whose delimiters are not usable in a CSS selector without escaping — the
+   * strip is what makes `#${dockId}` a valid selector rather than a
+   * `querySelector` that throws.
+   */
+  const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
+
   // ── State the shell actually owns — no `text`, no `setText`. ────────────
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const [stagedCommand, setStagedCommand] = useState<Command | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   // Flips ONLY on the empty<->non-empty boundary (`ComposerEditor`'s
   // `onEmptyChange`) — never once per keystroke. This is what lets
@@ -585,12 +601,12 @@ function ComposerImpl({
   // above) ever runs. Checking `defaultPrevented` is what makes "only when
   // no suggestion menu is open" correct without this component needing any
   // channel into the menus' internal open/selected state — which
-  // `composer-editor.tsx` does not expose, and modifying `composer/menus/`
-  // or `composer/editor/` is out of scope for this task. This also composes
-  // correctly with `ListItem`'s own Tab-to-indent keymap
-  // (`@tiptap/extension-list`): inside a list item, Tab indents and is
-  // marked handled, so agent-cycling steps aside there too. Escape here
-  // cancels a staged command, ported from session-chat-input.tsx:924-929.
+  // `composer-editor.tsx` does not expose.
+  //
+  // The suggestion menus are now the ONLY other Tab consumer. `ListItem`'s
+  // Tab-to-indent keymap used to be a second one, and this comment used to
+  // describe how the two composed; `@tiptap/extension-list` is gone
+  // (extensions.ts), so there is no list node in the schema to indent.
   const cycleAgent = useCallback((): boolean => {
     if (primaryAgents.length <= 1 || !onAgentChange || agentSelectorLocked) return false;
     const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
@@ -599,28 +615,30 @@ function ComposerImpl({
     return true;
   }, [primaryAgents, onAgentChange, agentSelectorLocked, selectedAgent]);
 
+  // Escape no longer has a staged command to cancel: the command is a chip in
+  // the document, so Backspace removes it — one keystroke, at the caret, with
+  // undo — and there is no mode left for Escape to exit. Escape is left
+  // entirely to `@tiptap/suggestion`, which uses it to dismiss an open menu.
   useEffect(() => {
     if (!editorElement) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && stagedCommand) {
-        e.preventDefault();
-        setStagedCommand(null);
-        editorRef.current?.clear();
-        return;
-      }
       if (e.key === 'Tab' && !e.defaultPrevented) {
         if (cycleAgent()) e.preventDefault();
       }
     };
     editorElement.addEventListener('keydown', onKeyDown);
     return () => editorElement.removeEventListener('keydown', onKeyDown);
-  }, [editorElement, stagedCommand, cycleAgent]);
+  }, [editorElement, cycleAgent]);
 
   // ── Assigned item 4: make the suggestion menus' ARIA reachable. Both
   // menus (`menus/mention-menu.tsx`, `menus/slash-menu.tsx`) already render
   // `role="listbox"` + `aria-activedescendant` + a stable `aria-label`
-  // ("Mention suggestions" / "Commands and actions"), portalled to
-  // `document.body` — but the contenteditable itself carries neither
+  // ("Mention suggestions" / "Commands and actions") — `@` portalled to
+  // `document.body`, `/` docked into this component's own dock element (see
+  // the dock's comment in the render below). Either way they are inside
+  // `document.body`'s subtree, which is all the observer below assumes, so
+  // docking the `/` menu changed nothing here. The contenteditable itself,
+  // though, carries neither
   // `aria-controls` nor `aria-activedescendant`, so a screen reader has no
   // way to associate the two. `composer/menus/` is closed for this task, so
   // this observes that already-shipped, stable contract from the outside
@@ -674,7 +692,8 @@ function ComposerImpl({
     const sync = () => {
       if (!attached) return;
       if (!attached.id) {
-        const suffix = attached.getAttribute('aria-label') === 'Mention suggestions' ? 'mention' : 'slash';
+        const suffix =
+          attached.getAttribute('aria-label') === 'Mention suggestions' ? 'mention' : 'slash';
         attached.id = `composer-suggestions-${suffix}`;
       }
       editorElement.setAttribute('aria-controls', attached.id);
@@ -735,7 +754,10 @@ function ComposerImpl({
     editorElement.addEventListener('focusin', onFocusIn);
     editorElement.addEventListener('focusout', onFocusOut);
 
-    if (document.activeElement === editorElement || editorElement.contains(document.activeElement)) {
+    if (
+      document.activeElement === editorElement ||
+      editorElement.contains(document.activeElement)
+    ) {
       startObserving();
     }
 
@@ -867,7 +889,10 @@ function ComposerImpl({
           : [...prefillFiles],
       );
     }
-    setStagedCommand(null);
+    // No `setStagedCommand(null)` counterpart is needed: a prefill replaces or
+    // merges the DOCUMENT, and the command chip is part of that document — a
+    // replace drops it, a merge keeps it, both without a second state field to
+    // keep in step.
     editorRef.current?.focus();
   }, [prefillId, prefillText, prefillFiles, prefillMode, editorElement]);
 
@@ -889,7 +914,9 @@ function ComposerImpl({
   useEffect(() => {
     if (lockForQuestion) {
       const wasEmpty = editorRef.current?.isEmpty() ?? true;
-      savedDocBeforeQuestionRef.current = wasEmpty ? null : (editorRef.current?.getDocument() ?? null);
+      savedDocBeforeQuestionRef.current = wasEmpty
+        ? null
+        : (editorRef.current?.getDocument() ?? null);
       editorRef.current?.clear();
     } else if (savedDocBeforeQuestionRef.current) {
       setDocumentWithoutStealingFocus(editorRef.current, savedDocBeforeQuestionRef.current);
@@ -912,18 +939,8 @@ function ComposerImpl({
   const handleTranscription = useCallback((transcribedText: string) => {
     const handle = editorRef.current;
     if (!handle) return;
-    const next = appendTranscribedText(
-      handle.getDocument(),
-      handle.isEmpty(),
-      transcribedText,
-    );
+    const next = appendTranscribedText(handle.getDocument(), handle.isEmpty(), transcribedText);
     setDocumentWithoutStealingFocus(handle, next);
-  }, []);
-
-  const handleSelectCommand = useCallback((cmd: Command) => {
-    setStagedCommand(cmd);
-    editorRef.current?.clear();
-    editorRef.current?.focus();
   }, []);
 
   const handleSelectAction = useCallback(
@@ -974,12 +991,22 @@ function ComposerImpl({
       return;
     }
 
-    if (stagedCommand) {
-      const args = (editorRef.current?.getContent().text ?? '').trim();
-      onCommand?.(stagedCommand, args || undefined);
+    // A `/` chip in the document means "run this command", and the text around
+    // it is the arguments — `getContent().text` already excludes the chip, so
+    // nothing has to be stripped here. `planDraftSubmission` also owns the
+    // one case worth being careful about: a chip whose command no longer
+    // exists in the live list degrades to a plain message with `/name`
+    // re-inlined, rather than sending bare arguments.
+    const draft = editorRef.current?.getContent();
+    const plan = planDraftSubmission({
+      commandName: draft?.commandName,
+      text: draft?.text ?? '',
+      commands: commands ?? [],
+    });
+    if (plan.kind === 'command') {
+      onCommand?.(plan.command, plan.args);
       if (clearOnSend) {
         editorRef.current?.clear();
-        setStagedCommand(null);
         setAttachedFiles((prev) => {
           for (const file of prev) {
             if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
@@ -1004,8 +1031,11 @@ function ComposerImpl({
       return;
     }
 
-    const content = editorRef.current?.getContent() ?? { text: '', mentions: [] };
-    const trimmed = content.text.trim();
+    // `plan.text` rather than `draft.text`: identical for an ordinary message,
+    // and for a draft whose command chip could not be resolved it is the one
+    // that still carries `/name` in front of the arguments.
+    const content = draft ?? { text: '', mentions: [] };
+    const trimmed = plan.text;
     if ((!trimmed && attachedFiles.length === 0) || submitDisabled) return;
 
     const filesToSend = attachedFiles.length > 0 ? [...attachedFiles] : undefined;
@@ -1049,8 +1079,8 @@ function ComposerImpl({
       // restore attached files whenever `clearOnSend` is true, never nested
       // inside whatever gates the document restore — losing them in the
       // defensive null-handle case would be real data loss on a path this
-      // function already tolerates a null `editorRef` for (the
-      // `stagedCommand`/`lockForQuestion` branches above).
+      // function already tolerates a null `editorRef` for (the command-chip
+      // and `lockForQuestion` branches above).
       const currentDoc = editorRef.current?.getDocument() ?? null;
       const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
       const sentFiles = filesToSend ?? [];
@@ -1099,7 +1129,11 @@ function ComposerImpl({
     queuedMessages,
     queueInFlightId,
     onCommand,
-    stagedCommand,
+    // Replaces `stagedCommand`: the command no longer lives in state, so what
+    // this callback must stay fresh against is the LIST a chip is resolved
+    // against — a stale closure here is what would make a just-created skill
+    // fail to resolve at submit.
+    commands,
     attachedFiles,
     lockForQuestion,
     lockForApproval,
@@ -1108,7 +1142,6 @@ function ComposerImpl({
   ]);
 
   const editorPlaceholder = resolveEditorPlaceholder({
-    stagedCommand: !!stagedCommand,
     lockForApproval,
     lockForQuestion,
     questionButtonLabel,
@@ -1116,7 +1149,25 @@ function ComposerImpl({
   });
 
   return (
-    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-3 sm:px-4">
+    <div className="relative z-10 mx-auto w-full max-w-210  shrink-0 px-2 pb-3 sm:px-0">
+      {/*
+        The `/` menu's dock. `@tiptap/suggestion` appends the menu element
+        here (resolved by selector at mount time — see `menus/mount.ts`),
+        which is what makes the palette a sibling ABOVE the composer instead
+        of a popover floating over it: the composer card keeps its own box and
+        stays entirely about composing.
+
+        Deliberately unstyled and unsized. It holds no layout of its own, so
+        an empty dock is a zero-height block that changes nothing on the page;
+        the card that lands inside it brings its own width and its own bottom
+        margin (`menus/slash-menu.tsx`). Styling the gap here instead would
+        leave an 8px hole above the composer whenever the menu is closed.
+
+        `@` is NOT docked here — it stays anchored to the caret, because it
+        names a thing at a point in the sentence. See `mountDockedMenu`'s doc
+        comment for the full reasoning.
+      */}
+      <div id={dockId} />
       <div
         ref={cardRef}
         onDragEnter={handleDragEnter}
@@ -1124,19 +1175,26 @@ function ComposerImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-card border-border relative z-10 w-full rounded-xl border',
-          'shadow-none transition-[border-color,box-shadow] duration-150',
-          'focus-within:border-foreground/20 focus-within:shadow-sm',
-          'focus-within:ring-ring focus-within:ring-2 focus-within:ring-offset-2',
+          // Geometry ported from the Perplexity composer, tokens kept Kortix.
+          //   rounded-2xl (16px) · pt-3 (12px) · px-0 pb-0
+          // The card owns ONLY its top padding; horizontal and bottom padding
+          // belong to the content column below, which is what lets the
+          // attachment strip and the editor share one 12px gutter without
+          // either of them re-deriving it.
+          'bg-card border-border relative isolate z-10 w-full rounded-xl border pt-3',
+          'shadow-[0_0_4px_oklch(0_0_0/0.03)] dark:shadow-md',
+          'transition-[background-color,border-color,box-shadow] duration-75',
+          attachedFiles.length > 0 ? 'pt-0' : 'pt-3',
           cardClassName,
           isDragOver && 'border-primary',
         )}
       >
-        <div className="relative flex w-full flex-col gap-2 overflow-visible">
+       
+        <div className="relative z-[1] flex w-full flex-col overflow-visible">
           {isDragOver && (
             <div
               className={cn(
-                'border-primary/70 bg-primary/5 pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[24px] border-2 border-dashed',
+                'border-primary/70 bg-primary/5 pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl border-2 border-dashed',
                 cardClassName,
               )}
             >
@@ -1150,7 +1208,7 @@ function ComposerImpl({
 
           {/* Inline chips: thread context, todos, queue — unified spacing */}
           {(threadContext || sessionId || inputSlot || replyTo || queuedMessages?.length) && (
-            <div className="mx-3 mt-2.5 flex flex-col gap-1.5 empty:hidden">
+            <div className="mb-3 flex flex-col gap-1.5 px-3 empty:hidden">
               <QueuedMessages
                 messages={queuedMessages ?? EMPTY_QUEUE}
                 failed={failedQueuedMessages}
@@ -1208,38 +1266,17 @@ function ComposerImpl({
               composer and they had no remaining reference. */}
           <AttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
 
-          {stagedCommand && (
-            <div className="flex min-w-0 items-center gap-2 px-4 pt-3 pb-0">
-              <div className="bg-muted/60 border-border/50 flex max-w-full shrink-0 items-center gap-1.5 rounded-2xl border px-2.5 py-1">
-                <Terminal className="text-muted-foreground size-3" />
-                <span className="text-foreground max-w-[220px] truncate font-mono text-xs font-medium whitespace-nowrap sm:max-w-[320px]">
-                  /{stagedCommand.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStagedCommand(null);
-                    editorRef.current?.clear();
-                  }}
-                  className="text-muted-foreground hover:text-foreground ml-0.5 transition-colors"
-                  aria-label={tHardcodedUi.raw(
-                    'componentsSessionSessionChatInput.line2118JsxAttrAriaLabelCancelCommand',
-                  )}
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
-              {stagedCommand.description && (
-                <span className="text-muted-foreground min-w-0 truncate text-xs">
-                  {stagedCommand.description}
-                </span>
-              )}
-            </div>
-          )}
-
+          {/*
+            The staged-command banner that used to sit here is gone. A picked
+            command renders inside the editor now, as an inline chip on the
+            line the user is typing (`editor/mention-node.ts`) — so it reads
+            as part of the message rather than a separate strip of chrome, and
+            it is removed the way everything else in the document is removed:
+            Backspace, with undo.
+          */}
           <div
             className={cn(
-              'flex max-h-[320px] flex-col gap-1 px-3.5 py-3',
+              'flex min-w-0 flex-col gap-4 px-3 pb-3',
               // Fix round 1, Minor: restores the amber placeholder emphasis
               // the old textarea overlay had for a paused connector approval
               // (session-chat-input.tsx:1233's `text-amber-600
@@ -1252,76 +1289,96 @@ function ComposerImpl({
               lockForApproval && 'composer-locked-approval',
             )}
           >
-            <Suspense fallback={<ComposerEditorFallback />}>
-              <ComposerEditorLazy
-                ref={setEditorRef}
-                placeholder={editorPlaceholder}
-                disabled={editorDisabled}
-                onSubmit={handleSubmit}
-                onEmptyChange={setIsEmpty}
-                agents={agents}
-                sessions={allSessions ?? []}
-                currentSessionId={sessionId}
-                commands={stagedCommand ? EMPTY_COMMANDS : commands}
-                actions={stagedCommand ? EMPTY_ACTIONS : undefined}
-                onSelectCommand={handleSelectCommand}
-                onSelectAction={handleSelectAction}
-                onMenuOpenChange={setMenuOpen}
-              />
-            </Suspense>
-          </div>
+            {/*
+              The text row's own offsets: `mt-1 ml-2 pb-2`.
 
-          {/* Bottom toolbar — hidden file input stays here since it needs
-              appendAttachedFiles/disabled/lockForQuestion from this
-              component's state; the visible attach button lives in
-              ComposerToolbar and just triggers this ref. */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={tHardcodedUi.raw(
-              'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
-            )}
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-          <ComposerToolbar
-            onAttachClick={handleAttachClick}
-            modelsLoading={modelsLoading}
-            agents={primaryAgents}
-            selectedAgent={selectedAgent}
-            onAgentChange={onAgentChange}
-            agentSelectorLocked={agentSelectorLocked}
-            models={models}
-            selectedModel={availableSelectedModel}
-            onModelChange={onModelChange}
-            modelDefaultControls={modelDefaultControls}
-            providers={providers}
-            modelRequired={modelRequired}
-            variants={variants}
-            selectedVariant={selectedVariant}
-            onVariantChange={onVariantChange}
-            projectId={projectId}
-            messages={messages}
-            onContextClick={onContextClick}
-            toolbarSlot={toolbarSlot}
-            onTranscription={handleTranscription}
-            voiceDisabled={submitDisabled || isBusy}
-            isSending={isSending}
-            isBusy={isBusy}
-            onStop={onStop}
-            stopDisabled={stopDisabled}
-            escCount={escCount}
-            lockForQuestion={lockForQuestion}
-            questionButtonLabel={questionButtonLabel}
-            questionCanAct={questionCanAct}
-            hasText={!isEmpty}
-            canSubmit={canSubmit}
-            submitDisabled={submitDisabled}
-            disabled={disabled}
-            modelUnavailable={modelUnavailable}
-            onSubmit={handleSubmit}
-          />
+              `ml-2` is the one that matters and the one that looks like a
+              mistake in isolation. The text sits 8px further in than the
+              gutter, so the caret lines up with the LABEL of the first
+              toolbar control below it rather than with that control's box
+              edge — the button's own internal padding is what it is being
+              matched against. Remove it and the text reads as hanging left of
+              everything under it.
+
+              `overflow-hidden` + `min-w-0` are what let the editor's own
+              `overflow-y-auto` scroll instead of stretching this row.
+            */}
+            <div className="relative mt-1 ml-2 min-w-0 overflow-hidden pb-2">
+              <Suspense fallback={<ComposerEditorFallback />}>
+                <ComposerEditorLazy
+                  ref={setEditorRef}
+                  placeholder={editorPlaceholder}
+                  disabled={editorDisabled}
+                  onSubmit={handleSubmit}
+                  onEmptyChange={setIsEmpty}
+                  agents={agents}
+                  sessions={allSessions ?? []}
+                  currentSessionId={sessionId}
+                  // Unconditional. This pair used to be swapped for empty lists
+                  // whenever a command was staged, which is precisely what made
+                  // `/` stop opening after the first pick.
+                  commands={commands}
+                  onSelectAction={handleSelectAction}
+                  slashDockSelector={`#${dockId}`}
+                  onMenuOpenChange={setMenuOpen}
+                />
+              </Suspense>
+            </div>
+
+            {/* The hidden file input stays in this component (not
+                `ComposerToolbar`) because it needs
+                appendAttachedFiles/disabled/lockForQuestion from this
+                component's state; the visible attach button lives in
+                ComposerToolbar and just triggers this ref. `hidden` means it
+                is not a flex item, so it does not consume a `gap-4` slot. */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={tHardcodedUi.raw(
+                'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
+              )}
+              multiple
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <ComposerToolbar
+              onAttachClick={handleAttachClick}
+              modelsLoading={modelsLoading}
+              agents={primaryAgents}
+              selectedAgent={selectedAgent}
+              onAgentChange={onAgentChange}
+              agentSelectorLocked={agentSelectorLocked}
+              models={models}
+              selectedModel={availableSelectedModel}
+              onModelChange={onModelChange}
+              modelDefaultControls={modelDefaultControls}
+              providers={providers}
+              modelRequired={modelRequired}
+              variants={variants}
+              selectedVariant={selectedVariant}
+              onVariantChange={onVariantChange}
+              projectId={projectId}
+              messages={messages}
+              onContextClick={onContextClick}
+              toolbarSlot={toolbarSlot}
+              onTranscription={handleTranscription}
+              voiceDisabled={submitDisabled || isBusy}
+              isSending={isSending}
+              isBusy={isBusy}
+              onStop={onStop}
+              stopDisabled={stopDisabled}
+              escCount={escCount}
+              lockForQuestion={lockForQuestion}
+              questionButtonLabel={questionButtonLabel}
+              questionCanAct={questionCanAct}
+              hasText={!isEmpty}
+              canSubmit={canSubmit}
+              submitDisabled={submitDisabled}
+              disabled={disabled}
+              modelUnavailable={modelUnavailable}
+              onSubmit={handleSubmit}
+            />
+          </div>
         </div>
       </div>
       <ModelConnectionBar show={noModelsConnected} />

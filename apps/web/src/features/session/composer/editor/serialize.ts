@@ -26,6 +26,13 @@ export function collectMentions(nodes: SerializableNode[]): TrackedMention[] {
   const mentions: TrackedMention[] = [];
   for (const node of nodes) {
     if (node.type !== 'mention') continue;
+    // `command` chips share the `mention` atom node (see mention-node.ts) but
+    // are NOT references: they leave the composer as `onCommand(command,
+    // args)`, never as a `<file_ref>`/`<agent_ref>`/`<session_ref>` block. If
+    // they fell through here they would reach `buildFileRefsBlock` as a file
+    // named after the command and the agent would be asked to read a path
+    // that does not exist.
+    if (node.attrs?.kind === 'command') continue;
     const kind = (node.attrs?.kind ?? 'file') as MentionKind;
     const label = node.attrs?.label ?? '';
     // Only sessions round-trip an id — files and agents are addressed by
@@ -36,6 +43,25 @@ export function collectMentions(nodes: SerializableNode[]): TrackedMention[] {
     );
   }
   return mentions;
+}
+
+/**
+ * The name of the FIRST `/` command chip in the document, or `undefined`.
+ *
+ * First, not last, and not a list: a message runs at most one command, and the
+ * first chip is the one the user picked to lead the message. A second chip is
+ * left in the text as a no-op rather than silently changing which command
+ * runs — inserting one is a deliberate keystroke, and reordering the user's
+ * intent behind their back is worse than ignoring the extra.
+ */
+export function collectCommandName(nodes: SerializableNode[]): string | undefined {
+  for (const node of nodes) {
+    if (node.type !== 'mention') continue;
+    if (node.attrs?.kind !== 'command') continue;
+    const label = node.attrs?.label ?? '';
+    if (label) return label;
+  }
+  return undefined;
 }
 
 /** Flatten a ProseMirror document into the structural node list above. */
@@ -84,9 +110,20 @@ export function flattenDocument(doc: ProseMirrorNode): SerializableNode[] {
 export function serializeDocument(doc: ProseMirrorNode): {
   text: string;
   mentions: TrackedMention[];
+  /**
+   * The `/` command chip leading this message, if there is one. Structured,
+   * exactly like `mentions` — and for the same reason: `text` is the
+   * human-readable body, and a command is not body. What `text` holds when
+   * this is set IS the command's arguments, with no stripping needed at the
+   * call site.
+   */
+  commandName?: string;
 } {
   const flat = flattenDocument(doc);
   const text = doc.textBetween(0, doc.content.size, '\n', (node) => {
+    // A command chip contributes no text — see `MentionNode.renderText`'s
+    // doc comment. The remainder of the paragraph is the args verbatim.
+    if (node.type.name === 'mention' && node.attrs.kind === 'command') return '';
     if (node.type.name === 'mention') return `@${node.attrs.label}`;
     // Shift+Enter (and Mod+Enter) insert a `hardBreak` inline leaf —
     // `@tiptap/extension-hard-break`'s keymap, and the node
@@ -107,5 +144,9 @@ export function serializeDocument(doc: ProseMirrorNode): {
     if (node.type.name === 'hardBreak') return '\n';
     return '';
   });
-  return { text: text.trim(), mentions: collectMentions(flat) };
+  return {
+    text: text.trim(),
+    mentions: collectMentions(flat),
+    commandName: collectCommandName(flat),
+  };
 }

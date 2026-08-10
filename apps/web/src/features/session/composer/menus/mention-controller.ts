@@ -7,6 +7,7 @@ import { insertMention } from '../editor/mention-node';
 import { baseSuggestion } from '../editor/suggestion';
 import type { MenuController } from '../editor/suggestion';
 import { MentionMenuHost } from './mention-menu';
+import { mountSuggestionMenu } from './mount';
 import type { MentionMenuHostProps } from './mention-menu';
 import type { MenuRow } from './menu-items';
 import { MenuNavState } from './menu-nav-state';
@@ -94,7 +95,7 @@ export function createMentionSuggestion(
           onRowsChange: handleRowsChange,
         } satisfies MentionMenuHostProps,
       });
-      unmount = props.mount(renderer.element);
+      unmount = mountSuggestionMenu(props, renderer.element);
     },
     onUpdate(props) {
       // Reset-on-query-change happens here; `handleRowsChange` above only

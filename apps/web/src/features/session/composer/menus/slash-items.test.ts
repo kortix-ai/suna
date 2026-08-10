@@ -17,15 +17,28 @@ describe('groupCommandsBySource', () => {
     expect(groups[0].commands.map((c) => c.name)).toEqual(['build', 'test']);
   });
 
-  // Correction over the brief: the live server may not populate
-  // `source: 'skill'` at all today, so "every command shares one source" —
-  // even when that source is explicitly 'skill', not just undefined — must
-  // ALSO degrade to a plain "Commands" heading, never a lone "Skills"
-  // heading with nothing to contrast it against.
-  test('every command sharing one explicit source ALSO degrades to a single "Commands" group', () => {
+  // REVERSED (deliberately, see `groupCommandsBySource`'s doc comment). This
+  // previously asserted a lone 'skill' bucket degrades to a "Commands"
+  // heading. That rule only ever considered the unfiltered list; against real
+  // data it relabelled rows mid-keystroke, because a query that happens to
+  // match only skills leaves exactly one non-empty bucket. The rows do not
+  // change — only the heading above them does — which reads as the list having
+  // been swapped out. A lone "Skills" heading is accurate and is what the
+  // reference UX shows.
+  test('a lone explicit source keeps its own heading rather than degrading', () => {
     const groups = groupCommandsBySource([cmd('deploy', 'skill'), cmd('release', 'skill')]);
-    expect(groups.map((g) => g.heading)).toEqual(['Commands']);
+    expect(groups.map((g) => g.heading)).toEqual(['Skills']);
     expect(groups[0].commands.map((c) => c.name)).toEqual(['deploy', 'release']);
+  });
+
+  // The regression the reversal above must not reintroduce: filtering a mixed
+  // list down to one bucket keeps that bucket's heading stable.
+  test('filtering a mixed list down to skills alone keeps the "Skills" heading', () => {
+    const all = [cmd('build'), cmd('deploy', 'skill'), cmd('design', 'skill')];
+    expect(groupCommandsBySource(all).map((g) => g.heading)).toEqual(['Skills', 'Commands']);
+
+    const filtered = all.filter((c) => (c as unknown as { name: string }).name.includes('de'));
+    expect(groupCommandsBySource(filtered).map((g) => g.heading)).toEqual(['Skills']);
   });
 
   test('mixing skill and plain commands splits into Skills and Commands, in that order', () => {

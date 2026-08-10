@@ -8,6 +8,7 @@ import { ChatIcon, FolderIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo } from 'react';
 
 import { useFileSearch } from '../hooks/use-file-search';
+import { MenuCard, MenuRow as MenuRowButton, MenuSectionHeading } from './menu-shell';
 import { buildMentionSections } from './menu-items';
 import type { MenuRow, MentionSection } from './menu-items';
 
@@ -31,42 +32,38 @@ export function MentionMenu({
   if (!sections.length && !loading) return null;
 
   return (
-    <div
-      role="listbox"
-      aria-label="Mention suggestions"
-      aria-activedescendant={`mention-row-${selectedIndex}`}
-      className="bg-popover border-border w-[min(28rem,90vw)] overflow-hidden rounded-xl border shadow-md"
-    >
-      <div className="max-h-72 overflow-y-auto p-1">
+    // `rounded-xl` (12px) with `p-1.5` (6px) padding and `rounded-md` (6px)
+    // rows — concentric, 6 + 6 = 12. It was `rounded-md` on the card AND on
+    // the rows, which is the same radius on parent and child: the rows'
+    // corners visibly cut inside the card's at the four extremes.
+    //
+    // 12px, not the `/` menu's 16px: this one floats at the caret and is half
+    // the width, so it should read as lighter than the docked palette.
+    <MenuCard className="w-[min(26rem,calc(100vw-1.5rem))] rounded-xl">
+      <div
+        role="listbox"
+        aria-label="Mention suggestions"
+        aria-activedescendant={`mention-row-${selectedIndex}`}
+        className="max-h-[19rem] overflow-y-auto p-1.5"
+      >
         {sections.map((section) => (
           <div key={section.kind}>
-            <div className="text-muted-foreground px-2 py-1.5 text-xs font-medium">
-              {section.heading}
-            </div>
+            <MenuSectionHeading>{section.heading}</MenuSectionHeading>
             {section.items.map((row) => (
-              <button
+              <MenuRowButton
                 key={`${row.kind}-${row.value}-${row.index}`}
                 id={`mention-row-${row.index}`}
-                role="option"
-                aria-selected={row.index === selectedIndex}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onSelect(row);
-                }}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm',
-                  row.index === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
-                )}
+                selected={row.index === selectedIndex}
+                onSelect={() => onSelect(row)}
               >
                 <RowIcon row={row} />
-                <span className="truncate font-medium">{rowTitle(row)}</span>
+                <span className="min-w-0 truncate text-sm">{rowTitle(row)}</span>
                 {row.description && (
-                  <span className="text-muted-foreground ml-auto truncate text-xs">
+                  <span className="text-muted-foreground ml-auto shrink-0 truncate text-xs">
                     {row.description}
                   </span>
                 )}
-              </button>
+              </MenuRowButton>
             ))}
           </div>
         ))}
@@ -77,7 +74,7 @@ export function MentionMenu({
           </div>
         )}
       </div>
-    </div>
+    </MenuCard>
   );
 }
 

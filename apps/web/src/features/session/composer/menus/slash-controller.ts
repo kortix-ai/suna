@@ -3,8 +3,10 @@ import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions } from '@tiptap/suggestion';
 
+import { insertCommandChip } from '../editor/mention-node';
 import { baseSuggestion } from '../editor/suggestion';
 import type { MenuController } from '../editor/suggestion';
+import { mountDockedMenu, mountSuggestionMenu } from './mount';
 import { SlashMenu } from './slash-menu';
 import type { SlashAction } from './slash-actions';
 import { buildSlashSections } from './slash-items';
@@ -23,9 +25,26 @@ export interface CreateSlashSuggestionOptions {
    * row can't discard the args being typed.
    */
   getActions?: () => SlashAction[];
-  /** A real OpenCode command was picked. This STAGES it — mirrors the live
-   *  `handleSelectCommand` (session-chat-input.tsx:875-883): the host shows
-   *  an args input and waits for a submit, it does not run the command here. */
+  /**
+   * CSS selector for the element the menu docks into. Omitted → the menu
+   * floats at the caret, `document.body`-portalled, same as `@`. See
+   * `mount.ts`'s `mountDockedMenu` for why `/` docks and `@` does not.
+   */
+  dockSelector?: string;
+  /**
+   * A real OpenCode command was picked. Notification only — the chip has
+   * ALREADY been inserted into the document by `command()` below by the time
+   * this fires, and the host does not need to do anything for the command to
+   * survive. It exists so a host can react (analytics, hints); it is
+   * deliberately no longer the mechanism by which the command is remembered.
+   *
+   * It used to be exactly that: the host stored the picked `Command` in React
+   * state (`composer.tsx`'s `stagedCommand`) and rendered a banner for it. The
+   * document knew nothing about it, so the host had to defend the banner by
+   * feeding this menu an EMPTY command list for as long as one was staged —
+   * which is why `/` appeared to stop working entirely after the first pick.
+   * The chip removes the need for any of that.
+   */
   onSelectCommand?: (command: Command) => void;
   /** A composer action was picked (switch-model, set-scope, ...). The host
    *  owns what each action id opens or does — this callback is the only
@@ -98,7 +117,9 @@ export function createSlashSuggestion(
         editor: props.editor,
         props: { sections, selectedIndex: nav.getSelectedIndex(), onSelect },
       });
-      unmount = props.mount(renderer.element);
+      unmount = opts.dockSelector
+        ? mountDockedMenu(props, renderer.element)
+        : mountSuggestionMenu(props, renderer.element);
     },
     onUpdate(props) {
       // Reset-on-query-change first; `recompute` -> `nav.setRows` below only
@@ -138,11 +159,52 @@ export function createSlashSuggestion(
   };
 
   return {
-    ...baseSuggestion('/', SLASH_PLUGIN_KEY, controller),
+    ...baseSuggestion('/', SLASH_PLUGIN_KEY, controller, opts.dockSelector),
+    /**
+     * The hint that trails a bare `/` — "/Type to search".
+     *
+     * The suggestion plugin already wraps the trigger range in a decoration
+     * span and tags it `is-empty` while the query has no characters; it also
+     * copies `decorationContent` onto the span as `data-decoration-content`.
+     * All that is missing is a rule to paint it, which lives in `globals.css`
+     * beside the composer's own placeholder rule (same `content:
+     * attr(...)`/`pointer-events: none` shape, for the same reason: it must
+     * not be selectable and must not shift the caret).
+     *
+     * Rendering it this way rather than through the editor's placeholder
+     * matters — the placeholder only exists on an EMPTY document, and by the
+     * time a `/` has been typed the document is not empty. This decoration is
+     * scoped to the trigger itself, so it also works for a `/` typed at the
+     * end of a sentence, not just at the start of an empty draft.
+     *
+     * `@` gets no equivalent: its menu opens beside the caret with the row
+     * list already visible, so the hint would restate what is on screen.
+     */
+    decorationClass: 'kortix-slash-trigger',
+    decorationContent: 'Type to search',
+    /**
+     * A command row inserts a chip AT THE TRIGGER — the same shape
+     * `mention-controller.ts` uses for `@`, deliberately: `deleteRange(range)`
+     * removes the `/query` the user typed and the chip takes its place, so the
+     * document reads as one continuous line the user wrote. The rest of the
+     * paragraph is the command's arguments (`serialize.ts`'s `commandName` /
+     * `text` split), and nothing about the composer enters a special mode.
+     *
+     * An action row inserts nothing: actions operate the composer (switch
+     * model, attach a file) rather than being part of the message, so the
+     * trigger text is deleted and the host is handed the action.
+     */
     command: ({ editor, range, props: row }) => {
       editor.chain().focus().deleteRange(range).run();
-      if (row.type === 'command' && row.command) opts.onSelectCommand?.(row.command);
-      else if (row.type === 'action' && row.action) opts.onSelectAction?.(row.action);
+      if (row.type === 'command' && row.command) {
+        // `row.name` is `command.name || ''` (slash-items.ts). A nameless
+        // command cannot be re-resolved from the live list at submit time,
+        // so inserting a chip for it would produce a chip that can never run.
+        if (row.name) insertCommandChip(editor, row.name);
+        opts.onSelectCommand?.(row.command);
+      } else if (row.type === 'action' && row.action) {
+        opts.onSelectAction?.(row.action);
+      }
     },
   };
 }

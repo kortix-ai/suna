@@ -19,13 +19,19 @@ import { serializeDocument } from './serialize';
 import { createSuggestionExtension } from './suggestion';
 
 export interface ComposerEditorHandle {
-  getContent(): { text: string; mentions: TrackedMention[] };
   /**
-   * `text` — not `markdown`. There is no markdown parser in the extension
-   * list (extensions.ts), so this never interprets `**bold**`/`# heading`
-   * syntax; it only ever inserts literal characters. Markdown parsing on
-   * prefill (starter prompts, failed-send recovery) is deliberately out of
-   * scope for this task.
+   * `commandName` is the `/` command chip leading the draft, if any — see
+   * `editor/serialize.ts`. When it is set, `text` is that command's ARGUMENTS:
+   * the chip contributes no text of its own, so no stripping is needed at the
+   * call site.
+   */
+  getContent(): { text: string; mentions: TrackedMention[]; commandName?: string };
+  /**
+   * `text` — not `markdown`, and there is nothing for markdown to become.
+   * The schema is paragraphs, text, hard breaks and chips (extensions.ts):
+   * no parser to interpret `**bold**`/`# heading` on the way in, and no mark
+   * or list node for it to produce if there were. `**bold**` goes in as six
+   * literal characters and comes back out as six literal characters.
    *
    * Always replaces the whole document. An earlier `'replace' | 'merge'`
    * mode existed here, but every production caller always passed
@@ -118,12 +124,20 @@ export interface ComposerEditorProps {
   /** `/` menu data + the two things a row selection can produce — see `menus/slash-controller.ts`. */
   commands?: Command[];
   /**
-   * A real OpenCode command was picked from the `/` menu. This STAGES it —
-   * mirrors the live `handleSelectCommand` (session-chat-input.tsx:875-883):
-   * the host shows an args input and waits for a submit. `ComposerEditor`
-   * never executes a command itself.
+   * A real OpenCode command was picked from the `/` menu. Notification only:
+   * the command has already been inserted into the document as an inline chip
+   * (`menus/slash-controller.ts`'s `command()`), and it needs nothing from the
+   * host to survive. `ComposerEditor` never executes a command itself — the
+   * host reads `getContent().commandName` at submit time.
    */
   onSelectCommand?: (command: Command) => void;
+  /**
+   * CSS selector for an element the `/` menu should render INTO, in normal
+   * flow, instead of floating at the caret. `composer.tsx` points this at a
+   * dock it renders directly above the composer card. Omitted → the `/` menu
+   * floats like `@` does. See `menus/mount.ts`'s `mountDockedMenu`.
+   */
+  slashDockSelector?: string;
   /**
    * A composer action was picked from the `/` menu (switch-model, set-scope,
    * ...). The host owns what each action id opens or does — see
@@ -269,6 +283,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       onSelectCommand,
       onSelectAction,
       actions,
+      slashDockSelector,
       onMenuOpenChange,
     },
     ref,
@@ -459,6 +474,13 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           createSlashSuggestion({
             getCommands: () => commandsRef.current,
             getActions: () => actionsRef.current,
+            // NOT read through a ref, unlike every getter around it. This is
+            // frozen at construction on purpose: it is a per-instance
+            // selector string that identifies this composer's dock element
+            // and never changes for the component's lifetime. The plugin
+            // resolves it with `document.querySelector` at MOUNT time, so the
+            // dock is free to render after the editor does — which it does.
+            dockSelector: slashDockSelector,
             onSelectCommand: (command) => onSelectCommandRef.current?.(command),
             onSelectAction: (action) => onSelectActionRef.current?.(action),
             onHasRowsChange: (hasRows) => {
@@ -476,7 +498,20 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           role: 'textbox',
           'aria-multiline': 'true',
           'aria-label': 'Message input',
-          class: 'outline-none min-h-[3rem] max-h-[12.5rem] overflow-y-auto',
+          /**
+           * `min-h-[1.5em]` — ONE line, not three. The reference composer
+           * opens at a single line's height and grows with the text; a 3rem
+           * floor made an empty composer 27px taller than its content, which
+           * is what the card's padding is for.
+           *
+           * The `vh` caps are the reference's, verbatim, including the fact
+           * that the middle band is the SHORTEST. Tailwind emits base → sm →
+           * lg in that order, so the effective ladder is: below 640px 45vh,
+           * 640–1023px 25vh, 1024px and up 40vh. That is a strange curve, and
+           * it is deliberate to keep it here rather than "fix" it silently —
+           * change the `sm:` step if the tablet cap turns out to be wrong.
+           */
+          class: 'outline-none min-h-[1.5em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
         },
         handleKeyDown,
       },

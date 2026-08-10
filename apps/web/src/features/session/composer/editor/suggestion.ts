@@ -77,6 +77,14 @@ export function baseSuggestion<TSelected>(
   char: string,
   pluginKey: PluginKey,
   controller: MenuController<TSelected>,
+  /**
+   * Where the plugin appends the menu element. Omitted (the default) means
+   * `document.body` — a floating menu anchored to the caret, which is what
+   * `@` wants. A CSS selector docks it into that element instead, which is
+   * what `/` wants; see `menus/mount.ts`'s `mountDockedMenu` for why the two
+   * triggers differ and why this is a selector rather than an element.
+   */
+  container?: string,
 ): Omit<SuggestionOptions<never, TSelected>, 'editor'> {
   return {
     char,
@@ -85,6 +93,7 @@ export function baseSuggestion<TSelected>(
     allowedPrefixes: [' ', '\n'],
     items: () => [],
     minQueryLength: Infinity,
+    container,
     render: () => ({
       onStart: (props) => controller.onStart(props),
       onUpdate: (props) => controller.onUpdate(props),

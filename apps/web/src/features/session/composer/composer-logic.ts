@@ -8,6 +8,7 @@
  * is what makes that regression provable instead of re-introducible.
  */
 
+import type { Command } from '@kortix/sdk/react';
 import type { JSONContent } from '@tiptap/core';
 
 import { mergeFailedSubmissionDocument, mergeFailedSubmissionFiles } from '../composer-draft-recovery';
@@ -107,7 +108,7 @@ export interface FailedSendRecoveryPlan {
  * `submittedDoc` being non-null. That is wrong: `submittedDoc` can only be
  * `null` in the defensive case where `editorRef.current` was already gone
  * at submit time, and `handleSubmit` explicitly tolerates that same null
- * handle sixty lines earlier (the `stagedCommand`/`lockForQuestion`
+ * handle sixty lines earlier (the command-chip and `lockForQuestion`
  * branches both do `editorRef.current?.getContent()`). Nesting the files
  * restore inside the document-restore gate meant a failed send in that
  * edge case discarded the user's attachments outright instead of restoring
@@ -202,12 +203,16 @@ export function planPrefillMerge(input: {
  * agent.
  *
  * Appending to the last block rather than concatenating a new one is what
- * makes the separator a space instead of a paragraph break. The fallback
- * exists because the last block is not always something that can hold inline
- * text directly: a list, blockquote or code block holds child blocks, so
- * pushing a text node into it would build an invalid document. In that case a
- * new paragraph is the only correct target, and a leading space would be
- * meaningless at the start of a fresh block.
+ * makes the separator a space instead of a paragraph break.
+ *
+ * The `else` branch is a whitelist fallback, not dead code, even though
+ * `paragraph` is now the only block type the composer schema defines
+ * (`editor/extensions.ts` — lists, blockquotes and code blocks are gone).
+ * This function takes a `JSONContent` from a CALLER, not from the live
+ * editor: a prefill, a restored draft, or a failed-send snapshot can carry
+ * any shape. Appending a text node into a block that holds child blocks would
+ * build an invalid document, so anything that is not a paragraph gets a fresh
+ * paragraph instead — where a leading space would be meaningless.
  */
 export function appendTranscribedText(
   doc: JSONContent,
@@ -283,8 +288,6 @@ export function shouldApplyPrefill({
 }
 
 export interface ResolveEditorPlaceholderInput {
-  /** `!!stagedCommand`. */
-  stagedCommand: boolean;
   lockForApproval: boolean;
   lockForQuestion: boolean;
   questionButtonLabel?: string | null;
@@ -295,25 +298,72 @@ export interface ResolveEditorPlaceholderInput {
 /**
  * Which placeholder string `ComposerEditor` should show right now.
  *
- * Precedence matches the old custom-overlay conditionals exactly
- * (session-chat-input.tsx:1227-1272): a staged command's args prompt beats
- * the approval lock, which beats the question lock, which beats the
- * caller's own placeholder. Only one of these is ever true in practice —
- * `stagedCommand` and `lockForQuestion`/`lockForApproval` are mutually
- * exclusive interaction modes — but the precedence order still matters for
- * the (rare, transitional) render where two flags are momentarily both set.
+ * Precedence matches the old custom-overlay conditionals
+ * (session-chat-input.tsx:1227-1272): the approval lock beats the question
+ * lock, which beats the caller's own placeholder.
+ *
+ * A staged command used to sit at the top of this list with its own prompt
+ * ("Enter details and press Enter, or press Esc to cancel"). It is gone
+ * because the state it described is gone: a picked command is now an inline
+ * chip in the document (`editor/mention-node.ts`), which makes the document
+ * NON-EMPTY — and a placeholder only ever renders on an empty document. The
+ * branch was not removed as a simplification; it had become unreachable by
+ * construction, and the chip itself is what tells the user what they picked.
  */
 export function resolveEditorPlaceholder({
-  stagedCommand,
   lockForApproval,
   lockForQuestion,
   questionButtonLabel,
   placeholder,
 }: ResolveEditorPlaceholderInput): string {
-  if (stagedCommand) return 'Enter details and press Enter, or press Esc to cancel';
   if (lockForApproval) return 'Approve or deny the action above to continue…';
   if (lockForQuestion) {
     return questionButtonLabel ? 'Or type your own answer...' : 'Type your answer...';
   }
   return placeholder;
+}
+
+export interface PlanDraftSubmissionInput {
+  /** `getContent().commandName` — the `/` chip leading the draft, if any. */
+  commandName: string | undefined;
+  /** `getContent().text` — already excludes the chip, so this IS the args. */
+  text: string;
+  /** The live command list the chip is resolved against. */
+  commands: Command[];
+}
+
+export type DraftSubmissionPlan =
+  | { kind: 'command'; command: Command; args?: string }
+  | { kind: 'message'; text: string };
+
+/**
+ * Decide whether a draft runs a command or sends a message.
+ *
+ * The interesting case is the third branch. A command chip carries the
+ * command's NAME, not the `Command` object — attributes have to survive the
+ * JSON round trip that failed-send recovery and the question lock put the
+ * document through, and an object graph does not. So the name is resolved
+ * against the live list at submit time, and that lookup can miss: the command
+ * list is refetched while a menu opens (`useMenuRevalidation`), a skill can be
+ * deleted, and a recovered draft can outlive the command it names.
+ *
+ * A miss must not silently drop the user's text. `text` excludes the chip, so
+ * returning it unchanged would send the arguments with no indication of what
+ * they were arguments FOR. Re-inlining `/name` in front of them keeps the
+ * message the user actually composed intact and legible, and lets the agent
+ * see what was intended — the failure degrades to plain text instead of
+ * discarding information.
+ */
+export function planDraftSubmission({
+  commandName,
+  text,
+  commands,
+}: PlanDraftSubmissionInput): DraftSubmissionPlan {
+  const trimmed = text.trim();
+  if (!commandName) return { kind: 'message', text: trimmed };
+
+  const command = commands.find((candidate) => candidate.name === commandName);
+  if (command) return { kind: 'command', command, args: trimmed || undefined };
+
+  return { kind: 'message', text: `/${commandName} ${trimmed}`.trim() };
 }

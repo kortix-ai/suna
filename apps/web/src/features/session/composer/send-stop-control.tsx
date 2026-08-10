@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { ArrowUpIcon as ArrowUp } from '@phosphor-icons/react';
 
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
@@ -15,6 +16,27 @@ import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 // three mutually exclusive states — sending spinner, stop button (with the
 // triple-ESC hint), and the normal send button (or the question action
 // button while a structured question is active).
+
+/**
+ * The composer's icon-button geometry, shared by the three mutually exclusive
+ * states below so they can never drift apart mid-transition — a send button
+ * that changed width when it became a stop button would shift the whole right
+ * cluster the instant a turn starts.
+ *
+ *  - `h-8 w-9` — 32px tall, 36px wide. A 9/8 pill, matching the attach and
+ *    dictation buttons; a 32px square reads narrower than the text pills
+ *    beside it at the same height.
+ *  - `hit-area-1` — 4px of invisible target on every side (44×40 real), with
+ *    zero layout cost. The row's `gap-2` is 8px, so neighbouring extensions
+ *    meet exactly and never overlap.
+ *  - `transition-[...]` — named properties. `Button`'s base variant ships
+ *    `transition-all`, which would animate width/padding during the state
+ *    swap as well as color; this narrows it to what should actually move.
+ */
+const ICON_BUTTON =
+  'h-8 w-9 flex-shrink-0 rounded-full p-0 hit-area-1 ' +
+  'transition-[background-color,color,opacity,scale] duration-300 ease-out ' +
+  'active:scale-[0.96] active:duration-150';
 
 export interface SendStopControlProps {
   isSending: boolean;
@@ -53,7 +75,7 @@ export function SendStopControl({
 }: SendStopControlProps) {
   if (isSending && !lockForQuestion) {
     return (
-      <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
+      <Button size="sm" disabled className={ICON_BUTTON}>
         <Loading className="size-4" />
       </Button>
     );
@@ -83,7 +105,7 @@ export function SendStopControl({
               size="sm"
               onClick={onStop}
               disabled={stopDisabled || !onStop}
-              className="h-8 w-8 flex-shrink-0 rounded-full p-0"
+              className={ICON_BUTTON}
             >
               <div className="h-3 w-3 rounded-[3px] bg-current" />
             </Button>
@@ -110,7 +132,9 @@ export function SendStopControl({
             size="sm"
             disabled={!questionCanAct || disabled}
             onClick={onSubmit}
-            className="h-8 flex-shrink-0 rounded-full px-3.5 text-xs font-medium"
+            // `w-auto` releases the 36px pill width — this one is a text
+            // button. `px-3` matches every other text pill in the row.
+            className={cn(ICON_BUTTON, 'w-auto px-3 text-xs font-medium')}
           >
             {questionButtonLabel}
           </Button>
@@ -129,7 +153,7 @@ export function SendStopControl({
                   aria-label={
                     modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
                   }
-                  className="h-8 w-8 flex-shrink-0 rounded-full p-0"
+                  className={ICON_BUTTON}
                 >
                   {disabled ? (
                     <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />

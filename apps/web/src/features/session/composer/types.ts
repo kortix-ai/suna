@@ -24,6 +24,18 @@ export type AttachedFile =
 
 export type MentionKind = 'file' | 'agent' | 'session';
 
+/**
+ * Every kind of chip the editor document can hold.
+ *
+ * `command` is the `/` slash-command chip. It is stored as the same atom node
+ * as an `@` mention (`editor/mention-node.ts`) — one node type, one insert
+ * helper, one serializer walk — but it is NOT a `TrackedMention`: mentions
+ * become `<file_ref>`/`<agent_ref>`/`<session_ref>` blocks on the wire, and a
+ * command becomes the `onCommand(command, args)` call instead. `collectMentions`
+ * (`editor/serialize.ts`) filters it out for exactly that reason.
+ */
+export type ChipKind = MentionKind | 'command';
+
 export interface MentionItem {
   kind: MentionKind;
   label: string;

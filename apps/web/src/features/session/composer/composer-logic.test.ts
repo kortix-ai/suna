@@ -3,6 +3,7 @@ import type { JSONContent } from '@tiptap/core';
 
 import {
   appendTranscribedText,
+  planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
   resolveEditorPlaceholder,
@@ -113,7 +114,6 @@ describe('shouldApplyPrefill', () => {
 
 describe('resolveEditorPlaceholder', () => {
   const base = {
-    stagedCommand: false,
     lockForApproval: false,
     lockForQuestion: false,
     questionButtonLabel: null as string | null,
@@ -124,18 +124,7 @@ describe('resolveEditorPlaceholder', () => {
     expect(resolveEditorPlaceholder(base)).toBe('Ask anything...');
   });
 
-  test('staged command wins over everything else', () => {
-    expect(
-      resolveEditorPlaceholder({
-        ...base,
-        stagedCommand: true,
-        lockForApproval: true,
-        lockForQuestion: true,
-      }),
-    ).toBe('Enter details and press Enter, or press Esc to cancel');
-  });
-
-  test('lockForApproval wins over lockForQuestion when staged command is not active', () => {
+  test('lockForApproval wins over lockForQuestion', () => {
     expect(
       resolveEditorPlaceholder({
         ...base,
@@ -516,5 +505,73 @@ describe('appendTranscribedText — voice transcription appends at the end with 
 
     expect(next.content?.[0].content?.[0]).toEqual(draft.content![0].content![0]);
     expect(next.content?.[0].content?.[1]).toEqual({ type: 'text', text: ' dictated' });
+  });
+});
+
+/**
+ * `planDraftSubmission` is the whole of "does this draft run a command or send
+ * a message". It exists as a pure function because `handleSubmit` cannot be
+ * tested here — this repo's `bun test` has no DOM and `composer.tsx` sits
+ * behind a `React.lazy` boundary — and because the miss case (a chip naming a
+ * command that no longer exists) is the one place the answer is not obvious.
+ */
+describe('planDraftSubmission', () => {
+  const commands = [
+    { name: 'deep-research', description: 'Research deeply' },
+    { name: 'compact', description: 'Compact the thread' },
+  ] as never as Parameters<typeof planDraftSubmission>[0]['commands'];
+
+  test('no command chip — an ordinary message, trimmed', () => {
+    expect(
+      planDraftSubmission({ commandName: undefined, text: '  hello world  ', commands }),
+    ).toEqual({ kind: 'message', text: 'hello world' });
+  });
+
+  test('a resolvable chip runs the command, with the surrounding text as args', () => {
+    const plan = planDraftSubmission({
+      commandName: 'deep-research',
+      text: 'the tiptap docs',
+      commands,
+    });
+
+    expect(plan.kind).toBe('command');
+    if (plan.kind !== 'command') throw new Error('unreachable');
+    expect(plan.command.name).toBe('deep-research');
+    expect(plan.args).toBe('the tiptap docs');
+  });
+
+  test('a chip with no arguments passes args as undefined, not an empty string', () => {
+    // `onCommand(command, args)` treats `undefined` as "no arguments given".
+    // An empty string is a supplied-but-blank argument, which is a different
+    // thing to the command being run.
+    const plan = planDraftSubmission({ commandName: 'compact', text: '   ', commands });
+
+    expect(plan.kind).toBe('command');
+    if (plan.kind !== 'command') throw new Error('unreachable');
+    expect(plan.args).toBeUndefined();
+  });
+
+  test('an UNRESOLVABLE chip degrades to a message with /name re-inlined', () => {
+    // The regression this guards: `text` excludes the chip, so returning it
+    // unchanged would send "the tiptap docs" with no trace of what it was
+    // arguments for. A deleted skill, or a draft recovered after the command
+    // list changed, must not silently eat half the user's message.
+    expect(
+      planDraftSubmission({ commandName: 'deleted-skill', text: 'the tiptap docs', commands }),
+    ).toEqual({ kind: 'message', text: '/deleted-skill the tiptap docs' });
+  });
+
+  test('an unresolvable chip with no arguments leaves no trailing space', () => {
+    expect(planDraftSubmission({ commandName: 'gone', text: '', commands })).toEqual({
+      kind: 'message',
+      text: '/gone',
+    });
+  });
+
+  test('an empty command list resolves nothing — every chip degrades', () => {
+    expect(planDraftSubmission({ commandName: 'compact', text: 'x', commands: [] })).toEqual({
+      kind: 'message',
+      text: '/compact x',
+    });
   });
 });

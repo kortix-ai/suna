@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import type { Command } from '@kortix/sdk/react';
+import { Editor } from '@tiptap/core';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 
+import { baseExtensions } from '../editor/extensions';
+import { MentionNode } from '../editor/mention-node';
 import { createSlashSuggestion } from './slash-controller';
 import { SLASH_ACTIONS, type SlashAction } from './slash-actions';
 import type { SlashRow } from './slash-items';
@@ -152,21 +156,20 @@ describe('createSlashSuggestion — Enter declines with zero rows, consumes with
 });
 
 /**
- * Task 13, fix round 1, Important 3 — `getActions` (the option that lets a
- * host, `composer.tsx`'s `EMPTY_ACTIONS` while a command is staged, override
- * the Actions section) was added but had no test binding it to the real
- * `createSlashSuggestion` — `slash-items.test.ts:121` covers
- * `buildSlashSections`' `actions` parameter directly, and the JS default-
- * parameter mechanics are sound, but nothing proved the NEW option actually
- * reaches that call. These do, through the same real `onStart`/`onKeyDown`
- * surface the suite above uses.
+ * `getActions` lets a host override the Actions section. `composer.tsx` no
+ * longer uses it — it used to pass `[]` to suppress the whole palette while a
+ * command was staged, and that suppression is exactly the bug the command-chip
+ * model removed. The option itself stays: it is the only way to reach
+ * `buildSlashSections`' `actions` parameter from a host, and these tests bind
+ * it to the real `createSlashSuggestion` rather than to `buildSlashSections`
+ * in isolation (`slash-items.test.ts:121` covers that half).
  */
 describe('createSlashSuggestion — getActions threads through to buildSlashSections', () => {
   test('getActions: () => [] suppresses the Actions section entirely — Enter declines with zero rows', () => {
-    // Mirrors composer.tsx's EMPTY_ACTIONS exactly: passing `[]` must leave
-    // onStart with NOTHING to select — not just an empty Commands section.
-    // This is the fix itself: before it, `getCommands: () => []` alone
-    // still left the (fixed, unreachable) SLASH_ACTIONS default populated.
+    // Passing `[]` must leave onStart with NOTHING to select — not just an
+    // empty Commands section. Before this option existed, `getCommands: () =>
+    // []` alone still left the (fixed, unreachable) SLASH_ACTIONS default
+    // populated.
     const { onStart, onKeyDown } = createSlashSuggestion({
       getCommands: () => [],
       getActions: () => [],
@@ -213,5 +216,153 @@ describe('createSlashSuggestion — getActions threads through to buildSlashSect
     expect(selected).toHaveLength(1);
     expect(selected[0].type).toBe('action');
     expect(SLASH_ACTIONS).toContainEqual(selected[0].action);
+  });
+});
+
+/**
+ * The command-chip contract — the fix for "`/` works once and then never
+ * again".
+ *
+ * These drive the REAL `command()` callback the Suggestion plugin invokes on a
+ * selection, against a real headless `@tiptap/core` Editor (constructed with
+ * no `element`, the same pattern `editor/composer-editor.test.ts` uses — its
+ * `view` getter falls back to a stub that still dispatches transactions). No
+ * DOM, no mocking of the node or the editor.
+ */
+function editorWithSlashQuery(typed: string): Editor {
+  return new Editor({
+    extensions: [...baseExtensions(() => ''), MentionNode],
+    content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: typed }] }] },
+  });
+}
+
+function chipsIn(editor: Editor): { kind: string; label: string }[] {
+  const chips: { kind: string; label: string }[] = [];
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'mention') {
+      chips.push({ kind: String(node.attrs.kind), label: String(node.attrs.label) });
+    }
+  });
+  return chips;
+}
+
+const deepResearch = { name: 'deep-research', description: 'Research deeply' } as never as Command;
+
+describe('createSlashSuggestion — a picked command becomes an inline chip', () => {
+  test('selecting a command row replaces the typed /query with a command chip', () => {
+    // This is the behaviour change. The command used to leave the document
+    // entirely and become host state, which is what forced the host to blank
+    // the command list and broke every subsequent `/`.
+    const editor = editorWithSlashQuery('/deep');
+    const options = createSlashSuggestion({ getCommands: () => [deepResearch] });
+
+    options.command!({
+      editor,
+      range: { from: 1, to: 6 }, // the "/deep" the user typed
+      props: { index: 0, type: 'command', name: 'deep-research', description: '', command: deepResearch },
+    } as never);
+
+    expect(chipsIn(editor)).toEqual([{ kind: 'command', label: 'deep-research' }]);
+    // The typed trigger text is gone — the chip stands in its place, not
+    // alongside it.
+    expect(editor.state.doc.textBetween(0, editor.state.doc.content.size)).not.toContain('/deep');
+  });
+
+  test('a SECOND command can be picked into the same document — the menu is never suppressed', () => {
+    // The regression under test, stated directly: picking once must not put
+    // the composer into a state where picking again is impossible.
+    const editor = editorWithSlashQuery('/deep');
+    const options = createSlashSuggestion({ getCommands: () => [deepResearch] });
+    const pick = (from: number, to: number, name: string) =>
+      options.command!({
+        editor,
+        range: { from, to },
+        props: { index: 0, type: 'command', name, description: '', command: deepResearch },
+      } as never);
+
+    pick(1, 6, 'deep-research');
+    const afterFirst = editor.state.doc.content.size;
+    pick(afterFirst, afterFirst, 'compact');
+
+    expect(chipsIn(editor).map((c) => c.label)).toEqual(['deep-research', 'compact']);
+  });
+
+  test('selecting an ACTION row inserts no chip — actions operate the composer, they are not message content', () => {
+    const editor = editorWithSlashQuery('/switch');
+    const picked: SlashAction[] = [];
+    const options = createSlashSuggestion({
+      getCommands: () => [],
+      onSelectAction: (action) => picked.push(action),
+    });
+
+    options.command!({
+      editor,
+      range: { from: 1, to: 8 },
+      props: { index: 0, type: 'action', name: 'Switch model', description: '', action: SLASH_ACTIONS[0] },
+    } as never);
+
+    expect(chipsIn(editor)).toEqual([]);
+    expect(picked).toEqual([SLASH_ACTIONS[0]]);
+  });
+
+  test('onSelectCommand still fires, as a notification alongside the insert', () => {
+    const editor = editorWithSlashQuery('/deep');
+    const notified: Command[] = [];
+    const options = createSlashSuggestion({
+      getCommands: () => [deepResearch],
+      onSelectCommand: (command) => notified.push(command),
+    });
+
+    options.command!({
+      editor,
+      range: { from: 1, to: 6 },
+      props: { index: 0, type: 'command', name: 'deep-research', description: '', command: deepResearch },
+    } as never);
+
+    expect(notified).toEqual([deepResearch]);
+    expect(chipsIn(editor)).toHaveLength(1);
+  });
+
+  test('a nameless command inserts NO chip — it could never be resolved back at submit', () => {
+    const editor = editorWithSlashQuery('/x');
+    const options = createSlashSuggestion({ getCommands: () => [] });
+
+    options.command!({
+      editor,
+      range: { from: 1, to: 3 },
+      props: { index: 0, type: 'command', name: '', description: '', command: {} as never },
+    } as never);
+
+    expect(chipsIn(editor)).toEqual([]);
+  });
+});
+
+describe('createSlashSuggestion — dockSelector reaches the plugin', () => {
+  test('dockSelector becomes the Suggestion plugin container, so the menu renders in flow', () => {
+    // `container` is what redirects @tiptap/suggestion's appendChild away from
+    // document.body. Without this threading the menu still opens — it just
+    // floats over the composer instead of docking above it, which is the
+    // failure that looks like nothing is wrong.
+    const options = createSlashSuggestion({ getCommands: () => [], dockSelector: '#dock-42' });
+
+    expect(options.container).toBe('#dock-42');
+  });
+
+  test('omitting dockSelector leaves container undefined — the plugin default (document.body)', () => {
+    expect(createSlashSuggestion({ getCommands: () => [] }).container).toBeUndefined();
+  });
+});
+
+describe('createSlashSuggestion — the inline "/Type to search" hint', () => {
+  test('the trigger decoration carries a class and the hint content', () => {
+    // The plugin adds `is-empty` and copies `decorationContent` onto the
+    // decoration span itself; `globals.css`'s
+    // `.kortix-slash-trigger.is-empty::after` is what paints it. Both halves
+    // have to agree on the class name, and nothing else in the codebase
+    // would catch a rename of one without the other.
+    const options = createSlashSuggestion({ getCommands: () => [] });
+
+    expect(options.decorationClass).toBe('kortix-slash-trigger');
+    expect(options.decorationContent).toBe('Type to search');
   });
 });

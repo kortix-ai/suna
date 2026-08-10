@@ -146,9 +146,13 @@ describe('renderHTML output', () => {
     expect(tag).toBe('span');
     expect(attrs['data-mention']).toBe('file');
     expect(attrs['aria-label']).toBe('file mention: README.md');
-    expect(attrs.class).toBe(
-      'bg-muted text-foreground rounded-md px-1 py-0.5 text-[0.9em] font-medium whitespace-nowrap align-baseline',
-    );
+    // Asserted by class, not by the whole string in order: the exact
+    // concatenation order is an implementation detail of how `chipClass`
+    // composes its base, and pinning it turns any reshuffle into a false
+    // failure. What must hold is the visual contract — a REFERENCE is neutral
+    // (`bg-muted`) and rides the line it sits on.
+    expect(attrs.class).toContain('bg-muted');
+    expect(attrs.class).toContain('align-baseline');
     expect(content).toBe('@README.md');
   });
 
@@ -159,6 +163,31 @@ describe('renderHTML output', () => {
 
     expect(attrs['data-mention']).toBe('session');
     expect(attrs['aria-label']).toBe('session mention: Fix the parser');
+  });
+
+  test('a command chip renders with a slash, its own tint, and a command aria-label', () => {
+    // The `/` prefix is the whole visual difference between "I am pointing at
+    // this" and "I am running this" — a command chip that rendered `@name`
+    // would be indistinguishable from a mention of a file with that name.
+    const node = PMNode.fromJSON(schema, mentionJSON('command', 'deep-research'));
+    const toDOM = schema.nodes.mention.spec.toDOM!;
+    const [, attrs, content] = toDOM(node) as [string, Record<string, string>, string];
+
+    expect(content).toBe('/deep-research');
+    expect(attrs['data-mention']).toBe('command');
+    expect(attrs['aria-label']).toBe('command: /deep-research');
+    // The tint is the whole visual difference from a mention, and BOTH of
+    // these matter. `toContain` proves the variant applied; `not.toContain`
+    // proves twMerge actually deleted the base's `bg-muted` instead of
+    // shipping both classes and leaving the winner to stylesheet order — the
+    // exact failure a template-literal `chipClass` produces, invisibly.
+    expect(attrs.class).toContain('bg-primary/[0.08]');
+    expect(attrs.class).not.toContain('bg-muted');
+    // Same trap, dark side: `dark:bg-card` is a different variant group, so
+    // twMerge cannot drop it for an unprefixed `bg-*`. It has to be overridden
+    // explicitly or the chip loses its tint in dark mode only.
+    expect(attrs.class).toContain('dark:bg-primary/[0.08]');
+    expect(attrs.class).not.toContain('dark:bg-card');
   });
 });
 

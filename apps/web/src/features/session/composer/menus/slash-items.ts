@@ -42,17 +42,25 @@ export interface CommandGroup {
 /**
  * Groups Commands rows by `Command.source` ("command" | "mcp" | "skill" |
  * undefined — `@opencode-ai/sdk` `dist/v2/gen/types.gen.d.ts:1974`) into
- * Skills / MCP / Commands headings — but ONLY when at least two of those
- * buckets are non-empty. Nothing upstream filters on `source`, so
- * skill-backed commands already arrive through `command.list()` mixed in
- * with everything else; this is what gives them their own heading.
+ * Skills / MCP / Commands headings. Nothing upstream filters on `source`, so
+ * skill-backed commands already arrive through `command.list()` mixed in with
+ * everything else; this is what gives them their own heading.
  *
- * Degrades to a single "Commands" heading — no empty headings, no lone
- * "Skills" heading — when every command shares one bucket. That covers both
- * "every command happens to be a skill today" and "no live server populates
- * `source: 'skill'` yet, so every command has `source: undefined`" — the
- * likely case in practice, which must render exactly like a plain command
- * list with nothing to differentiate.
+ * Every group carries its OWN bucket's heading, including when only one bucket
+ * is non-empty. An earlier version collapsed the single-bucket case onto a flat
+ * "Commands" heading, to avoid a lone "Skills" heading with nothing to contrast
+ * against. That reasoned about the UNFILTERED list only, and it produced a
+ * visible bug the moment a query narrowed the list: typing `/web` against a
+ * real workspace (skills + plain commands) dropped every non-skill row, which
+ * left one non-empty bucket, which relabelled the SAME rows from "Skills" to
+ * "Commands" mid-keystroke. A heading that changes identity while you type
+ * reads as the list having been replaced. Observed on a live session at
+ * localhost:13400 — the rows under it were byte-identical before and after.
+ *
+ * The lone-heading case the old rule guarded against is not a defect: a list of
+ * only skills labelled "Skills" is accurate, and it is what the reference UX
+ * shows. `source: undefined` still lands in the `command` bucket and still
+ * renders "Commands", so a server that never populates `source` is unaffected.
  */
 export function groupCommandsBySource(commands: Command[]): CommandGroup[] {
   if (commands.length === 0) return [];
@@ -60,11 +68,10 @@ export function groupCommandsBySource(commands: Command[]): CommandGroup[] {
   const buckets: Record<CommandBucket, Command[]> = { skill: [], mcp: [], command: [] };
   for (const command of commands) buckets[bucketFor(command)].push(command);
 
-  const nonEmpty = BUCKET_ORDER.filter((bucket) => buckets[bucket].length > 0);
-  if (nonEmpty.length <= 1) {
-    return [{ heading: BUCKET_HEADING.command, commands }];
-  }
-  return nonEmpty.map((bucket) => ({ heading: BUCKET_HEADING[bucket], commands: buckets[bucket] }));
+  return BUCKET_ORDER.filter((bucket) => buckets[bucket].length > 0).map((bucket) => ({
+    heading: BUCKET_HEADING[bucket],
+    commands: buckets[bucket],
+  }));
 }
 
 function commandMatchesQuery(command: Command, q: string): boolean {

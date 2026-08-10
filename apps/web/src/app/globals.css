@@ -2041,6 +2041,24 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   pointer-events: none;
 }
 
+/* The `/` trigger's inline hint — "/Type to search". `@tiptap/suggestion`
+   decorates the active trigger range with this class, adds `is-empty` while
+   no query characters have been typed yet, and copies the configured
+   `decorationContent` onto the span as `data-decoration-content` (see
+   `menus/slash-controller.ts`). This is the only thing that paints it.
+
+   Same shape as the placeholder rule above, and for the same two reasons:
+   `content: attr(...)` keeps the string out of the document (so it can never
+   be selected, copied, or serialized into the message), and
+   `pointer-events: none` keeps a click landing on it from moving the caret
+   into text that does not exist. It disappears the instant a character is
+   typed, because the plugin drops `is-empty` at that point. */
+.kortix-composer-editor .kortix-slash-trigger.is-empty::after {
+  content: attr(data-decoration-content);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
 /* Fix round 1, Minor: the paused-on-approval placeholder keeps the old
    amber warning emphasis (session-chat-input.tsx:1233 —
    `text-amber-600 dark:text-amber-400`) instead of the plain muted color
