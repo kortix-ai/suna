@@ -1,0 +1,93 @@
+name: Retire QA portal
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type retire-qa.kortix.com to delete the DNS record and Access application.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+      CF_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+      CF_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
+    steps:
+      - name: Require the exact portal hostname
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: test "$CONFIRM" = 'retire-qa.kortix.com'
+
+      - name: Delete the QA Access application and DNS record
+        run: |
+          node <<'NODE'
+          const host = 'qa.kortix.com';
+          const accountId = process.env.CF_ACCOUNT_ID;
+          const zoneId = process.env.CF_ZONE_ID;
+          const email = process.env.CF_EMAIL;
+          const globalApiKey = process.env.CF_GLOBAL_API_KEY;
+
+          for (const [name, value] of Object.entries({ accountId, zoneId, email, globalApiKey })) {
+            if (!value) throw new Error(`${name} is not configured`);
+          }
+
+          const headers = {
+            'X-Auth-Email': email,
+            'X-Auth-Key': globalApiKey,
+            'Content-Type': 'application/json',
+          };
+
+          async function request(path, init = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4/${path}`, {
+              ...init,
+              headers,
+            });
+            const body = await response.json();
+            if (!response.ok || !body.success) {
+              throw new Error(`${init.method ?? 'GET'} ${path}: ${JSON.stringify(body.errors)}`);
+            }
+            return body.result;
+          }
+
+          function isPortalDomain(domain) {
+            return domain === host || domain?.startsWith(`${host}/`);
+          }
+
+          const accessScopes = [
+            `accounts/${accountId}/access/apps`,
+            `zones/${zoneId}/access/apps`,
+          ];
+
+          for (const scope of accessScopes) {
+            const applications = await request(scope);
+            for (const application of applications.filter((item) => isPortalDomain(item.domain))) {
+              await request(`${scope}/${application.id}`, { method: 'DELETE' });
+              console.log(`Deleted ${scope}/${application.id} for ${application.domain}`);
+            }
+          }
+
+          const dnsPath = `zones/${zoneId}/dns_records`;
+          const records = await request(`${dnsPath}?name=${encodeURIComponent(host)}`);
+          for (const record of records) {
+            if (record.name !== host) throw new Error(`Refusing to delete unexpected DNS name: ${record.name}`);
+            await request(`${dnsPath}/${record.id}`, { method: 'DELETE' });
+            console.log(`Deleted ${record.type} ${record.name}`);
+          }
+
+          for (const scope of accessScopes) {
+            const remaining = (await request(scope)).filter((item) => isPortalDomain(item.domain));
+            if (remaining.length) throw new Error(`${scope} still contains ${remaining.length} QA application(s)`);
+          }
+          const remainingDns = await request(`${dnsPath}?name=${encodeURIComponent(host)}`);
+          if (remainingDns.length) throw new Error(`DNS still contains ${remainingDns.length} QA record(s)`);
+
+          console.log('qa.kortix.com Cloudflare resources are absent.');
+          NODE
