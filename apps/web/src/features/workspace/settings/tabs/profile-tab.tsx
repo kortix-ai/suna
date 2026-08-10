@@ -266,7 +266,7 @@ export function ProfileTabView({
             type="button"
             onClick={onOpenFilePicker}
             disabled={isUploadingAvatar}
-            className="group focus-visible:ring-ring relative shrink-0 cursor-pointer overflow-hidden rounded-md focus-visible:ring-2 focus-visible:outline-none"
+            className="group focus-visible:ring-ring relative shrink-0 cursor-pointer overflow-hidden rounded-md transition-[scale] duration-150 ease-out active:scale-[0.96] focus-visible:ring-2 focus-visible:outline-none"
             aria-label="Upload profile picture"
           >
             <Avatar className="border-border size-14 border">

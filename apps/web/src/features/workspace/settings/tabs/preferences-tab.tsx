@@ -297,7 +297,7 @@ export function PreferencesTabView({
               type="button"
               aria-label={label}
               aria-pressed={theme === value}
-              className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out [&>svg]:size-4"
+              className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-[color,background-color,scale] duration-150 ease-out active:scale-[0.96] [&>svg]:size-4"
               style={{ backgroundColor: theme === value ? 'var(--background)' : 'transparent' }}
               onClick={() => onThemeChange(value)}
             >

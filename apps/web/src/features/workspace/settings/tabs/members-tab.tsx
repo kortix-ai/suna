@@ -2487,7 +2487,13 @@ function FilterChips<T extends string>({
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+            // Press feedback: `active:scale-[0.96]` is this app's dominant
+            // convention (123 of 148 `active:scale` usages) and the value the
+            // design-system reference page uses. The transition names its
+            // properties rather than using `transition-colors` alone, so the
+            // scale actually animates — a bare `transition-colors` would snap.
+            'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
+            'transition-[color,background-color,scale] duration-150 ease-out active:scale-[0.96]',
             value === o.value
               ? 'bg-foreground text-background'
               : 'bg-muted/50 text-muted-foreground hover:bg-muted',
