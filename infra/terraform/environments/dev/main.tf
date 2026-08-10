@@ -2,7 +2,8 @@
 #
 #   dev-api-ecs-fargate.kortix.com → Cloudflare (proxied, Full strict) → ALB →
 #   ECS Fargate service (autoscaled) in private subnets, egress via NAT.
-#   dev.kortix.com (frontend) stays on Vercel — not managed here.
+#   dev-fe-ecs.kortix.com → Cloudflare → a separate ECS Fargate frontend service.
+#   dev.kortix.com remains on Vercel.
 #
 # This ECS service is the always-warm FALLBACK behind dev-api.kortix.com: that
 # hostname is a Cloudflare Worker (infra/cloudflare/workers/api-router, env=dev)

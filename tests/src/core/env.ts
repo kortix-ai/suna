@@ -3,7 +3,7 @@
  *
  * The suite is environment-agnostic: point it at a local dev API, dev-api.kortix.com,
  * or prod via env vars. Primary names are KE2E_(star), with E2E_(star) + standard fallbacks so
- * the existing gate5/playwright secrets keep working.
+ * existing Playwright and deployed-target secrets keep working.
  *
  * Bun auto-loads a `.env` in the cwd, so local runs can drop secrets there.
  */

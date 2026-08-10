@@ -15,12 +15,12 @@ import { enqueueCurrentAppRuntime } from './deployment-worker';
 import {
   appAccessCookie,
   appAccessCookieName,
+  appAccessModeFromStorage,
   appAccessibleToUser,
   appAccessSecret,
   cookieValue,
   createAppAccessToken,
   verifyAppAccessToken,
-  type AppAccessMode,
 } from './access';
 
 const EDGE_HOST_HEADER = 'x-kortix-app-host';
@@ -60,7 +60,7 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
 }> = {
   waiting: {
     title: 'Waiting for first deployment',
-    message: 'Deploy from a linked project with kortix apps deploy .',
+    message: 'Deploy from a linked workspace with kortix apps deploy .',
     code: 'app_waiting_for_deployment',
     progress: true,
   },
@@ -287,7 +287,7 @@ function appAccessResponse(
   invalidPassword = false,
   returnTo = safeAppReturnTo(new URL(request.url).pathname + new URL(request.url).search),
 ): Response {
-  const mode = app.accessMode as AppAccessMode;
+  const mode = appAccessModeFromStorage(app.accessMode);
   if (!appBrowserNavigation(request)) {
     return Response.json(
       { error: 'App authentication required', code: 'app_auth_required', access_mode: mode },
@@ -298,7 +298,7 @@ function appAccessResponse(
   const isPassword = mode === 'password';
   const action = isPassword
     ? `<form method="post" action="/_kortix/access/password"><label for="password">Password</label><input id="password" name="password" type="password" minlength="8" required autocomplete="current-password"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><button type="submit">Open App</button>${invalidPassword ? '<p class="error" role="alert">The password is incorrect.</p>' : ''}</form>`
-    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/projects/${app.workspaceId}/apps?open_app=${app.appId}`)}">Continue with Kortix</a>`;
+    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/workspaces/${app.workspaceId}/apps?open_app=${app.appId}`)}">Continue with Kortix</a>`;
   const message = isPassword
     ? 'Enter the password configured by the App owner.'
     : 'Sign in with a Kortix account that can access this App.';

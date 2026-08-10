@@ -2,7 +2,7 @@
  * Agent-run + session happy-path backlog.
  *
  * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, SESS-12, FILE-8, FILE-9,
- * GOLD-1, CHN-6.
+ * GOLD-1, CHN-6, SESS-10.
  *
  * REALITY: every flow here needs a REAL booted Daytona sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
@@ -73,6 +73,79 @@ async function waitForSessionReady(
     throw markSessionReadinessTimeoutRetryable(error, sessionId);
   }
 }
+
+flow(
+  'SESS-10',
+  {
+    domain: 'sessions',
+    requires: ['funded', 'daytona'],
+    serial: true,
+    timeoutMs: 360_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.sharedSeededProject();
+    const session = await ctx.fixtures.session(project, {
+      prompt: 'Summarize why deterministic end-to-end tests reduce release risk in one sentence.',
+    });
+
+    await ctx.step('the real sandbox reaches OpenCode readiness after the initial prompt', async () => {
+      await waitForSessionReady(ctx, project.id, session.id);
+    });
+
+    let mirrored: any = null;
+    await ctx.step('the session read exposes a non-placeholder root OpenCode title and tree', async () => {
+      mirrored = await waitFor(
+        async () => {
+          const response = await ctx.client
+            .as(ctx.P.OWNER)
+            .get('/v1/projects/:projectId/sessions/:sessionId', {
+              params: { projectId: project.id, sessionId: session.id },
+            });
+          response.status(200);
+          return response.json<any>();
+        },
+        {
+          until: (row) => {
+            const root = Array.isArray(row?.opencode_sessions)
+              ? row.opencode_sessions.find(
+                  (entry: any) => entry?.id === row?.opencode_session_id && !entry?.parent_id,
+                )
+              : null;
+            const title = typeof root?.title === 'string' ? root.title.trim() : '';
+            return Boolean(title) && !/^new (session|agent)\b/i.test(title) && row?.name === title;
+          },
+          timeoutMs: 180_000,
+          intervalMs: 3_000,
+          description: `the OpenCode title/tree mirror for ${session.id}`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
+    });
+
+    await ctx.step('the project session list returns the same mirrored title and tree', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+      response.status(200);
+      const body = response.json<any>();
+      const rows = Array.isArray(body) ? body : (body.sessions ?? []);
+      const listed = rows.find((row: any) => row?.session_id === session.id);
+      if (!listed) throw new Error(`session list omitted ${session.id}`);
+      if (listed.name !== mirrored.name) {
+        throw new Error(`list title ${String(listed.name)} != detail title ${String(mirrored.name)}`);
+      }
+      if (JSON.stringify(listed.opencode_sessions) !== JSON.stringify(mirrored.opencode_sessions)) {
+        throw new Error('list and detail returned different OpenCode session trees');
+      }
+    });
+  },
+);
 
 /**
  * Boot a fresh session and wait for its runtime to reach `ready`, returning the

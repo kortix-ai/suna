@@ -7,7 +7,7 @@ const NEVER_DELIVER = new Set(['SLACK_SIGNING_SECRET', 'SLACK_BOT_TOKEN']);
 
 export interface AppRuntimeEnvironmentInput {
   environment?: Record<string, string>;
-  /** Runtime environment key -> project secret identifier. */
+  /** Runtime environment key -> workspace secret identifier. */
   secrets?: Record<string, string>;
   availableSecrets: ResolvedWorkspaceSecret[];
 }

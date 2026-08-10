@@ -31,6 +31,7 @@ import { workspaceRoutesApp } from '../workspaces/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import {
   appAccessibleToUser,
+  appAccessModeFromStorage,
   appAccessSessionUrl,
   persistAppAccessPolicy,
   serializeAppAccessPolicy,
@@ -133,11 +134,11 @@ function serializeApp(row: typeof apps.$inferSelect) {
   return {
     app_id: row.appId,
     account_id: row.accountId,
-    project_id: row.workspaceId,
+    workspace_id: row.workspaceId,
     slug: row.slug,
     name: row.name,
     url: appPublicUrl(row),
-    access_mode: row.accessMode as AppAccessMode,
+    access_mode: appAccessModeFromStorage(row.accessMode),
     access_revision: row.accessRevision,
     desired_state: row.desiredState,
     active_deployment_id: row.activeDeploymentId,
@@ -153,7 +154,7 @@ function serializeApp(row: typeof apps.$inferSelect) {
 function serializeArtifact(row: typeof appArtifacts.$inferSelect) {
   return {
     artifact_id: row.artifactId,
-    project_id: row.workspaceId,
+    workspace_id: row.workspaceId,
     kind: row.kind,
     status: row.status,
     image_reference: row.imageReference,
@@ -200,11 +201,11 @@ function appDeploymentActorType(c: any): 'human' | 'agent' | 'service_account' |
 
 /**
  * Membership + capability + `apps` flag, in that order. Returns the loaded
- * project on success, or the Response the route must return:
- *   • 404 — the project does not exist or the caller is not a member (a
+ * workspace on success, or the Response the route must return:
+ *   • 404 — the workspace does not exist or the caller is not a member (a
  *     non-member must not be able to distinguish the two).
- *   • 403 `feature_disabled` — the caller IS a member, but the project has the
- *     `apps` flag off. A member already knows the project exists, so the honest
+ *   • 403 `feature_disabled` — the caller IS a member, but the workspace has the
+ *     `apps` flag off. A member already knows the workspace exists, so the honest
  *     "turn it on in Settings" answer beats a misleading 404.
  * A capability denial still throws (403) from assertWorkspaceCapability.
  */
@@ -250,7 +251,7 @@ workspaceRoutesApp.openapi(
 );
 
 const AppAccessSchema = z.object({
-  mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
+  mode: z.enum(['private', 'workspace', 'restricted', 'public', 'password']),
   revision: z.number().int().positive(),
   member_ids: z.array(z.string().uuid()).max(100).default([]),
   group_ids: z.array(z.string().uuid()).max(100).default([]),
@@ -278,7 +279,7 @@ workspaceRoutesApp.openapi(
     request: {
       params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.object({
-        mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
+        mode: z.enum(['private', 'workspace', 'restricted', 'public', 'password']),
         member_ids: z.array(z.string().uuid()).max(100).optional(),
         group_ids: z.array(z.string().uuid()).max(100).optional(),
         password: z.string().min(8).max(256).optional(),

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # ecs-deploy.sh — roll a Kortix service onto ECS Fargate with a task-def rendered
-# fresh from Secrets Manager, so the ECS env can never drift from the EKS env.
+# fresh from Secrets Manager, so task-definition revisions cannot drift.
 #
 # The env contract lives in ONE place per environment: the Secrets Manager blob
 # `kortix-<env>-env`. ECS injects the complete JSON document through one stable
@@ -9,7 +9,7 @@
 # an optional JSON key cannot invalidate an already-registered task definition.
 #
 # Usage:
-#   ecs-deploy.sh <env> <image> [--service api|gateway] [--version X.Y.Z]
+#   ecs-deploy.sh <env> <image> [--service api|gateway|web] [--version X.Y.Z]
 #                 [--database-migrated] [--no-wait] [--dry-run]
 #
 #   env        dev | staging | prod | prod-use2-shadow
@@ -19,11 +19,9 @@
 #              release version (X.Y.Z). Why: prod release images are RETAGGED
 #              staging manifests, so their baked KORTIX_VERSION is the staging
 #              string (e.g. 0.9.109-staging.<sha8>) — without this stamp, ECS
-#              /v1/health reports that instead of the released X.Y.Z while EKS
-#              (which stamps kortixVersion via Helm values) reports the clean
-#              version. The stamp keeps both backends' reported versions
-#              IDENTICAL, which is what lets deploy-prod's verify-live-version
-#              job assert the public endpoint serves the released version.
+#              /v1/health reports that instead of the released X.Y.Z. The stamp
+#              lets deploy-prod assert that the public endpoint serves the
+#              released version.
 #   --dry-run  render + print the task-def override, then exit WITHOUT
 #              registering or rolling anything.
 #   --database-migrated
@@ -44,6 +42,34 @@ derive_version_from_image() {
   if printf '%s' "$tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     printf '%s' "$tag"
   fi
+}
+
+configure_service_coordinates() {
+  local service_kind="$1"
+  VERSION_ENV_NAME="KORTIX_VERSION"
+  case "$service_kind" in
+    api)
+      CLUSTER="$SERVICE_PREFIX"
+      SERVICE="$SERVICE_PREFIX"
+      CONTAINER="api"
+      ;;
+    gateway)
+      CLUSTER="${SERVICE_PREFIX}-gateway"
+      SERVICE="${SERVICE_PREFIX}-gateway"
+      CONTAINER="gateway"
+      ;;
+    web)
+      CLUSTER="${SERVICE_PREFIX}-web"
+      SERVICE="${SERVICE_PREFIX}-web"
+      CONTAINER="web"
+      SECRET_NAME="${SERVICE_PREFIX}-web-env"
+      VERSION_ENV_NAME="KORTIX_PUBLIC_VERSION"
+      ;;
+    *)
+      echo "unknown service: $service_kind (expected api|gateway|web)" >&2
+      return 2
+      ;;
+  esac
 }
 
 # Allow sourcing for tests: `KORTIX_ECS_DEPLOY_LIB=1 source ecs-deploy.sh`.
@@ -106,18 +132,8 @@ if [ "$DRY_RUN" != "1" ] \
   exit 2
 fi
 
-# Each service lives in its own cluster (the ecs-api module names cluster==service):
-#   api     → cluster/service <service-prefix>,         container "api"
-#   gateway → cluster/service <service-prefix>-gateway, container "gateway"
-if [ "$SVC_KIND" = "gateway" ]; then
-  CLUSTER="${SERVICE_PREFIX}-gateway"
-  SERVICE="${SERVICE_PREFIX}-gateway"
-  CONTAINER="gateway"
-else
-  CLUSTER="$SERVICE_PREFIX"
-  SERVICE="$SERVICE_PREFIX"
-  CONTAINER="api"
-fi
+# Each service lives in its own cluster (the ecs-api module names cluster==service).
+configure_service_coordinates "$SVC_KIND"
 
 echo "▶ env=$ENV region=$REGION cluster=$CLUSTER service=$SERVICE container=$CONTAINER"
 echo "▶ image=$IMAGE  secrets<-$SECRET_NAME"
@@ -160,6 +176,7 @@ CURRENT_TD="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" 
 NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
   --task-definition "$CURRENT_TD" --query 'taskDefinition' --output json \
   | jq --arg img "$IMAGE" --arg c "$CONTAINER" --arg ver "$VERSION_OVERRIDE" \
+       --arg version_env "$VERSION_ENV_NAME" \
        --argjson secrets "$SECRETS_JSON" '
       # drop read-only fields register-task-definition rejects
       del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
@@ -177,9 +194,14 @@ NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
             | .secrets = $secrets
             | .environment = (
                 ((.environment // []) | map(
-                  select(.name != "KORTIX_VERSION" and .name != "KORTIX_COMMIT")
+                  select(
+                    .name != "KORTIX_VERSION" and
+                    .name != "KORTIX_PUBLIC_VERSION" and
+                    .name != "NEXT_PUBLIC_KORTIX_VERSION" and
+                    .name != "KORTIX_COMMIT"
+                  )
                 ))
-                + (if $ver == "" then [] else [{name: "KORTIX_VERSION", value: $ver}] end))
+                + (if $ver == "" then [] else [{name: $version_env, value: $ver}] end))
           else . end)')"
 
 if [ "$DRY_RUN" = "1" ]; then

@@ -88,7 +88,13 @@ export function supaStatusEnv(name: string): Record<string, string> {
   return env;
 }
 
-export interface SlotCreds { dbUrl: string; supabaseUrl: string; serviceRoleKey: string; anonKey: string; }
+export interface SlotCreds {
+  dbUrl: string;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  anonKey: string;
+  jwtSecret: string;
+}
 
 export function slotCredsFromStatus(ports: Ports, st: Record<string, string>): SlotCreds {
   return {
@@ -96,6 +102,7 @@ export function slotCredsFromStatus(ports: Ports, st: Record<string, string>): S
     supabaseUrl: st.API_URL || `http://127.0.0.1:${ports.sbApi}`,
     serviceRoleKey: st.SERVICE_ROLE_KEY || '',
     anonKey: st.ANON_KEY || '',
+    jwtSecret: st.JWT_SECRET || '',
   };
 }
 
@@ -137,5 +144,6 @@ export function primaryCredsFromStatus(st: Record<string, string>): SlotCreds {
     supabaseUrl: st.API_URL || `http://127.0.0.1:${SHARED_SUPABASE_PORTS.sbApi}`,
     serviceRoleKey: st.SERVICE_ROLE_KEY || '',
     anonKey: st.ANON_KEY || '',
+    jwtSecret: st.JWT_SECRET || '',
   };
 }

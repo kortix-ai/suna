@@ -119,7 +119,7 @@ when done.
 
 <repo-specifics>
 In this repo, respect the existing skills: prefer the `worktree` skill
-(`pnpm worktree`) for isolated parallel Codex runs, and the `ke2e-tests` /
+(`pnpm worktree`) for isolated parallel Codex runs, and the `testing` and
 `migration` skills' rules still apply to anything Codex produces — verify against
 them. A Codex run is not a license to bypass repo conventions; you own the result.
 </repo-specifics>

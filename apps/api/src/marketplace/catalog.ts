@@ -807,6 +807,8 @@ interface ExternalRef {
 
 /** Env-configured + DB-persisted registries, as safety-filtered refs. */
 async function externalRefs(): Promise<ExternalRef[]> {
+  if (process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED === '0') return [];
+
   const out: ExternalRef[] = [];
   const seen = new Set<string>(); // dedup so a default + user-added dupe isn't scanned twice
   const push = (ref: RegistryRef, sourceId?: string) => {

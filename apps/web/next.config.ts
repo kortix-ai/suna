@@ -114,6 +114,8 @@ function resolveKortixVersion(): string {
   return base;
 }
 const KORTIX_VERSION = resolveKortixVersion();
+const KORTIX_COMMIT =
+  process.env.NEXT_PUBLIC_KORTIX_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || 'unknown';
 
 // --- Turbopack dev memory eviction ----------------------------------------
 // `experimental.turbopackMemoryEviction` takes exactly `false | 'auto' | 'full'`
@@ -189,6 +191,7 @@ const nextConfig = (): NextConfig => ({
   // both the server (runtime-config) and client bundles, even on Vercel.
   env: {
     NEXT_PUBLIC_KORTIX_VERSION: KORTIX_VERSION,
+    NEXT_PUBLIC_KORTIX_COMMIT: KORTIX_COMMIT,
   },
   // Hide Next.js's persistent dev badge in the corner. It only ever
   // really matters when there's a build error / route compile issue —

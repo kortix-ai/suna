@@ -28,6 +28,7 @@ test('toProjectPayload maps canonical Workspace wire keys to the legacy Project 
       connection: {
         owner_type: 'workspace',
         authorization_strategy: 'workspace',
+        mode: 'workspace',
         visibility: 'workspace',
         sharing: { mode: 'workspace' },
       },
@@ -51,6 +52,7 @@ test('toProjectPayload maps canonical Workspace wire keys to the legacy Project 
     connection: {
       owner_type: 'project',
       authorization_strategy: 'project',
+      mode: 'project',
       visibility: 'project',
       sharing: { mode: 'project' },
     },
@@ -70,12 +72,14 @@ test('Project request compatibility translates entity fields but preserves manif
       project_id: 'p1',
       owner_type: 'project',
       authorization_strategy: 'project',
+      mode: 'project',
       project: { name: 'Manifest project block' },
     }),
   ).toEqual({
     workspace_id: 'p1',
     owner_type: 'workspace',
     authorization_strategy: 'workspace',
+    mode: 'workspace',
     project: { name: 'Manifest project block' },
   });
 

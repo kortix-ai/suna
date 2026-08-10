@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import type { Env } from '../core/env';
-import type { CreatedProject } from '../core/types';
+import { randomUUID } from "node:crypto";
+import type { Env } from "../core/env";
+import type { CreatedProject } from "../core/types";
 
 interface ProjectDb {
   query(text: string, values?: unknown[]): Promise<unknown>;
@@ -10,8 +10,9 @@ interface ProjectDb {
 export type OpenProjectDb = (databaseUrl: string) => Promise<ProjectDb>;
 
 async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
-  const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-  const { Client } = await import('pg');
+  const local =
+    databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
+  const { Client } = await import("pg");
   const client = new Client({
     connectionString: databaseUrl,
     ssl: local ? false : { rejectUnauthorized: false },
@@ -21,11 +22,15 @@ async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
 }
 
 function assertDatabaseFixtureAllowed(env: Env, action: string): string {
-  if (env.target === 'prod') {
-    throw new Error(`refusing to ${action} a database-only project against production`);
+  if (env.target === "prod") {
+    throw new Error(
+      `refusing to ${action} a database-only project against production`,
+    );
   }
   if (!env.databaseUrl) {
-    throw new Error('KE2E_DATABASE_URL is required for database-only project fixtures');
+    throw new Error(
+      "KE2E_DATABASE_URL is required for database-only project fixtures",
+    );
   }
   return env.databaseUrl;
 }
@@ -36,11 +41,14 @@ export async function createDatabaseProject(
     accountId: string;
     userId: string;
     name: string;
+    repoUrl?: string | null;
+    appsEnabled?: boolean;
+    metadata?: Record<string, unknown>;
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<CreatedProject> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, 'create');
-  const workspaceId = randomUUID();
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "create");
+  const projectId = randomUUID();
   const client = await open(databaseUrl);
   try {
     await client.query(
@@ -59,11 +67,11 @@ export async function createDatabaseProject(
            $1::uuid,
            $2::uuid,
            $4,
-           'https://ke2e.invalid/' || $1::text || '.git',
+           COALESCE($5, 'https://ke2e.invalid/' || $1::text || '.git'),
            'main',
            'kortix.yaml',
            'active'::kortix.project_status,
-           '{"ke2e":{"database_only":true}}'::jsonb
+           $6::jsonb
          )
          RETURNING project_id
        )
@@ -81,12 +89,44 @@ export async function createDatabaseProject(
          'manager'::kortix.project_role,
          $3::uuid
        FROM inserted_project`,
-      [workspaceId, input.accountId, input.userId, input.name],
+      [
+        projectId,
+        input.accountId,
+        input.userId,
+        input.name,
+        input.repoUrl ?? null,
+        JSON.stringify({
+          ke2e: { database_only: true },
+          experimental: { apps: input.appsEnabled ?? true },
+          onboarding_completed_at: "2026-01-01T00:00:00.000Z",
+          ...(input.metadata ?? {}),
+        }),
+      ],
     );
   } finally {
     await client.end();
   }
-  return { id: workspaceId, name: input.name };
+  return { id: projectId, name: input.name };
+}
+
+export async function mergeDatabaseProjectMetadata(
+  env: Env,
+  projectId: string,
+  metadata: Record<string, unknown>,
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "update metadata for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `UPDATE kortix.projects
+       SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+       WHERE project_id = $1::uuid`,
+      [projectId, JSON.stringify(metadata)],
+    );
+  } finally {
+    await client.end();
+  }
 }
 
 export async function createDatabaseSession(
@@ -98,7 +138,7 @@ export async function createDatabaseSession(
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<string> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, 'create a session for');
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "create a session for");
   const sessionId = randomUUID();
   const client = await open(databaseUrl);
   try {
@@ -127,16 +167,16 @@ export async function createDatabaseSession(
 
 export async function deleteDatabaseProject(
   env: Env,
-  workspaceId: string,
+  projectId: string,
   open: OpenProjectDb = openProjectDb,
 ): Promise<void> {
-  const databaseUrl = assertDatabaseFixtureAllowed(env, 'delete');
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "delete");
   const client = await open(databaseUrl);
   try {
     await client.query(
       `DELETE FROM kortix.projects
        WHERE project_id = $1::uuid`,
-      [workspaceId],
+      [projectId],
     );
   } finally {
     await client.end();

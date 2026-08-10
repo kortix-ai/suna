@@ -1247,7 +1247,7 @@ interface ActivityDay {
   activeAccounts: number;
   activeUsers: number;
   newAccounts: number;
-  activeProjects: number;
+  activeWorkspaces: number;
 }
 
 flow(
@@ -1284,7 +1284,7 @@ flow(
             .exists("$.summary.wau")
             .exists("$.summary.mau")
             .exists("$.summary.totalAccounts")
-            .exists("$.summary.totalProjects");
+            .exists("$.summary.totalWorkspaces");
 
           const days = r.json<{ days: ActivityDay[] }>().days;
           // Dense series: one entry per requested UTC day, zero-filled. A sparse
@@ -1301,7 +1301,7 @@ flow(
             "activeAccounts",
             "activeUsers",
             "newAccounts",
-            "activeProjects",
+            "activeWorkspaces",
           ] as const) {
             if (!(key in days[0]!))
               throw new Error(`day entry is missing "${key}"`);

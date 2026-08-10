@@ -58,6 +58,7 @@ flow(
   'GW-2',
   {
     domain: 'llm-gateway',
+    requires: ['funded'],
     routes: ['GET /v1/llm/models', 'GET /v1/models', 'GET /v1/openai/models'],
   },
   async (ctx) => {
@@ -279,6 +280,7 @@ flow(
   'GW-4',
   {
     domain: 'llm-gateway',
+    requires: ['funded'],
     routes: [
       'GET /v1/projects/:workspaceId/gateway/routing-policy',
       'PUT /v1/projects/:workspaceId/gateway/routing-policy',

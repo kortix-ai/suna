@@ -3430,7 +3430,7 @@ export function SessionChat({
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
-    const workspaceRoute = pathname?.match(/^\/(?:workspaces|workspaces)\/([^/]+)\/sessions\/([^/]+)/);
+    const workspaceRoute = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
     return {
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {

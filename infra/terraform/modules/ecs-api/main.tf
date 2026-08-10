@@ -192,12 +192,15 @@ resource "aws_security_group" "service" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  egress {
-    description = "PostgreSQL data plane"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  dynamic "egress" {
+    for_each = var.enable_postgres_egress ? [1] : []
+    content {
+      description = "PostgreSQL data plane"
+      from_port   = 5432
+      to_port     = 5432
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
   tags = {
     ManagedBy   = "terraform"

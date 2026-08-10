@@ -62,6 +62,42 @@ afterEach(async () => {
 });
 
 describe('manifest file compare-and-swap', () => {
+  test('allows credential-free absolute repositories only in local development', async () => {
+    const previous = process.env.KORTIX_LOCAL_DEV;
+    const localProject = { ...project, gitAuthToken: null };
+    const manifest = await readManifest(localProject);
+    if (!manifest) throw new Error('Expected the seeded manifest');
+    manifest.raw.connectors = [{ slug: 'local', provider: 'http' }];
+    try {
+      delete process.env.KORTIX_LOCAL_DEV;
+      expect(
+        await commitManifest(
+          localProject as Parameters<typeof commitManifest>[0],
+          manifest,
+          'blocked local write',
+        ),
+      ).toEqual({
+        error: 'No git credentials available to write to the workspace repo',
+        status: 502,
+      });
+
+      process.env.KORTIX_LOCAL_DEV = '1';
+      expect(
+        await commitManifest(
+          localProject as Parameters<typeof commitManifest>[0],
+          manifest,
+          'local write',
+        ),
+      ).toEqual({ ok: true });
+      expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.yaml'])).toContain(
+        'slug: local',
+      );
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_LOCAL_DEV;
+      else process.env.KORTIX_LOCAL_DEV = previous;
+    }
+  });
+
   test('rejects a stale manifest revision without overwriting the winning write', async () => {
     const original = await readManifest(project);
     expect(original?.revision).toMatch(/^[0-9a-f]{40}$/);

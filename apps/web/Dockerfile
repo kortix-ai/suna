@@ -83,6 +83,7 @@ RUN rm -f /app/apps/web/.env /app/apps/web/.env.local /app/apps/web/.env.product
 
 # Copy entrypoint script (needs to run as root for VPS URL rewriting)
 COPY apps/web/docker-entrypoint.sh /docker-entrypoint.sh
+COPY apps/web/scripts/hydrate-environment-secret.mjs /hydrate-environment-secret.mjs
 RUN chmod +x /docker-entrypoint.sh
 
 # In local mode (no KORTIX_PUBLIC_URL), runs as nextjs user via CMD.

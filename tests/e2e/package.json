@@ -1,9 +1,0 @@
-{
-  "name": "@kortix/e2e",
-  "version": "0.2.0",
-  "private": true,
-  "type": "module",
-  "devDependencies": {
-    "@kortix/sdk": "workspace:*"
-  }
-}

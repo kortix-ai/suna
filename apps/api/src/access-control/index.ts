@@ -1,12 +1,12 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import postgres from 'postgres';
-import { db } from '../shared/db';
 import { accessRequests } from '@kortix/db';
-import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
+import postgres from 'postgres';
 import { config } from '../config';
+import { errors, json, makeOpenApiApp } from '../openapi';
 import { getSsoProviderByDomain } from '../repositories/sso';
+import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
+import { db } from '../shared/db';
 import { createCheckEmailRateLimitMiddleware } from '../shared/rate-limit';
-import { makeOpenApiApp, json, errors } from '../openapi';
 
 export const accessControlApp = makeOpenApiApp();
 
@@ -56,7 +56,9 @@ accessControlApp.openapi(
     summary: 'Resolve how an email should proceed through the auth flow',
     middleware: [createCheckEmailRateLimitMiddleware()] as const,
     request: {
-      body: { content: { 'application/json': { schema: z.object({ email: z.string().email() }) } } },
+      body: {
+        content: { 'application/json': { schema: z.object({ email: z.string().email() }) } },
+      },
     },
     responses: {
       200: json(
@@ -67,7 +69,15 @@ accessControlApp.openapi(
     },
   }),
   async (c) => {
-    const { email } = c.req.valid('json');
+    // zod-openapi validates declared JSON bodies. An unsupported content type
+    // can still reach the handler without parsed JSON. Reject that input before
+    // reading `email`; otherwise `email.trim()` turns malformed public traffic
+    // into a 500 response.
+    const body = c.req.valid('json') as { email?: unknown } | undefined;
+    if (typeof body?.email !== 'string') {
+      return c.json({ error: true, message: 'Validation failed', status: 400 }, 400);
+    }
+    const email = body.email;
     const domain = email.trim().toLowerCase().split('@')[1] || '';
     if (domain) {
       const ssoProvider = await getSsoProviderByDomain(domain).catch(() => null);

@@ -151,8 +151,9 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
       .where(eq(appAccessGrants.appId, APP_ID));
     expect(rows).toHaveLength(2);
 
-    const project = await persistAppAccessPolicy(updated, { mode: 'project' });
-    expect(project.accessRevision).toBe(3);
+    const workspace = await persistAppAccessPolicy(updated, { mode: 'workspace' });
+    expect(workspace.accessRevision).toBe(3);
+    expect(workspace.accessMode).toBe('project');
     expect(await testDb().select().from(appAccessGrants)
       .where(eq(appAccessGrants.appId, APP_ID))).toHaveLength(0);
   });

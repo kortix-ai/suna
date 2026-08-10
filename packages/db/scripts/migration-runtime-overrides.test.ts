@@ -20,6 +20,15 @@ function fixture(sql: string): string {
   return migrations;
 }
 
+function removeLocalDockerFixture(sql: string): string {
+  const root = mkdtempSync(join(tmpdir(), 'kortix-migration-runtime-'));
+  const migrations = join(root, 'migrations');
+  mkdirSync(migrations, { recursive: true });
+  writeFileSync(join(migrations, '20260807165721291_remove_local_docker_provider.sql'), sql);
+  roots.push(root);
+  return migrations;
+}
+
 describe('materializeMigrationRuntimeDirectory', () => {
   test('changes only the known audit-v2 timeout and keeps the immutable source untouched', () => {
     const sql = "SET lock_timeout = '5s';\nSET statement_timeout = '120s';\nSELECT 1;\n";
@@ -69,5 +78,28 @@ describe('materializeMigrationRuntimeDirectory', () => {
         expectedSha256: 'b99a7e9f6659464429b1494a03212c5cccdc185191e802ae911203046a8b86e7',
       }),
     ).toThrow('expected exactly one');
+  });
+
+  test('drops the historical compatibility view only in the runtime copy', () => {
+    const insertionPoint = `DROP TRIGGER IF EXISTS trg_session_sandbox_identity_immutable
+  ON kortix.session_sandboxes;--> statement-breakpoint
+
+`;
+    const sql = `SELECT 1;\n${insertionPoint}SELECT 2;\n`;
+    const source = removeLocalDockerFixture(sql);
+    const runtime = materializeMigrationRuntimeDirectory(source, {
+      removeLocalDockerExpectedSha256: '2a9222670912af39fe3306dc1c0a56461e9b611d96c45bc22c09c45aa438297f',
+    });
+
+    expect(readFileSync(join(source, '20260807165721291_remove_local_docker_provider.sql'), 'utf8')).toBe(sql);
+    expect(
+      readFileSync(
+        join(runtime.path, '20260807165721291_remove_local_docker_provider.sql'),
+        'utf8',
+      ),
+    ).toContain('DROP VIEW IF EXISTS kortix.workspace_sessions;');
+    expect(runtime.appliedOverrides).toEqual([
+      '20260807165721291_remove_local_docker_provider.sql: drop historical workspace_sessions view (e0cfc4b8df7598ee3dfb485606d264fa5b915fd03871873019bd0d005b9b120b)',
+    ]);
   });
 });

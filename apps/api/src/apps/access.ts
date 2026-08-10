@@ -6,8 +6,19 @@ import { config } from '../config';
 import { authorize, WORKSPACE_ACTIONS } from '../iam';
 import { db } from '../shared/db';
 
-export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
+export type AppAccessMode = 'private' | 'workspace' | 'restricted' | 'public' | 'password';
+type PersistedAppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppAccessTokenKind = 'kortix' | 'password';
+
+/** Convert the physical database value into the canonical Workspace contract. */
+export function appAccessModeFromStorage(value: string): AppAccessMode {
+  return value === 'project' ? 'workspace' : value as AppAccessMode;
+}
+
+/** Keep the existing database constraint stable while Workspace remains canonical. */
+function appAccessModeToStorage(value: AppAccessMode): PersistedAppAccessMode {
+  return value === 'workspace' ? 'project' : value;
+}
 
 export interface AppAccessPolicy {
   mode: AppAccessMode;
@@ -98,7 +109,7 @@ export function appAccessDecision(input: {
   if (input.mode === 'public') return true;
   if (!input.subject || input.mode === 'password') return false;
   if (input.ownerId && input.ownerId === input.subject.userId) return true;
-  if (input.mode === 'project') return true;
+  if (input.mode === 'workspace') return true;
   if (input.mode === 'restricted') {
     return input.grants.some((grant) =>
       grant.principalType === 'member'
@@ -125,7 +136,7 @@ export async function serializeAppAccessPolicy(
 ): Promise<AppAccessPolicy> {
   const grants = row.accessMode === 'restricted' ? await loadAppAccessGrants(row.appId) : [];
   return {
-    mode: row.accessMode as AppAccessMode,
+    mode: appAccessModeFromStorage(row.accessMode),
     revision: row.accessRevision,
     member_ids: grants
       .filter((grant) => grant.principalType === 'member')
@@ -192,7 +203,7 @@ export async function persistAppAccessPolicy(
 
   return db.transaction(async (tx) => {
     const [updated] = await tx.update(apps).set({
-      accessMode: input.mode,
+      accessMode: appAccessModeToStorage(input.mode),
       accessPasswordHash: passwordHash,
       accessRevision: sql`${apps.accessRevision} + 1`,
       updatedAt: new Date(),
@@ -232,16 +243,16 @@ export async function appAccessibleToUser(
   },
   userId: string,
 ): Promise<boolean> {
-  const projectAccess = await authorize(
+  const workspaceAccess = await authorize(
     userId,
     app.accountId,
     WORKSPACE_ACTIONS.WORKSPACE_READ,
     { type: 'project', id: app.workspaceId },
   );
-  if (!projectAccess.allowed) return false;
+  if (!workspaceAccess.allowed) return false;
   const subject = await resolveShareSubject(userId);
   return appAccessDecision({
-    mode: app.accessMode as AppAccessMode,
+    mode: appAccessModeFromStorage(app.accessMode),
     ownerId: app.createdBy,
     grants: app.accessMode === 'restricted' ? await loadAppAccessGrants(app.appId) : [],
     subject,

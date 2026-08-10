@@ -1,240 +1,92 @@
 name: QA - release gate
 
-# Blocking pre-production gate. This runs before a release PR can merge into
-# prod, so deploy-prod only runs after the full suite has passed. Configure the
-# prod branch protection rule to require this workflow for normal releases.
-
 on:
   pull_request:
     branches: [prod]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
-    inputs:
-      api_base_url:
-        description: "Staging API base URL including /v1"
-        required: false
-        type: string
-      web_base_url:
-        description: "Staging frontend URL"
-        required: false
-        type: string
-      gateway_base_url:
-        description: "Staging LLM gateway origin without /v1"
-        required: false
-        type: string
-      dast_target_url:
-        description: "Staging DAST target origin without /v1"
-        required: false
-        type: string
-      pentest_target_url:
-        description: "Staging automated pentest target origin without /v1"
-        required: false
-        type: string
 
 concurrency:
   group: qa-release-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
   full-suite:
     name: full suite + quality gates
+    uses: ./.github/workflows/test.yml
+    with:
+      mode: full
+      artifact-name: release-qa-results
+      retention-days: 90
+    secrets: inherit
+
+  deployed-staging:
+    name: deployed staging API + browser
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 20
     env:
-      QA_REPORTS_ROLE_ARN: ${{ secrets.QA_REPORTS_ROLE_ARN }}
-      QA_REPORTS_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
-      QA_REPORTS_PREFIX: ${{ vars.QA_REPORTS_PREFIX || 'reports' }}
-      QA_REPORTS_PUBLIC_BASE_URL: ${{ vars.QA_REPORTS_PUBLIC_BASE_URL }}
-      API_BASE_URL_INPUT: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
-      WEB_BASE_URL_INPUT: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
-      GATEWAY_BASE_URL_INPUT: ${{ inputs.gateway_base_url || vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
-      DAST_TARGET_URL_INPUT: ${{ inputs.dast_target_url || vars.QA_DAST_TARGET_URL }}
-      PENTEST_TARGET_URL_INPUT: ${{ inputs.pentest_target_url || vars.QA_PENTEST_TARGET_URL }}
+      KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
+      E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}
+      KE2E_GATEWAY_URL: ${{ vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
+      KE2E_TARGET: staging
+      KE2E_LIVE_CONFIRM: ci
       KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
       KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
       KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
       KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
       KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-      KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
       KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
       KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
       KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
-      # Staging can provision managed repositories with the server credential.
-      # CLI push flows also require repo-scoped token export from a GitHub App.
+      E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
       KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
-      # GitHub applies a secondary content-creation limit independently of the
-      # REST core quota. Serialize and pace real managed-repository creation.
-      KE2E_PROVISION_CONCURRENCY: 1
-      KE2E_PROVISION_MIN_INTERVAL_MS: 5000
-      KE2E_PROVISION_RATE_LIMIT_DELAY_MS: 180000
-      # staging.kortix.com sits behind Vercel deployment protection (SSO); the
-      # Playwright configs send this as x-vercel-protection-bypass so the browser
-      # suite can reach the app instead of the Vercel login wall.
-      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
+      - name: Require the deployed staging source SHA
+        run: |
+          set -euo pipefail
+          test -f RELEASE_SOURCE_SHA || {
+            echo "::error::Release PR has no RELEASE_SOURCE_SHA."
+            exit 1
+          }
+          source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::RELEASE_SOURCE_SHA must contain one 40-character Git SHA."
+            exit 1
+          }
+          echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "Expected deployed staging SHA: $source_sha"
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.11.0
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-
-      - name: Normalize and guard release targets
+          cache: pnpm
+      - name: Install deployed-target dependencies
         run: |
-          set -euo pipefail
-          api="${API_BASE_URL_INPUT%/}"
-          web="${WEB_BASE_URL_INPUT%/}"
-          gateway="${GATEWAY_BASE_URL_INPUT%/}"
-          dast="${DAST_TARGET_URL_INPUT:-}"
-          pentest="${PENTEST_TARGET_URL_INPUT:-}"
-          if [ -z "$dast" ] && [ -n "$api" ]; then
-            dast="${api%/v1}"
-          fi
-          if [ -z "$pentest" ] && [ -n "$api" ]; then
-            pentest="${api%/v1}"
-          fi
-          if [ -z "$api" ] || [ -z "$web" ] || [ -z "$gateway" ] || [ -z "$dast" ] || [ -z "$pentest" ]; then
-            echo "::error::Release QA requires staging API, web, gateway, DAST, and pentest targets."
-            exit 1
-          fi
-          case "$gateway $dast $pentest" in
-            *prod*|*production*|https://api.kortix.com*|https://kortix.com*)
-              echo "::error::Refusing production-looking release targets: gateway=$gateway dast=$dast pentest=$pentest"
-              exit 1
-              ;;
-          esac
-          {
-            echo "API_BASE_URL=$api"
-            echo "KE2E_API_URL=$api"
-            echo "BASE_URL=$api"
-            echo "E2E_BASE_URL=$web"
-            echo "KE2E_GATEWAY_URL=$gateway"
-            echo "KE2E_TARGET=staging"
-            echo "TARGET_URL=$dast"
-            echo "PENTEST_TARGET_URL=$pentest"
-            echo "PENTEST_LIVE_CONFIRM=ci"
-            echo "KE2E_LIVE_CONFIRM=ci"
-          } >> "$GITHUB_ENV"
-          echo "Release API target: $api"
-          echo "Release web target: $web"
-          echo "Release gateway target: $gateway"
-          echo "Release DAST target: $dast"
-          echo "Release pentest target: $pentest"
-
-      - name: Install test dependencies
-        run: cd tests && bun install --frozen-lockfile
-      - name: Install workspace dependencies
-        run: corepack enable pnpm && pnpm install --frozen-lockfile
-      # ── Opt-in FAST-TRACK ──────────────────────────────────────────────────
-      # Set repo variable RELEASE_FAST_TRACK=true to skip the slow live lanes
-      # (Playwright/browser e2e, the ~278-flow API suite, migration+infra,
-      # advisory security) so this required gate clears in a few minutes instead
-      # of 6-16. The cheap, deterministic safety net — lint + typecheck + unit +
-      # contract + api-coverage and the final quality gates — STILL runs, so
-      # build-breakers are still caught. Unset the variable (or set it to false)
-      # to restore the full pre-prod gate. promote.yml has a matching skip.
-      - name: Fast-track notice
-        if: vars.RELEASE_FAST_TRACK == 'true'
-        run: echo "::warning::RELEASE_FAST_TRACK=true — skipping browser/e2e, API flow suite, migration+infra, and advisory security. Static checks + quality gates still run. Unset RELEASE_FAST_TRACK to restore the full pre-prod gate."
-      - name: Install Playwright Chromium
-        if: vars.RELEASE_FAST_TRACK != 'true'
-        run: cd tests && npx playwright install --with-deps chromium
-
-      - name: Static + local functional checks
-        run: make lint typecheck unit integration contract api-coverage
-
-      - name: Live API smoke
-        if: vars.RELEASE_FAST_TRACK != 'true'
-        timeout-minutes: 10
-        run: make smoke
-      # The full ke2e API flow suite (~375 live flows) runs against staging-api
-      # (QA_API_BASE_URL) as a BLOCKING pre-prod gate, enabled via repo var
-      # QA_RUN_API_SUITE=true. It catches HTTP-contract regressions the browser
-      # and unit gates miss — e.g. an unmounted route returning 404 (CHN-16, which
-      # is exactly how the AgentMail inbound webhook reached prod broken). Flip the
-      # repo var to false only to temporarily skip it.
-      - name: API flow suite
-        if: vars.QA_RUN_API_SUITE == 'true' && vars.RELEASE_FAST_TRACK != 'true'
-        timeout-minutes: 90
-        run: make api
-
-      - name: Browser regression
-        if: vars.RELEASE_FAST_TRACK != 'true'
-        timeout-minutes: 30
-        run: |
-          make e2e a11y
-          # Visual is advisory: it snapshots the live target with no deterministic
-          # per-platform baselines, so a pixel diff shouldn't red-gate the release.
-          # It still runs and its results land in the report.
-          make visual || echo "::warning::Visual regression failed (advisory — live target). See the QA report for diffs."
-
-      - name: Migration + infra
-        if: vars.RELEASE_FAST_TRACK != 'true'
-        timeout-minutes: 20
-        run: make migration infra
-      # Static SAST/deps/secrets is advisory: the scanners are noisy (gitleaks
-      # flags minified build artifacts; trivy/osv surface ubiquitous transitive
-      # CVEs) and real secrets are already gated by secret-scan.yml + the
-      # pre-commit hook. It still runs and its SARIF lands in the report.
-      - name: Static security (advisory)
-        if: vars.RELEASE_FAST_TRACK != 'true'
-        timeout-minutes: 15
-        run: make security-fast || echo "::warning::static security scan reported findings (advisory — see SARIF; real-secret gate lives in secret-scan.yml)"
-      # The exhaustive, scan-the-whole-app lanes — mutation (Stryker), black-box
-      # pentest, k6 performance, and DAST — run in qa-nightly, not on every
-      # release: they add ~40-60min and duplicate the scheduled suite. The
-      # blocking gate stays fast + deterministic.
-
-      - name: Quality gates
-        run: make gates
-
-      - name: Build report artifacts
+          pnpm install --frozen-lockfile --filter @kortix/tests...
+          pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Run every deployed staging flow and browser journey through the root runner
+        run: pnpm test -- --target-full
+      - name: Guard test artifacts against secrets
         if: always()
         run: |
-          # Co-located bun:test unit suites (~830) into the report.
-          bash tests/scripts/collect-bun-junit.sh || true
-          # vitest/pact/bun JUnit -> allure-results.
-          npm --prefix tests run allure:junit
-          # ke2e API flows -> allure-results (native exporter, same dir).
-          npm --prefix tests run allure || true
-          cd tests
-          rm -rf test-results/allure-report
-          npx allure generate test-results/allure-results -o test-results/allure-report || true
-          npm run catalog || true
-      - name: AWS auth for report publish
-        id: aws-report-auth
-        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
-        timeout-minutes: 2
-        continue-on-error: true
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
-          aws-region: ${{ vars.QA_AWS_REGION }}
-          action-timeout-s: 60
-          retry-max-attempts: 3
-      - name: Publish release Allure report
-        if: always() && steps.aws-report-auth.outcome == 'success'
-        run: |
           set -euo pipefail
-          run_key="release/${{ github.run_id }}"
-          aws s3 sync tests/test-results/allure-report \
-            "s3://${QA_REPORTS_BUCKET}/${QA_REPORTS_PREFIX}/${run_key}/" \
-            --delete --only-show-errors
-          url="${QA_REPORTS_PUBLIC_BASE_URL%/}/${QA_REPORTS_PREFIX}/${run_key}/index.html"
-          {
-            echo "### Full-suite Allure report"
-            echo ""
-            echo "Report: $url"
-          } >> "$GITHUB_STEP_SUMMARY"
+          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+            echo "::error::A test artifact contains a secret-shaped value."
+            exit 1
+          fi
+          echo "No secret-shaped values found."
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: release-qa-report
-          path: |
-            tests/test-results/**
+          name: release-qa-deployed-staging
+          path: tests/test-results/**
+          if-no-files-found: warn
           retention-days: 90

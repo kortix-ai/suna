@@ -187,5 +187,6 @@ suite('usage breakdown reads metadata->>ledger_type (throwaway Postgres)', () =>
 });
 
 if (!dockerOk) {
+  // biome-ignore lint/suspicious/noSkippedTests: This integration suite requires a running Docker daemon.
   test.skip('usage breakdown ledger_type (docker unavailable — skipped)', () => {});
 }

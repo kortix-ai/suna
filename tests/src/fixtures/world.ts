@@ -26,8 +26,15 @@ import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
 import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
-import { createDatabaseProject, createDatabaseSession, deleteDatabaseProject } from './database-project';
+import {
+  createDatabaseProject,
+  createDatabaseSession,
+  deleteDatabaseProject,
+  mergeDatabaseProjectMetadata,
+} from './database-project';
 import { mapWithConcurrency } from '../core/concurrency';
+import { createLocalGitRepository } from './local-git';
+import type { FixtureStats } from '../core/result';
 
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
@@ -35,6 +42,7 @@ export interface World {
   principals: Principals;
   newStack(): ResourceStack;
   makeFixtures(stack: ResourceStack): Fixtures;
+  fixtureStats(): FixtureStats;
   teardownAll(): Promise<void>;
 }
 
@@ -64,6 +72,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       principals,
       newStack: () => new ResourceStack(new Client(env.apiUrl)),
       makeFixtures: () => noFixtures,
+      fixtureStats: () => ({ databaseProjectCount: 0, managedProjectCount: 0 }),
       teardownAll: async () => {},
     };
   }
@@ -122,15 +131,25 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       accountId?: string;
       seed?: boolean;
       managedGit?: boolean;
+      metadata?: Record<string, unknown>;
     },
   ): Promise<CreatedProject> {
     const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
     const accountId = opts?.accountId ?? owner.accountId!;
-    if (canCreateDatabaseProject && !opts?.seed && !opts?.managedGit) {
+    if (canCreateDatabaseProject && (env.target === 'local' || (!opts?.seed && !opts?.managedGit))) {
+      const localRepository =
+        env.target === 'local' && (opts?.seed || opts?.managedGit)
+          ? await createLocalGitRepository(name)
+          : null;
+      if (localRepository) {
+        stack.push('local-git', localRepository.root, { dispose: localRepository.dispose });
+      }
       const project = await createDatabaseProject(env, {
         accountId,
         userId: owner.userId!,
         name,
+        repoUrl: localRepository?.repoUrl,
+        metadata: opts?.metadata,
       });
       databaseProjectCount++;
       databaseProjectIds.add(project.id);
@@ -145,6 +164,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     });
     managedProjectCount++;
     stack.push('project', id);
+    if (opts?.metadata) await mergeDatabaseProjectMetadata(env, id, opts.metadata);
     return { id, name } as CreatedProject;
   }
 
@@ -152,29 +172,19 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     name: (slug) => `e2e-${runId}-${slug}`,
     sharedProject() {
       if (!sharedProjectPromise) {
-        sharedProjectPromise = (async () => {
-          const id = await provisionProject(adminClient, { name: `e2e-${runId}-shared` });
-          managedProjectCount++;
-          sharedStack.push('project', id);
-          return { id, name: `e2e-${runId}-shared` } as CreatedProject;
-        })();
+        sharedProjectPromise = createProject(sharedStack, {
+          name: `e2e-${runId}-shared`,
+          managedGit: true,
+        });
       }
       return sharedProjectPromise;
     },
     sharedSeededProject() {
       if (!sharedSeededProjectPromise) {
-        sharedSeededProjectPromise = (async () => {
-          const id = await provisionProject(adminClient, {
-            name: `e2e-${runId}-shared-seeded`,
-            seed_starter: true,
-          });
-          managedProjectCount++;
-          sharedStack.push('project', id);
-          return {
-            id,
-            name: `e2e-${runId}-shared-seeded`,
-          } as CreatedProject;
-        })();
+        sharedSeededProjectPromise = createProject(sharedStack, {
+          name: `e2e-${runId}-shared-seeded`,
+          seed: true,
+        });
       }
       return sharedSeededProjectPromise;
     },
@@ -308,6 +318,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     principals: principalsProxy(provisioned.principals),
     newStack: () => new ResourceStack(adminClient, deleteDatabaseProjectFixture),
     makeFixtures: fixturesFor,
+    fixtureStats: () => ({ databaseProjectCount, managedProjectCount }),
     async teardownAll() {
       log.info(
         `fixtures: ${databaseProjectCount} database-only projects · ${managedProjectCount} managed repositories`,

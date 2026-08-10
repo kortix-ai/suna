@@ -10,7 +10,7 @@
  * comment in index.ts).
  *
  * Also covers the ONE surviving project-scoped marketplace route —
- * `POST /v1/projects/:workspaceId/marketplace/install-session`, the
+ * `POST /v1/projects/:projectId/marketplace/install-session`, the
  * agent-driven replacement for the deleted deterministic install engine
  * (apps/api/src/projects/routes/r10.ts). It kicks off a real session/agent
  * once past validation, so — same convention as PROJ-13's OAuth `start` in
@@ -32,8 +32,8 @@ const KNOWN_ITEM_FILE_TARGET = '@skills/access-policy/SKILL.md';
 // the only address a non-admin OWNER can safely create+clean up for real.
 const FEATURED_ADDRESS = 'anthropics/skills';
 
-// ─── COVB-8 — GET /v1/marketplace/items ───────────────────────────────────
-flow('COVB-8', { domain: 'marketplace', routes: ['GET /v1/marketplace/items'] }, async (ctx) => {
+// ─── MKTP-1 — GET /v1/marketplace/items ───────────────────────────────────
+flow('MKTP-1', { domain: 'marketplace', routes: ['GET /v1/marketplace/items'] }, async (ctx) => {
   await ctx.step('public catalog list (no auth) → 200', async () => {
     const r = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/items');
     r.status(200).body().exists('$.items').exists('$.total').exists('$.hasMore');
@@ -60,9 +60,9 @@ flow('COVB-8', { domain: 'marketplace', routes: ['GET /v1/marketplace/items'] },
   });
 });
 
-// ─── COVB-9 — GET /v1/marketplace/items/:id ───────────────────────────────
+// ─── MKTP-2 — GET /v1/marketplace/items/:id ───────────────────────────────
 flow(
-  'COVB-9',
+  'MKTP-2',
   { domain: 'marketplace', routes: ['GET /v1/marketplace/items/:id'] },
   async (ctx) => {
     await ctx.step('known item → 200 real shape', async () => {
@@ -85,9 +85,9 @@ flow(
   },
 );
 
-// ─── COVB-10 — GET /v1/marketplace/items/:id/file ─────────────────────────
+// ─── MKTP-6 — GET /v1/marketplace/items/:id/file ──────────────────────────
 flow(
-  'COVB-10',
+  'MKTP-6',
   { domain: 'marketplace', routes: ['GET /v1/marketplace/items/:id/file'] },
   async (ctx) => {
     await ctx.step('known item + file target → 200 content', async () => {
@@ -117,9 +117,9 @@ flow(
   },
 );
 
-// ─── COVB-11 — GET /v1/marketplace/marketplaces ───────────────────────────
+// ─── MKTP-7 — GET /v1/marketplace/marketplaces ────────────────────────────
 flow(
-  'COVB-11',
+  'MKTP-7',
   { domain: 'marketplace', routes: ['GET /v1/marketplace/marketplaces'] },
   async (ctx) => {
     await ctx.step('public list of distinct marketplaces (no auth) → 200', async () => {
@@ -136,9 +136,9 @@ flow(
   },
 );
 
-// ─── COVB-12 — GET /v1/marketplace/marketplaces/featured ──────────────────
+// ─── MKTP-8 — GET /v1/marketplace/marketplaces/featured ───────────────────
 flow(
-  'COVB-12',
+  'MKTP-8',
   { domain: 'marketplace', routes: ['GET /v1/marketplace/marketplaces/featured'] },
   async (ctx) => {
     await ctx.step('public curated featured list (no auth) → 200', async () => {
@@ -155,8 +155,8 @@ flow(
   },
 );
 
-// ─── COVB-13 — GET /v1/marketplace/sources ─────────────────────────────────
-flow('COVB-13', { domain: 'marketplace', routes: ['GET /v1/marketplace/sources'] }, async (ctx) => {
+// ─── MKTP-9 — GET /v1/marketplace/sources ──────────────────────────────────
+flow('MKTP-9', { domain: 'marketplace', routes: ['GET /v1/marketplace/sources'] }, async (ctx) => {
   await ctx.step('ANON → 401', async () => {
     const r = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/sources');
     r.status(401);
@@ -167,7 +167,7 @@ flow('COVB-13', { domain: 'marketplace', routes: ['GET /v1/marketplace/sources']
   });
 });
 
-// ─── COVB-14 — POST /v1/marketplace/sources + DELETE /v1/marketplace/sources/:id ─
+// ─── MKTP-10 — POST /v1/marketplace/sources + DELETE /v1/marketplace/sources/:id ─
 // Adding an ARBITRARY source is admin-only; adding one of the curated
 // FEATURED_MARKETPLACES addresses is allowed for any signed-in user (see
 // index.ts's own comment on this exception). DELETE is unconditionally
@@ -176,7 +176,7 @@ flow('COVB-13', { domain: 'marketplace', routes: ['GET /v1/marketplace/sources']
 // cleanup is guaranteed) — creating without the ability to clean up would
 // leak a real row on shared staging.
 flow(
-  'COVB-14',
+  'MKTP-10',
   {
     domain: 'marketplace',
     routes: ['POST /v1/marketplace/sources', 'DELETE /v1/marketplace/sources/:id'],
@@ -243,34 +243,34 @@ flow(
   },
 );
 
-// ─── COVB-15 — POST /v1/projects/:workspaceId/marketplace/install-session ──
+// ─── MKTP-11 — POST /v1/projects/:projectId/marketplace/install-session ───
 // Agent-driven replacement for the deleted deterministic per-project install
-// engine. Validates workspaceId access + body BEFORE spawning any real
+// engine. Validates projectId access + body BEFORE spawning any real
 // session/agent (apps/api/src/projects/routes/r10.ts:134-163) — we assert
 // that boundary only, matching PROJ-13's convention for similarly heavy
 // routes (projects-misc.flow.ts).
 flow(
-  'COVB-15',
-  { domain: 'projects', routes: ['POST /v1/projects/:workspaceId/marketplace/install-session'] },
+  'MKTP-11',
+  { domain: 'projects', routes: ['POST /v1/projects/:projectId/marketplace/install-session'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          '/v1/projects/:workspaceId/marketplace/install-session',
+          '/v1/projects/:projectId/marketplace/install-session',
           { id: KNOWN_ITEM_ID },
-          { params: { workspaceId: p.id } },
+          { params: { projectId: p.id } },
         );
       r.status(401);
     });
-    await ctx.step('unknown workspaceId → 404', async () => {
+    await ctx.step('unknown projectId → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:workspaceId/marketplace/install-session',
+          '/v1/projects/:projectId/marketplace/install-session',
           { id: KNOWN_ITEM_ID },
-          { params: { workspaceId: NOPE } },
+          { params: { projectId: NOPE } },
         );
       r.status(404);
     });
@@ -278,9 +278,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:workspaceId/marketplace/install-session',
+          '/v1/projects/:projectId/marketplace/install-session',
           {},
-          { params: { workspaceId: p.id } },
+          { params: { projectId: p.id } },
         );
       r.status(400).body().has('$.error', 'id is required');
     });
@@ -288,9 +288,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:workspaceId/marketplace/install-session',
+          '/v1/projects/:projectId/marketplace/install-session',
           { id: 'nope-' + NOPE },
-          { params: { workspaceId: p.id } },
+          { params: { projectId: p.id } },
         );
       r.status(400);
     });
@@ -298,9 +298,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/projects/:workspaceId/marketplace/install-session',
+          '/v1/projects/:projectId/marketplace/install-session',
           { id: KNOWN_ITEM_ID },
-          { params: { workspaceId: p.id } },
+          { params: { projectId: p.id } },
         );
       r.status([403, 404]);
     });

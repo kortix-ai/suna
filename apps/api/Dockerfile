@@ -157,6 +157,10 @@ COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 # Kortix cloud applies them in the deploy pipeline's migrate-db job instead.
 COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
 COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
+COPY --from=deps /app/packages/db/scripts/local-audit-v2-ledger-repair.ts ./packages/db/scripts/local-audit-v2-ledger-repair.ts
+COPY --from=deps /app/packages/db/scripts/local-invalid-index-repair.ts ./packages/db/scripts/local-invalid-index-repair.ts
+COPY --from=deps /app/packages/db/scripts/local-warm-session-index-repair.ts ./packages/db/scripts/local-warm-session-index-repair.ts
+COPY --from=deps /app/packages/db/scripts/migration-target.ts ./packages/db/scripts/migration-target.ts
 COPY --from=deps /app/packages/db/scripts/migration-ledger-repair.ts ./packages/db/scripts/migration-ledger-repair.ts
 COPY --from=deps /app/packages/db/scripts/migration-retry.ts ./packages/db/scripts/migration-retry.ts
 COPY --from=deps /app/packages/db/scripts/migration-runtime-overrides.ts ./packages/db/scripts/migration-runtime-overrides.ts
