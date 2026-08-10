@@ -821,7 +821,15 @@ function AuthCardForm({
   return (
     <>
       <m.div {...rise(0)}>
-        <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
+        <StepHeader
+          title="Welcome to Kortix"
+          tagline="Your AI Command Center"
+          description={
+            <span data-testid="preview-provider-proof">
+              Preview provider proof: frontend and API use this pull request.
+            </span>
+          }
+        />
       </m.div>
 
       <m.div {...rise(0.06)}>

@@ -22,6 +22,7 @@ describe('Health & System endpoints', () => {
     expect(body.timestamp).toBeDefined();
     expect(body.environment).toBe('dev');
     expect(body.version).toBe('dev');
+    expect(body.preview_probe).toBe('provider-proof');
   });
 
   // ─── GET /v1/health ─────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ describe('Health & System endpoints', () => {
     expect(body.timestamp).toBeDefined();
     expect(body.environment).toBe('dev');
     expect(body.version).toBe('dev');
+    expect(body.preview_probe).toBe('provider-proof');
   });
 
   // ─── GET /v1/system/status ──────────────────────────────────────────────

@@ -394,6 +394,7 @@ const HealthSchema = z
     commit: z.string(),
     started_at: z.string(),
     instance: z.string(),
+    preview_probe: z.literal('provider-proof'),
     scheduler_leader: z.boolean(),
     trigger_scheduler: z.record(z.string(), z.unknown()),
   })
@@ -409,6 +410,7 @@ const healthHandler = (c: any) =>
     commit: API_COMMIT,
     started_at: STARTED_AT,
     instance: API_INSTANCE,
+    preview_probe: 'provider-proof',
     scheduler_leader: isLeader(),
     trigger_scheduler: getTriggerSchedulerHealth(),
   });

@@ -41,6 +41,7 @@ export function createTestApp(opts: TestAppOptions = {}) {
       timestamp: new Date().toISOString(),
       environment: 'dev',
       version: 'dev',
+      preview_probe: 'provider-proof',
     }),
   );
 
@@ -51,6 +52,7 @@ export function createTestApp(opts: TestAppOptions = {}) {
       timestamp: new Date().toISOString(),
       environment: 'dev',
       version: 'dev',
+      preview_probe: 'provider-proof',
     }),
   );
 
