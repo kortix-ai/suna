@@ -562,6 +562,8 @@ test('getProjectSessionScope reads canonical session scope', async () => {
     added_secrets: [],
     dropped_bindings: [],
     retroactive: true,
+    connector_bindings_configured: false,
+    connector_bindings_inherit_unbound: true,
     detail: 'Current session scope.',
   };
   nextResponse = { status: 200, body: scope };
@@ -569,6 +571,35 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
   expect(last().method).toBe('GET');
   expect(result.connector_bindings.gmail).toEqual({ connection_id: 'AUTH-1' });
+  // `connector_bindings` is the RESOLVED map, identical for an inherited and an
+  // overridden session. This flag is the only thing that separates them, so a
+  // client can stop calling an inherited default "nothing selected".
+  expect(result.connector_bindings_configured).toBe(false);
+  expect(result.connector_bindings_inherit_unbound).toBe(true);
+});
+
+test('setProjectSessionScope clears a connector override with null', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: { gmail: { connection_id: 'AUTH-DEFAULT' } },
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+      connector_bindings_configured: false,
+      connector_bindings_inherit_unbound: false,
+      detail: 'Connector access is back to the project defaults.',
+    },
+  };
+  const result = await setProjectSessionScope('P1', 'S1', { connector_bindings: null });
+  expect(last().method).toBe('PUT');
+  // `null` is the REVERT verb. `{}` is its opposite — an explicit "no
+  // connectors at all" — so the two must reach the wire unchanged.
+  expect(last().body).toEqual({ connector_bindings: null });
+  expect(result.connector_bindings_configured).toBe(false);
 });
 
 test('setProjectSessionScope replaces connections with canonical input', async () => {

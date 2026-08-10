@@ -797,8 +797,17 @@ export interface SessionScopeInput {
    * secrets untouched.
    */
   secrets?: string[] | null;
-  /** FULL new binding map — REPLACES the previous one. Omit to leave untouched. */
-  connector_bindings?: SessionConnectorBindingsInput;
+  /**
+   * FULL new binding map — REPLACES the previous one. Three distinct states:
+   *
+   * - **omitted** — leave the session's connector scope untouched.
+   * - **`null`** — CLEAR the override. Every alias the agent grants goes back to
+   *   resolving the project default. This is the only way to undo an override.
+   * - **`{}`** — an EXPLICIT zero-connector override: no connector at all, not
+   *   even a project default. The opposite of `null`, so never send one for the
+   *   other.
+   */
+  connector_bindings?: SessionConnectorBindingsInput | null;
   /**
    * FULL new list of connector aliases this session REQUIRES — REPLACES the
    * previous one. Omit to leave untouched.
@@ -818,6 +827,22 @@ export interface SessionScope {
   /** Aliases this session requires, connected or not. See `require_connectors`. */
   required_connectors: string[] | null;
   connector_bindings: SessionConnectorBindings;
+  /**
+   * Whether this session HOLDS its own connector override.
+   *
+   * `connector_bindings` is the server-RESOLVED map, so it looks the same for a
+   * session that overrode its connectors and one that simply inherits the
+   * project defaults. Read this to tell them apart: `false` means every alias
+   * still resolves to the project default, and the UI must say "project
+   * default" rather than "none selected". Send `connector_bindings: null` to
+   * return a session to `false`.
+   */
+  connector_bindings_configured: boolean;
+  /**
+   * Whether an alias with no stored binding still falls back to the project
+   * default while an override is configured. Create-time only.
+   */
+  connector_bindings_inherit_unbound: boolean;
   dropped_secrets: string[];
   added_secrets: string[];
   dropped_bindings: string[];

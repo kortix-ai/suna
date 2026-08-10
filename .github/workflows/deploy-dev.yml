@@ -53,6 +53,7 @@ jobs:
       frontend: ${{ steps.outputs.outputs.frontend }}
       cli: ${{ steps.outputs.outputs.cli }}
       apps_router: ${{ steps.outputs.outputs.apps_router }}
+      terraform: ${{ steps.outputs.outputs.terraform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -108,6 +109,14 @@ jobs:
             apps_router:
               - 'infra/cloudflare/workers/apps-router/**'
               - '.github/workflows/deploy-dev.yml'
+            # Only the roots this pipeline actually applies. environments/dev is
+            # deliberately absent: it reads an operator-local terraform.tfvars
+            # and is still applied by hand (see terraform-apply.yml).
+            terraform:
+              - 'infra/terraform/environments/dev-web/**'
+              - 'infra/terraform/modules/**'
+              - '.github/workflows/terraform-apply.yml'
+              - '.github/workflows/deploy-dev.yml'
       - name: Normalize outputs
         id: outputs
         run: |
@@ -116,6 +125,7 @@ jobs:
           gateway="${{ steps.filter.outputs.gateway }}"
           frontend="${{ steps.filter.outputs.frontend }}"
           cli="${{ steps.filter.outputs.cli }}"
+          terraform="${{ steps.filter.outputs.terraform }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ inputs.surface }}" = "frontend" ]; then
               api=false
@@ -123,10 +133,12 @@ jobs:
               gateway=false
               frontend=true
               cli=false
+              terraform=false
             else
               api=true
               apps_router=true
               frontend=true
+              terraform=true
             fi
           fi
           {
@@ -135,6 +147,7 @@ jobs:
             echo "gateway=$gateway"
             echo "frontend=$frontend"
             echo "cli=$cli"
+            echo "terraform=$terraform"
           } >> "$GITHUB_OUTPUT"
       - name: Summary
         run: |
@@ -145,7 +158,37 @@ jobs:
             echo "- Frontend: ${{ steps.outputs.outputs.frontend }}"
             echo "- CLI: ${{ steps.outputs.outputs.cli }}"
             echo "- Apps router: ${{ steps.outputs.outputs.apps_router }}"
+            echo "- Terraform (dev-web): ${{ steps.outputs.outputs.terraform }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Apply dev Terraform before any image rolls ──────────────────────────────
+  # Infrastructure first, then the image that runs on it. Skipped when nothing
+  # under the dev roots changed, and skipped entirely until the repo variable
+  # TF_APPLY_ROLE_ARN_DEV is set — so merging this before the IAM role exists
+  # cannot break the dev pipeline. The image jobs below treat a SKIPPED
+  # terraform job as a pass and a FAILED one as a blocker.
+  #
+  # The `github.ref` condition keeps the documented "manual branch run" of this
+  # workflow working: terraform-apply.yml refuses any commit that is not on
+  # `main`, so on a branch dispatch this job would fail and block the image
+  # deploys. Skipping is the correct outcome there — a branch run deploys
+  # images, never infrastructure.
+  terraform-dev:
+    name: Apply dev Terraform
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.terraform == 'true' && vars.TF_APPLY_ROLE_ARN_DEV != '' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/dev-web
+      aws_region: us-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_DEV }}
+      github_environment: dev
+      trusted_branch: main
+      cloudflare: true
+    secrets: inherit
 
   # ── Compute the dev version (single source of truth) ────────────────────────
   # Dev builds are a pre-release of the UPCOMING version, derived from the latest
@@ -329,8 +372,16 @@ jobs:
   # ── Roll the freshly-built image onto the dev ECS Fargate service ───────────
   deploy-api-ecs:
     name: Deploy API to dev (ECS Fargate)
-    needs: [detect-changes, dev-version, tag-api, migrate-db]
-    if: needs.detect-changes.outputs.api == 'true'
+    needs: [detect-changes, dev-version, tag-api, migrate-db, terraform-dev]
+    # `always()` is required because terraform-dev is SKIPPED whenever no dev
+    # Terraform changed — without it GitHub would skip this job too. Every other
+    # upstream is still required to have succeeded.
+    if: >-
+      ${{ always()
+        && needs.detect-changes.outputs.api == 'true'
+        && needs.tag-api.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → ECS deploy role
@@ -609,8 +660,14 @@ jobs:
 
   deploy-web-ecs:
     name: Deploy frontend to dev (ECS Fargate)
-    needs: [detect-changes, dev-version, build-frontend]
-    if: needs.detect-changes.outputs.frontend == 'true'
+    needs: [detect-changes, dev-version, build-frontend, terraform-dev]
+    # Same soft dependency as deploy-api-ecs: environments/dev-web owns the web
+    # ALB, WAF association, and task roles this image runs behind.
+    if: >-
+      ${{ always()
+        && needs.detect-changes.outputs.frontend == 'true'
+        && needs.build-frontend.result == 'success'
+        && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write

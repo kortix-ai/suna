@@ -22,6 +22,7 @@ pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
 pnpm test -- --browser-only    # Browser journeys with the deterministic local stack
+pnpm test -- --browser-only --browser-shard=1/2 # One deterministic browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
@@ -48,21 +49,24 @@ code.
 
 GitHub Actions uses `.github/workflows/tests.yml` for local-profile PR tests.
 `tests-pr.yml` calls it once for pull requests into `main` or `staging`. Full
-mode starts three warm workers in parallel. The workers run
-`pnpm test`, `pnpm test -- --browser-only`, and
-`pnpm test -- --packages-only`. Set `provider` to `auto`, `platinum`, or
-`daytona`. Automatic PR tests use Daytona directly to avoid Platinum restore
-latency. Manual runs can select either provider or `auto`. Auto tries Platinum
-first. It falls back to Daytona only when Platinum infrastructure throws. A
-non-zero test exit returns directly and does not trigger fallback. Each lane
-has a unique sandbox run ID and artifact. The three lanes are the parallel
-equivalent of `pnpm test -- --full`.
-The local browser lane uses one Playwright worker in CI. This prevents two cold
-Next.js route compilations from exhausting a 12 GiB Daytona worker. Deployed
-staging browser runs set two workers explicitly.
+mode starts four warm workers in parallel. Core and package workers run
+`pnpm test` and `pnpm test -- --packages-only`. Two browser workers run shards
+`1/2` and `2/2` through `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`.
+Set `provider` to `auto`, `platinum`, or `daytona`. Automatic PR tests use
+Daytona directly to avoid Platinum restore latency. Manual runs can select
+either provider or `auto`. Auto tries Platinum first. It falls back to Daytona
+only when Platinum infrastructure throws. A non-zero test exit returns directly
+and does not trigger fallback. Each worker has a unique sandbox run ID and
+artifact. The four workers are the parallel equivalent of `pnpm test -- --full`.
+Each local browser shard uses one Playwright worker in CI. Two or more workers
+can exhaust the 12 GiB Daytona guest while Next.js compiles cold routes. A
+disposable worker prestarts Supabase so the root runner reuses it and sandbox
+deletion replaces the local Supabase teardown.
+Deployed staging browser runs also set two workers explicitly.
 Platinum warm restore readiness is capped at 2 minutes. A missing marker or
 unreachable guest after that cap is an infrastructure error and triggers auto
-fallback. Cold template builds keep their separate 45-minute creation budget.
+fallback. A sandbox reported as `via=cold-boot` gets 45 minutes to prepare the
+warm image. This cold preparation budget does not weaken the restore cap.
 
 Both providers use a content-addressed warm image. The image name includes the
 `pnpm-lock.yaml` hash. Both images contain pinned Node, Bun, pnpm, Docker,
@@ -70,6 +74,43 @@ Chromium, linked `node_modules`, a warm checkout, and pre-pulled Supabase images
 Each worker fetches the requested ref, verifies the exact SHA, runs an offline
 lockfile install, starts nested Docker, and invokes the unchanged root command.
 Both runners stream logs, download `tests/test-results`, and delete the worker.
+
+## Pull request preview sandboxes
+
+Add the `preview` label to a same-repository pull request into `main`.
+`.github/workflows/deploy-preview.yml` then performs this sequence:
+
+1. A repository writer authorizes the exact pull request SHA.
+2. Three credential-free jobs build the API, gateway, and frontend images for
+   `linux/amd64`.
+3. The trusted controller from `main` publishes the three exact SHA tags.
+4. The controller restores one warm Platinum sandbox. `auto` uses Daytona only
+   when Platinum infrastructure fails.
+5. The sandbox generates the standard `kortix self-host` Compose distribution.
+6. One overlay adds Caddy, Mailpit, the report mount, and loopback PostgreSQL.
+7. The sandbox runs `pnpm test -- --target-full` against its public HTTPS origin.
+8. The workflow posts the preview URL and `/_tests/` report URL to the pull
+   request. It also creates a GitHub Deployment for `preview/pr-<number>`.
+
+The preview owns PostgreSQL, Supabase Auth, REST, Storage, API, gateway,
+frontend, and Mailpit. It does not use the Dev, staging, or production database.
+The warm image contains dependencies and Docker layers only. It contains no
+preview database and no runtime secret.
+
+The runtime secret allowlist contains `DAYTONA_API_KEY`,
+`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, and the five fields required
+for the dedicated preview GitHub App installation. Mailpit handles preview
+email. The GitHub App runs the real managed repository and CLI push flows.
+OAuth initiation is the only allowed preview browser exclusion. All API flow
+exclusions and all other browser journey exclusions fail the preview test.
+
+Use **Run workflow** to select `platinum` or `daytona` explicitly for one
+provider proof. A new deployment deletes any existing provider sandbox for the
+same pull request. A test failure keeps the sandbox available for diagnosis.
+Removing the label, closing the pull request, or pushing a new commit deletes
+the sandbox. A new commit also removes the stale `preview` label. A scheduled
+reconciler deletes sandboxes whose pull request is closed, unlabeled, or at a
+different SHA.
 
 `tests-release.yml` runs `pnpm test -- --target-full` against deployed staging
 for pull requests into `prod`. It does not repeat the local-profile suite.
@@ -109,6 +150,8 @@ The base template requests Platinum's `kernel_modules: container` profile.
 The capture and worker load those modules before they start dockerd. This
 infrastructure does not change test logic.
 
+The capture retries Supabase startup for up to 40 minutes. This absorbs bounded
+registry rate limits while preserving the 45-minute cold preparation budget.
 The capture and fresh local stack use Supabase's `--ignore-health-check` only
 before migrations. This prevents PostgREST from rejecting a new database before
 the `kortix` schema exists. The runner still requires migrations and service

@@ -7,7 +7,8 @@ import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
  *
  * - when to keep polling (`shouldPollProjectSessions`);
  * - what "last activity" means and how to sort by it
- *   (`sessionLastActivityAt`, `sortSessionsByLastActivity`);
+ *   (`sessionLastActivityAt`, `sortSessionsByLastActivity`) — the same value
+ *   the sidebar's date sections bucket on, see `session-grouping.ts`;
  * - what a row is titled, and how its timestamp is abbreviated
  *   (`getSessionDisplayTitle`, `shortRelative`);
  * - which of loading/error/empty/no-matches/content renders
@@ -29,26 +30,96 @@ export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
 }
 
-/** The latest conversation activity for a session.
+/** Fast poll: a provisioning session changes status within seconds. */
+const PROVISIONING_POLL_MS = 5_000;
+/** Slow poll: fast enough that the relative-time column and the date sections
+ *  follow the conversation you are having, slow enough to be one cheap request
+ *  a minute. */
+const OPEN_SESSION_POLL_MS = 60_000;
+
+/**
+ * How often the sidebar refetches the session list, or false for not at all.
  *
- * `project_sessions.updated_at` is bookkeeping. Runtime stop/resume, title
- * sync, branch telemetry, and mapping repairs all advance it without a user or
- * agent turn. OpenCode's scoped session snapshot records conversation activity,
- * so it is the only safe source for a "last activity" label. A session without
- * a snapshot falls back to creation time rather than inventing activity. */
-export function sessionLastActivityAt(session: ProjectSession): string {
-  let latestActivityMs: number | null = null;
-  for (const openCodeSession of session.opencode_sessions ?? []) {
-    const activityMs = openCodeSession.updated_at;
-    if (typeof activityMs !== 'number' || !Number.isFinite(activityMs)) continue;
-    const parsed = new Date(activityMs).getTime();
-    if (!Number.isFinite(parsed)) continue;
-    latestActivityMs = latestActivityMs === null ? parsed : Math.max(latestActivityMs, parsed);
-  }
-  return latestActivityMs === null ? session.created_at : new Date(latestActivityMs).toISOString();
+ * Provisioning wins, as it always has. Beyond that the list refetches ONLY
+ * while a session is open, because that is the only time this list goes stale
+ * on its own: every prompt advances the open session's last activity server
+ * side, which is what moves its row between the Today / Yesterday / This week
+ * sections. Without this the row keeps yesterday's section until the page is
+ * reloaded, no matter how long you work in it. A project page with no session
+ * open generates no activity, so it polls nothing.
+ */
+export function projectSessionsRefetchInterval(params: {
+  sessions: ProjectSession[] | undefined;
+  hasOpenSession: boolean;
+}): number | false {
+  if (shouldPollProjectSessions(params.sessions)) return PROVISIONING_POLL_MS;
+  return params.hasOpenSession ? OPEN_SESSION_POLL_MS : false;
 }
 
-/** Newest-first sort by conversation activity. */
+/** Epoch ms from an ISO string or an epoch-ms number, or null. `metadata` is
+ *  jsonb, so its values arrive as `unknown` and must be proven, not asserted. */
+function activityMs(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || !value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** When the API last accepted a prompt for this session.
+ *
+ * Stamped server-side in the preview proxy the moment a prompt is admitted
+ * (`apps/api/src/projects/session-activity.ts`), so it needs no sandbox
+ * round-trip and cannot silently go missing the way the snapshot below can. */
+function promptActivityMs(session: ProjectSession): number | null {
+  return activityMs((session.metadata as Record<string, unknown> | null)?.last_activity_at);
+}
+
+/** Newest conversation update in OpenCode's scoped session snapshot, or null
+ *  when the session carries no usable snapshot. */
+function conversationActivityMs(session: ProjectSession): number | null {
+  let latest: number | null = null;
+  for (const openCodeSession of session.opencode_sessions ?? []) {
+    const parsed = activityMs(openCodeSession.updated_at);
+    if (parsed === null) continue;
+    latest = latest === null ? parsed : Math.max(latest, parsed);
+  }
+  return latest;
+}
+
+/** The latest real activity for a session, newest evidence first.
+ *
+ * Two independent signals mean "someone used this session", and the newer one
+ * wins because each can lead the other: the prompt stamp lands before the turn
+ * runs, and the conversation snapshot keeps advancing while the agent replies.
+ *
+ *   1. `metadata.last_activity_at` — the API's prompt stamp.
+ *   2. `opencode_sessions[].updated_at` — OpenCode's conversation snapshot.
+ *      Real activity, but a LAGGING cache: it is written only by a deferred,
+ *      best-effort sandbox read (`opencode-session-snapshot.ts`), so a session
+ *      whose sandbox was unreachable at that moment has no snapshot at all.
+ *   3. `updated_at` — row bookkeeping, and only reached when neither signal
+ *      above exists.
+ *   4. `created_at` — last resort.
+ *
+ * Step 3 is the fix for the reported bug and it is deliberately a FALLBACK, not
+ * a peer. Bookkeeping writes (runtime stop/resume, title sync, branch
+ * telemetry, mapping repairs) advance `updated_at` without a turn, so it must
+ * never outrank a session that has real activity data. But for a session with
+ * NO activity data, `updated_at` is an upper bound on when it was last touched
+ * while `created_at` is provably not activity at all — which is what pinned a
+ * session that is used every day to the "Older" section of its creation date.
+ * On local data 164 of 181 sessions were in exactly that state. Step 3 retires
+ * itself: any such session gets an exact stamp on its next prompt. */
+export function sessionLastActivityAt(session: ProjectSession): string {
+  const prompt = promptActivityMs(session);
+  const conversation = conversationActivityMs(session);
+  if (prompt !== null || conversation !== null) {
+    return new Date(Math.max(prompt ?? -Infinity, conversation ?? -Infinity)).toISOString();
+  }
+  return session.updated_at || session.created_at;
+}
+
+/** Newest-first sort by `sessionLastActivityAt`. */
 export function sortSessionsByLastActivity(sessions: ProjectSession[]): ProjectSession[] {
   return sessions.slice().sort((a, b) => {
     const parsedA = new Date(sessionLastActivityAt(a)).getTime();

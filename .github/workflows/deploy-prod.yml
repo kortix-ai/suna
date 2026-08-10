@@ -102,6 +102,34 @@ jobs:
             echo "No RELEASE_SOURCE_SHA (legacy release) — will use legacy dev fallback images"
           fi
 
+  # ── Apply production Terraform before any image rolls ───────────────────────
+  # Scope: environments/prod-web only. environments/prod reads an
+  # operator-local, gitignored terraform.tfvars (it pins api_image to the
+  # release tag and sets api_environment), so CI would plan against inputs no
+  # operator ever used. That root stays manual until those inputs move into
+  # variables this workflow supplies — see terraform-apply.yml.
+  #
+  # Skipped while TF_APPLY_ROLE_ARN_PROD is unset, so merging this before the
+  # IAM role exists cannot break a release. Once set, a failed apply blocks the
+  # release: shipping an image onto infrastructure that failed to converge is
+  # exactly the state this pipeline exists to prevent.
+  terraform-prod:
+    name: Apply prod Terraform
+    needs: version
+    if: vars.TF_APPLY_ROLE_ARN_PROD != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/prod-web
+      aws_region: eu-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_PROD }}
+      github_environment: prod
+      trusted_branch: prod
+      cloudflare: true
+    secrets: inherit
+
   # ── Raise the "release in progress" banner ──────────────────────────────────
   # Show users a CRITICAL banner for the duration of the rollout (non-dismissible
   # for members; admins can still dismiss). Best-effort and non-blocking: it never
@@ -812,7 +840,16 @@ jobs:
   # active backend serves old code.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
-    needs: [version, retag-images, verify-image-commits, migrate-db]
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod]
+    # `always()` is required because terraform-prod is SKIPPED while
+    # TF_APPLY_ROLE_ARN_PROD is unset. Every other upstream stays required, so
+    # this remains the hard gate described above.
+    if: >-
+      ${{ always()
+        && needs.retag-images.result == 'success'
+        && needs.verify-image-commits.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → ECS deploy role
@@ -1185,8 +1222,45 @@ jobs:
           echo "::error::Prod FE-ECS did not serve the expected release."
           exit 1
 
-  # The Vercel project remains git-connected during parallel validation. The
-  # prod branch continues to auto-deploy to kortix.com.
+  # Deploy kortix.com (Vercel) ONLY after the API provably serves the release.
+  # Vercel's git auto-deploy for `prod` is OFF (vercel.json deploymentEnabled +
+  # vercel-ignore.sh): during the 2026-08-10 v0.12.7 rollout the auto-deployed
+  # new frontend called routes the still-old API did not have, and every
+  # project load failed. Ordering the frontend after `verify-live-version`
+  # makes a mixed frontend/API pair impossible.
+  deploy-web-vercel:
+    name: Deploy prod web to Vercel (after API is live)
+    needs: [version, verify-live-version]
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Link and verify the Vercel project
+        run: |
+          set -euo pipefail
+          test -n "${VERCEL_TOKEN:-}" || { echo "::error::VERCEL_TOKEN is not configured."; exit 1; }
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          linked="$(jq -r '.projectId' .vercel/project.json)"
+          if [ "$linked" != "prj_SoUUSNJPvOTDneE0E7faWHFuWMAY" ]; then
+            echo "::error::VERCEL_PROJECT_ID resolves to '$linked', not the suna project — refusing to deploy the wrong project."
+            exit 1
+          fi
+      - name: Deploy the release frontend to production
+        run: |
+          set -euo pipefail
+          # Stamp the release version explicitly: the Vercel build cannot always
+          # read the repo-root VERSION file from the apps/web root directory
+          # (v0.12.7 shipped a frontend reporting VERSION "dev" and failed
+          # frontend-auth-proof until redeployed with the env set).
+          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" \
+            --build-env "NEXT_PUBLIC_KORTIX_VERSION=${{ needs.version.outputs.version }}"
+
   frontend-note:
     name: Prod frontend paths active
     needs: [version, publish-web-ecs-dns]
@@ -1202,7 +1276,7 @@ jobs:
 
   frontend-auth-proof:
     name: Prod frontend auth configuration
-    needs: [version, frontend-note, verify-web-ecs]
+    needs: [version, frontend-note, verify-web-ecs, deploy-web-vercel]
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

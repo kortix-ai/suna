@@ -28,6 +28,7 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
+import { hasOpenAssistantTurn } from './assistant-turn-open';
 import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
@@ -49,7 +50,7 @@ import {
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
 import {
   type AttachedFile,
@@ -2048,19 +2049,16 @@ export function SessionChat({
   const sessionStatus = sessionState?.status ?? syncStatus;
   const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
-  // Pending: last assistant message has no time.completed.
-  // Used as a SECONDARY signal — only contributes to busy when the
-  // server also says busy. Prevents the event-ordering race where
-  // session.idle arrives before message.updated sets time.completed.
-  const hasIncompleteAssistant = useMemo(() => {
-    if (!messages || messages.length === 0) return false;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].info.role === 'assistant') {
-        return !(messages[i].info as any).time?.completed;
-      }
-    }
-    return false;
-  }, [messages]);
+  // Pending: last assistant message is neither completed nor errored.
+  // Used as a SECONDARY signal for busy — only contributes when the server
+  // also says busy. Prevents the event-ordering race where session.idle
+  // arrives before message.updated sets time.completed.
+  //
+  // It is ALSO a queue drain gate, which is why "errored counts as ended"
+  // matters: an aborted turn keeps `time.completed` unset, so reading only
+  // that field left this true forever after the stop button and closed the
+  // gate permanently. See `assistant-turn-open.ts`.
+  const hasIncompleteAssistant = useMemo(() => hasOpenAssistantTurn(messages), [messages]);
 
   const hasPendingUserReply = useMemo(() => {
     if (!messages || messages.length === 0) return false;
@@ -3228,6 +3226,11 @@ export function SessionChat({
 
   const sendQueuedMessage = useCallback(
     async (message: WebQueuedMessage) => {
+      // ONE message. The queue is first-come-first-served: `queue[0]` goes out
+      // by itself, and the rest wait for the turn it starts to finish. Merging
+      // the queue into a single prompt would destroy that ordering and hand the
+      // agent several unrelated instructions at once.
+      //
       // Files that did not survive being stored carry no data — send the text
       // rather than a broken attachment. The composer shows the user that the
       // attachments were dropped.
@@ -3277,12 +3280,12 @@ export function SessionChat({
   }, [sessionId, sessionState, abortSession, queueDrain]);
 
   /**
-   * "Stop & send" on a queued message: end the current turn, then send that one.
+   * The per-row action: end the current turn if one is running, then send that
+   * message. The only path that interrupts a running turn — automatic draining
+   * never does — which is why it is a deliberate click and says what it does.
    *
-   * The only path that interrupts a running turn, and it is labelled as such in
-   * the composer — automatic draining never does. Waits for the server to
-   * actually report idle rather than guessing with a fixed delay, so the prompt
-   * cannot race the abort it just issued.
+   * Waits for the server to actually report idle rather than guessing with a
+   * fixed delay, so the prompt cannot race the abort it just issued.
    */
   const handleQueueSendNow = useCallback(
     async (id: string) => {
@@ -3594,13 +3597,37 @@ export function SessionChat({
   const chatToolbarSlot = useMemo(
     () =>
       projectId && projectSessionId ? (
-        <SessionScopeToolbar
+        <SessionOverridesComposer
           projectId={projectId}
           sessionId={projectSessionId}
-          agentName={sessionScopeAgentName}
+          agents={local.agent.list}
+          selectedAgent={sessionScopeAgentName ?? null}
+          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
+          agentLocked={!!lockedAgentName}
+          defaultAgentName={projectConfig?.open_code_default_agent}
+          models={local.model.list}
+          modelsLoading={providersLoading}
+          selectedModel={local.model.currentKey ?? null}
+          onModelChange={handleModelChange}
+          providers={providers}
+          defaultModel={local.model.defaults.resolveDefaultFor(sessionScopeAgentName)}
         />
       ) : undefined,
-    [projectId, projectSessionId, sessionScopeAgentName],
+    [
+      handleAgentChange,
+      handleModelChange,
+      local.agent.list,
+      local.model.currentKey,
+      local.model.defaults,
+      local.model.list,
+      lockedAgentName,
+      projectConfig?.open_code_default_agent,
+      projectId,
+      projectSessionId,
+      providers,
+      providersLoading,
+      sessionScopeAgentName,
+    ],
   );
 
   const chatInputSlot = useMemo(
@@ -4110,11 +4137,13 @@ export function SessionChat({
                 queuedMessages={queuedMessages}
                 failedQueuedMessages={failedQueuedMessages}
                 queueInFlightId={sessionQueue.inFlightId}
+                queuePaused={queueDrain.paused}
+                queueIsRunning={isBusy}
+                onSendQueuedMessageNow={handleQueueSendNow}
                 onQueueMessage={handleQueueMessage}
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onEditQueuedMessage={handleEditQueuedMessage}
                 onReorderQueuedMessage={handleReorderQueuedMessage}
-                onSendQueuedMessageNow={handleQueueSendNow}
                 onRetryQueuedMessage={handleRetryQueuedMessage}
                 onStop={handleStop}
                 escCount={escCount}

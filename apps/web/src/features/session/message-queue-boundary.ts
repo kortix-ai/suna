@@ -1,8 +1,13 @@
 /**
- * When it is safe to release a queued message.
+ * When it is safe to release the head of the queue.
  *
- * This module exists because the previous answer was wrong in three separate
- * ways, and all three were invisible from the code that used them:
+ * The queue is first come, first served. The agent finishes the task it is on,
+ * `queue[0]` goes out **alone**, and everything behind it waits for the turn
+ * that message starts. One message per completed task, in the order they were
+ * typed — nothing is merged, nothing overtakes.
+ *
+ * This module answers only *when*, and the previous answer was wrong in three
+ * separate ways, all of them invisible from the code that used them:
  *
  *   1. **A finished tool call counted as a boundary.** Any tool part reaching
  *      `completed` or `error` drained the whole queue. A turn that runs Bash →
@@ -102,37 +107,42 @@ export function shouldClearPause(previousQueueSize: number, nextQueueSize: numbe
   return nextQueueSize > previousQueueSize;
 }
 
+/**
+ * The whole machine: one clock, no latch.
+ *
+ * ## Why the latch is gone, and why one-per-turn still holds without it
+ *
+ * It used to carry a second field, `sawBusySinceDispatch`: after releasing a
+ * message it refused to release another until a NEW busy period had been
+ * *observed by this tab*. The intent was right — the next message must wait for
+ * the turn this one starts — but the mechanism was a second, weaker copy of
+ * something the gates already do, and it failed open in the wrong direction.
+ *
+ * `isServerBusy` reads `useSyncStore.sessionStatus[sessionId]`. `handleSend`
+ * calls `beginOptimisticSend`, which writes `{ type: 'busy' }` into that exact
+ * slot **synchronously, before any await** — and `useSessionSync` additionally
+ * forces busy while a prompt is observed in flight. So by the time the drain
+ * ticks again after a dispatch, the busy gate is already closed. The head is
+ * genuinely alone on the wire; the latch was asserting a fact the gate had
+ * already established.
+ *
+ * What the latch uniquely did was fail closed. If that busy period never
+ * arrived — a send that errored before reaching the server, a missed status
+ * event, a tab that was asleep — every later message waited forever on a turn
+ * that never started. That is the "the queue just stops sending" report, and it
+ * is why a `rearmDrainMachine` escape hatch had to exist beside it and be
+ * called from three places to paper over the cases anyone had thought of.
+ *
+ * Removing it leaves one honest question: have the gates been continuously
+ * clear long enough to call this the end of a turn?
+ */
 export interface DrainMachine {
-  /**
-   * Whether a busy period has been observed since the last dispatch. This is
-   * what makes one message go out per turn instead of the whole queue at once:
-   * after dispatching, the machine will not fire again until the turn that
-   * dispatch started has itself been seen and finished.
-   *
-   * Starts `true`, not `false`. A queue restored from storage on an idle
-   * session never had a busy period this tab could observe, and requiring one
-   * would wedge it forever.
-   */
-  sawBusySinceDispatch: boolean;
   /** When the gates last became clear, or null while any gate is closed. */
   clearSince: number | null;
 }
 
 export function createDrainMachine(): DrainMachine {
-  return { sawBusySinceDispatch: true, clearSince: null };
-}
-
-/**
- * Let the queue move again without waiting for a busy period.
- *
- * Needed after a send that failed outright: it never made the session busy, so
- * `sawBusySinceDispatch` would stay false and every later message would be
- * stuck behind a turn that never happened. A failed item must never take the
- * rest of the queue down with it — that lockout is why the client queue was
- * deleted wholesale once before.
- */
-export function rearmDrainMachine(machine: DrainMachine): DrainMachine {
-  return { ...machine, sawBusySinceDispatch: true, clearSince: null };
+  return { clearSince: null };
 }
 
 /**
@@ -147,20 +157,66 @@ export function stepDrainMachine(
   now: number,
   settleMs: number = QUEUE_SETTLE_MS,
 ): { machine: DrainMachine; dispatch: boolean } {
-  if (gates.isServerBusy) {
-    // The turn this dispatch is waiting on. Seeing it is what licenses the
-    // next release, and it resets the settle clock.
-    return { machine: { sawBusySinceDispatch: true, clearSince: null }, dispatch: false };
-  }
-
-  if (!canDrainQueue(gates)) {
-    return { machine: { ...machine, clearSince: null }, dispatch: false };
-  }
+  // `isServerBusy` is one of the gates, so a running turn lands here too and
+  // resets the clock. There is no separate busy branch to keep in sync.
+  if (!canDrainQueue(gates)) return { machine: { clearSince: null }, dispatch: false };
 
   const clearSince = machine.clearSince ?? now;
-  if (!machine.sawBusySinceDispatch || now - clearSince < settleMs) {
-    return { machine: { ...machine, clearSince }, dispatch: false };
+  if (now - clearSince < settleMs) return { machine: { clearSince }, dispatch: false };
+
+  // Reset the clock on dispatch, so the message behind this one starts its wait
+  // from scratch. Normally it never gets that far — the send closes the busy
+  // gate synchronously — but when a send fails without ever reaching the server
+  // the gates stay clear, and this is what keeps the next message a full settle
+  // window behind rather than following it in the same instant.
+  return { machine: { clearSince: null }, dispatch: true };
+}
+
+/**
+ * What one observation should cause. `wait` carries the delay because nothing
+ * re-renders while the gates merely stay clear — the caller must set a timer or
+ * the queue stalls until some unrelated render happens to wake it.
+ */
+export type DrainAction =
+  | { kind: 'idle' }
+  | { kind: 'dispatch' }
+  | { kind: 'wait'; ms: number };
+
+/**
+ * The whole drain decision, with no React and no clock of its own.
+ *
+ * This used to live inside the hook's `tick`, which meant none of it could be
+ * asserted: not "an empty queue must not step the machine", not "a send already
+ * on the wire must not start a second one", not the remaining-time arithmetic
+ * that decides whether the queue moves at all. Those are the mistakes worth
+ * catching, so they are inputs and outputs here and the hook is left holding
+ * only the side effects.
+ */
+export function planDrainTick(input: {
+  machine: DrainMachine;
+  gates: QueueDrainGates;
+  /** How many messages are waiting, in-flight ones included. */
+  pendingCount: number;
+  /** Whether a dispatch from an earlier tick is still awaiting its send. */
+  sending: boolean;
+  now: number;
+  settleMs?: number;
+}): { machine: DrainMachine; action: DrainAction } {
+  const settleMs = input.settleMs ?? QUEUE_SETTLE_MS;
+
+  // Nothing to send, or a send already out. Return the machine untouched: this
+  // tick observed nothing, so it must not restart or advance the settle clock.
+  if (input.sending || input.pendingCount === 0) {
+    return { machine: input.machine, action: { kind: 'idle' } };
   }
 
-  return { machine: { sawBusySinceDispatch: false, clearSince: null }, dispatch: true };
+  const { machine, dispatch } = stepDrainMachine(input.machine, input.gates, input.now, settleMs);
+  if (dispatch) return { machine, action: { kind: 'dispatch' } };
+
+  // Armed and counting down. A closed gate leaves `clearSince` null and will
+  // re-render when it opens, so there is nothing to poll for.
+  if (machine.clearSince === null) return { machine, action: { kind: 'idle' } };
+
+  const elapsed = input.now - machine.clearSince;
+  return { machine, action: { kind: 'wait', ms: Math.max(0, settleMs - elapsed) } };
 }

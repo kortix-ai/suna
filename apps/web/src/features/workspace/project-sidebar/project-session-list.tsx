@@ -37,20 +37,27 @@ import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/sh
 import {
   getSessionDisplayTitle,
   groupSessionsByCoordinator,
+  projectSessionsRefetchInterval,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
-  shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import {
-  DEFAULT_SESSION_GROUP_MODE,
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { cn } from '@/lib/utils';
-import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
+import {
+  selectCollapsedSections,
+  selectGroupMode,
+  selectHiddenSections,
+  selectOrderMode,
+  selectSourceFilters,
+  selectStatusFilters,
+  useSessionFilterStore,
+} from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listProjectSessions,
@@ -162,7 +169,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     refetchInterval: (query) =>
-      shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
+      projectSessionsRefetchInterval({
+        sessions: query.state.data as ProjectSession[] | undefined,
+        hasOpenSession: Boolean(activeSessionId),
+      }),
     refetchOnWindowFocus: false,
     ...contract('inventory'),
   });
@@ -177,22 +187,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
   // which writes to the same store from the nested `⋯` menu.
-  const groupMode = useSessionFilterStore(
-    (s) => s.groupByProject[projectId] ?? DEFAULT_SESSION_GROUP_MODE,
-  );
-  const orderMode = useSessionFilterStore((s) => s.orderByProject[projectId] ?? 'activity');
-  const statusFilters = useSessionFilterStore(
-    (s) => s.statusFiltersByProject[projectId] ?? EMPTY_LIST,
-  );
-  const sourceFilters = useSessionFilterStore(
-    (s) => s.sourceFiltersByProject[projectId] ?? EMPTY_LIST,
-  );
-  const hiddenSections = useSessionFilterStore(
-    (s) => s.hiddenSectionsByProject[projectId] ?? EMPTY_LIST,
-  );
-  const collapsedSections = useSessionFilterStore(
-    (s) => s.collapsedSectionsByProject[projectId] ?? EMPTY_LIST,
-  );
+  // No `surface` argument anywhere here: the sidebar IS the default surface,
+  // and it keeps the bare projectId key it has always persisted under.
+  const groupMode = useSessionFilterStore(selectGroupMode(projectId));
+  const orderMode = useSessionFilterStore(selectOrderMode(projectId));
+  const statusFilters = useSessionFilterStore(selectStatusFilters(projectId));
+  const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId));
+  const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId));
+  const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
 
   const restartMutation = useMutation({
