@@ -11,16 +11,14 @@ function read(relativePath: string): string {
 
 describe('web ECS migration', () => {
   it('maps --service web to the dedicated cluster, container, and secret', () => {
-    const script = resolve(root, 'infra/scripts/ecs-deploy.sh');
     const output = execFileSync(
       'bash',
       [
         '-c',
-        'source "$1"; SERVICE_PREFIX=kortix-dev; SECRET_NAME=kortix-dev-env; configure_service_coordinates web; printf "%s|%s|%s|%s|%s" "$CLUSTER" "$SERVICE" "$CONTAINER" "$SECRET_NAME" "$VERSION_ENV_NAME"',
-        'bash',
-        script,
+        'source infra/scripts/ecs-deploy.sh; SERVICE_PREFIX=kortix-dev; SECRET_NAME=kortix-dev-env; configure_service_coordinates web; printf "%s|%s|%s|%s|%s" "$CLUSTER" "$SERVICE" "$CONTAINER" "$SECRET_NAME" "$VERSION_ENV_NAME"',
       ],
       {
+        cwd: root,
         encoding: 'utf8',
         env: { ...process.env, KORTIX_ECS_DEPLOY_LIB: '1' },
       },
