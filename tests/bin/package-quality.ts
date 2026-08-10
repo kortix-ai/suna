@@ -20,6 +20,14 @@ async function run(
   if (code !== 0) throw new Error(`${command.join(' ')} exited with code ${code}`);
 }
 
+async function runAll(tasks: Promise<unknown>[]): Promise<void> {
+  const results = await Promise.allSettled(tasks);
+  const failure = results.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (failure) throw failure.reason;
+}
+
 async function rejectFocusedTests(): Promise<void> {
   const child = Bun.spawn(
     [
@@ -128,16 +136,16 @@ async function runWorkspaceTests(
   );
 }
 
-await Promise.all([
+await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
 ]);
 await rejectFocusedTests();
-await Promise.all([
+await runAll([
   run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
   run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
 ]);
-await Promise.all([
+await runAll([
   ...['llm-catalog', 'sdk', 'executor-sdk'].map((directory) =>
     verifyPublishablePackage(directory, false),
   ),
@@ -147,13 +155,13 @@ await Promise.all([
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
 // removing idle CPU time between independent load classes. The API has three
 // workers. The CLI has four. The agent server and pnpm each add one supervisor.
-await Promise.all([
+await runAll([
   runWorkspaceTests(['kortix-api'], 1, {
     KORTIX_API_TEST_WORKERS: '3',
   }),
   runWorkspaceTests(['@kortix/cli', '@kortix/sandbox-agent-server'], 2),
 ]);
-await Promise.all([
+await runAll([
   (async () => {
     await runWorkspaceTests(['@kortix/db'], 1);
     // These contracts apply the complete migration history to disposable

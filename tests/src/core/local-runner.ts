@@ -92,7 +92,6 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     name: 'browser',
     command: ['bun', 'run', 'test:browser'],
     cwd: 'tests',
-    env: { E2E_BROWSER_WORKERS: '4' },
   };
   const packageQuality: LocalTestLane = {
     name: 'package-quality',
@@ -145,10 +144,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       ...flows,
       command: [...flows.command, '--api-workers', '4'],
     };
-    const fullBrowser: LocalTestLane = {
-      ...browser,
-      env: { E2E_BROWSER_WORKERS: '4' },
-    };
+    const fullBrowser: LocalTestLane = { ...browser };
     const lanes = [fullFlows, runnerUnit, routeCoverage, worktreeUnit, fullBrowser, packageQuality];
     return {
       mode: 'full',

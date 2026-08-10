@@ -42,9 +42,7 @@ describe('local test runner', () => {
       ['package-quality'],
     ]);
     expect(plan.stages[0]?.[0]?.command.slice(-2)).toEqual(['--api-workers', '4']);
-    expect(plan.lanes.find((lane) => lane.name === 'browser')?.env).toEqual({
-      E2E_BROWSER_WORKERS: '4',
-    });
+    expect(plan.lanes.find((lane) => lane.name === 'browser')?.env).toBeUndefined();
   });
 
   it('runs browser journeys through the same root command', () => {
@@ -57,7 +55,6 @@ describe('local test runner', () => {
       name: 'browser',
       command: ['bun', 'run', 'test:browser'],
       cwd: 'tests',
-      env: { E2E_BROWSER_WORKERS: '4' },
     });
   });
 

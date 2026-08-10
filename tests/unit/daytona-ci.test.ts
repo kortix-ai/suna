@@ -4,6 +4,7 @@ import {
   DaytonaApi,
   DaytonaHttpError,
   buildDaytonaBaseDockerfile,
+  buildDaytonaWarmBuilderRequest,
   buildDaytonaWarmScript,
   buildDaytonaWorkerRequest,
   cleanupDaytonaCiSandbox,
@@ -11,6 +12,7 @@ import {
   daytonaBaseSnapshotName,
   daytonaSnapshotName,
   isExactDaytonaCiSandbox,
+  isExactDaytonaWarmBuilder,
   isRetryableDaytonaError,
   retryDaytonaOperation,
   validateDaytonaCiInput,
@@ -84,6 +86,38 @@ describe('Daytona CI worker plan', () => {
         'kortix-ci-git-sha': sha,
       },
     });
+  });
+
+  test('gives one shared warm builder an exact lane owner', () => {
+    const request = buildDaytonaWarmBuilderRequest({
+      snapshot: 'kortix-ci-daytona-v1-base',
+      target: 'us',
+      repository: 'kortix-ai/suna',
+      sha,
+      runId: '31320717706-browser',
+      runAttempt: '2',
+      builderName: 'kortix-ci-daytona-v1-bbbbbbbbbbbbbbbb-builder',
+    });
+
+    expect(request.name).toBe('kortix-ci-daytona-v1-bbbbbbbbbbbbbbbb-builder');
+    expect(request.labels).toMatchObject({
+      'kortix-ci-run-id': '31320717706-browser',
+      'kortix-ci-run-attempt': '2',
+    });
+    expect(
+      isExactDaytonaWarmBuilder(request as never, {
+        runId: '31320717706-browser',
+        runAttempt: '2',
+        builderName: 'kortix-ci-daytona-v1-bbbbbbbbbbbbbbbb-builder',
+      }),
+    ).toBe(true);
+    expect(
+      isExactDaytonaWarmBuilder(request as never, {
+        runId: '31320717706-core',
+        runAttempt: '2',
+        builderName: 'kortix-ci-daytona-v1-bbbbbbbbbbbbbbbb-builder',
+      }),
+    ).toBe(false);
   });
 
   test('uses the unchanged root test command inside Daytona', () => {

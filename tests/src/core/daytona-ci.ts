@@ -158,6 +158,42 @@ export function buildDaytonaWorkerRequest(input: {
   };
 }
 
+export function buildDaytonaWarmBuilderRequest(input: {
+  snapshot: string;
+  target: string;
+  repository: string;
+  sha: string;
+  runId: string;
+  runAttempt: string;
+  builderName: string;
+}): Record<string, unknown> & { name: string; labels: Record<string, string> } {
+  const request = buildDaytonaWorkerRequest({
+    snapshot: input.snapshot,
+    target: input.target,
+    repository: input.repository,
+    sha: input.sha,
+    runId: input.runId,
+    runAttempt: input.runAttempt,
+  });
+  return {
+    ...request,
+    name: input.builderName,
+    labels: request.labels as Record<string, string>,
+  };
+}
+
+export function isExactDaytonaWarmBuilder(
+  sandbox: { name: string; labels?: Record<string, string> },
+  input: { runId: string; runAttempt: string; builderName: string },
+): boolean {
+  return (
+    sandbox.name === input.builderName &&
+    sandbox.labels?.['kortix-ci'] === 'true' &&
+    sandbox.labels?.['kortix-ci-run-id'] === input.runId &&
+    sandbox.labels?.['kortix-ci-run-attempt'] === input.runAttempt
+  );
+}
+
 export function isRetryableDaytonaError(error: unknown): boolean {
   if (error instanceof DaytonaHttpError) return TRANSIENT_STATUS_CODES.has(error.status);
   if (error instanceof SyntaxError) return true;
@@ -476,6 +512,41 @@ async function deleteSandbox(api: DaytonaApi, idOrName: string): Promise<void> {
   }
 }
 
+async function waitForWarmSnapshotOwner(
+  api: DaytonaApi,
+  snapshotName: string,
+  builderName: string,
+): Promise<DaytonaSnapshot | null> {
+  const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
+  let lastBuilderState = '';
+  while (Date.now() < deadline) {
+    const snapshot = await findSnapshot(api, snapshotName);
+    if (snapshot) {
+      if (['error', 'build_failed', 'failed'].includes(snapshotState(snapshot))) {
+        throw new Error(
+          `Daytona warm snapshot ${snapshotName} entered state=${snapshotState(snapshot)}: ${snapshot.errorReason ?? ''}`,
+        );
+      }
+      return waitForSnapshot(api, snapshot);
+    }
+
+    const builder = await getSandboxByName(api, builderName);
+    if (!builder) return null;
+    const state = String(builder.state ?? '').toLowerCase();
+    if (state !== lastBuilderState) {
+      console.log(
+        `[daytona-ci] warm_builder=${builderName} owner=${builder.labels?.['kortix-ci-run-id'] ?? 'unknown'} state=${state}`,
+      );
+      lastBuilderState = state;
+    }
+    if (['error', 'build_failed', 'stopped', 'archived', 'destroyed'].includes(state)) return null;
+    await sleep(POLL_MS);
+  }
+  throw new Error(
+    `Daytona warm builder ${builderName} did not produce snapshot ${snapshotName} within ${SNAPSHOT_TIMEOUT_MS}ms`,
+  );
+}
+
 async function ensureWarmSnapshot(
   api: DaytonaApi,
   input: DaytonaCiInput,
@@ -495,21 +566,56 @@ async function ensureWarmSnapshot(
   const builderName = `${name}-builder`.slice(0, 64);
   let builder: DaytonaSandbox | null = null;
   try {
-    await deleteSandbox(api, builderName);
-    builder = await waitForSandbox(
-      api,
-      await createDaytonaSandbox(api, {
-        ...buildDaytonaWorkerRequest({
-          snapshot: base.name,
-          target: input.target,
-          repository: input.repository,
-          sha: input.sha,
-          runId: `warm-${lockHash.slice(0, 12)}`,
-          runAttempt: 'builder',
-        }),
-        name: builderName,
-      }),
-    );
+    const snapshotAfterBase = await findSnapshot(api, name);
+    if (snapshotAfterBase) return waitForSnapshot(api, snapshotAfterBase);
+
+    const request = buildDaytonaWarmBuilderRequest({
+      snapshot: base.name,
+      target: input.target,
+      repository: input.repository,
+      sha: input.sha,
+      runId: input.runId,
+      runAttempt: input.runAttempt,
+      builderName,
+    });
+    for (;;) {
+      const existingBuilder = await getSandboxByName(api, builderName);
+      if (
+        existingBuilder &&
+        !isExactDaytonaWarmBuilder(existingBuilder, {
+          runId: input.runId,
+          runAttempt: input.runAttempt,
+          builderName,
+        })
+      ) {
+        const ownedSnapshot = await waitForWarmSnapshotOwner(api, name, builderName);
+        if (ownedSnapshot) return ownedSnapshot;
+        try {
+          await deleteSandbox(api, existingBuilder.id);
+        } catch (error) {
+          if (!(error instanceof DaytonaHttpError && error.status === 409)) throw error;
+          console.warn(`[daytona-ci] warm_builder=${builderName} cleanup=busy`);
+        }
+        await sleep(POLL_MS);
+        continue;
+      }
+
+      builder = existingBuilder ?? (await createDaytonaSandbox(api, request));
+      if (
+        isExactDaytonaWarmBuilder(builder, {
+          runId: input.runId,
+          runAttempt: input.runAttempt,
+          builderName,
+        })
+      ) {
+        builder = await waitForSandbox(api, builder);
+        break;
+      }
+
+      const ownedSnapshot = await waitForWarmSnapshotOwner(api, name, builderName);
+      builder = null;
+      if (ownedSnapshot) return ownedSnapshot;
+    }
 
     const warmScript = buildDaytonaWarmScript();
     const uploaded = await execute(
