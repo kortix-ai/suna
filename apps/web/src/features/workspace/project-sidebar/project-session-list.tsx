@@ -37,10 +37,10 @@ import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/sh
 import {
   getSessionDisplayTitle,
   groupSessionsByCoordinator,
+  projectSessionsRefetchInterval,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
-  shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import {
@@ -162,7 +162,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     refetchInterval: (query) =>
-      shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
+      projectSessionsRefetchInterval({
+        sessions: query.state.data as ProjectSession[] | undefined,
+        hasOpenSession: Boolean(activeSessionId),
+      }),
     refetchOnWindowFocus: false,
     ...contract('inventory'),
   });
