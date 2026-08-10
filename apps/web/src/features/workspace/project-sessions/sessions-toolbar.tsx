@@ -13,7 +13,7 @@ import Loading from '@/components/ui/loading';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
 import { cn } from '@/lib/utils';
 import type { ProjectSession } from '@kortix/sdk';
-import { DotsThreeIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
+import { MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 
 export function SessionsToolbar({
   projectId,
@@ -109,11 +109,11 @@ export function SessionsToolbar({
               <Button
                 type="button"
                 variant="outline"
-                size="icon"
+                size="sm"
                 aria-label="Session view options"
-                className="size-8 transition-[scale] duration-150 active:scale-[0.96]"
+                className="transition-[scale] duration-150 active:scale-[0.96]"
               >
-                <DotsThreeIcon className="size-4 shrink-0" />
+                Filter
               </Button>
             </DropdownMenuTrigger>
           </Hint>
