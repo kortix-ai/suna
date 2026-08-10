@@ -23,6 +23,7 @@
  * usually warm. That keeps the ~48 s crawl off the request path entirely,
  * including the first request after a deploy.
  */
+import { isThirdPartyApp } from './pipedream-catalog';
 import { compareByProminence, type CatalogApp } from './pipedream-search';
 
 /** How long a snapshot is served before a refresh is scheduled behind it. The
@@ -48,31 +49,20 @@ export interface CatalogCategory {
 }
 
 export interface CatalogSnapshot {
-  /**
-   * Every app Pipedream publishes, in resting order. Nothing is withheld.
-   *
-   * ── Three exclusions used to live here, and all three were the same bug ──
-   *
-   * Each hid real records behind a rule the user could not see or defeat, so a
-   * search that came up short looked like a broken search box:
-   *
-   *  1. `authType === 'oauth'` — hid 2,579 of 3,238 apps.
-   *  2. `hasActions` — hid 1,263 (39.1%). Not one was reachable by any query,
-   *     including its own exact name: `q=Auth0` returned zero results, and
-   *     `q=SAP` returned 21 of the 30 apps Pipedream's own explorer shows.
-   *  3. `UTILITY_APP_SLUGS` / `NATIVE_APP_SLUGS` — hid 8. This is the one that
-   *     made `q=slack` report 10 where Pipedream reports 11: it dropped
-   *     `slack` ("Slack (legacy)") and `slack_bot` ("Bot for Slack"). It was
-   *     also incoherent — it never listed `slack_v2`, which IS the main Slack
-   *     record and was on the browse page the whole time — and 13 of its 19
-   *     utility slugs matched nothing in the catalogue at all.
-   *
-   * An app that publishes no actions is still a dead end, but that is now said
-   * on the card and enforced at the add modal's submit, where the user can read
-   * it. `compareByProminence` ranks those last inside their band so they never
-   * displace a connectable app.
-   */
+  /** Every catalogue app, in resting order. */
   apps: CatalogApp[];
+  /**
+   * Apps Pipedream publishes that expose no actions, in resting order.
+   *
+   * NOT part of the catalogue — a connector built on one would carry zero
+   * agent tools. They are kept so a search can say why it found nothing
+   * instead of implying the app does not exist. This is not hypothetical:
+   * `sap_s_4hana_cloud` and `sap_s_4hana_cloud_sandbox` both ship
+   * `has_actions: false`, so "SAP" — the exact query in the bug report — is
+   * still an empty result, and "No matches for SAP" would still be the wrong
+   * thing to say about it.
+   */
+  withoutActions: CatalogApp[];
   /** Category -> its apps, in resting order. Precomputed because the sections
    *  endpoint reads all 25 buckets on every call. */
   byCategory: ReadonlyMap<string, CatalogApp[]>;
@@ -107,7 +97,9 @@ let inFlight: Promise<CatalogSnapshot> | null = null;
  * everything else in this module is scheduling.
  */
 export function buildSnapshot(apps: readonly CatalogApp[], fetchedAt: number): CatalogSnapshot {
-  const ordered = [...apps].sort(compareByProminence);
+  const sorted = [...apps].sort(compareByProminence);
+  const ordered = sorted.filter((app) => app.hasActions);
+  const withoutActions = sorted.filter((app) => !app.hasActions);
 
   const byCategory = new Map<string, CatalogApp[]>();
   for (const app of ordered) {
@@ -124,15 +116,11 @@ export function buildSnapshot(apps: readonly CatalogApp[], fetchedAt: number): C
     .map(([key, items]) => ({ key, label: key, count: items.length }))
     .sort((a, b) => (a.count !== b.count ? b.count - a.count : a.key.localeCompare(b.key)));
 
-  return { apps: ordered, byCategory, categories, fetchedAt };
+  return { apps: ordered, withoutActions, byCategory, categories, fetchedAt };
 }
 
 /**
  * Walk every page of the catalogue and build a snapshot.
- *
- * **Keeps every record.** There is no membership predicate any more — see the
- * `CatalogSnapshot.apps` doc. Whatever Pipedream publishes is what the
- * catalogue offers.
  *
  * Stops on a missing cursor, an empty page, or a cursor that repeats — the
  * last of which is the only way a well-formed API could spin this loop.
@@ -147,7 +135,9 @@ export async function crawlCatalog(
 
   for (let page = 0; page < MAX_CRAWL_PAGES; page++) {
     const result = await fetchPage(CRAWL_PAGE_SIZE, cursor);
-    apps.push(...result.apps);
+    for (const app of result.apps) {
+      if (isThirdPartyApp(app)) apps.push(app);
+    }
     const next = result.nextCursor;
     if (!next || result.apps.length === 0 || seenCursors.has(next)) break;
     seenCursors.add(next);

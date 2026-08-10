@@ -69,7 +69,9 @@ describe('toWireModel / toOpencodeModelRef', () => {
 
   test('re-prefixes a bare managed id to the opencode ref; leaves BYOK/codex alone', () => {
     expect(toOpencodeModelRef('glm-5.2')).toBe('kortix/glm-5.2');
-    expect(toOpencodeModelRef('claude-opus-4.8')).toBe('kortix/claude-opus-4.8');
+    expect(toOpencodeModelRef('deepseek-v4-flash')).toBe('kortix/deepseek-v4-flash');
+    // 2026-08-10 slim-down: a deactivated managed id is no longer re-prefixed.
+    expect(toOpencodeModelRef('claude-opus-4.8')).toBe('claude-opus-4.8');
     expect(toOpencodeModelRef('kortix/glm-5.2')).toBe('kortix/glm-5.2');
     expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe('anthropic/claude-sonnet-4.6');
     expect(toOpencodeModelRef('codex/gpt-5.5')).toBe('codex/gpt-5.5');
@@ -115,8 +117,8 @@ describe('degradeUnservableDefault — stale default guard', () => {
       'glm-5.2',
     );
     expect(
-      await degradeUnservableDefault('kortix/claude-opus-4.8', { hasWorkspace: true }, neverProbe),
-    ).toBe('kortix/claude-opus-4.8');
+      await degradeUnservableDefault('kortix/deepseek-v4-flash', { hasWorkspace: true }, neverProbe),
+    ).toBe('kortix/deepseek-v4-flash');
   });
 
   test('BYOK default with no workspace context degrades to platform, no probe', async () => {

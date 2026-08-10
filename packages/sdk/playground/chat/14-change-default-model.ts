@@ -1,9 +1,9 @@
 /**
  * Step 5 — change the model, with a typesafe model picker.
  *
- * Changes the PROJECT default model via `project.modelDefaults.set(...)`,
+ * Changes the workspace default model via `workspace.modelDefaults.set(...)`,
  * then re-reads the defaults and asserts the change stuck. Every new session
- * in the project resolves to this model unless a prompt overrides it.
+ * in the workspace resolves to this model unless a prompt overrides it.
  *
  * Model selection is compile-time safe: `ManagedModelId` is a literal union,
  * so a typo like 'claude-opus-4.9' is a type error, not a 400 at runtime.
@@ -11,11 +11,11 @@
  * the union is pinned here and cross-checked against `MANAGED_MODELS` — the
  * set the gateway actually serves — before anything talks to the API.
  *
- * Project selection: argv[3] → KORTIX_PROJECT_ID (required).
+ * Workspace selection: argv[3] → KORTIX_WORKSPACE_ID → deprecated KORTIX_PROJECT_ID.
  *
  * Run:
  *   KORTIX_API_URL=http://localhost:8008/v1 KORTIX_API_KEY=kortix_pat_... \
- *     bun run playground/chat/14-change-default-model.ts claude-opus-4.8 [workspaceId]
+ *     bun run playground/chat/14-change-default-model.ts glm-5.2 [workspaceId]
  *
  * As an npm consumer, the import lines change to:
  *   import { createKortix } from '@kortix/sdk';
@@ -25,13 +25,7 @@ import { MANAGED_MODELS } from "@kortix/llm-catalog";
 
 import { createKortix } from "../../src/index";
 
-const MODEL_IDS = [
-  "claude-opus-4.8",
-  "claude-sonnet-4.6",
-  "glm-5.2",
-  "kimi-k3",
-  "deepseek-v4-flash",
-] as const;
+const MODEL_IDS = ["glm-5.2", "deepseek-v4-flash"] as const;
 
 type ManagedModelId = (typeof MODEL_IDS)[number];
 
@@ -87,41 +81,44 @@ async function main() {
   }
   const model: ManagedModelId = requested;
 
-  const workspaceId = process.argv[3] ?? process.env.KORTIX_PROJECT_ID;
+  const workspaceId =
+    process.argv[3] ?? process.env.KORTIX_WORKSPACE_ID ?? process.env.KORTIX_PROJECT_ID;
   if (!workspaceId) {
-    console.error("✗ no project given — pass argv[3] or set KORTIX_PROJECT_ID");
+    console.error(
+      "✗ no workspace given — pass argv[3] or set KORTIX_WORKSPACE_ID",
+    );
     process.exit(1);
     return;
   }
 
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
-  const project = kortix.project(workspaceId);
+  const workspace = kortix.workspace(workspaceId);
 
-  const before = await project.modelDefaults.get();
+  const before = await workspace.modelDefaults.get();
   if (before.freeTier) {
     console.warn(
       "⚠ account is free-tier — the gateway may reject managed models",
     );
   }
   console.log(
-    `current: project=${before.projectDefault ?? "(unset)"} account=${before.accountDefault ?? "(unset)"} platform=${before.platformDefault}`,
+    `current: workspace=${before.workspaceDefault ?? "(unset)"} account=${before.accountDefault ?? "(unset)"} platform=${before.platformDefault}`,
   );
   console.log(
-    `resolved for this project: ${before.resolvedForCaller ?? "(none)"} · source: ${before.resolvedSource ?? "n/a"}`,
+    `resolved for this workspace: ${before.resolvedForCaller ?? "(none)"} · source: ${before.resolvedSource ?? "n/a"}`,
   );
 
-  await project.modelDefaults.set({ scope: "project", model });
-  console.log(`✓ set project default → ${model}`);
+  await workspace.modelDefaults.set({ scope: "workspace", model });
+  console.log(`✓ set workspace default → ${model}`);
 
-  const after = await project.modelDefaults.get();
-  if (after.projectDefault !== model) {
+  const after = await workspace.modelDefaults.get();
+  if (after.workspaceDefault !== model) {
     console.error(
-      `✗ step 5 FAILED — re-read projectDefault is ${after.projectDefault ?? "(unset)"}, expected ${model}`,
+      `✗ step 5 FAILED — re-read workspaceDefault is ${after.workspaceDefault ?? "(unset)"}, expected ${model}`,
     );
     process.exit(1);
   }
   console.log(
-    `✓ re-read defaults — projectDefault is ${after.projectDefault}, resolves via '${after.resolvedSource ?? "project"}'`,
+    `✓ re-read defaults — workspaceDefault is ${after.workspaceDefault}, resolves via '${after.resolvedSource ?? "workspace"}'`,
   );
 
   console.log("\nper-session override (paste into step 4 before send):");

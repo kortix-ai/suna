@@ -18,7 +18,8 @@ export interface ResolvedWorkspaceRoutingPolicy {
 
 export interface GatewayRouteResolverOptions {
   defaultModel: string;
-  visionModel: string;
+  /** Reroute target for image-bearing default requests; empty/undefined = no reroute. */
+  visionModel: string | undefined;
   policies: readonly ModelFallbackPolicy[];
   supportsImage: (model: string) => boolean;
   getWorkspacePolicy?: (workspaceId: string) => Promise<ResolvedWorkspaceRoutingPolicy | null>;
@@ -65,7 +66,7 @@ export function createGatewayRouteResolver(
   const catalogModelFor = options.catalogModelFor ?? (() => undefined);
 
   return async (principal, input) => {
-    const projectPolicy = principal.workspaceId && options.getWorkspacePolicy
+    const workspacePolicy = principal.workspaceId && options.getWorkspacePolicy
       ? await options.getWorkspacePolicy(principal.workspaceId)
       : null;
     const concreteDefault = principal.defaultModel || options.defaultModel;
@@ -73,7 +74,11 @@ export function createGatewayRouteResolver(
     let primaryModel = input.requestedModel;
 
     if (isDefaultRequest && input.requires.imageInput && !options.supportsImage(primaryModel)) {
-      primaryModel = projectPolicy?.visionModel || options.visionModel;
+      // No configured vision target (the managed lineup has no vision model
+      // since the 2026-08-10 slim-down) → keep the default model rather than
+      // rerouting to a dead ref that resolves as model_not_found.
+      const visionTarget = workspacePolicy?.visionModel || options.visionModel;
+      if (visionTarget) primaryModel = visionTarget;
     }
 
     // Bound once per request (not per candidate) — cheap (a config lookup +
@@ -81,10 +86,10 @@ export function createGatewayRouteResolver(
     // its OWN freshly-clamped defaults instead of trusting the primary
     // model's. See `ModelRoutePlan.generationDefaultsForModel`'s doc comment.
     const generationDefaultsForModel = (model: string): ModelGenerationDefaults | undefined =>
-      generationDefaultsFor(model, projectPolicy?.modelGenerationConfig, catalogModelFor);
+      generationDefaultsFor(model, workspacePolicy?.modelGenerationConfig, catalogModelFor);
     const generationDefaults = generationDefaultsForModel(primaryModel);
 
-    const exactRule = projectPolicy?.rules.find((rule) => rule.model === primaryModel);
+    const exactRule = workspacePolicy?.rules.find((rule) => rule.model === primaryModel);
     if (exactRule) {
       return {
         policyId: `project:exact:${primaryModel}`,
@@ -96,12 +101,12 @@ export function createGatewayRouteResolver(
       };
     }
 
-    if (isDefaultRequest && projectPolicy?.defaultFallback) {
+    if (isDefaultRequest && workspacePolicy?.defaultFallback) {
       return {
         policyId: 'project:default',
         primaryModel,
-        fallbackModels: projectPolicy.defaultFallback.models,
-        fallbackOn: projectPolicy.defaultFallback.fallbackOn,
+        fallbackModels: workspacePolicy.defaultFallback.models,
+        fallbackOn: workspacePolicy.defaultFallback.fallbackOn,
         generationDefaults,
         generationDefaultsForModel,
       };

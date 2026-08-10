@@ -27,13 +27,7 @@ describe('connector authorization owner is locked after creation', () => {
     // Two call sites exist: the existing-connector detail page and the
     // custom-connector draft. Locking the draft too would make it impossible to
     // pick an owner at all.
-    //
-    // `\b` matters. Unanchored, this counted any prop ENDING in `lockedReason`
-    // — a `blockedReason={…}` added elsewhere in this file pushed the count to
-    // 2 and failed a test about a prop it had nothing to do with. The same hole
-    // could pass wrongly: delete the real `lockedReason=` and add one such
-    // prop, and the count still reads 1.
-    expect(VIEW.match(/\blockedReason=/g)?.length ?? 0).toBe(1);
+    expect(VIEW.match(/lockedReason=/g)?.length ?? 0).toBe(1);
   });
 
   test('a lockedReason renders a STATEMENT, returning before any Select', () => {

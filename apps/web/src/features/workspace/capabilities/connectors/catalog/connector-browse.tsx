@@ -17,11 +17,7 @@ import {
 } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 import { cn } from '@/lib/utils';
-import {
-  catalogEntryHasNoAgentTools,
-  isCatalogEntryConnected,
-  type CatalogEntry,
-} from './catalog-entry';
+import { isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
 import { catalogFootSummary } from './catalog-foot';
 import { CategoryIcon } from './category-icon';
 import { ALL_CATEGORIES } from './connector-categories';
@@ -114,13 +110,6 @@ const CatalogEntryCard = memo(function CatalogEntryCard({
       leading={<ConnectorIcon icon={entry.icon} computer={entry.source === 'computer'} />}
       title={entry.name}
       description={entry.description}
-      badges={
-        catalogEntryHasNoAgentTools(entry) ? (
-          <Badge variant="secondary" size="sm" data-testid="catalog-no-tools">
-            No agent tools
-          </Badge>
-        ) : null
-      }
       trailing={<CatalogAffordance connected={isCatalogEntryConnected(entry, connectedKeys)} />}
       onClick={() => onSelect(entry)}
     />
@@ -416,7 +405,7 @@ export function ConnectorBrowse({
         isEmpty
         empty={
           searching ? (
-            <CatalogNoMatch query={activeQuery} />
+            <CatalogNoMatch query={activeQuery} excludedNoActions={state.excludedNoActions} />
           ) : (
             <EmptyState
               icon={GlobeIcon}

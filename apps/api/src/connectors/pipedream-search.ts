@@ -70,24 +70,14 @@ function scoreApp(app: CatalogApp, query: string): number {
 }
 
 /**
- * The catalogue's resting order: promotion weight, then usable-before-inert,
- * then name.
+ * The catalogue's resting order: Pipedream's promotion weight, then name.
  *
  * Used whenever there is no query — browsing, a category view, and each
  * section's top slice — so a category's first six cards are its most prominent
  * six rather than whichever six the crawl happened to reach first.
- *
- * **Why `hasActions` sorts rather than filters.** 1,263 of the 3,230 catalogue
- * apps publish no actions, so a connector built on one carries zero agent
- * tools. They used to be excluded outright, which made 39% of the catalogue
- * unreachable by *any* query including an app's own exact name — the reported
- * "SAP returns nothing" bug. Ranking them last inside their own weight band
- * keeps browse leading with apps the user can actually use, while leaving every
- * record findable. The card says which is which.
  */
 export function compareByProminence(a: CatalogApp, b: CatalogApp): number {
   if (a.featuredWeight !== b.featuredWeight) return b.featuredWeight - a.featuredWeight;
-  if (a.hasActions !== b.hasActions) return a.hasActions ? -1 : 1;
   return a.name.localeCompare(b.name);
 }
 
@@ -95,12 +85,6 @@ export function compareByProminence(a: CatalogApp, b: CatalogApp): number {
  * Apps matching `query`, best first. A blank query returns everything in
  * resting order rather than nothing — this is the browse path as well as the
  * search path.
- *
- * **Match strength outranks usability.** `hasActions` breaks ties *within* a
- * score band and never across one, so `q=SAP` answers with "SAP S/4HANA Cloud"
- * (score 90, no actions) above "Sapling.ai" (score 80, actions). Sorting it any
- * higher would reinstate the old bug in a softer form: the app the user named
- * would sit below apps that merely mention it.
  */
 export function rankApps(apps: readonly CatalogApp[], query: string): CatalogApp[] {
   const needle = normalize(query);
@@ -112,11 +96,7 @@ export function rankApps(apps: readonly CatalogApp[], query: string): CatalogApp
     if (score > SCORE.none) scored.push({ app, score });
   }
   return scored
-    .sort((a, b) => {
-      if (a.score !== b.score) return b.score - a.score;
-      if (a.app.hasActions !== b.app.hasActions) return a.app.hasActions ? -1 : 1;
-      return compareByProminence(a.app, b.app);
-    })
+    .sort((a, b) => (a.score !== b.score ? b.score - a.score : compareByProminence(a.app, b.app)))
     .map((entry) => entry.app);
 }
 

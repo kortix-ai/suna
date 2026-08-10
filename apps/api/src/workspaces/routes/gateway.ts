@@ -1022,7 +1022,7 @@ workspaceRoutesApp.openapi(
       workspaceId,
     };
     // The ping is a real (if tiny) paid upstream call for a platform-fee-billed
-    // BYOK project — it must respect an already-exceeded project budget like
+    // BYOK workspace — it must respect an already-exceeded workspace budget like
     // any other gateway call (see playground's identical guard above). Caught
     // rather than left to propagate: a budget block is exactly the "couldn't
     // verify" case this endpoint already models, not a hard failure.
@@ -1096,7 +1096,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     effective: {
       defaultModel: effectiveDefault,
       defaultModelSource,
-      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL,
+      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL ?? null,
       defaultFallback: {
         models: [...(route.fallbackModels ?? [])],
         fallbackOn: route.fallbackOn ?? 'transient',
@@ -1104,7 +1104,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     },
     platform: {
       defaultModel: platformDefaultModelId(),
-      visionModel: config.LLM_GATEWAY_VISION_MODEL,
+      visionModel: config.LLM_GATEWAY_VISION_MODEL ?? null,
       defaultFallback: operatorFallbackFor(platformDefaultModelId()),
     },
     capabilities: { write: canWrite },

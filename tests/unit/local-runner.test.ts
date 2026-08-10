@@ -59,7 +59,35 @@ describe('local test runner', () => {
     });
   });
 
-  it('serializes the local CI browser lane and preserves explicit target concurrency', () => {
+  it('runs one browser shard through the same root command', () => {
+    const plan = buildLocalTestPlan(['--browser-only', '--browser-shard=1/2']);
+
+    expect(plan.mode).toBe('browser');
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'run',
+      'test:browser',
+      '--',
+      '--shard=1/2',
+    ]);
+  });
+
+  it('rejects invalid browser shards', () => {
+    expect(() => buildLocalTestPlan(['--browser-only', '--browser-shard='])).toThrow(
+      'CURRENT/TOTAL',
+    );
+    expect(() => buildLocalTestPlan(['--browser-only', '--browser-shard=0/2'])).toThrow(
+      'CURRENT/TOTAL',
+    );
+    expect(() => buildLocalTestPlan(['--browser-only', '--browser-shard=3/2'])).toThrow(
+      'CURRENT/TOTAL',
+    );
+    expect(() => buildLocalTestPlan(['--browser-shard=1/2'])).toThrow(
+      'requires --browser-only',
+    );
+  });
+
+  it('uses one CI browser worker and preserves explicit concurrency', () => {
     expect(resolveBrowserWorkers(undefined, true)).toBe(1);
     expect(resolveBrowserWorkers(undefined, false)).toBe(4);
     expect(resolveBrowserWorkers('2', true)).toBe(2);
@@ -115,6 +143,26 @@ describe('local test runner', () => {
         E2E_REQUIRE_ALL_BROWSER: '1',
       },
     });
+  });
+
+  it('keeps strict browser coverage but records the authorized preview OAuth exclusion', () => {
+    const previous = process.env.KE2E_TARGET;
+    process.env.KE2E_TARGET = 'preview';
+    try {
+      const plan = buildLocalTestPlan(['--target-full']);
+      expect(plan.lanes[1]?.env).toEqual({
+        E2E_BROWSER_WORKERS: '2',
+        E2E_ENABLE_SDK_ONLY_SESSION: '1',
+        E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
+        E2E_OAUTH_PROVIDER_INITIATION: '0',
+        E2E_ENABLE_BILLING_JOURNEY: '1',
+        E2E_REQUIRE_ALL_BROWSER: '1',
+        E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1',
+      });
+    } finally {
+      if (previous === undefined) delete process.env.KE2E_TARGET;
+      else process.env.KE2E_TARGET = previous;
+    }
   });
 
   it('rejects conflicting modes', () => {

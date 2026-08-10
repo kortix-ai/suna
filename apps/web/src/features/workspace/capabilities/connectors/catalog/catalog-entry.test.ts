@@ -4,7 +4,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
-  catalogEntryHasNoAgentTools,
   catalogSections,
   computersCatalogEntry,
   connectedCatalogKeys,
@@ -179,25 +178,5 @@ describe('catalogSections', () => {
     const sections = catalogSections(many, { popularCap: CATEGORY_ROW_CAP });
     expect(sections[0]?.category).toBe(POPULAR_SECTION);
     expect(sections[0]?.items.length).toBe(CATEGORY_ROW_CAP);
-  });
-});
-
-describe('catalogEntryHasNoAgentTools', () => {
-  test('flags an Easy Connect app that publishes no actions', () => {
-    // 1,263 of the 3,230 Pipedream apps. They are listed now rather than
-    // withheld, so the card has to say what they are.
-    const entry = catalogEntryFromEasyConnect(
-      app({ slug: 'sap_s_4hana_cloud', name: 'SAP S/4HANA Cloud', hasActions: false }),
-    );
-    expect(catalogEntryHasNoAgentTools(entry)).toBe(true);
-  });
-
-  test('a normal Easy Connect app is not flagged', () => {
-    expect(catalogEntryHasNoAgentTools(catalogEntryFromEasyConnect(app()))).toBe(false);
-  });
-
-  test('sources that do not publish the flag are never flagged', () => {
-    expect(catalogEntryHasNoAgentTools(computersCatalogEntry())).toBe(false);
-    expect(catalogEntryHasNoAgentTools(catalogEntryFromDiscover(connector()))).toBe(false);
   });
 });

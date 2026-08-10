@@ -3,7 +3,7 @@
  *
  * - Creates ONE session up front and pins it via KORTIX_SESSION_ID, so the
  *   five sandbox scripts (04, 06, 07, 09, 11) share a single boot.
- * - Defaults KORTIX_MODEL to claude-sonnet-4.6 when unset (the local stack's
+ * - Defaults KORTIX_MODEL to glm-5.2 when unset (the local stack's
  *   default model currently 400s on `max_tokens`).
  * - Keeps going after a failure; exits 1 if anything failed.
  * - Skipped on purpose: 14-change-default-model (mutates the project's
@@ -54,7 +54,7 @@ run("run-all", async () => {
   const kortix = makeKortix();
   const workspaceId = await pickProjectId(kortix);
 
-  const model = process.env.KORTIX_MODEL ?? "claude-sonnet-4.6";
+  const model = process.env.KORTIX_MODEL ?? "glm-5.2";
   if (!process.env.KORTIX_MODEL) {
     console.log(
       `KORTIX_MODEL not set — defaulting to ${model} (local gateway bug workaround)`,

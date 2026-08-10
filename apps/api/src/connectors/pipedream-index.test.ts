@@ -54,43 +54,36 @@ describe('crawlCatalog', () => {
     expect(snapshot.fetchedAt).toBe(1_000);
   });
 
-  test('keeps every record — no app is withheld from the catalogue', async () => {
+  test('drops utilities, keeps action-less apps aside rather than discarding them', async () => {
     const { fetchPage } = pagedFetcher([
       app({ slug: 'github', name: 'GitHub' }),
       app({ slug: 'oracle_cloud_infrastructure', name: 'Oracle Cloud Infrastructure' }),
-      // Was dropped by UTILITY_APP_SLUGS.
-      app({ slug: 'schedule', name: 'Schedule', hasActions: false }),
-      // Were dropped by NATIVE_APP_SLUGS. This is the `q=slack` bug: Pipedream
-      // reports 11 matches, Kortix reported 10, and these two were the gap.
-      // The set never covered `slack_v2` — the record that IS the main Slack —
-      // so it hid the legacy pair while achieving nothing it claimed to.
-      app({ slug: 'slack', name: 'Slack (legacy)' }),
-      app({ slug: 'slack_bot', name: 'Bot for Slack' }),
-      app({ slug: 'slack_v2', name: 'Slack' }),
-      // Were dropped by `hasActions`. 1,263 apps, none reachable by any query,
-      // including their own exact name.
+      app({ slug: 'schedule', name: 'Schedule' }),
+      app({ slug: 'slack', name: 'Slack' }),
+      // Both real: the live catalogue ships these with `has_actions: false`,
+      // which is why "SAP" is still an empty catalogue result and why the page
+      // needs to be able to explain that rather than say "no matches".
       app({ slug: 'sap_s_4hana_cloud', name: 'SAP S/4HANA Cloud', hasActions: false }),
       app({ slug: 'triggers_only', name: 'Triggers Only', hasActions: false, hasTriggers: true }),
     ]);
 
     const snapshot = await crawlCatalog(fetchPage, () => 0);
 
-    // Connectable apps first, then the action-less ones. Every record present.
     expect(snapshot.apps.map((a) => a.slug)).toEqual([
-      'slack_bot',
       'github',
       'oracle_cloud_infrastructure',
-      // "Slack" before "Slack (legacy)" — same weight, both connectable, so
-      // `localeCompare` decides and the shorter name is the prefix.
-      'slack_v2',
-      'slack',
+    ]);
+    expect(snapshot.withoutActions.map((a) => a.slug)).toEqual([
       'sap_s_4hana_cloud',
-      'schedule',
       'triggers_only',
     ]);
+    // A utility is dropped entirely — there is nothing true to say about it.
+    expect([...snapshot.apps, ...snapshot.withoutActions].map((a) => a.slug)).not.toContain(
+      'schedule',
+    );
   });
 
-  test('action-less apps join their category, counted and ranked last', async () => {
+  test('action-less apps never reach a category bucket', async () => {
     const { fetchPage } = pagedFetcher([
       app({ slug: 'real', name: 'Real', categories: ['CRM'] }),
       app({ slug: 'hollow', name: 'Hollow', categories: ['CRM'], hasActions: false }),
@@ -98,10 +91,10 @@ describe('crawlCatalog', () => {
 
     const snapshot = await crawlCatalog(fetchPage, () => 0);
 
-    // The facet count drives a section heading, and the heading now states the
-    // category's real size because the grid can show every one of them.
-    expect(snapshot.categories).toEqual([{ key: 'CRM', label: 'CRM', count: 2 }]);
-    expect(snapshot.byCategory.get('CRM')?.map((a) => a.slug)).toEqual(['real', 'hollow']);
+    // The facet count drives a section heading, so it must count only what the
+    // grid can actually show.
+    expect(snapshot.categories).toEqual([{ key: 'CRM', label: 'CRM', count: 1 }]);
+    expect(snapshot.byCategory.get('CRM')?.map((a) => a.slug)).toEqual(['real']);
   });
 
   test('stops on a repeating cursor instead of looping forever', async () => {

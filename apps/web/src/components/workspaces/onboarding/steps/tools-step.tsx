@@ -27,7 +27,6 @@ import {
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  easyConnectUnavailableReason,
   proposeConnectorConnectionSlug,
   type EasyConnectApp,
 } from '@/features/workspace/customize/sections/connector-connection-form';
@@ -196,7 +195,6 @@ export function ToolsStep({
         }
         existingSlugs={existingSlugs}
         pending={connect.isPending}
-        unavailableReason={easyConnectUnavailableReason(selectedApp)}
         onOpenChange={(open) => !open && setSelectedApp(null)}
         onSubmit={(connection) => {
           if (!selectedApp) return;

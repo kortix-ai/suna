@@ -170,6 +170,21 @@ import {
 } from './connector-oauth2';
 import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
+import {
+  connectionOwnerTypeForStrategy,
+  buildEasyConnectConnectorDraft,
+  buildEmailConnectorConnectionSlug,
+  connectorConnectionQueryKeys,
+  connectorAuthorizationStrategyForProvider,
+  connectorAuthorizationStrategyIsEditable,
+  connectorAuthorizationUpdateIsPending,
+  connectorSetupStatus,
+  connectorSyncErrorForSlug,
+  createOnlyConnectorDraft,
+  type EasyConnectApp,
+  proposeConnectorConnectionSlug,
+} from './connector-connection-form';
+import { AuthorizationStrategyField, ConnectorConnectionModal } from './connector-connection-modal';
 import { DiscoverCatalogue } from './discover-catalogue';
 import { connectorConnectionRows } from './view/connector-connections';
 
@@ -1154,7 +1169,7 @@ export function ConnectorDetail({
   const connected = usesWorkspaceAuthorization && connector.secretSet;
   // The connection's connection_id — the reference a backend (Kortix as a Backend)
   // passes in `connector_bindings` to run a session AS this connection. It isn't
-  // surfaced anywhere else, so we expose + copy it here. Project-default connection
+  // surfaced anywhere else, so we expose + copy it here. Workspace-default connection
   // only (the account this connector is connected as for the whole workspace).
   const connectionsQuery = useQuery({
     queryKey: ['connections', workspaceId],
@@ -2999,7 +3014,7 @@ export function PermissionsSection({
   const governingRule = (path: string) =>
     rules.find((r) => r.match.trim() && clientMatch(r.match.trim(), path));
 
-  // Tools a PROJECT-scope rule already decides. Project rules are evaluated
+  // Tools a WORKSPACE-scope rule already decides. Workspace rules are evaluated
   // before connector rules and cannot be overridden here (connector/policy.ts),
   // so without this the panel would show a connector rule the runtime ignores.
   // The server resolves this through the same function the call gate uses.
@@ -3980,7 +3995,6 @@ function AppCatalogue({
         }
         existingSlugs={existingSlugs}
         pending={addApp.isPending}
-        unavailableReason={easyConnectUnavailableReason(selectedApp)}
         onOpenChange={(open) => !open && setSelectedApp(null)}
         onSubmit={(connector) => addApp.mutate(connector)}
       />

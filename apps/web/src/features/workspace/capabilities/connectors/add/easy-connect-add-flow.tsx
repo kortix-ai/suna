@@ -7,7 +7,6 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
   buildEasyConnectConnectorDraft,
   connectorSyncErrorForSlug,
-  easyConnectUnavailableReason,
   proposeConnectorConnectionSlug,
 } from '@/features/workspace/customize/sections/connector-connection-form';
 import { ConnectorConnectionIcon } from '@/features/workspace/customize/sections/connector-connection-header';
@@ -89,7 +88,6 @@ export function EasyConnectAddFlow({
       initialSlug={app ? proposeConnectorConnectionSlug(app.name, existingSlugs) : ''}
       existingSlugs={existingSlugs}
       pending={add.isPending}
-      unavailableReason={easyConnectUnavailableReason(app)}
       icon={<ConnectorConnectionIcon src={app?.imgSrc} name={app?.name ?? ''} />}
       summary={app?.description ?? null}
       onOpenChange={(open) => !open && onClose()}

@@ -21,7 +21,7 @@ mock.module('../../config', () => ({
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return '';
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'glm-5.2';
-        if (key === 'LLM_GATEWAY_VISION_MODEL') return 'claude-sonnet-4.6';
+        if (key === 'LLM_GATEWAY_VISION_MODEL') return undefined;
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') return [];
         if (key === 'AWS_BEDROCK_REGION') return 'us-west-2';
         if (key === 'AWS_BEDROCK_API_KEY') return 'bedrock-key';
@@ -82,13 +82,12 @@ describe('a managed model whose transport credential is missing is never OFFERED
   test('the served lineup drops it and keeps every credentialed transport', () => {
     const served = SERVED_MANAGED_MODELS.map((m) => m.id);
     expect(served).not.toContain('glm-5.2');
-    expect(served).toContain('claude-opus-4.8');
     expect(served).toContain('deepseek-v4-flash');
   });
 
   test('the served model catalog does not advertise it', () => {
     expect(managedModels()['glm-5.2']).toBeUndefined();
-    expect(managedModels()['claude-opus-4.8']).toBeDefined();
+    expect(managedModels()['deepseek-v4-flash']).toBeDefined();
     expect(gatewayModelCatalog('proj')['glm-5.2']).toBeUndefined();
     expect(gatewayModelCatalog(undefined)['glm-5.2']).toBeUndefined();
   });
@@ -110,7 +109,9 @@ describe('the platform default model is always resolvable', () => {
       platformDefaultModelId(),
     );
     expect(candidates.length).toBeGreaterThan(0);
-    expect(candidates[0]?.apiKey).toBe('bedrock-key');
+    // 2026-08-10 slim-down: with aster uncredentialed the only served managed
+    // model is deepseek-v4-flash (openrouter transport).
+    expect(candidates[0]?.apiKey).toBe('openrouter-key');
   });
 
   test('naming the unreachable model explicitly still refuses, with an actionable reason', async () => {

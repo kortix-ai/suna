@@ -100,34 +100,6 @@ describe('rankApps', () => {
     expect(rankApps(apps, '   ').map((a) => a.slug)).toEqual(['promoted', 'a', 'b']);
   });
 
-  test('an action-less app is reachable by its own exact name', () => {
-    // The regression this whole change exists for. `q=Auth0` returned NOTHING
-    // on the live catalogue because the single Auth0 record publishes no
-    // actions, and action-less apps were withheld from every ranking path.
-    const apps = [app({ slug: 'auth0', name: 'Auth0 (Management API)', hasActions: false })];
-    expect(rankApps(apps, 'auth0').map((a) => a.slug)).toEqual(['auth0']);
-  });
-
-  test('match strength outranks usability across score bands', () => {
-    // `q=SAP` on the live catalogue. "SAP S/4HANA Cloud" carries no actions but
-    // is what the user typed (score 90, whole word); "Sapling.ai" merely starts
-    // with the letters (score 80). The named app leads regardless.
-    const apps = [
-      app({ slug: 'sapling_ai', name: 'Sapling.ai' }),
-      app({ slug: 'sap_s_4hana_cloud', name: 'SAP S/4HANA Cloud', hasActions: false }),
-    ];
-    expect(rankApps(apps, 'SAP').map((a) => a.slug)).toEqual(['sap_s_4hana_cloud', 'sapling_ai']);
-  });
-
-  test('inside one score band, a connectable app leads an action-less one', () => {
-    const apps = [
-      app({ slug: 'aaa_inert', name: 'AAA Slackish', hasActions: false }),
-      app({ slug: 'zzz_usable', name: 'ZZZ Slackish' }),
-    ];
-    // Both score `nameWord`; alphabetical order would put the inert one first.
-    expect(rankApps(apps, 'slackish').map((a) => a.slug)).toEqual(['zzz_usable', 'aaa_inert']);
-  });
-
   test('equal scores break on prominence, then name', () => {
     const apps = [
       app({ slug: 'x2', name: 'Slackish B' }),
@@ -149,20 +121,6 @@ describe('compareByProminence', () => {
     const heavy = app({ slug: 'z', name: 'Zzz', featuredWeight: 1 });
     const light = app({ slug: 'a', name: 'Aaa', featuredWeight: 0 });
     expect([light, heavy].sort(compareByProminence).map((a) => a.slug)).toEqual(['z', 'a']);
-  });
-
-  test('featured weight still outranks having actions', () => {
-    const promoted = app({ slug: 'z', name: 'Zzz', featuredWeight: 1, hasActions: false });
-    const usable = app({ slug: 'a', name: 'Aaa', featuredWeight: 0 });
-    expect([usable, promoted].sort(compareByProminence).map((a) => a.slug)).toEqual(['z', 'a']);
-  });
-
-  test('within one weight band, a connectable app precedes an action-less one', () => {
-    // Browsing a category must lead with apps the user can use, so the 1,263
-    // action-less records sit at the tail rather than in the first rows.
-    const inert = app({ slug: 'a', name: 'Aaa', hasActions: false });
-    const usable = app({ slug: 'z', name: 'Zzz' });
-    expect([inert, usable].sort(compareByProminence).map((a) => a.slug)).toEqual(['z', 'a']);
   });
 });
 

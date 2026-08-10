@@ -127,24 +127,6 @@ export function connectedCatalogKeys(connectors: readonly WorkspaceAdminConnecto
   return keys;
 }
 
-/**
- * Whether connecting this entry would produce a connector with zero agent
- * tools.
- *
- * True for the 1,263 Pipedream apps (39.1% of the catalogue) that publish no
- * actions. They used to be withheld from the catalogue entirely, which made
- * them unreachable by any query including their own exact name — `q=Auth0`
- * returned nothing, `q=SAP` missed both SAP records. They are listed now, so
- * the card has to say what they are: the badge and the blocked add modal are
- * the whole of the compensation.
- *
- * Only Easy Connect publishes the flag. Discover entries and the native
- * Computers card always carry tools.
- */
-export function catalogEntryHasNoAgentTools(entry: CatalogEntry): boolean {
-  return entry.source === 'easy-connect' && entry.app.hasActions === false;
-}
-
 export function isCatalogEntryConnected(
   entry: CatalogEntry,
   connectedKeys: ReadonlySet<string>,

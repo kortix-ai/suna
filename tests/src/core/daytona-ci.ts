@@ -368,7 +368,7 @@ async function ensureBaseSnapshot(
   return waitForSnapshot(api, created);
 }
 
-async function waitForSandbox(api: DaytonaApi, sandbox: DaytonaSandbox): Promise<DaytonaSandbox> {
+export async function waitForSandbox(api: DaytonaApi, sandbox: DaytonaSandbox): Promise<DaytonaSandbox> {
   const deadline = Date.now() + SANDBOX_TIMEOUT_MS;
   let current = sandbox;
   let lastState = '';
@@ -392,7 +392,7 @@ async function waitForSandbox(api: DaytonaApi, sandbox: DaytonaSandbox): Promise
   );
 }
 
-async function getSandboxByName(api: DaytonaApi, name: string): Promise<DaytonaSandbox | null> {
+export async function getSandboxByName(api: DaytonaApi, name: string): Promise<DaytonaSandbox | null> {
   try {
     return await api.json<DaytonaSandbox>(
       `/sandbox/${encodeURIComponent(name)}`,
@@ -452,7 +452,7 @@ function toolboxBase(sandbox: DaytonaSandbox): string {
   return `${sandbox.toolboxProxyUrl.replace(/\/+$/, '')}/${encodeURIComponent(sandbox.id)}`;
 }
 
-async function execute(
+export async function execute(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   command: string,
@@ -506,7 +506,7 @@ rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes
 `;
 }
 
-async function deleteSandbox(api: DaytonaApi, idOrName: string): Promise<void> {
+export async function deleteSandbox(api: DaytonaApi, idOrName: string): Promise<void> {
   try {
     await api.json(`/sandbox/${encodeURIComponent(idOrName)}`, { method: 'DELETE' });
   } catch (error) {
@@ -549,7 +549,7 @@ async function waitForWarmSnapshotOwner(
   );
 }
 
-async function ensureWarmSnapshot(
+export async function ensureWarmSnapshot(
   api: DaytonaApi,
   input: DaytonaCiInput,
   lockHash: string,
@@ -682,7 +682,7 @@ async function ensureWarmSnapshot(
   }
 }
 
-async function readRemoteExitCode(
+export async function readRemoteExitCode(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -702,7 +702,7 @@ async function readRemoteExitCode(
   return exitCode;
 }
 
-async function statRemoteLog(
+export async function statRemoteLog(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -722,7 +722,7 @@ async function statRemoteLog(
   return { size };
 }
 
-async function readRemoteLog(
+export async function readRemoteLog(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -740,7 +740,7 @@ async function readRemoteLog(
   return Uint8Array.from(Buffer.from(result.result.trim(), 'base64'));
 }
 
-async function downloadArtifacts(
+export async function downloadArtifacts(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   root: string,

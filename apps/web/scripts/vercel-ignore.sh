@@ -7,11 +7,11 @@
 # Two stages run in order:
 #   1. FE-relevance — if a push changed NOTHING that feeds the apps/web build
 #      (only sibling apps / infra / tests / docs), skip it on every branch.
-#   2. Deploy-target — staging and prod deploy real frontend changes. Dev and
-#      per-PR previews run only on ECS and always skip Vercel builds.
+#   2. Deploy-target — staging auto-builds. Production deploys through the
+#      gated workflow. Dev uses ECS. PR previews use Platinum or Daytona.
 #
-# For staging and production, default to BUILD on ANY uncertainty. Dev and
-# per-PR previews default to SKIP because ECS owns those frontend deployments.
+# Staging defaults to BUILD on uncertainty. Dev and PR previews default to SKIP.
+# Production auto-builds always skip because deploy-prod.yml owns that release.
 #
 # WHY THIS EXISTS
 # A backend/infra-only push to `prod` (e.g. a rollback that only flips
@@ -52,14 +52,25 @@ if ! printf '%s\n' "$changed" | grep -qvE "$SAFE"; then
 fi
 
 # ── Stage 2: deploy-target gate ──────────────────────────────────────────────
-# FE-relevant changes are present. The permanent environments always deploy;
-# per-PR previews are OPT-IN (previews on every PR were the bulk of build spend).
+# FE-relevant changes are present. Staging always deploys; per-PR previews are
+# OPT-IN (previews on every PR were the bulk of build spend).
+#
+# `prod` is NOT here: a push to prod must never auto-deploy the frontend.
+# The 2026-08-10 v0.12.7 outage shipped the new frontend to kortix.com while
+# the API was still on the old version (its prerequisite migration failed), so
+# every access check called a route that did not exist yet. The prod frontend
+# deploys ONLY from deploy-prod.yml's `deploy-web-vercel` job, which runs after
+# `verify-live-version` proves the API serves the release. Belt-and-braces with
+# `git.deploymentEnabled.prod: false` in vercel.json.
 REF="${VERCEL_GIT_COMMIT_REF:-}"
 case "${VERCEL_ENV:-}:$REF" in
-  production:*|*:staging|*:prod)
+  *:prod)
+    echo "vercel-ignore: prod deploys only via deploy-prod.yml after the API is live — skipping auto build."
+    exit 0 ;;
+  production:*|*:staging)
     echo "vercel-ignore: environment branch (${REF:-$VERCEL_ENV}) — building frontend."
     exit 1 ;;
 esac
 
-echo "vercel-ignore: dev and PR previews deploy on ECS only — skipping Vercel. ref=$REF"
+echo "vercel-ignore: dev deploys on ECS; PR previews deploy in sandboxes — skipping Vercel. ref=$REF"
 exit 0

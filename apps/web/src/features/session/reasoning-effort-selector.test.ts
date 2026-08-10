@@ -25,8 +25,8 @@ describe('reasoningEffortValuesFor — composer show/hide source of truth', () =
   });
 
   test('a managed model resolves through its pricingRef to real reasoning_options', () => {
-    const values = reasoningEffortValuesFor('claude-opus-4.8');
-    expect(values).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    const values = reasoningEffortValuesFor('deepseek-v4-flash');
+    expect(values).toEqual(['high', 'xhigh']);
   });
 });
 

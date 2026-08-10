@@ -58,6 +58,10 @@ export interface CatalogState {
   /** Categories the user can filter by, each with its true count. Empty for
    *  the Discover source and while the Easy Connect index is still building. */
   categories: PipedreamCategory[];
+  /** Apps matching the query that publish no actions, so the catalogue does
+   *  not offer them. Lets the no-match state say why instead of implying the
+   *  app does not exist — `q=SAP` is exactly this case. */
+  excludedNoActions: number;
   /** The browse page. Empty while searching or inside a category — both are
    *  one flat result set by definition. */
   sections: CatalogSection[];
@@ -85,8 +89,8 @@ export interface CatalogState {
  *
  * **Why two sources.** `connectors_api_discover` resolves to `false` by
  * default (`apps/api/src/experimental/features.ts:83`), so the Discover
- * catalogue is unavailable to most projects. Easy Connect (Pipedream) is not
- * flagged. Falling back keeps the page populated for every project.
+ * catalogue is unavailable to most workspaces. Easy Connect (Pipedream) is not
+ * flagged. Falling back keeps the page populated for every workspace.
  *
  * **Why not merge them.** The two publish overlapping apps under different
  * slugs and different `id` namespaces, and each has its own add flow. A merged
@@ -235,6 +239,8 @@ export function useCatalog(
   const easyConnectPage = easyConnectQuery.data?.pages[0];
   const categories = source === 'easy-connect' ? (easyConnectPage?.categories ?? []) : [];
 
+  const excludedNoActions = easyConnectPage?.excludedNoActions ?? 0;
+
   const reportedTotal =
     source === 'discover' ? discoverQuery.data?.pages[0]?.total : easyConnectPage?.total;
   const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
@@ -250,6 +256,7 @@ export function useCatalog(
     activeQuery,
     source,
     categories,
+    excludedNoActions,
     sections,
     // `isLoading` is the COLD state only — no cards on screen at all. A search
     // over a populated catalogue keeps its results and reports `isRefreshing`,
