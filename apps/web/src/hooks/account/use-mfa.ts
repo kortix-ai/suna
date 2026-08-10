@@ -121,6 +121,8 @@ export function useMfa() {
   return {
     factors: factorsQuery.data?.factors ?? [],
     factorsLoading: factorsQuery.isLoading,
+    factorsError: factorsQuery.isError,
+    onRetryFactors: () => factorsQuery.refetch(),
     sessionVerified: aalQuery.data?.current_level === 'aal2',
 
     enrolling,

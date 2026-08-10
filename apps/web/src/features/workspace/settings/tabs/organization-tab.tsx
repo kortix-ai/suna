@@ -145,6 +145,7 @@ import Loading from '@/components/ui/loading';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { accountStateKeys } from '@/hooks/billing';
 import { usePermission } from '@/lib/use-permission';
@@ -321,6 +322,21 @@ function OrganizationGeneralCard({
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to update account'),
   });
+
+  if (accountQuery.isError) {
+    return (
+      <ErrorState
+        size="sm"
+        title="Couldn't load account"
+        description={accountQuery.error instanceof Error ? accountQuery.error.message : undefined}
+        action={
+          <Button variant="outline" size="sm" onClick={() => accountQuery.refetch()}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
 
   if (accountQuery.isLoading || !account) {
     return <Skeleton className="h-[86px] w-full rounded-md" />;

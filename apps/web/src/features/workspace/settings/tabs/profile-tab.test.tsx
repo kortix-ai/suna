@@ -32,6 +32,30 @@ describe('ProfileTabView', () => {
   });
 });
 
+/**
+ * `factorsError` (fed by `useMfa()`'s `factorsQuery.isError`) must render a
+ * real error state with a retry action instead of falling through to the
+ * "No second factor enrolled" empty-state copy — that copy is a factual
+ * claim that the factor list came back empty, not that it failed to load.
+ */
+describe('ProfileTabView — two-factor error state', () => {
+  test('a failed factors fetch shows an error, not the empty-state banner', () => {
+    const out = renderToStaticMarkup(<ProfileTabView factorsError />);
+    expect(out).toContain('load your authenticator apps');
+    expect(out).toContain('>Retry<');
+    expect(out).not.toContain('No second factor enrolled');
+  });
+
+  test('loading takes priority over the error state', () => {
+    const out = renderToStaticMarkup(<ProfileTabView factorsLoading factorsError />);
+    expect(out).not.toContain('load your authenticator apps');
+  });
+
+  test('no error by default — the empty-state banner renders instead', () => {
+    expect(html()).toContain('No second factor enrolled');
+  });
+});
+
 // Ported from the deleted `features/accounts/settings/security-tab.test.tsx`
 // (Task 10) — `FactorRow` and `totpQrSrc` moved into `profile-tab.tsx`, this
 // tab being their only remaining consumer once the legacy user-settings

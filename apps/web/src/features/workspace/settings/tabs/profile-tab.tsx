@@ -42,6 +42,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Label } from '@/components/ui/label';
@@ -154,6 +155,8 @@ export interface ProfileTabViewProps {
   // Two-factor authentication
   factors?: FactorInfo[];
   factorsLoading?: boolean;
+  factorsError?: boolean;
+  onRetryFactors?: () => void;
   sessionVerified?: boolean;
   removeFactorTarget?: string | null;
   onRequestRemoveFactor?: (id: string) => void;
@@ -214,6 +217,8 @@ export function ProfileTabView({
   userEmail = '',
   factors = [],
   factorsLoading = false,
+  factorsError = false,
+  onRetryFactors = () => {},
   sessionVerified = false,
   removeFactorTarget = null,
   onRequestRemoveFactor = () => {},
@@ -374,6 +379,16 @@ export function ProfileTabView({
 
         {factorsLoading ? (
           <Skeleton className="h-14 w-full" />
+        ) : factorsError ? (
+          <ErrorState
+            size="sm"
+            title="Couldn't load your authenticator apps"
+            action={
+              <Button variant="outline" size="sm" onClick={onRetryFactors}>
+                Retry
+              </Button>
+            }
+          />
         ) : (
           <div className="space-y-2">
             {factors.length === 0 && !enrolling && (
@@ -801,6 +816,8 @@ export function ProfileTab() {
       userEmail={profileQuery.data?.email ?? ''}
       factors={mfa.factors}
       factorsLoading={mfa.factorsLoading}
+      factorsError={mfa.factorsError}
+      onRetryFactors={mfa.onRetryFactors}
       sessionVerified={mfa.sessionVerified}
       removeFactorTarget={mfa.removeFactorTarget}
       onRequestRemoveFactor={mfa.setRemoveFactorTarget}

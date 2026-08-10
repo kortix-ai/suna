@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   type PatPolicy,
   getPatPolicy,
@@ -101,6 +102,17 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
         <div className="space-y-5 px-4 py-5">
           {query.isLoading ? (
             <Skeleton className="h-32 w-full rounded-md" />
+          ) : query.isError ? (
+            <ErrorState
+              size="sm"
+              title="Couldn't load PAT policy"
+              description={query.error instanceof Error ? query.error.message : undefined}
+              action={
+                <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
           ) : (
             <>
               <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
@@ -158,7 +170,7 @@ export function PatPolicyCard({ accountId, canManage }: PatPolicyCardProps) {
           )}
         </div>
 
-        {canManage && !query.isLoading && (
+        {canManage && !query.isLoading && !query.isError && (
           <div className="border-border flex items-center justify-end border-t px-4 py-3">
             <Button size="sm" onClick={handleSave} disabled={mutation.isPending} className="gap-1.5">
               {mutation.isPending && <Loading className="size-3.5 shrink-0" />}

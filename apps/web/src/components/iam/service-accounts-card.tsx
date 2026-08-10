@@ -6,6 +6,7 @@
 // rotation = disable + create new.
 
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   CheckIcon as Check,
   CopyIcon as Copy,
@@ -123,6 +124,17 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
 
       {sasQuery.isLoading ? (
         <Skeleton className="h-16 w-full rounded-md" />
+      ) : sasQuery.isError ? (
+        <ErrorState
+          size="sm"
+          title="Couldn't load service accounts"
+          description={sasQuery.error instanceof Error ? sasQuery.error.message : undefined}
+          action={
+            <Button variant="outline" size="sm" onClick={() => sasQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        />
       ) : sas.length === 0 ? (
         <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
           No service accounts yet. Create one to get a bearer token for your CI and automations.
