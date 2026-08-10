@@ -17,6 +17,7 @@ export type SessionInvocationSource =
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
+  | 'system:connector-connected'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';

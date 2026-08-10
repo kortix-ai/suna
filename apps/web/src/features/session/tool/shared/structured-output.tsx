@@ -48,7 +48,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                 key={i}
                 className="bg-muted/40 border-border/60 flex items-start gap-2 rounded-2xl border px-2.5 py-1.5"
               >
-                <Ban className="text-muted-foreground/70 mt-0.5 size-3 flex-shrink-0" />
+                <Ban className="text-muted-foreground/70 mt-0.5 size-3 shrink-0" />
                 <div className="min-w-0 flex-1">
                   {section.errorType && (
                     <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
@@ -71,7 +71,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                 >
                   <ChevronRight
                     className={cn(
-                      'size-3 flex-shrink-0 transition-transform',
+                      'size-3 shrink-0 transition-transform',
                       showTrace && 'rotate-90',
                     )}
                   />
@@ -117,7 +117,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                   STATUS_BG.success,
                 )}
               >
-                <CheckCircle className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
+                <CheckCircle className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
                 <span className={cn('font-mono text-xs', STATUS_TEXT.success)}>{section.text}</span>
               </div>
             );
@@ -128,7 +128,7 @@ export function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                 key={i}
                 className="text-muted-foreground flex items-center gap-2 px-2.5 py-1 font-mono text-xs"
               >
-                <span className="bg-muted-foreground/30 size-1 flex-shrink-0 rounded-full" />
+                <span className="bg-muted-foreground/30 size-1 shrink-0 rounded-full" />
                 <span className="wrap-break-word">{section.text}</span>
               </div>
             );

@@ -179,6 +179,8 @@ function makeDeps(): ConnectorRouterDeps {
 
   return {
     attachmentStore,
+    // The flag itself has its own unit coverage; this fake reports every flag on.
+    featureFlagEnabled: async () => true,
     resolvePrincipal: async (c) => {
       const authorization = c.req.header('authorization');
       if (authorization === `Bearer ${TOKEN}`) return principal();

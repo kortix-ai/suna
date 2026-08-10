@@ -5,7 +5,6 @@ import type { RailItem } from './type';
 const item = (tab: RailItem['tab']): RailItem => ({ tab, label: tab });
 
 const flags = (overrides: Partial<RailFlags> = {}): RailFlags => ({
-  tunnelEnabled: false,
   marketplaceEnabled: false,
   llmGatewayAvailable: false,
   voiceEnabled: false,
@@ -27,14 +26,12 @@ describe('railGroups', () => {
     expect(tabs).toContain('profile');
     expect(tabs).toContain('channels');
     expect(tabs).toContain('billing');
-    expect(tabs).not.toContain('computers');
     expect(tabs).not.toContain('voice');
     expect(tabs).not.toContain('review');
     expect(tabs).not.toContain('marketplace');
   });
 
   test('each flag adds exactly its own tab', () => {
-    expect(tabsOf(flags({ tunnelEnabled: true }))).toContain('computers');
     expect(tabsOf(flags({ voiceEnabled: true }))).toContain('voice');
     expect(tabsOf(flags({ reviewEnabled: true }))).toContain('review');
     expect(tabsOf(flags({ marketplaceEnabled: true }))).toContain('marketplace');
@@ -47,16 +44,19 @@ describe('railGroups', () => {
     expect(tabs).toContain('voice');
   });
 
-  test('every flag on yields 27 content tabs', () => {
+  test('every flag on yields 26 content tabs', () => {
+    // 27 before the `main` merge — Computers graduated to the standalone
+    // Connectors page (#6313), taking the `agent_tunnel`-gated rail row and
+    // the whole `computers` tab with it.
     const all = flags({
-      tunnelEnabled: true, marketplaceEnabled: true,
+      marketplaceEnabled: true,
       llmGatewayAvailable: true, voiceEnabled: true, reviewEnabled: true,
     });
-    expect(tabsOf(all)).toHaveLength(27);
+    expect(tabsOf(all)).toHaveLength(26);
   });
 
   test('no tab appears in two groups', () => {
-    const tabs = tabsOf(flags({ tunnelEnabled: true, marketplaceEnabled: true, voiceEnabled: true, reviewEnabled: true }));
+    const tabs = tabsOf(flags({ marketplaceEnabled: true, voiceEnabled: true, reviewEnabled: true }));
     expect(new Set(tabs).size).toBe(tabs.length);
   });
 
@@ -89,7 +89,6 @@ describe('railGroups', () => {
   test('the rail excludes standalone agent, connectors and skills pages', () => {
     const tabs = tabsOf(
       flags({
-        tunnelEnabled: true,
         marketplaceEnabled: true,
         llmGatewayAvailable: true,
         voiceEnabled: true,
@@ -102,6 +101,8 @@ describe('railGroups', () => {
     expect(tabs).not.toContain('agents');
     expect(tabs).not.toContain('connectors');
     expect(tabs).not.toContain('skills');
+    // Computers joined them on `main` (#6313) — it is a connector now.
+    expect(tabs).not.toContain('computers');
   });
 
   test('the sections that stayed from Customize are untouched', () => {

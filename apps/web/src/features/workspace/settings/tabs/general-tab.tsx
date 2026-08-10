@@ -60,6 +60,15 @@
  * (`components/projects/schedule-view.tsx`, the Schedules tab). See each
  * file's own header comment for the move.
  *
+ * **Ported from `main` at the settings-panel merge: archive suppression.**
+ * `main` moved the deleted `/projects` list page's archive handler into
+ * `settings-view.tsx` as `runProjectArchive` +
+ * `accountProjectCountForArchive`. That file is deleted here, so both
+ * functions live below and this tab's archive mutation drives them. Without
+ * the port, `suppressAutoProjectAfterDelete()` would have had ZERO callers and
+ * `/projects/start` would silently re-provision a workspace the user just
+ * deleted. `general-tab.archive.test.ts` carries `main`'s tests for them.
+ *
  * `GeneralTabView` is the pure, props-only half — every stateful piece
  * (`GeneralWorkspaceCard`'s name+icon mutations, `SandboxProviderRow`'s
  * mutation+polling) owns its own hooks and can't render under
@@ -89,11 +98,13 @@ import {
   renameOnMutate,
   renameOnSettled,
 } from '@/hooks/projects/project-rename-cache';
+import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
   archiveProject,
   getProject,
+  listProjectsForAccount,
   updateProject,
   updateProjectSandboxProvider,
   type KortixProject,
@@ -246,6 +257,70 @@ function toIconValue(icon?: string | null, glyph?: GlyphSelection | null): Proje
 
 function SaveStatus() {
   return <span className="text-muted-foreground shrink-0 text-xs tabular-nums">Saving…</span>;
+}
+
+export interface RunProjectArchiveClient {
+  archiveProject: (projectId: string) => Promise<unknown>;
+}
+
+/**
+ * The archive mutation's real side effects, pulled out of the container so
+ * this exact wiring can be pinned with a plain fake instead of
+ * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
+ * hazard for sibling suites.
+ *
+ * Ported from `main` at the settings-panel merge (`settings-view.tsx`'s
+ * `runProjectArchive`), which itself carried it over from the deleted
+ * `/projects` list page's archive handler: "Archiving the LAST project must
+ * leave the account empty. Without this the auto-provision door would see zero
+ * active projects and immediately recreate one, undoing the delete the user
+ * just confirmed." Same condition (`<= 1`, against the count from BEFORE this
+ * archive lands), same tab-scoped `sessionStorage` guard
+ * (`suppressAutoProjectAfterDelete`) — deliberately NOT `localStorage`: a
+ * later sign-in or a fresh tab must still auto-provision for an empty account
+ * like any other.
+ *
+ * Without this, `main`'s `/projects/start` landing door is the only consumer of
+ * `isAutoProjectSuppressed()` and NOTHING would ever set the flag — deleting
+ * `settings-view.tsx` alone would have orphaned the whole mechanism silently.
+ *
+ * `onSuppress` only runs after `client.archiveProject` resolves — a failed
+ * archive must not suppress auto-provision for a project that still exists.
+ *
+ * `remainingProjectCountBeforeArchive` is `number | null`, NOT the deleted
+ * page's plain number: that page's count and its Archive button read the SAME
+ * query, so the button could not render before the count existed. Here the
+ * count is a separate, dependent query that can still be loading or errored
+ * when Delete is confirmed. `null` means "count unknown" and deliberately does
+ * NOT suppress — failing closed, because the cost of skipping a suppression is
+ * one unwanted auto-create, while the cost of a FALSE suppression is
+ * `/projects/start` refusing to auto-create for the next empty account this
+ * tab visits.
+ */
+export async function runProjectArchive(
+  projectId: string,
+  remainingProjectCountBeforeArchive: number | null,
+  client: RunProjectArchiveClient,
+  onSuppress: () => void,
+): Promise<void> {
+  await client.archiveProject(projectId);
+  if (remainingProjectCountBeforeArchive !== null && remainingProjectCountBeforeArchive <= 1) {
+    onSuppress();
+  }
+}
+
+/**
+ * `accountProjectsQuery.data` -> the count `runProjectArchive` needs, kept as
+ * its own exported step so the exact mapping is pinned independently of
+ * TanStack Query. The bug this guards against lived in a bare
+ * `accountProjectsQuery.data?.length ?? 0` at the call site: `undefined`
+ * (still loading, OR the query errored — react-query leaves `data` `undefined`
+ * in both) silently became `0`, which reads as "zero projects remain" and
+ * fires a false suppression. `undefined` must map to `null` ("unknown"), never
+ * to `0` ("confirmed empty"). Ported from `main`.
+ */
+export function accountProjectCountForArchive(data: unknown[] | undefined): number | null {
+  return data ? data.length : null;
 }
 
 /** Workspace name + icon. Moved from `settings-view.tsx`'s
@@ -473,8 +548,27 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
   const canEdit = canManage || canWrite;
 
+  // Same `qk.projects.list(accountId)` cache entry the workspace switcher and
+  // `/new` already fetch with, so this is warm (no extra request) for the
+  // common case. Read, not re-derived from `project`: this is the account's
+  // PROJECT COUNT before the archive commits, which `runProjectArchive` needs
+  // to decide whether this was the last one. Ported from `main`.
+  const accountId = project?.account_id;
+  const accountProjectsQuery = useQuery({
+    queryKey: qk.projects.list(accountId),
+    queryFn: () => listProjectsForAccount(accountId as string),
+    enabled: !!accountId,
+    ...contract('inventory'),
+  });
+
   const archiveMutation = useMutation({
-    mutationFn: () => archiveProject(projectId),
+    mutationFn: () =>
+      runProjectArchive(
+        projectId,
+        accountProjectCountForArchive(accountProjectsQuery.data),
+        { archiveProject },
+        suppressAutoProjectAfterDelete,
+      ),
     onSuccess: () => {
       successToast('Workspace archived');
       // qk.projects.scope(): for a single-account user the archived

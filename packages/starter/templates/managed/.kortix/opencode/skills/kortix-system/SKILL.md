@@ -7,8 +7,9 @@ description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, 
 
 <live-skills>
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
-**system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`, `kortix-memory`,
-`kortix-slack`, `kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
+**system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`,
+`kortix-memory`, `kortix-harness-refinement`, `kortix-slack`,
+`kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
@@ -346,6 +347,34 @@ watching — usually via `slack send`, silent otherwise), and it must be
   — the `kortix triggers ls/info/fire/enable/disable` command reference.
 </scheduling>
 
+<continual-harness>
+## Continual harness — the project refines its own scaffolding
+
+Everything that shapes agent behavior in this project — agent prompts,
+sub-agents, skills/tools, memory — is the **harness**, and it lives in git
+under `.kortix/`. Kortix treats the harness as continuously improvable
+from trajectory evidence, on two loops:
+
+1. **In-session refinement (self-invoked)** — every agent runs the
+   four-pass protocol from the `kortix-harness-refinement` skill over its
+   own recent turns the moment a failure signature costs it twice (and as
+   a checkpoint on long sessions). Edits apply in place — they take
+   effect next turn — committed `harness: …` to the session branch, with
+   one CR kept updated toward `main`.
+2. **Cross-session reflection** — the `harness-reflector` agent (daily
+   cron trigger, on by default) fans out read-only `session-reviewer`
+   sub-agents, one per recent session, to work through full session
+   histories; it aggregates their findings, refines the shared harness,
+   and opens a `harness: …` CR against `main`.
+
+Any agent may also invoke the protocol itself when a failure signature
+costs it twice — load `kortix-harness-refinement`
+(`kortix skills get kortix-harness-refinement` if it is not on disk)
+for the failure signatures, the four passes, and the guardrails (never
+edit managed `kortix-*` skills, never merge your own harness CR, no-op
+is valid).
+</continual-harness>
+
 <change-requests>
 **This is the single most important rule for any agent running in a
 Kortix session: if you want your work to land on `main`, you MUST open
@@ -483,7 +512,7 @@ and every block is **governance only** —
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
 `prompt` on the manifest side at all in v2 — every one of those is OpenCode
 behavior and lives in that agent's own `.kortix/opencode/agents/<name>.md`
-frontmatter, joined by name (this project's `kortix` and `memory-reflector`
+frontmatter, joined by name (this project's `kortix` and `harness-reflector`
 agents both work this way — open their `.md` files to see what they
 actually do). `default_agent` is required and must resolve to a declared,
 enabled agent. `[[channels]]` is removed outright (channel↔agent routing is

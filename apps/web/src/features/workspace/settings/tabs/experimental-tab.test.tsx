@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ExperimentalFeatureView } from '@kortix/sdk';
+import type { FeatureFlagView } from '@kortix/sdk';
 
 import { ExperimentalTabView } from './experimental-tab';
 
-const betaFeature: ExperimentalFeatureView = {
+const betaFeature: FeatureFlagView = {
   key: 'voice',
   name: 'Voice',
   description: 'Talk to your agent.',
@@ -14,7 +14,7 @@ const betaFeature: ExperimentalFeatureView = {
   overridden: true,
 };
 
-const experimentalFeature: ExperimentalFeatureView = {
+const experimentalFeature: FeatureFlagView = {
   key: 'apps',
   name: 'Apps',
   description: 'Early-access app discovery.',
@@ -83,8 +83,12 @@ describe('ExperimentalTabView', () => {
   });
 
   test('renders an empty state with no features and no table markup', () => {
+    // The shared `EmptyState` primitive since the `main` merge — ported from
+    // that branch's `feature-flags-view.tsx`, replacing a bare sentence.
     const out = renderToStaticMarkup(<ExperimentalTabView features={[]} />);
-    expect(out).toContain('No experimental features are available on this project yet.');
+    expect(out).toContain('data-slot="empty"');
+    expect(out).toContain('No experimental features');
+    expect(out).toContain('This deployment exposes no per-project feature flags.');
     expect(out).not.toContain('<table');
   });
 
@@ -100,6 +104,56 @@ describe('ExperimentalTabView', () => {
     expect(out).toContain('Retry');
     expect(out).toContain('boom');
     expect(out).not.toContain('Voice');
+  });
+
+  test('every stability the API can serve has its own badge, including stable', () => {
+    // Ported from `main`'s `feature-flags-view.test.ts`. `FeatureFlagStability`
+    // is experimental | beta | stable; the two-way ternary this replaced
+    // rendered a `stable` flag as "Experimental" — a wrong label, not a
+    // compile error.
+    const stable: FeatureFlagView = {
+      key: 'teams',
+      name: 'Teams',
+      description: 'Shipped, still behind a switch.',
+      stability: 'stable',
+      available: true,
+      enabled: true,
+      overridden: false,
+    };
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[stable]} />);
+    expect(out).toContain('Stable');
+  });
+
+  test('each row states whether it is a default or a project override', () => {
+    // Ported from `main`'s `feature-flags-view.test.ts`. `overridden` reports
+    // WHETHER the project set a choice, not what the default was.
+    const overridden = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
+    expect(overridden).toContain('Overridden for this project');
+
+    const inherited = renderToStaticMarkup(
+      <ExperimentalTabView features={[experimentalFeature]} />,
+    );
+    expect(inherited).toContain('Default off');
+    expect(
+      renderToStaticMarkup(
+        <ExperimentalTabView features={[{ ...experimentalFeature, enabled: true }]} />,
+      ),
+    ).toContain('Default on');
+  });
+
+  test('the customize-write notice renders only when the probe has resolved to a denial', () => {
+    // Ported from `main`'s `feature-flags-view.tsx`. While the IAM probe is in
+    // flight the switches are already disabled (fail-closed) but the reason is
+    // unknown, so the line must stay off rather than assert a denial.
+    const denied = renderToStaticMarkup(
+      <ExperimentalTabView features={[betaFeature]} canManage={false} showPermissionNotice />,
+    );
+    expect(denied).toContain('customize-write permission');
+
+    const probing = renderToStaticMarkup(
+      <ExperimentalTabView features={[betaFeature]} canManage={false} />,
+    );
+    expect(probing).not.toContain('customize-write permission');
   });
 
   test('does not render General-tab markers — the sandbox-provider pin and Delete workspace live there instead', () => {

@@ -22,60 +22,58 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { getClient, RuntimeNotReadyError } from '../core/runtime/client';
-import {
-  commitSessionRewind,
-  messagesBeforeRewind,
-  reconcileCommittedSessionRewind,
-  type SessionRewindState,
-} from '../core/session/rewind';
-import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
-import {
-  setOpenCodeHealth,
-  setSandboxStatus,
-} from '../browser/stores/sandbox-connection-store';
-import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
-import { useSyncStore } from '../browser/stores/sync-store';
 import {
   beginSessionPromptObservation,
   endSessionPromptObservation,
 } from '../browser/session-sync/session-sync-registry';
-import { setCurrentRuntime } from '../core/session/current-runtime';
+import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
+import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { setOpenCodeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
+import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { useSyncStore } from '../browser/stores/sync-store';
+import { BillingError, parseBillingError } from '../core/http/api/errors';
+import { isSessionFresh } from '../core/http/fresh-sessions';
+import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
 import {
-  isSessionStartError,
   type SessionStartResult,
+  isSessionStartError,
   sessionStartKey,
   startProjectSession,
 } from '../core/rest/projects-client';
-import { isSessionFresh } from '../core/http/fresh-sessions';
-import { BillingError, parseBillingError } from '../core/http/api/errors';
-import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
-import { extractGatewayErrorDetails } from '../core/turns/errors';
-import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
-import { useOpenCodeEventStream } from './use-opencode-events';
-import type { ModelKey } from './use-model-store';
-import { formatModelString } from './use-opencode-local';
-import { useProjectConfig } from './use-project-config';
-import { useProjectModels } from './use-project-models';
-import { usePermissionSelfHeal } from './use-permission-self-heal';
-import { useQuestionSelfHeal } from './use-question-self-heal';
-import { useRuntimePhase } from './use-runtime-phase';
-import { clearStartStash, readStartStash } from './session-start-stash';
-import { useSessionPicks } from './use-session-picks';
-import { useSessionSync } from './use-session-sync';
-import { reconcileHydratedSessionTitle } from './session-title-sync';
-import { useVisibleAgents } from './use-visible-agents';
+import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
+import { setCurrentRuntime } from '../core/session/current-runtime';
 import {
+  type SessionRewindState,
+  commitSessionRewind,
+  messagesBeforeRewind,
+  reconcileCommittedSessionRewind,
+} from '../core/session/rewind';
+import { extractGatewayErrorDetails } from '../core/turns/errors';
+import { clearStartStash, readStartStash } from './session-start-stash';
+import { reconcileHydratedSessionTitle } from './session-title-sync';
+import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
+import type { ModelKey } from './use-model-store';
+import { useOpenCodeEventStream } from './use-opencode-events';
+import { formatModelString } from './use-opencode-local';
+import {
+  type PromptPart,
   rejectQuestion as rejectQuestionApi,
   replyToPermission,
   replyToQuestion,
   useAbortOpenCodeSession,
   useExecuteOpenCodeCommand,
   useSendOpenCodeMessage,
-  type PromptPart,
 } from './use-opencode-sessions';
 import { unwrap } from './use-opencode-sessions/shared';
+import { usePermissionSelfHeal } from './use-permission-self-heal';
+import { useProjectConfig } from './use-project-config';
+import { useProjectModels } from './use-project-models';
+import { useQuestionSelfHeal } from './use-question-self-heal';
+import { useRuntimePhase } from './use-runtime-phase';
+import { useSessionPicks } from './use-session-picks';
+import { derivePhase } from './use-session-phase';
+import { useSessionSync } from './use-session-sync';
+import { useVisibleAgents } from './use-visible-agents';
 
 /** Coarse session lifecycle for the host's top-level gating. */
 export type SessionPhase = 'starting' | 'ready' | 'error';
@@ -121,10 +119,151 @@ export function shouldPollSessionStart(
   data: SessionStartResult | null | undefined,
 ): number | false {
   if (isSessionStartError(error)) return false;
+  if (data?.retriable === false) return false;
   const stage = data?.stage;
   return stage === 'ready' || stage === 'failed' || stage === 'stopped'
     ? false
     : SESSION_START_POLL_MS;
+}
+
+/**
+ * How long `/start` can return NEITHER data NOR an error before it counts as
+ * "given up" rather than "still working".
+ *
+ * `startProjectSession` swallows every 5xx/408/429/transport failure into a
+ * `null` result instead of throwing
+ * (`core/rest/projects-client/session-sandbox.ts`), so on a persistent
+ * outage `start.error` and `start.data` both stay `null` forever and
+ * `shouldPollSessionStart(null, null)` keeps returning `SESSION_START_POLL_MS`
+ * — there is no terminal stage and no error ever produced to observe.
+ * Without this ceiling, a caller waiting for `/start` to "settle" (e.g. the
+ * `phase` derivation below) can never learn it gave up, and a runtime error
+ * arriving alongside a wedged `/start` pins that caller in "still starting"
+ * forever — a silent hang, strictly worse than a visible error card.
+ *
+ * A genuine resume never trips this: every poll on a resuming box returns
+ * real `data` (a `stage`), so the inconclusive clock keeps resetting and this
+ * budget never starts counting — it only fires when `/start` itself has
+ * nothing to say, tick after tick. A cold sandbox resume can legitimately
+ * take tens of seconds end to end, but that legitimate case is exactly the
+ * one that keeps producing data and never reaches this bound.
+ *
+ * **Worst-case actual flip time is ~61.5s, not 45s** — say so accurately
+ * rather than understate it. 45s is 30 consecutive empty poll intervals at
+ * `SESSION_START_POLL_MS` (1.5s each), but the budget is only ever CHECKED
+ * at a poll tick, and `waitMs` (default
+ * `15_000`, the server-side long-poll budget passed to `startProjectSession`)
+ * means a single tick's request can itself take up to ~15s before resolving.
+ * So the tick that finally crosses the 45s line can itself land up to one
+ * full cycle late: `45_000 + (waitMs + SESSION_START_POLL_MS)` ≈
+ * `45_000 + 16_500` = `61_500`ms in the worst case. That is still acceptable:
+ * it is a finite, single-digit-minutes ceiling on a failure this task
+ * otherwise made hang forever, and erring toward a LATE flip (never early)
+ * is the safe direction — it never cuts short a legitimate wake, only delays
+ * how quickly a genuine outage surfaces its error card.
+ */
+export const START_INCONCLUSIVE_GIVE_UP_MS = 45_000;
+
+/**
+ * Has `/start` been returning nothing usable — no data, no error — for at
+ * least {@link START_INCONCLUSIVE_GIVE_UP_MS}? Kept separate from
+ * `shouldPollSessionStart` (which correctly keeps saying "poll again":
+ * retrying costs nothing) because "should the query retry" and "should a
+ * caller stop waiting on it" are different questions once the first answer
+ * is permanently yes.
+ */
+export function hasStartGivenUp(
+  data: SessionStartResult | null | undefined,
+  error: unknown,
+  inconclusiveSinceMs: number | null,
+  nowMs: number,
+): boolean {
+  if (data || error) return false;
+  return (
+    inconclusiveSinceMs !== null && nowMs - inconclusiveSinceMs >= START_INCONCLUSIVE_GIVE_UP_MS
+  );
+}
+
+/**
+ * Compute the next value for the "inconclusive since" clock that feeds
+ * {@link hasStartGivenUp}, given one poll tick's outcome. Pure and separate
+ * from the `useEffect` that calls it so the arm/reset decision is
+ * unit-testable without rendering the hook — an earlier version of this
+ * logic lived only in the effect and was wrong in a way the pure
+ * `computeStartSettled` tests could not catch: it armed while the query was
+ * DISABLED, and the stale stamp then carried into the enabled window,
+ * consuming the whole grace period before a single real `/start` request had
+ * fired.
+ *
+ * The invariant: the clock may only measure time during which the query was
+ * actually able to run for THIS session.
+ * - Disabled → always `null`. A query that cannot fetch has neither "given
+ *   up" nor is it "still working" — it hasn't started. A stamp taken while
+ *   disabled must not survive into the enabled window.
+ * - Data or error arrived → clear to `null`. The poll said SOMETHING.
+ * - Enabled, inconclusive (no data, no error), not mid-fetch → arm at
+ *   `nowMs` if nothing is armed yet; otherwise keep the existing stamp — the
+ *   clock starts once, at the FIRST inconclusive tick, not every tick.
+ * - Mid-fetch → keep whatever is already armed; a fetch in flight is not
+ *   itself informative either way, and time spent waiting on it still counts.
+ *
+ * Session-identity resetting (`projectId`/`sessionId` changing under a reused
+ * hook instance) is handled by a separate effect, not here — this function
+ * has no session id to key on by design, matching the narrow input the
+ * `useEffect` actually has on each tick.
+ */
+export function nextInconclusiveSince(input: {
+  current: number | null;
+  enabled: boolean;
+  hasData: boolean;
+  hasError: boolean;
+  isFetching: boolean;
+  nowMs: number;
+}): number | null {
+  if (!input.enabled) return null;
+  if (input.hasData || input.hasError) return null;
+  if (input.isFetching) return input.current;
+  return input.current ?? input.nowMs;
+}
+
+/**
+ * Whether the `/start` poll should be treated as SETTLED — resolved, failed,
+ * or given up — for a caller (like `phase`, below) that needs to stop
+ * waiting on it. A disabled query settles immediately: a query that never
+ * runs was never "still working" in the first place.
+ *
+ * Takes `hasGivenUp` as an ALREADY-RESOLVED boolean, not a timestamp pair.
+ * The caller previously stored this function's ENTIRE return value in
+ * `useState` — including the `!enabled -> true` branch — so a
+ * disabled->enabled transition (or a session switch) could read a stale
+ * `true` for one committed, painted frame, and a live `runtimeError` in that
+ * window rendered 'error' before a single real `/start` request had fired.
+ * `enabled`, `isFetching`, `data`, and `error` are cheap to read fresh on
+ * every call, so they no longer go through state at all — only `hasGivenUp`
+ * (via {@link hasStartGivenUp}) inherently needs wall-clock tracking, so it
+ * is the only piece the caller is allowed to latch.
+ *
+ * ORDER IS LOAD-BEARING: `hasGivenUp` must be tested BEFORE `isFetching`.
+ * Giving up does not stop the poll — `shouldPollSessionStart(null, null)`
+ * keeps returning 1500ms for as long as the outage lasts — so with the
+ * fetch check first, this answered false
+ * mid-poll and true between polls, forever. `phase` flipped 'starting' <->
+ * 'error' with it and the runtime error card blinked on and off once per poll
+ * cycle. Give-up is a sticky verdict (the caller's effect clears it only when
+ * /start actually answers, when the session changes, or when the query is
+ * disabled), so once it is in, no single in-flight tick may take it back out.
+ */
+export function computeStartSettled(input: {
+  enabled: boolean;
+  isFetching: boolean;
+  data: SessionStartResult | null | undefined;
+  error: unknown;
+  hasGivenUp: boolean;
+}): boolean {
+  if (!input.enabled) return true;
+  if (input.hasGivenUp) return true;
+  if (input.isFetching) return false;
+  return !shouldPollSessionStart(input.error, input.data);
 }
 
 /**
@@ -149,11 +288,7 @@ export const SESSION_START_POLL_OPTIONS = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Discriminant for `KortixSendError` — what kind of failure interrupted a send. */
-export type KortixSendErrorKind =
-  | 'billing'
-  | 'connector'
-  | 'runtime-not-ready'
-  | 'runtime-error';
+export type KortixSendErrorKind = 'billing' | 'connector' | 'runtime-not-ready' | 'runtime-error';
 
 /** One connector the session needs and has no usable connection for. */
 export interface KortixSendErrorConnector {
@@ -210,7 +345,6 @@ export interface KortixSendError {
 // fallback for callers that re-wrap the original error (losing the
 // `instanceof` chain) but still preserve its message.
 const RUNTIME_NOT_READY_MARKER = 'Server URL not ready';
-
 
 /**
  * Flip the optimistic message these parts belong to from `pending` to
@@ -285,9 +419,7 @@ function connectorRefusalConnections(error: unknown): KortixSendErrorConnector[]
       id: connection.id,
       slug: connection.slug,
       name:
-        typeof connection.name === 'string' && connection.name
-          ? connection.name
-          : connection.slug,
+        typeof connection.name === 'string' && connection.name ? connection.name : connection.slug,
       authorization_strategy: strategy,
     });
   }
@@ -311,7 +443,12 @@ export function classifySendError(error: unknown): KortixSendError {
   if (error && typeof error === 'object') {
     const parsed = parseBillingError(error);
     if (parsed instanceof BillingError) {
-      return { kind: 'billing', message: parsed.message, billing: parsed, cause: error };
+      return {
+        kind: 'billing',
+        message: parsed.message,
+        billing: parsed,
+        cause: error,
+      };
     }
     const connectors = connectorRefusalConnections(error);
     if (connectors) {
@@ -538,11 +675,7 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   loadOlder: async () => {},
 };
 
-export function useSession(
-  projectId: string,
-  sessionId: string,
-  options: UseSessionOptions = {},
-) {
+export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
   const queryClient = useQueryClient();
   const titleRefreshAbortRef = useRef<AbortController | null>(null);
   const {
@@ -554,10 +687,11 @@ export function useSession(
   } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
+  const startEnabled = enabled && !!projectId && !!sessionId;
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     queryFn: () => startProjectSession(projectId, sessionId, waitMs),
-    enabled: enabled && !!projectId && !!sessionId,
+    enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>
       isSessionStartError(error) && error.status === 404
@@ -572,6 +706,66 @@ export function useSession(
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
 
+  // Track how long /start has been returning nothing usable — no data, no
+  // error — so `computeStartSettled` can bound the "given up" case (see
+  // START_INCONCLUSIVE_GIVE_UP_MS) instead of waiting on a poll that a
+  // swallowed transport failure can keep alive forever. `nextInconclusiveSince`
+  // owns the arm/reset decision (pure, unit-tested); the effects here are thin
+  // callers of it. Only the RAW TIMESTAMP lives in a ref — `hasGivenUp` below
+  // is the one piece of *derived* state, and everything else `phase` needs
+  // (`enabled`/`isFetching`/`data`/`error`) is read fresh at render, never
+  // stored (see the comment on `startSettled` below for why).
+  const startInconclusiveSinceRef = useRef<number | null>(null);
+  const [startGivenUp, setStartGivenUp] = useState(false);
+  // A new session gets a fresh clock AND a fresh give-up verdict. This hook
+  // instance is reused across session navigation (see the switch effect
+  // below), and neither may bleed from a DIFFERENT (projectId, sessionId)
+  // into this one's give-up budget. Declared before the arming effect so both
+  // clear first, within the same commit, when the session changes.
+  useEffect(() => {
+    startInconclusiveSinceRef.current = null;
+    setStartGivenUp(false);
+  }, [projectId, sessionId]);
+  useEffect(() => {
+    // `Date.now()` lives here, not in the render body: reading it during
+    // render made this impure and a StrictMode/concurrent-render hazard. One
+    // read feeds both the arm decision and the give-up decision, computed
+    // together so they never disagree about "now".
+    const nowMs = Date.now();
+    startInconclusiveSinceRef.current = nextInconclusiveSince({
+      current: startInconclusiveSinceRef.current,
+      enabled: startEnabled,
+      hasData: !!start.data,
+      hasError: !!start.error,
+      isFetching: start.isFetching,
+      nowMs,
+    });
+    setStartGivenUp(
+      hasStartGivenUp(start.data, start.error, startInconclusiveSinceRef.current, nowMs),
+    );
+  }, [startEnabled, start.data, start.error, start.isFetching]);
+  // `startEnabled`/`start.isFetching`/`start.data`/`start.error` are read
+  // FRESH here, on every render — never stored. Only `startGivenUp` comes
+  // from state. The PREVIOUS version stored `computeStartSettled`'s entire
+  // return value (including the `!enabled -> true` branch) via `useState`,
+  // so on the commit where `startEnabled` flipped from `false` to `true` (a
+  // billing unblock, or auth finishing load), this read the STALE stored
+  // `true` for one committed, painted frame — and with a live `runtimeError`
+  // already present, that frame rendered `phase === 'error'`, the exact
+  // premature panic card this task exists to remove. Reading
+  // `enabled`/`isFetching`/`data`/`error` fresh at render makes that
+  // structurally impossible: nothing here can ever be one render behind its
+  // own inputs except the one value that inherently needs wall-clock
+  // tracking (`startGivenUp`), and that value is now session-reset above
+  // too.
+  const startSettled = computeStartSettled({
+    enabled: startEnabled,
+    isFetching: start.isFetching,
+    data: start.data,
+    error: start.error,
+    hasGivenUp: startGivenUp,
+  });
+
   // 2. Point the SDK's runtime at this session's sandbox once ready. Track WHICH
   // sandbox we switched to (not a bare bool) so navigating between sessions (this
   // hook instance is reused) re-gates instead of binding the new session to the
@@ -585,14 +779,17 @@ export function useSession(
     // the current runtime url. Every read (getClient, the SSE stream, files/
     // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
     // health effect below seeds connected+healthy with no client poll.
-    setCurrentRuntime(getSandboxUrlForExternalId(sandbox.external_id), sandbox.external_id, sandbox.sandbox_id);
+    setCurrentRuntime(
+      getSandboxUrlForExternalId(sandbox.external_id),
+      sandbox.external_id,
+      sandbox.sandbox_id,
+    );
     setSwitchedSandboxId(sandbox.sandbox_id);
   }, [startReady, sandbox, switchedSandboxId]);
   // Clear the current runtime when this session view unmounts.
   useEffect(() => () => setCurrentRuntime(null), []);
 
-  const switched =
-    startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
+  const switched = startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -680,13 +877,11 @@ export function useSession(
   const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
   const questions = useMemo(
-    () =>
-      switched ? Object.values(questionMap).filter((q) => q.sessionID === ocSessionId) : [],
+    () => (switched ? Object.values(questionMap).filter((q) => q.sessionID === ocSessionId) : []),
     [questionMap, ocSessionId, switched],
   );
   const permissions = useMemo(
-    () =>
-      switched ? Object.values(permissionMap).filter((p) => p.sessionID === ocSessionId) : [],
+    () => (switched ? Object.values(permissionMap).filter((p) => p.sessionID === ocSessionId) : []),
     [permissionMap, ocSessionId, switched],
   );
   const runtimeActionReady = switched && !!rootSessionId;
@@ -733,7 +928,10 @@ export function useSession(
   }, [userMsgCount, pending]);
   useEffect(() => {
     if (!pending) return;
-    const t = setTimeout(() => setSendState((s) => (s.pending ? { ...s, pending: null } : s)), 30_000);
+    const t = setTimeout(
+      () => setSendState((s) => (s.pending ? { ...s, pending: null } : s)),
+      30_000,
+    );
     return () => clearTimeout(t);
   }, [pending]);
 
@@ -765,22 +963,23 @@ export function useSession(
     // of being deleted by a rehydrate that only carries older turns.
     markDispatchedForPartIds(ocSessionId, parts);
 
-    await sendRestPromptWithObservation(
-      ocSessionId,
-      sandbox?.external_id ?? undefined,
-      () =>
-        sendMutation.mutateAsync({
-          sessionId: ocSessionId,
-          parts,
-          ...(Object.keys(opts).length ? { options: opts } : {}),
-        }),
+    await sendRestPromptWithObservation(ocSessionId, sandbox?.external_id ?? undefined, () =>
+      sendMutation.mutateAsync({
+        sessionId: ocSessionId,
+        parts,
+        ...(Object.keys(opts).length ? { options: opts } : {}),
+      }),
     );
     setRestRewind(commitSessionRewind);
   };
 
   const send = (
     text: string,
-    override?: { model?: ModelKey | null; agent?: string | null; variant?: string | null },
+    override?: {
+      model?: ModelKey | null;
+      agent?: string | null;
+      variant?: string | null;
+    },
   ) => {
     if (!runtimeActionReady) return;
     pendingBaseCount.current = userMsgCount;
@@ -851,8 +1050,17 @@ export function useSession(
   };
 
   const runtimeSessionError = canonicalSession.error;
-  const phase: SessionPhase =
-    terminal || startError || runtimeSessionError ? 'error' : switched ? 'ready' : 'starting';
+  const phase: SessionPhase = derivePhase({
+    terminal,
+    startError,
+    runtimeError: runtimeSessionError,
+    // `startSettled` is computed above via `computeStartSettled`, which wraps
+    // `shouldPollSessionStart` (the EXISTING definition of "the poll is still
+    // working") and additionally bounds the case where /start swallows a
+    // persistent failure into `null` forever — see START_INCONCLUSIVE_GIVE_UP_MS.
+    startSettled,
+    switched,
+  });
 
   // 10. Replay the new-session hand-off once ready + thread empty (exactly once).
   // Force-disabled when `chatEngine` is off: this reads `sync.isLoading`/
@@ -870,7 +1078,11 @@ export function useSession(
     if (sync.messages.length > 0) return;
     if (stash.model) picks.setModel(stash.model);
     if (stash.agent) picks.setAgent(stash.agent);
-    send(stash.prompt, { model: stash.model, agent: stash.agent, variant: stash.variant });
+    send(stash.prompt, {
+      model: stash.model,
+      agent: stash.agent,
+      variant: stash.variant,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, sync.isLoading, sync.messages.length, sessionId, replayStartStash, chatEngine]);
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { ArrowRightIcon as ArrowRight, GitDiffIcon as FileDiff } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
@@ -12,7 +13,6 @@ import { ChangeRequestDetailDialog } from '@/features/project-files/components/c
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
@@ -125,7 +125,7 @@ function NavItemInner({ projectId }: { projectId: string }) {
   // opening a single CR's detail dialog. Its badge then counts the SAME unified
   // "needs_you" set the per-session row dots and the Customize rail read, so the
   // pill, the dots, and the rail always agree on one number.
-  const reviewEnabled = useReviewCenterEnabled(projectId);
+  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
   const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
   // Flag on → the unified inbox's "awaiting you" count (open CRs are a subset of

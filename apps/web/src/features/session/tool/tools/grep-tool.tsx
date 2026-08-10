@@ -43,9 +43,9 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Grep',
+        title: 'Searched',
         subtitle: directory,
         args: [
           ...args,
@@ -64,7 +64,7 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         <ToolResultCard>
           <InlineGrepResults
             groups={grepResult.groups}
-            onFileClick={(fp) => openFile(fp)}
+            onFileClick={openFile}
             toDisplayPath={toDisplayPath}
             disabled={!navigationEnabled}
           />

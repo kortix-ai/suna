@@ -7,16 +7,15 @@
 # Two stages run in order:
 #   1. FE-relevance — if a push changed NOTHING that feeds the apps/web build
 #      (only sibling apps / infra / tests / docs), skip it on every branch.
-#   2. Deploy-target — the permanent environments (main/staging/prod) always
-#      deploy real FE changes; per-PR previews are OPT-IN to save build spend.
+#   2. Deploy-target — staging and prod deploy real frontend changes. Dev and
+#      per-PR previews run only on ECS and always skip Vercel builds.
 #
-# For the permanent environments, default to BUILD on ANY uncertainty — never
-# silently skip a real FE deploy. Per-PR previews invert that: default SKIP,
-# build only when explicitly opted in (a "preview" label or a preview/* branch).
+# For staging and production, default to BUILD on ANY uncertainty. Dev and
+# per-PR previews default to SKIP because ECS owns those frontend deployments.
 #
 # WHY THIS EXISTS
 # A backend/infra-only push to `prod` (e.g. a rollback that only flips
-# infra/k8s image tags) must NOT rebuild + redeploy the frontend. Vercel
+# backend-only deployment metadata must NOT rebuild + redeploy the frontend. Vercel
 # auto-deploys the prod branch on every push, so without this an infra-only
 # push would re-deploy the current FE and CLOBBER a Vercel "instant rollback"
 # of the frontend. A real promote changes FE source (apps/web, packages,
@@ -57,36 +56,10 @@ fi
 # per-PR previews are OPT-IN (previews on every PR were the bulk of build spend).
 REF="${VERCEL_GIT_COMMIT_REF:-}"
 case "${VERCEL_ENV:-}:$REF" in
-  production:*|*:main|*:staging|*:prod)
+  production:*|*:staging|*:prod)
     echo "vercel-ignore: environment branch (${REF:-$VERCEL_ENV}) — building frontend."
     exit 1 ;;
 esac
 
-# A per-PR / feature-branch preview. Build only when explicitly opted in:
-#   • branch named preview/*                       (no secret required), OR
-#   • the PR carries a "preview" label             (needs GITHUB_TOKEN, PR-read).
-case "$REF" in
-  preview/*)
-    echo "vercel-ignore: preview/* branch — building opt-in preview."
-    exit 1 ;;
-esac
-
-PR="${VERCEL_GIT_PULL_REQUEST_ID:-}"
-OWNER="${VERCEL_GIT_REPO_OWNER:-kortix-ai}"
-SLUG="${VERCEL_GIT_REPO_SLUG:-suna}"
-if [ -n "$PR" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-  labels="$(curl -fsSL \
-    -H "Authorization: Bearer $GITHUB_TOKEN" \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/$OWNER/$SLUG/issues/$PR/labels" 2>/dev/null)" || labels=""
-  if printf '%s' "$labels" | grep -qE '"name"[[:space:]]*:[[:space:]]*"preview"'; then
-    echo "vercel-ignore: PR #$PR carries the 'preview' label — building opt-in preview."
-    exit 1
-  fi
-  echo "vercel-ignore: PR #$PR has no 'preview' label — skipping preview (add the label + redeploy to build one)."
-  exit 0
-fi
-
-# No way to confirm an opt-in (no PR context or no GITHUB_TOKEN) → skip.
-echo "vercel-ignore: preview not opted-in (no preview/* branch, no 'preview' label check available) — skipping. ref=$REF pr=${PR:-none}"
+echo "vercel-ignore: dev and PR previews deploy on ECS only — skipping Vercel. ref=$REF"
 exit 0

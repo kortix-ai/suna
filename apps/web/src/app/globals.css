@@ -990,29 +990,6 @@
    inline style beats a stylesheet declaration, which meant the stagger
    survived `prefers-reduced-motion` on `.kx-fade-up` — the movement stopped
    but the staged reveal did not. */
-@keyframes kx-card-reveal {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.kx-card-reveal {
-  animation: kx-card-reveal 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
-  animation-delay: var(--kx-card-reveal-delay, 0ms);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .kx-card-reveal {
-    animation-name: kx-fade;
-    animation-delay: 0ms;
-  }
-}
-
 @keyframes blur-fade-in {
   from {
     opacity: 0;

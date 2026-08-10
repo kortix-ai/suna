@@ -138,6 +138,9 @@ export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCod
   const server = Bun.serve<ProxyWsData>({
     hostname: '127.0.0.1',
     port: opts.port ?? 0,
+    // Bun's default 10s idleTimeout severs exactly the connections the TUI
+    // depends on: the idle global SSE event stream and long-blocking sends.
+    idleTimeout: 0,
     fetch: async (req, bunServer) => {
       const incoming = new URL(req.url);
       if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {

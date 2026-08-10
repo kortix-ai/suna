@@ -84,8 +84,8 @@ The implementation plan should run the narrowest failing test during each TDD cy
 
 - `bun test apps/api/src/__tests__/billing/free-tier*.test.ts`
 - `bun test apps/api/src/__tests__/unit-resolve-candidates-free-tier.test.ts`
-- `cd tests && bun bin/ke2e.ts run --domain billing,projects,llm-gateway`
-- `pnpm --filter @kortix/tests test:e2e`
+- `pnpm test -- --domain billing,projects,llm-gateway`
+- `pnpm test -- --browser-only`
 - `npx eslint <touched web test files>`
 
 If live signup or sandbox tests require the local stack, start or reuse `pnpm dev` and verify `http://localhost:8008/v1/health` before running them.

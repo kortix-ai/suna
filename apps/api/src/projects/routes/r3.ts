@@ -12,18 +12,32 @@ import { loadProjectConfig } from '../git';
 import { parseBasicAuthHeader } from '../git-backends';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName, resolveProjectSecretForConsumer } from '../secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import {
+  propagateProjectSecretsToActiveSandboxes,
+  type ProjectSecretPropagationResult,
+} from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
-import { SecretConsumerSchema, UpdateSecretStrategyInputSchema } from '@kortix/api-contract';
+import {
+  SecretConsumerSchema,
+  SecretSchema as ContractSecretSchema,
+  UpdateSecretStrategyInputSchema,
+} from '@kortix/api-contract';
 import { parseEgressPolicy } from '../../secrets/strategy';
+import {
+  findBoundaryDestinationConflict,
+  networkBoundaryPolicyError,
+  type BoundaryDestinationConflict,
+} from '../../secrets/network-boundary';
+import { networkBoundaryDeliveryAvailable } from '../../secrets/network-boundary-availability';
 import {
   connectors,
   projectSecrets,
   projectSessionSecretHandles,
   projects,
   sessionSandboxes,
+  type SecretEgressPolicy,
 } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
@@ -33,10 +47,99 @@ import {
 } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
-import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
+import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection, type SecretAgentGrantConfig } from '../lib/serializers';
 import { sessionWorkspaceAllowsRepositoryAccess } from '../lib/session-workspace-access';
 
 type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
+
+// ─── Secret write responses ─────────────────────────────────────────────────
+// A secret write may also have to reach every LIVE sandbox in the project. The
+// two write routes that can move a network-boundary credential report what that
+// fan-out actually did, because a save that stored fine and delivered nowhere
+// otherwise looks identical to a save that worked. `delivery_sync` is null when
+// no fan-out ran. It is NOT part of `SecretSchema` — a secret READ has no sync
+// to report.
+
+const SecretDeliverySyncSchema = z
+  .object({
+    ok: z.boolean(),
+    targeted: z.number(),
+    synced: z.number(),
+    failed: z.number(),
+    failures: z.array(
+      z.object({
+        session_id: z.string(),
+        sandbox_id: z.string().nullable(),
+        reason: z.string(),
+      }),
+    ),
+  })
+  .nullable()
+  .optional();
+
+type SecretDeliverySync = NonNullable<z.infer<typeof SecretDeliverySyncSchema>>;
+
+const SecretWriteResultSchema = ContractSecretSchema.extend({
+  delivery_sync: SecretDeliverySyncSchema,
+}).openapi('SecretWriteResult');
+
+/** Keep the per-sandbox reasons; drop the rows that succeeded. */
+function summarizeDeliverySync(result: ProjectSecretPropagationResult): SecretDeliverySync {
+  return {
+    ok: result.ok,
+    targeted: result.targeted,
+    synced: result.synced,
+    failed: result.failed,
+    failures: result.results
+      .filter((target) => target.status === 'failed')
+      .map((target) => ({
+        session_id: target.session_id,
+        sandbox_id: target.sandbox_id,
+        reason: target.reason ?? 'sandbox sync failed',
+      })),
+  };
+}
+
+/**
+ * The other network-boundary secret in this project that already claims one of
+ * the candidate's (host, header) destinations, or null.
+ *
+ * The provider edge maps one destination to one credential. A second claim is
+ * refused at session provision, so the stored pair takes down every NEW session
+ * in the project with an error the author cannot connect to their edit. Both
+ * write routes call this BEFORE the row lands.
+ */
+async function boundaryDestinationConflict(
+  projectId: string,
+  identifier: string,
+  policy: SecretEgressPolicy,
+): Promise<BoundaryDestinationConflict | null> {
+  const rows = await db
+    .select({ identifier: projectSecrets.identifier, egressPolicy: projectSecrets.egressPolicy })
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.strategy, 'egress'),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
+  return findBoundaryDestinationConflict(
+    { identifier, policy },
+    rows.map((other) => ({ identifier: other.identifier, policy: other.egressPolicy })),
+  );
+}
+
+function boundaryConflictBody(identifier: string, conflict: BoundaryDestinationConflict) {
+  return {
+    error:
+      `${conflict.identifier} already injects the "${conflict.header}" header for ${conflict.host}. ` +
+      `Two secrets cannot target the same host and header — give ${identifier} a different header, ` +
+      'or a different host.',
+    code: 'secret_boundary_destination_conflict',
+    conflict,
+  };
+}
 
 async function connectorSecretBindings(projectId: string, identifier: string): Promise<string[]> {
   const rows = await db
@@ -481,11 +584,16 @@ projectsApp.openapi(
   let optional: string[] = [];
   let manifestStatus: 'loaded' | 'missing' | 'error' = 'missing';
   let manifestError: string | null = null;
+  // The same load answers `delivery_blocked_reason` (which agents may receive an
+  // egress/broker secret). Threading the config costs no extra I/O; leaving it
+  // null on a failed load is what keeps the warning from firing on a guess.
+  let agentGrants: SecretAgentGrantConfig | null = null;
   try {
     const projectConfig = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
     required = projectConfig?.env?.required ?? [];
     optional = projectConfig?.env?.optional ?? [];
     manifestStatus = projectConfig?.manifest_raw ? 'loaded' : 'missing';
+    agentGrants = projectConfig ?? null;
   } catch (err) {
     manifestStatus = 'error';
     manifestError = err instanceof Error ? err.message : String(err);
@@ -507,7 +615,7 @@ projectsApp.openapi(
   // standing agent grant remains the enumeration ceiling for agent tokens.
   const agentGrant = getAgentGrant(c);
 
-  const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared))
+  const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared, agentGrants))
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
 
@@ -540,8 +648,8 @@ projectsApp.openapi(
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
     responses: {
-        200: json(SecretSchema, 'The created secret'),
-        ...errors(400, 404),
+        200: json(SecretWriteResultSchema, 'The created secret'),
+        ...errors(400, 404, 409),
     },
   }),
   async (c: any) => {
@@ -582,9 +690,9 @@ projectsApp.openapi(
   const requestedStrategy = body.strategy;
   if (
     requestedStrategy !== undefined &&
-    !['runtime', 'broker', 'denied'].includes(String(requestedStrategy))
+    !['runtime', 'broker', 'egress', 'denied'].includes(String(requestedStrategy))
   ) {
-    return c.json({ error: 'secret creation supports runtime, broker, or denied delivery' }, 400);
+    return c.json({ error: 'secret creation supports runtime, broker, egress, or denied delivery' }, 400);
   }
   if (
     requestedStrategy === 'broker' &&
@@ -600,6 +708,13 @@ projectsApp.openapi(
     requestedConsumerData !== 'sandbox'
   ) {
     return c.json({ error: 'runtime creation requires the sandbox consumer' }, 400);
+  }
+  if (
+    requestedStrategy === 'egress' &&
+    requestedConsumer !== undefined &&
+    requestedConsumerData !== 'network'
+  ) {
+    return c.json({ error: 'egress creation requires the network consumer' }, 400);
   }
   if (
     requestedStrategy === 'denied' &&
@@ -618,6 +733,7 @@ projectsApp.openapi(
   const explicitStrategy = (requestedStrategy ?? (defaultToGateway ? 'broker' : undefined)) as
     | 'runtime'
     | 'broker'
+    | 'egress'
     | 'denied'
     | undefined;
   const explicitConsumer =
@@ -626,15 +742,40 @@ projectsApp.openapi(
         ? 'llm_gateway'
         : requestedStrategy === 'runtime'
           ? 'sandbox'
+          : requestedStrategy === 'egress'
+            ? 'network'
           : requestedStrategy === 'denied'
             ? null
             : undefined
       : requestedConsumerData;
   let explicitPolicy = null;
-  if (explicitConsumer === 'http_broker') {
+  if (explicitConsumer === 'http_broker' || explicitConsumer === 'network') {
     const policy = parseEgressPolicy(body.egress_policy);
-    if (!policy.ok || policy.policy.backend !== 'kortix_fetch') {
-      return c.json({ error: policy.ok ? 'HTTP broker requires the kortix_fetch backend' : policy.error }, 400);
+    if (!policy.ok) {
+      return c.json({ error: policy.error, code: 'secret_delivery_policy_invalid' }, 400);
+    }
+    if (explicitConsumer === 'http_broker' && policy.policy.backend !== 'kortix_fetch') {
+      return c.json({ error: 'HTTP broker requires the kortix_fetch backend' }, 400);
+    }
+    if (explicitConsumer === 'network') {
+      const boundaryError = networkBoundaryPolicyError(policy.policy);
+      if (boundaryError) {
+        return c.json(
+          { error: boundaryError, code: 'secret_delivery_policy_invalid' },
+          400,
+        );
+      }
+      if (!networkBoundaryDeliveryAvailable()) {
+        return c.json(
+          {
+            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            code: 'secret_delivery_unavailable',
+          },
+          409,
+        );
+      }
+      const conflict = await boundaryDestinationConflict(projectId, identifier, policy.policy);
+      if (conflict) return c.json(boundaryConflictBody(identifier, conflict), 409);
     }
     explicitPolicy = policy.policy;
   } else if (body.egress_policy !== undefined) {
@@ -749,7 +890,22 @@ projectsApp.openapi(
     }),
   );
 
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+  // Only a network-boundary secret waits for the fan-out. Its value never
+  // reaches the sandbox, so a failed push is the difference between "the agent
+  // can call that host" and "it cannot" — the author has to see it. Awaiting is
+  // up to 15s per live sandbox, which no ordinary secret save should pay, so
+  // every other strategy keeps the detached push.
+  const boundaryDelivery = explicitStrategy === 'egress' || existing?.strategy === 'egress';
+  let deliverySync: SecretDeliverySync | null = null;
+  if (boundaryDelivery) {
+    deliverySync = summarizeDeliverySync(
+      await propagateProjectSecretsToActiveSandboxes(projectId, {
+        refreshModels: isGatewayManagedEnv(name),
+      }),
+    );
+  } else {
+    void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+  }
 
   // First provider connect on a default-less project → seed a sensible project
   // default model (that provider's flagship). Detached + idempotent; never seeds
@@ -768,7 +924,7 @@ projectsApp.openapi(
   if (!view) {
     throw new Error(`Secret view not found after upsert: ${identifier}`);
   }
-  return c.json(view, 200);
+  return c.json({ ...view, delivery_sync: deliverySync }, 200);
 },
 );
 
@@ -784,7 +940,7 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: UpdateSecretStrategyInputSchema } } },
     },
     responses: {
-      200: json(SecretSchema, 'Updated secret delivery strategy'),
+      200: json(SecretWriteResultSchema, 'Updated secret delivery strategy'),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -871,17 +1027,28 @@ projectsApp.openapi(
         );
       }
       nextPolicy = policy.policy;
+      if (parsed.data.strategy === 'egress') {
+        const boundaryError = networkBoundaryPolicyError(policy.policy);
+        if (boundaryError) {
+          return c.json(
+            { error: boundaryError, code: 'secret_delivery_policy_invalid' },
+            400,
+          );
+        }
+      }
     } else if (parsed.data.egress_policy) {
       return c.json({ error: 'This consumer does not accept an outbound policy' }, 400);
     }
     if (parsed.data.strategy === 'egress') {
-      return c.json(
-        {
-          error: 'egress delivery is unavailable until its adapter is enabled',
-          code: 'secret_delivery_unavailable',
-        },
-        409,
-      );
+      if (!networkBoundaryDeliveryAvailable()) {
+        return c.json(
+          {
+            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            code: 'secret_delivery_unavailable',
+          },
+          409,
+        );
+      }
     }
     if (
       parsed.data.strategy === 'broker' &&
@@ -953,6 +1120,14 @@ projectsApp.openapi(
       }
     }
 
+    // Last gate before the write: the destination has to be free. Checked here,
+    // after the 404 and the lock checks, so an author sees the specific reason
+    // rather than a collision report for a secret they cannot edit anyway.
+    if (parsed.data.strategy === 'egress' && nextPolicy) {
+      const conflict = await boundaryDestinationConflict(projectId, identifier, nextPolicy);
+      if (conflict) return c.json(boundaryConflictBody(identifier, conflict), 409);
+    }
+
     const nextHandlePrefix =
       nextConsumer === 'http_broker' ? (parsed.data.handle_prefix ?? null) : null;
     const deliveryChanged =
@@ -960,6 +1135,7 @@ projectsApp.openapi(
       existing.consumer !== nextConsumer ||
       JSON.stringify(existing.egressPolicy ?? null) !== JSON.stringify(nextPolicy) ||
       existing.handlePrefix !== nextHandlePrefix;
+    let deliverySync: SecretDeliverySync | null = null;
     if (deliveryChanged) {
       const changedAt = new Date();
       const actorType =
@@ -1011,16 +1187,21 @@ projectsApp.openapi(
           metadata: { identifier, name: existing.name },
         }),
       );
-      await propagateProjectSecretsToActiveSandboxes(projectId, {
-        refreshModels: isGatewayManagedEnv(existing.name),
-      });
+      // This route already paid for the fan-out and discarded the report. A
+      // network-boundary secret that stored fine and reached no live sandbox is
+      // otherwise indistinguishable from one that worked.
+      deliverySync = summarizeDeliverySync(
+        await propagateProjectSecretsToActiveSandboxes(projectId, {
+          refreshModels: isGatewayManagedEnv(existing.name),
+        }),
+      );
     }
 
     const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
     const view = views.find((item) => item.identifier === identifier);
     if (!view) return c.json({ error: 'Not found' }, 404);
 
-    return c.json(view, 200);
+    return c.json({ ...view, delivery_sync: deliverySync }, 200);
   },
 );
 

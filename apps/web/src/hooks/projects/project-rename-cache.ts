@@ -7,14 +7,19 @@ import {
 } from '@kortix/sdk/react';
 
 /**
- * The `onMutate`/`onError`/`onSettled` trio both project-rename mutations
- * (`edit-project-modal.tsx`'s `EditProjectModal`, `features/workspace/
- * settings/tabs/general-tab.tsx`'s `GeneralWorkspaceCard`) wire into their
- * own `useMutation`. Shared so the two
- * call sites cannot drift the way the old per-project-connectors query
- * builder once drifted from its six siblings — one copy of the
- * cache-consistency logic, two mutations that each supply only their own
- * `projectId` + `name`.
+ * The `onMutate`/`onError`/`onSettled` trio a project-rename mutation wires
+ * into its own `useMutation` — today just `features/workspace/settings/tabs/
+ * general-tab.tsx`'s `GeneralWorkspaceCard`.
+ *
+ * Originally shared between that card and `edit-project-modal.tsx`'s
+ * `EditProjectModal` so the two call sites could not drift the way the old
+ * per-project-connectors query builder once drifted from its six siblings.
+ * The workspace-switcher work deleted that modal and moved icon editing into
+ * the card, leaving one caller. These stay extracted anyway: what they own is
+ * the snapshot/restore invariant below, which is worth stating in one place
+ * and testing directly (`project-rename-cache.test.ts`) whether it has one
+ * caller or two — and a second rename path is exactly the kind of thing that
+ * gets added later.
  *
  * Fixes the Critical gap in the first version of this wiring: `onMutate`
  * wrote the optimistic name but never snapshotted what it overwrote, so a

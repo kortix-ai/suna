@@ -439,7 +439,6 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // Use echo so every provider writes the same valid sudoers line.
     "    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\",
     '    && chmod 0440 /etc/sudoers.d/kortix \\',
-    '    && install -d -o kortix -g kortix -m 0700 /var/run/kortix \\',
     '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
     '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
     '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix',

@@ -15,7 +15,7 @@ export function teamsMode(
   baseUrl: string,
   opts: { enabled: boolean; projectId?: string; byoAppId?: string | null },
 ): TeamsMode {
-  // `enabled` is the project's `teams` experimental flag, resolved by the
+  // `enabled` is the project's `teams` feature flag, resolved by the
   // caller from the project row it already holds.
   const enabled = opts.enabled;
   const byo = Boolean(opts?.byoAppId);

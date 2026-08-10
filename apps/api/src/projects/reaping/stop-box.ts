@@ -11,6 +11,7 @@
  */
 
 import { getProvider } from '../../platform/providers';
+import type { StopReason } from '../stop-reason';
 import { type ReapCandidate, reloadDeadlineAt } from './box-queries';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from './policy';
 import { applyStoppedState } from './sandbox-state-sync';
@@ -24,7 +25,18 @@ export type StoppableBox = Pick<
   'sandboxId' | 'sessionId' | 'externalId' | 'provider'
 >;
 
-export async function stopExpiredBox(row: StoppableBox, now: Date): Promise<StopBoxOutcome> {
+/**
+ * `stopReason` is REQUIRED, not defaulted. It used to default to
+ * `'deadline_expired'`, which meant a new caller silently inherited that
+ * reason without ever having to think about it — exactly backwards for a
+ * field the classification query groups on. Every caller now names its own
+ * reason explicitly; see box-reaper.ts and parkBoxAtRunCap below.
+ */
+export async function stopExpiredBox(
+  row: StoppableBox,
+  now: Date,
+  stopReason: StopReason,
+): Promise<StopBoxOutcome> {
   // LAST-MOMENT RE-CHECK. `row.deadlineAt` came from the batch snapshot, taken
   // BEFORE this row's multi-second `getStatus` round-trip. A prompt (or a human
   // clicking the preview, or a gateway LLM call) that landed inside that window
@@ -50,6 +62,7 @@ export async function stopExpiredBox(row: StoppableBox, now: Date): Promise<Stop
     sandboxId: row.sandboxId,
     sessionId: row.sessionId,
     externalId: row.externalId,
+    stopReason,
     now,
   });
   return 'stopped';
@@ -70,7 +83,7 @@ export async function stopExpiredBox(row: StoppableBox, now: Date): Promise<Stop
  * box whose grant a concurrent turn has meanwhile revived.
  */
 export async function parkBoxAtRunCap(row: StoppableBox): Promise<void> {
-  const outcome = await stopExpiredBox(row, new Date()).catch((err) => {
+  const outcome = await stopExpiredBox(row, new Date(), 'run_cap').catch((err) => {
     console.warn(
       `[deadline] run-cap park failed for sandbox ${row.sandboxId}:`,
       err instanceof Error ? err.message : err,

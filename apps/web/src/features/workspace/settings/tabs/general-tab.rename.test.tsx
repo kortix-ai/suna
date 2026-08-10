@@ -3,8 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * `GeneralWorkspaceCard`'s rename mutation cannot be rendered or driven here
- * — same reasoning as `edit-project-modal.rename.test.tsx`'s doc comment:
+ * `GeneralWorkspaceCard`'s rename mutation cannot be rendered or driven here:
  * `apps/web`'s `bun test` runs WITHOUT `--isolate`, so mocking
  * `@tanstack/react-query` process-wide would corrupt every other file in the
  * run, and there is no jsdom/`@testing-library/react` harness here either.
@@ -12,12 +11,19 @@ import { join } from 'node:path';
  * Ported from `settings-view.rename.test.tsx` (deleted by Task 18 — the name
  * mutation this pins moved, byte-identical, from that file's
  * `GeneralProjectCard` into this file's `GeneralWorkspaceCard`, see
- * `general-tab.tsx`'s header comment). Same split as that file: this pins
- * that `GeneralWorkspaceCard`'s rename `mutation` wires
+ * `general-tab.tsx`'s header comment). So the coverage is split in two, and
+ * neither half alone proves the fix: this file pins that
+ * `GeneralWorkspaceCard`'s rename `mutation` wires
  * `onMutate`/`onError`/`onSettled` to the shared `renameOnMutate`/
- * `renameOnError`/`renameOnSettled` functions, while
- * `project-rename-cache.test.ts` proves what those functions DO, including
- * the Critical rollback path, against a real QueryClient.
+ * `renameOnError`/`renameOnSettled` functions — the gap a
+ * helpers-in-isolation test cannot see, because a silent revert to a local
+ * no-op still passes it — while `project-rename-cache.test.ts` proves what
+ * those functions DO, including the Critical rollback path, against a real
+ * QueryClient.
+ *
+ * This card is now the ONLY rename path. `EditProjectModal` was the other
+ * one and had its own paired source-scan file; the workspace-switcher work
+ * on `main` deleted that modal, so both went with it.
  */
 const source = readFileSync(join(import.meta.dir, 'general-tab.tsx'), 'utf8');
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
@@ -46,6 +52,13 @@ describe('GeneralWorkspaceCard: the source the component actually renders', () =
   });
 
   test('onMutate is wired to the shared renameOnMutate, not a local write', () => {
+    // A bare `nextName`, not main's `patch.name`: `GeneralWorkspaceCard`
+    // keeps the rename and the icon save as TWO mutations (see
+    // `general-tab.tsx`), so this mutation's variables are the name string
+    // itself. `renameOnMutate` still tolerates `undefined` — that is what
+    // makes an icon-only save write nothing optimistic and roll nothing back
+    // — but this card never reaches it, because the icon save is a separate
+    // mutation that does not wire the rename trio at all.
     expect(mutationBlock).toMatch(
       /onMutate:\s*\(nextName\)\s*=>\s*renameOnMutate\(queryClient,\s*project\.project_id,\s*nextName\)/,
     );

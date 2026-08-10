@@ -17,7 +17,7 @@
 
 resource "aws_iam_role" "gha_nacl_audit" {
   name = "kortix-gha-nacl-audit"
-  # Pinned to the default branch. qa-pr.yml runs on pull_request with
+  # Pinned to the default branch. tests-pr.yml runs on pull_request with
   # id-token: write and executes PR-controlled code, so a wildcard subject
   # would let any pull request mint a token and assume this role. The audit
   # runs on schedule and manual dispatch, both of which carry the main subject.

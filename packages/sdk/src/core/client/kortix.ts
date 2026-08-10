@@ -502,6 +502,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         pipedream: {
           listApps: (...a: DropFirst<Parameters<typeof P.listPipedreamApps>>) =>
             P.listPipedreamApps(projectId, ...a),
+          /** The browse page: a fixed top slice of each of the largest
+           *  categories, with each category's true total, in one request. */
+          listSections: (...a: DropFirst<Parameters<typeof P.listPipedreamSections>>) =>
+            P.listPipedreamSections(projectId, ...a),
           connect: (...a: DropFirst<Parameters<typeof P.pipedreamConnect>>) =>
             P.pipedreamConnect(projectId, ...a),
           finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
@@ -672,7 +676,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
       },
 
-      /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
+      /** Toggle a feature flag (Customize → Feature flags). Pass `enabled: null` to clear the override. */
+      updateFeatureFlag: (...a: DropFirst<Parameters<typeof P.updateFeatureFlag>>) =>
+        P.updateFeatureFlag(projectId, ...a),
+
+      /** @deprecated Renamed to `updateFeatureFlag`. Keeps the legacy `/experimental` wire path for older deployed APIs. */
       updateExperimentalFeature: (
         ...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>
       ) => P.updateExperimentalFeature(projectId, ...a),
@@ -942,6 +950,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       reloadConfig: (input?: Parameters<typeof P.reloadProjectSessionConfig>[2]) => {
         forgetReady();
         return P.reloadProjectSessionConfig(projectId, sessionId, input);
+      },
+      /** Reload config with server-observed progress events. */
+      reloadConfigStream: (
+        ...args: DropFirst2<Parameters<typeof P.reloadProjectSessionConfigStream>>
+      ) => {
+        forgetReady();
+        return P.reloadProjectSessionConfigStream(projectId, sessionId, ...args);
       },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),

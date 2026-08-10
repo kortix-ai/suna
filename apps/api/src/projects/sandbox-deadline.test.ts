@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockConfigModule } from './reaping/test-support/mock-config';
 
 // The module only ever issues raw SQL, so the assertions below are about the
 // STATEMENT SHAPE — which is the whole safety argument: an extend must contain
@@ -18,7 +19,11 @@ function render(query: unknown): string {
   if (query === null || query === undefined) return '';
   // Interpolated primitives are stored raw by drizzle, not wrapped in Param.
   if (typeof query !== 'object') return String(query);
-  const node = query as { queryChunks?: unknown[]; value?: unknown; name?: unknown };
+  const node = query as {
+    queryChunks?: unknown[];
+    value?: unknown;
+    name?: unknown;
+  };
   if (Array.isArray(node.queryChunks)) return node.queryChunks.map(render).join(' ');
   if (Array.isArray(node.value)) return node.value.join('');
   if (node.value !== undefined) return String(node.value);
@@ -26,7 +31,7 @@ function render(query: unknown): string {
   return '';
 }
 
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 } }));
+mock.module('../config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
   db: {
     execute: async (query: unknown) => {
@@ -198,7 +203,7 @@ describe('observeTurnStart — refuse at the cap instead of accepting then killi
 // ═══ THE FEATURE-DEFEATING BUG THIS CLOSES ═══
 // The warm exemption was deleted with no replacement. An unclaimed warm box has
 // no turns, no LLM calls and no human traffic, so it can NEVER receive an extend
-// — every warm box was reaped at its 20-minute boot floor before it could be
+// — every warm box was reaped at its 15-minute boot floor before it could be
 // handed out, which defeats the warm pool outright.
 describe('grantWarmPoolLifetime — the one box that can never be observed', () => {
   test('REGRESSION: a warm box is granted its bounded hour at bake time', async () => {
@@ -222,7 +227,9 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
 
   test('the warm lifetime is tunable', async () => {
     process.env.KORTIX_SANDBOX_WARM_GRANT_MINUTES = '10';
-    await grantWarmPoolLifetime('sb-1', { warm_session: { state: 'available' } });
+    await grantWarmPoolLifetime('sb-1', {
+      warm_session: { state: 'available' },
+    });
 
     expect(executed[0]).toContain('600');
   });
@@ -231,7 +238,9 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
     executeThrows = new Error('db down');
 
     expect(
-      await grantWarmPoolLifetime('sb-1', { warm_session: { state: 'available' } }),
+      await grantWarmPoolLifetime('sb-1', {
+        warm_session: { state: 'available' },
+      }),
     ).toBeUndefined();
   });
 });
@@ -277,13 +286,17 @@ describe('shortenSandboxDeadlineOnTurnEnd — a retry is not a turn end', () => 
   });
 
   test('REGRESSION: a RETRYABLE error writes NOTHING — the turn is still running', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', { isRetryable: true });
+    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
+      isRetryable: true,
+    });
 
     expect(executed).toEqual([]);
   });
 
   test('a permanent error shortens the box', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', { isRetryable: false });
+    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
+      isRetryable: false,
+    });
 
     expect(executed).toHaveLength(1);
   });

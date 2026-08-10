@@ -18,28 +18,19 @@ describe('GitHub installation presentation', () => {
 });
 
 describe('GitHub account connection surfaces', () => {
-  const projectModalSource = readFileSync(
-    join(import.meta.dir, '../features/projects/modal/project-create-modal.tsx'),
-    'utf8',
-  );
+  // The two tests that used to live here (`keeps the GitHub App install
+  // action visible during repository import`, `presents the three repository
+  // sources as one visible decision`) asserted on
+  // `project-create-modal.tsx`'s source. That modal — and the
+  // `github-create`/`github-import` repository-source picker it alone drove —
+  // was deleted along with it; `/new` only drives `POST /projects/provision`
+  // (Kortix-managed repos). There is no surviving surface for either
+  // assertion to move to, so they are gone, not adapted. The remaining test
+  // below is independent of the deleted file.
   const accountPageSource = readFileSync(
     join(import.meta.dir, '../app/(app)/accounts/[id]/page.tsx'),
     'utf8',
   );
-
-  test('keeps the GitHub App install action visible during repository import', () => {
-    expect(projectModalSource).toContain('aria-label="Connect another GitHub account"');
-    expect(projectModalSource).toContain('router.push(`/github/setup?account_id=');
-    expect(projectModalSource).not.toContain('window.location.assign(freshInstallUrl)');
-  });
-
-  test('presents the three repository sources as one visible decision', () => {
-    expect(projectModalSource).toContain('aria-label="Repository source"');
-    expect(projectModalSource).toContain('Kortix managed');
-    expect(projectModalSource).toContain('Create in GitHub');
-    expect(projectModalSource).toContain('Import from GitHub');
-    expect(projectModalSource).not.toContain('Use managed repository');
-  });
 
   test('does not gate account GitHub connections on managed-server status', () => {
     expect(accountPageSource).not.toContain("githubAppStatusQuery.data?.source === 'env'");

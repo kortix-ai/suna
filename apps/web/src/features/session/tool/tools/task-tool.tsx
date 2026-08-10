@@ -20,17 +20,23 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   KanbanIcon as SquareKanban,
 } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 export function TaskTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
 
   const subagentType = (input.subagent_type as string) || 'general';
-  const description =
-    (input.description as string) ||
-    firstMeaningfulLine(input.prompt) ||
-    firstMeaningfulLine(input.title, 80);
+  // `firstMeaningfulLine` splits its argument on every newline and trims each
+  // segment. A sub-agent prompt is the longest string this row ever sees, and
+  // this ran over it on every render of a row that is mostly collapsed.
+  const description = useMemo(
+    () =>
+      (input.description as string) ||
+      firstMeaningfulLine(input.prompt) ||
+      firstMeaningfulLine(input.title, 80),
+    [input],
+  );
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
@@ -42,6 +48,7 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
   }, [childMessages]);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const openModal = useCallback(() => setModalOpen(true), []);
 
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
@@ -58,12 +65,12 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
   return (
     <>
       <BasicTool
-        icon={<SquareKanban className="size-3.5 flex-shrink-0" />}
+        icon={<SquareKanban className="size-3.5 shrink-0" />}
         trigger={{
           title: `Agent · ${subagentType}`,
           subtitle,
         }}
-        onClick={childSessionId ? () => setModalOpen(true) : undefined}
+        onClick={childSessionId ? openModal : undefined}
         badge={
           isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined
         }

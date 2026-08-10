@@ -515,6 +515,9 @@ app.get('/metrics', (c) => {
   if (!hasInternalObservabilityAuth(c)) {
     return c.text('unauthorized\n', 401);
   }
+  if (process.env.KORTIX_LOCAL_TEST_PROFILE === '1') {
+    c.header('x-kortix-local-test-profile', '1');
+  }
   if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
   c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return c.body(renderMetrics());
@@ -921,6 +924,7 @@ app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
+import { warmPipedreamCatalog } from './connectors/pipedream';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
 
 app.use('/v1/tunnel/*', async (c, next) => {
@@ -1261,16 +1265,19 @@ console.log(`
 ╚═══════════════════════════════════════════════════════════╝
 `);
 
-// Load LLM pricing from models.dev (non-blocking if it fails).
-// Awaited so pricing is available before the first billing request.
-await initModelPricing().catch((err) =>
-  console.error('[startup] Model pricing init failed (will retry in 24h):', err),
-);
-runtimeModelCatalog
-  .start()
-  .catch((err) =>
-    console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+// Local REST tests use the bundled model catalog and never contact models.dev.
+if (process.env.KORTIX_MODEL_PRICING_LIVE_ENABLED !== '0') {
+  await initModelPricing().catch((err) =>
+    console.error('[startup] Model pricing init failed (will retry in 24h):', err),
   );
+}
+if (process.env.KORTIX_MODEL_CATALOG_LIVE_ENABLED !== '0') {
+  runtimeModelCatalog
+    .start()
+    .catch((err) =>
+      console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+    );
+}
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
@@ -1378,6 +1385,12 @@ async function bootServices() {
     },
     { eligible },
   );
+  // Build the Pipedream catalogue index in the background. Deliberately NOT
+  // awaited: the crawl is ~33 requests / ~48s, and readiness must not wait on
+  // a third party. Until it lands, the catalogue routes answer from the live
+  // paged API (`indexReady: false`), so a cold pod serves correct results the
+  // whole time — just without category facets.
+  warmPipedreamCatalog();
 }
 
 // Graceful shutdown
@@ -1538,16 +1551,50 @@ export default {
 
       const tunnelId = url.searchParams.get('tunnelId');
 
-      if (!tunnelId) {
-        return new Response(JSON.stringify({ error: 'Missing tunnelId' }), {
+      if (
+        !tunnelId ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tunnelId)
+      ) {
+        return new Response(JSON.stringify({ error: 'A valid tunnelId is required' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      // Rate limit WS connections (keyed by tunnelId to prevent connection spam)
+      // Agent Tunnel is a native CLI protocol. Browsers always send Origin on
+      // WebSocket upgrades; rejecting it prevents cross-site WebSocket use if
+      // a machine bearer is ever exposed to browser-accessible state.
+      if (req.headers.has('origin')) {
+        return new Response(
+          JSON.stringify({
+            error: 'Browser tunnel WebSockets are not allowed',
+          }),
+          {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      }
+
+      // Include the source address so an unauthenticated attacker who learns a
+      // tunnelId cannot consume the real machine's reconnect budget.
       const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-      const wsRateCheck = tunnelRateLimiter.check('wsConnect', tunnelId);
+      const clientIp =
+        req.headers.get('cf-connecting-ip')?.trim() ||
+        req.headers.get('x-real-ip')?.trim() ||
+        req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        'unknown';
+      const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
+      if (!wsIpRateCheck.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: 'Too many connection attempts',
+            retryAfterMs: wsIpRateCheck.retryAfterMs,
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      const wsRateCheck = tunnelRateLimiter.check('wsConnect', `${clientIp}:${tunnelId}`);
       if (!wsRateCheck.allowed) {
         return new Response(
           JSON.stringify({
@@ -1633,7 +1680,7 @@ export default {
       message: string | Buffer,
     ) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onMessage(ws.data.tunnelId, message);
+        tunnelWsHandlers.onMessage(ws.data.tunnelId, ws as any, message);
         return;
       }
       if (ws.data?.type === 'preview-ws') {
@@ -1648,7 +1695,7 @@ export default {
 
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onClose(ws.data.tunnelId);
+        tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
         return;
       }
       if (ws.data?.type === 'preview-ws') {

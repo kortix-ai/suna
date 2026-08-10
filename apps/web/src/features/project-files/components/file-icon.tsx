@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { fileIconFor } from '@/lib/utils/file-utils';
 import {
   DatabaseIcon as Database,
   FileArchiveIcon as FileArchive,
@@ -99,175 +100,18 @@ function getMonochromeIcon(fileName: string, ic: string, isDirectory?: boolean, 
     return <FileTerminal className={mono} />;
   }
 
-  // ── By extension ───────────────────────────────────────────────
-
-  // Code files
-  if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'vue', 'svelte'].includes(ext)) {
-    return <FileCode2 className={mono} />;
-  }
-  if (
-    [
-      'py',
-      'pyi',
-      'pyx',
-      'pyw',
-      'rs',
-      'go',
-      'rb',
-      'erb',
-      'gemspec',
-      'java',
-      'kt',
-      'kts',
-      'c',
-      'cpp',
-      'cc',
-      'cxx',
-      'h',
-      'hpp',
-      'hxx',
-      'm',
-      'mm',
-      'cs',
-      'swift',
-      'php',
-      'html',
-      'htm',
-      'css',
-      'scss',
-      'sass',
-      'less',
-      'styl',
-    ].includes(ext)
-  ) {
-    return <FileCode className={mono} />;
-  }
-
-  // Data / config
-  if (['json', 'jsonc', 'json5'].includes(ext)) {
-    return <FileJson className={mono} />;
-  }
-  if (['yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'properties', 'editorconfig'].includes(ext)) {
-    return <FileCog className={mono} />;
-  }
-  if (['xml', 'xsl', 'xslt', 'wsdl'].includes(ext)) {
-    return <FileCode className={mono} />;
-  }
-
-  // Shell
-  if (['sh', 'bash', 'zsh', 'fish', 'bat', 'cmd', 'ps1'].includes(ext)) {
-    return <FileTerminal className={mono} />;
-  }
-
-  // Text / docs
-  if (['md', 'mdx', 'txt', 'rst', 'rtf'].includes(ext)) {
-    return <FileText className={mono} />;
-  }
-
-  // Images
-  if (
-    [
-      'png',
-      'jpg',
-      'jpeg',
-      'gif',
-      'svg',
-      'webp',
-      'ico',
-      'bmp',
-      'avif',
-      'tiff',
-      'tif',
-      'heic',
-      'heif',
-    ].includes(ext)
-  ) {
-    return <FileImage className={mono} />;
-  }
-
-  // Video
-  if (['mp4', 'webm', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'ogv'].includes(ext)) {
-    return <FileVideo className={mono} />;
-  }
-
-  // Audio
-  if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus'].includes(ext)) {
-    return <FileAudio className={mono} />;
-  }
-  if (['mid', 'midi'].includes(ext)) {
-    return <FileMusic className={mono} />;
-  }
-
-  // Spreadsheets
-  if (['xlsx', 'xls', 'csv', 'tsv', 'ods'].includes(ext)) {
-    return <FileSpreadsheet className={mono} />;
-  }
-
-  // SQLite databases
-  if (['db', 'sqlite', 'sqlite3', 'db3', 'sdb', 's3db'].includes(ext)) {
-    return <Database className={mono} />;
-  }
-
-  // PDF / Documents
-  if (ext === 'pdf') {
-    return <FileType className={mono} />;
-  }
-  if (['doc', 'docx', 'odt'].includes(ext)) {
-    return <FileType className={mono} />;
-  }
-  if (['ppt', 'pptx', 'odp'].includes(ext)) {
-    return <FileType className={mono} />;
-  }
-
-  // Archives
-  if (['zip', 'tar', 'gz', 'bz2', 'xz', 'rar', '7z', 'tgz', 'zst'].includes(ext)) {
-    return <FileArchive className={mono} />;
-  }
-
-  // Lock / security
-  if (['lock', 'pem', 'crt', 'cer', 'key'].includes(ext)) {
-    return <FileLock className={mono} />;
-  }
-
-  // Database / SQL
-  if (['sql', 'sqlite', 'db', 'sqlite3'].includes(ext)) {
-    return <FileChartLine className={mono} />;
-  }
-
-  // Protobuf / GraphQL
-  if (['proto', 'graphql', 'gql'].includes(ext)) {
-    return <FileCode2 className={mono} />;
-  }
-
-  // WASM
-  if (['wasm', 'wat'].includes(ext)) {
-    return <FileBox className={mono} />;
-  }
-
-  // Log files
-  if (ext === 'log') {
-    return <FileText className={mono} />;
-  }
-
-  // RC / config dotfiles
-  if (
-    name.startsWith('.') &&
-    (name.endsWith('rc') ||
-      name.endsWith('rc.js') ||
-      name.endsWith('rc.json') ||
-      name.endsWith('rc.yml'))
-  ) {
-    return <FileCog className={mono} />;
-  }
-  if (name.includes('eslint') || name.includes('prettier') || name.includes('babel')) {
-    return <FileCog className={mono} />;
-  }
-  if (name.startsWith('tsconfig') || name.startsWith('jsconfig')) {
-    return <FileCog className={mono} />;
-  }
-
-  // Fallback
-  return <FileIcon className={mono} />;
+  // Everything that is decided purely by extension is decided in ONE place —
+  // `fileIconFor` in lib/utils/file-utils. This function used to carry ~150
+  // lines of its own if-chain, which had drifted: `.pdf`, `.docx` and `.pptx`
+  // all resolved to the plain text glyph here while the chip on a tool row drew
+  // something else for the same file. Phosphor ships a specific icon for each of
+  // them, and now one table hands it to both surfaces.
+  //
+  // The named-file cases above stay: they key off the whole FILENAME
+  // (`Dockerfile`, `.env`, `package.json`, `LICENSE`) rather than an extension,
+  // which is not a question an extension table can answer.
+  const Icon = fileIconFor(fileName);
+  return <Icon className={mono} />;
 }
 
 /**

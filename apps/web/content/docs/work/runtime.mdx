@@ -43,6 +43,14 @@ An open dashboard tab, preview, SSE connection, or health poll does not create a
 - Triggers create their session branch the same way an interactive session does.
 - Nothing writes the default branch directly. Only a merged [change request](/docs/work/change-requests) does.
 
+### Reconcile a session branch
+
+Use **Ask Agent: Sync Branch & Reload** from the session command palette when the base branch changed. The agent inspects the session branch, preserves local work, fetches the latest `base_ref`, resolves conflicts, runs the relevant tests, and commits the reconciliation. Kortix does not choose one side of a conflict or reset the working tree.
+
+The agent finishes with `kortix sessions reload "$KORTIX_SESSION_ID" --project "$KORTIX_PROJECT_ID" --no-repo --force --yes`. `--no-repo` is required because the agent already reconciled the branch. The reload replaces the OpenCode runtime after the replacement becomes healthy. It ends the current turn, so send `continue` after the runtime returns.
+
+The session header reports each server-confirmed reload phase in real time. A web reload checks the session, compiles the agent config, applies and validates the runtime replacement, then confirms the active config. It does not refresh the repository. The CLI can refresh the repository unless you pass `--no-repo`.
+
 ## Layout inside the sandbox
 
 ```

@@ -10,9 +10,9 @@ name: Deploy Dev
 #                   via ECS Fargate. dev-api.kortix.com
 #                   is a Cloudflare Worker routing to the ECS service
 #                   (see infra/cloudflare/workers/api-router).
-#   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest (image is for
-#                   self-hosters). dev.kortix.com itself is deployed by Vercel
-#                   from `main` via Vercel's own Git integration — no deploy step.
+#   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest, deployed to
+#                   the dedicated kortix-dev-web ECS Fargate service at
+#                   dev.kortix.com. Vercel is disabled for main.
 #   - CLI         → 4 cross-compiled binaries published to the mutable
 #                   `dev-latest` GitHub prerelease (default API base dev-api).
 #
@@ -28,6 +28,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      surface:
+        description: Surface to deploy from a manual branch run
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - frontend
 
 concurrency:
   group: deploy-dev
@@ -40,9 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       api: ${{ steps.outputs.outputs.api }}
-      gateway: ${{ steps.filter.outputs.gateway }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      cli: ${{ steps.filter.outputs.cli }}
+      gateway: ${{ steps.outputs.outputs.gateway }}
+      frontend: ${{ steps.outputs.outputs.frontend }}
+      cli: ${{ steps.outputs.outputs.cli }}
       apps_router: ${{ steps.outputs.outputs.apps_router }}
     steps:
       - name: Checkout
@@ -60,8 +69,6 @@ jobs:
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
               - 'scripts/ci/cosign-sign-attest.sh'
-              - 'infra/k8s/charts/kortix-api/**'
-              - 'infra/k8s/envs/dev/**'
               - '.github/workflows/deploy-dev.yml'
               - 'supabase/migrations/**' # run by ensureSchema at boot — must redeploy to apply
               - 'pnpm-lock.yaml'
@@ -71,9 +78,6 @@ jobs:
               - 'apps/llm-gateway/**'
               - 'packages/llm-gateway/**'
               - 'packages/shared/**'
-              - 'infra/k8s/charts/kortix-gateway/**'
-              - 'infra/k8s/envs/dev/gateway-values.yaml'
-              - 'infra/k8s/argocd/applications/gateway-dev.yaml'
               - 'infra/scripts/ecs-deploy.sh'
               - '.github/workflows/deploy-dev.yml'
               - 'pnpm-lock.yaml'
@@ -81,6 +85,15 @@ jobs:
             frontend:
               - 'apps/web/**'
               - 'packages/**'
+              - 'infra/scripts/ecs-deploy.sh'
+              - 'infra/scripts/render-web-env.mjs'
+              - 'infra/scripts/sync-web-env.sh'
+              - 'infra/scripts/sync-web-dns.mjs'
+              - 'infra/terraform/environments/dev/**'
+              - 'infra/terraform/environments/dev-web/**'
+              - 'infra/terraform/modules/ecs-api/**'
+              - 'infra/terraform/security-baseline/iam-gha-ecs-deploy.tf'
+              - '.github/workflows/deploy-dev.yml'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'VERSION'
@@ -100,20 +113,37 @@ jobs:
         run: |
           api="${{ steps.filter.outputs.api }}"
           apps_router="${{ steps.filter.outputs.apps_router }}"
+          gateway="${{ steps.filter.outputs.gateway }}"
+          frontend="${{ steps.filter.outputs.frontend }}"
+          cli="${{ steps.filter.outputs.cli }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            api=true
-            apps_router=true
+            if [ "${{ inputs.surface }}" = "frontend" ]; then
+              api=false
+              apps_router=false
+              gateway=false
+              frontend=true
+              cli=false
+            else
+              api=true
+              apps_router=true
+              frontend=true
+            fi
           fi
-          echo "api=$api" >> "$GITHUB_OUTPUT"
-          echo "apps_router=$apps_router" >> "$GITHUB_OUTPUT"
+          {
+            echo "api=$api"
+            echo "apps_router=$apps_router"
+            echo "gateway=$gateway"
+            echo "frontend=$frontend"
+            echo "cli=$cli"
+          } >> "$GITHUB_OUTPUT"
       - name: Summary
         run: |
           {
             echo "### Changes detected"
             echo "- API: ${{ steps.outputs.outputs.api }}"
-            echo "- Gateway: ${{ steps.filter.outputs.gateway }}"
-            echo "- Frontend: ${{ steps.filter.outputs.frontend }}"
-            echo "- CLI: ${{ steps.filter.outputs.cli }}"
+            echo "- Gateway: ${{ steps.outputs.outputs.gateway }}"
+            echo "- Frontend: ${{ steps.outputs.outputs.frontend }}"
+            echo "- CLI: ${{ steps.outputs.outputs.cli }}"
             echo "- Apps router: ${{ steps.outputs.outputs.apps_router }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -518,13 +548,14 @@ jobs:
           echo "✓ kortix/kortix-gateway:dev → dev-${SHA8}"
 
   # ── Build + push the multi-arch frontend image ──────────────────────────────
-  # dev.kortix.com is served by Vercel (auto-deploys from `main`); this image is
-  # for self-hosters, so there is no deploy step here.
+  # The same immutable image serves Dev ECS and the self-host distribution.
   build-frontend:
     name: Build frontend image (multi-arch)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
     steps:
       - uses: actions/checkout@v7
         with: { submodules: false }
@@ -540,10 +571,13 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
           NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_URL: http://localhost:3000
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
           NEXT_PUBLIC_BILLING_ENABLED: "false"
           NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.dev-version.outputs.version }}
+          NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.sha }}
           NEXT_OUTPUT: standalone
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -563,22 +597,141 @@ jobs:
           tags: |
             kortix/kortix-frontend:dev-latest
       - name: Retag :dev-latest → :dev-<sha8>
+        id: tag
         run: |
           set -euo pipefail
           SHA8="${GITHUB_SHA::8}"
           docker buildx imagetools create \
             --tag "kortix/kortix-frontend:dev-${SHA8}" \
             "kortix/kortix-frontend:dev-latest"
+          echo "image=kortix/kortix-frontend:dev-${SHA8}" >> "$GITHUB_OUTPUT"
           echo "Pushed kortix/kortix-frontend:dev-${SHA8} + :dev-latest"
 
+  deploy-web-ecs:
+    name: Deploy frontend to dev (ECS Fargate)
+    needs: [detect-changes, dev-version, build-frontend]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      DOTENV_PRIVATE_KEY_DEV: ${{ secrets.WEB_DOTENV_PRIVATE_KEY_DEV }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 22 }
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Sync the encrypted Dev web profile to Secrets Manager
+        run: |
+          set -euo pipefail
+          test -n "${DOTENV_PRIVATE_KEY_DEV:-}" || {
+            echo "::error::WEB_DOTENV_PRIVATE_KEY_DEV is not configured."
+            exit 1
+          }
+          npx --yes @dotenvx/dotenvx@1.75.1 run \
+            -f apps/web/.env.dev -- bash infra/scripts/sync-web-env.sh dev
+      - name: Roll the Dev web service onto the immutable image
+        run: |
+          bash infra/scripts/ecs-deploy.sh \
+            dev \
+            "${{ needs.build-frontend.outputs.image }}" \
+            --service web \
+            --version "${{ needs.dev-version.outputs.version }}"
+
+  publish-web-ecs-dns:
+    name: Publish canonical Dev ECS DNS
+    needs: [detect-changes, deploy-web-ecs]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Point the canonical Dev hostname at the web ALB
+        run: |
+          set -euo pipefail
+          alb="$(aws elbv2 describe-load-balancers \
+            --names kortix-dev-web-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)"
+          node infra/scripts/sync-web-dns.mjs dev "$alb"
+
+  verify-web-dev:
+    name: Verify canonical Dev frontend on ECS
+    needs: [detect-changes, dev-version, publish-web-ecs-dns]
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_COMMIT: ${{ github.sha }}
+      EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
+      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+    steps:
+      - name: Verify ECS health, protection, runtime configuration, and edge headers
+        run: |
+          set -euo pipefail
+          test -n "${WEB_PROTECTION_PASSWORD:-}" || {
+            echo "::error::WEB_PROTECTION_PASSWORD is not configured."
+            exit 1
+          }
+          base=https://dev.kortix.com
+          consecutive_matches=0
+          for attempt in $(seq 1 40); do
+            cookie_jar="$(mktemp)"
+            body="$(curl -fsS --max-time 15 "$base/api/health" || true)"
+            commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
+            version="$(jq -r '.version // empty' <<<"$body" 2>/dev/null || true)"
+            anonymous="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
+            wrong="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}x" "$base/" || true)"
+            protected="$(curl -sS -c "$cookie_jar" -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/" || true)"
+            cookie_only="$(curl -sS -b "$cookie_jar" -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
+            runtime="$(curl -fsS -b "$cookie_jar" --max-time 15 "$base/api/runtime-config" || true)"
+            headers="$(curl -sS -D - -o /dev/null --max-time 15 "$base/" || true)"
+            vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$headers")"
+            rm -f "$cookie_jar"
+            echo "(${attempt}/40) commit=${commit:-?} version=${version:-?} anonymous=${anonymous:-?} wrong=${wrong:-?} protected=${protected:-?} cookie_only=${cookie_only:-?} vercel_headers=${vercel_headers}"
+            if [ "$commit" = "$EXPECTED_COMMIT" ] \
+              && [ "$version" = "$EXPECTED_VERSION" ] \
+              && [ "$anonymous" = 401 ] \
+              && [ "$wrong" = 401 ] \
+              && { [ "$protected" = 200 ] || [ "$protected" = 307 ] || [ "$protected" = 308 ]; } \
+              && { [ "$cookie_only" = 200 ] || [ "$cookie_only" = 307 ] || [ "$cookie_only" = 308 ]; } \
+              && grep -q 'dev-api.kortix.com' <<<"$runtime" \
+              && grep -q 'https://dev.kortix.com' <<<"$runtime" \
+              && [ "$vercel_headers" = 0 ]; then
+              consecutive_matches=$((consecutive_matches + 1))
+              if [ "$consecutive_matches" -ge 4 ]; then
+                echo "dev.kortix.com served ${EXPECTED_COMMIT} from ECS for four consecutive checks."
+                exit 0
+              fi
+            else
+              consecutive_matches=0
+            fi
+            sleep 20
+          done
+          echo "::error::Canonical Dev ECS verification failed for ${EXPECTED_COMMIT}."
+          exit 1
+
   # ── Move the self-host `:dev` channel tag onto the image that just built ────
-  # Frontend has no separate "deploy" job in this pipeline (dev.kortix.com is
-  # Vercel's own Git integration off `main`, not this image) — the image build
-  # succeeding IS the self-host artifact's release event, so gate on
-  # build-frontend directly.
   promote-dev-channel-frontend:
     name: Move :dev → this build (frontend)
-    needs: [detect-changes, build-frontend]
+    needs: [detect-changes, build-frontend, verify-web-dev]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:

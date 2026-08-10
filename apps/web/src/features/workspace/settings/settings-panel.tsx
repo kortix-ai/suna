@@ -32,14 +32,20 @@
  * directly, and THIS panel already provides it below (`buildSettingsPanel-
  * SettingsNav` / `<SettingsNavProvider>`).
  *
- * **Task 5b2 update.** Fifteen of the legacy panel's `SectionContent`
- * cases (fourteen `case` labels plus the `llm-*` prefix branch) are now
+ * **Task 5b2 update.** Fourteen of the legacy panel's `SectionContent`
+ * cases (thirteen `case` labels plus the `llm-*` prefix branch) are now
  * wired onto their mapped tab via `SettingsTabPane` below: `commands`,
- * `marketplace`, `secrets`, `channels`, `voice`, `computers`, `schedules`,
+ * `marketplace`, `secrets`, `channels`, `voice`, `schedules`,
  * `webhooks`, `git`, `review`, `sandbox`, `members`, `settings`, `upgrade`,
  * and `llm-*` become `instructions`, `marketplace`, `secrets`, `channels`,
- * `voice`, `computers`, `schedules`, `webhooks`, `repositories`, `review`,
+ * `voice`, `schedules`, `webhooks`, `repositories`, `review`,
  * `sandbox`, `members`, `general`, `upgrades`, and `models`.
+ *
+ * **Merge update (`main`, #6313).** The fifteenth, `computers`, is gone from
+ * both vocabularies: Computers graduated to the standalone Connectors page
+ * (`ComputerTunnelManager`), `computers-view.tsx` is deleted upstream, and
+ * `settings-tabs.ts`'s `GRADUATED` map now redirects `computers` to
+ * `/projects/:id/connectors`.
  *
  * **Task 20 update.** `sandbox` and `snapshots` are the split halves of the
  * legacy `SandboxView` (see `tabs/sandbox-tab.tsx` / `tabs/snapshots-tab.tsx`
@@ -222,7 +228,6 @@ import { detectManifestVersion } from '@/features/workspace/customize/migrate-to
 import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
 import { RelatedProjectsSwitcher } from '@/features/workspace/customize/related-projects-switcher';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
-import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
@@ -281,7 +286,7 @@ import { useSettingsAccountId } from './use-settings-account-id';
  * (`lib/project-actions.ts`) already gates it — reused as-is rather than
  * duplicated, since the leaves themselves didn't change, only the tab ids
  * that front them. Tabs with no entry here are either ungated (profile,
- * preferences, connected, snapshots, groups, experimental) or account-scoped
+ * preferences, connected, snapshots, groups) or account-scoped
  * and gated through `ACCOUNT_TAB_PERMISSION` below instead — see that
  * constant's comment.
  */
@@ -299,7 +304,14 @@ const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
   marketplace: 'marketplace',
   review: 'review',
   voice: 'voice',
-  computers: 'computers',
+  // `main` (#6279) declared a `feature-flags` access entry when it shipped its
+  // own feature-flag section — read `project.read`, write
+  // `project.customize.write`, matching what `PATCH /projects/:id/features`
+  // asserts. That section is deleted with the rest of the legacy vocabulary,
+  // so the Experimental tab (this branch's equivalent surface) inherits the
+  // declaration rather than leaving it orphaned. Read is `project.read`, the
+  // same floor the whole panel already needs, so rail visibility is unchanged.
+  experimental: 'feature-flags',
   upgrades: 'upgrade',
 };
 
@@ -648,7 +660,6 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
     [projectId, caps, capsResolved, accountPermsResolved, accountCan, billingEnabled],
   );
 
-  const tunnelEnabled = project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = project?.experimental?.marketplace ?? false;
   const llmGatewayAvailable = isLlmGatewayAvailable(project);
   // Distinct from `llmGatewayAvailable` above (which only affects rail
@@ -678,7 +689,6 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
     // groups drop out so no orphan header renders.
     () =>
       railGroups({
-        tunnelEnabled,
         marketplaceEnabled,
         llmGatewayAvailable,
         voiceEnabled,
@@ -686,7 +696,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
       })
         .map((g) => ({ ...g, items: g.items.filter((item) => isTabAllowed(item.tab)) }))
         .filter((g) => g.items.length > 0),
-    [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, voiceEnabled, reviewEnabled, isTabAllowed],
+    [marketplaceEnabled, llmGatewayAvailable, voiceEnabled, reviewEnabled, isTabAllowed],
   );
   // Upgrades lives in its own pinned footer, but stays in the item universe so
   // deep-links, the mobile tail, and the active-tab fallback all still see it.
@@ -1141,8 +1151,6 @@ function SettingsTabPane({
         return <ScheduleView projectId={projectId} type="cron" />;
       case 'webhooks':
         return <ScheduleView projectId={projectId} type="webhook" />;
-      case 'computers':
-        return <ComputersView projectId={projectId} />;
       case 'models':
         // The gate moved INTO the tab (`models-tab.tsx`), unchanged: it still
         // mirrors the legacy panel's

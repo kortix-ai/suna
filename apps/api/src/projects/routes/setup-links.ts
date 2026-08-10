@@ -187,7 +187,13 @@ projectsApp.openapi(
 
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'connector', slug, app: conn.app, uid: loaded.userId },
+      {
+        kind: 'connector',
+        slug,
+        app: conn.app,
+        uid: loaded.userId,
+        sid: (c.get('sessionId') as string | undefined) ?? null,
+      },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
 

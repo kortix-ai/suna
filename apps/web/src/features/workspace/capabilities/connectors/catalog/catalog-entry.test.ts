@@ -5,6 +5,7 @@ import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
   catalogSections,
+  computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
   POPULAR_SECTION,
@@ -34,6 +35,9 @@ const app = (over: Partial<PipedreamApp> = {}): PipedreamApp => ({
   imgSrc: null,
   authType: 'oauth',
   categories: ['productivity'],
+  hasActions: true,
+  hasTriggers: false,
+  featuredWeight: 0,
   ...over,
 });
 
@@ -53,6 +57,16 @@ const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
   }) as AdminConnector;
 
 describe('normalising the two catalogues', () => {
+  test('Computer Tunnels is a native connector catalogue entry', () => {
+    const entry = computersCatalogEntry();
+    expect(entry).toMatchObject({
+      source: 'computer',
+      slug: 'computers',
+      name: 'Computer Tunnels',
+      categories: ['developer-tools'],
+    });
+  });
+
   test('a Discover entry keeps its rank and its raw connector', () => {
     const entry = catalogEntryFromDiscover(connector({ popularity: 42 }));
     expect(entry.source).toBe('discover');
@@ -103,6 +117,13 @@ describe('connected join', () => {
   test('a fully renamed connector falls back to + rather than matching wrongly', () => {
     const keys = connectedCatalogKeys([conn({ slug: 'tracker', name: 'Tracker' })]);
     expect(isCatalogEntryConnected(catalogEntryFromDiscover(connector()), keys)).toBe(false);
+  });
+
+  test('Computer Tunnels stays connected when every profile has a custom name and slug', () => {
+    const keys = connectedCatalogKeys([
+      conn({ provider: 'computer', slug: 'studio-machines', name: 'Studio' }),
+    ]);
+    expect(isCatalogEntryConnected(computersCatalogEntry(), keys)).toBe(true);
   });
 
   // A connector with a blank name must not index the empty string, or every

@@ -44,6 +44,7 @@ let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStopCalls = 0;
 let providerStatus = 'stopped';
+let providerStatusSequence: string[] = [];
 let providerStatusAfterStart: string | null = null;
 let providerStatusSessionMetadataUpdate: Record<string, unknown> | null = null;
 let providerStartError: Error | null = null;
@@ -113,6 +114,7 @@ function resetState() {
   providerStartCalls = 0;
   providerStopCalls = 0;
   providerStatus = 'stopped';
+  providerStatusSequence = [];
   providerStatusAfterStart = null;
   providerStatusSessionMetadataUpdate = null;
   providerStartError = null;
@@ -423,7 +425,7 @@ mock.module('../platform/providers', () => ({
           },
         };
       }
-      return providerStatus;
+      return providerStatusSequence.shift() ?? providerStatus;
     },
     start: async () => {
       providerStartCalls += 1;
@@ -561,6 +563,33 @@ mock.module('../shared/supabase', () => ({
     },
   }),
 }));
+
+function applySandboxUpdates(
+  row: SandboxRowFixture,
+  updates: Partial<typeof sessionSandboxes.$inferSelect>,
+): SandboxRowFixture {
+  let metadata = updates.metadata;
+  if (metadata && typeof metadata === 'object' && 'queryChunks' in metadata) {
+    const query = new PgDialect().sqlToQuery(metadata as unknown as SQL);
+    const merged = { ...((row.metadata ?? {}) as Record<string, unknown>) };
+    for (const key of query.sql.matchAll(/- '([^']+)'/g)) delete merged[key[1]!];
+    for (const param of query.params) {
+      if (typeof param !== 'string' || !param.startsWith('{')) continue;
+      try {
+        Object.assign(merged, JSON.parse(param) as Record<string, unknown>);
+      } catch {
+        // Non-JSON SQL parameters are unrelated to metadata merges.
+      }
+    }
+    metadata = merged;
+  }
+  return {
+    ...row,
+    ...updates,
+    metadata: metadata === undefined ? row.metadata : metadata,
+    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+  };
+}
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
@@ -867,16 +896,20 @@ mock.module('../shared/db', () => ({
               if (!row) return [];
               if (predicate) {
                 const query = new PgDialect().sqlToQuery(predicate as SQL);
-                if (query.sql.includes('runtimeWakeId')) {
+                const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+                if (
+                  query.sql.includes('runtimeWakeRetryAfterAt') &&
+                  typeof metadata.runtimeWakeId === 'string' &&
+                  Date.parse(String(metadata.runtimeWakeLeaseExpiresAt)) > Date.now()
+                ) {
+                  return [];
+                }
+                if (query.sql.includes("->>'runtimeWakeId' =")) {
                   const wakeId = (row.metadata as Record<string, unknown> | null)?.runtimeWakeId;
                   if (typeof wakeId !== 'string' || !query.params.includes(wakeId)) return [];
                 }
               }
-              sessionSandboxRows[0] = {
-                ...row,
-                ...updates,
-                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-              };
+              sessionSandboxRows[0] = applySandboxUpdates(row, updates);
               return [sessionSandboxRows[0]];
             }
             return [];
@@ -899,11 +932,7 @@ mock.module('../shared/db', () => ({
                 if (table === sessionSandboxes) {
                   const row = sessionSandboxRows[0];
                   if (!row) return [];
-                  sessionSandboxRows[0] = {
-                    ...row,
-                    ...updates,
-                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                  };
+                  sessionSandboxRows[0] = applySandboxUpdates(row, updates);
                   return [sessionSandboxRows[0]];
                 }
                 return [];
@@ -927,11 +956,7 @@ mock.module('../shared/db', () => ({
               if (table === sessionSandboxes) {
                 const row = sessionSandboxRows[0];
                 if (!row) return [];
-                sessionSandboxRows[0] = {
-                  ...row,
-                  ...updates,
-                  updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                };
+                sessionSandboxRows[0] = applySandboxUpdates(row, updates);
                 return [sessionSandboxRows[0]];
               }
               return [];
@@ -1114,7 +1139,7 @@ describe('project session API contract', () => {
     expect(assertedIamActions).toContain('project.session.read');
   });
 
-  test('in-place resume clears stale readiness timers and the prior terminal session error', async () => {
+  test('in-place resume keeps stopped state and billing closed until the provider proves running', async () => {
     const staleReadyWaitStartedAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     sessionRow = {
       ...sessionRow!,
@@ -1160,9 +1185,9 @@ describe('project session API contract', () => {
     });
 
     expect(won).toBe(true);
-    expect(sessionRow).toMatchObject({ status: 'running', error: null });
+    expect(sessionRow).toMatchObject({ status: 'stopped' });
     expect(sessionSandboxRows[0]).toMatchObject({
-      status: 'active',
+      status: 'stopped',
       externalId: 'original-provider-identity',
       metadata: {
         initStatus: 'ready',
@@ -1176,11 +1201,17 @@ describe('project session API contract', () => {
     expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
     expect(resumedMetadata.runtimeWakeId).toEqual(expect.any(String));
+    expect(computeReopenCalls).toBe(0);
 
+    providerStatus = 'running';
     releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    expect(sessionRow).toMatchObject({ status: 'running', error: null });
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(computeReopenCalls).toBe(1);
   });
 
-  test('provider reconciliation cannot close billing while an in-place resume is starting', async () => {
+  test('provider reconciliation observes a stopped row while an in-place resume is starting', async () => {
     sessionRow = {
       ...sessionRow!,
       status: 'stopped',
@@ -1219,13 +1250,127 @@ describe('project session API contract', () => {
       'platinum-resume-race',
       new Date(),
     );
-    releaseProviderStart?.();
-    await flushUntil(() => providerStartCalls === 1);
-
     expect(won).toBe(true);
     expect(reconciled).toBe(false);
-    expect(sessionSandboxRows[0]?.status).toBe('active');
-    expect(sessionRow?.status).toBe('running');
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
+    expect(computeReopenCalls).toBe(0);
+
+    providerStatus = 'running';
+    releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('provider start rejection keeps both rows stopped and opens no compute meter', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rejected-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartError = new Error('provider rejected start');
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rejected-wake',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+    await flushUntil(
+      () =>
+        typeof (sessionSandboxRows[0]?.metadata as Record<string, unknown>)?.runtimeWakeFailedAt ===
+        'string',
+    );
+
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
+    expect(computeReopenCalls).toBe(0);
+    const failureMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(failureMetadata.runtimeWakeError).toBe('start_failed');
+    expect(typeof failureMetadata.runtimeWakeFailedAt).toBe('string');
+    expect(typeof failureMetadata.runtimeWakeRetryAfterAt).toBe('string');
+    expect(failureMetadata.runtimeWakeId).toBeUndefined();
+    expect(Date.parse(String(failureMetadata.runtimeWakeRetryAfterAt))).toBeGreaterThan(Date.now());
+
+    const response = await createApp().request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'stopped',
+      retriable: false,
+      reason: 'runtime_wake_cooldown',
+      sandbox: { status: 'stopped' },
+      failure: {
+        category: 'sandbox-provider',
+        retryable: true,
+      },
+    });
+    expect(providerStartCalls).toBe(1);
+  });
+
+  test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-single-flight-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+    const input = {
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      externalId: 'platinum-single-flight-wake',
+      metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+    };
+
+    const [first, second] = await Promise.all([
+      resumeStoppedSandbox(input),
+      resumeStoppedSandbox(input),
+    ]);
+    await flushUntil(() => providerStartCalls > 0);
+
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect(providerStartCalls).toBe(1);
+    expect(computeReopenCalls).toBe(0);
+
+    providerStatus = 'running';
+    releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
     expect(computeReopenCalls).toBe(1);
   });
 
@@ -1270,7 +1415,11 @@ describe('project session API contract', () => {
       sandboxId: SESSION_ID,
       sessionId: SESSION_ID,
       externalId: 'platinum-cancelled-wake',
-      metadata: { stopReason: 'manual', stoppedBy: USER_ID },
+      // Top-level, not nested in `metadata`: the patch sets `stopReason` from
+      // the required field AFTER spreading `metadata`, so a nested one is
+      // overwritten and `JSON.stringify` drops the resulting undefined.
+      stopReason: 'manual',
+      metadata: { stoppedBy: USER_ID },
     });
     releaseProviderStart?.();
     await flushUntil(() => providerStopCalls === 1);
@@ -2160,6 +2309,60 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  test('dashboard start exposes an actionable non-retryable protected-delivery failure', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'failed',
+      sandboxProvider: 'daytona',
+      error:
+        'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 1,
+          initMaxAttempts: 1,
+          failureCategory: 'unsupported-secret-delivery',
+          errorMessage:
+            'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+          lastProvisioningError:
+            'Sandbox provider daytona does not support network-boundary secret delivery',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      failure: {
+        category: 'unsupported-secret-delivery',
+        message:
+          'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+        retryable: false,
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
   test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
     const app = createApp();
     sessionRow = {
@@ -2488,7 +2691,7 @@ describe('project session API contract', () => {
     ).toEqual(expect.any(String));
   });
 
-  test('concurrent archived resume + transient removed status keeps the original identity fenced', async () => {
+  test('a removed stopped runtime keeps the original identity fenced without optimistic activation', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -2528,13 +2731,13 @@ describe('project session API contract', () => {
     expect(await res.json()).toMatchObject({
       stage: 'starting',
       retriable: true,
-      reason: 'runtime_removed_checking',
+      reason: 'runtime_waking',
     });
-    expect(providerStartCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-original-archived');
-    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
     expect(
       (sessionSandboxRows[0]?.metadata as Record<string, unknown>).runtimeWakeStartedAt,
     ).toEqual(expect.any(String));

@@ -203,7 +203,7 @@ describe('marketplace catalog', () => {
       const entry = await findCatalogEntryByName(name);
       expect(entry?.item.meta?.managedBy).toBe('kortix');
     }
-    for (const name of ['agent-browser', 'kortix', 'memory-reflector', 'web_search', 'pdf']) {
+    for (const name of ['agent-browser', 'kortix', 'harness-reflector', 'web_search', 'pdf']) {
       const entry = await findCatalogEntryByName(name);
       expect(entry?.item.meta?.managedBy).toBeUndefined();
     }
@@ -407,6 +407,30 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
       expect(ext!.external).toBe(true);
       expect(ext!.id).toBe('db-mock:db-ext');
     } finally {
+      restoreFetch();
+      registerMarketplaceSourceProvider(async () => []);
+      _resetExternalCache();
+    }
+  });
+
+  test.serial('external marketplace loading can be disabled for local runs', async () => {
+    let fetched = false;
+    const previous = process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED;
+    process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED = '0';
+    registerMarketplaceSourceProvider(async () => [
+      { id: 's1', address: 'github:mockorg/mockrepo', addedAt: '2026-06-16T00:00:00.000Z' },
+    ]);
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response('unexpected request', { status: 500 });
+    }) as unknown as typeof fetch;
+    _resetExternalCache();
+    try {
+      await listCatalogItems();
+      expect(fetched).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED;
+      else process.env.KORTIX_MARKETPLACE_EXTERNAL_ENABLED = previous;
       restoreFetch();
       registerMarketplaceSourceProvider(async () => []);
       _resetExternalCache();

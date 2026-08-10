@@ -70,8 +70,7 @@ const PROVIDERS: readonly ConnectorProvider[] = [
   'channel',
   'computer',
 ];
-export type ConnectorAuthorizationStrategy =
-  (typeof CONNECTOR_AUTHORIZATION_STRATEGIES)[number];
+export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STRATEGIES)[number];
 
 /**
  * Platform-owned slugs and the ONLY provider allowed to use each. These are
@@ -84,7 +83,10 @@ export type ConnectorAuthorizationStrategy =
  *
  *  - `kortix_slack` → channel only (the Slack channel materializes under it; see
  *    connector/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
- *  - `computer`     → computer only (the Agent Computer Tunnel connector).
+ *  - `computer`     → computer only (default Computers profile slug).
+ * Additional Computers profile slugs are created through the connector API.
+ * They never pass through manifest parsing because machine ids are account
+ * control-plane identities, not repository configuration.
  * See KORTIX-206 + docs/specs/computer-connector.md. The pairs themselves are
  * canonically defined in `@kortix/manifest-schema` (imported above) — this
  * `export` just preserves this module's existing public surface, since
@@ -194,6 +196,12 @@ export interface ConnectorSpec {
   baseUrl: string | null;
   /** channel: chat platform (slack | …) — selects the fixed action catalog + API base. */
   platform: ChannelPlatform | null;
+  /** computer: legacy single-machine binding. */
+  tunnelId?: string | null;
+  /** computer: profile-scoped machine allowlist. */
+  tunnelIds?: string[] | null;
+  /** computer: verified owner accounts for the selected machine allowlist. */
+  tunnelAccountIds?: string[] | null;
   /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──
@@ -376,6 +384,7 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     endpoint: spec.endpoint,
     baseUrl: spec.baseUrl,
     platform: spec.platform,
+    tunnelIds: spec.tunnelIds ?? (spec.tunnelId ? [spec.tunnelId] : null),
     spec: spec.spec,
     auth: spec.auth,
     authAuto: spec.authAuto ?? false,
@@ -476,11 +485,7 @@ function parseConnectorEntry(
     strategyRaw &&
     !(CONNECTOR_AUTHORIZATION_STRATEGIES as readonly string[]).includes(strategyRaw)
   ) {
-    return err(
-      slug,
-      'authorization_strategy must be "project" or "user"',
-      filename,
-    );
+    return err(slug, 'authorization_strategy must be "project" or "user"', filename);
   }
   const authorizationStrategy: ConnectorAuthorizationStrategy =
     (strategyRaw as ConnectorAuthorizationStrategy) || 'project';
@@ -587,15 +592,18 @@ function parseProviderFields(
         filename,
       );
     }
-    return { ok: true, value: { ...base, platform: platform as ChannelPlatform } };
+    return {
+      ok: true,
+      value: { ...base, platform: platform as ChannelPlatform },
+    };
   }
 
   if (provider === 'computer') {
-    // Synth-only: connecting a machine over the Agent Computer Tunnel auto-
-    // materializes a single `computer` connector. It can't be declared by hand.
+    // API-only: profiles select account-owned machines through the connector
+    // API. Tunnel ids must not enter repository configuration.
     return err(
       slug,
-      'provider="computer" is managed automatically when you connect a machine (Computers) — it cannot be declared in kortix.yaml',
+      'provider="computer" is managed through the connector API (Computers) — it cannot be declared in kortix.yaml',
       filename,
     );
   }
@@ -684,7 +692,10 @@ function parseAuth(
     );
   }
 
-  return { ok: true, value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret } };
+  return {
+    ok: true,
+    value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret },
+  };
 }
 
 /**

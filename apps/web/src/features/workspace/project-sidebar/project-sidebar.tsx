@@ -6,7 +6,6 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
@@ -15,13 +14,11 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { UserMenu } from '@/features/layout/user-menu';
-import { useAuth } from '@/features/providers/auth-provider';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
+import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
-import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
@@ -30,7 +27,6 @@ import {
   ProjectSettingsNavItem,
   useSettingsKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/project-settings-nav';
-import { useAdminRole } from '@/hooks/admin';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
@@ -41,10 +37,10 @@ import {
   SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
-import { ProjectSwitcher } from './project-switcher';
+import { WorkspaceSwitcher } from './workspace-switcher';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -56,21 +52,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
 
-  const { data: adminRoleData } = useAdminRole();
-  const isAdmin = adminRoleData?.isAdmin ?? false;
-
   const accountId = useBillingAccountId();
-
-  const { user: authUser } = useAuth();
-  const user = useMemo(
-    () => ({
-      name: authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'User',
-      email: authUser?.email ?? '',
-      avatar: authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture || '',
-      isAdmin,
-    }),
-    [authUser, isAdmin],
-  );
 
   // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
@@ -120,14 +102,19 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             and the session header no longer has to carry a toggle while the
             panel is docked open.
 
-            The Kortix mark used to be a separate button sitting beside the
-            switcher. Same subject, two mismatched controls, and dead space
-            between them. It is one segmented control now (see
-            ProjectSwitcher): the mark still links to the project's home, the
-            name still opens the switcher, and the whole row between them is
-            live instead of inert. */}
+            ONE control answers "who am I / where am I / where can I go". It was
+            three: a `<Link>` carrying the Kortix mark fused to a separate
+            dropdown trigger carrying the workspace name up here, plus the user
+            menu as a third control down in the footer — two of the three being
+            dropdowns. The link is gone, because a control that is half
+            navigation and half disclosure makes you guess which half you are
+            pointing at. The workspace directory is now a second VIEW of this
+            menu, behind "Switch Workspace", which is why there is no footer
+            control below any more. */}
         <div className="flex w-full items-center gap-1">
-          <ProjectSwitcher variant="sidebar" className="min-w-0 flex-1" />
+          <div className="min-w-0 flex-1">
+            <WorkspaceSwitcher projectId={projectId} />
+          </div>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile
@@ -224,7 +211,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectSessionList projectId={projectId} />
           </SidebarGroup>
 
-          <SidebarGroup className="mt-auto py-0.5">
+          <SidebarGroup className="mt-auto">
             <SidebarMenu>
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
@@ -254,9 +241,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
-        <UserMenu user={user} variant="sidebar" />
-      </SidebarFooter>
+      {/* No footer control. This menu moved to the header, where it is now the
+          single control carrying identity AND the workspace directory; a copy
+          down here would put the same dropdown at both ends of one panel. */}
 
       {/* No resize rail while collapsed — the edge is the hover-peek zone. */}
       {isExpanded && <SidebarRail />}

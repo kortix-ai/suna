@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { Monitor } from '@/features/icon/icons/monitor';
-import { Moon } from '@/features/icon/icons/moon';
-import { Sun } from '@/features/icon/icons/sun';
+import { MonitorIcon, Moon, Sun } from '@phosphor-icons/react';
+
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 import { THEME_OPTIONS } from './user-menu';
@@ -41,13 +40,18 @@ describe('THEME_OPTIONS', () => {
     // Identity, not resemblance: the submenu and the settings tab must render
     // the same component, or the two surfaces drift into different glyphs for
     // the same choice.
-    expect(THEME_OPTIONS.map((option) => option.Icon)).toEqual([Sun, Moon, Monitor]);
+    expect(THEME_OPTIONS.map((option) => option.Icon)).toEqual([Sun, Moon, MonitorIcon]);
   });
 
   test('pairs every value with a label and an icon', () => {
     for (const option of THEME_OPTIONS) {
       expect(option.label.length).toBeGreaterThan(0);
-      expect(typeof option.Icon).toBe('function');
+      // Renderable, not necessarily a plain function. These moved from local
+      // SVG components to Phosphor, and a `forwardRef` component is an OBJECT
+      // carrying `$$typeof` — `typeof === 'function'` would fail every icon in
+      // the library while the component is perfectly valid.
+      expect(['function', 'object']).toContain(typeof option.Icon);
+      expect(option.Icon).toBeTruthy();
     }
   });
 });

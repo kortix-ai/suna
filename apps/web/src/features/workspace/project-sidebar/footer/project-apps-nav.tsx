@@ -2,8 +2,8 @@
 
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
-import { useAppsFeatureEnabled } from '@/hooks/projects/use-apps-feature-enabled';
 import { useIsMobile } from '@/hooks/utils';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { GlobeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
@@ -15,14 +15,14 @@ export function ProjectAppsNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const appsGate = useAppsFeatureEnabled(projectId);
+  const appsGate = useFeatureFlag(projectId, 'apps');
   const handleClick = useCallback(() => {
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);
 
   if (!projectId) return null;
-  /* Fail-closed: the entry exists only after the project opts into the `apps`
-     experiment in Settings → Experimental. Loading counts as disabled. */
+  /* Fail-closed: the entry exists only after the project turns the `apps`
+     feature flag on in Customize → Feature flags. Loading counts as disabled. */
   if (!appsGate.enabled) return null;
   return (
     <SidebarMenuItem>

@@ -1,3 +1,12 @@
+import type { UseSessionResult } from '@kortix/sdk/react';
+
+export function gatedRuntimeError(input: {
+  phase: UseSessionResult['phase'];
+  runtimeError: unknown;
+}): unknown {
+  return input.phase === 'error' ? input.runtimeError : null;
+}
+
 export function canMountSessionChat(input: {
   switched: boolean;
   opencodeSessionId: string | null;

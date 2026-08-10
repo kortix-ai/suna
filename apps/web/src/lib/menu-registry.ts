@@ -20,8 +20,9 @@
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
-import type { ExperimentalFeatureKey } from '@kortix/sdk';
+import type { FeatureFlagKey } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   SquaresFourIcon as Blocks,
@@ -40,13 +41,13 @@ import {
   GitPullRequestIcon as GitPullRequest,
   GlobeIcon as Globe,
   HashIcon as Hash,
+  TrayIcon as Inbox,
   KeyboardIcon as Keyboard,
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
-  MonitorIcon as Monitor,
   PaletteIcon as Palette,
   SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
@@ -64,6 +65,7 @@ import {
   UsersIcon as UsersSolid,
   SpeakerHighIcon as Volume2,
   ImagesSquareIcon as WallpaperIcon,
+  WaveformIcon as Waveform,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
@@ -186,10 +188,12 @@ export interface MenuItemDef {
    *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
    *  project-paradigm surfaces (Board today; Milestones, Team later). */
   requiresProjectsFlag?: boolean;
-  /** If set, item is only shown when the named per-project experimental
-   *  feature is enabled (mirrors the Customize rail gating). The palette
-   *  resolves it against the active project's experimental flags. */
-  requiresExperimental?: ExperimentalFeatureKey;
+  /** If set, the item is only shown when the named per-project FEATURE FLAG is
+   *  enabled (mirrors the Customize rail gating). A disabled feature's surface
+   *  is invisible, so EVERY registry consumer must honour this — the command
+   *  palette and the right sidebar both filter on it, fail-closed while the
+   *  project detail is unresolved. */
+  requiresFlag?: FeatureFlagKey;
 }
 
 // ============================================================================
@@ -315,19 +319,19 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'restartConfig',
     keywords: 'reload restart config agents skills commands',
+    requiresSession: true,
   },
   {
-    id: 'restart-full',
-    // Says what it does. This maps to the daemon's /kortix/refresh, which pulls
-    // the workspace AND restarts the runtime — "Full" alone did not warn that it
-    // touches the working tree, or that it ends the turn in flight.
-    label: 'Restart: Pull & Restart Runtime',
+    id: 'sync-session-branch',
+    label: 'Ask Agent: Sync Branch & Reload',
     icon: RefreshCw,
     group: 'actions',
     showIn: ['commandPalette'],
     kind: 'action',
-    actionId: 'restartFull',
-    keywords: 'reload restart full services kill nuclear pull refresh workspace',
+    actionId: 'reconcileSession',
+    keywords:
+      'agent sync branch base pull merge conflict resolve reconcile reload restart refresh workspace',
+    requiresSession: true,
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -342,7 +346,10 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects',
+    // Static registry entry — no user id to resolve the latest project with,
+    // so this is the id-free landing door, never the removed `/projects`
+    // list.
+    href: PROJECT_LANDING_PATH,
     keywords: 'projects list all workspaces switch',
   },
   {
@@ -419,7 +426,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/apps',
     requiresProject: true,
-    requiresExperimental: 'apps',
+    requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   {
@@ -530,7 +537,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/settings/marketplace',
     requiresProject: true,
-    requiresExperimental: 'marketplace',
+    requiresFlag: 'marketplace',
     keywords: 'marketplace store install templates agents skills browse project customize',
   },
   {
@@ -542,22 +549,34 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/settings/models',
     requiresProject: true,
-    requiresExperimental: 'llm_gateway',
+    requiresFlag: 'llm_gateway',
     keywords:
       'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
   },
   {
-    id: 'proj-computers',
-    label: 'Customize · Computers',
-    icon: Monitor,
+    id: 'proj-review',
+    label: 'Customize · Review Center',
+    icon: Inbox,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/settings/computers',
+    href: '/projects/{projectId}/settings/review',
     requiresProject: true,
-    requiresExperimental: 'agent_tunnel',
+    requiresFlag: 'review_center',
     keywords:
-      'computers tunnel machines connect reverse local devices remote agent access project customize',
+      'review center inbox approvals change requests approve reject needs you project customize',
+  },
+  {
+    id: 'proj-voice',
+    label: 'Customize · Voice',
+    icon: Waveform,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/settings/voice',
+    requiresProject: true,
+    requiresFlag: 'voice',
+    keywords: 'voice call speak spoken conversation livekit bot name project customize',
   },
   {
     id: 'proj-members',

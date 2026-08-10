@@ -25,13 +25,14 @@ import {
   type MenuItemDef,
   type NavSubGroup,
 } from '@/lib/menu-registry';
+import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 import { Button } from '../ui/button';
 
@@ -134,9 +135,29 @@ export function SidebarRight() {
     [router, openSandboxServiceTab, handleNewTerminal],
   );
 
-  // Get registry items for the right sidebar
-  const quickActionClusters = getNavItemsClustered('rightSidebar', 'quickActions');
-  const navClusters = getNavItemsClustered('rightSidebar', 'navigation');
+  // Get registry items for the right sidebar.
+  //
+  // `requiresFlag` is honoured HERE too, not only in the command palette. A
+  // disabled feature's surface must be invisible on every registry consumer;
+  // this one previously rendered whatever the registry listed, so the first
+  // flagged item to gain `showIn: ['rightSidebar']` would have leaked. Reads
+  // the project from the route and fails CLOSED — no project id, or the detail
+  // query still in flight, hides every flagged item rather than flashing it.
+  const routeProjectId = useParams<{ id?: string }>()?.id ?? null;
+  const { flags: featureFlags } = useProjectFeatureFlags(routeProjectId);
+  const flagAllows = useCallback(
+    (item: MenuItemDef) => !item.requiresFlag || featureFlags[item.requiresFlag],
+    [featureFlags],
+  );
+  const filterClusters = useCallback(
+    (clusters: MenuItemDef[][]) =>
+      clusters.map((cluster) => cluster.filter(flagAllows)).filter((cluster) => cluster.length > 0),
+    [flagAllows],
+  );
+  const quickActionClusters = filterClusters(
+    getNavItemsClustered('rightSidebar', 'quickActions'),
+  );
+  const navClusters = filterClusters(getNavItemsClustered('rightSidebar', 'navigation'));
 
   const obHide = useOnboardingModeStore((s) => s.active && !s.morphing);
 
@@ -206,7 +227,7 @@ export function SidebarRight() {
                                 disabled={isDisabled}
                                 variant="sidebar"
                               >
-                                <Icon className="text-muted-foreground/50 h-4 w-4 flex-shrink-0" />
+                                <Icon className="text-muted-foreground/50 h-4 w-4 shrink-0" />
                                 <span>{label}</span>
                               </Button>
                             );
@@ -244,7 +265,7 @@ export function SidebarRight() {
                                     'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
                                 )}
                               >
-                                <Icon className="h-4 w-4 flex-shrink-0" />
+                                <Icon className="h-4 w-4 shrink-0" />
                                 <span>{item.label}</span>
                               </Button>
                             );
@@ -316,7 +337,7 @@ export function SidebarRight() {
           <div
             data-sidebar="header"
             className={cn(
-              'flex h-[38px] flex-shrink-0 items-center gap-2 overflow-hidden px-3 pt-2',
+              'flex h-[38px] shrink-0 items-center gap-2 overflow-hidden px-3 pt-2',
               state === 'expanded' ? 'justify-between' : 'justify-center',
             )}
           >
@@ -326,7 +347,7 @@ export function SidebarRight() {
               </span>
             )}
             <button
-              className="text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent flex h-7 w-7 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150"
+              className="text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150"
               onClick={toggleSidebar}
               aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
             >
@@ -461,7 +482,7 @@ export function SidebarRight() {
                               variant="sidebar"
                               className="rounded-lg"
                             >
-                              <Icon className="text-muted-foreground/50 h-4 w-4 flex-shrink-0" />
+                              <Icon className="text-muted-foreground/50 h-4 w-4 shrink-0" />
                               <span>{label}</span>
                             </Button>
                           );
@@ -499,7 +520,7 @@ export function SidebarRight() {
                                   'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
                               )}
                             >
-                              <Icon className="text-muted-foreground/50 h-4 w-4 flex-shrink-0" />
+                              <Icon className="text-muted-foreground/50 h-4 w-4 shrink-0" />
                               <span>{item.label}</span>
                             </Button>
                           );

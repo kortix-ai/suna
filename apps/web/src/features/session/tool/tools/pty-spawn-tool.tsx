@@ -43,8 +43,8 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
 
   return (
     <BasicTool
-      icon={<Terminal className="size-3.5 flex-shrink-0" />}
-      trigger={{ title: 'Spawn', subtitle: title || command }}
+      icon={<Terminal className="size-3.5 shrink-0" />}
+      trigger={{ title: 'Started terminal', subtitle: title || command }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}

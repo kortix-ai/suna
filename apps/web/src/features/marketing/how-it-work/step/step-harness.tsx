@@ -16,15 +16,15 @@ import { WebPanelWrapper } from '../web-panel-wrapper';
  * `skills:` are NOT frontmatter keys — an earlier version of this panel showed
  * both, and neither would parse.
  */
-const CONFIG: { line: string; tone?: 'muted' | 'accent' }[] = [
-  { line: '# .kortix/opencode/agents/kortix.md', tone: 'muted' },
-  { line: 'description: General knowledge worker' },
-  { line: 'model: auto' },
-  { line: 'permission:' },
-  { line: '  edit: allow' },
-  { line: '  bash:' },
-  { line: '    git push: deny', tone: 'accent' },
-  { line: "    '*': allow" },
+const CONFIG: { id: string; line: string; tone?: 'muted' | 'accent' }[] = [
+  { id: 'path', line: '# .kortix/opencode/agents/kortix.md', tone: 'muted' },
+  { id: 'description', line: 'description: General knowledge worker' },
+  { id: 'model', line: 'model: auto' },
+  { id: 'permission', line: 'permission:' },
+  { id: 'edit', line: '  edit: allow' },
+  { id: 'bash', line: '  bash:' },
+  { id: 'git-push', line: '    git push: deny', tone: 'accent' },
+  { id: 'bash-fallback', line: "    '*': allow" },
 ];
 
 const CAPABILITIES = [
@@ -58,13 +58,16 @@ export function StepHarness(): ReactNode {
           }
         >
           <div className="bg-background px-4 py-3">
-            <pre className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]">
+            <pre
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll this overflowing code region, as required by Axe.
+              tabIndex={0}
+              aria-label="Kortix agent harness configuration"
+              className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]"
+            >
               <code>
-                {CONFIG.map((entry, index) => (
+                {CONFIG.map((entry) => (
                   <div
-                    // A fixed, ordered snippet: `---` appears twice, so the
-                    // line text is not a unique key. Its position is.
-                    key={`config-${index}`}
+                    key={entry.id}
                     className={
                       entry.tone === 'muted'
                         ? 'text-muted-foreground/55'

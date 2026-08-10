@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kortix Testing"
+  short_description: "Run and extend the local-first Kortix tests"
+  default_prompt: "Use $testing to add or run the correct Kortix tests and report exact proof."

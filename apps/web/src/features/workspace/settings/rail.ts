@@ -15,7 +15,6 @@ import {
   TrayIcon as Inbox,
   KeyIcon as KeyRound,
   LinkIcon as Link,
-  MonitorIcon as Monitor,
   NetworkIcon as Network,
   ScrollIcon as ScrollText,
   ShieldIcon as Shield,
@@ -67,7 +66,6 @@ export function isRailItemActive(
   return item.tab === tab;
 }
 
-const COMPUTERS_ITEM: RailItem = { tab: 'computers', label: 'Computers', icon: Monitor };
 const MARKETPLACE_ITEM: RailItem = { tab: 'marketplace', label: 'Marketplace', icon: Store };
 const REVIEW_ITEM: RailItem = { tab: 'review', label: 'Review', icon: Inbox };
 const VOICE_ITEM: RailItem = { tab: 'voice', label: 'Voice', icon: AudioLines };
@@ -136,7 +134,6 @@ const STATIC_GROUPS: readonly RailGroup[] = [
 ];
 
 export interface RailFlags {
-  tunnelEnabled: boolean;
   marketplaceEnabled: boolean;
   llmGatewayAvailable: boolean;
   voiceEnabled: boolean;
@@ -160,11 +157,6 @@ export interface RailFlags {
  */
 export function railGroups(flags: RailFlags): readonly RailGroup[] {
   return STATIC_GROUPS.map((g) => {
-    if (g.label === 'Workspace') {
-      const items = [...g.items];
-      if (flags.tunnelEnabled) items.push(COMPUTERS_ITEM);
-      return { ...g, items };
-    }
     if (g.label === 'Agent') {
       const items = [...g.items];
       if (flags.marketplaceEnabled) items.push(MARKETPLACE_ITEM);

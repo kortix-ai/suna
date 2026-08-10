@@ -1,7 +1,7 @@
 'use client';
 
-import { type AdminConnector, getProjectDetail, listConnectors } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
+import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
@@ -40,6 +40,7 @@ import {
 } from './connector-identity';
 import { providerLabel } from './provider-label';
 
+import { ComputersAddFlow } from '@/features/workspace/capabilities/connectors/add/computers-add-flow';
 import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
 import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import {
@@ -47,10 +48,7 @@ import {
   type CatalogEntry,
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
-import {
-  ALL_CATEGORIES,
-  catalogCategoryKeys,
-} from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
+import { ALL_CATEGORIES } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
 import { useCatalog } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
@@ -221,9 +219,12 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [],
   );
 
-  const experimental = projectQuery.data?.project?.experimental;
-  const discoverEnabled = experimental?.connectors_api_discover === true;
-  const emailChannelEnabled = experimental?.agentmail_email === true;
+  // The one gating primitive. `useFeatureFlag` reads the SAME
+  // `qk.project.detail(projectId)` entry `projectQuery` above holds, so this is
+  // the same fetch and the same fail-closed semantics — `projectQuery` stays
+  // only to surface a load FAILURE and drive Retry (see `isError`/`retry`).
+  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
+  const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
   const authorizationQueryKeys = useMemo(
     () => connectorConnectionQueryKeys(projectId),
@@ -256,8 +257,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // Both queries gate what this page can offer, so both have to be able to
   // report a failure and both have to be retried.
   //
-  // `projectQuery` supplies `experimental`, and every flag read off it FAILS
-  // CLOSED: a 500 leaves `discoverEnabled` and `emailChannelEnabled` false.
+  // `projectQuery` is the SAME cache entry `useFeatureFlag` reads, and every
+  // flag read off it FAILS CLOSED: a 500 leaves `discoverEnabled` and
+  // `emailChannelEnabled` false.
   // `settled` does not save us — react-query drops `isLoading` once a query
   // has exhausted its retries, so on failure the page rendered as fully loaded
   // with capabilities silently gone. Naming only `connectorsQuery` here also
@@ -285,15 +287,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const scope: ConnectorScope = scopeChoice ?? 'discover';
   const catalogActive = scope !== 'connected';
 
-  // The category the catalogue should fetch FOR, as opposed to the one the
-  // user picked. `null` while browsing everything and while a search runs —
-  // the search is server-side across every category, so deepening one would be
-  // work against a grid that is ignoring it.
+  // The category the catalogue should FILTER by, server-side. `null` while
+  // browsing everything and while a search runs — the search is server-side
+  // across every category, so narrowing one would contradict the grid.
   //
   // Read off `query`, not `catalog.activeQuery`: this is an input to the hook
   // that produces `catalog`, so it cannot depend on its output. The 300ms
-  // debounce difference only means focus stops one tick earlier, which is the
-  // right direction.
+  // debounce difference only means the filter clears one tick earlier, which
+  // is the right direction.
   const focusCategory =
     catalogActive && category !== ALL_CATEGORIES && query.trim().length === 0 ? category : null;
 
@@ -304,11 +305,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   });
 
   // A category is a key in ONE catalogue's vocabulary. When `discoverEnabled`
-  // resolves and the source flips, every entry is replaced and the picked
-  // category is a token from a namespace that no longer exists —
-  // `resolveActiveCategory` already stops the GRID rendering it, but
-  // `focusCategory` above would still spend the catalogue's whole page budget
-  // fetching for a bucket that can never have anything in it.
+  // resolves and the source flips, every entry is replaced and the open
+  // category is a token from a namespace that no longer exists — so
+  // `focusCategory` above would filter the new source by a key it has never
+  // published, and the grid would be empty with nothing on screen explaining
+  // why.
   //
   // Adjusted during render, not in an effect. React re-runs this component
   // before committing, so the reset lands in the same paint and `useCatalog`'s
@@ -320,13 +321,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     setCategorySource(catalog.source);
     setCategory(ALL_CATEGORIES);
   }
-
-  // Derived ONCE, for both the rail and the grid. Deriving it twice is what
-  // let the control and the content disagree about which categories exist.
-  const availableCategories = useMemo(
-    () => catalogCategoryKeys(catalog.entries, (entry) => entry.categories),
-    [catalog.entries],
-  );
 
   // Typing clears the category. The `Select` hides while a search runs (a
   // catalogue search is server-side across every category, so showing
@@ -452,7 +446,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           connectedKeys={connectedKeys}
           mode={scope === 'discover' ? 'sectioned' : 'flat'}
           category={category}
-          availableCategories={availableCategories}
           onCategoryChange={setCategory}
           onSelect={setCatalogTarget}
           emptyTitle="Catalogue unavailable"
@@ -519,6 +512,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       <EasyConnectAddFlow
         projectId={projectId}
         app={catalogTarget?.source === 'easy-connect' ? catalogTarget.app : null}
+        existingSlugs={existingSlugs}
+        canWrite={canWrite}
+        onClose={() => setCatalogTarget(null)}
+        onAdded={onCatalogAdded}
+      />
+      <ComputersAddFlow
+        projectId={projectId}
+        open={catalogTarget?.source === 'computer'}
         existingSlugs={existingSlugs}
         canWrite={canWrite}
         onClose={() => setCatalogTarget(null)}

@@ -33,7 +33,6 @@ import type { RailItem } from './type';
  */
 
 const flags = {
-  tunnelEnabled: false,
   marketplaceEnabled: false,
   llmGatewayAvailable: false,
   voiceEnabled: false,
@@ -147,7 +146,7 @@ describe('SettingsPanelShell — pane wiring', () => {
 /**
  * Task 5b2 — proof that real tab-pane content is gated on the ACTIVE tab.
  *
- * Every one of the fifteen views wired onto a tab this task ports from
+ * Every one of the views wired onto a tab this task ports from
  * The legacy panel's `SectionContent` switch calls `useQuery` /
  * `useProjectCan` (react-query) synchronously in its own function body —
  * confirmed by grepping each file (see the task report's table). None of the
@@ -184,7 +183,6 @@ const REAL_VIEW_TABS: readonly SettingsTab[] = [
   'repositories',
   'schedules',
   'webhooks',
-  'computers',
   'models',
   'instructions',
   'marketplace',
@@ -201,15 +199,14 @@ const REAL_VIEW_TABS: readonly SettingsTab[] = [
   'upgrades',
 ];
 
-/** `computers`, `marketplace`, `review`, and `voice` are flag-gated rail
+/** `marketplace`, `review`, and `voice` are flag-gated rail
  *  items (see `rail.ts`) — with every flag off (this file's module-level
  *  `flags`/`allGroups`/`allItems`) they don't exist in the rail at all, so
  *  there is no `TabsContent` for them to mount into. Every flag on puts all
- *  fifteen real-view tabs in the rail at once, which is what this describe
+ *  real-view tabs in the rail at once, which is what this describe
  *  block's "every real-view tab exists as a sibling" claim requires to be
  *  literally true. */
 const allFlagsOnGroups = railGroups({
-  tunnelEnabled: true,
   marketplaceEnabled: true,
   llmGatewayAvailable: true,
   voiceEnabled: true,

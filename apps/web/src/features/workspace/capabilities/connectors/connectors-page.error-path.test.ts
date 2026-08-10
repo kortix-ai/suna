@@ -52,9 +52,18 @@ describe('connectors page error path', () => {
     // If a flag ever stops coming from `projectQuery`, the coupling above is
     // no longer sufficient and this test should be revisited rather than
     // silently outlived.
-    expect(source).toContain('const experimental = projectQuery.data?.project?.experimental;');
-    expect(source).toContain('discoverEnabled = experimental?.connectors_api_discover === true');
-    expect(source).toContain('emailChannelEnabled = experimental?.agentmail_email === true');
+    // The flags now come from the ONE gating primitive, which reads the SAME
+    // `qk.project.detail(projectId)` entry `projectQuery` holds — so the
+    // coupling this file guards is unchanged, only the expression is.
+    expect(source).toContain(
+      "const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;",
+    );
+    expect(source).toContain(
+      "const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;",
+    );
+    expect(source).toContain('queryKey: qk.project.detail(projectId)');
+    // No hand-rolled flag read survives here.
+    expect(source).not.toContain('?.experimental?.');
   });
 
   test('both add journeys end in the same handler shape', () => {

@@ -188,7 +188,7 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
   };
 
   return (
-    <header className="bg-background sticky top-0 z-20 h-12 w-full flex-shrink-0 sm:h-14">
+    <header className="bg-background sticky top-0 z-20 h-12 w-full shrink-0 sm:h-14">
       <div className="flex h-full items-center justify-between px-3 sm:px-4">
         {/* Left side — title + "Shared" badge */}
         <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -201,7 +201,7 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
         </div>
 
         {/* Right side — Copy Link */}
-        <div className="flex flex-shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -268,7 +268,7 @@ function AssistantBlock({ text }: { text: string }) {
         <img
           src="/kortix-logomark-white.svg"
           alt="Kortix"
-          className="flex-shrink-0 invert dark:invert-0"
+          className="shrink-0 invert dark:invert-0"
           style={{ height: '12px', width: 'auto' }}
         />
       </div>

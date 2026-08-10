@@ -2,7 +2,7 @@ import { lt } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { projectFeatureEnabled } from '../../experimental/for-project';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { resolveConversationProject } from './binding';
@@ -54,7 +54,7 @@ export async function handleTeamsConversationUpdate(activity: TeamsActivity): Pr
 
   const projectId = await resolveConversationProject(tenantId, conversationId);
   if (!projectId) return;
-  if (!(await projectFeatureEnabled(projectId, 'teams'))) return;
+  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) return;
 
   const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
   await sendCard(
@@ -91,10 +91,10 @@ export async function handleTeamsActivity(activity: TeamsActivity): Promise<void
     console.warn('[teams-webhook] no project installed for tenant', { tenantId });
     return;
   }
-  // Per-project gate — the `teams` experimental feature. This is the only
+  // Per-project gate — the `teams` feature flag. This is the only
   // enforcement point for the shared multi-tenant webhook, which cannot know
   // the project before this line.
-  if (!(await projectFeatureEnabled(projectId, 'teams'))) {
+  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) {
     console.warn('[teams-webhook] teams feature is off for project — ignoring', { projectId });
     return;
   }

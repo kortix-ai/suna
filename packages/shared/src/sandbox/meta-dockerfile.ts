@@ -68,7 +68,6 @@ RUN apt-get update \\
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash kortix \\
- && install -d -o kortix -g kortix -m 0700 /var/run/kortix \\
  && mkdir -p /workspace /opt/kortix /ephemeral/kortix-master/opencode \\
  && chown -R kortix:kortix /workspace /opt/kortix /ephemeral
 

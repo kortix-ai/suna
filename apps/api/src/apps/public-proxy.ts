@@ -10,7 +10,7 @@ import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { AppBudgetExceededError, assertAppBudgetAvailable } from './budget';
 import { AppHostingProvider } from './hosting';
-import { resolveExperimentalFeature } from '../experimental/features';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import {
   appAccessCookie,
@@ -467,7 +467,7 @@ export async function loadPublicAppState(routeKey: string) {
     .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt)))
     .limit(1);
   const app = loaded?.app;
-  if (!loaded || !resolveExperimentalFeature(loaded.projectMetadata, 'apps')) return null;
+  if (!loaded || !resolveFeatureFlag(loaded.projectMetadata, 'apps')) return null;
   if (!app) return null;
   let [deployment] = app.activeDeploymentId
     ? await db.select().from(appDeployments)

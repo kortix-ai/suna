@@ -13,10 +13,17 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { upsertCredential, upsertConnectionCredential } from './credentials';
 import type { ExecResult } from './call';
-import { isPipedreamOAuthApp } from './pipedream-catalog';
+import { isCatalogApp } from './pipedream-catalog';
+import {
+  getCatalogSnapshot,
+  type CatalogCategory,
+  type CatalogPageFetcher,
+} from './pipedream-index';
+import { pageOf, rankApps, type CatalogApp } from './pipedream-search';
 import type { PipedreamActionLike } from './types';
 
-export { isPipedreamOAuthApp } from './pipedream-catalog';
+export { isCatalogApp } from './pipedream-catalog';
+export type { CatalogCategory } from './pipedream-index';
 
 const PD_BASE = 'https://api.pipedream.com';
 
@@ -113,6 +120,18 @@ class PipedreamProvider {
     return (data.data || []).map((a) => ({ id: a.id, app: a.app.name_slug, appName: a.app.name }));
   }
 
+  /**
+   * One raw page of Pipedream's app catalogue, mapped but **not filtered**.
+   *
+   * Filtering is the caller's job, and there are two callers with different
+   * needs: the catalogue index applies `isCatalogApp` while crawling, and the
+   * icon lookup in `sync.ts` must be able to find an app whose connector
+   * already exists even if it would not be offered in the catalogue today.
+   *
+   * `hasMore` is driven by Pipedream's cursor, NOT `apps.length` — any filter a
+   * caller applies would otherwise shrink a page below `limit` and stop paging
+   * early.
+   */
   async listApps(query?: string, limit = 48, cursor?: string): Promise<{ apps: PipedreamApp[]; total?: number; nextCursor?: string; hasMore: boolean }> {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
@@ -121,22 +140,14 @@ class PipedreamProvider {
     if (!query) { params.set('sort_key', 'featured_weight'); params.set('sort_direction', 'desc'); }
     const data = await this.api<{
       page_info: { total_count: number; count: number; end_cursor?: string };
-      data: Array<{ name_slug: string; name: string; description?: string; img_src?: string; auth_type?: string; categories: string[] }>;
+      data: Array<{ name_slug: string; name: string; description?: string; img_src?: string; auth_type?: string; categories: string[]; has_actions?: boolean; has_triggers?: boolean; featured_weight?: number }>;
     }>('GET', `/v1/connect/${this.projectId}/apps?${params.toString()}`);
-    const apps = (data.data || [])
-      .map((a) => ({
-        slug: a.name_slug, name: a.name, description: a.description ?? null, imgSrc: a.img_src ?? null,
-        authType: a.auth_type ?? null, categories: a.categories || [],
-      }))
-      .filter(isPipedreamOAuthApp);
-    // hasMore is driven by Pipedream's cursor, NOT apps.length — filtering out
-    // utility apps would otherwise shrink a page below `limit` and stop paging early.
-    //
-    // `total` is Pipedream's count for the whole query, so the browse UI can say
-    // "192 of 2,713" instead of implying the catalogue is one page long. It is an
-    // upper bound rather than an exact figure: `isPipedreamOAuthApp` drops utility
-    // apps from each page, and Pipedream counts before that filter. Quoting it is
-    // still far closer to the truth than quoting the loaded count.
+    const apps = (data.data || []).map((a) => ({
+      slug: a.name_slug, name: a.name, description: a.description ?? null, imgSrc: a.img_src ?? null,
+      authType: a.auth_type ?? null, categories: a.categories || [],
+      hasActions: a.has_actions === true, hasTriggers: a.has_triggers === true,
+      featuredWeight: typeof a.featured_weight === 'number' ? a.featured_weight : 0,
+    }));
     return {
       apps,
       total: data.page_info?.total_count,
@@ -282,6 +293,52 @@ export async function pipedreamConnectUrl(
   return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app, redirects);
 }
 
+export interface PipedreamAccount {
+  id: string;
+  app: string;
+  appName: string;
+}
+
+/** Attempts + spacing for the account lookup below. Exported for the tests. */
+export const PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS = 3;
+export const PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS = 1200;
+
+/**
+ * Look up the account Pipedream just connected for an external user id.
+ *
+ * Pipedream's account list is eventually consistent: a finalize that runs
+ * immediately after the hosted connect page closes (or from the connect
+ * webhook, which fires at least as early) can read an EMPTY list for an account
+ * that exists a second later. That read is the only thing standing between a
+ * completed OAuth and a persisted credential, so a single empty read must not
+ * be treated as "not connected".
+ *
+ * Bounded on purpose: PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS reads, spaced
+ * PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS apart, returning as soon as one matches.
+ * `runtime` exists so tests inject the provider and the delay — nothing else
+ * passes it.
+ */
+export async function findPipedreamAccount(
+  extUserId: string,
+  app: string,
+  runtime: {
+    listAccounts?: (extUserId: string) => Promise<PipedreamAccount[]>;
+    sleep?: (ms: number) => Promise<void>;
+    attempts?: number;
+  } = {},
+): Promise<PipedreamAccount | null> {
+  const listAccounts = runtime.listAccounts ?? ((id: string) => getProvider().listAccounts(id));
+  const sleep = runtime.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const attempts = runtime.attempts ?? PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await sleep(PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS);
+    const accounts = await listAccounts(extUserId);
+    const match = accounts.find((a) => a.app === app) ?? accounts[0];
+    if (match) return match;
+  }
+  return null;
+}
+
 /**
  * After the user finishes 1-click connect, persist the account-id binding as a
  * credential on the connector — shared (userId null) or that member's own.
@@ -292,9 +349,19 @@ export async function finalizePipedreamConnection(opts: {
   app: string;
   connectorId: string;
   userId: string | null;
+  /**
+   * Lookup attempts override. A POLLING caller (the setup-link finalize route)
+   * passes 1 — its poll loop already is the retry, so the server must not stack
+   * a 2.4s three-read sweep on top of every poll. One-shot callers (webhook,
+   * authed finalize) keep the default bounded retry.
+   */
+  lookupAttempts?: number;
 }): Promise<{ connected: boolean; accountId?: string }> {
-  const accounts = await getProvider().listAccounts(externalUserId(opts.projectId, opts.slug, opts.userId));
-  const match = accounts.find((a) => a.app === opts.app) ?? accounts[0];
+  const match = await findPipedreamAccount(
+    externalUserId(opts.projectId, opts.slug, opts.userId),
+    opts.app,
+    { attempts: opts.lookupAttempts },
+  );
   if (!match) return { connected: false };
   await upsertCredential({ projectId: opts.projectId, connectorId: opts.connectorId, userId: opts.userId, value: match.id, kind: 'connection' });
   return { connected: true, accountId: match.id };
@@ -310,10 +377,10 @@ export async function finalizePipedreamConnectionAuthorization(opts: {
   connectionId: string;
   createdBy: string | null;
 }): Promise<{ connected: boolean; accountId?: string }> {
-  const accounts = await getProvider().listAccounts(
+  const match = await findPipedreamAccount(
     externalUserId(opts.projectId, opts.slug, opts.connectionId),
+    opts.app,
   );
-  const match = accounts.find((account) => account.app === opts.app) ?? accounts[0];
   if (!match) return { connected: false };
   await upsertConnectionCredential({
     projectId: opts.projectId,
@@ -346,18 +413,167 @@ export async function pipedreamListAccounts(extUserId: string): Promise<Array<{ 
   return getProvider().listAccounts(extUserId);
 }
 
-export interface PipedreamApp {
-  slug: string;
-  name: string;
-  description: string | null;
-  imgSrc: string | null;
-  authType: 'oauth';
-  categories: string[];
+/**
+ * One catalogue app.
+ *
+ * `authType` is a free string, not `'oauth'`. It was narrowed to the literal
+ * when the catalogue was OAuth-only, which is the filter that hid 79% of
+ * Pipedream's apps — see `pipedream-catalog.ts`. Nothing in `apps/web` or
+ * `packages/sdk` reads this field to gate behaviour; it is descriptive.
+ */
+export type PipedreamApp = CatalogApp;
+
+/** Page size for both the live fallback and the index-backed catalogue. */
+const CATALOG_PAGE_SIZE = 48;
+
+/** Fetch one crawl page, bound to the configured provider. */
+const crawlPage: CatalogPageFetcher = async (limit, cursor) => {
+  const page = await getProvider().listApps(undefined, limit, cursor);
+  return { apps: page.apps, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) };
+};
+
+/**
+ * Browse the Pipedream app catalogue live, one page at a time.
+ *
+ * The fallback path, used only while the index is still warming, and by
+ * `sync.ts` to resolve one app's icon by slug. Applies `isCatalogApp` so a
+ * warming page and a warm page offer the same apps.
+ */
+export async function browsePipedreamApps(query?: string, cursor?: string): Promise<{ apps: PipedreamApp[]; total?: number; nextCursor?: string; hasMore: boolean }> {
+  const page = await getProvider().listApps(query, CATALOG_PAGE_SIZE, cursor);
+  return { ...page, apps: page.apps.filter(isCatalogApp) };
 }
 
-/** Browse the Pipedream app catalogue (search + paginate) for the "connect an app" UI. */
-export async function browsePipedreamApps(query?: string, cursor?: string): Promise<{ apps: PipedreamApp[]; total?: number; nextCursor?: string; hasMore: boolean }> {
-  return getProvider().listApps(query, 48, cursor);
+/** Resolve one app's icon by exact slug, unfiltered — a connector may already
+ *  exist for an app the catalogue would not offer today. */
+export async function pipedreamAppIcon(slug: string): Promise<string | null> {
+  const page = await getProvider().listApps(slug, CATALOG_PAGE_SIZE);
+  return page.apps.find((app) => app.slug === slug)?.imgSrc ?? null;
+}
+
+export interface PipedreamCatalogPage {
+  apps: PipedreamApp[];
+  categories: CatalogCategory[];
+  total: number;
+  nextCursor?: string;
+  hasMore: boolean;
+  /**
+   * Whether the answer came from the complete catalogue index.
+   *
+   * `false` means the index is still crawling and this page came from the live
+   * API: `categories` is empty and `category` was ignored. The client shows its
+   * own client-side grouping for that render and re-queries once the index
+   * lands.
+   */
+  indexReady: boolean;
+  /**
+   * Apps that match the query but publish no actions, and so are not in the
+   * catalogue.
+   *
+   * Only meaningful while searching, and it exists for exactly one sentence of
+   * copy: `q=SAP` matches `sap_s_4hana_cloud` and `sap_s_4hana_cloud_sandbox`,
+   * both `has_actions: false`. Reporting "No matches for SAP" over that is
+   * wrong twice — the apps exist, and the reason they are absent is one we can
+   * state.
+   */
+  excludedNoActions: number;
+}
+
+/**
+ * A page of the catalogue, filtered by query and/or category.
+ *
+ * Category filtering exists **only** here. Pipedream's `/apps` endpoint accepts
+ * `?category=` and ignores it (verified: `total_count` is 3238 with and
+ * without), so a category is meaningless against the live API and honest only
+ * against the full snapshot.
+ */
+export async function pipedreamCatalogPage(input: {
+  q?: string;
+  category?: string;
+  cursor?: string;
+  limit?: number;
+}): Promise<PipedreamCatalogPage> {
+  const limit = input.limit && input.limit > 0 ? Math.min(input.limit, 100) : CATALOG_PAGE_SIZE;
+  const { snapshot } = getCatalogSnapshot(crawlPage);
+
+  if (!snapshot) {
+    const live = await browsePipedreamApps(input.q, input.cursor);
+    return {
+      apps: live.apps,
+      categories: [],
+      total: live.total ?? live.apps.length,
+      ...(live.nextCursor ? { nextCursor: live.nextCursor } : {}),
+      hasMore: live.hasMore,
+      indexReady: false,
+      excludedNoActions: 0,
+    };
+  }
+
+  const scoped = input.category
+    ? (snapshot.byCategory.get(input.category) ?? [])
+    : snapshot.apps;
+  const ranked = rankApps(scoped, input.q ?? '');
+  const page = pageOf(ranked, input.cursor, limit);
+
+  // Counted only for a search. While browsing, "1,264 apps you cannot use" is
+  // a number with nowhere to go.
+  const excludedNoActions = input.q ? rankApps(snapshot.withoutActions, input.q).length : 0;
+
+  return {
+    apps: page.items,
+    categories: snapshot.categories,
+    total: page.total,
+    ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+    hasMore: page.hasMore,
+    indexReady: true,
+    excludedNoActions,
+  };
+}
+
+export interface PipedreamCatalogSection {
+  key: string;
+  label: string;
+  /** The category's TRUE size, not the length of `apps`. This is what lets a
+   *  section heading state a count the page can honour. */
+  total: number;
+  apps: PipedreamApp[];
+}
+
+/**
+ * The browse page: the top `perCategory` apps of each of the largest
+ * categories, in one request.
+ *
+ * This is what makes the Discovery sections stop growing as the user scrolls.
+ * Each section is a fixed slice of a complete category, chosen by prominence,
+ * with the category's real total beside it — rather than "whatever the four
+ * pages loaded so far happened to contain", which changed under the reader on
+ * every landed page.
+ */
+export async function pipedreamCatalogSections(input?: {
+  perCategory?: number;
+  maxCategories?: number;
+}): Promise<{ sections: PipedreamCatalogSection[]; categories: CatalogCategory[]; indexReady: boolean }> {
+  const perCategory = input?.perCategory && input.perCategory > 0 ? Math.min(input.perCategory, 24) : 6;
+  const maxCategories = input?.maxCategories && input.maxCategories > 0 ? Math.min(input.maxCategories, 40) : 12;
+  const { snapshot } = getCatalogSnapshot(crawlPage);
+
+  if (!snapshot) return { sections: [], categories: [], indexReady: false };
+
+  const sections = snapshot.categories.slice(0, maxCategories).map((category) => ({
+    key: category.key,
+    label: category.label,
+    total: category.count,
+    apps: (snapshot.byCategory.get(category.key) ?? []).slice(0, perCategory),
+  }));
+
+  return { sections, categories: snapshot.categories, indexReady: true };
+}
+
+/** Build the catalogue index now. Called at boot so the first user request
+ *  finds it warm; failures are logged and retried on demand. */
+export function warmPipedreamCatalog(): void {
+  if (!pipedreamConfigured()) return;
+  getCatalogSnapshot(crawlPage);
 }
 
 /** Execute a Pipedream action via the Connect API. `accountId` is the binding; `userId` scopes the external id. */

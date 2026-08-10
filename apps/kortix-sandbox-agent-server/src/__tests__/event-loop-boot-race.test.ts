@@ -47,6 +47,27 @@ function flakyEventServer(failures: number) {
   return { server, port: server.port as number, attemptCount: () => attempts }
 }
 
+function eventServerWithChunks(chunks: string[]) {
+  const server = Bun.serve({
+    port: 0,
+    fetch(req) {
+      if (!new URL(req.url).pathname.startsWith('/event')) return new Response('ok')
+      const stream = new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk))
+        },
+      })
+      return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
+    },
+  })
+  servers.push(server)
+  return { server, port: server.port as number }
+}
+
+function eventServerWithFrame(frame: string) {
+  return eventServerWithChunks([frame])
+}
+
 const cfg = { workspace: '/workspace' } as never
 
 describe('event-loop boot race — the SSE subscribe must not sleep through opencode becoming ready', () => {
@@ -89,12 +110,58 @@ describe('event-loop boot race — the SSE subscribe must not sleep through open
     expect(connectedCalls).toBeGreaterThanOrEqual(1)
   }, 20_000)
 
+  test('dispatches an event framed with CRLF line endings', async () => {
+    const event = {
+      type: 'session.updated',
+      properties: { info: { id: 'ses_crlf' } },
+    }
+    const { port } = eventServerWithFrame(`data: ${JSON.stringify(event)}\r\n\r\n`)
+    const observed: string[] = []
+    const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {
+      onEvent: (candidate) => {
+        if (candidate.type) observed.push(candidate.type)
+      },
+    })
+    loops.push(loop)
+
+    await loop.connected
+    await Bun.sleep(50)
+    expect(observed).toEqual(['session.updated'])
+  }, 20_000)
+
+  test('dispatches a CRLF frame whose delimiter spans reader chunks', async () => {
+    const event = {
+      type: 'session.idle',
+      properties: { sessionID: 'ses_split' },
+    }
+    const encoded = `data: ${JSON.stringify(event)}\r\n\r\n`
+    const { port } = eventServerWithChunks([
+      encoded.slice(0, -3),
+      encoded.slice(-3, -1),
+      encoded.slice(-1),
+    ])
+    const observed: string[] = []
+    const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {
+      onEvent: (candidate) => {
+        if (candidate.type) observed.push(candidate.type)
+      },
+    })
+    loops.push(loop)
+
+    await loop.connected
+    await Bun.sleep(50)
+    expect(observed).toEqual(['session.idle'])
+  }, 20_000)
+
   test('keeps retrying rather than giving up while opencode is still unavailable', async () => {
     const { port, attemptCount } = flakyEventServer(Number.MAX_SAFE_INTEGER)
     const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {})
     loops.push(loop)
 
-    await new Promise((r) => setTimeout(r, 600))
+    const deadline = Date.now() + 5_000
+    while (attemptCount() <= 2 && Date.now() < deadline) {
+      await Bun.sleep(25)
+    }
     expect(attemptCount()).toBeGreaterThan(2)
   }, 20_000)
 })

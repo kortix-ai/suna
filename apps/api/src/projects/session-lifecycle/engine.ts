@@ -439,6 +439,7 @@ export async function continueSession(
       await syncSandboxEnvForPrompt({
         projectId: session.projectId,
         sessionId,
+        externalId,
         serviceKey,
         previewUrl: ingress.url,
         providerHeaders: ingress.headers,

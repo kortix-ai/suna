@@ -10,6 +10,13 @@ export interface SessionScopeDraft {
   secrets?: string[] | null;
   connector_bindings?: Record<string, { connection_id: string }>;
   /**
+   * The connector bindings are a preview of server-resolved defaults, not a
+   * caller replacement. New sessions keep this marker until the user changes
+   * connector scope. Omitting the replacement lets the server discard stale or
+   * disconnected rows while preserving an explicit user deselection.
+   */
+  connector_bindings_inherited?: boolean;
+  /**
    * Connectors this session REQUIRES but has no connection for yet.
    *
    * A binding is "use THIS connection", so a connector with nothing connected
@@ -87,10 +94,28 @@ function cloneBindings(
   );
 }
 
-function grantIncludes(grant: SessionScopeGrant, value: string): boolean {
+/**
+ * Connector grant membership. Exact match, on purpose: the server compares
+ * canonical slugs with a plain `includes` (`agentMayUseConnector`), so a looser
+ * match here would offer a connector the call gate then rejects.
+ */
+function connectorGrantIncludes(grant: SessionScopeGrant, slug: string): boolean {
   if (grant === 'none') return false;
   if (grant === 'all' || grant == null) return true;
-  return grant.includes(value);
+  return grant.includes(slug);
+}
+
+/**
+ * Secret grant membership. Case-INSENSITIVE, matching the server
+ * (`agentMayUseEnv`, and `listAdmits` in the delivery rule). The grant is the
+ * hand-written `secrets:` list from kortix.yaml, so its case need not match the
+ * stored identifier. An exact match here hid secrets the server does deliver.
+ */
+function secretGrantIncludes(grant: SessionScopeGrant, identifier: string): boolean {
+  if (grant === 'none') return false;
+  if (grant === 'all' || grant == null) return true;
+  const target = identifier.toUpperCase();
+  return grant.some((entry) => entry.toUpperCase() === target);
 }
 
 export function createSessionScopeDraft(
@@ -122,7 +147,19 @@ export function createNewSessionScopeDraft(
     draft.secrets = null;
   }
   if (catalog.connector_connections.status === 'ready') {
-    draft.connector_bindings = {};
+    // Preview every strategy-compatible default that the agent grant exposes.
+    // The inherited marker keeps an untouched session on server-side resolution,
+    // which filters stale or disconnected rows. A user change clears the marker
+    // and turns the draft into a complete fail-closed replacement.
+    draft.connector_bindings = Object.fromEntries(
+      catalog.connector_connections.items.flatMap((connector) => {
+        const connection =
+          connector.connections.find((candidate) => candidate.is_default) ??
+          connector.connections[0];
+        return connection ? [[connector.slug, { connection_id: connection.connection_id }]] : [];
+      }),
+    );
+    draft.connector_bindings_inherited = true;
     draft.require_connectors = [];
   }
   return draft;
@@ -146,7 +183,11 @@ export function buildSessionScopeReplacement(
   const connectorBindings = Object.hasOwn(draft, 'connector_bindings')
     ? draft.connector_bindings
     : previousScope?.connector_bindings;
-  if (availability.connector_bindings && connectorBindings !== undefined) {
+  if (
+    availability.connector_bindings &&
+    connectorBindings !== undefined &&
+    draft.connector_bindings_inherited !== true
+  ) {
     replacement.connector_bindings = cloneBindings(connectorBindings);
   }
   const required = Object.hasOwn(draft, 'require_connectors')
@@ -174,7 +215,7 @@ export function buildSessionScopeSelectionCatalog(
             .filter(
               (secret) =>
                 secret.effective_source !== 'none' &&
-                grantIncludes(input.grants?.secrets, secret.identifier),
+                secretGrantIncludes(input.grants?.secrets, secret.identifier),
             )
             .map((secret) => ({
               identifier: secret.identifier,
@@ -199,7 +240,7 @@ export function buildSessionScopeSelectionCatalog(
         .filter(
           (connector) =>
             connector.status !== 'disabled' &&
-            grantIncludes(input.grants?.connectors, connector.slug),
+            connectorGrantIncludes(input.grants?.connectors, connector.slug),
         )
         .map((connector) => {
           const ownerType = connector.authorizationStrategy === 'user' ? 'member' : 'project';

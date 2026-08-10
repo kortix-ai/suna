@@ -211,9 +211,12 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v39: bake the pinned Python package floor (runtime-versions.json
 // `pythonPackages`) into the managed interpreter — starter skills and bare
 // `python3` run with zero per-script resolution or runtime PyPI downloads.
-// v40: create a private, kortix-owned /var/run/kortix before daemon startup so
-// the durable OpenCode audit spool and session pins remain writable.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v40';
+// v40: create a private, kortix-owned /var/run/kortix before daemon startup.
+// Platinum replaces /run and starts the image as `kortix`, so that directory
+// does not survive provider startup.
+// v41: store durable daemon state under /home/kortix/.local/state/kortix. This
+// path remains writable when a provider replaces /run or discards image USER.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v41';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

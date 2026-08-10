@@ -8,15 +8,20 @@ const client = () => new QueryClient({ defaultOptions: { queries: { retry: false
 const ID = 'proj_1';
 
 /**
- * These are the EXACT functions `edit-project-modal.tsx` and
- * `features/workspace/settings/tabs/general-tab.tsx` wire into
- * `useMutation({ onMutate, onError, onSettled })` — see the source-scan
- * assertions in `edit-project-modal.rename.test.tsx` and
- * `general-tab.rename.test.tsx` that pin the wiring itself. This file
- * covers what the functions those two components call actually DO, against a
- * real QueryClient — no react-query mocking (mocking `@tanstack/react-query`
- * here would be process-wide across `bun test`'s non---isolate run in
- * `apps/web` and corrupt every other test file in the run).
+ * These are the EXACT functions `features/workspace/settings/tabs/
+ * general-tab.tsx` wires into `useMutation({ onMutate, onError, onSettled })`
+ * — see the source-scan assertions in `general-tab.rename.test.tsx` that pin
+ * the wiring itself. This file covers what those functions actually DO,
+ * against a real QueryClient — no react-query mocking (mocking
+ * `@tanstack/react-query` here would be process-wide across `bun test`'s
+ * non---isolate run in `apps/web` and corrupt every other test file in the
+ * run).
+ *
+ * `edit-project-modal.tsx` was the second caller and had its own paired
+ * source-scan file. The workspace-switcher work deleted that modal — rename
+ * now lives only in Settings — so the pair went with it, and the one
+ * assertion it held that this file did not ('leaves an unrelated project
+ * untouched') was moved here rather than dropped.
  */
 describe('renameOnMutate', () => {
   test('writes the optimistic name and returns a restorable snapshot', () => {
@@ -109,6 +114,33 @@ describe('renameOnSettled', () => {
     const qc = client();
     expect(() => renameOnSettled(qc, null)).not.toThrow();
     expect(() => renameOnSettled(qc, undefined)).not.toThrow();
+  });
+});
+
+// Guards the actual regression, not just the helper: an unrelated project's
+// cache entries must not move when this project renames. Moved here from
+// `edit-project-modal.rename.test.tsx` when that modal — and its paired
+// source-scan file — were deleted; it was the one assertion in that file this
+// one did not already make.
+describe('blast radius', () => {
+  test('leaves an unrelated project untouched', async () => {
+    const qc = client();
+    const OTHER = 'proj_2';
+    qc.setQueryData(qk.projects.list('acct_1'), [
+      { project_id: ID, name: 'Old' },
+      { project_id: OTHER, name: 'Keep' },
+    ]);
+    qc.setQueryData(qk.project.detail(OTHER), { project: { project_id: OTHER, name: 'Keep' } });
+
+    renameOnMutate(qc, ID, 'New');
+    await renameOnSettled(qc, ID);
+
+    const list = qc.getQueryData(qk.projects.list('acct_1')) as Array<{
+      project_id: string;
+      name: string;
+    }>;
+    expect(list.find((p) => p.project_id === OTHER)?.name).toBe('Keep');
+    expect(qc.getQueryState(qk.project.detail(OTHER))?.isInvalidated).toBe(false);
   });
 });
 

@@ -25,6 +25,7 @@ let sessionMetadata: Record<string, unknown> | null = null;
 const SANDBOX_ROW = {
   sessionId: 'sess-1',
   externalId: 'ext-1',
+  provider: 'daytona',
   config: { serviceKey: 'svc-key' },
 };
 const SESSION_ROW = {
@@ -36,7 +37,11 @@ const SESSION_ROW = {
   manifestPath: 'kortix.yaml',
   accountId: 'acct-1',
 };
-let activeSandbox: { externalId: string; config: Record<string, unknown> } | null = SANDBOX_ROW;
+let activeSandbox: {
+  externalId: string;
+  provider: string;
+  config: Record<string, unknown>;
+} | null = SANDBOX_ROW;
 let daemonProof = true;
 let daemonReload: string | null = 'restarted';
 
@@ -100,6 +105,10 @@ mock.module('../secrets', () => ({
 
 mock.module('../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
+}));
+
+mock.module('./network-secret-boundary', () => ({
+  resolveSessionNetworkBoundary: async () => [],
 }));
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -193,6 +202,18 @@ describe('propagateProjectSecretsToActiveSandboxes', () => {
 });
 
 describe('pushSessionAgentConfigToSandbox', () => {
+  test('reports compilation before the blocking runtime apply starts', async () => {
+    const phases: string[] = [];
+    const result = await pushSessionAgentConfigToSandbox({
+      ...INPUT,
+      baseRef: 'main',
+      onPhase: (phase) => phases.push(phase),
+    });
+
+    expect(result.applied).toBe(true);
+    expect(phases).toEqual(['compiling-config', 'applying-config']);
+  });
+
   test('pushes the freshly compiled config and asks for the opencode restart', async () => {
     // opencode reads its config only at spawn, so the push alone changes
     // nothing — `refreshModels` is what makes the daemon restart it and apply.
@@ -273,7 +294,7 @@ describe('pushSessionAgentConfigToSandbox', () => {
   });
 
   test('a sandbox with no service key is refused rather than pushed unauthenticated', async () => {
-    activeSandbox = { externalId: 'ext-1', config: {} };
+    activeSandbox = { externalId: 'ext-1', provider: 'daytona', config: {} };
 
     const result = await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
 

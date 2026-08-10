@@ -4,8 +4,10 @@ import {
   AuthError,
   BillingError,
   RequestTooLargeError,
+  featureDisabledKey,
   formatBillingErrorForUI,
   isBillingError,
+  isFeatureDisabledError,
   parseBillingError,
 } from './errors';
 
@@ -285,4 +287,50 @@ test('formatBillingErrorForUI generic branch falls back to a default subtitle wh
     alertTitle: 'Billing check failed',
     alertSubtitle: 'Please upgrade to continue.',
   });
+});
+
+// ── Feature-flag gate (403 feature_disabled) ────────────────────────────────
+//
+// Every flag-gated route rejects identically: 403 with the machine-readable
+// `feature_disabled` code and the flag key (apps/api/src/feature-flags/gate.ts,
+// wire shape `FeatureDisabledErrorSchema`). Clients branch on `code`, never on
+// prose, so the narrowing helper is the one supported way to detect it.
+
+test('isFeatureDisabledError narrows a 403 feature_disabled ApiError', () => {
+  const err = new ApiError('Apps is not enabled for this project.', {
+    status: 403,
+    code: 'feature_disabled',
+    details: { error: 'Apps is not enabled for this project.', code: 'feature_disabled', feature: 'apps' },
+  });
+
+  expect(isFeatureDisabledError(err)).toBe(true);
+  if (isFeatureDisabledError(err)) {
+    // The narrowed type carries the flag key, so a caller can name the feature.
+    expect(err.feature).toBe('apps');
+  }
+});
+
+test('isFeatureDisabledError reads the flag key from the body when `feature` is not hoisted', () => {
+  const err = new ApiError('nope', {
+    status: 403,
+    code: 'feature_disabled',
+    data: { error: 'nope', code: 'feature_disabled', feature: 'review_center' },
+  });
+
+  expect(isFeatureDisabledError(err)).toBe(true);
+  expect(featureDisabledKey(err)).toBe('review_center');
+});
+
+test('isFeatureDisabledError rejects other errors', () => {
+  expect(isFeatureDisabledError(new ApiError('forbidden', { status: 403, code: '403' }))).toBe(false);
+  expect(isFeatureDisabledError(new ApiError('nope', { status: 401, code: 'feature_disabled' }))).toBe(
+    false,
+  );
+  expect(isFeatureDisabledError(new Error('feature_disabled'))).toBe(false);
+  expect(isFeatureDisabledError(null)).toBe(false);
+  expect(isFeatureDisabledError(undefined)).toBe(false);
+});
+
+test('featureDisabledKey returns null when the error is not a feature gate', () => {
+  expect(featureDisabledKey(new ApiError('boom', { status: 500 }))).toBeNull();
 });

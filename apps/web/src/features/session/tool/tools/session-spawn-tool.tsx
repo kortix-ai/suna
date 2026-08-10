@@ -15,7 +15,7 @@ import {
   type MessageWithParts,
 } from '@/ui';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
 
 export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
@@ -54,7 +54,13 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
   }, [childToolParts]);
 
-  const label = description || projectName || fullPrompt.split('\n')[0]?.slice(0, 80) || '';
+  // The fallback splits the ENTIRE spawn prompt into lines just to read the
+  // first one. A spawn prompt is routinely kilobytes, and this sits in the
+  // component body, so it ran on every render of a worker row.
+  const label = useMemo(
+    () => description || projectName || fullPrompt.split('\n')[0]?.slice(0, 80) || '',
+    [description, projectName, fullPrompt],
+  );
 
   const subtitle = isRunning ? (lastActivity ?? label) : label || undefined;
   const hasPreview = Boolean(childSessionId);
@@ -63,10 +69,10 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
     if (hasPreview) setModalOpen(true);
   };
 
-  const openFullSession = () => {
+  const openFullSession = useCallback(() => {
     if (!childHref) return;
     router.push(childHref);
-  };
+  }, [childHref, router]);
 
   return (
     <>

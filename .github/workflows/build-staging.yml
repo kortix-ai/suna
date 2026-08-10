@@ -58,9 +58,11 @@ jobs:
           IFS='.' read -r ma mi pa <<< "$latest"
           : "${ma:=0}"; : "${mi:=0}"; : "${pa:=0}"
           next="${ma}.${mi}.$((pa + 1))"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "sha8=${sha::8}" >> "$GITHUB_OUTPUT"
-          echo "version=${next}-staging.${sha::8}" >> "$GITHUB_OUTPUT"
+          {
+            echo "sha=$sha"
+            echo "sha8=${sha::8}"
+            echo "version=${next}-staging.${sha::8}"
+          } >> "$GITHUB_OUTPUT"
           echo "Latest release: ${latest:-none} -> staging ${next}-staging.${sha::8}"
 
   build-api:
@@ -156,10 +158,13 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
           NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_URL: http://localhost:3000
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
           NEXT_PUBLIC_BILLING_ENABLED: "false"
           NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.version.outputs.version }}
+          NEXT_PUBLIC_KORTIX_COMMIT: ${{ needs.version.outputs.sha }}
           NEXT_OUTPUT: standalone
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4

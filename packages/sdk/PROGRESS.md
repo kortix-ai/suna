@@ -12,6 +12,352 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-10 — session `reload-live-status` claim
+
+No **Now** task claimed. This is the user-directed live session-config reload status work.
+
+Claimed SDK scope:
+
+- Add an additive streamed reload method beside the existing JSON method.
+- Preserve the existing reload route, result type, facade methods, and every published name.
+- Report only server-confirmed phases. Do not synthesize time-based progress.
+- Add failing stream parser and error coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work used the required
+RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- Stream coverage failed because `reloadProjectSessionConfigStream` and the
+  `SessionReloadPhase` public type did not exist.
+
+GREEN:
+
+- The API emits five server-observed phases and one terminal `done` or `error`
+  frame. The existing JSON reload route is unchanged.
+- The SDK parses split SSE frames, preserves `ApiError` status and code values,
+  and rejects a stream that closes without a terminal result.
+- Focused session REST suite: `39 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk test`: `1848 pass`, `0 fail`, `7093 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk smoke:install`: packed-install import and construction passed.
+- Public-surface snapshots contain additive reload stream names only. The package
+  version did not change.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-10 — session `stream-cache-throttle` claim
+
+No **Now** task claimed. This is a user-directed browser performance fix in the
+sync store's `sessionStorage` mirror of in-progress assistant text.
+
+Claimed SDK scope:
+
+- Coalesce `writeStreamCache` writes instead of writing on every stream delta.
+- Preserve the regression guard, the payload shape, and every published export.
+- Add failing coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The `tdd` skill was invoked and its RED → GREEN → REFACTOR sequence followed.
+
+RED:
+
+- `a burst of deltas writes to sessionStorage once, not once per delta` failed
+  with `Expected: 1, Received: 20` — 20 deltas produced 20 `setItem` calls, each
+  preceded by a `getItem` + `JSON.parse` and followed by a `JSON.stringify` of
+  the whole accumulated response. Cost was quadratic in response length.
+
+GREEN:
+
+- Leading-plus-trailing throttle at `STREAM_CACHE_FLUSH_MS = 500`, matching the
+  IndexedDB transcript layer. The first delta still lands immediately; the rest
+  of a window collapse into one trailing write. `JSON.stringify` is deferred to
+  flush time, which is where the size-dependent cost lives.
+- The read-back that guarded against regressions now happens once per session
+  key per page instead of once per delta, held in a `WeakMap` keyed by the
+  storage object — so tests get fresh state from their own stub and the package
+  ships no test-only export.
+- A part switch flushes synchronously; the cache holds one entry per session, so
+  a new part must not wait out a window opened by the part it replaced.
+- `packages/sdk/src/browser/stores/sync-store.test.ts`: `77 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk test`: `1827 pass`, `2 skip`, `0 fail`, `7043 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- No published export name changed and the package version was not touched.
+
+One pre-existing test changed meaning and it is called out rather than buried:
+`message.part.delta accumulates text and writes the running total to
+sessionStorage` asserted the write was synchronous on every delta — which is the
+behaviour being fixed. Its assertion is unchanged (the running total reaches the
+cache); it now awaits the flush window. The only consumer reads this cache once
+after a refresh and already discards entries older than thirty minutes.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-09 — session `connector-finalize-unify` claim
+
+No **Now** task claimed. User-directed fix: Pipedream connector credentials never
+persisted through the setup-link flow. The hosted connect page has no callback,
+and the only path that could have saved the credential — the Pipedream connect
+webhook — answered every real payload `400 missing external_user_id` (it read
+`body.external_user_id`; the real CONNECTION_SUCCESS nests it at
+`account.external_id`). The API side gains an explicit finalize route; the SDK
+must expose it so `apps/web` does not raw-`fetch` it.
+
+Claimed SDK scope (additive only):
+
+- `core/rest/platform-client/host-boundary.ts`: new
+  `finalizeConnectorSetupLink(token, options)` → `POST
+  /setup-links/connectors/{token}/finalize` → `{ connected: boolean }`, beside
+  the existing `startConnectorSetupLink`. Anonymous, like its siblings.
+- Re-recorded `public-surface.snapshot.json` + `public-type-surface.snapshot.json`
+  (2 additions each, 0 removals/renames — reviewed as additive).
+- No published name renamed; no `package.json` change (same subpath), no
+  `version` touched.
+
+Signature note: the task text sketched `finalizeConnectorSetupLink(backendUrl,
+token)`. Shipped as `(token, options: HostRequestOptions)` to match
+`startConnectorSetupLink` / `getConnectorSetupLink` — one shape per concept.
+
+RED: 2 new tests in `host-boundary.test.ts` failed with
+`TypeError: boundary.finalizeConnectorSetupLink is not a function` (4 pass,
+2 fail).
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` (package + examples).
+- `pnpm --filter @kortix/sdk test`: `1831 pass`, `2 skip`, `0 fail`, `7049
+  expect()` calls, 141 files (baseline this session: 1829 pass / 2 skip, same
+  141 files).
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-09 — session `session-title-sidebar-sync` claim
+
+No **Now** task claimed. User-directed fix: the sidebar/tab never converge to the
+runtime session title the header shows.
+
+Claimed SDK scope:
+
+- `react/use-opencode-events/helpers.ts`: new module-internal `realRuntimeTitle`
+  + `patchKortixSessionTitleMirrors` — on a `session.updated`/`session.created`
+  title change, patch the cached Kortix session reads (`name` on rows matching
+  `opencode_session_id`, `custom_name` untouched) before the existing
+  `refetchKortixSessionMirrors` reconciliation refetch.
+- `react/use-opencode-events/handle-event.ts`: wire both call sites.
+- Doc-only precedence update on `ProjectSession.name` (`core/rest/projects-client/sessions.ts`).
+- No published export name changed; no package.json change.
+
+RED: 4 new tests in `handle-event.test.ts` (`kortix session title mirroring`) —
+patch test failed against the unpatched handler (`Expected "Runtime Title",
+Received "Generated Title"`), guards passed.
+
+GREEN:
+
+- `bun test packages/sdk/src/react/use-opencode-events/`: `39 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` (package + examples).
+- `pnpm --filter @kortix/sdk test`: `1829 pass`, `2 skip`, `0 fail`, `7044 expect()` calls, 141 files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import passed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-09 — session `computers-connector-grouping` claim
+
+No **Now** task claimed. This is the user-directed Computers connector profile refactor.
+
+Claimed SDK scope:
+
+- Add an optional machine-id allowlist to the existing connector draft and config types.
+- Preserve every existing published name and wire route.
+- Add failing REST client coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- Connector draft and config types rejected `tunnel_ids` / `tunnelIds` before implementation.
+
+GREEN:
+
+- Focused connector REST client suite: `38 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk test`: `1807 pass`, `2 skip`, `0 fail`, `7001 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- No published export name or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-09 — session `release-codeql-connector-url` claim
+
+No **Now** task claimed. This is a narrow production-release security gate fix.
+
+Claimed SDK scope:
+
+- Replace the polynomial trailing-slash regular expression in connector attachment uploads.
+- Preserve the existing URL contract and every published export name.
+- Add a failing regression test before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- The slash-heavy URL regression took `492.09 ms` and failed its `< 200 ms` bound.
+
+GREEN:
+
+- Focused connector gateway suite: `12 pass`, `0 fail`; regression case `0.19 ms`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1807 pass`, `0 fail`, `7004 expect()` calls.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- No published export name or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-08 — session `sandbox-agent-lifecycle` claim
+
+No **Now** task claimed. This is the user-directed sandbox lifecycle and billing
+correctness refactor.
+
+Claimed SDK scope:
+
+- Stop automatic `/start` polling after a bounded terminal wake failure.
+- Preserve the existing published session APIs and all exported names.
+- Keep runtime identity session-scoped and provider-agnostic.
+- Add failing SDK tests before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk test`: `1806 pass`, `0 fail` after merging current `origin/main`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed-install import and construction passed.
+- SDK wake polling stops on the server's bounded `retriable: false` response.
+- No published export name or package version changed.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-08 — session `feature-flags-web`
+
+Backlog **B48** — canonical feature-flag naming plus one gating primitive, so the
+SDK matches `@kortix/api-contract`'s `FeatureFlag*` family and every host stops
+hand-rolling `project?.experimental?.<key> === true`.
+
+SDK scope (additive only — **0 removals, 0 renames**):
+
+- `core/rest/projects-client/projects.ts`: `FeatureFlagKey`, `FeatureFlagStability`
+  (`experimental | beta | stable`), `FeatureFlagView`, the runtime
+  `FEATURE_FLAG_KEYS`, and `updateFeatureFlag` on the CANONICAL
+  `PATCH /projects/:id/features`. `ExperimentalFeatureKey` / `ExperimentalFeatureView`
+  are now `@deprecated` aliases; `updateExperimentalFeature` **keeps its
+  `/experimental` wire path** on purpose — consumers pinned to an older deployed
+  API only have that route, so re-pointing it would break them.
+- `core/http/api/errors.ts`: `FEATURE_DISABLED_CODE`, `FeatureDisabledError`,
+  `isFeatureDisabledError`, `featureDisabledKey`, re-exported from the root barrel
+  and `./api-client`. Verified the pre-existing behaviour rather than assuming it:
+  `api-client.ts` already lets a body `code` win over the `String(status)`
+  fallback — a new test pins it against a real mocked 403 gate body.
+- `react/use-feature-flag.ts`: `useFeatureFlag(projectId, key)` → `{enabled, isLoading}`,
+  reading the shared `qk.project.detail(id)` entry with a `=== true` fail-closed
+  read. One line added to `react/index.ts`.
+- `core/client/kortix.ts`: `project(id).updateFeatureFlag(...)` beside the
+  deprecated `updateExperimentalFeature`.
+
+No new subpath, so `exports`, `publishConfig.exports`, and `SUBPATH_TIERS` are
+unchanged. Version untouched.
+
+TDD: every change had its failing test first and was watched fail —
+`Export named 'FEATURE_FLAG_KEYS' not found in module '…/projects.ts'`,
+`Export named 'isFeatureDisabledError' not found in module '…/errors.ts'`, and
+`Cannot find module './use-feature-flag'`. The three new source-contract tests in
+`apps/web` were mutation-checked (removing the `stable` badge arm, weakening the
+customize-write fail-closed guard, and un-filtering `sidebar-right` each turned
+them red).
+
+Verification:
+
+- `bun run test`: `1777 pass`, `0 fail`, `6965 expect()` calls across `139` files.
+- `bun run typecheck`: exit `0` for the package and examples.
+- `bun run smoke:install`: packed `@kortix/sdk` + `@kortix/executor-sdk`,
+  installed the tarballs, imported and constructed in Node ESM — pass.
+- Both surface snapshots re-recorded: `11` and `20` insertions, **0 deletions**.
+- Downstream: `apps/web` `tsc --noEmit` clean apart from the documented
+  `test.each` baseline; `apps/whitelabel-demo` `tsc --noEmit` exit `0` and
+  `sdk-boundary` `0 violations`; `apps/mobile` `tsc --noEmit` error set is
+  **byte-identical** before and after this change (verified by stashing
+  `packages/sdk` and diffing the sorted output) — its failures are pre-existing
+  and unrelated.
+
+Discovered, not fixed (see *Discovered this session*): `apps/mobile` and
+`apps/whitelabel-demo` still render off the deprecated `ExperimentalFeatureView`
+alias and label the surface "Experimental". They compile unchanged because the
+alias and the widened stability union are both backwards-compatible, but their
+copy is now inconsistent with the platform's naming.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-08 — session `workspace-switcher-final-fix-wave` completion
+
+No **Now** task claimed. This is the SDK slice of the workspace-switcher
+branch's final whole-branch-review fix wave (`.superpowers/sdd/2026-08-06-
+workspace-switcher/final-fix-wave-report.md`) — one finding, additive only.
+
+Scope: `provisionProjectStream` (`core/rest/projects-client/projects.ts`)
+threw a bare `Error` for every failure — no `.status`, no `.code` — even
+though `ProvisionStreamEvent` already declared `code?: string` and the server
+sends it. `apps/web`'s `messageFor`/`isRetryableError` classify every create
+failure by reading exactly those two fields, so on the default streaming path
+they always saw `undefined` for both: a 400 offered an unwinnable retry, and a
+409 leaked the literal string `idempotency_key` to the user.
+
+RED: `projects.test.ts` — 3 new tests asserting the thrown error is
+`instanceof ApiError` with `.status`/`.code` set, for both the in-band `error`
+frame and the pre-stream denial. Failed for the right reason: the thrown
+value was a plain `Error`, not `ApiError`.
+
+GREEN: `provisionProjectStream` now throws `new ApiError(message, { status,
+code })` at both throw sites; `ProvisionStreamEvent`'s `error` variant gained
+an optional `status?: number` field to carry it. `1589 pass, 0 fail` (was
+1586 — the 3 new tests), `6408 expect()` calls across 122 files. `typecheck`
+clean. `smoke:install` green (pack → install → import).
+
+Public surface: **purely additive**. `ApiError` was already exported and
+already public; only an EXISTING type gained a new OPTIONAL field
+(`ProvisionStreamEvent['error'].status`), which the snapshot tests don't
+capture at the field level (verified: `public-surface.snapshot.json` and
+`public-type-surface.snapshot.json` show zero diff). No export added,
+renamed, or removed.
+
+**Status:** COMPLETE. **SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-08 — session `apps-retired-provider-scanner`
 
 The final PR cadence found the retired-provider id as a literal in one SDK
@@ -1725,6 +2071,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B45 | **Expose the second, named-glyph project icon (`icon_glyph`) on the SDK's typed project contract.** Tasks 1–5 of the project-glyph-icons plan added a server-validated `icon_glyph: {name,color} \| null` alongside the existing emoji `icon` — across the API contract, all three create paths, and `PATCH /projects/:id`'s tri-state semantics (the glyph wins and clears `icon` if both are sent). B43/B44 gave the SDK its own independent `icon` field; it has no `icon_glyph` anywhere. | `KortixProject`, `ProjectInput`, `ProvisionProjectInput`, `CreateProjectRepoInput` (`packages/sdk/src/core/rest/projects-client/projects.ts`) and `LinkRepositoryInput` (`packages/sdk/src/core/rest/projects-client/github.ts`) carry no `icon_glyph` member; plan `docs/superpowers/plans/2026-08-01-project-glyph-icons.md`; spec `docs/superpowers/specs/2026-08-01-project-glyph-icons-design.md`; task brief `.superpowers/sdd/2026-08-01-project-glyph-icons/task-6-brief.md`. | **DONE 2026-08-01** — session `sdk-project-glyph-icon`; implementation `3ce3e5f1f`; typecheck exit 0, full suite 1374 pass / 0 fail across 116 files, packed-install smoke pass, both brief mutations killed via typecheck (see session log) |
 | B46 | **Expose session agent-config freshness and reload.** A session's agent behaviour is compiled from git once, at provision, and frozen into the sandbox env — so merging an agent change never reaches an open session. The API grew `GET /v1/projects/:id/sessions/:sid/config` and `POST .../reload` (`apps/api/src/projects/routes/r7.ts:2170,2223`) and the CLI grew `kortix sessions reload` (`apps/cli/src/commands/sessions.ts:213`), but the SDK had neither, so `apps/web` could not offer it at all — and `apps/web/src/sdk-boundary-baseline.json` forbids reaching past `@kortix/sdk`. | `grep -rn "sessions/.*/reload" packages/sdk/src` → nothing but the unrelated sandbox-runtime `/kortix/services/system/reload`. Additive: `getProjectSessionConfigState`, `reloadProjectSessionConfig`, `SessionConfigState`, `SessionReloadResult`, plus `session().configState()` / `session().reloadConfig()` on the facade. | **DONE 2026-08-03** — session `stale-session-ui`; typecheck exit 0; full suite 1416 pass / 1 fail across 117 files (the single failure, `fetchCostExportCsv`, is PRE-EXISTING — it passes in isolation and fails identically at 1410/1 on a clean tree, a cross-file `configureKortix` token leak); packed-install smoke pass; surface snapshots re-recorded and reviewed as **purely additive, 0 removals** |
 | B47 | **A reload reported success while the agent kept running the old prompt.** `SessionReloadResult` exposed `applied` (the compiled config was pushed) but nothing about whether the agent files opencode actually READS were updated — and those came apart in production. Verified on dev: marker present in `~/.config/kortix-opencode.json`, absent from opencode's `/config` and `/agent`, because `OPENCODE_CONFIG_DIR` points into the session's working tree and its `.md` files win. | Additive: `config_dir_synced?: boolean | null` and `config_dir_reason?: string` on `SessionReloadResult`. Tri-state on purpose — `false` is a deliberate refusal (the session edited its own agent files), `null` is an older daemon that could not say. | **DONE 2026-08-03** — session `stale-session-ui`; typecheck exit 0; full suite 1419 pass / 1 fail across 117 files (the failure, `fetchCostExportCsv`, is PRE-EXISTING — passes in isolation, fails identically on a clean tree); packed-install smoke pass; type snapshot re-recorded and reviewed as **purely additive, 0 removals** |
+| B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -1733,6 +2080,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 
 | Date       | Session                  | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Where                                                                                                             |
 | ---------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 2026-08-08 | `feature-flags-web`      | **`apps/mobile` and `apps/whitelabel-demo` still say "Experimental" for the whole feature-flag system.** Both render the catalog off the deprecated `ExperimentalFeatureView` alias, call `updateExperimentalFeature` (the legacy `/experimental` route), and label the section "Experimental" — the platform now calls the system "Feature flags" and treats experimental/beta/stable as a per-flag stability badge. They compile unchanged (alias + widened union are both backwards-compatible) so nothing is broken, but the copy and the route are now behind the web app. Neither was redesigned in this session by instruction. | `apps/mobile/components/pages/SettingsNavPage.tsx:268,314-318`, `apps/mobile/lib/projects/hooks.ts:216-225`, `apps/whitelabel-demo/src/app/projects/[id]/settings/page.tsx:223-278` |
 | 2026-07-30 | `bugbash-model-resilience` | **Any ACP send failure replaces the whole chat surface with the page-level "OpenCode failed to load" card.** `executeSend`'s catch patches `error` onto the controller snapshot, `useSession` republishes it as `runtimeError`, and `apps/web`'s session page renders `InlineSessionError` + Restart INSTEAD of `SessionLayout`/`SessionChat` for it. Model-not-found is now recovered before it can reach that path, but a gateway 500 or a provider error on a send still nukes a healthy session's transcript and composer. The send failure is ALREADY surfaced inline as `sendError`; the controller should not also mark the runtime dead | `packages/sdk/src/core/acp/session-controller.ts:575-589` (patch `error`), `packages/sdk/src/react/use-session.ts:884` (`runtimeSessionError`), `apps/web/src/app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:775-800` (full-page card) |
 | 2026-07-30 | `bugbash-model-picker`   | **An explicit model pick has nowhere to persist on a composer with no `sessionId` and no loaded agent** (project home). `setModel` writes the per-agent slot only `if (currentAgent)` and the per-session slot only `if (scopedSessionModelKey)`; with neither it writes `visibility` + `recent` only, both of which lose to `serverDefaultKey` in the read chain — so the picker trigger never moves. Verified in a real browser: after clicking "Claude Sonnet 4.6" on `/projects/<id>`, `localStorage['opencode-model-store-v1']` held only `user` + `recent`, no `selectedModel`/`sessionModel`, and the trigger stayed on the platform default. The read chain's own comment (`:470`) claims selection "must NOT depend on a loaded agent", which the write side does not honour | `packages/sdk/src/react/use-opencode-local.ts:512-545` (write), `:443-459` (read) |
 | 2026-07-10 | `01AzJBSa`               | The original plan's "bump to `0.3.0`" is **impossible** — `version` is inert and `latest` on npm is `0.9.100`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `scripts/stage-npm-publish.mjs:32`                                                                                |
@@ -1753,6 +2101,8 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-10 | `4003a41b`               | Local-stack default-agent sends fail: gateway forwards opencode's `max_tokens` to a model demanding `max_completion_tokens` (OpenAI `unsupported_parameter`, HTTP 400) → default `send()` turns error with no assistant reply. Workaround verified live: per-send model override `{ providerID: 'kortix', modelID: 'claude-sonnet-4.6' }` → full e2e pass. Platform fix belongs in the gateway param translation or default model config                                                                                                                                                              | `/v1/llm-gateway/v1/llm/chat/completions` (via tunnel), `apps/api/src/router/routes/proxy/helpers.ts:252`         |
 | 2026-07-11 | `4003a41b`               | `session.transcript()` on a session whose sandbox was re-provisioned returns `{available:false, reason:"…ZlibError fetching …/session/<old opencode id>/message…"}` — graceful, but the compact transcript is unreadable after a sandbox swap (stale opencode session id?). Observed live on the local stack                                                                                                                                                                                                                                                                                          | `packages/sdk/src/core/rest/projects-client/sessions.ts` (`getSessionTranscript`)                                 |
 | 2026-07-11 | `4003a41b`               | `sandboxShares.list(sandboxId)` (`GET /p/share?sandbox_id=…`) returns **502** on the local stack for a live, ready sandbox — session `publicShares` create/list/revoke on the same sandbox works fine. SDK surfaces it correctly as typed ApiError; route itself looks broken/misrouted locally                                                                                                                                                                                                                                                                                                       | `packages/sdk/src/core/rest/projects-client/sandbox-shares.ts:33`                                                 |
+| 2026-08-10 | `activity-burst`         | **A shell failure is invisible to every host.** `shellViewModel` read `<exit_code>` privately, and nothing exported it — so a host that renders bash rows off `ToolPart` (as `apps/web` does) could not tell a build that exited 1 from one that exited 0. `partOutcome`-style heuristics cannot recover it: a failing test run prints to stdout exactly like a passing one, and the `Error:`-prefix check bails above 500 chars. Fixed additively this session (`shellExitCode`, exported, snapshot re-recorded — 4 added lines, no removals). **Not fixed:** `apps/web` strips the same tags with its OWN regex in `partOutput` (`infrastructure.tsx:514-515`), a second copy of `stripInternalTagTail`'s job that will drift. | `packages/sdk/src/core/turns/view-model.ts:179-198`, `apps/web/src/features/session/tool/shared/infrastructure.tsx:514` |
+| 2026-08-10 | `activity-burst`         | **Two `apps/web` ShowTool tests are order-dependent and fail in isolation at clean HEAD** — `content-only inline show exposes/omits Preview…` assert on a `viewBox="0 0 38 64"` occurrence count that comes back `undefined` when the file runs alone. Not an SDK issue and not caused by this session; adding any new test file to `src/features/session/tool/tools/` reshuffles execution order and surfaces it. Consistent with the known global mock-registry leak in `apps/web`. | `apps/web/src/features/session/tool/tools/show-tool.test.tsx:110,126` |
 | 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path.                                                                                                                                                                                                                     | `apps/api/src/connectors/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
 
 ---
@@ -7662,6 +8012,75 @@ GREEN:
 passes `wasTranscriptEvicted` into `shouldHydrateFromCache`. The SDK test runner
 has no DOM, so that effect cannot be driven; both halves of the decision it
 composes are tested directly.
+
+**Status:** COMPLETE.
+
+---
+
+### 2026-08-07 — session `workspace-switcher` Task 18: `provisionProjectStream`
+
+No SDK **Now** task claimed (`Now` tracks the unrelated OpenCode ACP canary
+plan). Task 18 of `.superpowers/sdd/2026-08-06-workspace-switcher/` — expose
+`POST /projects/provision-stream` (built server-side in an earlier task of the
+same plan) through the SDK, so `apps/web`'s create-project flow can show phase
+progress instead of a single opaque wait.
+
+Added:
+
+- `provisionProjectStream(input, onEvent, options?)` in
+  `core/rest/projects-client/projects.ts` — POSTs to `/projects/provision-stream`,
+  parses the data-only SSE body **line by line** (not `frame.startsWith('data: ')`
+  on the whole frame), calls `onEvent` per phase/done/error frame, and resolves
+  with the project on `done`. Rejects on a terminal `error` frame, on a pre-stream
+  non-2xx response (the route's "Owner or admin role required" 403 denial, which
+  arrives as plain JSON before any stream opens), and on a stream that closes
+  with no terminal frame at all — the last case matters because resolving with
+  `undefined` would route a caller to `/projects/undefined`.
+- `ProvisionPhase` and `ProvisionStreamEvent` — the phase union is pinned by a
+  compile-time exhaustiveness test against the literal 4-member list, so a
+  rename on either side of the two independent declarations (this one and
+  `PROVISION_PHASES` in `apps/api/src/projects/provision-core.ts`) fails loudly
+  instead of the UI silently stopping mid-progress.
+- `ApiClientOptions.fetch` — an explicit `fetch` injection point (narrower than
+  `typeof fetch`, no `preconnect`, so a plain stub function satisfies it) and
+  `backendApi.postStream`, a new POST variant that returns the raw `Response`
+  instead of consuming its body, so a caller can read `response.body`
+  incrementally. Chosen over `globalThis.fetch = mock(...)` (the rest of this
+  file's convention) because the task required a real injection seam, not just
+  a way to make this one test pass.
+- `default_branch?: string` on `ProvisionProjectInput` (carried-Minor cleanup):
+  `apps/web` was sending it and the server was reading it
+  (`apps/api/src/projects/routes/r1.ts:546`) with no field to type it, forcing
+  a `payload as unknown as ProvisionProjectInput` double-cast at the web call
+  site. Additive only — no existing field touched.
+
+Doc comment states the streaming target matrix and says plainly that **React
+Native is not supported** (RN's `fetch` has no `response.body`; Hermes has no
+`TextDecoderStream`) — matches this file's existing streaming guidance.
+
+RED (watched fail, for the right reason):
+
+```
+SyntaxError: Export named 'provisionProjectStream' not found in module
+'.../packages/sdk/src/core/rest/projects-client/projects.ts'.
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `1579 pass`, `2 skip`, `0 fail`,
+  `6381 expect()` calls across `122` files (baseline going in was `1569`/`122`
+  — the 10-test delta is exactly the tests this task added).
+- `pnpm --filter @kortix/sdk run smoke:install`: exit `0` — tarball packed,
+  installed into a throwaway project, imported successfully.
+
+Public surface changed additively only, verified by reading the diff before
+re-recording: `provisionProjectStream`, `ProvisionPhase`, `ProvisionStreamEvent`
+added to both the root and `projects-client` entries in both
+`public-surface.snapshot.json` (runtime) and `public-type-surface.snapshot.json`
+(type-level). Nothing removed, nothing renamed. `default_branch` is a new field
+on an existing interface, so it does not appear in either name-list snapshot.
+`package.json`'s `version` was not touched.
 
 **Status:** COMPLETE.
 

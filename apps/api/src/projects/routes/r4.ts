@@ -72,7 +72,8 @@ import {
   pipedreamConnectUrl,
 } from '../../connectors/pipedream';
 import { reconcileChannelConnectors } from '../../connectors/sync';
-import { resolveExperimentalFeature } from '../../experimental/features';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
@@ -1632,7 +1633,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
-    responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -1650,7 +1651,9 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) {
+      return c.json(featureDisabledBody('teams'), 403);
+    }
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -1768,7 +1771,7 @@ projectsApp.openapi(
         z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(),
         'Consent card sent',
       ),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -1786,7 +1789,9 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json({ error: 'Not found' }, 404);
+    if (!teamsChannelEnabled(loaded.row.metadata)) {
+      return c.json(featureDisabledBody('teams'), 403);
+    }
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
       serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
@@ -1804,7 +1809,7 @@ projectsApp.openapi(
 // ─── Email install — AgentMail-backed inbox per project ─────────────────────
 
 function emailChannelEnabled(metadata: unknown): boolean {
-  return resolveExperimentalFeature(metadata, 'agentmail_email');
+  return resolveFeatureFlag(metadata, 'agentmail_email');
 }
 
 projectsApp.openapi(
@@ -1896,12 +1901,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
     if (!emailChannelEnabled(loaded.row.metadata)) {
-      return c.json(
-        {
-          error: 'AgentMail Email is experimental and must be enabled for this project',
-        },
-        403,
-      );
+      return c.json(featureDisabledBody('agentmail_email'), 403);
     }
 
     let body: {
@@ -2082,12 +2082,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
     if (!emailChannelEnabled(loaded.row.metadata)) {
-      return c.json(
-        {
-          error: 'AgentMail Email is experimental and must be enabled for this project',
-        },
-        403,
-      );
+      return c.json(featureDisabledBody('agentmail_email'), 403);
     }
     let body: {
       connector_slug?: string;

@@ -42,6 +42,7 @@ import {
   isTerminalTurnEnd,
   isWarmPoolBox,
   turnGrantMs,
+  turnDeliveryGraceMs,
   warmPoolGrantMs,
 } from './sandbox-deadline-policy';
 
@@ -58,6 +59,7 @@ export {
   llmActivityGrantMs,
   previewGrantMs,
   turnGrantMs,
+  turnDeliveryGraceMs,
   warmPoolGrantMs,
 } from './sandbox-deadline-policy';
 
@@ -210,7 +212,7 @@ export async function shortenSandboxDeadlineOnTurnEnd(
  *
  * A warm box is the one box that can never be observed: nobody has claimed it,
  * so it has no turns, no LLM calls and no human preview traffic, and under the
- * bare 20-minute boot floor it was always reaped before it could be handed out.
+ * bare 15-minute boot floor it was always reaped before it could be handed out.
  * The control plane itself decided to bake it, which is as control-plane-observed
  * as an event gets, so it is granted its lifetime up front instead.
  *

@@ -1,13 +1,12 @@
 'use client';
 
-import { ArrowLeftIcon, GlobeIcon, PlusIcon } from '@phosphor-icons/react';
-import Image from 'next/image';
-import { useCallback, useMemo, useState, type CSSProperties } from 'react';
+import { ArrowLeftIcon, GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
+import { memo, useCallback } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { ConnectorConnectedMark } from '@/features/workspace/capabilities/connectors/connector-identity';
 import { useCapabilityScrollRoot } from '@/features/workspace/capabilities/shared/capability-scroll-root';
 
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
@@ -18,38 +17,28 @@ import {
 } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
 import { GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 import { cn } from '@/lib/utils';
-import { catalogSections, isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
+import { isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
 import { catalogFootSummary } from './catalog-foot';
-import {
-  CATALOG_INITIAL_REVEAL,
-  canRevealMore,
-  nextRevealCount,
-} from './catalog-paging';
 import { CategoryIcon } from './category-icon';
-import {
-  ALL_CATEGORIES,
-  CATEGORY_ROW_CAP,
-  groupIntoSections,
-  resolveActiveCategory,
-  sectionTitle,
-} from './connector-categories';
-import type { CatalogState } from './use-catalog';
+import { ALL_CATEGORIES } from './connector-categories';
+import type { CatalogSection, CatalogState } from './use-catalog';
 import { useCatalogAutoload } from './use-catalog-autoload';
 
 /**
- * The `+` / `✓` a catalogue card carries in its `trailing` slot.
+ * The connected marker on a catalogue card.
  *
- * Not a button. The whole `CatalogCard` is already a `<button>`, and nesting
- * an interactive element inside one is invalid HTML that browsers resolve by
- * splitting the outer button — which would break the card's own click target.
- * This is a glyph reporting state, and the card around it is what you press;
- * `aria-hidden` keeps it out of the accessible name, which the card's title
- * already supplies. That also means the 40x40 minimum-hit-area rule does not
- * apply here: there is one hit target, and it is card-sized.
+ * A labelled badge, not a bare glyph. It was a 16px green check in the trailing
+ * slot, which asked the user to decode a symbol whose only context was its
+ * colour — reported as "the connected state is a bit too hidden". A word costs
+ * one badge's width and needs no decoding.
  */
 function CatalogAffordance({ connected }: { connected: boolean }) {
   if (connected) {
-    return <ConnectorConnectedMark />;
+    return (
+      <Badge variant="success" size="sm" data-testid="catalog-connected">
+        Connected
+      </Badge>
+    );
   }
   return (
     <PlusIcon
@@ -63,28 +52,36 @@ function CatalogAffordance({ connected }: { connected: boolean }) {
 /**
  * A catalog favicon, or a neutral glyph tile when the record has none.
  *
- * The `outline` is `make-interfaces-feel-better`'s image rule: pure black at
- * 10% in light, pure white at 10% in dark. A tinted neutral would pick up the
- * surface colour behind it and read as dirt on the logo's edge.
+ * A plain `<img>`, not `next/image`. These are third-party favicons on
+ * arbitrary hosts, so the loader was already bypassed with `unoptimized` — which
+ * left `fill` costing an absolutely-positioned child inside a `relative`
+ * wrapper, per card, for no optimisation in return. Native `loading="lazy"`
+ * defers every icon below the fold, which is most of them on a browse page.
+ *
+ * `width`/`height` are set so the box is reserved before the image arrives and
+ * the grid never reflows around a late favicon.
  */
-function ConnectorIcon({ icon }: { icon: string | null }) {
+function ConnectorIcon({ icon, computer = false }: { icon: string | null; computer?: boolean }) {
   if (!icon) {
     return (
       <span className="bg-card flex size-9 shrink-0 items-center justify-center rounded-sm">
-        <GlobeIcon className="size-5" />
+        {computer ? <MonitorIcon className="size-5" /> : <GlobeIcon className="size-5" />}
       </span>
     );
   }
   return (
-    <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
-      <Image
+    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-sm">
+      {/* eslint-disable-next-line @next/next/no-img-element -- third-party
+          favicons on arbitrary hosts; the Next loader is bypassed anyway. */}
+      <img
         src={icon}
         alt=""
+        width={36}
+        height={36}
+        loading="lazy"
+        decoding="async"
         referrerPolicy="no-referrer"
-        fill
-        sizes="36px"
-        className="object-contain"
-        unoptimized
+        className="size-9 object-contain"
       />
     </span>
   );
@@ -94,141 +91,101 @@ function ConnectorIcon({ icon }: { icon: string | null }) {
  * One catalogue card. Extracted only so the sectioned and flat shapes below
  * cannot drift in what a card shows or which flow it opens.
  *
- * `reveal` is an index into the cards a newly loaded page just appended, or
- * `null` for a card that was already on screen. It drives the enter animation
- * and nothing else.
+ * `memo`'d because a browse page renders 72 of these and a flat category can
+ * render several hundred. `entry` and `connectedKeys` are referentially stable
+ * across a page landing (the arrays they come from are rebuilt, but the entry
+ * objects inside them are not), so the comparison actually pays off.
  */
-function CatalogEntryCard({
+const CatalogEntryCard = memo(function CatalogEntryCard({
   entry,
   connectedKeys,
   onSelect,
-  reveal = null,
 }: {
   entry: CatalogEntry;
   connectedKeys: ReadonlySet<string>;
   onSelect: (entry: CatalogEntry) => void;
-  reveal?: number | null;
 }) {
   return (
     <CatalogCard
-      leading={<ConnectorIcon icon={entry.icon} />}
+      leading={<ConnectorIcon icon={entry.icon} computer={entry.source === 'computer'} />}
       title={entry.name}
       description={entry.description}
       trailing={<CatalogAffordance connected={isCatalogEntryConnected(entry, connectedKeys)} />}
       onClick={() => onSelect(entry)}
-      className={reveal === null ? undefined : 'kx-card-reveal'}
-      style={reveal === null ? undefined : cardRevealDelay(reveal)}
     />
   );
-}
-
-/** Stagger step, in ms. The floor of the 30-80ms band on purpose: the band
- *  assumes a vertical list where each item is its own beat, and this is a 3-up
- *  grid where three cards share a row. At 40ms the row itself visibly
- *  diagonalled. */
-const REVEAL_STEP_MS = 30;
-
-/** Cards past this all start together. With 3 columns that is the first row
- *  leading and everything behind it arriving as one — a cascade, not a crawl.
- *  Holds the whole reveal to 90 + 200 = 290ms, inside the 300ms UI budget
- *  however many cards a page appends. */
-const REVEAL_MAX_STEPS = 3;
-
-/**
- * The delay for the nth appended card, as a custom property.
- *
- * A property rather than `animationDelay` directly, because an inline style
- * outranks a stylesheet declaration: setting the delay inline meant the
- * `prefers-reduced-motion` rule could strip the movement but never the
- * stagger, so a user who asked for less motion still got a staged reveal.
- * `.kx-card-reveal` reads this through `var()`, which its media query can
- * override.
- */
-function cardRevealDelay(reveal: number): CSSProperties {
-  return {
-    '--kx-card-reveal-delay': `${Math.min(reveal, REVEAL_MAX_STEPS) * REVEAL_STEP_MS}ms`,
-  } as CSSProperties;
-}
+});
 
 /** Skeletons appended to a growing grid while a request is in flight. Six —
  *  two full rows of the widest layout — so the placeholder block is the same
- *  shape as the batch about to replace it. Three left a visibly half-empty row
- *  that then reflowed as the real cards landed. */
+ *  shape as the batch about to replace it. */
 const LOADING_MORE_SKELETONS = 6;
 
-/** Skeletons for a focused category with nothing loaded for it yet. Six, to
- *  match `CatalogGridSkeleton` — this is a cold grid, not a growing one. */
-const PENDING_SKELETONS = 6;
-
 /**
- * One category section on the Discovery tab: a heading, the first
- * `CATEGORY_ROW_CAP` cards, and "View all".
+ * One category section on the browse page: a heading, its true size, a fixed
+ * slice of it, and one way in.
  *
- * **"View all" opens the category; it does not expand the section.** In-place
- * expansion could never keep the promise the label makes — a section holds only
- * what the loaded pages happen to contain, so "View all" on Finance opened 8
- * cards out of a 2,713-item catalogue. Opening the category is what puts it in
- * front of `useCatalog`'s `focusCategory`, which keeps fetching, and in front of
- * the scroll sentinel, which keeps fetching for as long as the user scrolls. The
- * label now means what it says.
+ * **The section does not grow.** Its cards are a fixed top slice the server
+ * chose from the complete category, and `total` is that category's real count.
+ * Previously a section was a client-side bucketing of whatever pages had
+ * loaded, so it gained cards while the user was reading it and reflowed the
+ * page under them — Marko's "you keep adding stuff to the different categories
+ * and expanding them so it's quite weird".
  *
- * What the earlier expansion was protecting against — a page that silently
- * swapped every section for one grid — is handled by `CategoryView`'s own
- * heading and Back control, not by refusing to open the category.
+ * **The count is on the heading now.** It was deliberately omitted before,
+ * because the only number available described the loaded pages rather than the
+ * catalogue, and got less true the more you loaded. `total` is the catalogue's
+ * own count, so the heading can state it.
  *
- * No count on the heading, and none on the button. "Productivity 26" would
- * describe the pages that happen to be loaded, not the catalogue, and would
- * get worse the more the user loads.
- *
- * The button appears on `items.length > CATEGORY_ROW_CAP` alone, with no
- * `POPULAR_SECTION` exemption. That case is closed one level up instead:
- * `catalogSections` is called with `popularCap: CATEGORY_ROW_CAP`, so Popular
- * cannot exceed the cap and cannot reach the condition. Pinned in
- * `catalog-entry.test.ts`, because it is the caller's argument — not anything
- * visible here — that keeps it true.
+ * **"View all" opens the category; it does not expand the section.** Opening it
+ * puts a real server-side filter in front of the grid, so the label means what
+ * it says even for a 348-app category.
  */
 function CategorySection({
-  category,
-  items,
+  section,
   connectedKeys,
   onSelect,
   onViewAll,
 }: {
-  category: string;
-  items: CatalogEntry[];
+  section: CatalogSection;
   connectedKeys: ReadonlySet<string>;
   onSelect: (entry: CatalogEntry) => void;
   onViewAll: (category: string) => void;
 }) {
-  const label = sectionTitle(category);
-  const visible = items.slice(0, CATEGORY_ROW_CAP);
-
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-muted-foreground flex items-center gap-1.5 text-sm font-medium">
-          <CategoryIcon category={category} className="size-4" />
-          {label}
+        <h2 className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-sm font-medium">
+          <CategoryIcon category={section.key} className="size-4 shrink-0" />
+          <span className="truncate">{section.label}</span>
+          {/* `tabular-nums` so the figure does not jitter the heading's width
+              if the catalogue count changes between refreshes. */}
+          <span className="text-muted-foreground/40" aria-hidden>
+            &bull;
+          </span>
+          <span className="text-muted-foreground/70 tabular-nums">
+            {section.total.toLocaleString()}
+          </span>
         </h2>
-        {items.length > CATEGORY_ROW_CAP ? (
+        {section.total > section.items.length ? (
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`View all ${label} connectors`}
-            onClick={() => onViewAll(category)}
+            aria-label={`View all ${section.label} connectors`}
+            onClick={() => onViewAll(section.key)}
             // `size="sm"` is `h-8` — 29.44px at this repo's `--spacing: 0.23rem`,
             // under the 40px minimum hit area. `-inset-y-1.5` adds 5.52px top
             // and bottom for 40.48px. Vertical only: the label already makes
             // the control ~64px wide, and widening it would push the target
             // toward the heading it sits opposite.
-            className="relative transition-transform duration-150 ease-out before:absolute before:-inset-y-1.5 before:content-[''] active:scale-[0.96]"
+            className="relative shrink-0 transition-transform duration-150 ease-out before:absolute before:-inset-y-1.5 before:content-[''] active:scale-[0.96]"
           >
             View all
           </Button>
         ) : null}
       </div>
       <div className={GRID_CLASSNAME}>
-        {visible.map((entry) => (
+        {section.items.map((entry) => (
           <CatalogEntryCard
             key={entry.key}
             entry={entry}
@@ -244,12 +201,6 @@ function CategorySection({
 /**
  * The heading of an open category: where you are, and one control back.
  *
- * This is the whole reason "View all" can open a category instead of expanding
- * a section in place. The objection to opening one was never the grid — it was
- * that the page silently replaced every section with one list and gave no
- * account of itself. A heading naming the category and a Back button beside it
- * is that account, and it costs one row.
- *
  * Deliberately NOT a persistent filter strip. A row of every category sitting
  * above the catalogue at all times is a second navigation layer on a page that
  * already has tabs, and it turns a place you go into a switch you have to
@@ -258,8 +209,17 @@ function CategorySection({
  * `ArrowLeftIcon`, not `CaretLeftIcon`: a caret pair reads as paging through a
  * sequence, which is exactly the gesture this catalogue does not have.
  */
-function CategoryViewHeader({ category, onBack }: { category: string; onBack: () => void }) {
-  const label = sectionTitle(category);
+function CategoryViewHeader({
+  category,
+  label,
+  total,
+  onBack,
+}: {
+  category: string;
+  label: string;
+  total: number | null;
+  onBack: () => void;
+}) {
   return (
     <div className="flex items-center gap-2">
       <Button
@@ -267,10 +227,8 @@ function CategoryViewHeader({ category, onBack }: { category: string; onBack: ()
         size="sm"
         onClick={onBack}
         aria-label="Back to all connectors"
-        // `size="sm"` is `h-8` — 29.44px at `--spacing: 0.23rem`, under the
-        // 40px minimum. `-inset-y-1.5` adds 5.52px top and bottom for 40.48px.
-        // Horizontal too here, unlike the section buttons: this control sits at
-        // the row's left edge with nothing to its left to overlap.
+        // `-inset-1.5` on all sides here, unlike the section buttons: this
+        // control sits at the row's left edge with nothing to its left.
         className="text-muted-foreground hover:text-foreground relative -ml-2 transition-transform duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
       >
         <ArrowLeftIcon className="size-3.5" />
@@ -280,6 +238,14 @@ function CategoryViewHeader({ category, onBack }: { category: string; onBack: ()
       <h2 className="text-foreground flex min-w-0 items-center gap-1.5 text-sm font-medium">
         <CategoryIcon category={category} className="size-4 shrink-0" />
         <span className="truncate">{label}</span>
+        {total !== null ? (
+          <>
+            <span className="text-muted-foreground/40" aria-hidden>
+              &bull;
+            </span>
+            <span className="text-muted-foreground/70 tabular-nums">{total.toLocaleString()}</span>
+          </>
+        ) : null}
       </h2>
     </div>
   );
@@ -290,12 +256,8 @@ function CategoryViewHeader({ category, onBack }: { category: string; onBack: ()
  *
  * **Why there is a button under a scroll-driven grid.** The sentinel above it
  * covers the pointer. A control is what covers everything else — keyboard
- * users, who never scroll a container they have not focused; assistive tech,
- * where "more content appeared somewhere below" is not an interaction; and the
- * one case the sentinel genuinely cannot serve, a focused category that has
- * hit `CATALOG_AUTOLOAD_MAX_PAGES` with its sentinel still in view. The button
- * is not a fallback for a broken observer; it is the accessible path, and it
- * is always rendered while there is more to fetch.
+ * users, who never scroll a container they have not focused, and assistive
+ * tech, where "more content appeared somewhere below" is not an interaction.
  *
  * A pointer user rarely sees it: the sentinel fires 400px early, so by the time
  * this scrolls into view a fetch is usually already running and the button has
@@ -329,11 +291,10 @@ function CatalogFoot({
           Load more
         </Button>
       ) : null}
-      {/* ONE line, spinner included — not a spinner line stacked on a count
-          line. `tabular-nums` because these quantities change as batches land,
-          and proportional digits would jitter the line's width under them.
-          `aria-live` only while loading: announcing every idle count change
-          would narrate the whole scroll. */}
+      {/* ONE line, spinner included. `tabular-nums` because these quantities
+          change as batches land, and proportional digits would jitter the
+          line's width under them. `aria-live` only while loading: announcing
+          every idle count change would narrate the whole scroll. */}
       {summary ? (
         <p
           className="text-muted-foreground/70 flex items-center gap-2 text-xs tabular-nums"
@@ -351,29 +312,26 @@ function CatalogFoot({
 /**
  * The catalogue body, in one of two shapes.
  *
- * `sectioned` (the Discovery tab) groups into capped category sections, Popular
- * first. `flat` (the All tab, and any focused category) is one grid.
+ * `sectioned` (the Discovery tab) is the browse page: a fixed top slice of each
+ * of the largest categories, each stating its true size. `flat` (the All tab, a
+ * search, and any open category) is one paginated grid.
  *
- * A text search always collapses to flat, in both modes: the search runs
- * server-side across the whole catalogue, so category headings would fragment
- * a result set the user asked to see as one list. Focusing a category collapses
- * to flat for the same reason — the heading would restate the chip.
+ * A text search always collapses to flat: the search runs server-side across
+ * the whole catalogue, so category headings would fragment a result set the
+ * user asked to see as one list. An open category collapses to flat for the
+ * same reason — the heading would restate what the header already says.
  *
- * **The catalogue paginates, by both gestures.** Scrolling to the foot loads
- * the next page (`useCatalogAutoload`), and the foot carries a real button for
- * everyone who does not reach it by scrolling. Neither is capped: the ceiling
- * in `catalog-paging.ts` bounds only the fetching the page does on its own.
- * This reverses an earlier decision to let browsing show one page and leave
- * search as the only way to reach the rest — with ~2,700 apps behind a
- * 48-per-page cursor, that made every category section a sample and made "View
- * all" a label the page could not honour.
+ * **One paging mechanism.** Scrolling to the foot fetches the next page, and so
+ * does the button beside it. Nothing else fetches: no eager first-paint budget,
+ * no per-category deepening loop, no reveal window uncovering already-loaded
+ * cards. Those existed to let the client fake a category filter, and the server
+ * performs it now.
  */
 export function ConnectorBrowse({
   state,
   connectedKeys,
   mode,
   category,
-  availableCategories,
   onCategoryChange,
   onSelect,
   emptyTitle,
@@ -382,31 +340,24 @@ export function ConnectorBrowse({
   state: CatalogState;
   connectedKeys: ReadonlySet<string>;
   mode: 'sectioned' | 'flat';
-  /** What the user picked. `ALL_CATEGORIES` when unfiltered — and NOT
-   *  necessarily what gets applied; see `resolveActiveCategory`. */
+  /** The open category, or `ALL_CATEGORIES` while browsing everything. */
   category: string;
-  /** From `catalogCategoryKeys`, the same list the rail is built from. A
-   *  `category` missing from it is stale and gets dropped rather than applied
-   *  to a set that no longer contains it. */
-  availableCategories: readonly string[];
   onCategoryChange: (category: string) => void;
   onSelect: (entry: CatalogEntry) => void;
   emptyTitle: string;
   emptyDescription: string;
 }) {
-  const { activeQuery, entries, total } = state;
+  const { activeQuery, entries, total, sections } = state;
   const searching = activeQuery.length > 0;
-  // Derived, never taken at face value. A picked category outlives a search
-  // (during which the rail is hidden) and outlives the entry set that produced
-  // it (a refetch, or `useCatalog` swapping source and with it the whole
-  // category vocabulary). Resolving against the list the rail shows means the
-  // grid and that rail cannot disagree about what is applied.
-  const activeCategory = resolveActiveCategory(category, availableCategories, { searching });
+  // A search hides the category header and ignores the filter, so a category
+  // must not survive into a searching render as an invisible constraint.
+  const activeCategory = searching ? ALL_CATEGORIES : category;
+  const openCategoryFacet = state.categories.find((facet) => facet.key === activeCategory) ?? null;
 
   const scrollRootRef = useCapabilityScrollRoot();
-  // Opening a category replaces a page of sections with one grid, and going
-  // Back replaces it again. Without this the user keeps their scroll offset
-  // into content that no longer exists, landing mid-grid on a view they just
+  // Opening a category replaces the browse page with one grid, and going Back
+  // replaces it again. Without this the user keeps their scroll offset into
+  // content that no longer exists, landing mid-grid on a view they just
   // arrived at the top of.
   const openCategory = useCallback(
     (next: string) => {
@@ -423,66 +374,14 @@ export function ConnectorBrowse({
     [onCategoryChange, scrollRootRef],
   );
 
-  const sections = useMemo(
-    () => (mode === 'sectioned' ? catalogSections(entries, { popularCap: CATEGORY_ROW_CAP }) : []),
-    [mode, entries],
-  );
-
-  const flat = useMemo(() => {
-    if (activeCategory === ALL_CATEGORIES) return entries;
-    return (
-      groupIntoSections(entries, (entry) => entry.categories).find(
-        (group) => group.category === activeCategory,
-      )?.items ?? []
-    );
-  }, [activeCategory, entries]);
-
   const showSections = mode === 'sectioned' && !searching && activeCategory === ALL_CATEGORIES;
 
-  // The reveal window over the flat grid — see `CATALOG_REVEAL_STEP`. Reset
-  // whenever the list underneath it becomes a different list, because a window
-  // is an offset into one list and means nothing against another: leaving it at
-  // 96 after opening a category would skip that category's first 96 cards
-  // straight past the fold.
-  //
-  // Keyed on what the user did, not on `flat` itself. `flat` changes identity
-  // every time a page lands, and resetting on that would claw the window back
-  // to 24 in the middle of a scroll.
-  const [revealed, setRevealed] = useState(CATALOG_INITIAL_REVEAL);
-  const revealKey = `${activeCategory}:${activeQuery}:${mode}`;
-  const [seenRevealKey, setSeenRevealKey] = useState(revealKey);
-  if (seenRevealKey !== revealKey) {
-    setSeenRevealKey(revealKey);
-    setRevealed(CATALOG_INITIAL_REVEAL);
-  }
-
-  // Sections are their own window — each caps at `CATEGORY_ROW_CAP` and grows
-  // as pages land — so the reveal step applies to the flat grid alone. Without
-  // this guard the sentinel would "uncover" cards in a shape that is not
-  // showing `flat` at all, and scrolling the Discovery tab would do nothing.
-  const canReveal = !showSections && canRevealMore(revealed, flat.length);
-  const visibleFlat = useMemo(
-    () => (showSections ? flat : flat.slice(0, revealed)),
-    [showSections, flat, revealed],
-  );
-
-  // Uncovering beats fetching, always: the cards are already in memory, so the
-  // grid grows in the same frame with no request at all. Only once the window
-  // has caught up with everything loaded does a scroll cost a round trip.
-  const hasMore = canReveal || state.hasMore;
+  const hasMore = !showSections && state.hasMore;
   // Depends on `state.loadMore`, NOT on `state`. `useCatalog` returns a fresh
   // object every render, so closing over `state` would give this a new identity
   // every render, and `useCatalogAutoload` lists it in its observer effect's
-  // deps — the observer would be torn down and rebuilt on every render of the
-  // page. `state.loadMore` is a `useCallback` and is stable.
-  const fetchMore = state.loadMore;
-  const loadMore = useCallback(() => {
-    if (canReveal) {
-      setRevealed((current) => nextRevealCount(current, flat.length));
-      return;
-    }
-    fetchMore();
-  }, [canReveal, flat.length, fetchMore]);
+  // deps — the observer would be torn down and rebuilt on every render.
+  const loadMore = state.loadMore;
 
   const sentinelRef = useCatalogAutoload({
     hasMore,
@@ -490,17 +389,13 @@ export function ConnectorBrowse({
     loadMore,
   });
 
-  const isEmpty = showSections ? sections.length === 0 : flat.length === 0;
-  // A focused category with nothing loaded for it yet is NOT empty — the page
-  // is still fetching pages to fill it. Rendering "no connectors" over a grid
-  // about to receive cards is the one state this surface must never show.
-  const isPending = isEmpty && state.hasMore && activeCategory !== ALL_CATEGORIES;
+  const isEmpty = showSections ? sections.length === 0 : entries.length === 0;
 
   // Loading, error and "nothing to show" are `CatalogGrid`'s contract in its
   // documented order; only the *content* branch differs between the sectioned
   // and flat shapes, so those three states are delegated here and the grid
   // gets no children it could render.
-  if (state.isLoading || state.isError || (isEmpty && !isPending)) {
+  if (state.isLoading || state.isError || isEmpty) {
     return (
       <CatalogGrid
         isLoading={state.isLoading}
@@ -510,7 +405,7 @@ export function ConnectorBrowse({
         isEmpty
         empty={
           searching ? (
-            <CatalogNoMatch query={activeQuery} />
+            <CatalogNoMatch query={activeQuery} excludedNoActions={state.excludedNoActions} />
           ) : (
             <EmptyState
               icon={GlobeIcon}
@@ -526,25 +421,25 @@ export function ConnectorBrowse({
     );
   }
 
-  const summary = catalogFootSummary({
-    shown: showSections ? entries.length : visibleFlat.length,
-    loaded: entries.length,
-    total,
-    categoryLabel: activeCategory === ALL_CATEGORIES ? null : sectionTitle(activeCategory),
-    searching,
-    hasMore,
-    isLoadingMore: state.isLoadingMore,
-  });
+  const summary = showSections
+    ? null
+    : catalogFootSummary({
+        shown: entries.length,
+        loaded: entries.length,
+        total,
+        categoryLabel: activeCategory === ALL_CATEGORIES ? null : (openCategoryFacet?.label ?? activeCategory),
+        searching,
+        hasMore,
+        isLoadingMore: state.isLoadingMore,
+      });
 
   return (
     <div
       // Search-as-you-type keeps the previous results and dims them, rather
       // than swapping the whole catalogue for six skeleton cards on every
-      // debounced keystroke (which is what `isLoading` did before
-      // `placeholderData: keepPreviousData` split the cold state out of it).
-      // `aria-busy` is the same statement for assistive tech, and
-      // `pointer-events-none` stops a click landing on a card that is about to
-      // be replaced by a different one in the same position.
+      // debounced keystroke. `aria-busy` is the same statement for assistive
+      // tech, and `pointer-events-none` stops a click landing on a card that is
+      // about to be replaced by a different one in the same position.
       aria-busy={state.isRefreshing || undefined}
       className={cn(
         'space-y-6 transition-opacity duration-150 ease-out',
@@ -557,6 +452,8 @@ export function ConnectorBrowse({
       {!searching && activeCategory !== ALL_CATEGORIES ? (
         <CategoryViewHeader
           category={activeCategory}
+          label={openCategoryFacet?.label ?? activeCategory}
+          total={openCategoryFacet?.count ?? null}
           onBack={() => openCategory(ALL_CATEGORIES)}
         />
       ) : null}
@@ -564,9 +461,8 @@ export function ConnectorBrowse({
       {showSections ? (
         sections.map((section) => (
           <CategorySection
-            key={section.category}
-            category={section.category}
-            items={section.items}
+            key={section.key}
+            section={section}
             connectedKeys={connectedKeys}
             onSelect={onSelect}
             onViewAll={openCategory}
@@ -574,7 +470,7 @@ export function ConnectorBrowse({
         ))
       ) : (
         <div className={GRID_CLASSNAME}>
-          {visibleFlat.map((entry) => (
+          {entries.map((entry) => (
             <CatalogEntryCard
               key={entry.key}
               entry={entry}
@@ -584,17 +480,11 @@ export function ConnectorBrowse({
           ))}
           {/* Inside the grid, not under it, so the next page's cards land
               exactly where these sit and the row does not reflow when they
-              swap. Only in the flat shape: the sectioned one has no single
-              grid for a page to append to.
-              A category the catalogue is still fetching for gets a full grid
-              of them rather than three, because there is nothing above them to
-              read — this is that category's cold state, and it should look
-              like every other cold state on the page. */}
-          {isPending || state.isLoadingMore
-            ? Array.from(
-                { length: isPending ? PENDING_SKELETONS : LOADING_MORE_SKELETONS },
-                (_, index) => <CatalogCardSkeleton key={`loading-${index}`} />,
-              )
+              swap. */}
+          {state.isLoadingMore
+            ? Array.from({ length: LOADING_MORE_SKELETONS }, (_, index) => (
+                <CatalogCardSkeleton key={`loading-${index}`} />
+              ))
             : null}
         </div>
       )}
@@ -604,17 +494,12 @@ export function ConnectorBrowse({
           it is already working while it is still below the fold. */}
       {hasMore ? <div ref={sentinelRef} aria-hidden className="h-px" /> : null}
 
-      {/* Suppressed while the grid is nothing but skeletons: they already say
-          "fetching", and a "Load more" button under them offers to fetch what
-          is already on its way. */}
-      {isPending ? null : (
-        <CatalogFoot
-          summary={summary}
-          hasMore={hasMore}
-          isLoadingMore={state.isLoadingMore}
-          loadMore={loadMore}
-        />
-      )}
+      <CatalogFoot
+        summary={summary}
+        hasMore={hasMore}
+        isLoadingMore={state.isLoadingMore}
+        loadMore={loadMore}
+      />
     </div>
   );
 }

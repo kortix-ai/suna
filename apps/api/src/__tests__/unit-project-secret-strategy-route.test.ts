@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { connectors, projectSecrets, projectSessionSecretHandles } from '@kortix/db';
+import type { SecretEgressPolicy } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
+import type {
+  ProjectSecretPropagationResult,
+  ProjectSecretPropagationTarget,
+} from '../projects/lib/sandbox-env-sync';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -26,6 +31,53 @@ const handleUpdates: Array<Record<string, unknown>> = [];
 const audits: Array<Record<string, unknown>> = [];
 const propagations: Array<{ projectId: string; options: unknown }> = [];
 const boundConnectorSlugs: string[] = [];
+
+// The OTHER shared egress secrets in the project — what the save-time
+// destination-collision query reads.
+const boundarySecrets: Array<{ identifier: string; egressPolicy: SecretEgressPolicy | null }> = [];
+
+// What the mocked fan-out reports back, and an optional gate that never settles
+// so a test can prove a call site is fire-and-forget.
+let propagationResult: ProjectSecretPropagationResult = propagationReport();
+let propagationGate: Promise<void> | null = null;
+
+function propagationReport(
+  overrides: Partial<ProjectSecretPropagationResult> = {},
+): ProjectSecretPropagationResult {
+  return {
+    ok: true,
+    active_sandboxes: 0,
+    targeted: 0,
+    synced: 0,
+    failed: 0,
+    exported: 0,
+    results: [],
+    ...overrides,
+  };
+}
+
+function syncTarget(
+  overrides: Partial<ProjectSecretPropagationTarget> = {},
+): ProjectSecretPropagationTarget {
+  return {
+    session_id: 'session-1',
+    sandbox_id: 'sandbox-1',
+    status: 'synced',
+    scope: 'inherit',
+    revision: 'rev-1',
+    exported: 1,
+    managed: 0,
+    withheld: 0,
+    agent_env_written: true,
+    ...overrides,
+  };
+}
+
+function resetPropagation() {
+  propagations.length = 0;
+  propagationResult = propagationReport();
+  propagationGate = null;
+}
 
 function secretRow(overrides: Record<string, unknown> = {}) {
   const now = new Date('2026-08-03T10:00:00.000Z');
@@ -85,6 +137,12 @@ const databaseMock = {
         return { where: async () => boundConnectorSlugs.map((slug) => ({ slug })) };
       }
       if (table !== projectSecrets) throw new Error('unexpected table');
+      // The destination-collision query is the only projectSecrets select that
+      // asks for identifier + policy and no secretId, and the only one that
+      // resolves to a LIST rather than a single row.
+      if (fields && 'identifier' in fields && 'egressPolicy' in fields && !('secretId' in fields)) {
+        return { where: async () => boundarySecrets.map((secret) => ({ ...secret })) };
+      }
       return { where: () => queryResult(fields) };
     },
   }),
@@ -156,7 +214,13 @@ mock.module('../projects/lib/access', () => ({
 mock.module('../projects/lib/sandbox-env-sync', () => ({
   propagateProjectSecretsToActiveSandboxes: async (projectId: string, options: unknown) => {
     propagations.push({ projectId, options });
+    if (propagationGate) await propagationGate;
+    return propagationResult;
   },
+}));
+
+mock.module('../secrets/network-boundary-availability', () => ({
+  networkBoundaryDeliveryAvailable: () => true,
 }));
 
 mock.module('../shared/audit', () => ({
@@ -204,8 +268,9 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     updates.length = 0;
     handleUpdates.length = 0;
     audits.length = 0;
-    propagations.length = 0;
     boundConnectorSlugs.length = 0;
+    boundarySecrets.length = 0;
+    resetPropagation();
   });
 
   test('changes runtime to denied and records metadata-only audit data', async () => {
@@ -403,7 +468,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(updates).toHaveLength(0);
   });
 
-  test('rejects transparent egress until its adapter is available', async () => {
+  test('stores an enforceable network-boundary policy', async () => {
     const response = await buildApp().request(
       `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
@@ -412,7 +477,169 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
         body: JSON.stringify({
           strategy: 'egress',
           egress_policy: {
-            backend: 'llm_gateway',
+            rules: [{ host: 'api.example.com' }],
+            inject: {
+              kind: 'header',
+              name: 'authorization',
+              template: 'Bearer {{secret}}',
+            },
+            on_no_match: 'deny',
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'egress',
+      consumer: 'network',
+      delivery_status: 'available',
+    });
+    expect(updates).toHaveLength(1);
+    expect(audits).toHaveLength(1);
+  });
+
+  test('rejects a boundary policy that claims another secret host and header', async () => {
+    boundarySecrets.push({
+      identifier: 'BOUNDARY_TEST',
+      egressPolicy: {
+        rules: [{ host: 'postman-echo.com' }],
+        inject: { kind: 'header', name: 'Authorization', template: 'Bearer {{secret}}' },
+      } as SecretEgressPolicy,
+    });
+
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: {
+            // Different case on both axes — the provider edge matches neither
+            // case-sensitively, so neither may the save check.
+            rules: [{ host: 'Postman-Echo.com' }],
+            inject: { kind: 'header', name: 'AUTHORIZATION', template: 'Bearer {{secret}}' },
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      code: 'secret_boundary_destination_conflict',
+      conflict: {
+        identifier: 'BOUNDARY_TEST',
+        host: 'postman-echo.com',
+        header: 'authorization',
+      },
+    });
+    // The sentence has to name both secrets, or the author cannot tell which
+    // pair collided.
+    expect(body.error).toContain('BOUNDARY_TEST');
+    expect(body.error).toContain('SERVICE_API_KEY');
+    expect(body.error).toContain('postman-echo.com');
+    expect(body.error).toContain('authorization');
+    expect(updates).toHaveLength(0);
+    expect(audits).toHaveLength(0);
+    expect(propagations).toHaveLength(0);
+  });
+
+  test('accepts the same host under a different header', async () => {
+    boundarySecrets.push({
+      identifier: 'BOUNDARY_TEST',
+      egressPolicy: {
+        rules: [{ host: 'postman-echo.com' }],
+        inject: { kind: 'header', name: 'authorization' },
+      } as SecretEgressPolicy,
+    });
+
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: {
+            rules: [{ host: 'postman-echo.com' }],
+            inject: { kind: 'header', name: 'x-api-key' },
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(updates).toHaveLength(1);
+  });
+
+  test('does not report a conflict against the secret being edited', async () => {
+    const stored = {
+      rules: [{ host: 'postman-echo.com' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    } as SecretEgressPolicy;
+    row = secretRow({
+      strategy: 'egress',
+      consumer: 'network',
+      egressPolicy: stored,
+      rotatedAt: new Date('2026-08-03T10:00:00.000Z'),
+    });
+    boundarySecrets.push({ identifier: 'SERVICE_API_KEY', egressPolicy: stored });
+
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: {
+            rules: [{ host: 'postman-echo.com' }],
+            inject: { kind: 'header', name: 'authorization', template: 'Token {{secret}}' },
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ strategy: 'egress' });
+  });
+
+  test('reports every failed sandbox in the delivery sync', async () => {
+    propagationResult = propagationReport({
+      ok: false,
+      active_sandboxes: 2,
+      targeted: 2,
+      synced: 1,
+      failed: 1,
+      exported: 3,
+      results: [
+        syncTarget({ session_id: 'session-ok', sandbox_id: 'sandbox-ok' }),
+        syncTarget({
+          session_id: 'session-bad',
+          sandbox_id: 'sandbox-bad',
+          status: 'failed',
+          scope: null,
+          revision: null,
+          exported: 0,
+          managed: null,
+          withheld: null,
+          agent_env_written: false,
+          reason: 'Sandbox provider daytona does not support network-boundary secret delivery',
+        }),
+      ],
+    });
+
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: {
             rules: [{ host: 'api.example.com' }],
             inject: { kind: 'header', name: 'authorization' },
           },
@@ -420,10 +647,57 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
       },
     );
 
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: 'secret_delivery_unavailable' });
+    expect(response.status).toBe(200);
+    expect((await response.json()).delivery_sync).toEqual({
+      ok: false,
+      targeted: 2,
+      synced: 1,
+      failed: 1,
+      failures: [
+        {
+          session_id: 'session-bad',
+          sandbox_id: 'sandbox-bad',
+          reason: 'Sandbox provider daytona does not support network-boundary secret delivery',
+        },
+      ],
+    });
+  });
+
+  test('reports no delivery sync when the policy is unchanged', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ strategy: 'runtime' }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).delivery_sync).toBeNull();
     expect(updates).toHaveLength(0);
-    expect(audits).toHaveLength(0);
+    expect(propagations).toHaveLength(0);
+  });
+
+  test('rejects a network policy whose method restriction cannot be enforced', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: {
+            rules: [{ host: 'api.example.com', methods: ['POST'] }],
+            inject: { kind: 'header', name: 'authorization' },
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'secret_delivery_policy_invalid' });
+    expect(updates).toHaveLength(0);
   });
 
   test('attributes a service-account strategy change to automation', async () => {
@@ -544,8 +818,9 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
     updates.length = 0;
     handleUpdates.length = 0;
     audits.length = 0;
-    propagations.length = 0;
     boundConnectorSlugs.length = 0;
+    boundarySecrets.length = 0;
+    resetPropagation();
   });
 
   test('records a metadata-only create event and marks the value rotated', async () => {
@@ -611,6 +886,156 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
       consumer: null,
     });
     expect(row).toMatchObject({ strategy: 'denied', consumer: null });
+  });
+
+  test('creates an enforceable network-boundary secret', async () => {
+    const policy = {
+      rules: [{ host: 'api.example.com' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+      on_no_match: 'deny',
+      tls: 'terminate',
+    };
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'egress',
+        consumer: 'network',
+        egress_policy: policy,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'egress',
+      consumer: 'network',
+      delivery_status: 'available',
+      egress_policy: policy,
+    });
+    expect(row).toMatchObject({ strategy: 'egress', consumer: 'network', egressPolicy: policy });
+  });
+
+  test('rejects creating a boundary secret on a claimed host and header', async () => {
+    boundarySecrets.push({
+      identifier: 'BOUNDARY_TEST',
+      egressPolicy: {
+        rules: [{ host: 'postman-echo.com' }],
+        inject: { kind: 'header', name: 'authorization' },
+      } as SecretEgressPolicy,
+    });
+
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'egress',
+        consumer: 'network',
+        egress_policy: {
+          rules: [{ host: 'postman-echo.com' }],
+          inject: { kind: 'header', name: 'Authorization' },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: 'secret_boundary_destination_conflict',
+      conflict: { identifier: 'BOUNDARY_TEST', host: 'postman-echo.com', header: 'authorization' },
+    });
+    expect(row).toBeNull();
+    expect(audits).toHaveLength(0);
+    expect(propagations).toHaveLength(0);
+  });
+
+  test('reports the delivery sync for a new boundary secret', async () => {
+    propagationResult = propagationReport({
+      ok: false,
+      active_sandboxes: 1,
+      targeted: 1,
+      synced: 0,
+      failed: 1,
+      results: [
+        syncTarget({
+          session_id: 'session-bad',
+          sandbox_id: 'sandbox-bad',
+          status: 'failed',
+          scope: null,
+          revision: null,
+          exported: 0,
+          managed: null,
+          withheld: null,
+          agent_env_written: false,
+          reason: 'Sandbox provider daytona does not support network-boundary secret delivery',
+        }),
+      ],
+    });
+
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'egress',
+        consumer: 'network',
+        egress_policy: {
+          rules: [{ host: 'api.example.com' }],
+          inject: { kind: 'header', name: 'authorization' },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).delivery_sync).toEqual({
+      ok: false,
+      targeted: 1,
+      synced: 0,
+      failed: 1,
+      failures: [
+        {
+          session_id: 'session-bad',
+          sandbox_id: 'sandbox-bad',
+          reason: 'Sandbox provider daytona does not support network-boundary secret delivery',
+        },
+      ],
+    });
+  });
+
+  test('reports no delivery sync for an ordinary secret', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'SERVICE_API_KEY', value: 'plaintext-test-value' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).delivery_sync).toBeNull();
+    expect(propagations).toHaveLength(1);
+  });
+
+  test('does not wait for the sandbox fan-out on an ordinary secret', async () => {
+    // The gate never settles. If the route awaited the fan-out here, an
+    // ordinary secret save would hang for the full push timeout per sandbox.
+    propagationGate = new Promise<void>(() => {});
+
+    const pending = Promise.resolve(
+      buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'SERVICE_API_KEY', value: 'plaintext-test-value' }),
+      }),
+    );
+    const settled = await Promise.race([
+      pending.then((response) => `responded:${response.status}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve('still-waiting'), 250)),
+    ]);
+
+    expect(settled).toBe('responded:200');
+    expect(propagations).toHaveLength(1);
   });
 
   test('rejects a creation consumer without a strategy', async () => {
@@ -783,7 +1208,8 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
     authType = 'supabase';
     updates.length = 0;
     audits.length = 0;
-    propagations.length = 0;
+    boundarySecrets.length = 0;
+    resetPropagation();
   });
 
   test('records the deleted policy metadata without the encrypted value', async () => {
@@ -865,7 +1291,8 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider audit', () => {
     agentGrant = null;
     authType = 'supabase';
     audits.length = 0;
-    propagations.length = 0;
+    boundarySecrets.length = 0;
+    resetPropagation();
   });
 
   test('deletes subscription credentials and records metadata only', async () => {

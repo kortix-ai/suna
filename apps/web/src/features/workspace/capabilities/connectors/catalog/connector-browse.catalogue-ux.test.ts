@@ -93,24 +93,29 @@ describe('the catalogue reaches the whole catalogue', () => {
     expect(autoload).toContain('scrollRootRef.current ?? nearestScrollParent(node)');
   });
 
-  test('the grid grows in rows while the network fetches in pages', () => {
-    // Asking the API for 6 at a time would turn ~2,700 apps into ~450 round
-    // trips. Jumping the grid by 48 whenever one lands is the other extreme.
-    // The reveal window is what separates the two.
-    expect(browse).toContain('canRevealMore');
-    expect(browse).toContain('nextRevealCount');
-    expect(browse).toContain('flat.slice(0, revealed)');
+  test('there is exactly ONE way the catalogue grows', () => {
+    // Reported as "load more feels janky". There used to be three mechanisms
+    // stacked: eager first-paint pages, a per-category auto-deepening effect
+    // chain, and a client-side reveal window over the grid. A scroll sometimes
+    // uncovered already-loaded cards and sometimes fetched, and the user had no
+    // way to tell which — so the grid grew at two different rates.
+    //
+    // Now: `hasMore` is the query's, and `loadMore` is the query's. Nothing
+    // else grows the grid.
+    expect(browse).toContain('const hasMore = !showSections && state.hasMore;');
+    expect(browse).toContain('const loadMore = state.loadMore;');
 
-    // Uncovering is checked BEFORE the network. Reversed, every scroll would
-    // cost a request while the answer was already in memory.
-    expect(browse).toContain('const hasMore = canReveal || state.hasMore;');
+    // The reveal window is gone, not merely unused.
+    expect(browse).not.toContain('canRevealMore');
+    expect(browse).not.toContain('nextRevealCount');
+    expect(browse).not.toContain('revealed');
   });
 
-  test('the reveal window is not applied to the sectioned view', () => {
-    // Sections are their own window — each caps at `CATEGORY_ROW_CAP`. Slicing
-    // `flat` in that shape would make the sentinel "uncover" cards nothing is
-    // rendering, and scrolling the Discovery tab would do nothing at all.
-    expect(browse).toContain('const canReveal = !showSections && canRevealMore(revealed, flat.length)');
+  test('the browse page never paginates — sections are fixed', () => {
+    // A section is a fixed top slice of a complete category, chosen by the
+    // server. It must not grow while the user reads it, which is what made the
+    // page reflow under them. `!showSections` is what enforces that.
+    expect(browse).toContain('const hasMore = !showSections && state.hasMore;');
   });
 
   test('there is a control as well as a gesture', () => {
@@ -121,12 +126,18 @@ describe('the catalogue reaches the whole catalogue', () => {
     expect(browse).toContain('onClick={loadMore}');
   });
 
-  test('the automatic budget is capped and the user-driven one is not', () => {
-    // The distinction the whole design rests on. Work the page does on its own
-    // is bounded, because nothing the user did asked for ~120 sequential
-    // requests. Work the user asked for by scrolling is not bounded, because
-    // capping it is the regression.
-    expect(catalog).toContain('maxPages: CATALOG_AUTOLOAD_MAX_PAGES');
+  test('the page does NO paging on its own', () => {
+    // There is no unattended budget any more, so there is nothing to cap. The
+    // effect chain that fetched four pages on every load — and kept fetching
+    // while a client-side category bucket looked thin — is gone with the
+    // client-side category filter it was compensating for.
+    expect(catalog).not.toContain('shouldAutoLoadPage');
+    expect(catalog).not.toContain('CATALOG_INITIAL_PAGES');
+    expect(catalog).not.toContain('CATALOG_AUTOLOAD_MAX_PAGES');
+    expect(catalog).not.toContain('CATALOG_FOCUS_TARGET');
+
+    // Scrolling stays uncapped: reaching the foot is an explicit request, and
+    // answering it with a ceiling is the original regression.
     const scrollRule = paging.slice(paging.indexOf('export function shouldLoadOnScroll'));
     expect(scrollRule).not.toContain('maxPages');
     expect(scrollRule).not.toContain('loadedPages');
@@ -145,19 +156,31 @@ describe('the catalogue reaches the whole catalogue', () => {
     expect(state).toContain('loadMore');
   });
 
-  test('a focused category keeps fetching until it has something to show', () => {
-    // Neither catalogue API accepts a category, so a category view is a
-    // client-side slice of the loaded pages. Without this the slice is however
-    // many of that category happened to fall in the first four pages — which
-    // is how "View all" on Finance opened eight cards.
-    expect(catalog).toContain('focusCategory');
-    expect(catalog).toContain('CATALOG_FOCUS_TARGET');
+  test('a category is a SERVER-side filter, not a slice of loaded pages', () => {
+    // The bug behind "category-based discovery doesn't work — you always just
+    // take the ones from the current page". Pipedream's /apps endpoint accepts
+    // a category parameter and ignores it, so a client-side slice was the only
+    // option and every category was a sample of the first few pages. The API
+    // filters against its own snapshot of the whole catalogue now.
     expect(page).toContain('focusCategory');
+    expect(catalog).toContain('...(category ? { category } : {})');
 
-    // Counted with the same membership rule the grid buckets by. A second,
-    // hand-written rule is how a page fetches forever against a target the
-    // grid has already met.
-    expect(catalog).toContain('countInSection');
+    // The category is part of the query KEY. Without it, changing category
+    // would re-slice an accumulated list instead of starting a new one.
+    expect(catalog).toContain("queryKey: ['easy-connect-apps', projectId, activeQuery, category]");
+
+    // No client-side bucketing of loaded entries to fake a category.
+    expect(catalog).not.toContain('countInSection');
+  });
+
+  test('the browse page is fetched, not bucketed', () => {
+    // One request returns a fixed top slice of each of the largest categories,
+    // each with the category's TRUE total. `total` is what lets a heading say
+    // "Marketing · 207" over six cards; deriving it from `items.length` would
+    // put the loaded count back on the heading.
+    expect(catalog).toContain('listPipedreamSections');
+    expect(browse).toContain('section.total');
+    expect(browse).toContain('section.total > section.items.length');
   });
 
   test('useInfiniteQuery survives, and not by accident', () => {
@@ -188,7 +211,9 @@ describe('the catalogue browses in place', () => {
     // fetchers, so the label is now true.
     expect(browse).toContain('View all');
     expect(browse).toContain('onViewAll');
-    expect(browse).toContain('const visible = items.slice(0, CATEGORY_ROW_CAP)');
+    // The slice is the server's, and the button appears only when the category
+    // genuinely holds more than the section shows.
+    expect(browse).toContain('section.total > section.items.length');
     expect(browse).not.toContain('setExpanded');
     expect(browse).not.toContain("expanded ? 'Show less' : 'View all'");
     expect(browse).not.toContain('See all');
@@ -235,18 +260,17 @@ describe('the catalogue browses in place', () => {
     expect(browse).toContain('tabular-nums');
   });
 
-  test('headings and the rail both read the curated sections', () => {
-    // `groupIntoSections` buckets by curated section key, not by raw catalogue
-    // category, and `sectionTitle` is what turns that key into a heading.
-    // Reaching for the old `groupByCategory` / `humanizeCategory` here is a
-    // `ReferenceError` at runtime but NOT a test failure on its own — every
-    // other test in this suite reads the file as text or exercises the pure
-    // module, so all of them stayed green while three call sites in this file
-    // were reverted to the old names. That is what this pins.
-    expect(browse).toContain('groupIntoSections(entries, (entry) => entry.categories)');
-    expect(browse).toContain('const label = sectionTitle(category)');
+  test('a section heading states the category label the source published', () => {
+    // The grid renders `section.label` verbatim. Both sources normalise to
+    // `CatalogSection` in `use-catalog.ts` — Easy Connect from the server's
+    // facet, Discover through `sectionTitle` over the curated keys — so the
+    // grid has exactly one label to draw and cannot pick a second vocabulary.
+    expect(browse).toContain('{section.label}');
+    expect(catalog).toContain('label: sectionTitle(section.category)');
+    expect(catalog).toContain('label: section.label');
+    // Bucketing does not happen in the grid any more.
+    expect(browse).not.toContain('groupIntoSections');
     expect(browse).not.toContain('groupByCategory');
-    expect(browse).not.toContain('humanizeCategory');
   });
 
   test('every curated section has its own glyph', () => {
@@ -268,57 +292,49 @@ describe('the catalogue browses in place', () => {
 });
 
 /**
- * The reveal motion. Every value here is a budget, not a taste call, so each
- * one is asserted rather than left to drift back under a "make it feel
- * grander" edit.
+ * Card entry motion — and the case for not having any.
+ *
+ * This block used to assert a per-card staggered reveal: `REVEAL_STEP_MS`,
+ * `REVEAL_MAX_STEPS`, a `--kx-card-reveal-delay` custom property, and a
+ * `.kx-card-reveal` keyframe. Every value was budgeted and asserted, and none
+ * of it ever ran — `CatalogEntryCard` took a `reveal` prop that both call
+ * sites omitted, so `reveal` was always `null` and the class was never
+ * applied. The tests passed by reading the source, which is exactly the blind
+ * spot a source-assertion suite has.
+ *
+ * It is not being restored. A staggered entrance is right for a handful of
+ * arriving items and wrong for a page appending 48 cards at once — that reads
+ * as a wave, which is the "load more feels janky" complaint. The grid now
+ * appends without per-card motion, and the skeletons already occupy the
+ * positions the new cards take, so nothing jumps.
  */
-describe('the card reveal stays inside the motion budget', () => {
+describe('appended cards do not stagger', () => {
   const css = readFileSync(join(here, '..', '..', '..', '..', '..', 'app', 'globals.css'), 'utf8');
 
-  test('the whole reveal finishes under 300ms, however many cards appear', () => {
-    // 200ms duration + a capped 3 x 30ms delay = 290ms for the last card.
-    // Uncapped, a 48-card page would have run past a second.
-    const step = Number(browse.match(/REVEAL_STEP_MS = (\d+)/)?.[1]);
-    const maxSteps = Number(browse.match(/REVEAL_MAX_STEPS = (\d+)/)?.[1]);
-    const duration = Number(css.match(/animation: kx-card-reveal (\d+)ms/)?.[1]);
-    expect(step).toBeGreaterThan(0);
-    expect(maxSteps).toBeGreaterThan(0);
-    expect(duration).toBeGreaterThan(0);
-    expect(step * maxSteps + duration).toBeLessThanOrEqual(300);
-  });
-
-  test('it uses its own keyframe, not the page-enter one', () => {
-    // `.kx-fade-up` is page-enter motion for a few large blocks. Reusing it on
-    // 48 dense cards is what made the reveal read as a wave.
-    expect(browse).toContain('kx-card-reveal');
-    expect(browse).not.toContain('kx-fade-up');
-    expect(css).toContain('@keyframes kx-card-reveal');
-  });
-
-  test('reduced motion drops the stagger as well as the movement', () => {
-    // The delay must travel as a custom property. An inline `animationDelay`
-    // outranks the stylesheet, so the media query could strip the transform
-    // but never the staged reveal.
-    expect(browse).toContain("'--kx-card-reveal-delay'");
+  test('no per-card reveal delay survives in the grid', () => {
+    expect(browse).not.toContain('kx-card-reveal');
+    expect(browse).not.toContain('REVEAL_STEP_MS');
     expect(browse).not.toContain('animationDelay');
-    expect(css).toContain('animation-delay: var(--kx-card-reveal-delay, 0ms)');
-
-    const reduced = css.slice(css.indexOf('.kx-card-reveal {'));
-    const query = reduced.slice(reduced.indexOf('@media (prefers-reduced-motion: reduce)'));
-    expect(query).toContain('animation-name: kx-fade');
-    expect(query).toContain('animation-delay: 0ms');
+    // The prop is gone too, so a future call site cannot re-enable a stagger
+    // that nothing else in this suite would notice.
+    expect(browse).not.toContain('reveal');
   });
 
-  test('it travels less than the page-enter motion it replaced', () => {
-    // 8px per card across a dense grid is collective motion, not arrival.
-    const keyframe = css.slice(css.indexOf('@keyframes kx-card-reveal'));
-    expect(keyframe).toContain('translateY(4px)');
+  test('the orphaned keyframe went with it', () => {
+    // Its only consumer was deleted. CSS that nothing references is a trap:
+    // the next reader assumes a stagger exists somewhere and goes looking.
+    expect(css).not.toContain('kx-card-reveal');
   });
 
-  test('the easing is the strong ease-out, never ease-in', () => {
-    // Entering elements accelerate at the start; ease-in delays the exact
-    // moment the user is watching.
-    expect(css).toContain('kx-card-reveal 200ms cubic-bezier(0.23, 1, 0.32, 1)');
+  test('a landing page still lands into reserved space', () => {
+    // What replaces the motion: skeletons rendered INSIDE the grid, so the
+    // real cards take the positions the placeholders already held.
+    expect(browse).toContain('CatalogCardSkeleton');
+    expect(browse).toContain('state.isLoadingMore');
+  });
+
+  test('the card is memoised — a browse page renders 72 of them', () => {
+    expect(browse).toContain('const CatalogEntryCard = memo(');
   });
 });
 

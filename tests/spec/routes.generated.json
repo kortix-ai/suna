@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 559,
+  "count": 567,
   "routes": [
     {
       "method": "GET",
@@ -872,6 +872,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/pipedream/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/policies"
     },
     {
@@ -1192,6 +1196,18 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/apps/:appId/access"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/access-session"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1473,6 +1489,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/experimental"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/features"
     },
     {
       "method": "GET",
@@ -1836,6 +1856,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reload-stream"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
     },
     {
@@ -1975,6 +1999,10 @@
       "path": "/v1/projects/provision"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/provision-stream"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/suna-migration/eligibility"
     },
@@ -2029,6 +2057,10 @@
     {
       "method": "GET",
       "path": "/v1/setup-links/connectors/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup-links/connectors/:token/finalize"
     },
     {
       "method": "POST",

@@ -26,7 +26,7 @@ export function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
       const taskId = (input.id as string) || '';
       return (
         <BasicTool
-          icon={<Check className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />}
+          icon={<Check className={cn('size-3.5 shrink-0', STATUS_TEXT.success)} />}
           trigger={{
             title: 'Update task',
             subtitle: taskId ? taskId.slice(-12) : undefined,

@@ -32,8 +32,11 @@ export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProp
   }, [input.todos, metadata.todos, streamingInput.todos]);
 
   const total = todos.length;
-  const done = todos.filter((t) => t.status === 'completed').length;
-  const active = todos.find((t) => t.status === 'in_progress');
+  // Two more passes over the list per render — one of them allocating a throwaway
+  // array — on the one tool row that is on screen for the whole of a long turn.
+  // `todos` is a stable identity now, so keying on it is enough.
+  const done = useMemo(() => todos.filter((t) => t.status === 'completed').length, [todos]);
+  const active = useMemo(() => todos.find((t) => t.status === 'in_progress'), [todos]);
   const pct = total ? Math.round((done / total) * 100) : 0;
 
   const subtitle = active ? active.content : total ? `${done} of ${total} done` : undefined;

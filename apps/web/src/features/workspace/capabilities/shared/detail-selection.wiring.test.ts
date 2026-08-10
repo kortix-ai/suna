@@ -91,7 +91,7 @@ describe('catalogue search keeps its results', () => {
     // The query key carries `activeQuery`, so every debounced keystroke is a
     // NEW key. Without this the grid drops to six skeleton cards each time.
     expect(code.match(/placeholderData: keepPreviousData/g)).toHaveLength(2);
-    expect(code).toContain("import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query'");
+    expect(code).toContain('keepPreviousData');
   });
 
   test('the cold state and the refreshing state are reported separately', () => {
@@ -104,13 +104,11 @@ describe('catalogue search keeps its results', () => {
     // placeholder shows, so paging off them fires a cursor request for a query
     // whose first page has not landed.
     //
-    // There are now three ways to reach `fetchNextPage` — the automatic chain,
-    // the scroll sentinel and the "Load more" button — so the guard is asserted
-    // at each of the two entry points rather than at one `if` that used to be
-    // the only one. `shouldAutoLoadPage` refusing placeholder data is proved
-    // behaviourally in `catalog-paging.test.ts`; this pins that `use-catalog`
-    // actually feeds it the flag, and that `loadMore` carries its own copy.
-    expect(code).toContain('isPlaceholderData,\n        focus:');
+    // There is now exactly ONE way to reach `fetchNextPage` — `loadMore`,
+    // called by the scroll sentinel and by the "Load more" button. The
+    // automatic chain that also called it is gone, so this used to assert the
+    // guard at two entry points and now asserts it at the only one.
+    expect(code.match(/fetchNextPage\(\)/g)).toHaveLength(1);
     expect(code).toContain('if (!hasNextPage || isFetchingNextPage || isPlaceholderData) return;');
     // `hasMore` is what the sentinel and the button both read, so withholding
     // it during the placeholder window disarms both at once.

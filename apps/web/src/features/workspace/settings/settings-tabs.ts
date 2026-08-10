@@ -30,7 +30,6 @@ export type SettingsTab =
   | 'repositories'
   | 'schedules'
   | 'webhooks'
-  | 'computers'
   | 'models'
   | 'instructions'
   | 'marketplace'
@@ -68,7 +67,6 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'repositories',
   'schedules',
   'webhooks',
-  'computers',
   'models',
   'instructions',
   'marketplace',
@@ -107,6 +105,12 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   agent: (p) => `/projects/${p}/agent`,
   agents: (p) => `/projects/${p}/agent`,
   connectors: (p) => `/projects/${p}/connectors`,
+  // Computers graduated out of settings on `main` (#6313): device pairing and
+  // per-capability grants are a connector now (`ComputerTunnelManager` in
+  // `capabilities/connectors/`), so a bookmarked `/customize/computers` or
+  // `/settings/computers` lands on the Connectors page instead of a tab that
+  // no longer exists.
+  computers: (p) => `/projects/${p}/connectors`,
   skills: (p) => `/projects/${p}/skills`,
 };
 

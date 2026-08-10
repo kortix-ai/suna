@@ -20,7 +20,7 @@ describe('SETTINGS_TABS', () => {
     for (const tab of [
       'profile', 'preferences', 'connected',
       'general', 'members', 'secrets', 'channels', 'repositories',
-      'schedules', 'webhooks', 'computers',
+      'schedules', 'webhooks',
       'models', 'instructions', 'marketplace', 'review', 'voice', 'sandbox', 'snapshots',
       'organization', 'billing', 'usage', 'groups', 'roles', 'identity', 'audit',
       'api-keys', 'experimental', 'upgrades',
@@ -104,6 +104,16 @@ describe('legacySectionRedirect', () => {
     expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/agent');
     expect(legacySectionRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
     expect(legacySectionRedirect('p1', 'files')).toBe('/projects/p1/files');
+  });
+
+  test('computers graduated to Connectors — a bookmark must not 404', () => {
+    // `main` (#6313) deleted `computers-view.tsx` and made the computer a
+    // connector (`ComputerTunnelManager`). Both the legacy `/customize/
+    // computers` and the settings-era `/settings/computers` deep links resolve
+    // through this map, so neither can land on a tab that no longer exists.
+    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/connectors');
+    expect(SETTINGS_TABS).not.toContain('computers' as never);
+    expect(parseSettingsTab('computers')).toBeNull();
   });
 
   test('every llm sub-section lands on models', () => {

@@ -170,7 +170,7 @@ function SandboxAlertContent({
         <p className="text-muted-foreground text-xs text-balance">
           {describeSandboxSeverity(severity, status)}
         </p>
-        {!failure && (
+        {!failure && severity !== 'building' && (
           <Button
             variant="transparent"
             size="sm"
@@ -212,39 +212,52 @@ function SandboxAlertContent({
       )}
 
       <div className="border-border flex flex-col gap-2 border-t p-3">
-        {canFixWithAgent && (
+        {severity === 'building' ? (
           <Button
             size="sm"
-            className="w-full"
-            disabled={fixWithAgent.isPending}
-            onClick={() => fixWithAgent.mutate()}
+            variant="secondary"
+            className="w-full border"
+            onClick={() => openSettings('sandbox')}
           >
-            {fixWithAgent.isPending ? (
-              <Loading className="text-foreground! size-3.5" />
-            ) : (
-              <SparklesSolid weight="fill" className="size-3.5" />
-            )}
-            {tI18nHardcoded.raw(
-              'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsxe7d8ac75',
-            )}
+            Details
           </Button>
+        ) : (
+          <>
+            {canFixWithAgent && (
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={fixWithAgent.isPending}
+                onClick={() => fixWithAgent.mutate()}
+              >
+                {fixWithAgent.isPending ? (
+                  <Loading className="text-foreground! size-3.5" />
+                ) : (
+                  <SparklesSolid weight="fill" className="size-3.5" />
+                )}
+                {tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsxe7d8ac75',
+                )}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              className="w-full border"
+              disabled={retry.isPending}
+              onClick={() => retry.mutate(failure?.template_slug)}
+            >
+              {retry.isPending ? (
+                <Loading className="text-foreground! size-3.5" />
+              ) : (
+                <RefreshCw className="size-3.5" />
+              )}
+              {tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsx8794c0a3',
+              )}
+            </Button>
+          </>
         )}
-        <Button
-          size="sm"
-          variant="secondary"
-          className="w-full border"
-          disabled={retry.isPending}
-          onClick={() => retry.mutate(failure?.template_slug)}
-        >
-          {retry.isPending ? (
-            <Loading className="text-foreground! size-3.5" />
-          ) : (
-            <RefreshCw className="size-3.5" />
-          )}
-          {tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsx8794c0a3',
-          )}
-        </Button>
       </div>
     </div>
   );
