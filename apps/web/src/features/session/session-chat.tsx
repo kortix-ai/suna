@@ -3279,6 +3279,28 @@ export function SessionChat({
     else abortSession.mutate(sessionId);
   }, [sessionId, sessionState, abortSession, queueDrain]);
 
+  /**
+   * The per-row action: end the current turn if one is running, then send that
+   * message. The only path that interrupts a running turn — automatic draining
+   * never does — which is why it is a deliberate click and says what it does.
+   *
+   * Waits for the server to actually report idle rather than guessing with a
+   * fixed delay, so the prompt cannot race the abort it just issued.
+   */
+  const handleQueueSendNow = useCallback(
+    async (id: string) => {
+      const status = useSessionStateStore.getState().sessionStatus[sessionId];
+      const running = status?.type === 'busy' || status?.type === 'retry';
+      if (running) {
+        handleStop();
+        await waitForSessionIdle(sessionId);
+      }
+      queueDrain.resume();
+      await queueDrain.dispatchNow(id);
+    },
+    [sessionId, handleStop, queueDrain],
+  );
+
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
   // 4s cooloff window — resets if you wait too long between presses.
@@ -4093,6 +4115,8 @@ export function SessionChat({
                 queueInFlightId={sessionQueue.inFlightId}
                 queuePaused={queueDrain.paused}
                 onResumeQueue={queueDrain.resume}
+                queueIsRunning={isBusy}
+                onSendQueuedMessageNow={handleQueueSendNow}
                 onQueueMessage={handleQueueMessage}
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onEditQueuedMessage={handleEditQueuedMessage}

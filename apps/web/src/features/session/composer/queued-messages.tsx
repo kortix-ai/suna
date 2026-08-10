@@ -34,8 +34,10 @@ import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import {
   ArrowClockwiseIcon,
+  PaperPlaneTiltIcon,
   PaperclipIcon,
   PauseIcon,
+  StopIcon,
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
@@ -79,22 +81,29 @@ export interface QueuedMessagesProps {
    */
   paused?: boolean;
   onResume?: () => void;
+  /**
+   * The agent is mid-turn. Only changes what the per-row send button *is*:
+   * an interrupt while a turn runs, a plain send while nothing does.
+   */
+  isRunning?: boolean;
+  /** Send this message now — stopping the current turn first if one is running. */
+  onSendNow?: (id: string) => void;
 }
 
 /**
- * A row's dismiss control.
+ * One icon control in a row's trailing action strip.
  *
- * Always visible rather than revealed on hover: the queue exists so you can
- * change your mind, and hiding the control that lets you do it behind a hover
- * makes the one routine action the least discoverable thing on the row. It sits
- * at low contrast until the row is hovered so a full queue still reads calm.
+ * The strip is revealed on hover and on focus-within, so a queue at rest is
+ * just text and numbers. Focus matters as much as hover here: these are real
+ * tab stops, and a control you can reach but cannot see is worse than one that
+ * is simply absent.
  *
  * The visible box is 20px for the composer's chip density; `before:` extends the
  * *hit* area without changing the layout. It lands at 36×40 rather than the
  * usual 40×40 minimum, and that is deliberate: rows sit on a ~37px pitch, so a
  * 40px-tall target would overlap its neighbour's — and two overlapping targets
- * is a worse failure than a 36px one, because it makes the wrong row's × the
- * thing you hit. Width is free, so it takes the full 40 there.
+ * is a worse failure than a 36px one, because it makes the wrong row's button
+ * the thing you hit. Width is free, so it takes the full 40 there.
  */
 function RowAction({
   label,
@@ -113,8 +122,7 @@ function RowAction({
         onClick={onClick}
         className={cn(
           'relative flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm',
-          'text-muted-foreground/50 group-hover:text-muted-foreground',
-          'hover:!text-foreground hover:bg-muted-foreground/10',
+          'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
           'transition-[color,background-color,scale] active:scale-[0.96]',
           'before:absolute before:top-1/2 before:left-1/2 before:h-9 before:w-10',
           'before:-translate-x-1/2 before:-translate-y-1/2 before:content-[""]',
@@ -123,6 +131,47 @@ function RowAction({
         {children}
       </button>
     </Hint>
+  );
+}
+
+/**
+ * Send this row now.
+ *
+ * One control with two meanings, because the consequence genuinely differs:
+ * while a turn is running this ENDS it first, which is the only thing in the
+ * queue that interrupts the agent; while nothing is running it is an ordinary
+ * send that just jumps the order. Showing the same paper plane for both would
+ * hide an interrupt behind a send.
+ *
+ * Both icons stay mounted and cross-fade, per the icon-swap rule — a hard swap
+ * on a state the user did not trigger at this element reads as a flicker. It is
+ * a CSS transition, not a spring: interruptible, and no layout to thrash.
+ */
+function SendNowAction({
+  isRunning,
+  onClick,
+}: {
+  isRunning: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <RowAction label={isRunning ? 'Stop agent & send this' : 'Send now'} onClick={onClick}>
+      <span className="relative inline-flex size-3 items-center justify-center">
+        <StopIcon
+          weight="fill"
+          className={cn(
+            'absolute inset-0 size-3 transition-opacity duration-200 ease-[cubic-bezier(0.2,0,0,1)]',
+            isRunning ? 'opacity-100' : 'opacity-0',
+          )}
+        />
+        <PaperPlaneTiltIcon
+          className={cn(
+            'absolute inset-0 size-3 transition-opacity duration-200 ease-[cubic-bezier(0.2,0,0,1)]',
+            isRunning ? 'opacity-0' : 'opacity-100',
+          )}
+        />
+      </span>
+    </RowAction>
   );
 }
 
@@ -152,9 +201,11 @@ function QueuedRow({
   total,
   minIndex,
   isInFlight,
+  isRunning,
   onRemove,
   onEdit,
   onReorder,
+  onSendNow,
   onFocusSibling,
 }: {
   message: QueuedMessageView;
@@ -162,9 +213,11 @@ function QueuedRow({
   total: number;
   minIndex: number;
   isInFlight: boolean;
+  isRunning: boolean;
   onRemove?: (id: string) => void;
   onEdit?: (id: string, text: string) => void;
   onReorder?: (id: string, toIndex: number) => void;
+  onSendNow?: (id: string) => void;
   onFocusSibling: (id: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -255,19 +308,30 @@ function QueuedRow({
             {message.lostAttachments}
           </span>
         </Hint>
-      ) : isInFlight ? (
-        <span className="text-muted-foreground/70 shrink-0 text-xs">Sending…</span>
-      ) : onRemove ? (
-        <RowAction
-          label="Remove from queue"
-          onClick={() => {
-            onFocusSibling(message.id);
-            onRemove(message.id);
-          }}
-        >
-          <XIcon className="size-3" />
-        </RowAction>
       ) : null}
+
+      {isInFlight ? (
+        <span className="text-muted-foreground/70 shrink-0 text-xs">Sending…</span>
+      ) : (
+        // Hidden until the row is hovered, and until it is focused — a control
+        // you can tab to but cannot see is worse than no control at all.
+        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+          {onSendNow && (
+            <SendNowAction isRunning={isRunning} onClick={() => onSendNow(message.id)} />
+          )}
+          {onRemove && (
+            <RowAction
+              label="Remove from queue"
+              onClick={() => {
+                onFocusSibling(message.id);
+                onRemove(message.id);
+              }}
+            >
+              <XIcon className="size-3" />
+            </RowAction>
+          )}
+        </span>
+      )}
     </li>
   );
 }
@@ -304,6 +368,8 @@ export function QueuedMessages({
   onRetry,
   paused = false,
   onResume,
+  isRunning = false,
+  onSendNow,
 }: QueuedMessagesProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const overflowing = useOverflowing(listRef, messages.length + failed.length);
@@ -393,9 +459,11 @@ export function QueuedMessages({
             total={messages.length}
             minIndex={minIndex}
             isInFlight={message.id === inFlightId}
+            isRunning={isRunning}
             onRemove={onRemove}
             onEdit={onEdit}
             onReorder={onReorder}
+            onSendNow={onSendNow}
             onFocusSibling={(id) => id && focusAfterRemove(id)}
           />
         ))}

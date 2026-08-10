@@ -106,6 +106,9 @@ export interface SessionChatInputProps {
   /** The queue is held by a stop. Rendered, not silent — see QueuedMessages. */
   queuePaused?: boolean;
   onResumeQueue?: () => void;
+  /** The agent is mid-turn, so the per-row send must stop it first. */
+  queueIsRunning?: boolean;
+  onSendQueuedMessageNow?: (id: string) => void;
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
@@ -231,6 +234,8 @@ function SessionChatInputImpl({
   queueInFlightId = null,
   queuePaused,
   onResumeQueue,
+  queueIsRunning,
+  onSendQueuedMessageNow,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
@@ -867,6 +872,8 @@ function SessionChatInputImpl({
     queueInFlightId,
     queuePaused,
     onResumeQueue,
+    queueIsRunning,
+    onSendQueuedMessageNow,
     onCommand,
     stagedCommand,
     attachedFiles,
@@ -1145,6 +1152,8 @@ function SessionChatInputImpl({
                 inFlightId={queueInFlightId}
                 paused={queuePaused}
                 onResume={onResumeQueue}
+                isRunning={queueIsRunning}
+                onSendNow={onSendQueuedMessageNow}
                 onRemove={onRemoveQueuedMessage}
                 onEdit={onEditQueuedMessage}
                 onReorder={onReorderQueuedMessage}

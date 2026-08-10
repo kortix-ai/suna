@@ -60,6 +60,8 @@ export interface MessageQueueDrainControls {
    */
   pause: () => void;
   resume: () => void;
+  /** Send one specific queued message right now, jumping the order. */
+  dispatchNow: (id: string) => Promise<void>;
   /**
    * Whether the queue is held by a stop. **Render this.**
    *
@@ -219,5 +221,23 @@ export function useMessageQueueDrain({
     tickRef.current();
   }, [setPausedState]);
 
-  return { pause, resume, paused };
+  const dispatchNow = useCallback(
+    async (id: string) => {
+      const queue = useMessageQueueStore.getState().getSessionQueue(sessionId);
+      const target = queue.pending.find((m) => m.id === id);
+      if (!target || target.id === queue.inFlightId) return;
+
+      // Explicit user action, so order yields to intent: move it to the front,
+      // clear the pause the stop button just set, and claim it — alone. This is
+      // the one path that jumps the queue, and it only ever runs from a click.
+      setPausedState(false);
+      useMessageQueueStore.getState().reorder(sessionId, id, 0);
+      machineRef.current = createDrainMachine();
+      const claimed = useMessageQueueStore.getState().claimNext(sessionId);
+      if (claimed) await dispatchOne(claimed);
+    },
+    [sessionId, dispatchOne, setPausedState],
+  );
+
+  return { pause, resume, paused, dispatchNow };
 }
