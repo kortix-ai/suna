@@ -63,7 +63,6 @@ import {
   CellSignalMediumIcon,
   CellSignalNoneIcon,
 } from '@phosphor-icons/react';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Kortix } from '../icon/icons/kortix';
 
 export interface ReasoningEffortModelKey {
@@ -197,6 +196,8 @@ function label(value: string): string {
  */
 function EffortIcon({ value, className }: { value: string | null; className?: string }) {
   switch (value) {
+    case 'auto':
+      return <Kortix className={cn(className, 'size-4')} />;
     case null:
     case 'none':
       return <CellSignalNoneIcon className={className} weight="fill" />;

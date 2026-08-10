@@ -16,8 +16,6 @@
 
 import { useEffect, useState } from 'react';
 
-import { XIcon as X } from '@phosphor-icons/react';
-
 import { cn } from '@/lib/utils';
 import { convertHeicBlobToJpeg, isHeicFile } from '@/lib/utils/heic-convert';
 
@@ -30,6 +28,7 @@ import {
 import type { AttachedFile } from './types';
 
 /** The two shapes of `AttachedFile` disagree on where the name lives. */
+import { Close } from '@/features/icon/icons/close';
 function attachmentName(af: AttachedFile): string {
   return af.kind === 'local' ? af.file.name : af.filename;
 }
@@ -146,7 +145,7 @@ export function AttachmentTiles({
   if (files.length === 0) return null;
 
   return (
-    <ul className="flex flex-wrap gap-2 px-3 pt-3">
+    <ul className="flex flex-wrap gap-2 px-3">
       {files.map((af, i) => {
         const name = attachmentName(af);
         return (
@@ -181,7 +180,7 @@ export function AttachmentTiles({
                   '[@media(pointer:coarse)]:opacity-100',
                 )}
               >
-                <X className="size-3" />
+                <Close className="size-3" />
               </button>
             </div>
           </li>

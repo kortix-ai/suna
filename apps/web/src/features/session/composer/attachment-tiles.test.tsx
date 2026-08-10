@@ -53,8 +53,13 @@ describe('AttachmentTiles', () => {
     const markup = renderToStaticMarkup(
       <AttachmentTiles files={[localDoc('AdmitCard-260411128971.pdf')]} onRemove={() => {}} />,
     );
-    expect(markup).toContain('AdmitCard-260411128971.pdf');
+    // Body text once (title= and aria-label= also mention the name).
+    expect(markup.match(/>AdmitCard-260411128971\.pdf</g)?.length).toBe(1);
     expect(markup).toContain('line-clamp-2');
+    // Cap + min-w-0 let the clamp ellipsize; `truncate` (nowrap) defeats it.
+    expect(markup).toContain('max-w-60');
+    expect(markup).toContain('min-w-0');
+    expect(markup).not.toMatch(/line-clamp-2[^"]*\btruncate\b|\btruncate\b[^"]*line-clamp-2/);
   });
 
   test('an image tile is the sent message square (TILE_SURFACE), not the file rectangle', () => {
@@ -76,6 +81,7 @@ describe('AttachmentTiles', () => {
     );
     expect(markup).toContain('h-20');
     expect(markup).toContain('min-w-40');
+    expect(markup).toContain('max-w-60');
     // NOT TILE_SURFACE's square sizing.
     expect(markup).not.toContain('size-20');
   });

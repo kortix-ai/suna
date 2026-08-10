@@ -5,11 +5,7 @@ import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
 import { useRuntimeSessions } from '@kortix/sdk/react';
-import {
-  ArrowUpLeftIcon as ArrowUpLeft,
-  ArrowBendUpLeftIcon as Reply,
-  XIcon as X,
-} from '@phosphor-icons/react';
+import { ArrowBendDoubleUpLeftIcon, ArrowUpLeftIcon as ArrowUpLeft } from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
 import { useTranslations } from 'next-intl';
 import type { RefObject } from 'react';
@@ -39,6 +35,8 @@ import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 
+import { Button } from '@/components/ui/button';
+import { Close } from '@/features/icon/icons/close';
 import { AttachmentTiles } from './attachment-tiles';
 import {
   appendTranscribedText,
@@ -767,6 +765,30 @@ function ComposerImpl({
   return (
     <div className="relative z-10 mx-auto w-full max-w-210 shrink-0 px-2 pb-3 sm:px-0">
       <div id={dockId} />
+
+      {replyTo && (
+        <div className="bg-sidebar border-border flex items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5">
+          <ArrowBendDoubleUpLeftIcon className="text-muted-foreground size-4 shrink-0" />
+          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+            {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
+          </span>
+          {onClearReply && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              type="button"
+              onClick={onClearReply}
+              className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
+              aria-label={tHardcodedUi.raw(
+                'componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply',
+              )}
+            >
+              <Close className="size-3" />
+            </Button>
+          )}
+        </div>
+      )}
+
       <div
         ref={cardRef}
         onDragEnter={handleDragEnter}
@@ -774,12 +796,12 @@ function ComposerImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-sidebar shadow-xl shadow-card border-border relative isolate z-10 w-full rounded-xl border',
-          'shadow-[0_0_4px_oklch(0_0_0/0.03)] dark:shadow-md',
+          'bg-sidebar shadow-card border-border relative isolate z-10 w-full rounded-xl border shadow-xl',
+          'pt-3 shadow-[0_0_4px_oklch(0_0_0/0.03)] dark:shadow-md',
           'transition-[background-color,border-color,box-shadow] duration-75',
-          attachedFiles.length > 0 ? 'pt-0' : 'pt-3.5',
           cardClassName,
           isDragOver && 'border-primary',
+          replyTo && 'rounded-t-none',
         )}
       >
         <div className="relative z-[1] flex w-full flex-col overflow-visible">
@@ -800,57 +822,40 @@ function ComposerImpl({
 
           {/* Inline chips: thread context, todos, queue — unified spacing */}
           {(threadContext || sessionId || inputSlot || replyTo || queuedMessages?.length) && (
-            <div className="mb-3 flex flex-col gap-1.5 px-3 empty:hidden">
-              <QueuedMessages
-                messages={queuedMessages ?? EMPTY_QUEUE}
-                failed={failedQueuedMessages}
-                inFlightId={queueInFlightId}
-                paused={queuePaused}
-                isRunning={queueIsRunning}
-                onRemove={onRemoveQueuedMessage}
-                onEdit={onEditQueuedMessage}
-                onReorder={onReorderQueuedMessage}
-                onSendNow={onSendQueuedMessageNow}
-                onRetry={onRetryQueuedMessage}
-              />
-              {replyTo && (
-                <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                  <Reply className="text-primary/60 size-3 flex-shrink-0" />
-                  <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                    {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
-                  </span>
-                  {onClearReply && (
-                    <button
-                      type="button"
-                      onClick={onClearReply}
-                      className="text-muted-foreground hover:text-foreground flex-shrink-0 transition-colors"
-                      aria-label={tHardcodedUi.raw(
-                        'componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply',
-                      )}
-                    >
-                      <X className="size-3" />
-                    </button>
-                  )}
-                </div>
-              )}
-              {threadContext && (
-                <button
-                  onClick={threadContext.onBackToParent}
-                  className={cn(
-                    'text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
-                  )}
-                >
-                  <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
-                  <span className="min-w-0 flex-1 truncate text-left">
-                    {'Sub-session of'}{' '}
-                    <span className="text-foreground/80 font-medium">
-                      {threadContext.parentTitle}
+            <>
+              <div className="mb-3 flex flex-col gap-1.5 px-3 empty:hidden">
+                <QueuedMessages
+                  messages={queuedMessages ?? EMPTY_QUEUE}
+                  failed={failedQueuedMessages}
+                  inFlightId={queueInFlightId}
+                  paused={queuePaused}
+                  isRunning={queueIsRunning}
+                  onRemove={onRemoveQueuedMessage}
+                  onEdit={onEditQueuedMessage}
+                  onReorder={onReorderQueuedMessage}
+                  onSendNow={onSendQueuedMessageNow}
+                  onRetry={onRetryQueuedMessage}
+                />
+
+                {threadContext && (
+                  <button
+                    onClick={threadContext.onBackToParent}
+                    className={cn(
+                      'text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                    )}
+                  >
+                    <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
+                    <span className="min-w-0 flex-1 truncate text-left">
+                      {'Sub-session of'}{' '}
+                      <span className="text-foreground/80 font-medium">
+                        {threadContext.parentTitle}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              )}
-              {inputSlot}
-            </div>
+                  </button>
+                )}
+                {inputSlot}
+              </div>
+            </>
           )}
 
           <AttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
@@ -859,6 +864,7 @@ function ComposerImpl({
             className={cn(
               'flex min-w-0 flex-col px-2 pb-2',
               lockForApproval && 'composer-locked-approval',
+              attachedFiles.length > 0 && 'pt-3',
             )}
           >
             <div className="relative min-w-0 px-2 pb-6">
