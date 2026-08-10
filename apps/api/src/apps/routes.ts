@@ -8,7 +8,7 @@ import {
   apps,
 } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
-import { PROJECT_ACTIONS } from '../iam';
+import { WORKSPACE_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
@@ -25,9 +25,9 @@ import { deploymentEventsAsLogs } from './logs';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { AppBudgetExceededError } from './budget';
-import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
-import { projectsApp } from '../projects/lib/app';
+import { assertWorkspaceCapability, loadWorkspaceForUser } from '../workspaces/lib/access';
+import { callerKortixSessionId } from '../workspaces/lib/caller-session';
+import { workspaceRoutesApp } from '../workspaces/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import {
   appAccessibleToUser,
@@ -133,7 +133,7 @@ function serializeApp(row: typeof apps.$inferSelect) {
   return {
     app_id: row.appId,
     account_id: row.accountId,
-    project_id: row.projectId,
+    project_id: row.workspaceId,
     slug: row.slug,
     name: row.name,
     url: appPublicUrl(row),
@@ -153,7 +153,7 @@ function serializeApp(row: typeof apps.$inferSelect) {
 function serializeArtifact(row: typeof appArtifacts.$inferSelect) {
   return {
     artifact_id: row.artifactId,
-    project_id: row.projectId,
+    project_id: row.workspaceId,
     kind: row.kind,
     status: row.status,
     image_reference: row.imageReference,
@@ -206,44 +206,44 @@ function appDeploymentActorType(c: any): 'human' | 'agent' | 'service_account' |
  *   • 403 `feature_disabled` — the caller IS a member, but the project has the
  *     `apps` flag off. A member already knows the project exists, so the honest
  *     "turn it on in Settings" answer beats a misleading 404.
- * A capability denial still throws (403) from assertProjectCapability.
+ * A capability denial still throws (403) from assertWorkspaceCapability.
  */
-async function authorizedProject(c: any, projectId: string, write = false) {
-  const loaded = await loadProjectForUser(c, projectId, write ? 'write' : 'read');
+async function authorizedWorkspace(c: any, workspaceId: string, write = false) {
+  const loaded = await loadWorkspaceForUser(c, workspaceId, write ? 'write' : 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404) as Response;
-  await assertProjectCapability(
+  await assertWorkspaceCapability(
     c,
     loaded.userId,
     loaded.row.accountId,
-    projectId,
-    write ? PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE : PROJECT_ACTIONS.PROJECT_GITOPS_READ,
+    workspaceId,
+    write ? WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE : WORKSPACE_ACTIONS.WORKSPACE_GITOPS_READ,
   );
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
   if (gate) return gate;
   return loaded;
 }
 
-async function scopedApp(projectId: string, appId: string) {
+async function scopedApp(workspaceId: string, appId: string) {
   const [row] = await db
     .select()
     .from(apps)
-    .where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt)))
+    .where(and(eq(apps.appId, appId), eq(apps.workspaceId, workspaceId), isNull(apps.deletedAt)))
     .limit(1);
   return row ?? null;
 }
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid() }) },
+    method: 'get', path: '/{workspaceId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid() }) },
     responses: { 200: json(z.object({ apps: z.array(AppObject) }), 'Apps'), ...errors(403, 404) },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const gate = await authorizedProject(c, projectId);
+    const workspaceId = c.req.param('workspaceId');
+    const gate = await authorizedWorkspace(c, workspaceId);
     if (gate instanceof Response) return gate;
     const rows = await db.select().from(apps)
-      .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
+      .where(and(eq(apps.workspaceId, workspaceId), isNull(apps.deletedAt)))
       .orderBy(desc(apps.createdAt));
     return c.json({ apps: rows.map(serializeApp) });
   },
@@ -257,26 +257,26 @@ const AppAccessSchema = z.object({
   password_configured: z.boolean(),
 });
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Get App access policy', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    method: 'get', path: '/{workspaceId}/apps/{appId}/access', tags: ['apps'], summary: 'Get App access policy', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
     responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(403, 404) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
+    const { workspaceId, appId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId);
     if (gate instanceof Response) return gate;
-    const row = await scopedApp(projectId, appId);
+    const row = await scopedApp(workspaceId, appId);
     return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'patch', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Update App access policy', ...auth,
+    method: 'patch', path: '/{workspaceId}/apps/{appId}/access', tags: ['apps'], summary: 'Update App access policy', ...auth,
     request: {
-      params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+      params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.object({
         mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
         member_ids: z.array(z.string().uuid()).max(100).optional(),
@@ -287,10 +287,10 @@ projectsApp.openapi(
     responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(400, 403, 404) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, true);
+    const { workspaceId, appId } = c.req.param();
+    const loaded = await authorizedWorkspace(c, workspaceId, true);
     if (loaded instanceof Response) return loaded;
-    const current = await scopedApp(projectId, appId);
+    const current = await scopedApp(workspaceId, appId);
     if (!current) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
     if (body.mode === 'password' && !body.password && !current.accessPasswordHash) {
@@ -323,17 +323,17 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'post', path: '/{projectId}/apps/{appId}/access-session', tags: ['apps'], summary: 'Create an App browser access session', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    method: 'post', path: '/{workspaceId}/apps/{appId}/access-session', tags: ['apps'], summary: 'Create an App browser access session', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
     responses: { 200: json(z.object({ url: z.string().url(), expires_at: z.string() }), 'App access session'), ...errors(403, 404) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId);
+    const { workspaceId, appId } = c.req.param();
+    const loaded = await authorizedWorkspace(c, workspaceId);
     if (loaded instanceof Response) return loaded;
-    const row = await scopedApp(projectId, appId);
+    const row = await scopedApp(workspaceId, appId);
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
       return c.json({ error: 'App access denied' }, 403);
@@ -346,11 +346,11 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
+    method: 'post', path: '/{workspaceId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
     request: {
-      params: z.object({ projectId: z.string().uuid() }),
+      params: z.object({ workspaceId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.object({
         slug: z.string().min(1).max(63), name: z.string().min(1).max(200),
         cpu: z.number().int().min(1).max(64).default(1),
@@ -363,15 +363,15 @@ projectsApp.openapi(
     responses: { 201: json(AppObject, 'App'), ...errors(400, 403, 404, 409) },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await authorizedProject(c, projectId, true);
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await authorizedWorkspace(c, workspaceId, true);
     if (loaded instanceof Response) return loaded;
     const body = c.req.valid('json');
     const slug = body.slug.toLowerCase();
     if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
     try {
       const [row] = await db.insert(apps).values({
-        accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
+        accountId: loaded.row.accountId, workspaceId, slug, name: body.name.trim(),
         routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
         cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
         idleTimeoutSeconds: body.idle_timeout_seconds,
@@ -386,11 +386,11 @@ projectsApp.openapi(
 );
 
 // Static artifact routes are registered before /apps/{appId}.
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'post', path: '/{projectId}/apps/artifacts', tags: ['apps'], summary: 'Register an App artifact', ...auth,
+    method: 'post', path: '/{workspaceId}/apps/artifacts', tags: ['apps'], summary: 'Register an App artifact', ...auth,
     request: {
-      params: z.object({ projectId: z.string().uuid() }),
+      params: z.object({ workspaceId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.discriminatedUnion('kind', [
         z.object({ kind: z.literal('archive'), media_type: z.string().optional() }),
         z.object({ kind: z.literal('oci_image'), image: z.string().min(1).max(512) }),
@@ -399,21 +399,21 @@ projectsApp.openapi(
     responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 503) },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await authorizedProject(c, projectId, true);
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await authorizedWorkspace(c, workspaceId, true);
     if (loaded instanceof Response) return loaded;
     const body = c.req.valid('json');
     const artifactId = randomUUID();
     if (body.kind === 'oci_image') {
       const [artifact] = await db.insert(appArtifacts).values({
-        artifactId, accountId: loaded.row.accountId, projectId, kind: body.kind,
+        artifactId, accountId: loaded.row.accountId, workspaceId, kind: body.kind,
         status: 'ready', imageReference: body.image, createdBy: loaded.userId,
       }).returning();
       return c.json({ artifact: serializeArtifact(artifact!), upload: null }, 201);
     }
     let upload: Awaited<ReturnType<typeof createAppArtifactUploadUrl>>;
     try {
-      upload = await createAppArtifactUploadUrl(loaded.row.accountId, projectId, artifactId);
+      upload = await createAppArtifactUploadUrl(loaded.row.accountId, workspaceId, artifactId);
     } catch (error) {
       if (error instanceof AppArtifactStorageUnavailableError) {
         return c.json({ error: error.message }, 503);
@@ -421,7 +421,7 @@ projectsApp.openapi(
       throw error;
     }
     const [artifact] = await db.insert(appArtifacts).values({
-      artifactId, accountId: loaded.row.accountId, projectId, kind: body.kind,
+      artifactId, accountId: loaded.row.accountId, workspaceId, kind: body.kind,
       status: 'uploading', objectPath: upload.objectPath,
       mediaType: body.media_type ?? 'application/gzip', createdBy: loaded.userId,
     }).returning();
@@ -429,24 +429,24 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'post', path: '/{projectId}/apps/artifacts/{artifactId}/finalize', tags: ['apps'], summary: 'Finalize an uploaded artifact', ...auth,
+    method: 'post', path: '/{workspaceId}/apps/artifacts/{artifactId}/finalize', tags: ['apps'], summary: 'Finalize an uploaded artifact', ...auth,
     request: {
-      params: z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() }),
+      params: z.object({ workspaceId: z.string().uuid(), artifactId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), size_bytes: z.number().int().positive().max(MAX_ARCHIVE_BYTES) }) } } },
     },
     responses: { 200: json(ArtifactObject, 'Artifact'), ...errors(400, 403, 404, 409) },
   }),
   async (c: any) => {
-    const { projectId, artifactId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, true);
+    const { workspaceId, artifactId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId, true);
     if (gate instanceof Response) return gate;
     const body = c.req.valid('json');
     const [artifact] = await db.update(appArtifacts).set({
       status: 'uploaded', sha256: body.sha256, sizeBytes: body.size_bytes, updatedAt: new Date(),
     }).where(and(
-      eq(appArtifacts.artifactId, artifactId), eq(appArtifacts.projectId, projectId),
+      eq(appArtifacts.artifactId, artifactId), eq(appArtifacts.workspaceId, workspaceId),
       eq(appArtifacts.kind, 'archive'), eq(appArtifacts.status, 'uploading'),
     )).returning();
     if (!artifact) return c.json({ error: 'Artifact is not awaiting finalization' }, 409);
@@ -454,26 +454,26 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Get an App', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    method: 'get', path: '/{workspaceId}/apps/{appId}', tags: ['apps'], summary: 'Get an App', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
     responses: { 200: json(AppObject, 'App'), ...errors(403, 404) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
+    const { workspaceId, appId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId);
     if (gate instanceof Response) return gate;
-    const row = await scopedApp(projectId, appId);
+    const row = await scopedApp(workspaceId, appId);
     return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
+    method: 'patch', path: '/{workspaceId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
     request: {
-      params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+      params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.object({
         name: z.string().min(1).max(200).optional(), cpu: z.number().int().min(1).max(64).optional(),
         memory_gb: z.number().int().min(1).max(512).optional(), disk_gb: z.number().int().min(1).max(2048).optional(),
@@ -483,8 +483,8 @@ projectsApp.openapi(
     responses: { 200: json(AppObject, 'App'), ...errors(403, 404) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, true);
+    const { workspaceId, appId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId, true);
     if (gate instanceof Response) return gate;
     const body = c.req.valid('json');
     const [row] = await db.update(apps).set({
@@ -495,22 +495,22 @@ projectsApp.openapi(
       ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
       ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
       updatedAt: new Date(),
-    }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
+    }).where(and(eq(apps.appId, appId), eq(apps.workspaceId, workspaceId), isNull(apps.deletedAt))).returning();
     return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    method: 'delete', path: '/{workspaceId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
     responses: { 200: json(z.object({ ok: z.boolean() }), 'Deleted'), ...errors(403, 404) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, true);
+    const { workspaceId, appId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId, true);
     if (gate instanceof Response) return gate;
-    const row = await scopedApp(projectId, appId);
+    const row = await scopedApp(workspaceId, appId);
     if (!row) return c.json({ error: 'Not found' }, 404);
     const runtimes = await db.select().from(appRuntimes)
       .innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
@@ -526,11 +526,11 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
+    method: 'post', path: '/{workspaceId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
     request: {
-      params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+      params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.object({
         artifact_id: z.string().uuid(),
         source: SourceSchema,
@@ -542,14 +542,14 @@ projectsApp.openapi(
     responses: { 202: json(DeploymentObject, 'Deployment queued'), ...errors(400, 403, 404, 409) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, true);
+    const { workspaceId, appId } = c.req.param();
+    const loaded = await authorizedWorkspace(c, workspaceId, true);
     if (loaded instanceof Response) return loaded;
-    const app = await scopedApp(projectId, appId);
+    const app = await scopedApp(workspaceId, appId);
     if (!app) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
     const [artifact] = await db.select().from(appArtifacts).where(and(
-      eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),
+      eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.workspaceId, workspaceId),
     )).limit(1);
     if (!artifact || !['uploaded', 'ready'].includes(artifact.status)) return c.json({ error: 'Artifact is not ready to deploy' }, 409);
     if (artifact.kind === 'oci_image' && body.source.kind !== 'oci_image') return c.json({ error: 'OCI artifacts require an oci_image source' }, 400);
@@ -582,33 +582,33 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'List App deployments', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+    method: 'get', path: '/{workspaceId}/apps/{appId}/deployments', tags: ['apps'], summary: 'List App deployments', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
     responses: { 200: json(z.object({ deployments: z.array(DeploymentObject) }), 'Deployments'), ...errors(403, 404) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
+    const { workspaceId, appId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId);
     if (gate instanceof Response) return gate;
-    if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
+    if (!(await scopedApp(workspaceId, appId))) return c.json({ error: 'Not found' }, 404);
     const rows = await db.select().from(appDeployments).where(eq(appDeployments.appId, appId)).orderBy(desc(appDeployments.version));
     return c.json({ deployments: rows.map(serializeDeployment) });
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Get App deployment', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
+    method: 'get', path: '/{workspaceId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Get App deployment', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
     responses: { 200: json(z.object({ deployment: DeploymentObject, events: z.array(z.object({}).passthrough()) }), 'Deployment'), ...errors(403, 404) },
   }),
   async (c: any) => {
-    const { projectId, appId, deploymentId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
+    const { workspaceId, appId, deploymentId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId);
     if (gate instanceof Response) return gate;
-    if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
+    if (!(await scopedApp(workspaceId, appId))) return c.json({ error: 'Not found' }, 404);
     const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId))).limit(1);
     if (!deployment) return c.json({ error: 'Not found' }, 404);
     const events = await db.select().from(appDeploymentEvents).where(eq(appDeploymentEvents.deploymentId, deploymentId)).orderBy(appDeploymentEvents.createdAt);
@@ -619,17 +619,17 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}/logs', tags: ['apps'], summary: 'Get App runtime logs', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }), query: z.object({ after: z.string().optional(), limit: z.string().optional() }) },
+    method: 'get', path: '/{workspaceId}/apps/{appId}/deployments/{deploymentId}/logs', tags: ['apps'], summary: 'Get App runtime logs', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }), query: z.object({ after: z.string().optional(), limit: z.string().optional() }) },
     responses: { 200: json(z.object({}).passthrough(), 'Logs'), ...errors(403, 404, 409, 503) },
   }),
   async (c: any) => {
-    const { projectId, appId, deploymentId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
+    const { workspaceId, appId, deploymentId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId);
     if (gate instanceof Response) return gate;
-    if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
+    if (!(await scopedApp(workspaceId, appId))) return c.json({ error: 'Not found' }, 404);
     const [deployment] = await db.select().from(appDeployments).where(and(
       eq(appDeployments.deploymentId, deploymentId),
       eq(appDeployments.appId, appId),
@@ -667,17 +667,17 @@ projectsApp.openapi(
 );
 
 for (const action of ['start', 'stop'] as const) {
-  projectsApp.openapi(
+  workspaceRoutesApp.openapi(
     createRoute({
-      method: 'post', path: `/{projectId}/apps/{appId}/${action}`, tags: ['apps'], summary: `${action} an App`, ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      method: 'post', path: `/{workspaceId}/apps/{appId}/${action}`, tags: ['apps'], summary: `${action} an App`, ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
       responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 503) },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
-      const gate = await authorizedProject(c, projectId, true);
+      const { workspaceId, appId } = c.req.param();
+      const gate = await authorizedWorkspace(c, workspaceId, true);
       if (gate instanceof Response) return gate;
-      const app = await scopedApp(projectId, appId);
+      const app = await scopedApp(workspaceId, appId);
       if (!app) return c.json({ error: 'Not found' }, 404);
       if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
       const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
@@ -730,17 +730,17 @@ for (const action of ['start', 'stop'] as const) {
   );
 }
 
-projectsApp.openapi(
+workspaceRoutesApp.openapi(
   createRoute({
-    method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
-    request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
+    method: 'post', path: '/{workspaceId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
+    request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
     responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 503) },
   }),
   async (c: any) => {
-    const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, true);
+    const { workspaceId, appId } = c.req.param();
+    const gate = await authorizedWorkspace(c, workspaceId, true);
     if (gate instanceof Response) return gate;
-    const app = await scopedApp(projectId, appId);
+    const app = await scopedApp(workspaceId, appId);
     if (!app) return c.json({ error: 'Not found' }, 404);
     const { deployment_id: deploymentId } = c.req.valid('json');
     const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);

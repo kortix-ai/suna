@@ -1,6 +1,6 @@
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -14,7 +14,7 @@ import {
 import { C, help, pad, status } from '../style.ts';
 import { runSandboxBuildLocal } from './sandboxes-local.ts';
 
-// ── Shapes (mirror apps/api/src/projects sandbox-template + snapshot routes) ─
+// ── Shapes (mirror apps/api/src/workspaces sandbox-template + snapshot routes) ─
 
 interface SandboxTemplate {
   template_id: string | null;
@@ -51,7 +51,7 @@ interface SnapshotBuild {
 
 const HELP = help`Usage: kortix sandboxes <subcommand> [options]
 
-Manage the project's sandbox images — the same surface as the dashboard's
+Manage the workspace's sandbox images — the same surface as the dashboard's
 Customize → Sandbox images. A template is a definition (image OR Dockerfile +
 resources); a build produces the actual snapshot the platform boots sessions
 from. Templates also come from \`[[sandbox.templates]]\` in kortix.yaml.
@@ -75,7 +75,7 @@ Subcommands:
 Local build (build --local):
   Renders your Dockerfile + the Kortix toolchain layer and builds it with an
   EMPTY context — the same repo-less constraint the cloud builds under. Needs
-  no login and no linked project, just Docker. For the checks that need neither,
+  no login and no linked workspace, just Docker. For the checks that need neither,
   run \`kortix validate\` (it lints these Dockerfiles statically).
 
   Slug: the positional, else \`sandbox.default\`, else your only template.
@@ -94,7 +94,7 @@ Options:
   --dockerfile <path>  Repo-relative Dockerfile path.
   --name <label>       Display name (default: slug).
   --cpu <n>            vCPUs.   --memory <n>  GiB RAM.   --disk <n>  GiB disk.
-  --project <id>       Operate on this project id (default: linked).
+  --workspace <id>       Operate on this workspace id (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 `;
@@ -113,7 +113,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   try {
     json = takeFlagBool(rest, ['--json']);
     local = takeFlagBool(rest, ['--local']);
-    f.project = takeFlagValue(rest, ['--project']);
+    f.workspace = takeFlagValue(rest, ['--workspace', '--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.image = takeFlagValue(rest, ['--image']);
     f.dockerfile = takeFlagValue(rest, ['--dockerfile']);
@@ -135,7 +135,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   if (sub === 'rm' || sub === 'remove' || sub === 'delete') return sandboxRmLocal(positional[0]);
   // `build --local` is the same kind of thing: it reads kortix.yaml + a
   // Dockerfile and talks to the local Docker daemon. No token, no linked
-  // project, no network — so it must route above resolveProjectContext, which
+  // workspace, no network — so it must route above resolveWorkspaceContext, which
   // would otherwise dead-end a logged-out developer on a pre-push check.
   // (It takes its own flags out of `rest` and reads the slug positional itself —
   // `positional` above was computed before --platform/--tag were stripped, so it
@@ -150,11 +150,11 @@ export async function runSandboxes(argv: string[]): Promise<number> {
     return 2;
   }
 
-  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveWorkspaceContext({ workspaceArg: f.workspace, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.workspaceId}`;
 
-  // Resolve a slug to a project-scoped template_id (needed for PATCH/DELETE/build).
+  // Resolve a slug to a workspace-scoped template_id (needed for PATCH/DELETE/build).
   const findTemplateId = async (slug: string): Promise<string | null> => {
     const resp = await ctx.client.get<{ items: SandboxTemplate[] }>(`${base}/sandbox-templates`);
     return resp.items.find((t) => t.slug === slug)?.template_id ?? null;
@@ -249,7 +249,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
         if (!slug) return missing('a template slug');
         const id = await findTemplateId(slug);
         if (!id) {
-          process.stderr.write(`${status.err(`No project-scoped template "${slug}" to build.`)}\n`);
+          process.stderr.write(`${status.err(`No workspace-scoped template "${slug}" to build.`)}\n`);
           return 1;
         }
         await ctx.client.post(`${base}/sandbox-templates/${id}/build`);

@@ -48,7 +48,7 @@ describe('resolveActiveCategory', () => {
   /**
    * The silent one. `catalog.entries` changes under the filter — a refetch, or
    * `useCatalog` flipping source from Easy Connect to Discover once
-   * `projectQuery` lands, which swaps the entire category vocabulary. The
+   * `workspaceQuery` lands, which swaps the entire category vocabulary. The
    * dropdown then has no option matching the stored value, so Radix renders
    * its placeholder ("All categories") while the grid still filtered by it —
    * `groupIntoSections(...).find(...)` missed, `?? []` swallowed it, and the

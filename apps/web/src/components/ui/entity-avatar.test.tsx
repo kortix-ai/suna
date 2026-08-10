@@ -84,7 +84,7 @@ describe('EntityAvatar — what the tile shows', () => {
     // The icon branch is the one an `emoji ? … : IconComponent ? …` chain gets
     // wrong when the two are swapped: with the icon checked first, every
     // marketplace/account tile that passes BOTH would keep showing the icon
-    // and the project emoji would never appear.
+    // and the workspace emoji would never appear.
     const html = render({ label: 'Demo', icon: RocketIcon, emoji: '🚀' });
 
     expect(html).toContain('🚀');
@@ -98,7 +98,7 @@ describe('EntityAvatar — what the tile shows', () => {
   });
 
   test('null — what the SDK returns for "no icon" — falls through to the initial', () => {
-    // `KortixProject.icon` is `string | null | undefined`, so the prop takes
+    // `KortixWorkspace.icon` is `string | null | undefined`, so the prop takes
     // null and the card passes it straight through. A truthiness check is what
     // makes this work; `emoji !== undefined` would render an empty span here
     // and the initial would vanish for every project that never set an icon.
@@ -113,7 +113,7 @@ describe('EntityAvatar — what the tile shows', () => {
     // The tile always sits beside the name it belongs to (project card, account
     // row). Left announceable, a screen reader reads the emoji's CLDR name —
     // "rocket" — immediately before the label that names the same thing. Same
-    // treatment as the picker trigger in features/projects/modal.
+    // treatment as the picker trigger in features/workspaces/modal.
     expect(render({ label: 'Demo', emoji: '🚀' })).toMatch(/aria-hidden="true"[^>]*>🚀/);
   });
 });
@@ -223,7 +223,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     // caller that passes a fill silently wins over `bg-emoji-fill-*` and the
     // tile loses its tint while keeping its ring. That is exactly what the
     // project card used to do with `bg-background`, and why that prop had to
-    // go when the tint landed (features/projects/project-card.tsx).
+    // go when the tint landed (features/workspaces/workspace-card.tsx).
     const classes = classesOf(render({ label: 'Demo', emoji: '🌿', className: 'bg-background' }));
 
     expect(classes).toContain('bg-background');
@@ -255,7 +255,7 @@ describe('EntityAvatar — the emoji tile’s surface', () => {
     '<span data-slot="entity-avatar" class="inline-flex shrink-0 items-center justify-center font-semibold size-8 rounded-md border-0 bg-emoji-fill-red inset-ring-1 inset-ring-emoji-ring-red text-base"><span aria-hidden="true" class="leading-none">🚀</span></span>';
 
   /**
-   * The same, for the exact call shape the project card uses — which no longer
+   * The same, for the exact call shape the workspace card uses — which no longer
    * passes `bg-background`. That prop was inert under the inline chalk and
    * became actively wrong under the tint: `className` is last into cn(), so it
    * beat `bg-emoji-fill-*` and left the card's tile ringed but grey.
@@ -343,7 +343,7 @@ describe('EntityAvatar — existing callers', () => {
   const LEGACY_INITIAL_TILE =
     '<span data-slot="entity-avatar" style="background-color:hsl(179 46% 79%);color:hsl(179 56% 27%);border-color:hsl(179 46% 67%)" class="inline-flex shrink-0 items-center justify-center border font-semibold size-8 rounded-md text-xs">D</span>';
 
-  /** The same, for the one call shape the project card uses today. */
+  /** The same, for the one call shape the workspace card uses today. */
   const LEGACY_CARD_TILE =
     '<span data-slot="entity-avatar" style="background-color:hsl(179 46% 79%);color:hsl(179 56% 27%);border-color:hsl(179 46% 67%)" class="inline-flex shrink-0 items-center justify-center border font-semibold size-10 rounded-md text-sm bg-background">D</span>';
 

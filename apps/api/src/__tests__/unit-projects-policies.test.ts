@@ -5,12 +5,12 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  type ProjectPolicySpec,
-  extractProjectPolicies,
-  projectPoliciesToTomlEntries,
-  projectPolicySettingsToToml,
-} from '../projects/policies';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+  type WorkspacePolicySpec,
+  extractWorkspacePolicies,
+  workspacePoliciesToTomlEntries,
+  workspacePolicySettingsToToml,
+} from '../workspaces/policies';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../workspaces/triggers';
 
 function parseFrom(body: string) {
   const m = parseManifestString(
@@ -18,10 +18,10 @@ function parseFrom(body: string) {
     'yaml',
     'kortix.yaml',
   );
-  return extractProjectPolicies(m);
+  return extractWorkspacePolicies(m);
 }
 
-describe('extractProjectPolicies — happy paths', () => {
+describe('extractWorkspacePolicies — happy paths', () => {
   test('empty manifest → empty list + allow_all default + no errors', () => {
     const r = parseFrom('');
     expect(r.policies).toEqual([]);
@@ -65,7 +65,7 @@ policy:
   });
 });
 
-describe('extractProjectPolicies — error cases', () => {
+describe('extractWorkspacePolicies — error cases', () => {
   test('policies as a mapping is rejected (must be a list)', () => {
     const r = parseFrom(`
 policies:
@@ -124,20 +124,20 @@ policies:
 });
 
 describe('round-trip serializers', () => {
-  test('projectPoliciesToTomlEntries preserves match + action', () => {
-    const policies: ProjectPolicySpec[] = [
+  test('workspacePoliciesToTomlEntries preserves match + action', () => {
+    const policies: WorkspacePolicySpec[] = [
       { match: '*.delete*', action: 'block' },
       { match: '*', action: 'always_run' },
     ];
-    expect(projectPoliciesToTomlEntries(policies)).toEqual([
+    expect(workspacePoliciesToTomlEntries(policies)).toEqual([
       { match: '*.delete*', action: 'block' },
       { match: '*', action: 'always_run' },
     ]);
   });
 
-  test('projectPolicySettingsToToml omits the default to keep the file clean', () => {
-    expect(projectPolicySettingsToToml({ defaultMode: 'allow_all' })).toBeNull();
-    expect(projectPolicySettingsToToml({ defaultMode: 'risk' })).toEqual({ default_mode: 'risk' });
+  test('workspacePolicySettingsToToml omits the default to keep the file clean', () => {
+    expect(workspacePolicySettingsToToml({ defaultMode: 'allow_all' })).toBeNull();
+    expect(workspacePolicySettingsToToml({ defaultMode: 'risk' })).toEqual({ default_mode: 'risk' });
   });
 });
 
@@ -148,7 +148,7 @@ describe('round-trip serializers', () => {
  * allow-list was unwritable (and, because sync is delete-then-insert from the
  * manifest, a hand-inserted row was erased on the next sync).
  */
-describe('extractProjectPolicies — argument conditions', () => {
+describe('extractWorkspacePolicies — argument conditions', () => {
   test('parses an allow-list rule with a regex condition', () => {
     const { policies, errors } = parseFrom(
       [
@@ -237,9 +237,9 @@ describe('extractProjectPolicies — argument conditions', () => {
   });
 });
 
-describe('projectPoliciesToTomlEntries — conditions round-trip', () => {
+describe('workspacePoliciesToTomlEntries — conditions round-trip', () => {
   test('serializes conditions back out', () => {
-    const specs: ProjectPolicySpec[] = [
+    const specs: WorkspacePolicySpec[] = [
       {
         match: 'gmail.send_email',
         action: 'require_approval',
@@ -247,7 +247,7 @@ describe('projectPoliciesToTomlEntries — conditions round-trip', () => {
       },
     ];
 
-    expect(projectPoliciesToTomlEntries(specs)).toEqual([
+    expect(workspacePoliciesToTomlEntries(specs)).toEqual([
       {
         match: 'gmail.send_email',
         action: 'require_approval',
@@ -257,10 +257,10 @@ describe('projectPoliciesToTomlEntries — conditions round-trip', () => {
   });
 
   test('omits the key entirely when there are no conditions', () => {
-    expect(projectPoliciesToTomlEntries([{ match: '*', action: 'block' }])).toEqual([
+    expect(workspacePoliciesToTomlEntries([{ match: '*', action: 'block' }])).toEqual([
       { match: '*', action: 'block' },
     ]);
-    expect(projectPoliciesToTomlEntries([{ match: '*', action: 'block', conditions: [] }])).toEqual(
+    expect(workspacePoliciesToTomlEntries([{ match: '*', action: 'block', conditions: [] }])).toEqual(
       [{ match: '*', action: 'block' }],
     );
   });
@@ -277,7 +277,7 @@ describe('projectPoliciesToTomlEntries — conditions round-trip', () => {
 
     const first = parseFrom(yaml);
     const reparsed = parseFrom(
-      ['policies:', ...serializeEntries(projectPoliciesToTomlEntries(first.policies))].join('\n'),
+      ['policies:', ...serializeEntries(workspacePoliciesToTomlEntries(first.policies))].join('\n'),
     );
 
     expect(reparsed.errors).toEqual([]);

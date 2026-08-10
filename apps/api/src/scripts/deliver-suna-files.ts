@@ -8,7 +8,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { config } from '../config';
 import { getSupabase } from '../shared/supabase';
-import { ensureBackupBucket } from '../projects/legacy-migration-storage';
+import { ensureBackupBucket } from '../workspaces/legacy-migration-storage';
 
 function arg(flag: string): string | undefined {
   const i = Bun.argv.indexOf(flag);

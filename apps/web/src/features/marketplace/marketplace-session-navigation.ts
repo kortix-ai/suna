@@ -8,21 +8,21 @@ export interface SessionRouter {
   prefetch: (href: string) => void;
 }
 
-export function marketplaceInstallSessionHref(projectId: string, sessionId: string): string {
-  return `/workspaces/${projectId}/sessions/${sessionId}`;
+export function marketplaceInstallSessionHref(workspaceId: string, sessionId: string): string {
+  return `/workspaces/${workspaceId}/sessions/${sessionId}`;
 }
 
 export function prepareMarketplaceInstallSessionNavigation(
   queryClient: QueryClient,
   router: SessionRouter,
-  projectId: string,
+  workspaceId: string,
   sessionId: string | null | undefined,
 ): string | null {
   if (!sessionId) return null;
 
-  const href = marketplaceInstallSessionHref(projectId, sessionId);
+  const href = marketplaceInstallSessionHref(workspaceId, sessionId);
   router.prefetch(href);
-  prefetchSessionStart(queryClient, projectId, sessionId);
-  void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
+  prefetchSessionStart(queryClient, workspaceId, sessionId);
+  void queryClient.invalidateQueries({ queryKey: qk.workspace.sessionsScope(workspaceId) });
   return href;
 }

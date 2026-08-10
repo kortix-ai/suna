@@ -51,7 +51,7 @@ export function createEventHandler(deps: {
    *  to "every project". Optional only so existing test harnesses that don't
    *  care about the Kortix-session-mirror refetch keep compiling; production
    *  always passes it (`use-opencode-events/index.ts`). */
-  projectId?: string | null;
+  workspaceId?: string | null;
 }) {
   const {
     queryClient,
@@ -65,7 +65,7 @@ export function createEventHandler(deps: {
     normalizeDiagnosticPaths,
     markSessionAbortedLocally,
     fetchLspDiagnosticsDebounced,
-    projectId = null,
+    workspaceId = null,
   } = deps;
   const reconcileTail =
     deps.reconcileSessionTail ??
@@ -136,7 +136,7 @@ export function createEventHandler(deps: {
             return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
           });
           queryClient.setQueryData(opencodeKeys.runtimeSession(info.id), info);
-          refetchKortixSessionMirrors(queryClient, projectId);
+          refetchKortixSessionMirrors(queryClient, workspaceId);
         }
         break;
       }
@@ -170,7 +170,7 @@ export function createEventHandler(deps: {
             next[idx] = info;
             return next.sort((a, b) => b.time.updated - a.time.updated);
           });
-          if (titleChanged) refetchKortixSessionMirrors(queryClient, projectId);
+          if (titleChanged) refetchKortixSessionMirrors(queryClient, workspaceId);
         }
         break;
       }

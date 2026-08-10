@@ -9,7 +9,7 @@
  *
  * This boundary catches ONLY those transient runtime-not-ready errors and
  * auto-retries silently until the runtime is ready. It intentionally renders no
- * fallback: the project shell is already mounted during session navigation and
+ * fallback: the workspace shell is already mounted during session navigation and
  * must never be replaced by a full-page loading logo. Every other error is
  * rethrown so it bubbles to the outer boundary exactly as before.
  *
@@ -31,7 +31,7 @@ function RuntimeLoadingFallback({ reset }: { reset: () => void }) {
   // The runtime URL lands within a second or two of provisioning. Soft-reset the
   // boundary on a short interval so the subtree re-renders and picks it up the
   // moment it's ready — no hard reload, no manual "Try again". This must stay
-  // visually empty: initial project access has its own legitimate loader, but a
+  // visually empty: initial workspace access has its own legitimate loader, but a
   // transient runtime race while switching sessions must not cover the loaded
   // project with the ASCII logo.
   useEffect(() => {

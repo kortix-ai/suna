@@ -17,7 +17,7 @@ describe('Feature flags section', () => {
   test('toggling calls the CANONICAL /features route through the SDK', () => {
     // `updateExperimentalFeature` still exists as a deprecated alias and still
     // hits `/experimental`. New UI must not use it.
-    expect(source).toContain('updateFeatureFlag(projectId, flag.key, next)');
+    expect(source).toContain('updateFeatureFlag(workspaceId, flag.key, next)');
     expect(source).toContain("import {");
     expect(source).toContain('  updateFeatureFlag,');
     expect(source).not.toContain('updateExperimentalFeature');
@@ -28,12 +28,12 @@ describe('Feature flags section', () => {
     // home for this list gated on `manager || project.write` — wrong in both
     // directions.
     expect(source).toContain(
-      'useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE)',
+      'useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE)',
     );
     expect(source).toContain('const canWrite = !writeCap.isLoading && writeCap.allowed === true;');
     expect(source).toContain('disabled={!canWrite || mutation.isPending}');
-    expect(source).not.toContain('PROJECT_ACTIONS.PROJECT_WRITE');
-    expect(source).not.toContain("effective_project_role === 'manager'");
+    expect(source).not.toContain('WORKSPACE_ACTIONS.WORKSPACE_WRITE');
+    expect(source).not.toContain("effective_workspace_role === 'manager'");
   });
 
   test('every stability the API can serve has a badge, including stable', () => {
@@ -45,42 +45,42 @@ describe('Feature flags section', () => {
     expect(source).toContain('STABILITY_BADGE[flag.stability] ?? STABILITY_BADGE.experimental');
   });
 
-  test('each row states whether it is a default or a project override', () => {
-    expect(source).toContain("if (flag.overridden) return 'Overridden for this project';");
+  test('each row states whether it is a default or a workspace override', () => {
+    expect(source).toContain("if (flag.overridden) return 'Overridden for this workspace';");
     expect(source).toContain("return flag.enabled ? 'Default on' : 'Default off';");
     expect(source).toContain('{originLabel(flag)}');
   });
 
   test('flags render in SERVER order and unavailable flags are not offered', () => {
-    expect(source).toContain('(project?.experimental_features ?? []).filter((f) => f.available)');
+    expect(source).toContain('(workspace?.experimental_features ?? []).filter((f) => f.available)');
     // Any client-side reordering would fight the registry's intentional order.
     expect(source).not.toContain('.sort(');
   });
 
   test('the Sandbox provider row moved here with the list', () => {
     expect(source).toContain('function SandboxProviderRow(');
-    expect(source).toContain('updateProjectSandboxProvider(project.project_id, next)');
+    expect(source).toContain('updateWorkspaceSandboxProvider(workspace.workspace_id, next)');
     const settings = readFileSync(join(import.meta.dir, 'settings-view.tsx'), 'utf8');
     expect(settings).not.toContain('SandboxProviderRow');
     expect(settings).not.toContain('ExperimentalCard');
     expect(settings).not.toContain('experimental_features');
   });
 
-  test('reads are consolidated onto the project DETAIL query', () => {
+  test('reads are consolidated onto the workspace DETAIL query', () => {
     // One entry backs the rail, `useFeatureFlag`, the palette, and this list —
     // so a single optimistic write lights every gated surface up together.
-    expect(source).toContain('queryKey: qk.project.detail(projectId)');
-    expect(source).toContain('queryFn: () => getProjectDetail(projectId)');
+    expect(source).toContain('queryKey: qk.workspace.detail(workspaceId)');
+    expect(source).toContain('queryFn: () => getWorkspaceDetail(workspaceId)');
     // The write still patches the summary entry: the PATCH response IS the
     // summary payload and settings-view renders off it.
-    expect(source).toContain('queryClient.setQueryData(qk.project.summary(projectId), updated)');
-    expect(source).toContain('qk.project.detail(projectId), (current)');
+    expect(source).toContain('queryClient.setQueryData(qk.workspace.summary(workspaceId), updated)');
+    expect(source).toContain('qk.workspace.detail(workspaceId), (current)');
   });
 
   test('the llm_gateway toggle still refreshes provider state', () => {
     expect(source).toContain("if (flag.key === 'llm_gateway') {");
     expect(source).toContain(
-      "refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true })",
+      "refreshWorkspaceProviderState(queryClient, workspaceId, {\n          removeWorkspaceScopedCache: true,\n        })",
     );
   });
 
@@ -92,7 +92,7 @@ describe('Feature flags section', () => {
 
   test('the section is registered everywhere a section must be registered', () => {
     const sections = readFileSync(join(root, 'lib/customize-sections.ts'), 'utf8');
-    const actions = readFileSync(join(root, 'lib/project-actions.ts'), 'utf8');
+    const actions = readFileSync(join(root, 'lib/workspace-actions.ts'), 'utf8');
     const rail = readFileSync(join(root, 'features/workspace/customize/rail.ts'), 'utf8');
     const panel = readFileSync(
       join(root, 'features/workspace/customize/customize-panel.tsx'),
@@ -106,6 +106,6 @@ describe('Feature flags section', () => {
     expect(actions).toContain("'feature-flags': {");
     expect(rail).toContain("{ section: 'feature-flags', label: 'Feature flags', icon: FlagIcon }");
     expect(panel).toContain("case 'feature-flags':");
-    expect(panel).toContain('<FeatureFlagsView projectId={projectId} />');
+    expect(panel).toContain('<FeatureFlagsView workspaceId={workspaceId} />');
   });
 });

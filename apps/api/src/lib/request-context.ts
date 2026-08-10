@@ -40,7 +40,7 @@ export interface RequestContext {
   /** User email (set after auth middleware) */
   userEmail?: string;
   /** Kortix project ID (set by route middleware/handlers when known) */
-  projectId?: string;
+  workspaceId?: string;
   /** Kortix project session ID (set by route middleware/handlers when known) */
   sessionId?: string;
   /** Sandbox ID (set by route handlers that operate on a sandbox) */
@@ -62,7 +62,7 @@ const LOG_FIELD_ALIASES: Record<string, string> = {
   userId: 'user_id',
   accountId: 'account_id',
   userEmail: 'user_email',
-  projectId: 'project_id',
+  workspaceId: 'project_id',
   sessionId: 'session_id',
   sandboxId: 'sandbox_id',
 };

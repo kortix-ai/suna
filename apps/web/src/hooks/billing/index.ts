@@ -47,12 +47,12 @@ export { useTransactions, useTransactionsSummary } from './use-transactions';
 export {
   SESSION_COST_PAGE_SIZE,
   useSessionCostDetail,
-  useSessionCostProjects,
+  useSessionCostWorkspaces,
   useSessionCosts,
 } from './use-session-costs';
 
-// Project -> sessions cost explorer (account-wide summary and rollup)
-export { COST_PAGE_SIZE, useCostByProject, useCostSummary } from './use-cost-explorer';
+// Workspace -> sessions cost explorer (account-wide summary and rollup)
+export { COST_PAGE_SIZE, useCostByWorkspace, useCostSummary } from './use-cost-explorer';
 
 // Download restriction for free tier
 export { useDownloadRestriction } from './use-download-restriction';

@@ -16,7 +16,7 @@ import {
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { latestWorkspacePath } from '@/lib/onboarding/last-workspace-cookie';
 
 const terminalLines = [
   { id: 'install', type: 'command', text: KORTIX_CLI_INSTALL_COMMAND },
@@ -36,7 +36,7 @@ export function CliInstallSection() {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
+    window.location.href = user ? latestWorkspacePath(user?.id) : '/auth';
   }, [user]);
 
   const copyInstallCommand = useCallback(() => {
@@ -61,7 +61,7 @@ export function CliInstallSection() {
                 Install Kortix from your terminal.
               </h2>
               <p className="text-muted-foreground text-base leading-relaxed text-pretty">
-                One curl installs the CLI. From there you can create a project, launch sessions, and
+                One curl installs the CLI. From there you can create a workspace, launch sessions, and
                 attach your local OpenCode TUI to any Kortix sandbox.
               </p>
             </div>

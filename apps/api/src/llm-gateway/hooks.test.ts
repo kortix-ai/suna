@@ -52,7 +52,7 @@ mock.module('../billing/services/yolo-tokens', () => ({
 mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async (token: string) =>
     token === 'good'
-      ? { isValid: true, accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null }
+      ? { isValid: true, accountId: 'acct-1', userId: 'user-1', workspaceId: null, sessionId: null }
       : { isValid: false },
 }));
 

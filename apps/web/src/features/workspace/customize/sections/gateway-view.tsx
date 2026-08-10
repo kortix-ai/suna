@@ -1,13 +1,13 @@
 'use client';
 
 /**
- * LLM — one Customize section that consolidates the per-project gateway surfaces
+ * LLM — one Customize section that consolidates the per-workspace gateway surfaces
  * (Providers, Overview, Logs, Budgets, API keys) behind a single tab bar, so the
  * whole section reads as one consistent surface (no competing tab styles).
  *
- * The tab bar is one row: the section tabs sit on the left, the project default
+ * The tab bar is one row: the section tabs sit on the left, the workspace default
  * model picker on the right. There's no duplicate default-model control inside
- * Routing; this shared picker is the single project-default surface.
+ * Routing; this shared picker is the single workspace-default surface.
  *
  * The active tab is LOCAL state, so switching tabs never touches the main
  * Customize rail. Deep-links / `openCustomize('llm-providers')` set the store
@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { WorkspaceProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { GatewayApiReference } from '@/features/workspace/customize/sections/view/gateway/gateway-api-reference';
 import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
@@ -29,12 +29,12 @@ import { GatewayOverview } from '@/features/workspace/customize/sections/view/ga
 import { GatewayPlayground } from '@/features/workspace/customize/sections/view/gateway/gateway-playground';
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
 import { useModelDefaults } from '@kortix/sdk/react';
-import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
+import { useGatewayKeys } from '@/hooks/workspaces/use-workspace-gateway';
 import type { CustomizeSection } from '@/lib/customize-sections';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
+import { gatewayRoutingPolicyKey, useWorkspaceModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
 
 type LlmTab =
@@ -68,34 +68,34 @@ const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
   'llm-api': 'api',
 };
 
-export function LlmManagementView({ projectId }: { projectId: string }) {
+export function LlmManagementView({ workspaceId }: { workspaceId: string }) {
   const open = useCustomizeStore((s) => s.open);
   const section = useCustomizeStore((s) => s.section);
   const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
   const [tab, setTab] = useState<LlmTab>(() => TAB_BY_SECTION[section] ?? 'providers');
 
-  // The project default is the single model authority for this project. Account
-  // and platform defaults are display-only inheritance when no project value is
-  // configured; choosing here always writes project scope.
-  const models = useProjectModels(projectId);
-  const modelDefaults = useModelDefaults(projectId);
-  const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
+  // The workspace default is the single model authority for this workspace. Account
+  // and platform defaults are display-only inheritance when no workspace value is
+  // configured; choosing here always writes workspace scope.
+  const models = useWorkspaceModels(workspaceId);
+  const modelDefaults = useModelDefaults(workspaceId);
+  const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(workspaceId) });
   // Only fetched once the API tab is open — this call needs the manage-keys
   // permission, and a read-only member should still see the reference (with
   // the prod-default base URL fallback) rather than eating a 403 on tab open.
-  const gatewayKeysQuery = useGatewayKeys(projectId, tab === 'api');
+  const gatewayKeysQuery = useGatewayKeys(workspaceId, tab === 'api');
   const gatewayUrl = gatewayKeysQuery.data?.gateway_url ?? null;
   const effectiveDefault =
-    modelDefaults.projectDefault ??
+    modelDefaults.workspaceDefault ??
     modelDefaults.accountDefault ??
     (modelDefaults.freeTier ? undefined : modelDefaults.platformDefault) ??
     null;
-  // A role with the LLM section's READ leaf (project.read) but not project.write
+  // A role with the LLM section's READ leaf (workspace.read) but not workspace.write
   // sees the gateway read-only: logs/overview/spend stay visible, but the
-  // project-default model picker — the one mutating control in this bar — is
+  // workspace-default model picker — the one mutating control in this bar — is
   // hidden so a read-only user cannot trigger a forbidden write.
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+    useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE).allowed === true;
 
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
   // tab. Plain in-view tab clicks stay local and never move the main rail.
@@ -123,19 +123,19 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
         </TabsList>
         {canWrite ? (
           <div className="flex shrink-0 items-center gap-1.5">
-            <span className="text-muted-foreground hidden text-xs sm:inline">Project default</span>
+            <span className="text-muted-foreground hidden text-xs sm:inline">Workspace default</span>
             <ModelSelector
               models={models}
               selectedModel={effectiveDefault}
-              unsetLabel="Project default"
+              unsetLabel="Workspace default"
               disabled={
                 modelDefaults.isLoading || modelDefaults.isUpdating || routingMutationCount > 0
               }
               onSelect={(m) => {
                 if (!m) return;
                 void modelDefaults
-                  .setProjectDefault(m)
-                  .catch(() => errorToast('Could not update the project default'));
+                  .setWorkspaceDefault(m)
+                  .catch(() => errorToast('Could not update the workspace default'));
               }}
             />
           </div>
@@ -145,9 +145,9 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
       {/* min-h-0 lets each panel actually shrink inside the flex column so
           overflow-y-auto scrolls instead of clipping tall content. */}
       <TabsContent value="providers" className="min-h-0 overflow-y-auto">
-        <ProjectProviderModal
+        <WorkspaceProviderModal
           asPanel
-          projectId={projectId}
+          workspaceId={workspaceId}
           open={open}
           onOpenChange={() => {}}
           defaultTab={llmProvidersTab}
@@ -155,27 +155,27 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
         />
       </TabsContent>
       <TabsContent value="overview" className="min-h-0 overflow-y-auto">
-        <GatewayOverview projectId={projectId} />
+        <GatewayOverview workspaceId={workspaceId} />
       </TabsContent>
       <TabsContent value="routing" className="min-h-0 overflow-y-auto">
         <GatewayRouting
-          projectId={projectId}
+          workspaceId={workspaceId}
           canWrite={canWrite}
-          projectDefaultPending={modelDefaults.isUpdating}
+          workspaceDefaultPending={modelDefaults.isUpdating}
         />
       </TabsContent>
       <TabsContent value="playground" className="min-h-0 overflow-y-auto">
-        <GatewayPlayground projectId={projectId} />
+        <GatewayPlayground workspaceId={workspaceId} />
       </TabsContent>
       <TabsContent value="logs" className="min-h-0 overflow-y-auto">
-        <GatewayLogs projectId={projectId} />
+        <GatewayLogs workspaceId={workspaceId} />
       </TabsContent>
       <TabsContent value="budgets" className="min-h-0 overflow-y-auto">
-        <GatewayBudgets projectId={projectId} canWrite={canWrite} />
+        <GatewayBudgets workspaceId={workspaceId} canWrite={canWrite} />
       </TabsContent>
       <TabsContent value="keys" className="min-h-0 overflow-y-auto">
         <GatewayKeys
-          projectId={projectId}
+          workspaceId={workspaceId}
           canWrite={canWrite}
           onViewModels={() => setTab('providers')}
         />
@@ -185,7 +185,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           <div className="space-y-1">
             <p className="text-foreground text-sm font-medium">Call the gateway</p>
             <p className="text-muted-foreground text-pretty text-xs">
-              Drop-in OpenAI- and Anthropic-compatible endpoints for calling this project's gateway
+              Drop-in OpenAI- and Anthropic-compatible endpoints for calling this workspace's gateway
               from outside a Kortix session.{' '}
               <button
                 type="button"

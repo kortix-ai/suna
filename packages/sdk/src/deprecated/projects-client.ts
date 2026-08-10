@@ -3,4 +3,4 @@
  * This subpath still works and will keep working until the next major.
  */
 export * from '../core/rest/projects-client';
-export * from '../core/rest/workspaces-client';
+export * from '../core/rest/workspaces-client/canonical-names';

@@ -1,9 +1,9 @@
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
-// Post-auth landing goes to a project, never to the projects list. The landing
-// door paints immediately and resolves (or provisions) the project behind the
+// Post-auth landing goes to a workspace, never to the workspaces list. The landing
+// door paints immediately and resolves (or provisions) the workspace behind the
 // UI, so no auth path has to block on the backend to build this redirect.
-const DEFAULT_AUTH_RETURN_URL = PROJECT_LANDING_PATH;
+const DEFAULT_AUTH_RETURN_URL = WORKSPACE_LANDING_PATH;
 const LEGACY_AUTH_RETURN_PREFIXES = [
   '/dashboard',
   '/instances',
@@ -92,7 +92,7 @@ export function sanitizeAuthReturnUrl(
   // door. Otherwise a new account renders the collection while its first
   // workspace is being provisioned.
   if (normalizedValue === '/workspaces' || normalizedValue === '/projects') {
-    return PROJECT_LANDING_PATH;
+    return WORKSPACE_LANDING_PATH;
   }
 
   if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(normalizedValue, prefix))) {
@@ -108,7 +108,7 @@ export function sanitizeAuthReturnUrl(
  */
 export function isSignupSafeReturnUrl(returnUrl: string | null | undefined): boolean {
   if (typeof returnUrl !== 'string' || returnUrl.length === 0) return false;
-  if (matchesReturnPrefix(returnUrl, PROJECT_LANDING_PATH)) return true;
+  if (matchesReturnPrefix(returnUrl, WORKSPACE_LANDING_PATH)) return true;
   return SIGNUP_SAFE_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(returnUrl, prefix));
 }
 
@@ -118,7 +118,7 @@ export function isSignupSafeReturnUrl(returnUrl: string | null | undefined): boo
  * Middleware turns any unauthenticated request into `?redirect=<path>`, so the
  * return URL is whatever the visitor happened to have open — very often a link
  * to somebody else's project. Replaying that after a SIGNUP drops a
- * seconds-old account on "Request access to this project": the one page it can
+ * seconds-old account on "Request access to this workspace": the one page it can
  * never act on, because the account did not exist when that project was
  * created and no amount of waiting changes that. The first thing a new user
  * sees is a locked door belonging to a stranger.

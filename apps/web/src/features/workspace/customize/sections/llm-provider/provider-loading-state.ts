@@ -1,6 +1,6 @@
 export function isProviderStateLoading(input: {
-  projectDetailLoading: boolean;
+  workspaceDetailLoading: boolean;
   secretsLoading: boolean;
 }): boolean {
-  return input.projectDetailLoading || input.secretsLoading;
+  return input.workspaceDetailLoading || input.secretsLoading;
 }

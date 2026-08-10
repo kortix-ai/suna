@@ -36,11 +36,11 @@ describe('gatewayModelCatalog — served catalog', () => {
 
     const managedOnly = gatewayModelCatalog(undefined);
     expect(managedOnly.auto).toBeUndefined();
-    // anonymous = managed-only; with a project, BYOK + codex widen the catalog
+    // anonymous = managed-only; with a workspace, BYOK + codex widen the catalog
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(managedOnly).length);
   });
 
-  test('project catalog advertises the GPT-5.6 Codex family', () => {
+  test('workspace catalog advertises the GPT-5.6 Codex family', () => {
     expect(full['codex/gpt-5.6-sol']).toMatchObject({
       name: 'GPT-5.6 Sol (ChatGPT)',
       reasoning: true,

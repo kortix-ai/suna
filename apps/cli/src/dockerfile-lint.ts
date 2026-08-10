@@ -1,5 +1,5 @@
 /**
- * Static lint for a project's sandbox Dockerfile — the pre-push gate.
+ * Static lint for a workspace's sandbox Dockerfile — the pre-push gate.
  *
  * `kortix validate` used to read kortix.yaml and stop there: every constraint
  * a sandbox Dockerfile has to satisfy was only discovered by the CLOUD builder,
@@ -205,7 +205,7 @@ export function lintDockerfile(text: string, opts: LintDockerfileOpts): Manifest
         message:
           `\`${ins.keyword} ${src}\` reads from the build context, but your repo is NOT in it — ` +
           `the cloud build fails with "Path does not exist: …/${src.replace(/^\.\//, '')}". Kortix ` +
-          `stages only its own artifacts there; your project source is git-cloned to /workspace ` +
+          `stages only its own artifacts there; your workspace source is git-cloned to /workspace ` +
           `when a session boots, so the image never bakes it in. Read it from /workspace at ` +
           `runtime, inline it with a RUN, or copy it from an earlier stage (\`COPY --from=<stage>\`).`,
       });

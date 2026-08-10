@@ -8,7 +8,32 @@ const WORKSPACE_KEYS: Readonly<Record<string, string>> = {
   effective_project_role: 'effective_workspace_role',
   project: 'workspace',
   projects: 'workspaces',
+  project_spend: 'workspace_spend',
+  projectDefault: 'workspaceDefault',
 };
+
+const PROJECT_VALUE_KEYS = new Set([
+  'authorization_strategy',
+  'authorizationStrategy',
+  'connectionOwnerType',
+  'kind',
+  'mode',
+  'owner_type',
+  'policy_source',
+  'scope',
+  'source',
+  'visibility',
+]);
+
+const HUMAN_TEXT_KEYS = new Set(['error', 'message', 'title']);
+
+function workspaceHumanText(value: string): string {
+  return value
+    .replaceAll('Projects', 'Workspaces')
+    .replaceAll('projects', 'workspaces')
+    .replaceAll('Project', 'Workspace')
+    .replaceAll('project', 'workspace');
+}
 
 export function toWorkspacePayload(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(toWorkspacePayload);
@@ -20,9 +45,15 @@ export function toWorkspacePayload(value: unknown): unknown {
     const workspaceKey = WORKSPACE_KEYS[key] ?? key;
     if (workspaceKey !== key && Object.hasOwn(source, workspaceKey)) continue;
     target[workspaceKey] =
-      workspaceKey === 'dashboard_url' && typeof child === 'string'
-        ? child.replace('/projects/', '/workspaces/')
-        : toWorkspacePayload(child);
+      PROJECT_VALUE_KEYS.has(key) && child === 'project'
+        ? 'workspace'
+        : key === 'defaultModelSource' && child === 'project'
+          ? 'workspace'
+        : workspaceKey === 'dashboard_url' && typeof child === 'string'
+          ? child.replace('/projects/', '/workspaces/')
+        : HUMAN_TEXT_KEYS.has(workspaceKey) && typeof child === 'string'
+          ? workspaceHumanText(child)
+          : toWorkspacePayload(child);
   }
   return target;
 }

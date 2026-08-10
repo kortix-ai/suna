@@ -4,17 +4,17 @@ import {
   type ConfigEntity,
   ConfigEntityView,
 } from '@/features/workspace/customize/sections/component/config-entity-view';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import { ProhibitIcon as SquareSlash } from '@phosphor-icons/react';
 
 type Command = ConfigEntity;
 
-export function CommandsView({ projectId }: { projectId: string }) {
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_COMMAND_WRITE).allowed === true;
+export function CommandsView({ workspaceId }: { workspaceId: string }) {
+  const canWrite = useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_COMMAND_WRITE).allowed === true;
   return (
     <ConfigEntityView<Command>
-      projectId={projectId}
+      workspaceId={workspaceId}
       kind="command"
       noun="command"
       layout="split"

@@ -7,7 +7,7 @@ describe("workspaceCompatibilityRoute", () => {
     expect(
       workspaceCompatibilityRoute(
         "GET",
-        "/v1/projects/:projectId/sessions/:sessionId",
+        "/v1/projects/:workspaceId/sessions/:sessionId",
       ),
     ).toBe("GET /v1/workspaces/:*/sessions/:*");
   });

@@ -61,19 +61,19 @@ mock.module('../../billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => false,
 }));
 
-mock.module('../../projects/secrets', () => ({
-  decryptProjectSecret: (_projectId: string, value: string) => value,
-  encryptProjectSecret: (_projectId: string, value: string) => value,
-  getProjectSecretValue: async () => 'operators-own-anthropic-key',
-  getProjectSecretValueForConsumer: async () => 'operators-own-anthropic-key',
-  resolveProjectSecretsForConsumer: async (input: { name: string }) => [
+mock.module('../../workspaces/secrets', () => ({
+  decryptWorkspaceSecret: (_workspaceId: string, value: string) => value,
+  encryptWorkspaceSecret: (_workspaceId: string, value: string) => value,
+  getWorkspaceSecretValue: async () => 'operators-own-anthropic-key',
+  getWorkspaceSecretValueForConsumer: async () => 'operators-own-anthropic-key',
+  resolveWorkspaceSecretsForConsumer: async (input: { name: string }) => [
     { identifier: input.name, value: 'operators-own-anthropic-key' },
   ],
-  listProjectSecrets: async () => ({}),
-  listProjectSecretsForUser: async () => ({}),
-  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
-  listProjectSecretNamesForConsumer: async () => [],
-  listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listWorkspaceSecrets: async () => ({}),
+  listWorkspaceSecretsForUser: async () => ({}),
+  listWorkspaceSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listWorkspaceSecretNamesForConsumer: async () => [],
+  listWorkspaceSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   projectSecretsRevision: () => 'empty',
 }));
 
@@ -140,7 +140,7 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
   test('a request explicitly naming a managed model resolves to NO candidates — never a silent fallback to Kortix credits', async () => {
     await expect(
       resolveCandidates(
-        { userId: 'u-managed', accountId: 'a-managed', projectId: 'p-managed' },
+        { userId: 'u-managed', accountId: 'a-managed', workspaceId: 'p-managed' },
         'claude-sonnet-4.6',
       ),
     ).rejects.toMatchObject({
@@ -153,7 +153,7 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
 
   test('a BYOK request still works on its own key, but gets NO managed fallback appended', async () => {
     const candidates = await resolveCandidates(
-      { userId: 'u-byok', accountId: 'a-byok', projectId: 'p-byok' },
+      { userId: 'u-byok', accountId: 'a-byok', workspaceId: 'p-byok' },
       'anthropic/claude-opus-4-8',
     );
     expect(candidates).toHaveLength(1);

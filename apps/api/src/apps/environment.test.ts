@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { ResolvedProjectSecret } from '../projects/secrets';
+import type { ResolvedWorkspaceSecret } from '../workspaces/secrets';
 import { resolveAppRuntimeEnvironment } from './environment';
 
-function secret(identifier: string, key: string, value: string): ResolvedProjectSecret {
+function secret(identifier: string, key: string, value: string): ResolvedWorkspaceSecret {
   return {
     secretId: `secret-${identifier}`,
     identifier,

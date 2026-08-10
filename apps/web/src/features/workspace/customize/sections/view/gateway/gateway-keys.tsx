@@ -41,8 +41,8 @@ import {
   useCreateGatewayKey,
   useGatewayKeys,
   useRevokeGatewayKey,
-} from '@/hooks/projects/use-project-gateway';
-import type { CreatedGatewayKey } from '@/lib/projects-gateway-client';
+} from '@/hooks/workspaces/use-workspace-gateway';
+import type { CreatedGatewayKey } from '@/lib/workspaces-gateway-client';
 
 function fmtDate(s: string | null): string {
   if (!s) return 'never';
@@ -54,18 +54,18 @@ function fmtDate(s: string | null): string {
 }
 
 export function GatewayKeys({
-  projectId,
+  workspaceId,
   canWrite = false,
   onViewModels,
 }: {
-  projectId: string;
+  workspaceId: string;
   canWrite?: boolean;
   /** Jump to the Providers/Models tab from the reveal dialog's reference panel. */
   onViewModels?: () => void;
 }) {
-  const { data, isError } = useGatewayKeys(projectId);
-  const createKey = useCreateGatewayKey(projectId);
-  const revokeKey = useRevokeGatewayKey(projectId);
+  const { data, isError } = useGatewayKeys(workspaceId);
+  const createKey = useCreateGatewayKey(workspaceId);
+  const revokeKey = useRevokeGatewayKey(workspaceId);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [created, setCreated] = useState<CreatedGatewayKey | null>(null);
@@ -107,7 +107,7 @@ export function GatewayKeys({
                 <span className="text-muted-foreground font-normal"> ({keys.length})</span>
               </Label>
               <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                Project-scoped keys for calling the gateway from external apps — every request is
+                Workspace-scoped keys for calling the gateway from external apps — every request is
                 logged and billed here.
               </p>
             </div>
@@ -123,7 +123,7 @@ export function GatewayKeys({
               icon={KeyRound}
               size="sm"
               title="No keys yet"
-              description="Create a project-scoped key to call the gateway from outside a Kortix session."
+              description="Create a workspace-scoped key to call the gateway from outside a Kortix session."
               action={
                 canWrite ? (
                   <Button variant="outline" size="sm" onClick={() => setCreating(true)}>

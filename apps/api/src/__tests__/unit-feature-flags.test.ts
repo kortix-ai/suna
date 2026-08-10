@@ -10,7 +10,7 @@ import {
   resolveFeatureFlag,
   resolveFeatureFlags,
 } from '../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
+import { workspaceLlmGatewayEnabled } from '../llm-gateway/enablement';
 
 const STABILITIES = ['experimental', 'beta', 'stable'];
 const ENFORCEMENTS = ['routes', 'behavioral', 'ui-only'];
@@ -148,7 +148,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
       available,
     );
     expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(false);
-    expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
+    expect(workspaceLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
   });
 
   test('llm_gateway fleet default rolls all projects on while the kill switch and project-off override still win', () => {
@@ -158,7 +158,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
       config.LLM_GATEWAY_ENABLED = false;
       config.LLM_GATEWAY_DEFAULT_ENABLED = true;
       expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
-      expect(projectLlmGatewayEnabled({})).toBe(false);
+      expect(workspaceLlmGatewayEnabled({})).toBe(false);
 
       config.LLM_GATEWAY_ENABLED = true;
       config.LLM_GATEWAY_DEFAULT_ENABLED = false;
@@ -166,11 +166,11 @@ describe('resolveFeatureFlag — explicit override wins', () => {
 
       config.LLM_GATEWAY_DEFAULT_ENABLED = true;
       expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(true);
-      expect(projectLlmGatewayEnabled({})).toBe(true);
+      expect(workspaceLlmGatewayEnabled({})).toBe(true);
       expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(
         false,
       );
-      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(false);
+      expect(workspaceLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(false);
 
       // The kill switch also beats an explicit project ON.
       config.LLM_GATEWAY_ENABLED = false;

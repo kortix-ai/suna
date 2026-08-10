@@ -9,8 +9,8 @@ import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { upsertProjectSecret } from '@kortix/sdk';
-import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { upsertWorkspaceSecret } from '@kortix/sdk';
+import { qk, refreshWorkspaceProviderState } from '@kortix/sdk/react';
 import {
   CaretLeftIcon as ChevronLeft,
   ArrowSquareOutIcon as ExternalLink,
@@ -25,19 +25,19 @@ import { type FormEvent, useMemo, useState } from 'react';
 import { ChatGptSubscriptionConnect } from './chatgpt-subscription-connect';
 import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from './utils';
 
-// LLM provider credentials are ALWAYS project-wide. A per-user "Only me" key is
+// LLM provider credentials are ALWAYS workspace-wide. A per-user "Only me" key is
 // invisible to the LLM gateway's shared-row resolution, so every model turn
 // dies with "No upstream configured" while the picker still shows the provider
 // as connected (2026-07-07 prod incident). The server rejects personal
 // overrides for provider env vars; this form never offers the choice.
 
 export function ApiKeyConnectForm({
-  projectId,
+  workspaceId,
   provider,
   onBack,
   onConnected,
 }: {
-  projectId: string;
+  workspaceId: string;
   provider: LlmProviderEntry;
   onBack: () => void;
   onConnected: (providerId: string) => void;
@@ -52,7 +52,7 @@ export function ApiKeyConnectForm({
   const upsert = useMutation({
     mutationFn: async () => {
       for (const envVar of provider.envVars) {
-        await upsertProjectSecret(projectId, {
+        await upsertWorkspaceSecret(workspaceId, {
           name: envVar,
           value: values[envVar] ?? '',
           strategy: 'broker',
@@ -62,8 +62,8 @@ export function ApiKeyConnectForm({
     },
     onSuccess: () => {
       successToast(`${provider.label} connected`);
-      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-      refreshProjectProviderState(queryClient, projectId, { expectProviderId: provider.id });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.secrets(workspaceId) });
+      refreshWorkspaceProviderState(queryClient, workspaceId, { expectProviderId: provider.id });
       onConnected(provider.id);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),
@@ -116,7 +116,7 @@ export function ApiKeyConnectForm({
       </div>
 
       {provider.id === 'openai' && (
-        <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
+        <ChatGptSubscriptionConnect workspaceId={workspaceId} onConnected={onConnected} />
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -154,7 +154,7 @@ export function ApiKeyConnectForm({
           </FieldGroup>
 
           <FieldDescription className="text-xs">
-            Project-wide — every member of this project can use this provider.
+            Workspace-wide — every member of this workspace can use this provider.
           </FieldDescription>
 
           {provider.helpUrl && helpHostname && (

@@ -537,7 +537,7 @@ function UnreachableView({
                 ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
                 : degraded
                   ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
-                  : 'This workspace is unreachable. Return to projects and open or create another session.'}
+                  : 'This workspace is unreachable. Switch workspaces and open or create another session.'}
         </p>
         {sandboxId ? (
           <p className="text-muted-foreground/35 font-mono text-xs">
@@ -577,7 +577,7 @@ function UnreachableView({
           className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
         >
           <ArrowLeftRight className="h-3 w-3" />
-          Projects
+          Workspaces
         </button>
       </div>
     </>
@@ -615,7 +615,7 @@ function ReconnectPill({
 
         <Button type="button" onClick={onSwitch} variant="muted" size="xs" className="rounded-full">
           <ArrowLeftRight className="h-2.5 w-2.5" />
-          Projects
+          Workspaces
         </Button>
       </div>
     </div>
@@ -646,7 +646,7 @@ function HealthPill({
 
         <Button type="button" onClick={onSwitch} variant="muted" size="xs" className="rounded-full">
           <ArrowLeftRight className="h-2.5 w-2.5" />
-          Projects
+          Workspaces
         </Button>
       </div>
     </div>

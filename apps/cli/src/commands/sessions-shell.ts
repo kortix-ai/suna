@@ -12,7 +12,7 @@ import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat, resolveRunningSessionId, type ResolvedSession } from './sessions-chat.ts';
 
-type CtxOpts = { projectArg?: string; hostArg?: string };
+type CtxOpts = { workspaceArg?: string; hostArg?: string };
 
 const PTY_ENV = { TERM: 'xterm-256color', COLORTERM: 'truecolor' } as const;
 
@@ -48,7 +48,7 @@ always start a fresh shell instead. Behaves like ssh — Ctrl+C/Ctrl+D go to
 the remote shell, not this CLI; type \`exit\` or close the terminal to leave.
 
   --new            Start a brand-new shell instead of reattaching.
-  --project <id>   Pin this project id (skips the cross-host scan).
+  --workspace <id>   Pin this workspace id (skips the cross-host scan).
   --host <name>    Pin this Kortix host (skips the cross-host scan).
   -h, --help       Show this help.
 
@@ -63,10 +63,10 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
     return 0;
   }
 
-  let projectArg: string | undefined;
+  let workspaceArg: string | undefined;
   let hostArg: string | undefined;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    workspaceArg = takeFlagValue(rest, ['--workspace', '--project']);
     hostArg = takeFlagValue(rest, ['--host']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
@@ -85,7 +85,7 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const opts: CtxOpts = { projectArg, hostArg };
+  const opts: CtxOpts = { workspaceArg, hostArg };
   const sessionId = await resolveRunningSessionId(positional[0], opts, 'Pick a session to open a shell in');
   if (!sessionId) return 1;
 
@@ -99,7 +99,7 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
   try {
     runtimeUrl = await withKortixScope(resolved.auth, async () => {
       const ready = await kortixFromAuth(resolved.auth)
-        .session(resolved.ctx.projectId, resolved.session.session_id)
+        .session(resolved.ctx.workspaceId, resolved.session.session_id)
         .ensureReady();
       return ready.runtimeUrl;
     });

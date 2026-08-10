@@ -1,6 +1,6 @@
 'use client';
 
-import { SandboxTemplateForm } from '@/components/projects/sandbox-template-form';
+import { SandboxTemplateForm } from '@/components/workspaces/sandbox-template-form';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -20,26 +20,26 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { useWorkspaceManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { useSandboxRecovery } from '@/features/workspace/workspace-sidebar/footer/workspace-sandbox-alert';
 import {
   type FailedBuildRelevance,
   describeFailedBuild,
   formatSandboxProviders,
-} from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+} from '@/features/workspace/workspace-sidebar/footer/sandbox-alert-state';
 import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import {
-  type ProjectSnapshotBuild,
-  type ProjectSnapshotStatus,
+  type WorkspaceSnapshotBuild,
+  type WorkspaceSnapshotStatus,
   type SandboxRuntimeStatus,
   type SandboxTemplate,
   type SnapshotErrorCategory,
   buildSandboxTemplate,
   deleteSandboxTemplate,
-  getProject,
-  listProjectSnapshots,
+  getWorkspace,
+  listWorkspaceSnapshots,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -95,9 +95,9 @@ const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   unknown: 'Build failed',
 };
 
-const BUILD_SOURCE_LABEL: Record<NonNullable<ProjectSnapshotBuild['source']>, string> = {
+const BUILD_SOURCE_LABEL: Record<NonNullable<WorkspaceSnapshotBuild['source']>, string> = {
   'session-start': 'Session start',
-  'project-create': 'Project created',
+  'workspace-create': 'Workspace created',
   'cr-merge': 'Code review merge',
   manual: 'Manual rebuild',
   background: 'Background sync',
@@ -105,7 +105,7 @@ const BUILD_SOURCE_LABEL: Record<NonNullable<ProjectSnapshotBuild['source']>, st
 };
 
 const BUILD_STATUS_TILE: Record<
-  ProjectSnapshotStatus,
+  WorkspaceSnapshotStatus,
   {
     label: string;
     badgeVariant: 'success' | 'warning' | 'destructive';
@@ -182,7 +182,7 @@ function formatBuildDuration(startedAt: string, finishedAt: string | null): stri
   return `${hours}h`;
 }
 
-export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean {
+export function isWorkspaceAcceleratorBuild(build: WorkspaceSnapshotBuild): boolean {
   return build.snapshot_name.startsWith('kortix-ppwarm-');
 }
 
@@ -208,10 +208,10 @@ export function BuildRow({
   providerMode,
   relevance,
 }: {
-  build: ProjectSnapshotBuild;
-  /** Only reveal the resolved provider when the project has explicitly pinned one. */
+  build: WorkspaceSnapshotBuild;
+  /** Only reveal the resolved provider when the workspace has explicitly pinned one. */
   providerMode: SandboxProviderMode;
-  /** How this build relates to the image the project boots today. */
+  /** How this build relates to the image the workspace boots today. */
   relevance?: FailedBuildRelevance | null;
 }) {
   const status = BUILD_STATUS_TILE[build.status];
@@ -221,7 +221,7 @@ export function BuildRow({
   const sourceLabel = build.source ? BUILD_SOURCE_LABEL[build.source] : null;
   const timestamp = formatRelative(build.finished_at ?? build.started_at);
   const hasErrorDetails = build.status === 'failed' && !!build.error;
-  const accelerator = isProjectAcceleratorBuild(build);
+  const accelerator = isWorkspaceAcceleratorBuild(build);
 
   const row = (
     <>
@@ -326,7 +326,7 @@ function InlinePanelEmpty({ message, action }: { message: string; action?: React
 
 /**
  * Shown only when a failure still bites — i.e. the API's derived state is
- * `blocked` (nothing bootable anywhere this project routes) or `degraded` (some
+ * `blocked` (nothing bootable anywhere this workspace routes) or `degraded` (some
  * routable providers are fine, others aren't).
  *
  * It deliberately never renders the newest failed row on its own. A build row is
@@ -378,7 +378,7 @@ function SandboxStatusBanner({
               </p>
               <p className="text-muted-foreground text-sm text-balance">
                 {blocked
-                  ? 'The image this project boots from failed to build, and no working copy is available. Every new session retries it and hits the same error.'
+                  ? 'The image this workspace boots from failed to build, and no working copy is available. Every new session retries it and hits the same error.'
                   : `The image is ready on ${formatSandboxProviders(status.ready_providers)} but failing on ${formatSandboxProviders(status.failed_providers)}. Sessions routed there won’t start.`}
               </p>
               {failure ? (
@@ -447,14 +447,14 @@ function formatRelative(input: string | null | undefined): string {
 }
 
 function TemplateRow({
-  projectId,
+  workspaceId,
   template,
   canManage,
   onEdit,
   providerMode,
   selectedProvider,
 }: {
-  projectId: string;
+  workspaceId: string;
   template: SandboxTemplate;
   canManage: boolean;
   onEdit: (tpl: SandboxTemplate) => void;
@@ -463,7 +463,7 @@ function TemplateRow({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const { version: manifestVersion } = useProjectManifestVersion(projectId);
+  const { version: manifestVersion } = useWorkspaceManifestVersion(workspaceId);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const templateId = template.template_id ?? null;
   const requireTemplateId = () => {
@@ -471,19 +471,19 @@ function TemplateRow({
     return templateId;
   };
   const buildMut = useMutation({
-    mutationFn: () => buildSandboxTemplate(projectId, requireTemplateId()),
+    mutationFn: () => buildSandboxTemplate(workspaceId, requireTemplateId()),
     onSuccess: () => {
       successToast(`Rebuild started for "${template.name}"`);
-      queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.snapshots(workspaceId) });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to start build'),
   });
   const deleteMut = useMutation({
-    mutationFn: () => deleteSandboxTemplate(projectId, requireTemplateId()),
+    mutationFn: () => deleteSandboxTemplate(workspaceId, requireTemplateId()),
     onSuccess: () => {
       successToast(`Deleted "${template.name}"`);
-      queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
-      queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.snapshots(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.sandboxes(workspaceId) });
       setConfirmDelete(false);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to delete template'),
@@ -491,7 +491,7 @@ function TemplateRow({
 
   const Icon = template.is_default ? Container : template.has_image ? Package : FileCode;
   const sub = template.is_default
-    ? 'Platform default · shared by every project'
+    ? 'Platform default · shared by every workspace'
     : template.has_image
       ? `Image: ${template.image}`
       : `Dockerfile: ${template.dockerfile_path}`;
@@ -600,7 +600,7 @@ function TemplateRow({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={`Delete sandbox template "${template.name}"?`}
-        description="This removes the template from the project. Sessions already using it are unaffected."
+        description="This removes the template from the workspace. Sessions already using it are unaffected."
         confirmLabel="Delete"
         confirmVariant="destructive"
         isPending={deleteMut.isPending}
@@ -610,19 +610,19 @@ function TemplateRow({
   );
 }
 
-export function SandboxView({ projectId }: { projectId: string }) {
-  const projectQuery = useQuery({
-    queryKey: qk.project.summary(projectId),
-    queryFn: () => getProject(projectId),
+export function SandboxView({ workspaceId }: { workspaceId: string }) {
+  const workspaceQuery = useQuery({
+    queryKey: qk.workspace.summary(workspaceId),
+    queryFn: () => getWorkspace(workspaceId),
     ...contract('config'),
   });
-  const { version: manifestVersion } = useProjectManifestVersion(projectId);
-  const canManage = projectQuery.data?.effective_project_role === 'manager';
+  const { version: manifestVersion } = useWorkspaceManifestVersion(workspaceId);
+  const canManage = workspaceQuery.data?.effective_workspace_role === 'manager';
 
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const snapshotsQuery = useQuery({
-    queryKey: qk.project.snapshots(projectId),
-    queryFn: () => listProjectSnapshots(projectId),
+    queryKey: qk.workspace.snapshots(workspaceId),
+    queryFn: () => listWorkspaceSnapshots(workspaceId),
     ...contract('config'),
     refetchInterval: (query) => {
       const data = query.state.data;
@@ -638,7 +638,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
       return anyBuilding ? 5_000 : false;
     },
   });
-  const { fixWithAgent, retry } = useSandboxRecovery(projectId);
+  const { fixWithAgent, retry } = useSandboxRecovery(workspaceId);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SandboxTemplate | null>(null);
@@ -649,8 +649,8 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const providerMode: SandboxProviderMode =
     data?.provider_mode === 'pinned' ? 'pinned' : 'automatic';
   const selectedProvider = data?.selected_provider ?? null;
-  const templateBuilds = builds.filter((build) => !isProjectAcceleratorBuild(build));
-  const acceleratorBuilds = builds.filter(isProjectAcceleratorBuild);
+  const templateBuilds = builds.filter((build) => !isWorkspaceAcceleratorBuild(build));
+  const acceleratorBuilds = builds.filter(isWorkspaceAcceleratorBuild);
   const status = data?.status ?? null;
   // Only these two states mean a user is actually affected right now. Everything
   // else — including a failed build whose image the provider has since brought
@@ -773,7 +773,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
                       {templates.map((t) => (
                         <TemplateRow
                           key={t.template_id ?? `tpl-${t.slug}`}
-                          projectId={projectId}
+                          workspaceId={workspaceId}
                           template={t}
                           canManage={canManage}
                           onEdit={openEditForm}
@@ -823,13 +823,13 @@ export function SandboxView({ projectId }: { projectId: string }) {
 
                 {acceleratorBuilds.length > 0 ? (
                   <div className="space-y-2">
-                    <Label>Project accelerator</Label>
+                    <Label>Workspace accelerator</Label>
                     <InfoBanner
                       tone="neutral"
                       icon={SparklesSolid}
                       title="Optional repository acceleration"
                     >
-                      A project accelerator preloads this repository for a later session. A missing
+                      A workspace accelerator preloads this repository for a later session. A missing
                       or failed accelerator never blocks a session. Kortix uses the shared session
                       runtime and clones the repository into{' '}
                       <code className="font-mono">/workspace</code>.
@@ -846,7 +846,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
           </div>
 
           <SandboxTemplateForm
-            projectId={projectId}
+            workspaceId={workspaceId}
             open={formOpen}
             onOpenChange={setFormOpen}
             template={editingTemplate}

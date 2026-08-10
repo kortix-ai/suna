@@ -7,17 +7,17 @@ import {
   sanitizeAuthReturnUrl,
 } from '@/lib/auth/return-url';
 import {
-  LAST_PROJECT_COOKIE,
+  LAST_WORKSPACE_COOKIE,
   POST_AUTH_INTENT_COOKIE,
   POST_AUTH_INTENT_MAX_AGE,
-  PROJECT_LANDING_PATH,
-  parseLastProjectForUser,
-  projectPathFromId,
+  WORKSPACE_LANDING_PATH,
+  parseLastWorkspaceForUser,
+  workspacePathFromId,
 } from '@/lib/onboarding/landing-destination';
-import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
-import { fetchAccountStateWithToken } from '@kortix/sdk';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
+import { fetchAccountStateWithToken } from '@kortix/sdk';
+import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -238,7 +238,7 @@ export async function GET(request: NextRequest) {
             // more: it used to await accounts (8s) + projects (8s) + a managed
             // git repo create AND a full starter push (90s) before the browser
             // received any redirect at all, so a fresh signup stared at a blank
-            // callback page for the whole provision. `PROJECT_LANDING_PATH`
+            // callback page for the whole provision. `WORKSPACE_LANDING_PATH`
             // now paints instantly and does that work behind the real UI.
             if (accountState && !accountHasAppAccess(accountState)) {
               finalDestination = '/accounts';
@@ -251,18 +251,18 @@ export async function GET(request: NextRequest) {
         // Returning users skip the landing door's resolve step entirely: the
         // browser already told us which project they had open last. Reading a
         // cookie costs nothing, so this is a strictly free hop to remove.
-        if (finalDestination === PROJECT_LANDING_PATH) {
+        if (finalDestination === WORKSPACE_LANDING_PATH) {
           // Scoped to THIS user. The cookie survives sign-out, so an unscoped
           // read sent the next account to sign in on this browser straight into
           // the previous account's project — i.e. onto "Request access to this
           // project", on every login.
-          const lastProjectPath = projectPathFromId(
-            parseLastProjectForUser(
-              request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+          const lastWorkspacePath = workspacePathFromId(
+            parseLastWorkspaceForUser(
+              request.cookies.get(LAST_WORKSPACE_COOKIE)?.value,
               data.user.id,
             ),
           );
-          if (lastProjectPath) finalDestination = lastProjectPath;
+          if (lastWorkspacePath) finalDestination = lastWorkspacePath;
         }
       }
 
@@ -276,7 +276,7 @@ export async function GET(request: NextRequest) {
       // the landing door with whatever referrer the magic link / IdP hop
       // carried — usually a cross-origin one. The marker is what lets the door
       // provision a first project anyway; without it a webmail signup is
-      // demoted to the projects list. See navigationMayCreateProject.
+      // demoted to the workspaces list. See navigationMayCreateWorkspace.
       response.cookies.set(POST_AUTH_INTENT_COOKIE, '1', {
         maxAge: POST_AUTH_INTENT_MAX_AGE,
         path: '/',

@@ -17,20 +17,20 @@ export function effectiveChoice(
 ): PolicyChoice {
   const hit = effective.find((e) => e.path === path);
   if (!hit) return 'default';
-  return hit.source === 'connector' || hit.source === 'project' ? hit.action : 'default';
+  return hit.source === 'connector' || hit.source === 'workspace' ? hit.action : 'default';
 }
 
 /**
- * Project-scope rules are evaluated first and win
+ * Workspace-scope rules are evaluated first and win
  * (`resolveEffectiveAction`, apps/api/src/connectors/policy.ts:342). Editing the
  * connector-scope rule under one would change nothing, so the control is
  * disabled and says where the rule actually lives.
  */
-export function isLockedByProject(
+export function isLockedByWorkspace(
   path: string,
   effective: readonly ConnectorEffectivePolicy[],
 ): boolean {
-  return effective.find((e) => e.path === path)?.source === 'project';
+  return effective.find((e) => e.path === path)?.source === 'workspace';
 }
 
 /**
@@ -139,7 +139,7 @@ export function previewEffective(
 ): ConnectorEffectivePolicy[] {
   const targets = new Set(paths);
   const touched = (entry: ConnectorEffectivePolicy) =>
-    targets.has(entry.path) && entry.source !== 'project';
+    targets.has(entry.path) && entry.source !== 'workspace';
   if (choice === 'default') return effective.filter((entry) => !touched(entry));
   return effective.map((entry) =>
     touched(entry) ? { path: entry.path, action: choice, source: 'connector' as const } : entry,

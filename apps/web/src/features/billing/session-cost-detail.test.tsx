@@ -7,8 +7,8 @@ import { SessionCostDetailContent } from './session-cost-detail';
 
 const detail = {
   session_id: 'session-detail',
-  project_id: 'project-detail',
-  project_name: 'Research workflows',
+  workspace_id: 'project-detail',
+  workspace_name: 'Research workflows',
   owner_id: 'owner-1',
   owner_type: 'user',
   owner_name: 'Session owner',

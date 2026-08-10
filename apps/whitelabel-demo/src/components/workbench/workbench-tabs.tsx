@@ -33,11 +33,11 @@ import { toast } from 'sonner';
 /** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
 export function WorkbenchTabs({
   session,
-  projectId,
+  workspaceId,
   sessionId,
 }: {
   session: UseSessionResult;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   return (
@@ -58,7 +58,7 @@ export function WorkbenchTabs({
         <Thread session={session} />
       </TabsContent>
       <TabsContent value="files" className="min-h-0 flex-1 overflow-hidden p-4">
-        <FilesPanel projectId={projectId} />
+        <FilesPanel workspaceId={workspaceId} />
       </TabsContent>
       {/* What this session can still change. Shown as a first-class tab rather
           than a settings footnote: 'can I switch the agent / secrets now?' is a
@@ -69,14 +69,14 @@ export function WorkbenchTabs({
           <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
             Overrides are set when a session starts. These are the ones you can still move.
           </p>
-          <SessionScope projectId={projectId} sessionId={sessionId} />
+          <SessionScope workspaceId={workspaceId} sessionId={sessionId} />
         </div>
       </TabsContent>
       <TabsContent value="changes" className="min-h-0 flex-1 overflow-hidden p-4">
-        <ChangesPanel projectId={projectId} sessionId={sessionId} />
+        <ChangesPanel workspaceId={workspaceId} sessionId={sessionId} />
       </TabsContent>
       <TabsContent value="preview" className="min-h-0 flex-1 overflow-hidden p-4">
-        <PreviewPanel projectId={projectId} sessionId={sessionId} />
+        <PreviewPanel workspaceId={workspaceId} sessionId={sessionId} />
       </TabsContent>
     </Tabs>
   );
@@ -101,9 +101,9 @@ function Thread({ session: c }: { session: UseSessionResult }) {
   // recover: restart() wakes the box and re-arms useSession's /start poll.
   const qc = useQueryClient();
   const restart = useMutation({
-    mutationFn: () => kortix.session(c.projectId, c.sessionId).restart(),
+    mutationFn: () => kortix.session(c.workspaceId, c.sessionId).restart(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.sessionStart(c.projectId, c.sessionId) });
+      qc.invalidateQueries({ queryKey: qk.sessionStart(c.workspaceId, c.sessionId) });
       toast.success('Reconnecting the runtime…');
     },
     onError: () => toast.error('Could not reconnect the runtime'),
@@ -272,7 +272,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
               </p>
               <div className="mt-2">
                 <NewSessionDialog
-                  projectId={c.projectId}
+                  workspaceId={c.workspaceId}
                   initialAgent={agentSwitch.requestedAgent}
                   trigger={
                     <Button size="sm" variant="secondary" className="h-7 gap-1.5">
@@ -298,7 +298,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             }
             commands={c.commands}
             onCommand={c.runCommand}
-            footer={<ScopeBar projectId={c.projectId} sessionId={c.sessionId} />}
+            footer={<ScopeBar workspaceId={c.workspaceId} sessionId={c.sessionId} />}
             toolbar={
               <div className="flex items-center gap-0.5">
                 <ModelPicker models={c.models} value={c.picks.model} onChange={c.picks.setModel} />

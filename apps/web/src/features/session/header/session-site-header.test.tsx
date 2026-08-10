@@ -18,7 +18,7 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('peekLeave');
   });
 
-  // The collapse control lives in the panel's own header now (ProjectSidebar)
+  // The collapse control lives in the panel's own header now (WorkspaceSidebar)
   // and the desktop shell draws its own opener in the title-bar band, so this
   // one exists purely to bring a hidden panel back on the web. The rule —
   // docked-open, mobile, and desktop-shell clauses — is pinned as a truth
@@ -97,7 +97,7 @@ describe('SessionSiteHeader session title', () => {
 describe('SessionSiteHeader transcript ownership', () => {
   test('keeps the export modal on the canonical project-session cache scope', () => {
     expect(source).toContain(
-      'kortixSessionScope={isProjectSession ? `${projectId}/${projectSessionId}` : undefined}',
+      'kortixSessionScope={isWorkspaceSession ? `${workspaceId}/${workspaceSessionId}` : undefined}',
     );
     expect(exportModalSource).toContain('useSessionSync(sessionId, { kortixSessionScope })');
   });
@@ -240,11 +240,11 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
 describe('SessionConfigIndicator wiring', () => {
   test('the chip gets the Kortix session id, never the OpenCode one', () => {
     // The header holds both. `sessionId` is the OpenCode id used by the
-    // changes/approvals chips; the config routes are keyed on the project
+    // changes/approvals chips; the config routes are keyed on the workspace
     // session row's UUID, and passing the wrong one 400s on the id regex.
     const mount = source.split('<SessionConfigIndicator')[1]?.split('/>')[0];
     expect(mount).toBeTruthy();
-    expect(mount).toContain('sessionId={projectSessionId!}');
+    expect(mount).toContain('sessionId={workspaceSessionId!}');
     expect(mount).not.toContain('sessionId={sessionId}');
   });
 

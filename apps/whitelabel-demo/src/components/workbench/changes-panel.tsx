@@ -17,10 +17,10 @@ import { ChangeRequestsView } from './changes/change-requests-view';
 import { CommitsView } from './changes/commits-view';
 
 export function ChangesPanel({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   return (
@@ -40,13 +40,13 @@ export function ChangesPanel({
           value="commits"
           className="min-h-0 flex-1 overflow-hidden p-3 data-[state=inactive]:hidden"
         >
-          <CommitsView projectId={projectId} sessionId={sessionId} />
+          <CommitsView workspaceId={workspaceId} sessionId={sessionId} />
         </TabsContent>
         <TabsContent
           value="change-requests"
           className="min-h-0 flex-1 overflow-hidden p-3 data-[state=inactive]:hidden"
         >
-          <ChangeRequestsView projectId={projectId} sessionId={sessionId} />
+          <ChangeRequestsView workspaceId={workspaceId} sessionId={sessionId} />
         </TabsContent>
       </Tabs>
     </div>

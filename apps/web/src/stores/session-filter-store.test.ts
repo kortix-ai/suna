@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { EMPTY_LIST, useSessionFilterStore } from './session-filter-store';
 
 const EMPTY_STATE = {
-  groupByProject: {},
-  orderByProject: {},
-  statusFiltersByProject: {},
-  sourceFiltersByProject: {},
-  hiddenSectionsByProject: {},
-  collapsedSectionsByProject: {},
+  groupByWorkspace: {},
+  orderByWorkspace: {},
+  statusFiltersByWorkspace: {},
+  sourceFiltersByWorkspace: {},
+  hiddenSectionsByWorkspace: {},
+  collapsedSectionsByWorkspace: {},
 };
 
 beforeEach(() => {
@@ -19,14 +19,14 @@ describe('toggleStatusFilter', () => {
   test('adds then removes, never duplicates', () => {
     const { toggleStatusFilter } = useSessionFilterStore.getState();
     toggleStatusFilter('p1', 'running');
-    expect(useSessionFilterStore.getState().statusFiltersByProject.p1).toEqual(['running']);
+    expect(useSessionFilterStore.getState().statusFiltersByWorkspace.p1).toEqual(['running']);
 
     toggleStatusFilter('p1', 'running');
-    expect(useSessionFilterStore.getState().statusFiltersByProject.p1).toEqual([]);
+    expect(useSessionFilterStore.getState().statusFiltersByWorkspace.p1).toEqual([]);
 
     toggleStatusFilter('p1', 'running');
     toggleStatusFilter('p1', 'done');
-    expect(useSessionFilterStore.getState().statusFiltersByProject.p1).toEqual(['running', 'done']);
+    expect(useSessionFilterStore.getState().statusFiltersByWorkspace.p1).toEqual(['running', 'done']);
   });
 });
 
@@ -34,10 +34,10 @@ describe('toggleSourceFilter', () => {
   test('adds then removes, never duplicates', () => {
     const { toggleSourceFilter } = useSessionFilterStore.getState();
     toggleSourceFilter('p1', 'slack');
-    expect(useSessionFilterStore.getState().sourceFiltersByProject.p1).toEqual(['slack']);
+    expect(useSessionFilterStore.getState().sourceFiltersByWorkspace.p1).toEqual(['slack']);
 
     toggleSourceFilter('p1', 'slack');
-    expect(useSessionFilterStore.getState().sourceFiltersByProject.p1).toEqual([]);
+    expect(useSessionFilterStore.getState().sourceFiltersByWorkspace.p1).toEqual([]);
   });
 });
 
@@ -45,10 +45,10 @@ describe('toggleSectionHidden', () => {
   test('adds then removes, never duplicates', () => {
     const { toggleSectionHidden } = useSessionFilterStore.getState();
     toggleSectionHidden('p1', 'recent');
-    expect(useSessionFilterStore.getState().hiddenSectionsByProject.p1).toEqual(['recent']);
+    expect(useSessionFilterStore.getState().hiddenSectionsByWorkspace.p1).toEqual(['recent']);
 
     toggleSectionHidden('p1', 'recent');
-    expect(useSessionFilterStore.getState().hiddenSectionsByProject.p1).toEqual([]);
+    expect(useSessionFilterStore.getState().hiddenSectionsByWorkspace.p1).toEqual([]);
   });
 });
 
@@ -56,10 +56,10 @@ describe('toggleSectionCollapsed', () => {
   test('adds then removes, never duplicates', () => {
     const { toggleSectionCollapsed } = useSessionFilterStore.getState();
     toggleSectionCollapsed('p1', 'recent');
-    expect(useSessionFilterStore.getState().collapsedSectionsByProject.p1).toEqual(['recent']);
+    expect(useSessionFilterStore.getState().collapsedSectionsByWorkspace.p1).toEqual(['recent']);
 
     toggleSectionCollapsed('p1', 'recent');
-    expect(useSessionFilterStore.getState().collapsedSectionsByProject.p1).toEqual([]);
+    expect(useSessionFilterStore.getState().collapsedSectionsByWorkspace.p1).toEqual([]);
   });
 });
 
@@ -76,12 +76,12 @@ describe('resetFilters', () => {
     useSessionFilterStore.getState().resetFilters('p1');
 
     const after = useSessionFilterStore.getState();
-    expect(after.statusFiltersByProject.p1).toEqual([]);
-    expect(after.sourceFiltersByProject.p1).toEqual([]);
-    expect(after.groupByProject.p1).toBe('source');
-    expect(after.orderByProject.p1).toBe('name');
-    expect(after.hiddenSectionsByProject.p1).toEqual(['recent']);
-    expect(after.collapsedSectionsByProject.p1).toEqual(['recent']);
+    expect(after.statusFiltersByWorkspace.p1).toEqual([]);
+    expect(after.sourceFiltersByWorkspace.p1).toEqual([]);
+    expect(after.groupByWorkspace.p1).toBe('source');
+    expect(after.orderByWorkspace.p1).toBe('name');
+    expect(after.hiddenSectionsByWorkspace.p1).toEqual(['recent']);
+    expect(after.collapsedSectionsByWorkspace.p1).toEqual(['recent']);
   });
 });
 
@@ -91,54 +91,54 @@ describe('collapseAllSections', () => {
     state.toggleSectionCollapsed('p1', 'existing');
 
     state.collapseAllSections('p1', ['today', 'yesterday']);
-    expect(useSessionFilterStore.getState().collapsedSectionsByProject.p1).toEqual([
+    expect(useSessionFilterStore.getState().collapsedSectionsByWorkspace.p1).toEqual([
       'today',
       'yesterday',
     ]);
 
     state.collapseAllSections('p1', []);
-    expect(useSessionFilterStore.getState().collapsedSectionsByProject.p1).toEqual([]);
+    expect(useSessionFilterStore.getState().collapsedSectionsByWorkspace.p1).toEqual([]);
   });
 });
 
 describe('setGroupMode / setOrderMode', () => {
   test('treats activity as the default grouping without persisting a redundant value', () => {
     const state = useSessionFilterStore.getState();
-    const groupMapRef = state.groupByProject;
+    const groupMapRef = state.groupByWorkspace;
 
     state.setGroupMode('p1', 'activity');
 
-    expect(useSessionFilterStore.getState().groupByProject).toBe(groupMapRef);
+    expect(useSessionFilterStore.getState().groupByWorkspace).toBe(groupMapRef);
   });
 
   test('no-op guard: setting the same value does not trigger a new object identity', () => {
     const state = useSessionFilterStore.getState();
     state.setGroupMode('p1', 'source');
-    const groupMapRef = useSessionFilterStore.getState().groupByProject;
+    const groupMapRef = useSessionFilterStore.getState().groupByWorkspace;
     state.setGroupMode('p1', 'source');
-    expect(useSessionFilterStore.getState().groupByProject).toBe(groupMapRef);
+    expect(useSessionFilterStore.getState().groupByWorkspace).toBe(groupMapRef);
 
     state.setOrderMode('p1', 'name');
-    const orderMapRef = useSessionFilterStore.getState().orderByProject;
+    const orderMapRef = useSessionFilterStore.getState().orderByWorkspace;
     state.setOrderMode('p1', 'name');
-    expect(useSessionFilterStore.getState().orderByProject).toBe(orderMapRef);
+    expect(useSessionFilterStore.getState().orderByWorkspace).toBe(orderMapRef);
   });
 });
 
-describe('defaults for an unknown project', () => {
+describe('defaults for an unknown workspace', () => {
   test('reads activity/activity/empty arrays', () => {
     const state = useSessionFilterStore.getState();
-    expect(state.groupByProject.unknown ?? 'activity').toBe('activity');
-    expect(state.orderByProject.unknown ?? 'activity').toBe('activity');
-    expect(state.statusFiltersByProject.unknown ?? []).toEqual([]);
-    expect(state.sourceFiltersByProject.unknown ?? []).toEqual([]);
-    expect(state.hiddenSectionsByProject.unknown ?? []).toEqual([]);
-    expect(state.collapsedSectionsByProject.unknown ?? []).toEqual([]);
+    expect(state.groupByWorkspace.unknown ?? 'activity').toBe('activity');
+    expect(state.orderByWorkspace.unknown ?? 'activity').toBe('activity');
+    expect(state.statusFiltersByWorkspace.unknown ?? []).toEqual([]);
+    expect(state.sourceFiltersByWorkspace.unknown ?? []).toEqual([]);
+    expect(state.hiddenSectionsByWorkspace.unknown ?? []).toEqual([]);
+    expect(state.collapsedSectionsByWorkspace.unknown ?? []).toEqual([]);
   });
 });
 
-describe('project isolation', () => {
-  test('two different projects do not leak into each other', () => {
+describe('workspace isolation', () => {
+  test('two different workspaces do not leak into each other', () => {
     const state = useSessionFilterStore.getState();
     state.toggleStatusFilter('p1', 'running');
     state.toggleSourceFilter('p1', 'slack');
@@ -146,13 +146,13 @@ describe('project isolation', () => {
     state.toggleSectionCollapsed('p1', 'recent');
 
     const after = useSessionFilterStore.getState();
-    expect(after.statusFiltersByProject.p2 ?? []).toEqual([]);
-    expect(after.sourceFiltersByProject.p2 ?? []).toEqual([]);
-    expect(after.groupByProject.p2 ?? 'activity').toBe('activity');
-    expect(after.collapsedSectionsByProject.p2 ?? []).toEqual([]);
+    expect(after.statusFiltersByWorkspace.p2 ?? []).toEqual([]);
+    expect(after.sourceFiltersByWorkspace.p2 ?? []).toEqual([]);
+    expect(after.groupByWorkspace.p2 ?? 'activity').toBe('activity');
+    expect(after.collapsedSectionsByWorkspace.p2 ?? []).toEqual([]);
 
     // p1 unaffected by reading p2
-    expect(after.statusFiltersByProject.p1).toEqual(['running']);
+    expect(after.statusFiltersByWorkspace.p1).toEqual(['running']);
   });
 });
 
@@ -171,22 +171,22 @@ describe('EMPTY_LIST — infinite-render-loop guard', () => {
 
   test('a bare [] fallback is NOT reference-stable — this is the bug being guarded', () => {
     const readWithBareFallback = () =>
-      useSessionFilterStore.getState().statusFiltersByProject.unseen ?? [];
+      useSessionFilterStore.getState().statusFiltersByWorkspace.unseen ?? [];
     // Two reads of the same absent key produce different references.
     expect(Object.is(readWithBareFallback(), readWithBareFallback())).toBe(false);
     // The shared constant does not.
     const readWithSharedFallback = () =>
-      useSessionFilterStore.getState().statusFiltersByProject.unseen ?? EMPTY_LIST;
+      useSessionFilterStore.getState().statusFiltersByWorkspace.unseen ?? EMPTY_LIST;
     expect(Object.is(readWithSharedFallback(), readWithSharedFallback())).toBe(true);
   });
 
-  test('every list map returns the identical reference for an absent project', () => {
+  test('every list map returns the identical reference for an absent workspace', () => {
     const s = useSessionFilterStore.getState();
     const reads = [
-      s.statusFiltersByProject.nobody ?? EMPTY_LIST,
-      s.sourceFiltersByProject.nobody ?? EMPTY_LIST,
-      s.hiddenSectionsByProject.nobody ?? EMPTY_LIST,
-      s.collapsedSectionsByProject.nobody ?? EMPTY_LIST,
+      s.statusFiltersByWorkspace.nobody ?? EMPTY_LIST,
+      s.sourceFiltersByWorkspace.nobody ?? EMPTY_LIST,
+      s.hiddenSectionsByWorkspace.nobody ?? EMPTY_LIST,
+      s.collapsedSectionsByWorkspace.nobody ?? EMPTY_LIST,
     ];
     for (const read of reads) expect(read).toBe(EMPTY_LIST);
   });

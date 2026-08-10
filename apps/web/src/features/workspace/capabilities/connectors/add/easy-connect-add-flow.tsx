@@ -13,7 +13,7 @@ import { ConnectorConnectionIcon } from '@/features/workspace/customize/sections
 import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
 
 /**
- * Add one Easy Connect (Pipedream) app to the project: name the connection,
+ * Add one Easy Connect (Pipedream) app to the workspace: name the connection,
  * create the connector, hand the slug back so the page can open its detail.
  *
  * ── Known duplication, read before changing either side ────────────────────
@@ -33,14 +33,14 @@ import { ConnectorConnectionModal } from '@/features/workspace/customize/section
  * empty modal open on a later refetch.
  */
 export function EasyConnectAddFlow({
-  projectId,
+  workspaceId,
   app,
   existingSlugs,
   canWrite,
   onClose,
   onAdded,
 }: {
-  projectId: string;
+  workspaceId: string;
   /** The app the user picked, or `null` when the flow is closed. */
   app: PipedreamApp | null;
   existingSlugs: readonly string[];
@@ -52,7 +52,7 @@ export function EasyConnectAddFlow({
     mutationFn: async (connection: Parameters<typeof buildEasyConnectConnectorDraft>[1]) => {
       if (!app) throw new Error('Select an app');
       const draft = buildEasyConnectConnectorDraft(app, connection);
-      const result = await createConnector(projectId, draft);
+      const result = await createConnector(workspaceId, draft);
       return {
         name: draft.name ?? app.name,
         slug: draft.slug,
@@ -83,7 +83,7 @@ export function EasyConnectAddFlow({
       open={app !== null}
       idPrefix="easy-connect-connection"
       title={`Add ${app?.name ?? 'app'}`}
-      description="Create a connection for this app. The connection name and slug identify it in sessions and project configuration."
+      description="Create a connection for this app. The connection name and slug identify it in sessions and workspace configuration."
       initialName={app?.name ?? ''}
       initialSlug={app ? proposeConnectorConnectionSlug(app.name, existingSlugs) : ''}
       existingSlugs={existingSlugs}

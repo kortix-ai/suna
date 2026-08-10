@@ -14,7 +14,7 @@ export interface Principal extends Identity {
   userId?: string;
   email?: string;
   accountId?: string;
-  projectId?: string;
+  workspaceId?: string;
   role?: string;
 }
 
@@ -47,7 +47,7 @@ export interface CreatedProject {
 
 export interface CreatedSession {
   id: string;
-  projectId: string;
+  workspaceId: string;
 }
 
 /** A team account with member/role provisioning, for IAM + access flows. */
@@ -57,7 +57,7 @@ export interface TeamFixture {
   /** Synthesize a user, add to this account at the given role, return its principal. */
   addMember(role: 'admin' | 'member'): Promise<Principal>;
   /** Grant a project role to an account member (PUT access). */
-  grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
+  grantProjectRole(workspaceId: string, userId: string, role: ProjectRole): Promise<void>;
   /** Create a project owned by this team account. */
   project(opts?: { name?: string; seed?: boolean; managedGit?: boolean }): Promise<CreatedProject>;
 }
@@ -134,7 +134,7 @@ export interface FlowContext {
   env: Env;
   /** A unit of capture/timing/assertion. */
   step<T>(name: string, fn: () => Promise<T>): Promise<T>;
-  /** Register a resource for LIFO teardown. `meta` carries parent ids (e.g. projectId for a session). */
+  /** Register a resource for LIFO teardown. `meta` carries parent ids (e.g. workspaceId for a session). */
   track(kind: string, id: string, meta?: Record<string, any>): void;
   /** Self-skip the flow with a reason (counts as skip, not fail). */
   skip(reason: string): never;

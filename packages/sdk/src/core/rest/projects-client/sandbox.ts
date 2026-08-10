@@ -193,26 +193,26 @@ export interface RebuildSnapshotResponse {
  * NOT the legacy one-project-one-sandbox instances. The endpoint path keeps the
  * historical `/sandboxes` name; the function is named for what it returns.
  */
-export async function listProjectSandboxTemplates(projectId: string) {
+export async function listProjectSandboxTemplates(workspaceId: string) {
   return unwrap(
     await backendApi.get<SandboxTemplatesResponse>(
-      `/projects/${projectId}/sandboxes`,
+      `/projects/${workspaceId}/sandboxes`,
     ),
   );
 }
 
-export async function listProjectSnapshots(projectId: string) {
+export async function listProjectSnapshots(workspaceId: string) {
   return unwrap(
     await backendApi.get<ProjectSnapshotsResponse>(
-      `/projects/${projectId}/snapshots`,
+      `/projects/${workspaceId}/snapshots`,
     ),
   );
 }
 
-export async function getProjectSandboxHealth(projectId: string) {
+export async function getProjectSandboxHealth(workspaceId: string) {
   return unwrap(
     await backendApi.get<ProjectSandboxHealth>(
-      `/projects/${projectId}/sandbox-health`,
+      `/projects/${workspaceId}/sandbox-health`,
       {
         // Background poll used by alerts/settings. React Query owns retry/error
         // state; the global error handler would otherwise spam console.error
@@ -224,19 +224,19 @@ export async function getProjectSandboxHealth(projectId: string) {
   );
 }
 
-export async function rebuildProjectSnapshot(projectId: string, slug?: string) {
+export async function rebuildProjectSnapshot(workspaceId: string, slug?: string) {
   return unwrap(
     await backendApi.post<RebuildSnapshotResponse>(
-      `/projects/${projectId}/snapshots/rebuild`,
+      `/projects/${workspaceId}/snapshots/rebuild`,
       slug ? { slug } : {},
     ),
   );
 }
 
-export async function fixSandboxWithAgent(projectId: string) {
+export async function fixSandboxWithAgent(workspaceId: string) {
   return unwrap(
     await backendApi.post<{ session_id: string }>(
-      `/projects/${projectId}/snapshots/fix-with-agent`,
+      `/projects/${workspaceId}/snapshots/fix-with-agent`,
       {},
     ),
   );
@@ -266,39 +266,39 @@ export interface UpdateSandboxTemplateInput {
 }
 
 export async function createSandboxTemplate(
-  projectId: string,
+  workspaceId: string,
   input: CreateSandboxTemplateInput,
 ) {
   return unwrap(
     await backendApi.post<{ template_id: string; slug: string }>(
-      `/projects/${projectId}/sandbox-templates`,
+      `/projects/${workspaceId}/sandbox-templates`,
       input,
     ),
   );
 }
 
 export async function updateSandboxTemplate(
-  projectId: string,
+  workspaceId: string,
   templateId: string,
   input: UpdateSandboxTemplateInput,
 ) {
   return unwrap(
     await backendApi.patch<{ template_id: string; slug: string }>(
-      `/projects/${projectId}/sandbox-templates/${templateId}`,
+      `/projects/${workspaceId}/sandbox-templates/${templateId}`,
       input,
     ),
   );
 }
 
-export async function deleteSandboxTemplate(projectId: string, templateId: string) {
+export async function deleteSandboxTemplate(workspaceId: string, templateId: string) {
   return unwrap(
     await backendApi.delete<null>(
-      `/projects/${projectId}/sandbox-templates/${templateId}`,
+      `/projects/${workspaceId}/sandbox-templates/${templateId}`,
     ),
   );
 }
 
-export async function buildSandboxTemplate(projectId: string, templateId: string) {
+export async function buildSandboxTemplate(workspaceId: string, templateId: string) {
   return unwrap(
     await backendApi.post<{
       status: 'started';
@@ -306,14 +306,14 @@ export async function buildSandboxTemplate(projectId: string, templateId: string
       slug: string;
       providers?: Array<'daytona' | 'platinum' | 'e2b'>;
     }>(
-      `/projects/${projectId}/sandbox-templates/${templateId}/build`,
+      `/projects/${workspaceId}/sandbox-templates/${templateId}/build`,
       {},
     ),
   );
 }
 
-export async function listProjectSandboxes(projectId: string) {
+export async function listProjectSandboxes(workspaceId: string) {
   return unwrap(
-    await backendApi.get<SandboxTemplatesResponse>(`/projects/${projectId}/sandboxes`),
+    await backendApi.get<SandboxTemplatesResponse>(`/projects/${workspaceId}/sandboxes`),
   );
 }

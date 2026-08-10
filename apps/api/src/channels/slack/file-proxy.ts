@@ -4,7 +4,7 @@
  * never holds it. Backs the in-sandbox `slack download` + `slack send --file`
  * once the token is pulled from the box (KORTIX-206 Phase C2).
  */
-import { loadSlackTokenForProject } from '../install-store';
+import { loadSlackTokenForWorkspace } from '../install-store';
 
 const SLACK_API = 'https://slack.com/api';
 // Only ever attach the bot token to Slack's FILE-serving hosts — `url` is
@@ -15,9 +15,9 @@ const SLACK_HOST = /^(files|files-origin|files-priv|files-private|files-public)\
 
 export type FileProxyError = { ok: false; error: string; status: number };
 
-/** Fetch a Slack-hosted file with the project's bot token. SSRF-guarded. */
+/** Fetch a Slack-hosted file with the workspace's bot token. SSRF-guarded. */
 export async function downloadSlackFile(
-  projectId: string,
+  workspaceId: string,
   url: string,
 ): Promise<{ ok: true; body: ArrayBuffer; contentType: string } | FileProxyError> {
   let parsed: URL;
@@ -29,8 +29,8 @@ export async function downloadSlackFile(
   if (parsed.protocol !== 'https:' || !SLACK_HOST.test(parsed.hostname)) {
     return { ok: false, error: 'url must be an https://*.slack.com file URL', status: 400 };
   }
-  const token = await loadSlackTokenForProject(projectId);
-  if (!token) return { ok: false, error: 'Slack not connected for this project', status: 404 };
+  const token = await loadSlackTokenForWorkspace(workspaceId);
+  if (!token) return { ok: false, error: 'Slack not connected for this workspace', status: 404 };
 
   const res = await fetch(parsed.href, {
     headers: { Authorization: `Bearer ${token}` },
@@ -46,14 +46,14 @@ export async function downloadSlackFile(
 
 /** Upload a file to Slack (the 3-step external-upload flow), token server-side. */
 export async function uploadSlackFile(
-  projectId: string,
+  workspaceId: string,
   args: { channel: string; filename: string; contentBase64: string; comment?: string; threadTs?: string },
 ): Promise<{ ok: true; files: unknown } | FileProxyError> {
   if (!args.channel || !args.filename || !args.contentBase64) {
     return { ok: false, error: 'channel, filename and content_base64 are required', status: 400 };
   }
-  const token = await loadSlackTokenForProject(projectId);
-  if (!token) return { ok: false, error: 'Slack not connected for this project', status: 404 };
+  const token = await loadSlackTokenForWorkspace(workspaceId);
+  if (!token) return { ok: false, error: 'Slack not connected for this workspace', status: 404 };
 
   const bytes = Buffer.from(args.contentBase64, 'base64');
 

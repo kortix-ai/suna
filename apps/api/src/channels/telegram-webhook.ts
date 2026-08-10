@@ -5,9 +5,9 @@ import { projects } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   createSession,
-  resolveProjectAutomationActor,
-} from '../projects/session-lifecycle';
-import { loadTelegramWebhookSecretForProject } from './install-store';
+  resolveWorkspaceAutomationActor,
+} from '../workspaces/session-lifecycle';
+import { loadTelegramWebhookSecretForWorkspace } from './install-store';
 import { makeOpenApiApp, json, errors } from '../openapi';
 
 export const telegramWebhookApp = makeOpenApiApp();
@@ -15,11 +15,11 @@ export const telegramWebhookApp = makeOpenApiApp();
 telegramWebhookApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}',
+    path: '/{workspaceId}',
     tags: ['channels'],
     summary: 'Telegram bot webhook (secret-token verified)',
     request: {
-      params: z.object({ projectId: z.string() }),
+      params: z.object({ workspaceId: z.string() }),
       body: { content: { 'application/json': { schema: z.any() } } },
     },
     responses: {
@@ -28,8 +28,8 @@ telegramWebhookApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const expected = await loadTelegramWebhookSecretForProject(projectId);
+  const workspaceId = c.req.param('workspaceId');
+  const expected = await loadTelegramWebhookSecretForWorkspace(workspaceId);
   if (!expected) return c.json({ error: 'Not configured' }, 404);
 
   const presented = c.req.header('x-telegram-bot-api-secret-token') ?? '';
@@ -51,7 +51,7 @@ telegramWebhookApp.openapi(
   const message = update.message ?? update.edited_message;
   if (!message || !message.chat) return c.json({ ok: true });
 
-  spawnAgentTurn(projectId, update, message).catch((err) =>
+  spawnAgentTurn(workspaceId, update, message).catch((err) =>
     console.error('[telegram-webhook] spawn failed', err),
   );
   return c.json({ ok: true });
@@ -61,7 +61,7 @@ telegramWebhookApp.openapi(
 // Gate for the Telegram equivalent of Slack's SLACK_REQUIRE_USER_IDENTITY: the
 // webhook otherwise runs every agent turn AS THE ACCOUNT OWNER for whoever can
 // message the bot, with no sender check. Defaults ON: a webhook secret proves
-// the request came from Telegram, but not that this sender may run this project
+// the request came from Telegram, but not that this sender may run this workspace
 // as the automation actor. Operators may temporarily set
 // TELEGRAM_REQUIRE_USER_IDENTITY=false only while migrating legacy projects to
 // metadata.telegram.allowedUserIds.
@@ -71,19 +71,19 @@ export function telegramRequireUserIdentityForTest(): boolean {
   return !['false', '0', 'no', 'off'].includes(raw);
 }
 
-// "Bound identity" here is a per-project allowlist of Telegram user ids, stored
+// "Bound identity" here is a per-Workspace allowlist of Telegram user ids, stored
 // in the existing projects.metadata jsonb column (no schema change) at
 // metadata.telegram.allowedUserIds. There is no product surface to populate
 // this yet — see risk note in the PR. Until one exists, enabling the flag
-// rejects every sender for a project with no allowlist configured, which is
+// rejects every sender for a workspace with no allowlist configured, which is
 // the safe direction to fail in.
 export function isKnownTelegramSenderForTest(
-  project: { metadata: unknown },
+  workspace: { metadata: unknown },
   message: TelegramMessage,
 ): boolean {
   const senderId = message.from?.id;
   if (senderId === undefined || senderId === null) return false;
-  const metadata = project.metadata as
+  const metadata = workspace.metadata as
     | { telegram?: { allowedUserIds?: unknown } }
     | null
     | undefined;
@@ -93,29 +93,29 @@ export function isKnownTelegramSenderForTest(
 }
 
 async function spawnAgentTurn(
-  projectId: string,
+  workspaceId: string,
   update: TelegramUpdate,
   message: TelegramMessage,
 ): Promise<void> {
-  const [project] = await db
+  const [workspace] = await db
     .select()
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
-  if (!project) return;
+  if (!workspace) return;
 
-  if (telegramRequireUserIdentityForTest() && !isKnownTelegramSenderForTest(project, message)) {
+  if (telegramRequireUserIdentityForTest() && !isKnownTelegramSenderForTest(workspace, message)) {
     console.warn(
-      '[telegram-webhook] rejecting unbound sender for project',
-      projectId,
+      '[telegram-webhook] rejecting unbound sender for workspace',
+      workspaceId,
       message.from?.id,
     );
     return;
   }
 
-  const userId = await resolveProjectAutomationActor(project.accountId);
+  const userId = await resolveWorkspaceAutomationActor(workspace.accountId);
   if (!userId) {
-    console.warn('[telegram-webhook] no actor for project', projectId);
+    console.warn('[telegram-webhook] no actor for workspace', workspaceId);
     return;
   }
 
@@ -123,11 +123,11 @@ async function spawnAgentTurn(
 
   const result = await createSession({
     source: 'telegram',
-    project,
+    workspace,
     userId,
     requestingPrincipalType: 'human',
     body: {
-      base_ref: project.defaultBranch,
+      base_ref: workspace.defaultBranch,
       agent_name: 'default',
       initial_prompt: initialPrompt,
       // Title from the user's actual words, not the scaffolded envelope.
@@ -135,8 +135,8 @@ async function spawnAgentTurn(
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
-    idempotencyKey: `telegram:${projectId}:${update.update_id}`,
-    // Channel sessions are team-facing — project-visible, not private to the
+    idempotencyKey: `telegram:${workspaceId}:${update.update_id}`,
+    // Channel sessions are team-facing — workspace-visible, not private to the
     // stand-in owner the session is attributed to.
     visibility: 'project',
     metadata: {
@@ -151,7 +151,7 @@ async function spawnAgentTurn(
   });
 
   if (result.error) {
-    console.error('[telegram-webhook] createProjectSession failed', result.error.body);
+    console.error('[telegram-webhook] createWorkspaceSession failed', result.error.body);
   }
 }
 

@@ -15,13 +15,13 @@ import {
 
 run("shares", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix);
+  const workspaceId = await pickProjectId(kortix);
   const sessionId = await pickOrCreateSessionId(
     kortix,
-    projectId,
+    workspaceId,
     "sdk shares test",
   );
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
 
   console.log("readying session…");
   const { sandboxId } = await retryUntilReady(() => session.ensureReady());

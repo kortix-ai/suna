@@ -30,26 +30,26 @@ afterAll(async () => {
 describe('mintJoinLink / resolveJoinLink', () => {
   test('mints a token that looks like our scheme and resolves back to the same call', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token, expiresAt } = await mintJoinLink({ callId: id, projectId });
+    const workspaceId = crypto.randomUUID();
+    const { token, expiresAt } = await mintJoinLink({ callId: id, workspaceId });
 
     expect(looksLikeJoinLinkToken(token)).toBe(true);
     expect(token.length).toBeGreaterThan(30);
     expect(expiresAt.getTime()).toBeGreaterThan(Date.now());
 
     const resolved = await resolveJoinLink(token);
-    expect(resolved).toEqual({ ok: true, callId: id, projectId });
+    expect(resolved).toEqual({ ok: true, callId: id, workspaceId });
   });
 
   test('two links minted for the same call are independently resolvable and independently random', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const a = await mintJoinLink({ callId: id, projectId });
-    const b = await mintJoinLink({ callId: id, projectId });
+    const workspaceId = crypto.randomUUID();
+    const a = await mintJoinLink({ callId: id, workspaceId });
+    const b = await mintJoinLink({ callId: id, workspaceId });
 
     expect(a.token).not.toBe(b.token);
-    expect(await resolveJoinLink(a.token)).toEqual({ ok: true, callId: id, projectId });
-    expect(await resolveJoinLink(b.token)).toEqual({ ok: true, callId: id, projectId });
+    expect(await resolveJoinLink(a.token)).toEqual({ ok: true, callId: id, workspaceId });
+    expect(await resolveJoinLink(b.token)).toEqual({ ok: true, callId: id, workspaceId });
   });
 
   test('an unknown token 404s without a DB round trip leaking which reason', async () => {
@@ -59,8 +59,8 @@ describe('mintJoinLink / resolveJoinLink', () => {
 
   test('a token missing the scheme prefix is rejected as unknown, never looked up', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: id, projectId });
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: id, workspaceId });
     const withoutPrefix = token.replace(/^vjl_/, '');
 
     const resolved = await resolveJoinLink(withoutPrefix);
@@ -77,8 +77,8 @@ describe('mintJoinLink / resolveJoinLink', () => {
 
   test('an expired link 410s instead of resolving', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: id, projectId, ttlSeconds: -1 });
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: id, workspaceId, ttlSeconds: -1 });
 
     const resolved = await resolveJoinLink(token);
     expect(resolved).toEqual({ ok: false, status: 410, error: 'This link has expired' });
@@ -88,9 +88,9 @@ describe('mintJoinLink / resolveJoinLink', () => {
 describe('revokeJoinLinksForCall', () => {
   test('revokes every link for a call — a resolve afterwards 410s', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const a = await mintJoinLink({ callId: id, projectId });
-    const b = await mintJoinLink({ callId: id, projectId });
+    const workspaceId = crypto.randomUUID();
+    const a = await mintJoinLink({ callId: id, workspaceId });
+    const b = await mintJoinLink({ callId: id, workspaceId });
 
     await revokeJoinLinksForCall(id);
 
@@ -101,20 +101,20 @@ describe('revokeJoinLinksForCall', () => {
   test('never touches links for a different call', async () => {
     const endedCallId = callId();
     const liveCallId = callId();
-    const projectId = crypto.randomUUID();
-    const ended = await mintJoinLink({ callId: endedCallId, projectId });
-    const live = await mintJoinLink({ callId: liveCallId, projectId });
+    const workspaceId = crypto.randomUUID();
+    const ended = await mintJoinLink({ callId: endedCallId, workspaceId });
+    const live = await mintJoinLink({ callId: liveCallId, workspaceId });
 
     await revokeJoinLinksForCall(endedCallId);
 
     expect((await resolveJoinLink(ended.token)).ok).toBe(false);
-    expect(await resolveJoinLink(live.token)).toEqual({ ok: true, callId: liveCallId, projectId });
+    expect(await resolveJoinLink(live.token)).toEqual({ ok: true, callId: liveCallId, workspaceId });
   });
 
   test('is idempotent — revoking an already-revoked call does not throw', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    await mintJoinLink({ callId: id, projectId });
+    const workspaceId = crypto.randomUUID();
+    await mintJoinLink({ callId: id, workspaceId });
 
     await revokeJoinLinksForCall(id);
     await expect(revokeJoinLinksForCall(id)).resolves.toBeUndefined();
@@ -149,13 +149,13 @@ describe('looksLikeJoinLinkToken', () => {
 describe('GET /public/voice-join/:token/transcript', () => {
   async function seedTurns(
     id: string,
-    projectId: string,
+    workspaceId: string,
     turns: Array<{ role: string; speaker: string | null; text: string }>,
   ): Promise<void> {
     for (const turn of turns) {
       await db.insert(voiceCallTurns).values({
         callId: id,
-        projectId,
+        workspaceId,
         sessionId: id,
         role: turn.role,
         speaker: turn.speaker,
@@ -172,9 +172,9 @@ describe('GET /public/voice-join/:token/transcript', () => {
 
   test('returns every kind of turn — both voices, the Kortix agent, and the tool calls', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: id, projectId });
-    await seedTurns(id, projectId, [
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: id, workspaceId });
+    await seedTurns(id, workspaceId, [
       { role: 'user', speaker: null, text: 'is the deploy done?' },
       { role: 'tool', speaker: 'ask_kortix', text: 'ask_kortix: is the deploy done?' },
       { role: 'tool', speaker: 'run_command', text: 'run_command: git log -1 → ok' },
@@ -198,9 +198,9 @@ describe('GET /public/voice-join/:token/transcript', () => {
 
   test('the cursor advances and pages the rest — an idle poll returns nothing and holds position', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: id, projectId });
-    await seedTurns(id, projectId, [
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: id, workspaceId });
+    await seedTurns(id, workspaceId, [
       { role: 'user', speaker: null, text: 'first' },
       { role: 'agent', speaker: 'kortix', text: 'second' },
     ]);
@@ -212,7 +212,7 @@ describe('GET /public/voice-join/:token/transcript', () => {
     expect(idle.body.turns).toEqual([]);
     expect(idle.body.cursor).toBe(first.body.cursor);
 
-    await seedTurns(id, projectId, [{ role: 'agent', speaker: 'Kortix Voice', text: 'third' }]);
+    await seedTurns(id, workspaceId, [{ role: 'agent', speaker: 'Kortix Voice', text: 'third' }]);
     const next = await get(`/${token}/transcript?cursor=${first.body.cursor}`);
     expect(next.body.turns.map((t: any) => t.text)).toEqual(['third']);
     expect(next.body.cursor).toBeGreaterThan(first.body.cursor);
@@ -221,12 +221,12 @@ describe('GET /public/voice-join/:token/transcript', () => {
   test('reads ONLY the call its own link was minted for', async () => {
     const mine = callId();
     const theirs = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: mine, projectId });
-    await seedTurns(mine, projectId, [{ role: 'user', speaker: null, text: 'mine' }]);
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: mine, workspaceId });
+    await seedTurns(mine, workspaceId, [{ role: 'user', speaker: null, text: 'mine' }]);
     // Same project, different call — a visitor holding one call's link must
     // not see the other, and has no id in the request to reach it with.
-    await seedTurns(theirs, projectId, [{ role: 'user', speaker: null, text: 'theirs' }]);
+    await seedTurns(theirs, workspaceId, [{ role: 'user', speaker: null, text: 'theirs' }]);
 
     const { body } = await get(`/${token}/transcript`);
     expect(body.turns.map((t: any) => t.text)).toEqual(['mine']);
@@ -234,12 +234,12 @@ describe('GET /public/voice-join/:token/transcript', () => {
 
   test("never echoes the link's project id back to an anonymous caller", async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: id, projectId });
-    await seedTurns(id, projectId, [{ role: 'user', speaker: null, text: 'hello' }]);
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: id, workspaceId });
+    await seedTurns(id, workspaceId, [{ role: 'user', speaker: null, text: 'hello' }]);
 
     const { body } = await get(`/${token}/transcript`);
-    expect(JSON.stringify(body)).not.toContain(projectId);
+    expect(JSON.stringify(body)).not.toContain(workspaceId);
   });
 
   test('an unknown token 404s', async () => {
@@ -250,9 +250,9 @@ describe('GET /public/voice-join/:token/transcript', () => {
 
   test('a revoked link 410s — ending the call ends the transcript with it', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: id, projectId });
-    await seedTurns(id, projectId, [{ role: 'user', speaker: null, text: 'hello' }]);
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: id, workspaceId });
+    await seedTurns(id, workspaceId, [{ role: 'user', speaker: null, text: 'hello' }]);
 
     expect((await get(`/${token}/transcript`)).status).toBe(200);
     await revokeJoinLinksForCall(id);
@@ -264,8 +264,8 @@ describe('GET /public/voice-join/:token/transcript', () => {
 
   test('an expired link 410s', async () => {
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: id, projectId, ttlSeconds: -1 });
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: id, workspaceId, ttlSeconds: -1 });
 
     const { status } = await get(`/${token}/transcript`);
     expect(status).toBe(410);
@@ -275,8 +275,8 @@ describe('GET /public/voice-join/:token/transcript', () => {
     // The resolve step's limiter allows 30/min. Sharing it would rate-limit a
     // single honest listener polling its own call against itself.
     const id = callId();
-    const projectId = crypto.randomUUID();
-    const { token } = await mintJoinLink({ callId: id, projectId });
+    const workspaceId = crypto.randomUUID();
+    const { token } = await mintJoinLink({ callId: id, workspaceId });
 
     for (let i = 0; i < 40; i++) {
       expect((await get(`/${token}/transcript`)).status).toBe(200);

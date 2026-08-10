@@ -185,7 +185,7 @@ function staleFailureReason<B extends SandboxStatusBuild>(
 /**
  * The template a new session boots by default: the project's declared default
  * (`sandbox.default` in kortix.yaml) when it resolves, else the platform
- * default, which `listTemplatesForProject` sorts first. Everything user-facing
+ * default, which `listTemplatesForWorkspace` sorts first. Everything user-facing
  * must describe THIS template — reporting on some other one is how a healthy
  * project ends up wearing another template's failure.
  */

@@ -410,7 +410,7 @@ function pdType(t: string): string {
 
 /* ─── dispatch ───────────────────────────────────────────────────────────── */
 
-import type { ConnectorProvider } from '../projects/connectors';
+import type { ConnectorProvider } from '../workspaces/connectors';
 import { channelCatalog } from './channels';
 
 /** Source material a connector needs normalized, by provider. */

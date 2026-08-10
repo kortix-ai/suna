@@ -29,7 +29,7 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     expect(result.queryKey).toEqual(qk.project.triggers('proj-1'));
   });
 
-  test('is disabled without a projectId, enabled once one is supplied', () => {
+  test('is disabled without a workspaceId, enabled once one is supplied', () => {
     expect((useProjectTriggers(undefined) as any).enabled).toBe(false);
     expect((useProjectTriggers(null) as any).enabled).toBe(false);
     expect((useProjectTriggers('proj-1') as any).enabled).toBe(true);
@@ -51,7 +51,7 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     expect(result.fire.onSuccess).toBeUndefined();
   });
 
-  test('a different projectId gets its own (non-colliding) query key', () => {
+  test('a different workspaceId gets its own (non-colliding) query key', () => {
     const a = useProjectTriggers('proj-a') as any;
     const b = useProjectTriggers('proj-b') as any;
     expect(a.queryKey).not.toEqual(b.queryKey);

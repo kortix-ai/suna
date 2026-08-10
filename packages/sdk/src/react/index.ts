@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
 // @kortix/sdk/react — the complete OpenCode React hook surface, relocated
 // verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
 // and type). This is the single source of truth the web UI binds to.
-export * from './opencode';
+export * from "./opencode";
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.
@@ -12,11 +12,13 @@ export {
   answerPermission,
   rejectQuestion,
   classifySendError,
+  workspaceSendErrorConnectors,
   type KortixSendError,
   type KortixSendErrorConnector,
   type KortixSendErrorKind,
+  type WorkspaceSendErrorConnector,
   type SendState,
-} from './use-session';
+} from "./use-session";
 
 // The billing/API error classes + helpers, relocated from apps/web's
 // `lib/api/errors.ts` (byte-for-byte duplicate of `platform/api/errors.ts`) —
@@ -28,7 +30,7 @@ export {
   isBillingError,
   formatBillingErrorForUI,
   type BillingErrorUI,
-} from '../core/http/api/errors';
+} from "../core/http/api/errors";
 
 // The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
 // (exported above via `./opencode`) wraps. Re-exported here too so a host
@@ -42,14 +44,14 @@ export {
   type EventStreamTimers,
   type OpenCodeEvent,
   type OpenEventStreamOptions,
-} from '../core/stream/event-stream';
+} from "../core/stream/event-stream";
 
 // The kortix-master React Query layer (tasks/tickets/projects/milestones/
 // credentials/sandbox-services) relocated from apps/web's six
 // `apps/web/src/hooks/{kortix/*,use-sandbox-services}.ts` files — see
 // `use-kortix-master.ts` for the full contract, including the injectable
 // `KortixMasterIdentity` seam that replaces web's direct `useAuth()` calls.
-export * from './use-kortix-master';
+export * from "./use-kortix-master";
 
 // The send / stash-replay / error-recovery core extracted from apps/web's
 // `session-chat.tsx` — see `use-session-send.ts` for the full contract. Not
@@ -76,7 +78,7 @@ export {
   type UseSessionSendOptions,
   type SendCallOptions,
   type UseSessionSendResult,
-} from './use-session-send';
+} from "./use-session-send";
 
 // The headless chat kit — `useChatTurns` (memoized `classifyTurn` over a
 // message list) + `renderParts` (compile-time-exhaustive part -> T
@@ -84,54 +86,75 @@ export {
 // this is the thin React binding over it. Kept inside the `react` barrel
 // rather than a new `@kortix/sdk/react/chat` subpath — no package.json
 // exports-map change needed to reach it.
-export { useChatTurns, type TurnView, renderParts, type PartRenderers } from './chat';
+export {
+  useChatTurns,
+  type TurnView,
+  renderParts,
+  type PartRenderers,
+} from "./chat";
 
-// Domain hooks — thin React Query bindings over `projects-client` CRUD
+// Domain hooks — thin React Query bindings over `workspaces-client` CRUD
 // surfaces (secrets, triggers, change requests) that previously had no
 // SDK-owned hook (only the client fn). Each owns its own query key + the
 // mutations a settings/workbench screen actually needs, with invalidation
 // wired so writes reflect without a manual refetch.
-export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
-export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
-export { useChangeRequests, changeRequestsKey } from './use-change-requests';
-export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
+  useWorkspaceSecrets,
+  workspaceSecretsKey,
+  useProjectSecrets,
+  projectSecretsKey,
+} from "./use-project-secrets";
+export {
+  useWorkspaceTriggers,
+  workspaceTriggersKey,
+  useProjectTriggers,
+  projectTriggersKey,
+} from "./use-project-triggers";
+export { useChangeRequests, changeRequestsKey } from "./use-change-requests";
+export {
+  useGatewayRoutingPolicy,
+  gatewayRoutingPolicyKey,
+} from "./use-gateway-routing-policy";
+export {
+  useWorkspaceApps,
   useProjectApps,
   useAppDeployments,
   useAppAccess,
+  workspaceAppsKey,
   projectAppsKey,
   appDeploymentsKey,
-} from './use-project-apps';
+} from "./use-project-apps";
 
 // The expected "no compaction model configured" configuration state thrown by
 // `useSummarizeOpenCodeSession`'s mutation when every model-resolution fallback
 // tier fails. Re-exported here so hosts + the telemetry noise gate can
 // `instanceof`-match it without reaching into the hook's internal path.
-export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
-export * from './use-admin-accounts';
-export * from './use-admin-projects';
-export * from './use-admin-analytics';
-export * from './use-admin-activity-analytics';
-export * from './use-admin-feedback';
-export * from './use-system-status';
-export * from './use-ops-overview';
-export * from './use-admin-billing';
-export * from './use-teams-installations';
-export * from './use-tunnel';
-export * from './use-admin-sandboxes';
-export * from './use-authenticated-preview-url';
-export * from './run-pty-command';
-export * from './runtime-actions';
+export { NoCompactionModelError } from "./use-opencode-sessions/no-compaction-model-error";
+export * from "./use-admin-accounts";
+export * from "./use-admin-projects";
+export * from "./use-admin-workspaces";
+export * from "./use-admin-analytics";
+export * from "./use-admin-activity-analytics";
+export * from "./use-admin-feedback";
+export * from "./use-system-status";
+export * from "./use-ops-overview";
+export * from "./use-admin-billing";
+export * from "./use-teams-installations";
+export * from "./use-tunnel";
+export * from "./use-admin-sandboxes";
+export * from "./use-authenticated-preview-url";
+export * from "./run-pty-command";
+export * from "./runtime-actions";
 
 // The client-cache-unification `qk` key factory (rooted at `'kx'`, disjoint
 // from `kortixKeys`'s `'kortix'` root above) + its four freshness tiers, the
 // single `useProjectName` accessor, and the invalidation/optimistic-write
 // helpers that keep the projects-list and project-detail caches in sync. See
 // `query-keys.ts` for why the root segment is `'kx'` and not `'kortix'`.
-export * from './query-keys';
-export * from './query-contracts';
-export * from './use-project-name';
-export * from './use-project-session';
-export * from './invalidate-project';
-export * from './workspace-compat';
-export * from './use-feature-flag';
+export * from "./query-keys";
+export * from "./query-contracts";
+export * from "./use-project-name";
+export * from "./use-project-session";
+export * from "./invalidate-project";
+export * from "./workspace-compat";
+export * from "./use-feature-flag";

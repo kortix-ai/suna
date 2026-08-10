@@ -9,7 +9,7 @@
  * - the modal that CTA opened branched on `billing_model === 'per_seat' ||
  *   has_subscription` and rendered "Out of credits — your Team plan and seats
  *   are unaffected";
- * - the project page keyed off `tier_key === 'free' | 'none'`;
+ * - the workspace page keyed off `tier_key === 'free' | 'none'`;
  * - the sidebar keyed off the raw balance.
  *
  * So a Team account on an ACTIVE $40/mo subscription with a $0.0099 wallet was

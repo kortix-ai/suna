@@ -63,6 +63,7 @@ import {
   beginRestPromptObservation,
   buildSessionCommandInput,
   classifySendError,
+  workspaceSendErrorConnectors,
   computeStartSettled,
   hasStartGivenUp,
   nextInconclusiveSince,
@@ -846,7 +847,7 @@ describe('classifySendError — connector refusals', () => {
       classifySendError(
         refusal({
           code: 'CONNECTOR_CONNECTION_REQUIRED',
-          connector_connections: [{ ...connection, authorization_strategy: 'workspace' }],
+          connector_connections: [{ ...connection, authorization_strategy: 'organization' }],
         }),
       ).kind,
     ).toBe('runtime-error');
@@ -858,3 +859,19 @@ describe('classifySendError — connector refusals', () => {
     );
   });
 });
+  test('canonicalizes legacy and Workspace authorization strategies for Workspace hosts', () => {
+    const connector = {
+      id: 'gmail',
+      slug: 'gmail',
+      name: 'Gmail',
+    };
+    expect(
+      workspaceSendErrorConnectors([
+        { ...connector, authorization_strategy: 'project' },
+        { ...connector, id: 'workspace', authorization_strategy: 'workspace' },
+      ]),
+    ).toEqual([
+      { ...connector, authorization_strategy: 'workspace' },
+      { ...connector, id: 'workspace', authorization_strategy: 'workspace' },
+    ]);
+  });

@@ -3,7 +3,7 @@
 import {
   createConnector,
   getDiscoverConnector,
-  type ConnectorDraftInput,
+  type WorkspaceConnectorDraftInput,
   type DiscoverConnector,
   type DiscoverConnectorTemplate,
 } from '@kortix/sdk';
@@ -35,7 +35,7 @@ import {
 import { ConnectorConnectionModal } from '@/features/workspace/customize/sections/connector-connection-modal';
 
 /**
- * Add one catalog connector to the project: pick a published surface, name
+ * Add one catalog connector to the workspace: pick a published surface, name
  * the connection, create the connector.
  *
  * ── Known duplication, read before changing either side ────────────────────
@@ -46,7 +46,7 @@ import { ConnectorConnectionModal } from '@/features/workspace/customize/section
  *
  * They were deliberately NOT unified. `connectors-view.discover.test.ts` pins
  * `discover-catalogue.tsx` at fourteen points of its *source text* — including
- * `'getDiscoverConnector(projectId, selectedConnector.id)'`,
+ * `'getDiscoverConnector(workspaceId, selectedConnector.id)'`,
  * `'createOnlyConnectorDraft(draft)'` and `'<ConnectorConnectionModal'` — so
  * extracting a shared module out of it would force a rewrite of a passing
  * contract test belonging to another surface. That was judged the worse trade.
@@ -69,14 +69,14 @@ interface VariantTarget {
 }
 
 export function DiscoverAddFlow({
-  projectId,
+  workspaceId,
   connector,
   existingSlugs,
   canWrite,
   onClose,
   onAdded,
 }: {
-  projectId: string;
+  workspaceId: string;
   /** The card the user clicked, or `null` when nothing is open. */
   connector: DiscoverConnector | null;
   existingSlugs: readonly string[];
@@ -98,10 +98,10 @@ export function DiscoverAddFlow({
   // Same query key as `discover-catalogue.tsx` uses, so opening the same
   // connector from either surface is one fetch, not two.
   const detailQuery = useQuery({
-    queryKey: ['discover-connector-detail', projectId, connector?.id],
+    queryKey: ['discover-connector-detail', workspaceId, connector?.id],
     queryFn: () =>
       connector
-        ? getDiscoverConnector(projectId, connector.id)
+        ? getDiscoverConnector(workspaceId, connector.id)
         : Promise.reject(new Error('No connector selected')),
     enabled: Boolean(connector),
     staleTime: 15 * 60_000,
@@ -124,7 +124,7 @@ export function DiscoverAddFlow({
             ...(template.auth.prefix ? { prefix: template.auth.prefix } : {}),
           }
         : undefined;
-      const draft: ConnectorDraftInput = {
+      const draft: WorkspaceConnectorDraftInput = {
         slug: connection.slug,
         name: connection.name.trim(),
         provider: template.provider,
@@ -136,7 +136,7 @@ export function DiscoverAddFlow({
         ...(auth ? { auth } : {}),
       };
       const createDraft = createOnlyConnectorDraft(draft);
-      const result = await createConnector(projectId, createDraft);
+      const result = await createConnector(workspaceId, createDraft);
       return {
         slug: createDraft.slug,
         name: createDraft.name ?? createDraft.slug,
@@ -266,7 +266,7 @@ export function DiscoverAddFlow({
         open={target !== null}
         idPrefix="browse-connection"
         title={`Add ${connectionName || 'connector'}`}
-        description="Create a connector connection. The display name and slug identify this connection in project configuration."
+        description="Create a connector connection. The display name and slug identify this connection in workspace configuration."
         initialName={connectionName}
         initialSlug={target ? proposeConnectorConnectionSlug(connectionName, existingSlugs) : ''}
         existingSlugs={existingSlugs}

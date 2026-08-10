@@ -49,7 +49,7 @@ interface MockState {
   installation: typeof INSTALLATION | null;
   /** Return `installation` from the Nth GET /installation onwards (0-based). */
   installedAfterPolls?: number;
-  /** The project's `teams` experimental feature, as GET /teams/mode reports it. */
+  /** The workspace's `teams` experimental feature, as GET /teams/mode reports it. */
   teamsEnabled: boolean;
 }
 
@@ -332,7 +332,7 @@ describe('kortix channels --platform teams', () => {
     // server's feature-flag gate so both sides read identically.
     const err = stripAnsi(stderr);
     expect(err).toContain(
-      'Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.',
+      'Microsoft Teams is not enabled for this workspace. Enable it in Settings → Feature flags.',
     );
     expect(stripAnsi(stdout)).toBe('');
     expect(err).not.toContain(TEAMS_CONSENT_URL);

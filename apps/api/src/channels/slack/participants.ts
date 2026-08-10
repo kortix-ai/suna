@@ -6,10 +6,10 @@ import {
 } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { loadSlackTokenForProject } from '../install-store';
+import { loadSlackTokenForWorkspace } from '../install-store';
 import { postEphemeral } from '../slack-api';
 import { escapeMrkdwn, sessionWebUrl } from './util';
-import { lookupEmailsByUserIds } from '../../projects/lib/access';
+import { lookupEmailsByUserIds } from '../../workspaces/lib/access';
 import { lookupSlackIdentity, lookupSlackUserIdForKortixUser } from './identity';
 
 const PLATFORM = 'slack';
@@ -23,7 +23,7 @@ export function normalizeConversationPolicy(value: unknown): SlackConversationPo
 }
 
 export function conversationPolicyLabel(policy: SlackConversationPolicy): string {
-  if (policy === 'project_open') return 'Project members can join';
+  if (policy === 'project_open') return 'Workspace members can join';
   if (policy === 'owner_only') return 'Owner only';
   return 'Owner approval';
 }
@@ -58,7 +58,7 @@ async function approvedParticipantExists(input: {
     .from(chatThreadParticipants)
     .where(and(
       eq(chatThreadParticipants.platform, PLATFORM),
-      eq(chatThreadParticipants.workspaceId, input.teamId),
+      eq(chatThreadParticipants.platformWorkspaceId, input.teamId),
       eq(chatThreadParticipants.threadId, input.threadId),
       eq(chatThreadParticipants.platformUserId, input.slackUserId),
       eq(chatThreadParticipants.userId, input.actorUserId),
@@ -81,7 +81,7 @@ async function loadParticipant(input: {
     .from(chatThreadParticipants)
     .where(and(
       eq(chatThreadParticipants.platform, PLATFORM),
-      eq(chatThreadParticipants.workspaceId, input.teamId),
+      eq(chatThreadParticipants.platformWorkspaceId, input.teamId),
       eq(chatThreadParticipants.threadId, input.threadId),
       eq(chatThreadParticipants.platformUserId, input.slackUserId),
     ))
@@ -91,14 +91,14 @@ async function loadParticipant(input: {
 
 function threadJoinRequestBlocks(input: {
   requesterLabel: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   threadId: string;
   requesterUserId: string;
   requesterSlackUserId: string;
 }): unknown[] {
   const value = JSON.stringify({
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     sessionId: input.sessionId,
     threadId: input.threadId,
     requesterUserId: input.requesterUserId,
@@ -140,7 +140,7 @@ async function requesterLabel(userId: string, slackUserId: string): Promise<stri
 }
 
 async function postJoinRequest(input: {
-  projectId: string;
+  workspaceId: string;
   teamId: string;
   channel?: string;
   threadId: string;
@@ -151,7 +151,7 @@ async function postJoinRequest(input: {
   alreadyPending: boolean;
 }): Promise<void> {
   if (!input.channel) return;
-  const token = await loadSlackTokenForProject(input.projectId);
+  const token = await loadSlackTokenForWorkspace(input.workspaceId);
   if (!token) return;
 
   const requesterText = input.alreadyPending
@@ -185,7 +185,7 @@ async function postJoinRequest(input: {
     `${label} wants to join this Kortix session.`,
     threadJoinRequestBlocks({
       requesterLabel: label,
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       sessionId: input.sessionId,
       threadId: input.threadId,
       requesterUserId: input.requesterUserId,
@@ -196,7 +196,7 @@ async function postJoinRequest(input: {
 }
 
 export async function ensureSlackThreadParticipant(input: {
-  projectId: string;
+  workspaceId: string;
   teamId: string;
   channel?: string;
   threadId: string;
@@ -218,7 +218,7 @@ export async function ensureSlackThreadParticipant(input: {
     return true;
   }
 
-  const token = input.channel ? await loadSlackTokenForProject(input.projectId) : null;
+  const token = input.channel ? await loadSlackTokenForWorkspace(input.workspaceId) : null;
   if (policy === 'owner_only') {
     if (token && input.channel) {
       await postEphemeral(
@@ -283,7 +283,7 @@ export async function ensureSlackThreadParticipant(input: {
       })
       .where(and(
         eq(chatThreadParticipants.platform, PLATFORM),
-        eq(chatThreadParticipants.workspaceId, input.teamId),
+        eq(chatThreadParticipants.platformWorkspaceId, input.teamId),
         eq(chatThreadParticipants.threadId, input.threadId),
         eq(chatThreadParticipants.platformUserId, input.slackUserId),
       ));
@@ -293,7 +293,7 @@ export async function ensureSlackThreadParticipant(input: {
       .insert(chatThreadParticipants)
       .values({
         platform: PLATFORM,
-        workspaceId: input.teamId,
+        platformWorkspaceId: input.teamId,
         threadId: input.threadId,
         sessionId: input.sessionId,
         platformUserId: input.slackUserId,
@@ -303,7 +303,7 @@ export async function ensureSlackThreadParticipant(input: {
       .onConflictDoNothing({
         target: [
           chatThreadParticipants.platform,
-          chatThreadParticipants.workspaceId,
+          chatThreadParticipants.platformWorkspaceId,
           chatThreadParticipants.threadId,
           chatThreadParticipants.platformUserId,
         ],
@@ -313,7 +313,7 @@ export async function ensureSlackThreadParticipant(input: {
   }
 
   await postJoinRequest({
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     teamId: input.teamId,
     channel: input.channel,
     threadId: input.threadId,
@@ -337,7 +337,7 @@ export async function rememberSlackThreadOwner(input: {
     .insert(chatThreadParticipants)
     .values({
       platform: PLATFORM,
-      workspaceId: input.teamId,
+      platformWorkspaceId: input.teamId,
       threadId: input.threadId,
       sessionId: input.sessionId,
       platformUserId: input.slackUserId,
@@ -349,7 +349,7 @@ export async function rememberSlackThreadOwner(input: {
     .onConflictDoUpdate({
       target: [
         chatThreadParticipants.platform,
-        chatThreadParticipants.workspaceId,
+        chatThreadParticipants.platformWorkspaceId,
         chatThreadParticipants.threadId,
         chatThreadParticipants.platformUserId,
       ],
@@ -368,7 +368,7 @@ export async function decideSlackThreadJoin(input: {
   teamId: string;
   channelId: string;
   deciderSlackUserId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   threadId: string;
   requesterUserId: string;
@@ -393,7 +393,7 @@ export async function decideSlackThreadJoin(input: {
     .insert(chatThreadParticipants)
     .values({
       platform: PLATFORM,
-      workspaceId: input.teamId,
+      platformWorkspaceId: input.teamId,
       threadId: input.threadId,
       sessionId: input.sessionId,
       platformUserId: input.requesterSlackUserId,
@@ -406,7 +406,7 @@ export async function decideSlackThreadJoin(input: {
     .onConflictDoUpdate({
       target: [
         chatThreadParticipants.platform,
-        chatThreadParticipants.workspaceId,
+        chatThreadParticipants.platformWorkspaceId,
         chatThreadParticipants.threadId,
         chatThreadParticipants.platformUserId,
       ],
@@ -424,8 +424,8 @@ export async function decideSlackThreadJoin(input: {
     await grantSessionMember(input.sessionId, input.requesterUserId);
   }
 
-  const token = await loadSlackTokenForProject(input.projectId);
-  const sessionUrl = sessionWebUrl(config.FRONTEND_URL, input.projectId, input.sessionId);
+  const token = await loadSlackTokenForWorkspace(input.workspaceId);
+  const sessionUrl = sessionWebUrl(config.FRONTEND_URL, input.workspaceId, input.sessionId);
   if (token) {
     const text = input.decision === 'approved'
       ? `You've been approved for this Kortix session. Send your message again and I'll continue.`

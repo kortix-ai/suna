@@ -9,7 +9,7 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { Close } from '@/features/icon/icons/close';
 import { listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
-import { listProjectAccess } from '@kortix/sdk';
+import { listWorkspaceAccess } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
@@ -61,14 +61,14 @@ export function ShareOption({
 }
 
 export function SharingPicker({
-  projectId,
+  workspaceId,
   value,
   onChange,
   copy,
   showHeading = true,
   hideMembers = false,
 }: {
-  projectId: string;
+  workspaceId: string;
   value: SharingSelection;
   onChange: (next: SharingSelection) => void;
   copy?: Partial<SharingCopy>;
@@ -83,13 +83,13 @@ export function SharingPicker({
 }) {
   const c: SharingCopy = {
     heading: copy?.heading ?? DEFAULT_COPY.heading,
-    project: copy?.project ?? DEFAULT_COPY.project,
+    workspace: copy?.workspace ?? DEFAULT_COPY.workspace,
     private: copy?.private ?? DEFAULT_COPY.private,
     members: copy?.members ?? DEFAULT_COPY.members,
   };
   // An older secret/connector still stored as a direct member share — surface it
   // (read-only-ish) so it isn't silently broken; the user migrates it to
-  // Project-wide/Private or moves the people onto an agent.
+  // Workspace-wide/Private or moves the people onto an agent.
   const legacyMembers = hideMembers && value.mode === 'members';
 
   return (
@@ -100,7 +100,7 @@ export function SharingPicker({
         onValueChange={(v) => onChange({ ...value, mode: v as SharingMode })}
         className="space-y-2"
       >
-        <ShareOption value="project" label={c.project.label} desc={c.project.desc} />
+        <ShareOption value="workspace" label={c.workspace.label} desc={c.workspace.desc} />
         <ShareOption value="private" label={c.private.label} desc={c.private.desc} />
         {!hideMembers && (
           <ShareOption value="members" label={c.members.label} desc={c.members.desc} />
@@ -108,7 +108,7 @@ export function SharingPicker({
       </RadioGroup>
       {!hideMembers && value.mode === 'members' && (
         <SubjectPicker
-          projectId={projectId}
+          workspaceId={workspaceId}
           memberIds={value.memberIds}
           groupIds={value.groupIds}
           onChange={(memberIds, groupIds) => onChange({ ...value, memberIds, groupIds })}
@@ -118,12 +118,12 @@ export function SharingPicker({
         <p className="text-muted-foreground text-xs leading-relaxed">
           To give specific people access, assign them (or a group) to an{' '}
           <span className="text-foreground/80 font-medium">agent</span> that uses this — they
-          inherit it automatically. Manage that in the project's Members tab.
+          inherit it automatically. Manage that in the workspace's Members tab.
         </p>
       )}
       {legacyMembers && (
         <p className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
-          This is still shared with specific members directly (legacy). Switch it to Project-wide or
+          This is still shared with specific members directly (legacy). Switch it to Workspace-wide or
           Private — targeted access now flows through agent assignment.
         </p>
       )}
@@ -134,17 +134,17 @@ export function SharingPicker({
 /**
  * Searchable, multi-select allow-list of MEMBERS and GROUPS — the same
  * member+group subject model the IAM Resource-access dialog uses. Members
- * come from the project's access list; groups (account groups) from
- * listGroups, keyed off the account the project belongs to (derived from the
+ * come from the workspace's access list; groups (account groups) from
+ * listGroups, keyed off the account the workspace belongs to (derived from the
  * access response, so no extra prop plumbing).
  */
 export function SubjectPicker({
-  projectId,
+  workspaceId,
   memberIds,
   groupIds,
   onChange,
 }: {
-  projectId: string;
+  workspaceId: string;
   memberIds: string[];
   groupIds: string[];
   onChange: (memberIds: string[], groupIds: string[]) => void;
@@ -152,8 +152,8 @@ export function SubjectPicker({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
   const { data, isLoading } = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
+    queryKey: qk.workspace.access(workspaceId),
+    queryFn: () => listWorkspaceAccess(workspaceId),
     ...contract('inventory'),
   });
 
@@ -248,7 +248,7 @@ export function SubjectPicker({
           </div>
         ) : nothing ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No members or groups in this project yet.
+            No members or groups in this workspace yet.
           </p>
         ) : filteredGroups.length === 0 && filteredMembers.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">

@@ -22,7 +22,7 @@ const model = 'kortix/claude-sonnet-4.6';
 
 let user: AuthUser | null = null;
 let auth: AuthSession | null = null;
-let projectId = '';
+let workspaceId = '';
 let sessionId = '';
 
 function log(label: string, detail: string): void {
@@ -59,7 +59,7 @@ async function waitForReady(token: string): Promise<{
       api<any>(
         token,
         'POST',
-        `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`,
+        `/projects/${workspaceId}/sessions/${sessionId}/start?wait_ms=8000`,
         {},
       ),
     (value) =>
@@ -115,16 +115,16 @@ async function main(): Promise<void> {
     },
     201,
   );
-  projectId = project.project_id;
-  await api(token, 'PATCH', `/projects/${projectId}/onboarding`, { completed: true });
-  await api(token, 'PUT', `/projects/${projectId}/model-defaults`, {
+  workspaceId = project.project_id;
+  await api(token, 'PATCH', `/projects/${workspaceId}/onboarding`, { completed: true });
+  await api(token, 'PUT', `/projects/${workspaceId}/model-defaults`, {
     scope: 'project',
     model: 'claude-sonnet-4.6',
   });
   const agentConfig = await api<{
     block: Record<string, any>;
-  }>(token, 'GET', `/projects/${projectId}/agents/kortix/config`);
-  await api(token, 'PUT', `/projects/${projectId}/agents/kortix/config`, {
+  }>(token, 'GET', `/projects/${workspaceId}/agents/kortix/config`);
+  await api(token, 'PUT', `/projects/${workspaceId}/agents/kortix/config`, {
     ...agentConfig.block,
     opencode: {
       ...agentConfig.block.opencode,
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
   const session = await api<{ session_id: string }>(
     token,
     'POST',
-    `/projects/${projectId}/sessions`,
+    `/projects/${workspaceId}/sessions`,
     {
       name: 'Session rewind smoke',
       opencode_model: model,
@@ -167,7 +167,7 @@ async function main(): Promise<void> {
     backendUrl: apiBase,
     getToken: () => token,
   });
-  const handle = kortix.session(projectId, sessionId);
+  const handle = kortix.session(workspaceId, sessionId);
   const readFile = async (path: string) => (await handle.files.read(path)).content.trim();
   const waitForFile = (path: string, expected: string) =>
     waitFor(
@@ -241,18 +241,18 @@ async function main(): Promise<void> {
 
 async function cleanup(): Promise<void> {
   if (keepFixture) {
-    log('fixture', `kept project=${projectId} session=${sessionId}`);
+    log('fixture', `kept project=${workspaceId} session=${sessionId}`);
     return;
   }
-  if (auth && projectId && sessionId) {
+  if (auth && workspaceId && sessionId) {
     await api(
       auth.access_token,
       'DELETE',
-      `/projects/${projectId}/sessions/${sessionId}`,
+      `/projects/${workspaceId}/sessions/${sessionId}`,
     ).catch(() => {});
   }
-  if (auth && projectId) {
-    await api(auth.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+  if (auth && workspaceId) {
+    await api(auth.access_token, 'DELETE', `/projects/${workspaceId}`).catch(() => {});
   }
   if (user?.id) {
     await deleteAuthUser(user.id, {

@@ -11,7 +11,7 @@ import {
   revokeAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { loadProjectForUser } from '../../projects/lib/access';
+import { loadWorkspaceForUser } from '../../workspaces/lib/access';
 import {
   accountsRouter,
   accountDisplayName,
@@ -93,7 +93,7 @@ accountsRouter.openapi(
     email: userEmail,
     token_context: {
       auth_type: authType,
-      project_id: (c.get('tokenProjectId') as string | undefined) ?? null,
+      project_id: (c.get('tokenWorkspaceId') as string | undefined) ?? null,
       session_id: (c.get('sessionId') as string | undefined) ?? null,
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
       connectors: (c.get('agentGrant') as { connectors?: string[] | 'all' } | null | undefined)?.connectors ?? null,
@@ -142,7 +142,7 @@ accountsRouter.openapi(
     tokens.map((t) => ({
       token_id: t.tokenId,
       name: t.name,
-      project_id: t.projectId ?? null,
+      project_id: t.workspaceId ?? null,
       public_key: t.publicKey,
       status: t.status,
       expires_at: t.expiresAt?.toISOString() ?? null,
@@ -211,21 +211,21 @@ accountsRouter.openapi(
 
   // Optional project scope. A project-scoped key only ever works on that one
   // project (the auth middleware enforces the binding); it never widens access.
-  const projectId =
+  const workspaceId =
     typeof body.project_id === 'string' && body.project_id.trim()
       ? body.project_id.trim()
       : undefined;
 
-  if (projectId) {
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (workspaceId) {
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'manage');
     if (!loaded?.row || loaded.row.accountId !== accountId) {
-      return c.json({ error: 'Project not found in account' }, 403);
+      return c.json({ error: 'Workspace not found in account' }, 403);
     }
   }
 
   let created;
   try {
-    created = await createAccountToken({ accountId, userId, name, expiresAt, projectId });
+    created = await createAccountToken({ accountId, userId, name, expiresAt, workspaceId });
   } catch (err) {
     if (err instanceof PatPolicyError) {
       return c.json({ error: err.message, code: err.code }, 400);
@@ -236,7 +236,7 @@ accountsRouter.openapi(
     {
       token_id: created.tokenId,
       name: created.name,
-      project_id: created.projectId ?? null,
+      project_id: created.workspaceId ?? null,
       public_key: created.publicKey,
       secret_key: created.secretKey,
       status: created.status,

@@ -7,7 +7,7 @@
 
 import { SandboxState } from '@daytonaio/sdk';
 import { config, SANDBOX_VERSION } from '../../config';
-import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
+import { triggerEmergencyDiskArchiveSweep } from '../../workspaces/disk-quota-guard';
 import {
   archiveDaytonaSandboxById,
   getDaytona,
@@ -31,7 +31,7 @@ import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 // loop). A single degraded upstream request on any of these calls hangs the
 // awaiting caller indefinitely. That is silently catastrophic on the reaper's
 // hot path (sandbox-reaper.ts): one stuck `getStatus`/`stop` call never lets
-// its Promise.all settle, which never lets runProjectMaintenance's outer
+// its Promise.all settle, which never lets runWorkspaceMaintenance's outer
 // Promise.all settle, which means its `finally` never runs — the
 // maintenanceRunning lock is stuck `true` forever and every future 5-minute
 // tick silently no-ops with zero error logs. Only a process restart clears the

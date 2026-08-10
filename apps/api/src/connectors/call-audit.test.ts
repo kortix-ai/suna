@@ -6,7 +6,7 @@ test('executionAuditEvent maps an agent connector failure into the central envel
     executionAuditEvent(
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'project-1',
         connectorId: 'connector-1',
         connectionId: 'connection-1',
         actionPath: 'gmail.send_email',
@@ -20,7 +20,7 @@ test('executionAuditEvent maps an agent connector failure into the central envel
     ),
   ).toEqual({
     accountId: 'account-1',
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     sessionId: 'session-1',
     actorUserId: 'actor-1',
     actorType: 'agent',
@@ -44,7 +44,7 @@ test('executionAuditEvent maps approval states without a session', () => {
   const event = executionAuditEvent(
     {
       accountId: 'account-1',
-      projectId: 'project-1',
+      workspaceId: 'project-1',
       connectorId: null,
       connectionId: null,
       actionPath: 'http.request',
@@ -64,7 +64,7 @@ test('executionAuditEvent redacts the central result summary', () => {
   const event = executionAuditEvent(
     {
       accountId: 'account-1',
-      projectId: 'project-1',
+      workspaceId: 'project-1',
       connectorId: 'connector-1',
       connectionId: 'connection-1',
       actionPath: 'http.request',
@@ -94,7 +94,7 @@ test('approvalResolvedAuditEvent attributes the human decision to the execution'
   expect(
     approvalResolvedAuditEvent({
       accountId: 'account-1',
-      projectId: 'project-1',
+      workspaceId: 'project-1',
       sessionId: 'session-1',
       executionId: 'execution-1',
       actorUserId: 'actor-1',
@@ -105,7 +105,7 @@ test('approvalResolvedAuditEvent attributes the human decision to the execution'
     }),
   ).toEqual({
     accountId: 'account-1',
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     sessionId: 'session-1',
     actorUserId: 'actor-1',
     actorType: 'human',

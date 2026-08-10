@@ -2,14 +2,14 @@
  * 22 — human-in-the-loop surfaces: change requests, the Review Center inbox,
  * pending connector approvals, and sessions needing input. All reads.
  *
- * Run (from packages/sdk):  bun run playground/review/22-review-and-changes.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/review/22-review-and-changes.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("review-and-changes", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
-  const project = kortix.project(projectId);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
+  const project = kortix.project(workspaceId);
 
   const changeRequests = await project.changeRequests.list();
   console.log(

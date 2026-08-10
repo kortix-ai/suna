@@ -41,7 +41,7 @@ export interface ApiReviewItem {
 }
 
 export async function listReviewItems(
-  projectId: string,
+  workspaceId: string,
   params?: { segment?: ReviewSegment; kind?: ReviewItemKind },
 ) {
   const q = new URLSearchParams();
@@ -50,23 +50,23 @@ export async function listReviewItems(
   const qs = q.toString();
   return unwrap(
     await backendApi.get<{ review_items: ApiReviewItem[] }>(
-      `/projects/${projectId}/review/items${qs ? `?${qs}` : ''}`,
+      `/projects/${workspaceId}/review/items${qs ? `?${qs}` : ''}`,
       // Background poll — keep failures with the query consumer, not the console.
       { showErrors: false },
     ),
   );
 }
 
-export async function getReviewItem(projectId: string, reviewItemId: string) {
+export async function getReviewItem(workspaceId: string, reviewItemId: string) {
   return unwrap(
     await backendApi.get<{ review_item: ApiReviewItem }>(
-      `/projects/${projectId}/review/items/${reviewItemId}`,
+      `/projects/${workspaceId}/review/items/${reviewItemId}`,
     ),
   );
 }
 
 export async function submitReviewItem(
-  projectId: string,
+  workspaceId: string,
   input: {
     kind: 'output' | 'decision' | 'batch';
     title: string;
@@ -77,29 +77,29 @@ export async function submitReviewItem(
     session_id?: string;
   },
 ) {
-  return unwrap(await backendApi.post<ApiReviewItem>(`/projects/${projectId}/review/items`, input));
+  return unwrap(await backendApi.post<ApiReviewItem>(`/projects/${workspaceId}/review/items`, input));
 }
 
 export async function actReviewItem(
-  projectId: string,
+  workspaceId: string,
   reviewItemId: string,
   input: { verdict: ReviewVerdict; feedback?: string },
 ) {
   return unwrap(
     await backendApi.post<ApiReviewItem>(
-      `/projects/${projectId}/review/items/${reviewItemId}/act`,
+      `/projects/${workspaceId}/review/items/${reviewItemId}/act`,
       input,
     ),
   );
 }
 
 export async function bulkActReviewItems(
-  projectId: string,
+  workspaceId: string,
   input: { ids: string[]; verdict: ReviewVerdict },
 ) {
   return unwrap(
     await backendApi.post<{ updated: number; review_items: ApiReviewItem[] }>(
-      `/projects/${projectId}/review/bulk`,
+      `/projects/${workspaceId}/review/bulk`,
       input,
     ),
   );

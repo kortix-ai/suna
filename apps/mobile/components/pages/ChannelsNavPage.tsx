@@ -1,5 +1,5 @@
 /**
- * ChannelsNavPage — connect a project to Slack (web parity:
+ * ChannelsNavPage — connect a workspace to Slack (web parity:
  * customize/sections/channels-view). Two paths: 1-click OAuth ("Add to Slack")
  * when the server has Slack creds, or BYO (paste a bot token + signing secret
  * from your own Slack app built from the generated manifest).
@@ -45,7 +45,7 @@ import {
   useSlackMode,
   useConnectSlack,
   useDisconnectSlack,
-} from '@/lib/projects/hooks';
+} from '@/lib/workspaces/hooks';
 import { API_URL } from '@/api/config';
 import { haptics } from '@/lib/haptics';
 
@@ -57,7 +57,7 @@ interface PageTabLike {
 
 interface ChannelsNavPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -68,13 +68,13 @@ const MONO = 'Menlo';
 const SLACK_APPS_URL = 'https://api.slack.com/apps?new_app=1';
 const SLACK = '#611f69';
 
-function buildSlackManifest(projectId: string): string {
+function buildSlackManifest(workspaceId: string): string {
   const root = API_URL.replace(/\/v1\/?$/, '');
-  const requestUrl = `${root}/v1/webhooks/slack/${projectId}`;
+  const requestUrl = `${root}/v1/webhooks/slack/${workspaceId}`;
   const manifest = {
     display_information: {
       name: 'Kortix',
-      description: 'Run a Kortix project from Slack',
+      description: 'Run a Kortix workspace from Slack',
       background_color: '#0a0a0a',
     },
     features: { bot_user: { display_name: 'kortix', always_online: true } },
@@ -108,17 +108,17 @@ function buildSlackManifest(projectId: string): string {
 // ─── BYO wizard (manifest → tokens) ───────────────────────────────────────────
 
 function ByoSlackSheet({
-  projectId,
+  workspaceId,
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   onClose: () => void;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const connectMut = useConnectSlack(projectId);
+  const connectMut = useConnectSlack(workspaceId);
 
   const [step, setStep] = useState<'manifest' | 'tokens'>('manifest');
   const [copied, setCopied] = useState(false);
@@ -126,7 +126,7 @@ function ByoSlackSheet({
   const [signingSecret, setSigningSecret] = useState('');
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  const manifest = useMemo(() => buildSlackManifest(projectId), [projectId]);
+  const manifest = useMemo(() => buildSlackManifest(workspaceId), [workspaceId]);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
@@ -284,7 +284,7 @@ function InfoRow({ label, value, mono, isDark }: { label: string; value: string;
 
 export function ChannelsNavPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -295,9 +295,9 @@ export function ChannelsNavPage({
   const insets = useSafeAreaInsets();
   const byoSheetRef = React.useRef<BottomSheetModal>(null);
 
-  const install = useSlackInstallation(projectId);
-  const mode = useSlackMode(projectId);
-  const disconnectMut = useDisconnectSlack(projectId);
+  const install = useSlackInstallation(workspaceId);
+  const mode = useSlackMode(workspaceId);
+  const disconnectMut = useDisconnectSlack(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -325,7 +325,7 @@ export function ChannelsNavPage({
   const handleDisconnect = () => {
     Alert.alert(
       'Disconnect Slack',
-      'Removes the Slack secrets and stops events for this project.',
+      'Removes the Slack secrets and stops events for this workspace.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -408,7 +408,7 @@ export function ChannelsNavPage({
                 </View>
                 <Text style={{ fontSize: 17, fontFamily: 'Roobert-Medium', color: fg }}>Connect Slack</Text>
                 <Text style={{ fontSize: 13.5, lineHeight: 20, color: muted, textAlign: 'center', marginTop: 6, paddingHorizontal: 12 }}>
-                  Run this project from Slack — @mention the bot in a channel or DM it to kick off a session.
+                  Run this workspace from Slack — @mention the bot in a channel or DM it to kick off a session.
                 </Text>
               </View>
 
@@ -460,7 +460,7 @@ export function ChannelsNavPage({
         keyboardBlurBehavior="restore"
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
-        <ByoSlackSheet projectId={projectId} onClose={() => byoSheetRef.current?.dismiss()} isDark={isDark} />
+        <ByoSlackSheet workspaceId={workspaceId} onClose={() => byoSheetRef.current?.dismiss()} isDark={isDark} />
       </BottomSheetModal>
     </View>
   );

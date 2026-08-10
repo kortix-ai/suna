@@ -26,6 +26,7 @@ const COMMAND_VERBS = new Set([
   'model',
   'agents',
   'agent',
+  'workspaces',
   'projects',
   'use',
   'switch',

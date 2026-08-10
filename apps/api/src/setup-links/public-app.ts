@@ -13,8 +13,8 @@ import { connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
 import { pipedreamConfigured, pipedreamConnectUrl } from '../connectors/pipedream';
-import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
-import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
+import { propagateWorkspaceSecretsToActiveSandboxes } from '../workspaces/lib/sandbox-env-sync';
+import { isValidSecretName, writeSharedWorkspaceSecret } from '../workspaces/secrets';
 import { db } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { resolveSetupLink } from './token';
@@ -62,11 +62,11 @@ function createSetupLinkRateLimitMiddleware() {
   };
 }
 
-async function projectName(projectId: string): Promise<string> {
+async function projectName(workspaceId: string): Promise<string> {
   const [row] = await db
     .select({ name: projects.name })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
   return row?.name ?? 'this project';
 }
@@ -83,7 +83,7 @@ setupLinksPublicApp.get('/secret/:token', async (c) => {
 
   return c.json({
     kind: 'secret',
-    project_name: await projectName(resolved.projectId),
+    project_name: await projectName(resolved.workspaceId),
     fields: resolved.payload.fields.map((f) => ({
       name: f.name,
       label: f.label ?? null,
@@ -117,8 +117,8 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
     if (!allowed.has(name) || !isValidSecretName(name)) continue;
     const value = typeof rawValue === 'string' ? rawValue : '';
     if (!value) continue;
-    await writeSharedProjectSecret({
-      projectId: resolved.projectId,
+    await writeSharedWorkspaceSecret({
+      workspaceId: resolved.workspaceId,
       name,
       value,
       scope: resolved.payload.scope,
@@ -132,7 +132,7 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
   }
 
   // Live-propagate so an active session sees the new value without a restart.
-  void propagateProjectSecretsToActiveSandboxes(resolved.projectId);
+  void propagateWorkspaceSecretsToActiveSandboxes(resolved.workspaceId);
 
   // Notify the requesting session that the secret was submitted, so the agent
   // can immediately retry whatever needed the credential instead of re-minting
@@ -140,7 +140,7 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
   // mint time (setup-links.ts passes c.get('sessionId')).
   const sid = (resolved.payload as { sid?: string | null }).sid;
   if (sid) {
-    void notifyRequestingSession(sid, resolved.projectId, resolved.payload.uid, saved);
+    void notifyRequestingSession(sid, resolved.workspaceId, resolved.payload.uid, saved);
   }
 
   return c.json({ ok: true, saved });
@@ -154,7 +154,7 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
 
   return c.json({
     kind: 'connector',
-    project_name: await projectName(resolved.projectId),
+    project_name: await projectName(resolved.workspaceId),
     slug: resolved.payload.slug,
     app: resolved.payload.app,
     expires_at: new Date(resolved.payload.exp).toISOString(),
@@ -179,7 +179,7 @@ setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
     .from(connectors)
     .where(
       and(
-        eq(connectors.projectId, resolved.projectId),
+        eq(connectors.workspaceId, resolved.workspaceId),
         eq(connectors.slug, resolved.payload.slug),
       ),
     )
@@ -199,7 +199,7 @@ setupLinksPublicApp.post('/connectors/:token/start', async (c) => {
 
   try {
     const { connectUrl } = await pipedreamConnectUrl(
-      resolved.projectId,
+      resolved.workspaceId,
       resolved.payload.slug,
       resolved.payload.app,
       null,
@@ -235,7 +235,7 @@ export function secretSubmittedPrompt(saved: string[]): string {
  */
 async function notifyRequestingSession(
   sessionId: string,
-  projectId: string,
+  workspaceId: string,
   actorUserId: string | null,
   saved: string[],
 ): Promise<void> {
@@ -253,11 +253,11 @@ async function notifyRequestingSession(
     const meta = (session.metadata ?? {}) as Record<string, unknown>;
     if (typeof meta.deletedAt === 'string') return;
     const { enqueueContinueSessionCommand, drainSessionLifecycleQueue } = await import(
-      '../projects/session-lifecycle'
+      '../workspaces/session-lifecycle'
     );
     await enqueueContinueSessionCommand({
       source: 'system:secret-submitted',
-      projectId,
+      workspaceId,
       accountId: session.accountId,
       sessionId,
       actorUserId,

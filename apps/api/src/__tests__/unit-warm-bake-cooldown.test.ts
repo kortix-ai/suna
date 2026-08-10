@@ -18,20 +18,20 @@ setTestEnv('DAYTONA_TARGET', 'test-target');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 
-const { warmBakeCooldownGate, warmBakeScopeId, perProjectWarmEligible, DEFAULT_SANDBOX_SLUG } = await import(
+const { warmBakeCooldownGate, warmBakeScopeId, perWorkspaceWarmEligible, DEFAULT_SANDBOX_SLUG } = await import(
   '../snapshots/builder'
 );
 const { computeTemplateIdentity, resolveUserDockerfile } = await import('../snapshots/templates');
 const { warmBuildSlug, templateSlugFromBuildSlug } = await import('../snapshots/ppwarm-names');
 const templatesModule = await import('../snapshots/templates');
 type ResolvedTemplate = Awaited<ReturnType<typeof templatesModule.resolveDefaultTemplate>>;
-type GitBackedProject = Parameters<typeof computeTemplateIdentity>[0];
+type GitBackedWorkspace = Parameters<typeof computeTemplateIdentity>[0];
 
-const PROJECT = '2d34b9f0-0000-0000-0000-000000000000';
+const WORKSPACE = '2d34b9f0-0000-0000-0000-000000000000';
 const COOLDOWN = 10 * 60 * 1000;
 
-const FAKE_PROJECT: GitBackedProject = {
-  projectId: PROJECT,
+const FAKE_WORKSPACE: GitBackedWorkspace = {
+  workspaceId: WORKSPACE,
   repoUrl: 'https://example.test/repo.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
@@ -40,7 +40,7 @@ const FAKE_PROJECT: GitBackedProject = {
 function makeTemplate(overrides: Partial<ResolvedTemplate>): ResolvedTemplate {
   return {
     templateId: 'tid-1',
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     slug: DEFAULT_SANDBOX_SLUG,
     name: DEFAULT_SANDBOX_SLUG,
     isShared: true,
@@ -64,95 +64,95 @@ function makeTemplate(overrides: Partial<ResolvedTemplate>): ResolvedTemplate {
 describe('warmBakeCooldownGate — per-(project, provider) bake pacing', () => {
   test('first kick passes and starts the cooldown', () => {
     const registry = new Map<string, number>();
-    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
-    expect(registry.get(`${PROJECT}:daytona`)).toBe(0);
+    expect(warmBakeCooldownGate(WORKSPACE, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
+    expect(registry.get(`${WORKSPACE}:daytona`)).toBe(0);
   });
 
   test('kicks inside the cooldown are rejected — a push every few minutes bakes once per window', () => {
     const registry = new Map<string, number>();
-    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
+    expect(warmBakeCooldownGate(WORKSPACE, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
     for (const minute of [1, 4, 7, 9]) {
       expect(
-        warmBakeCooldownGate(PROJECT, 'daytona', { now: minute * 60_000, cooldownMs: COOLDOWN, registry }),
+        warmBakeCooldownGate(WORKSPACE, 'daytona', { now: minute * 60_000, cooldownMs: COOLDOWN, registry }),
       ).toBe(false);
     }
-    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: COOLDOWN, cooldownMs: COOLDOWN, registry })).toBe(true);
+    expect(warmBakeCooldownGate(WORKSPACE, 'daytona', { now: COOLDOWN, cooldownMs: COOLDOWN, registry })).toBe(true);
   });
 
   test('a rejected kick does not extend the cooldown window', () => {
     const registry = new Map<string, number>();
-    warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry });
-    warmBakeCooldownGate(PROJECT, 'daytona', { now: COOLDOWN - 1, cooldownMs: COOLDOWN, registry });
-    expect(registry.get(`${PROJECT}:daytona`)).toBe(0);
+    warmBakeCooldownGate(WORKSPACE, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry });
+    warmBakeCooldownGate(WORKSPACE, 'daytona', { now: COOLDOWN - 1, cooldownMs: COOLDOWN, registry });
+    expect(registry.get(`${WORKSPACE}:daytona`)).toBe(0);
   });
 
   test('providers cool down independently — parity fan-out is paced per provider, not globally', () => {
     const registry = new Map<string, number>();
-    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
-    expect(warmBakeCooldownGate(PROJECT, 'platinum', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
-    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 1, cooldownMs: COOLDOWN, registry })).toBe(false);
-    expect(warmBakeCooldownGate(PROJECT, 'platinum', { now: 1, cooldownMs: COOLDOWN, registry })).toBe(false);
+    expect(warmBakeCooldownGate(WORKSPACE, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
+    expect(warmBakeCooldownGate(WORKSPACE, 'platinum', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
+    expect(warmBakeCooldownGate(WORKSPACE, 'daytona', { now: 1, cooldownMs: COOLDOWN, registry })).toBe(false);
+    expect(warmBakeCooldownGate(WORKSPACE, 'platinum', { now: 1, cooldownMs: COOLDOWN, registry })).toBe(false);
   });
 
   test('projects cool down independently', () => {
     const registry = new Map<string, number>();
     const other = 'adfd91b6-0000-0000-0000-000000000000';
-    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
+    expect(warmBakeCooldownGate(WORKSPACE, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
     expect(warmBakeCooldownGate(other, 'daytona', { now: 1, cooldownMs: COOLDOWN, registry })).toBe(true);
   });
 
   test('a zero cooldown disables pacing (escape hatch for tests/ops)', () => {
     const registry = new Map<string, number>();
-    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: 0, registry })).toBe(true);
-    expect(warmBakeCooldownGate(PROJECT, 'daytona', { now: 0, cooldownMs: 0, registry })).toBe(true);
+    expect(warmBakeCooldownGate(WORKSPACE, 'daytona', { now: 0, cooldownMs: 0, registry })).toBe(true);
+    expect(warmBakeCooldownGate(WORKSPACE, 'daytona', { now: 0, cooldownMs: 0, registry })).toBe(true);
   });
 });
 
 describe('warmBakeScopeId — per-(project, template) pacing scope', () => {
   test('an omitted slug and the explicit default slug compute the identical key', () => {
-    expect(warmBakeScopeId(PROJECT)).toBe(warmBakeScopeId(PROJECT, DEFAULT_SANDBOX_SLUG));
+    expect(warmBakeScopeId(WORKSPACE)).toBe(warmBakeScopeId(WORKSPACE, DEFAULT_SANDBOX_SLUG));
   });
 
   test('a default-slug caller reproduces the exact pre-change cooldown pacing behavior', () => {
     const registry = new Map<string, number>();
-    const scope = warmBakeScopeId(PROJECT);
+    const scope = warmBakeScopeId(WORKSPACE);
     expect(warmBakeCooldownGate(scope, 'daytona', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
     expect(warmBakeCooldownGate(scope, 'daytona', { now: 1, cooldownMs: COOLDOWN, registry })).toBe(false);
     expect(warmBakeCooldownGate(scope, 'daytona', { now: COOLDOWN, cooldownMs: COOLDOWN, registry })).toBe(true);
   });
 
   test('a custom template gets an independent pacing scope from the default template', () => {
-    expect(warmBakeScopeId(PROJECT, 'custom-tpl')).not.toBe(warmBakeScopeId(PROJECT, DEFAULT_SANDBOX_SLUG));
+    expect(warmBakeScopeId(WORKSPACE, 'custom-tpl')).not.toBe(warmBakeScopeId(WORKSPACE, DEFAULT_SANDBOX_SLUG));
 
     const registry = new Map<string, number>();
-    const defaultScope = warmBakeScopeId(PROJECT, DEFAULT_SANDBOX_SLUG);
-    const customScope = warmBakeScopeId(PROJECT, 'custom-tpl');
+    const defaultScope = warmBakeScopeId(WORKSPACE, DEFAULT_SANDBOX_SLUG);
+    const customScope = warmBakeScopeId(WORKSPACE, 'custom-tpl');
     expect(warmBakeCooldownGate(defaultScope, 'platinum', { now: 0, cooldownMs: COOLDOWN, registry })).toBe(true);
     expect(warmBakeCooldownGate(customScope, 'platinum', { now: 1, cooldownMs: COOLDOWN, registry })).toBe(true);
   });
 
   test('two distinct custom templates get independent pacing scopes from each other', () => {
-    expect(warmBakeScopeId(PROJECT, 'tpl-a')).not.toBe(warmBakeScopeId(PROJECT, 'tpl-b'));
+    expect(warmBakeScopeId(WORKSPACE, 'tpl-a')).not.toBe(warmBakeScopeId(WORKSPACE, 'tpl-b'));
   });
 });
 
-describe('perProjectWarmEligible — read-side warm-image gate', () => {
+describe('perWorkspaceWarmEligible — read-side warm-image gate', () => {
   test('the shared default template is eligible on every provider', () => {
-    expect(perProjectWarmEligible({ isShared: true }, 'daytona')).toBe(true);
-    expect(perProjectWarmEligible({ isShared: true }, 'platinum')).toBe(true);
-    expect(perProjectWarmEligible({ isShared: true }, 'e2b')).toBe(true);
+    expect(perWorkspaceWarmEligible({ isShared: true }, 'daytona')).toBe(true);
+    expect(perWorkspaceWarmEligible({ isShared: true }, 'platinum')).toBe(true);
+    expect(perWorkspaceWarmEligible({ isShared: true }, 'e2b')).toBe(true);
   });
 
   test('a custom template is eligible on platinum (the default allowlist)', () => {
-    expect(perProjectWarmEligible({ isShared: false }, 'platinum')).toBe(true);
+    expect(perWorkspaceWarmEligible({ isShared: false }, 'platinum')).toBe(true);
   });
 
   test('a custom template is NOT eligible on daytona by default — the 66% Daytona hit-rate path is untouched', () => {
-    expect(perProjectWarmEligible({ isShared: false }, 'daytona')).toBe(false);
+    expect(perWorkspaceWarmEligible({ isShared: false }, 'daytona')).toBe(false);
   });
 
   test('a custom template is NOT eligible on an unlisted provider', () => {
-    expect(perProjectWarmEligible({ isShared: false }, 'e2b')).toBe(false);
+    expect(perWorkspaceWarmEligible({ isShared: false }, 'e2b')).toBe(false);
   });
 });
 
@@ -167,8 +167,8 @@ describe('per-template warm identity — the runtime-matches-template invariant'
       image: 'myorg/custom-runtime:latest',
     });
 
-    const sharedResolved = await resolveUserDockerfile(FAKE_PROJECT, shared);
-    const customResolved = await resolveUserDockerfile(FAKE_PROJECT, custom);
+    const sharedResolved = await resolveUserDockerfile(FAKE_WORKSPACE, shared);
+    const customResolved = await resolveUserDockerfile(FAKE_WORKSPACE, custom);
 
     expect(customResolved.dockerfile).toBe('FROM myorg/custom-runtime:latest\n');
     expect(customResolved.dockerfile).not.toBe(sharedResolved.dockerfile);
@@ -184,8 +184,8 @@ describe('per-template warm identity — the runtime-matches-template invariant'
       image: 'myorg/custom-runtime:latest',
     });
 
-    const sharedIdentity = await computeTemplateIdentity(FAKE_PROJECT, shared);
-    const customIdentity = await computeTemplateIdentity(FAKE_PROJECT, custom);
+    const sharedIdentity = await computeTemplateIdentity(FAKE_WORKSPACE, shared);
+    const customIdentity = await computeTemplateIdentity(FAKE_WORKSPACE, custom);
 
     expect(customIdentity.snapshotName.startsWith('kortix-tpl-')).toBe(true);
     expect(sharedIdentity.snapshotName.startsWith('kortix-default-')).toBe(true);
@@ -196,8 +196,8 @@ describe('per-template warm identity — the runtime-matches-template invariant'
   test('two custom templates with different images get different identities — the warm bake cannot reuse a stale one', async () => {
     const customA = makeTemplate({ slug: 'tpl-a', isShared: false, image: 'myorg/a:latest' });
     const customB = makeTemplate({ slug: 'tpl-b', isShared: false, image: 'myorg/b:latest' });
-    const identityA = await computeTemplateIdentity(FAKE_PROJECT, customA);
-    const identityB = await computeTemplateIdentity(FAKE_PROJECT, customB);
+    const identityA = await computeTemplateIdentity(FAKE_WORKSPACE, customA);
+    const identityB = await computeTemplateIdentity(FAKE_WORKSPACE, customB);
     expect(identityA.snapshotName).not.toBe(identityB.snapshotName);
   });
 });

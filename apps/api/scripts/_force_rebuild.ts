@@ -26,8 +26,8 @@ console.log(`row ${row.templateId} providerState -> ${refreshed?.providerState}`
 
 // 3. rebuild with the fresh binary
 const PID = 'a216e2e6-4ab4-4eff-9a7a-12fa131a4265';
-const [p] = await db.select().from(projects).where(eq(projects.projectId, PID)).limit(1);
-const gitProject = { projectId: p.projectId, repoUrl: p.repoUrl, defaultBranch: p.defaultBranch ?? 'main', manifestPath: (p as any).manifestPath ?? null, gitAuthToken: null } as any;
+const [p] = await db.select().from(projects).where(eq(projects.workspaceId, PID)).limit(1);
+const gitProject = { workspaceId: p.workspaceId, repoUrl: p.repoUrl, defaultBranch: p.defaultBranch ?? 'main', manifestPath: (p as any).manifestPath ?? null, gitAuthToken: null } as any;
 const t0 = Date.now();
 const r = await ensureSandboxImage(gitProject, { source: 'manual', provider: 'platinum' });
 console.log('RESULT', JSON.stringify({ ...r, ms: Date.now() - t0 }));

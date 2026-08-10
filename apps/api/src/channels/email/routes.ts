@@ -3,7 +3,7 @@ import { config } from '../../config';
 import { json, errors } from '../../openapi';
 import { loadAgentMailWebhookSecretForInbox } from '../install-store';
 import { emailWebhookApp } from './app';
-import { dispatchAgentMailEvent, resolveProjectForAgentMailInbox } from './session';
+import { dispatchAgentMailEvent, resolveWorkspaceForAgentMailInbox } from './session';
 import { verifyAgentMailSignature } from './verify';
 import type { AgentMailMessageReceivedEvent } from './types';
 
@@ -37,11 +37,11 @@ emailWebhookApp.openapi(
       return c.json({ error: 'Missing event_type or message.inbox_id' }, 400);
     }
 
-    const projectId = event.message?.inbox_id
-      ? await resolveProjectForAgentMailInbox(event.message.inbox_id)
+    const workspaceId = event.message?.inbox_id
+      ? await resolveWorkspaceForAgentMailInbox(event.message.inbox_id)
       : null;
-    const secret = projectId
-      ? await loadAgentMailWebhookSecretForInbox(projectId, event.message.inbox_id)
+    const secret = workspaceId
+      ? await loadAgentMailWebhookSecretForInbox(workspaceId, event.message.inbox_id)
       : config.AGENTMAIL_WEBHOOK_SECRET;
     if (!secret) {
       return c.json({ error: 'AgentMail webhook signing is not configured' }, 503);

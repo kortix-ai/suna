@@ -24,7 +24,7 @@ interface AttachmentCleanupDeps {
 
 export interface ConnectorAttachmentScope {
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string | null;
   userId: string;
 }
@@ -83,7 +83,7 @@ function plainFilename(value: string): boolean {
 }
 
 function objectPath(scope: ConnectorAttachmentScope, attachmentId: string): string {
-  return `connector-attachments/${scope.projectId}/${attachmentId}`;
+  return `connector-attachments/${scope.workspaceId}/${attachmentId}`;
 }
 
 export function validateClaimRows(
@@ -98,7 +98,7 @@ export function validateClaimRows(
     if (!row) throw new Error('attachment_not_found');
     if (
       row.accountId !== scope.accountId ||
-      row.projectId !== scope.projectId ||
+      row.workspaceId !== scope.workspaceId ||
       row.sessionId !== scope.sessionId ||
       row.userId !== scope.userId
     ) {
@@ -139,7 +139,7 @@ class DbConnectorAttachmentStore implements ConnectorAttachmentStore {
     await db.insert(connectorAttachments).values({
       attachmentId,
       accountId: scope.accountId,
-      projectId: scope.projectId,
+      workspaceId: scope.workspaceId,
       sessionId: scope.sessionId,
       userId: scope.userId,
       objectPath: path,

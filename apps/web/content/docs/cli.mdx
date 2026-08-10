@@ -27,9 +27,9 @@ Kortix stores authentication per host, not globally. A host is one Kortix API en
 
 The config file lives at `~/.config/kortix/config.json`, mode `0600`. Override its path with `KORTIX_CONFIG_FILE`.
 
-The CLI follows one hierarchy: host → account → project → session. You sign in to a host, pick an account inside it, pick a project inside that account, and open sessions inside the project. `kortix hosts login` walks the first three steps in order: it signs you in, picks the account, then sets a default project.
+The CLI follows one hierarchy: host → account → workspace → session. You sign in to a host, pick an account inside it, pick a workspace inside that account, and open sessions inside the workspace. `kortix hosts login` walks the first three steps in order: it signs you in, picks the account, then sets a default workspace.
 
-Every token starts with `kortix_pat_`. A user token, from `kortix login`, sees every account and project you belong to. A project token is auto-minted for a session sandbox and scoped to one project. See [Token scope](#token-scope).
+Every token starts with `kortix_pat_`. A user token, from `kortix login`, sees every account and workspace you belong to. A workspace token is auto-minted for a session sandbox and scoped to one workspace. See [Token scope](#token-scope).
 
 ## The dev loop
 
@@ -40,25 +40,25 @@ This loop assumes the CLI is installed and you ran `kortix login`. See [Quicksta
 <Step>
 ### Link a repo
 
-Start a new project, or link an existing repo folder to one.
+Start a new workspace, or link an existing repo folder to one.
 
-To scaffold a new project:
+To scaffold a new workspace:
 
 ```sh
 kortix init my-app
 cd my-app
 ```
 
-`kortix init` creates a project directory with the general-purpose starter. Its
+`kortix init` creates a workspace directory with the general-purpose starter. Its
 `kortix.yaml` declares `kortix_version: 2` and runs OpenCode.
 
-To link an existing cloned repo to a project you already created:
+To link an existing cloned repo to a workspace you already created:
 
 ```sh
-kortix projects link <project-id>
+kortix workspaces link <workspace-id>
 ```
 
-This command writes `.kortix/link.json` in the current directory. Kortix reads this file to find your project on every command run from this folder. If you plan to run `kortix ship` first, skip this step. It links a new project for you when none exists.
+This command writes `.kortix/link.json` in the current directory. Kortix reads this file to find your workspace on every command run from this folder. If you plan to run `kortix ship` first, skip this step. It links a new workspace for you when none exists.
 </Step>
 
 <Step>
@@ -68,7 +68,7 @@ This command writes `.kortix/link.json` in the current directory. Kortix reads t
 kortix ship
 ```
 
-`kortix ship` lints your `kortix.yaml`, commits local changes, pushes your branch, and prompts for any missing secret or connection. Run it each time you want your local changes on the cloud project. The first run also creates the cloud project and repo if you have not linked one yet.
+`kortix ship` lints your `kortix.yaml`, commits local changes, pushes your branch, and prompts for any missing secret or connection. Run it each time you want your local changes on the cloud workspace. The first run also creates the cloud workspace and repo if you have not linked one yet.
 </Step>
 
 <Step>
@@ -122,7 +122,7 @@ kortix cr diff 1
 kortix cr merge 1
 ```
 
-`kortix cr ls` lists change requests for the linked project. `kortix cr diff <cr>` shows the unified patch. `kortix cr merge <cr>` merges it into the project's default branch. Accept a CR number or its full id.
+`kortix cr ls` lists change requests for the linked workspace. `kortix cr diff <cr>` shows the unified patch. `kortix cr merge <cr>` merges it into the workspace's default branch. Accept a CR number or its full id.
 </Step>
 
 </Steps>
@@ -133,7 +133,7 @@ kortix cr merge 1
 
 | Command | Effect |
 | --- | --- |
-| `kortix login [--host <name>] [--api <url>] [--token <pat>] [--account <slug>] [--no-project]` | Sign in to the active host, or the named one. Opens a browser by default; `--token` signs in headless. `--no-project` skips the default-project pick. |
+| `kortix login [--host <name>] [--api <url>] [--token <pat>] [--account <slug>] [--no-workspace]` | Sign in to the active host, or the named one. Opens a browser by default; `--token` signs in headless. `--no-workspace` skips the default-workspace pick. |
 | `kortix logout [--host <name>]` | Remove the token for the active host, or the named one. |
 | `kortix whoami [--host <name>] [--json] [--token-only]` | Print the signed-in user and active account. |
 | `kortix token [--host <name>]` | Shortcut for `kortix whoami --token-only`. |
@@ -145,7 +145,7 @@ kortix cr merge 1
 | Command | Effect |
 | --- | --- |
 | `kortix hosts ls [--json]` | List every host and its auth status. |
-| `kortix hosts login [<name>] [--token <pat>] [--api <url>] [--account <slug>] [--no-project]` | Sign in to a host. An unknown name registers the host first. |
+| `kortix hosts login [<name>] [--token <pat>] [--api <url>] [--account <slug>] [--no-workspace]` | Sign in to a host. An unknown name registers the host first. |
 | `kortix hosts logout [<name>]` | Remove the token for a host. |
 | `kortix hosts use <name>` | Switch the active host. |
 | `kortix hosts add <name> --url <url> [--dashboard-url <url>] [--login]` | Register a new host. `--login` signs in right after. |
@@ -164,38 +164,51 @@ A remote host URL that starts with `http://` is normalized to `https://`. The CL
 | `kortix accounts current [--json]` | Print the active account. |
 | `kortix accounts info [<slug-or-id>] [--json]` | Show one account. |
 
-### Projects
+### Workspaces
 
-A command resolves "the project" in this order:
+A command resolves "the workspace" in this order:
 
-1. The `--project` flag.
-2. The `KORTIX_PROJECT_ID` environment variable.
-3. `.kortix/link.json` in the exact working directory.
-4. The global default set by `kortix projects use`.
+1. The `--workspace` flag.
+2. The `KORTIX_WORKSPACE_ID` environment variable.
+3. The deprecated `KORTIX_PROJECT_ID` environment variable.
+4. `.kortix/link.json` in the exact working directory.
+5. The global default set by `kortix workspaces use`.
 
 | Command | Effect |
 | --- | --- |
-| `kortix projects ls [--all] [--json]` | List projects on the active account. `--all` spans every account you belong to. |
-| `kortix projects info [<id>] [--json]` | Show one project. Default: the linked or default project. |
-| `kortix projects use [<id>]` | Set the global default project. Switches the active account if the project lives elsewhere. |
-| `kortix projects unset` | Clear the global default project. |
-| `kortix projects link [<id>]` | Bind the current directory to a project. Writes `.kortix/link.json`. |
-| `kortix projects unlink` | Remove `.kortix/link.json`. |
-| `kortix projects open [<id>]` | Open a project's dashboard page in your browser. |
-| `kortix projects clone [<id>] [dir]` | Clone a project's repo through the authenticated Kortix git proxy. |
-| `kortix projects rm [<id>] [--purge] [-y\|--yes]` | Archive a project. `--purge` also deletes its managed git repo. |
+| `kortix workspaces ls [--all] [--json]` | List workspaces on the active account. `--all` spans every account you belong to. |
+| `kortix workspaces info [<id>] [--json]` | Show one workspace. Default: the linked or default workspace. |
+| `kortix workspaces use [<id>]` | Set the global default workspace. Switches the active account if the workspace lives elsewhere. |
+| `kortix workspaces unset` | Clear the global default workspace. |
+| `kortix workspaces link [<id>]` | Bind the current directory to a workspace. Writes `.kortix/link.json`. |
+| `kortix workspaces unlink` | Remove `.kortix/link.json`. |
+| `kortix workspaces open [<id>]` | Open a workspace's dashboard page in your browser. |
+| `kortix workspaces clone [<id>] [dir]` | Clone a workspace's repo through the authenticated Kortix git proxy. |
+| `kortix workspaces rm [<id>] [--purge] [-y\|--yes]` | Archive a workspace. `--purge` also deletes its managed git repo. |
 
-### Project scaffold
+#### Legacy Project compatibility
 
-`kortix init [project-name] [options]` creates a new project directory. The
+Existing automation does not require a flag day. `kortix projects` remains a
+deprecated adapter for `kortix workspaces`. The `--project` flag remains a
+deprecated alias for `--workspace` on workspace-scoped commands.
+`KORTIX_PROJECT_ID` remains a fallback after `KORTIX_WORKSPACE_ID`.
+`--no-project` remains an alias for `--no-workspace` during login.
+
+New automation must use Workspace commands and names. The compatibility adapter
+continues to call `/v1/projects` so older response fields such as `project_id`
+remain stable.
+
+### Workspace scaffold
+
+`kortix init [workspace-name] [options]` creates a new workspace directory. The
 starter writes a v2 `kortix.yaml` and the canonical `.kortix/opencode`
 system-skill source. The command can wire local coding-tool discovery without
 changing the cloud OpenCode runtime. The command does not write
-`.kortix/link.json`. `kortix ship` or `kortix projects link` create that file.
+`.kortix/link.json`. `kortix ship` or `kortix workspaces link` create that file.
 
 | Flag | Meaning |
 | --- | --- |
-| `--name <project>` | Project name. |
+| `--name <workspace>` | Workspace name. |
 | `--primary <agent>` | Primary agent. |
 | `--agents <csv>` | Local coding-agent integrations to wire up. |
 | `--force` | Configure the current directory in place instead of scaffolding a new one. |
@@ -209,7 +222,7 @@ The local coding-tool selection does not change the cloud OpenCode runtime.
 
 ### Ship
 
-`kortix ship` stages, commits, and pushes your current branch to the project's git repo. Run it once to create the project. Run it again any time to sync. Alias: `kortix deploy`.
+`kortix ship` stages, commits, and pushes your current branch to the workspace's git repo. Run it once to create the workspace. Run it again any time to sync. Alias: `kortix deploy`.
 
 Each run:
 - Parses and validates `kortix.yaml` (skip with `--no-verify`).
@@ -222,15 +235,15 @@ An existing GitHub `origin` links through the Kortix GitHub App. Any other exist
 
 | Option | Effect |
 | --- | --- |
-| `--name <project>` | Display name for a new project. |
-| `--account <id\|slug>` | Account to create the project under (first ship only). |
+| `--name <workspace>` | Display name for a new workspace. |
+| `--account <id\|slug>` | Account to create the workspace under (first ship only). |
 | `--origin <managed\|git-url>` | Override the inferred origin choice. |
 | `--github-token <pat>` | Link a GitHub origin with this token instead of the GitHub App. |
 | `-m, --message <text>` | Commit message. |
 | `--no-commit` / `--no-verify` / `--no-env` / `--no-connect` | Skip that step. |
 | `-y, --yes` | Don't prompt. |
 | `-n, --dry-run` | Print what would happen; change nothing. |
-| `--project <id>` / `--host <name>` | Target a non-default project or host. |
+| `--workspace <id>` / `--host <name>` | Target a non-default workspace or host. |
 
 ### Sessions
 
@@ -238,10 +251,10 @@ Each session runs in one sandbox on its own branch.
 
 | Command | Effect |
 | --- | --- |
-| `kortix sessions ls` | List every session on the project. |
+| `kortix sessions ls` | List every session on the workspace. |
 | `kortix sessions status [--all] [--json]` | Every session and what its agent is doing right now. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id> [--json]` | Detail view: status, branch, agent, sandbox URL. |
-| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the project's default model. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. |
+| `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--json]` | Start a session. `--model <id>` overrides the workspace's default model. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. |
 | `kortix sessions connect [<id>] [-- <opencode args>]` | Attach your local OpenCode TUI to the OpenCode REST compatibility process in the sandbox. Alias: `attach`. |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Aliases: `terminal`, `ssh`. |
@@ -265,19 +278,19 @@ A change request (CR) merges one branch into another on any git host. It is the 
 
 | Command | Effect |
 | --- | --- |
-| `kortix cr ls [--status open\|merged\|closed\|all] [--project <id>]` | List CRs. Default: `--status open`. |
-| `kortix cr show <cr> [--project <id>]` | Show one CR, including its merge preview. Alias: `info`. |
+| `kortix cr ls [--status open\|merged\|closed\|all] [--workspace <id>]` | List CRs. Default: `--status open`. |
+| `kortix cr show <cr> [--workspace <id>]` | Show one CR, including its merge preview. Alias: `info`. |
 | `kortix cr diff <cr> [--no-color] [--json]` | Print a CR's unified diff. |
-| `kortix cr open --title "<text>" [--description "<text>"] [--head <ref>] [--session <id>] [--base <ref>]` | Open a CR. Aliases: `new`, `create`. Inside a sandbox, `--head` and `--session` default automatically. `--base` defaults to the project's default branch. |
+| `kortix cr open --title "<text>" [--description "<text>"] [--head <ref>] [--session <id>] [--base <ref>]` | Open a CR. Aliases: `new`, `create`. Inside a sandbox, `--head` and `--session` default automatically. `--base` defaults to the workspace's default branch. |
 | `kortix cr merge <cr> [--message "<text>"]` | Merge an open CR. Fast-forward when possible, three-way merge otherwise. |
 | `kortix cr close <cr>` | Close an open CR without merging. |
 | `kortix cr reopen <cr>` | Reopen a closed CR. Merged CRs are terminal. |
 
-`<cr>` accepts a per-project number (`3`) or the full id. Inside a sandbox, the CLI reads its token automatically — no login or link needed.
+`<cr>` accepts a per-workspace number (`3`) or the full id. Inside a sandbox, the CLI reads its token automatically — no login or link needed.
 
 ### Secrets
 
-Encrypted values stored on the project and injected as plain environment variables into every session sandbox at boot.
+Encrypted values stored on the workspace and injected as plain environment variables into every session sandbox at boot.
 
 | Command | Effect |
 | --- | --- |
@@ -295,7 +308,7 @@ Encrypted values stored on the project and injected as plain environment variabl
 
 ### Agents
 
-Per-agent model settings on the linked project.
+Per-agent model settings on the linked workspace.
 
 | Command | Effect |
 | --- | --- |
@@ -305,21 +318,21 @@ Per-agent model settings on the linked project.
 
 ### Channels
 
-Manages the project's connection to a chat platform. Tokens are stored encrypted in the project's secrets and resolved server-side — they are never injected into the sandbox.
+Manages the workspace's connection to a chat platform. Tokens are stored encrypted in the workspace's secrets and resolved server-side — they are never injected into the sandbox.
 
 | Command | Effect |
 | --- | --- |
 | `kortix channels status [--json]` | Show the current connection. |
 | `kortix channels connect [--wait] [--timeout <sec>]` | Connect in one step: prints an install link. `--wait` polls until the install lands. |
 | `kortix channels connect --manual [--bot-token <token>] [--signing-secret <secret>]` | Bring-your-own-app mode: save a bot token and signing secret directly. |
-| `kortix channels disconnect` | Remove the project's channel secrets. |
+| `kortix channels disconnect` | Remove the workspace's channel secrets. |
 | `kortix channels manifest` | Print the app manifest JSON for the bring-your-own-app path. |
 
 `--platform slack|teams` selects the platform; default `slack`. See [Connectors](/docs/connect/connectors).
 
 ### Connectors
 
-Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local `kortix.yaml`; run `kortix ship` to apply, unless you pass `--apply` to change the cloud project immediately.
+Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local `kortix.yaml`; run `kortix ship` to apply, unless you pass `--apply` to change the cloud workspace immediately.
 
 | Command | Effect |
 | --- | --- |
@@ -333,7 +346,7 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
 | `kortix connectors apps [<query>] [--json]` | Browse the connector app catalog. |
-| `kortix connectors policy ls [--json]` | Show project-wide execution policy. |
+| `kortix connectors policy ls [--json]` | Show workspace-wide execution policy. |
 | `kortix connectors policy set --default <risk\|allow_all>` | Set the default execution mode. |
 | `kortix connectors policy <slug> ls\|set <match> <allow\|ask\|block>\|rm <match>\|clear` | Manage one connector's tool-call rules. |
 
@@ -341,7 +354,7 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 
 ### Sandboxes
 
-Manages the project's sandbox images. A template defines an image or Dockerfile plus resources; a build produces the snapshot sessions boot from.
+Manages the workspace's sandbox images. A template defines an image or Dockerfile plus resources; a build produces the snapshot sessions boot from.
 
 | Command | Effect |
 | --- | --- |
@@ -359,7 +372,7 @@ Manages the project's sandbox images. A template defines an image or Dockerfile 
 
 ### Marketplace
 
-Read-only discovery of marketplace items. Installing an item into a project is an agent import, done from inside a session — there is no install command.
+Read-only discovery of marketplace items. Installing an item into a workspace is an agent import, done from inside a session — there is no install command.
 
 | Command | Effect |
 | --- | --- |
@@ -380,7 +393,7 @@ The binary and a token are enough for an agent to retrieve this context.
 | --- | --- |
 | `kortix system-skills list` | List the Kortix system skills. Default subcommand. |
 | `kortix system-skills get <name> [--full]` | Print one skill's current `SKILL.md`. `--full` adds its referenced files. |
-| `kortix system-skills path [name]` | Print a skill's on-disk directory in this project. |
+| `kortix system-skills path [name]` | Print a skill's on-disk directory in this workspace. |
 
 Options: `--host <name>`, `--json`.
 
@@ -398,13 +411,13 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | `kortix connectors show <connector>.<action>` | Show an action's input schema. |
 | `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. |
 | `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
-| `kortix connectors rm <slug>` | Remove a connector from the project. |
+| `kortix connectors rm <slug>` | Remove a connector from the workspace. |
 | `kortix connectors connect <slug>` | Mint a connect link for a human. |
 | `kortix connectors mcp` | Run the optional stdio MCP compatibility server. |
 
 ### Files
 
-Read-only view of the project's git repo. Operates on the default branch unless `--ref` names another branch, tag, or commit.
+Read-only view of the workspace's git repo. Operates on the default branch unless `--ref` names another branch, tag, or commit.
 
 | Command | Effect |
 | --- | --- |
@@ -432,43 +445,44 @@ A trigger starts a session from a schedule or a webhook. `add`, `rm`, `enable`, 
 | `kortix triggers info <slug> [--json]` | Show one trigger. |
 | `kortix triggers fire <slug>` | Fire a trigger manually. |
 | `kortix triggers enable <slug>` / `disable <slug>` | Turn one trigger on or off. |
-| `kortix triggers pause` / `resume` | Deactivate or reactivate every trigger on the project, server-side. |
+| `kortix triggers pause` / `resume` | Deactivate or reactivate every trigger on the workspace, server-side. |
 
 `add` options: `--type <cron\|webhook>` (default `cron`), `--prompt <text>` (required), `--agent <name>`, `--cron <expr>`, `--timezone <tz>` (default UTC), `--secret-env <NAME>`, `--name <label>`, `--disabled`.
 
 ### Access
 
-Who can use the linked project. Roles: `manager`, `editor`, `member`.
+Who can use the linked workspace. Roles: `manager`, `editor`, `member`.
 
 | Command | Effect |
 | --- | --- |
-| `kortix access ls [--json]` | List members and their project roles. |
-| `kortix access invite <email> --role <r>` | Invite someone to the project. |
-| `kortix access grant <user-id> --role <r>` | Set a member's project role. |
-| `kortix access revoke <user-id>` | Remove a member's project access. |
+| `kortix access ls [--json]` | List members and their workspace roles. |
+| `kortix access invite <email> --role <r>` | Invite someone to the workspace. |
+| `kortix access grant <user-id> --role <r>` | Set a member's workspace role. |
+| `kortix access revoke <user-id>` | Remove a member's workspace access. |
 | `kortix access pending [--json]` | List pending invitations. |
 | `kortix access cancel <invite-id>` | Cancel a pending invitation. |
 
 ### Audit
 
-The audit commands read the centralized reconstruction log. Account and project
+The audit commands read the centralized reconstruction log. Account and workspace
 lists are newest first. A session timeline is ordered by its monotonic
 `session_sequence`. `--all` follows every continuation cursor.
 
 | Command | Effect |
 | --- | --- |
 | `kortix audit ls [filters] [--all] [--json]` | List account events. |
-| `kortix audit project <project-id> [filters] [--all] [--json]` | List one project's events. |
-| `kortix audit session <session-id> --project <project-id> [--all] [--json]` | Reconstruct one session in order. |
+| `kortix audit workspace <workspace-id> [filters] [--all] [--json]` | List one workspace's events. |
+| `kortix audit session <session-id> --workspace <workspace-id> [--all] [--json]` | Reconstruct one session in order. |
 | `kortix audit export [filters] --format csv\|jsonl --out <file>` | Resume every export page into one file. |
 
-Filters: `--actor`, `--actor-type`, `--project`, `--session`, `--source`,
+Filters: `--actor`, `--actor-type`, `--workspace`, `--session`, `--source`,
 `--phase`, `--outcome`, `--action`, `--resource-type`, `--request-id`,
 `--correlation-id`, `--query`, `--since`, `--until`, `--cursor`, and `--limit`.
 Account lists and exports require `audit.read` and the account's `auditAccess`
-entitlement. Project-wide lists require `project.members.manage` because they can
+entitlement. Workspace-wide lists require `project.members.manage` because they can
 include private-session metadata. Session reconstruction requires
-`project.session.read` and visibility of that session.
+`project.session.read` and visibility of that session. These IAM wire actions
+retain their legacy names.
 
 ### Roles
 
@@ -482,15 +496,15 @@ Account-level custom IAM roles and policy bindings. Built-in roles are read-only
 | `kortix roles create <key> --name <n> [options]` | Create a custom role. |
 | `kortix roles set-actions <role> --actions a,b` | Replace a custom role's permissions. |
 | `kortix roles rm <role>` | Delete a custom role. |
-| `kortix roles assignments [--project <id>] [--json]` | List policy bindings. |
+| `kortix roles assignments [--workspace <id>] [--json]` | List policy bindings. |
 | `kortix roles assign <role> --to <type>:<id>` | Bind a role to a member, group, or token. |
 | `kortix roles unassign <policy-id>` | Remove a binding. |
-| `kortix roles export [--project <id>] [--out <file>] [--format toml\|json]` | Dump roles and bindings to a file. |
+| `kortix roles export [--workspace <id>] [--out <file>] [--format toml\|json]` | Dump roles and bindings to a file. |
 | `kortix roles import <file>` | Apply a roles and bindings file. |
 
 ### Grants
 
-Assigns project resources to people. Secrets and connectors live on agents; assigning an agent to a member grants everything that agent declares.
+Assigns workspace resources to people. Secrets and connectors live on agents; assigning an agent to a member grants everything that agent declares.
 
 | Command | Effect |
 | --- | --- |
@@ -505,7 +519,7 @@ Assigns project resources to people. Secrets and connectors live on agents; assi
 | `kortix validate [--file <path>] [--json] [--scopes]` | Validate the manifest against the canonical schema. Resolves `kortix.yaml` first, then `kortix.toml`. Exit codes: `0` valid, `1` errors, `2` file missing. |
 | `kortix schema [--version 1\|2] [--url]` | Print the manifest's JSON Schema. `--url` prints the schema URL instead. |
 
-See [Manifest reference](/docs/project/manifest).
+See [Manifest reference](/docs/workspace/manifest).
 
 ### Self-host
 
@@ -535,7 +549,7 @@ Common flags: `--instance <name>` (default `default`), `--domain <domain>`, `--t
 
 ### Token scope
 
-Every token starts with `kortix_pat_`. A user token is scoped to every project on your accounts. A project token is scoped to one project and auto-injected into that project's sandboxes. See the full token-family reference at [Session runtime](/docs/work/runtime).
+Every token starts with `kortix_pat_`. A user token is scoped to every workspace on your accounts. A workspace token is scoped to one workspace and auto-injected into that workspace's sandboxes. See the full token-family reference at [Session runtime](/docs/work/runtime).
 
 ### Exit codes
 

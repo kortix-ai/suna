@@ -11,7 +11,7 @@ export const SHARED_SUPABASE_PORTS = {
   sbInbucket: 54324,
 } as const;
 
-export function rewriteConfigToml(toml: string, projectId: string, ports: Ports): string {
+export function rewriteConfigToml(toml: string, workspaceId: string, ports: Ports): string {
   const sectionPort: Record<string, number> = {
     '[api]': ports.sbApi, '[db]': ports.sbDb, '[db.pooler]': ports.sbPooler,
     '[studio]': ports.sbStudio, '[inbucket]': ports.sbInbucket, '[analytics]': ports.sbAnalytics,
@@ -21,7 +21,7 @@ export function rewriteConfigToml(toml: string, projectId: string, ports: Ports)
   const out = lines.map((line) => {
     const secMatch = line.match(/^\s*(\[[^\]]+\])\s*$/);
     if (secMatch) { section = secMatch[1]; return line; }
-    if (/^\s*project_id\s*=/.test(line)) return `project_id = "${projectId}"`;
+    if (/^\s*project_id\s*=/.test(line)) return `project_id = "${workspaceId}"`;
     if (/^\s*port\s*=/.test(line) && section in sectionPort) {
       return line.replace(/port\s*=\s*\d+/, `port = ${sectionPort[section]}`);
     }
@@ -33,13 +33,13 @@ export function rewriteConfigToml(toml: string, projectId: string, ports: Ports)
   return out.join('\n');
 }
 
-export function renderSupabaseProject(name: string, worktreePath: string, projectId: string, ports: Ports) {
+export function renderSupabaseProject(name: string, worktreePath: string, workspaceId: string, ports: Ports) {
   const wd = supaWorkdir(name);
   const sbDir = join(wd, 'supabase');
   mkdirSync(sbDir, { recursive: true });
 
   const srcToml = readFileSync(join(worktreePath, 'supabase', 'config.toml'), 'utf8');
-  const rewritten = rewriteConfigToml(srcToml, projectId, ports);
+  const rewritten = rewriteConfigToml(srcToml, workspaceId, ports);
   writeFileSync(join(sbDir, 'config.toml'), rewritten);
 
   for (const sub of ['seed.sql', 'functions']) {

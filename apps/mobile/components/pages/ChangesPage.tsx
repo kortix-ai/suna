@@ -1,8 +1,8 @@
 /**
- * ChangesPage — project Change Requests (web parity:
+ * ChangesPage — workspace Change Requests (web parity:
  * customize/sections/changes-view). A CR proposes merging head_ref → base_ref.
  * Two tabs: Change requests (open/merged/closed, with merge / reject / reopen
- * and a full diff view) and Versions (the project's branches).
+ * and a full diff view) and Versions (the workspace's branches).
  *
  * Mobile branding: PageHeader + PageContent chrome, bottom-sheet CR detail with
  * a unified-diff renderer, design-system typography + colors.
@@ -47,7 +47,7 @@ import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { parsePatch, DiffFile } from '@/components/diff/PatchDiffView';
-import { relativeTime } from '@/lib/projects/triggers-format';
+import { relativeTime } from '@/lib/workspaces/triggers-format';
 import {
   useChangeRequests,
   useChangeRequest,
@@ -56,17 +56,17 @@ import {
   useMergeChangeRequest,
   useCloseChangeRequest,
   useReopenChangeRequest,
-  useProjectBranches,
+  useWorkspaceBranches,
   useVersionDiff,
   useOpenChangeRequest,
-} from '@/lib/projects/hooks';
+} from '@/lib/workspaces/hooks';
 import type {
   ChangeRequest,
   ChangeRequestStatus,
   ChangeRequestDiff,
-  ProjectCommitFile,
-  ProjectBranch,
-} from '@/lib/projects/projects-client';
+  WorkspaceCommitFile,
+  WorkspaceBranch,
+} from '@/lib/workspaces/workspaces-client';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -77,7 +77,7 @@ interface PageTabLike {
 
 interface ChangesPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -103,10 +103,10 @@ function statusTime(cr: ChangeRequest): string {
 
 // ─── Merge-preview banner ─────────────────────────────────────────────────────
 
-function MergeBanner({ cr, projectId, isDark }: { cr: ChangeRequest; projectId: string; isDark: boolean }) {
+function MergeBanner({ cr, workspaceId, isDark }: { cr: ChangeRequest; workspaceId: string; isDark: boolean }) {
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const fg = isDark ? '#F8F8F8' : '#121215';
-  const preview = useChangeRequestMergePreview(projectId, cr.cr_id, cr.status === 'open');
+  const preview = useChangeRequestMergePreview(workspaceId, cr.cr_id, cr.status === 'open');
 
   if (cr.status === 'merged') {
     return (
@@ -167,24 +167,24 @@ function Banner({ tone, isDark, column, children }: { tone: 'success' | 'warn' |
 // ─── CR detail sheet ──────────────────────────────────────────────────────────
 
 function CRDetailSheet({
-  projectId,
+  workspaceId,
   crId,
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   crId: string;
   onClose: () => void;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const crQuery = useChangeRequest(projectId, crId);
-  const diffQuery = useChangeRequestDiff(projectId, crId);
-  const preview = useChangeRequestMergePreview(projectId, crId, crQuery.data?.status === 'open');
-  const mergeMut = useMergeChangeRequest(projectId);
-  const closeMut = useCloseChangeRequest(projectId);
-  const reopenMut = useReopenChangeRequest(projectId);
+  const crQuery = useChangeRequest(workspaceId, crId);
+  const diffQuery = useChangeRequestDiff(workspaceId, crId);
+  const preview = useChangeRequestMergePreview(workspaceId, crId, crQuery.data?.status === 'open');
+  const mergeMut = useMergeChangeRequest(workspaceId);
+  const closeMut = useCloseChangeRequest(workspaceId);
+  const reopenMut = useReopenChangeRequest(workspaceId);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
@@ -255,7 +255,7 @@ function CRDetailSheet({
       </View>
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
-        <MergeBanner cr={cr} projectId={projectId} isDark={isDark} />
+        <MergeBanner cr={cr} workspaceId={workspaceId} isDark={isDark} />
 
         {cr.description?.trim() ? (
           <View style={{ marginHorizontal: -16, marginBottom: 10 }}>
@@ -401,7 +401,7 @@ function CRRow({
   );
 }
 
-function BranchRow({ branch, isDark }: { branch: ProjectBranch; isDark: boolean }) {
+function BranchRow({ branch, isDark }: { branch: WorkspaceBranch; isDark: boolean }) {
   const theme = useThemeColors();
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
@@ -439,7 +439,7 @@ function BranchPills({
   onSelect,
   isDark,
 }: {
-  options: ProjectBranch[];
+  options: WorkspaceBranch[];
   value: string | null;
   onSelect: (name: string) => void;
   isDark: boolean;
@@ -473,7 +473,7 @@ function BranchPills({
 }
 
 export function OpenCRSheet({
-  projectId,
+  workspaceId,
   onClose,
   onCreated,
   isDark,
@@ -481,7 +481,7 @@ export function OpenCRSheet({
   initialBaseRef,
   initialTitle,
 }: {
-  projectId: string;
+  workspaceId: string;
   onClose: () => void;
   onCreated: (crId: string, number: number) => void;
   isDark: boolean;
@@ -491,8 +491,8 @@ export function OpenCRSheet({
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const branchesQuery = useProjectBranches(projectId, true);
-  const createMut = useOpenChangeRequest(projectId);
+  const branchesQuery = useWorkspaceBranches(workspaceId, true);
+  const createMut = useOpenChangeRequest(workspaceId);
 
   const defaultBranch = branchesQuery.data?.default_branch ?? '';
   const allBranches = branchesQuery.data?.branches ?? [];
@@ -520,7 +520,7 @@ export function OpenCRSheet({
     }
   }, [initialBaseRef, defaultBranch, baseRef]);
 
-  const vdiff = useVersionDiff(projectId, headRef ?? '', baseRef ?? '', !!headRef && !!baseRef && headRef !== baseRef);
+  const vdiff = useVersionDiff(workspaceId, headRef ?? '', baseRef ?? '', !!headRef && !!baseRef && headRef !== baseRef);
   const preview = vdiff.data;
   const hasChanges = !!preview && !preview.is_same_ref && !preview.is_up_to_date && preview.files_changed > 0;
   const canSubmit = title.trim().length > 0 && !!headRef && !!baseRef && headRef !== baseRef && !vdiff.isLoading && hasChanges && !createMut.isPending;
@@ -630,7 +630,7 @@ const STATUS_FILTERS: ChangeRequestStatus[] = ['open', 'merged', 'closed'];
 
 export function ChangesPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -645,11 +645,11 @@ export function ChangesPage({
   const detailSheetRef = React.useRef<BottomSheetModal>(null);
   const createSheetRef = React.useRef<BottomSheetModal>(null);
 
-  const crs = useChangeRequests(projectId, status);
-  const branches = useProjectBranches(projectId, tab === 'versions');
-  const mergeMut = useMergeChangeRequest(projectId);
-  const closeMut = useCloseChangeRequest(projectId);
-  const reopenMut = useReopenChangeRequest(projectId);
+  const crs = useChangeRequests(workspaceId, status);
+  const branches = useWorkspaceBranches(workspaceId, tab === 'versions');
+  const mergeMut = useMergeChangeRequest(workspaceId);
+  const closeMut = useCloseChangeRequest(workspaceId);
+  const reopenMut = useReopenChangeRequest(workspaceId);
 
   const rowBusy = (cr: ChangeRequest) =>
     (mergeMut.isPending && mergeMut.variables?.crId === cr.cr_id) ||
@@ -815,7 +815,7 @@ export function ChangesPage({
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
         {selectedCrId ? (
-          <CRDetailSheet projectId={projectId} crId={selectedCrId} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
+          <CRDetailSheet workspaceId={workspaceId} crId={selectedCrId} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
         ) : (
           <View style={{ height: 1 }} />
         )}
@@ -833,7 +833,7 @@ export function ChangesPage({
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
         <OpenCRSheet
-          projectId={projectId}
+          workspaceId={workspaceId}
           onClose={() => createSheetRef.current?.dismiss()}
           onCreated={(crId, number) => {
             createSheetRef.current?.dismiss();

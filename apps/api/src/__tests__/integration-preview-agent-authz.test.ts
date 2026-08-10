@@ -15,11 +15,11 @@ import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import * as realRequestContext from '../lib/request-context';
-import * as realConnectorPreflight from '../projects/lib/prompt-connector-preflight';
-import * as realEnvSync from '../projects/lib/sandbox-env-sync';
-import * as realGrant from '../projects/lib/session-token-grant';
-import * as realSnapshot from '../projects/opencode-session-snapshot';
-import * as realShared from '../projects/routes/shared';
+import * as realConnectorPreflight from '../workspaces/lib/prompt-connector-preflight';
+import * as realEnvSync from '../workspaces/lib/sandbox-env-sync';
+import * as realGrant from '../workspaces/lib/session-token-grant';
+import * as realSnapshot from '../workspaces/opencode-session-snapshot';
+import * as realShared from '../workspaces/routes/shared';
 // Spread the real modules and override only what this test must control: these
 // modules have OTHER exports the surrounding graph imports, and a bare stub
 // makes bun fail the whole file on a missing export.
@@ -27,7 +27,7 @@ import * as realBackend from '../sandbox-proxy/backend';
 import * as realOwnership from '../shared/preview-ownership';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const SESSION_AGENT = 'pipeline-hygiene';
 const SCOPED_AGENT = 'nda-turnaround';
 
@@ -39,7 +39,7 @@ mock.module('../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),
 }));
-mock.module('../projects/lib/prompt-connector-preflight', () => ({
+mock.module('../workspaces/lib/prompt-connector-preflight', () => ({
   ...realConnectorPreflight,
   missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
@@ -48,24 +48,24 @@ mock.module('../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
-mock.module('../projects/lib/sandbox-env-sync', () => ({
+mock.module('../workspaces/lib/sandbox-env-sync', () => ({
   ...realEnvSync,
   syncSandboxEnvForPrompt: async () => {
     envSyncCalls += 1;
   },
 }));
-mock.module('../projects/lib/session-token-grant', () => ({
+mock.module('../workspaces/lib/session-token-grant', () => ({
   ...realGrant,
   remintGrantForAgentSwitch: async (input: { requestedAgent: string | null }) => {
     remintCalls.push(input.requestedAgent ?? '(none)');
     return { action: 'skip' };
   },
 }));
-mock.module('../projects/opencode-session-snapshot', () => ({
+mock.module('../workspaces/opencode-session-snapshot', () => ({
   ...realSnapshot,
   scheduleOpencodeSnapshotSync: () => {},
 }));
-mock.module('../projects/routes/shared', () => ({
+mock.module('../workspaces/routes/shared', () => ({
   ...realShared,
   resumeStoppedSandboxByExternalId: async () => true,
 }));
@@ -75,7 +75,7 @@ mock.module('../sandbox-proxy/backend', () => ({
     status: 'active',
     serviceKey: 'svc-key',
     sessionId: 'sess-1',
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     externalId: 'ext-1',
     sandboxId: 'sbx-1',
@@ -129,7 +129,7 @@ async function seedMember(
   if (projectRole) {
     await db
       .insert(projectMembers)
-      .values({ accountId: ACCOUNT, projectId: PROJECT, userId, projectRole });
+      .values({ accountId: ACCOUNT, workspaceId: WORKSPACE, userId, projectRole });
   }
   return userId;
 }
@@ -141,7 +141,7 @@ let owner = '';
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'preview-agent-authz-test' });
   await db.insert(projects).values({
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     name: 'p',
     repoUrl: 'https://example.com/p.git',
@@ -153,7 +153,7 @@ beforeAll(async () => {
   // grant row is what makes `scopedOut` a non-principal for it.
   await upsertResourceGrant({
     accountId: ACCOUNT,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     resourceType: 'agent',
     resourceId: SCOPED_AGENT,
     principalType: 'member',

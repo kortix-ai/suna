@@ -4,7 +4,7 @@ import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './use-opencode-
 /**
  * Some provider payloads aren't the full opencode `Model` shape — notably the
  * synthetic "kortix" provider built from the project llm-catalog endpoint
- * (see `projectLlmCatalogToProviderList`), whose models carry a flatter,
+ * (see `workspaceLlmCatalogToProviderList`), whose models carry a flatter,
  * models.dev-ish shape instead of `Model.capabilities`/`Model.cost`/etc. This
  * union covers both without lying about the shape via `any`; every field
  * access below is narrowed via `hasCapabilities` rather than cast.

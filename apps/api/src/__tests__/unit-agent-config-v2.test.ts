@@ -21,9 +21,9 @@ import {
   applyDefaultAgentV2,
   normalizeRequiredConnectorAliases,
   readAgentBlockV2,
-} from '../projects/lib/agent-config-v2';
-import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
-import { extractAgents } from '../projects/agents';
+} from '../workspaces/lib/agent-config-v2';
+import { parseManifestString, synthesizeBlankManifest } from '../workspaces/triggers';
+import { extractAgents } from '../workspaces/agents';
 
 const V2 = `
 kortix_version: 2

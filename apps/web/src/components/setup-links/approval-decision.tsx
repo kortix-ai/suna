@@ -41,7 +41,7 @@ export function ApprovalDecision({ token }: { token: string }) {
     setBusyDecision(decision);
     setError(null);
     try {
-      await resolveApproval(details.project_id, details.execution_id, decision);
+      await resolveApproval(details.workspace_id, details.execution_id, decision);
       setOutcome(decision);
       setDetails((current) => (current ? { ...current, pending: false } : current));
       successToast(decision === 'approve' ? 'Action approved' : 'Action denied');
@@ -82,7 +82,7 @@ export function ApprovalDecision({ token }: { token: string }) {
       request={{
         action: details.action,
         risk: details.risk,
-        projectName: details.project_name,
+        workspaceName: details.workspace_name,
         requestedAt: details.requested_at,
         argsPreview: details.args_preview,
         reviewComplete: details.review_complete === true,

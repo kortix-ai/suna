@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  type Project,
+  type Workspace,
   accountMembers,
   accounts,
   connectors,
@@ -15,23 +15,23 @@ import {
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { app } from '../index';
-import { loadProjectAgents } from '../projects/agents';
-import { createProjectSession } from '../projects/lib/sessions';
+import { loadWorkspaceAgents } from '../workspaces/agents';
+import { createWorkspaceSession } from '../workspaces/lib/sessions';
 import { createAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 
 const ACCOUNT_ID = crypto.randomUUID();
-const PROJECT_ID = crypto.randomUUID();
+const WORKSPACE_ID = crypto.randomUUID();
 const USER_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
 const UNAVAILABLE_SESSION_ID = crypto.randomUUID();
 const READ_WORKSPACE_SESSION_ID = crypto.randomUUID();
-const PROJECT_CONNECTOR_ID = crypto.randomUUID();
+const WORKSPACE_CONNECTOR_ID = crypto.randomUUID();
 const USER_CONNECTOR_ID = crypto.randomUUID();
 
 let fixtureRoot = '';
 let previousGitCacheDir: string | undefined;
-let project: Project;
+let workspace: Workspace;
 let authToken = '';
 
 function git(args: string[], cwd: string): void {
@@ -75,17 +75,17 @@ beforeAll(async () => {
     accountId: ACCOUNT_ID,
     name: `session-connector-gate-${ACCOUNT_ID}`,
   });
-  const [insertedProject] = await db
+  const [insertedWorkspace] = await db
     .insert(projects)
     .values({
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       accountId: ACCOUNT_ID,
-      name: `session-connector-gate-${PROJECT_ID}`,
+      name: `session-connector-gate-${WORKSPACE_ID}`,
       repoUrl: repository,
     })
     .returning();
-  if (!insertedProject) throw new Error('Project fixture insert returned no row');
-  project = insertedProject;
+  if (!insertedWorkspace) throw new Error('Workspace fixture insert returned no row');
+  workspace = insertedWorkspace;
   await db.insert(accountMembers).values({
     accountId: ACCOUNT_ID,
     userId: USER_ID,
@@ -93,7 +93,7 @@ beforeAll(async () => {
   });
   await db.insert(projectMembers).values({
     accountId: ACCOUNT_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     userId: USER_ID,
     projectRole: 'manager',
   });
@@ -101,18 +101,18 @@ beforeAll(async () => {
     await createAccountToken({
       accountId: ACCOUNT_ID,
       userId: USER_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       name: 'required-connector-route-test',
     })
   ).secretKey;
 
   await db.insert(connectors).values([
     {
-      connectorId: PROJECT_CONNECTOR_ID,
+      connectorId: WORKSPACE_CONNECTOR_ID,
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       slug: 'project_records',
-      name: 'Project records',
+      name: 'Workspace records',
       providerType: 'http',
       config: {
         baseUrl: 'https://project-records.example.test',
@@ -123,7 +123,7 @@ beforeAll(async () => {
     {
       connectorId: USER_CONNECTOR_ID,
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       slug: 'user_records',
       name: 'User records',
       providerType: 'http',
@@ -135,7 +135,7 @@ beforeAll(async () => {
     },
   ]);
 
-  await loadProjectAgents(project);
+  await loadWorkspaceAgents(workspace);
   writeFileSync(
     join(repository, 'kortix.yaml'),
     [
@@ -171,10 +171,10 @@ afterAll(async () => {
   if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
 });
 
-describe('createProjectSession required connection gate', () => {
+describe('createWorkspaceSession required connection gate', () => {
   test('rejects read mode before creating a session row', async () => {
-    const result = await createProjectSession({
-      project,
+    const result = await createWorkspaceSession({
+      workspace,
       userId: USER_ID,
       requestingPrincipalType: 'human',
       body: {
@@ -200,7 +200,7 @@ describe('createProjectSession required connection gate', () => {
       .from(projectSessions)
       .where(
         and(
-          eq(projectSessions.projectId, PROJECT_ID),
+          eq(projectSessions.workspaceId, WORKSPACE_ID),
           eq(projectSessions.sessionId, READ_WORKSPACE_SESSION_ID),
         ),
       );
@@ -209,7 +209,7 @@ describe('createProjectSession required connection gate', () => {
 
   test('returns the read-mode refusal through the session HTTP route', async () => {
     const sessionId = crypto.randomUUID();
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${authToken}`,
@@ -230,14 +230,14 @@ describe('createProjectSession required connection gate', () => {
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
       .where(
-        and(eq(projectSessions.projectId, PROJECT_ID), eq(projectSessions.sessionId, sessionId)),
+        and(eq(projectSessions.workspaceId, WORKSPACE_ID), eq(projectSessions.sessionId, sessionId)),
       );
     expect(rows).toEqual([]);
   });
 
   test('returns every missing connection and creates no session row', async () => {
-    const result = await createProjectSession({
-      project,
+    const result = await createWorkspaceSession({
+      workspace,
       userId: USER_ID,
       requestingPrincipalType: 'human',
       body: {
@@ -256,9 +256,9 @@ describe('createProjectSession required connection gate', () => {
           message: 'Create the required connections before starting this session.',
           connector_connections: [
             {
-              id: PROJECT_CONNECTOR_ID,
+              id: WORKSPACE_CONNECTOR_ID,
               slug: 'project_records',
-              name: 'Project records',
+              name: 'Workspace records',
               authorization_strategy: 'project',
             },
             {
@@ -276,14 +276,14 @@ describe('createProjectSession required connection gate', () => {
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
       .where(
-        and(eq(projectSessions.projectId, PROJECT_ID), eq(projectSessions.sessionId, SESSION_ID)),
+        and(eq(projectSessions.workspaceId, WORKSPACE_ID), eq(projectSessions.sessionId, SESSION_ID)),
       );
     expect(rows).toEqual([]);
   });
 
   test('returns a configuration conflict when a required connection is unavailable', async () => {
-    const result = await createProjectSession({
-      project,
+    const result = await createWorkspaceSession({
+      workspace,
       userId: USER_ID,
       requestingPrincipalType: 'human',
       body: {
@@ -310,7 +310,7 @@ describe('createProjectSession required connection gate', () => {
       .from(projectSessions)
       .where(
         and(
-          eq(projectSessions.projectId, PROJECT_ID),
+          eq(projectSessions.workspaceId, WORKSPACE_ID),
           eq(projectSessions.sessionId, UNAVAILABLE_SESSION_ID),
         ),
       );
@@ -319,7 +319,7 @@ describe('createProjectSession required connection gate', () => {
 
   test('returns the unavailable connection conflict through the session HTTP route', async () => {
     const sessionId = crypto.randomUUID();
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${authToken}`,
@@ -341,7 +341,7 @@ describe('createProjectSession required connection gate', () => {
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
       .where(
-        and(eq(projectSessions.projectId, PROJECT_ID), eq(projectSessions.sessionId, sessionId)),
+        and(eq(projectSessions.workspaceId, WORKSPACE_ID), eq(projectSessions.sessionId, sessionId)),
       );
     expect(rows).toEqual([]);
   });
@@ -349,8 +349,8 @@ describe('createProjectSession required connection gate', () => {
   test('names every unconfigured alias in one refusal', async () => {
     // One alias per round trip would make a two-connector agent take two failed
     // creates to diagnose, and the caller could never tell how many were left.
-    const result = await createProjectSession({
-      project,
+    const result = await createWorkspaceSession({
+      workspace,
       userId: USER_ID,
       requestingPrincipalType: 'human',
       body: { session_id: crypto.randomUUID(), agent_name: 'two_unavailable' },
@@ -376,8 +376,8 @@ describe('createProjectSession required connection gate', () => {
     // CONNECTOR_CONNECTION_REQUIRED here would send the end-user into a
     // connect flow while the real blocker is a project the owner has to
     // configure — so the unavailable code has to win.
-    const result = await createProjectSession({
-      project,
+    const result = await createWorkspaceSession({
+      workspace,
       userId: USER_ID,
       requestingPrincipalType: 'human',
       body: { session_id: crypto.randomUUID(), agent_name: 'mixed_failures' },
@@ -401,8 +401,8 @@ describe('createProjectSession required connection gate', () => {
     // 403 CONNECTOR_NOT_ASSIGNED is a manifest fault that no amount of
     // connecting fixes; 409 is the state conflict a connection clears. A
     // client that cannot tell them apart shows the wrong remedy.
-    const result = await createProjectSession({
-      project,
+    const result = await createWorkspaceSession({
+      workspace,
       userId: USER_ID,
       requestingPrincipalType: 'human',
       body: {

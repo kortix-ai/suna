@@ -201,12 +201,12 @@ export async function getReadCursor(callId: string): Promise<number> {
  */
 export async function advanceReadCursor(
   callId: string,
-  projectId: string,
+  workspaceId: string,
   cursor: number,
 ): Promise<void> {
   await db
     .insert(voiceCallReadCursors)
-    .values({ callId, projectId, cursor })
+    .values({ callId, workspaceId, cursor })
     .onConflictDoUpdate({
       target: voiceCallReadCursors.callId,
       set: { cursor, updatedAt: new Date() },
@@ -224,10 +224,10 @@ export async function advanceReadCursor(
  */
 export async function readTranscriptForAgent(input: {
   callId: string;
-  projectId: string;
+  workspaceId: string;
   args: Record<string, unknown>;
 }): Promise<AgentTranscriptRead> {
-  const { callId, projectId } = input;
+  const { callId, workspaceId } = input;
   const plan = resolveReadPlan(input.args);
 
   const position = await getReadCursor(callId);
@@ -252,7 +252,7 @@ export async function readTranscriptForAgent(input: {
     // transcript. Math.max is belt-and-braces for a clipped `full` on a call the
     // agent had already read further into: never move backwards.
     position2 = Math.max(position, page.cursor);
-    await advanceReadCursor(callId, projectId, position2);
+    await advanceReadCursor(callId, workspaceId, position2);
   }
 
   const unread = await countTurnsAfter(callId, position2);

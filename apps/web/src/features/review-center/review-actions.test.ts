@@ -42,7 +42,7 @@ describe('itemDeepLink', () => {
     expect(itemDeepLink('proj-1', null)).toBeNull();
     expect(itemDeepLink('proj-1', '')).toBeNull();
   });
-  test('is null without a project id', () => {
+  test('is null without a workspace id', () => {
     expect(itemDeepLink('', 'sess-1')).toBeNull();
   });
 });

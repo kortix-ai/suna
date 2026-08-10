@@ -70,7 +70,7 @@ export default function ProjectPage() {
 }
 
 function ProjectHome() {
-  const projectId = String(useParams().id);
+  const workspaceId = String(useParams().id);
   const router = useRouter();
   const qc = useQueryClient();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -92,18 +92,18 @@ function ProjectHome() {
   // upstream, so a member's private connection cannot be bound at all. The
   // alias used to be hardcoded here, which meant exactly one connector could
   // ever be bound from this screen.
-  const connectors = useConnectorBindingChoices(projectId);
+  const connectors = useConnectorBindingChoices(workspaceId);
   const [template, setTemplate] = useState('default');
   const [agent, setAgent] = useState<string | null>(null);
   const [model, setModel] = useState<ModelKey | null>(null);
 
   // Every picker is a server-side fetch — no runtime needed on this screen.
-  const models = useProjectModels(projectId);
-  const agents = useVisibleAgents({ projectId });
-  const config = useProjectConfig(projectId);
+  const models = useProjectModels(workspaceId);
+  const agents = useVisibleAgents({ workspaceId });
+  const config = useProjectConfig(workspaceId);
   const templates = useQuery({
-    queryKey: ['project-sandbox-templates', projectId],
-    queryFn: () => kortix.projects.sandboxTemplates(projectId),
+    queryKey: ['project-sandbox-templates', workspaceId],
+    queryFn: () => kortix.projects.sandboxTemplates(workspaceId),
     retry: false,
   });
   // `.sandboxTemplates()` returns `{ items: SandboxTemplate[] }` — this used to
@@ -117,7 +117,7 @@ function ProjectHome() {
       // Template + agent + bindings are create-time; the prompt + model + agent
       // flow into the first message (stashed) so the chosen model applies at
       // start. Unset overrides are omitted by the builder rather than guessed.
-      await kortix.project(projectId).sessions.create(
+      await kortix.project(workspaceId).sessions.create(
         buildSessionCreateInput(
           { ...NO_OVERRIDES, agent, bindings },
           {
@@ -129,14 +129,14 @@ function ProjectHome() {
       );
       writeStartStash(sessionId, { prompt: text, model, agent });
       kortix
-        .project(projectId)
+        .project(workspaceId)
         .onboardingComplete(true)
         .catch(() => {});
       return sessionId;
     },
     onSuccess: (sessionId) => {
-      invalidateSessions(qc, projectId);
-      router.push(`/projects/${projectId}/sessions/${sessionId}`);
+      invalidateSessions(qc, workspaceId);
+      router.push(`/projects/${workspaceId}/sessions/${sessionId}`);
     },
     onError: (err: unknown) => {
       // A missing connector is the one create refusal with a real remedy, so it
@@ -195,7 +195,7 @@ function ProjectHome() {
         {connectPrompt && (
           <div className="mb-4">
             <ConnectRequiredCard
-              projectId={projectId}
+              workspaceId={workspaceId}
               requirement={connectPrompt}
               onRetry={() => {
                 setConnectPrompt(null);

@@ -16,8 +16,13 @@ export function requireEnv(key: string): string {
   return v;
 }
 
+export function kortixWorkspaceId(): string | undefined {
+  return getEnv('KORTIX_WORKSPACE_ID') ?? getEnv('KORTIX_PROJECT_ID');
+}
+
+/** @deprecated Use kortixWorkspaceId. */
 export function kortixProjectId(): string | undefined {
-  return getEnv('KORTIX_PROJECT_ID');
+  return kortixWorkspaceId();
 }
 
 export function kortixSessionId(): string | undefined {

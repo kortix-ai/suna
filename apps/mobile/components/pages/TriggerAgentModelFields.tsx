@@ -14,9 +14,9 @@ import { ChevronRight, Check } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
 import {
-  useProjectAgentsForTrigger,
-  useProjectModelCatalogForTrigger,
-} from '@/lib/projects/hooks';
+  useWorkspaceAgentsForTrigger,
+  useWorkspaceModelCatalogForTrigger,
+} from '@/lib/workspaces/hooks';
 import { haptics } from '@/lib/haptics';
 
 const MONO = 'Menlo';
@@ -41,12 +41,12 @@ function FieldLabel({ children, muted }: { children: React.ReactNode; muted: str
 // ─── Agent ────────────────────────────────────────────────────────────────────
 
 export function AgentPickerField({
-  projectId,
+  workspaceId,
   value,
   onChange,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   /** Selected agent name, or null to leave unset (server defaults to "default"). */
   value: string | null;
   onChange: (name: string) => void;
@@ -55,7 +55,7 @@ export function AgentPickerField({
   const theme = useThemeColors();
   const { fg, muted, border, inputBg } = useFieldColors(isDark);
   const [open, setOpen] = useState(false);
-  const { agents, isLoading } = useProjectAgentsForTrigger(projectId);
+  const { agents, isLoading } = useWorkspaceAgentsForTrigger(workspaceId);
 
   return (
     <View>
@@ -109,12 +109,12 @@ export function AgentPickerField({
 // ─── Model ────────────────────────────────────────────────────────────────────
 
 export function ModelPickerField({
-  projectId,
+  workspaceId,
   value,
   onChange,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   /** Selected wire model id, or null to resolve the agent/account/platform default at fire time. */
   value: string | null;
   onChange: (modelID: string | null) => void;
@@ -123,7 +123,7 @@ export function ModelPickerField({
   const theme = useThemeColors();
   const { fg, muted, border, inputBg } = useFieldColors(isDark);
   const [open, setOpen] = useState(false);
-  const { models, isLoading, gatewayDisabled } = useProjectModelCatalogForTrigger(projectId);
+  const { models, isLoading, gatewayDisabled } = useWorkspaceModelCatalogForTrigger(workspaceId);
   const current = models.find((m) => m.modelID === value);
 
   if (gatewayDisabled) {

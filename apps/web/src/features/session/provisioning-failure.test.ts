@@ -43,9 +43,9 @@ describe('provisioningFailurePresentation', () => {
   });
 });
 
-describe('project session provider-failure recovery', () => {
+describe('workspace session provider-failure recovery', () => {
   const pageSource = readFileSync(
-    resolve(import.meta.dir, '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+    resolve(import.meta.dir, '../../app/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx'),
     'utf8',
   );
   const recoverySource = readFileSync(

@@ -1,7 +1,7 @@
 import type {
-  AdminConnector,
+  WorkspaceAdminConnector,
   Connection,
-  ProjectSecret,
+  WorkspaceSecret,
   SessionScope,
   SessionScopeInput,
 } from '@kortix/sdk';
@@ -9,6 +9,13 @@ import type {
 export interface SessionScopeDraft {
   secrets?: string[] | null;
   connector_bindings?: Record<string, { connection_id: string }>;
+  /**
+   * The connector bindings are a preview of server-resolved defaults, not a
+   * caller replacement. New sessions keep this marker until the user changes
+   * connector scope. Omitting the replacement lets the server discard stale or
+   * disconnected rows while preserving an explicit user deselection.
+   */
+  connector_bindings_inherited?: boolean;
   /**
    * Connectors this session REQUIRES but has no connection for yet.
    *
@@ -35,8 +42,8 @@ export interface SessionScopeCatalogGrants {
 }
 
 export interface SessionScopeRawCatalogs {
-  secrets: SessionScopeCatalogState<ProjectSecret>;
-  connectors: SessionScopeCatalogState<AdminConnector>;
+  secrets: SessionScopeCatalogState<WorkspaceSecret>;
+  connectors: SessionScopeCatalogState<WorkspaceAdminConnector>;
   connections: SessionScopeCatalogState<Connection>;
   grants?: SessionScopeCatalogGrants;
 }
@@ -55,7 +62,7 @@ export interface SessionScopeConnectionOption {
 export interface SessionScopeConnectorOption {
   slug: string;
   name: string;
-  authorization_strategy: AdminConnector['authorizationStrategy'];
+  authorization_strategy: WorkspaceAdminConnector['authorizationStrategy'];
   connections: SessionScopeConnectionOption[];
 }
 
@@ -115,14 +122,26 @@ export function createNewSessionScopeDraft(
   if (catalog.secrets.status === 'ready') {
     // No user override yet. `null` means "inherit everything the agent's grant
     // allows" — the same state a server-created session starts in. `[]` would be
-    // an EXPLICIT "inject zero project secrets", which silently denied every
+    // an EXPLICIT "inject zero workspace secrets", which silently denied every
     // browser-created session its grant on the first prompt. The user can still
     // deliberately deselect all (see `setAllSessionSecrets`) to get `[]`; the
     // two are opposite and must not be conflated.
     draft.secrets = null;
   }
   if (catalog.connector_connections.status === 'ready') {
-    draft.connector_bindings = {};
+    // Preview every strategy-compatible default that the agent grant exposes.
+    // The inherited marker keeps an untouched session on server-side resolution,
+    // which filters stale or disconnected rows. A user change clears the marker
+    // and turns the draft into a complete fail-closed replacement.
+    draft.connector_bindings = Object.fromEntries(
+      catalog.connector_connections.items.flatMap((connector) => {
+        const connection =
+          connector.connections.find((candidate) => candidate.is_default) ??
+          connector.connections[0];
+        return connection ? [[connector.slug, { connection_id: connection.connection_id }]] : [];
+      }),
+    );
+    draft.connector_bindings_inherited = true;
     draft.require_connectors = [];
   }
   return draft;
@@ -146,7 +165,11 @@ export function buildSessionScopeReplacement(
   const connectorBindings = Object.hasOwn(draft, 'connector_bindings')
     ? draft.connector_bindings
     : previousScope?.connector_bindings;
-  if (availability.connector_bindings && connectorBindings !== undefined) {
+  if (
+    availability.connector_bindings &&
+    connectorBindings !== undefined &&
+    draft.connector_bindings_inherited !== true
+  ) {
     replacement.connector_bindings = cloneBindings(connectorBindings);
   }
   const required = Object.hasOwn(draft, 'require_connectors')
@@ -202,7 +225,7 @@ export function buildSessionScopeSelectionCatalog(
             grantIncludes(input.grants?.connectors, connector.slug),
         )
         .map((connector) => {
-          const ownerType = connector.authorizationStrategy === 'user' ? 'member' : 'project';
+          const ownerType = connector.authorizationStrategy === 'user' ? 'member' : 'workspace';
           return {
             slug: connector.slug,
             name: connector.name,

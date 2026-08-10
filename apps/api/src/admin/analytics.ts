@@ -90,7 +90,7 @@ const ActivityDaySchema = z
     activeAccounts: z.number().int(),
     activeUsers: z.number().int(),
     newAccounts: z.number().int(),
-    activeProjects: z.number().int(),
+    activeWorkspaces: z.number().int(),
   })
   .openapi('AdminAnalyticsActivityDay');
 
@@ -104,7 +104,7 @@ const ActivityResponseSchema = z
       wau: z.number().int(),
       mau: z.number().int(),
       totalAccounts: z.number().int(),
-      totalProjects: z.number().int(),
+      totalWorkspaces: z.number().int(),
     }),
   })
   .openapi('AdminAnalyticsActivity');
@@ -190,7 +190,7 @@ analyticsApp.openapi(
             sessionsCreated: sql<number>`count(*)::int`,
             activeAccounts: sql<number>`count(distinct ${projectSessions.accountId})::int`,
             activeUsers: sql<number>`count(distinct ${projectSessions.createdBy})::int`,
-            activeProjects: sql<number>`count(distinct ${projectSessions.projectId})::int`,
+            activeWorkspaces: sql<number>`count(distinct ${projectSessions.workspaceId})::int`,
           })
           .from(projectSessions)
           .where(gte(projectSessions.createdAt, since))
@@ -222,7 +222,7 @@ analyticsApp.openapi(
         db
           .select({
             totalAccounts: sql<number>`(select count(*) from ${accounts})::int`,
-            totalProjects: sql<number>`(select count(*) from ${projects})::int`,
+            totalWorkspaces: sql<number>`(select count(*) from ${projects})::int`,
           })
           .from(sql`(select 1) as one`),
       ]);
@@ -237,7 +237,7 @@ analyticsApp.openapi(
             wau: Number(summaryRow?.wau ?? 0),
             mau: Number(summaryRow?.mau ?? 0),
             totalAccounts: Number(totalsRow?.totalAccounts ?? 0),
-            totalProjects: Number(totalsRow?.totalProjects ?? 0),
+            totalWorkspaces: Number(totalsRow?.totalWorkspaces ?? 0),
           },
         },
         200,

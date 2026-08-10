@@ -220,7 +220,7 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
             The same platform, the other teams
           </h2>
           <p className="text-muted-foreground mt-4 max-w-2xl text-base leading-relaxed">
-            One project, one set of connectors, one memory that compounds. Each team writes the
+            One workspace, one set of connectors, one memory that compounds. Each team writes the
             skills for its own work; nobody stands up a second system.
           </p>
         </Reveal>

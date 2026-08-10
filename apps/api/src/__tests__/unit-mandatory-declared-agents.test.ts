@@ -2,7 +2,7 @@
  * MANDATORY DECLARED AGENTS (flagged) — docs/specs/2026-07-05-agent-first-
  * config-unification.md §2.1/§3 Phase 2.
  *
- * `projectRequiresDeclaredAgents` decides whether a project is "subject" to
+ * `workspaceRequiresDeclaredAgents` decides whether a project is "subject" to
  * enforcement (platform-wide flag OR the project's own metadata stamp).
  * `resolveGovernedAgentGrant` is the pure resolution rule: for a non-subject
  * project it must be byte-for-byte identical to `grantFromLoadedAgents`
@@ -13,8 +13,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { DEFAULT_STARTER_TEMPLATE_ID, getStarterFiles } from '@kortix/starter';
-import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../projects/agents';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { extractAgents, workspaceRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../workspaces/agents';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../workspaces/triggers';
 
 /**
  * The manifest's own `default_agent`, asserted present. Every starter assertion
@@ -31,25 +31,25 @@ function loadAgents(body: string) {
   return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
 }
 
-describe('projectRequiresDeclaredAgents — subjectness', () => {
+describe('workspaceRequiresDeclaredAgents — subjectness', () => {
   test('platform flag off + no metadata stamp → not subject', () => {
-    expect(projectRequiresDeclaredAgents({}, false)).toBe(false);
-    expect(projectRequiresDeclaredAgents(null, false)).toBe(false);
-    expect(projectRequiresDeclaredAgents(undefined, false)).toBe(false);
+    expect(workspaceRequiresDeclaredAgents({}, false)).toBe(false);
+    expect(workspaceRequiresDeclaredAgents(null, false)).toBe(false);
+    expect(workspaceRequiresDeclaredAgents(undefined, false)).toBe(false);
   });
 
   test('platform flag on → subject regardless of metadata', () => {
-    expect(projectRequiresDeclaredAgents({}, true)).toBe(true);
-    expect(projectRequiresDeclaredAgents(null, true)).toBe(true);
+    expect(workspaceRequiresDeclaredAgents({}, true)).toBe(true);
+    expect(workspaceRequiresDeclaredAgents(null, true)).toBe(true);
   });
 
   test('platform flag off but project.metadata.require_declared_agents === true → subject', () => {
-    expect(projectRequiresDeclaredAgents({ require_declared_agents: true }, false)).toBe(true);
+    expect(workspaceRequiresDeclaredAgents({ require_declared_agents: true }, false)).toBe(true);
   });
 
   test('a truthy-but-not-literal-true value does NOT flip subjectness (strict ===)', () => {
-    expect(projectRequiresDeclaredAgents({ require_declared_agents: 'true' }, false)).toBe(false);
-    expect(projectRequiresDeclaredAgents({ require_declared_agents: 1 }, false)).toBe(false);
+    expect(workspaceRequiresDeclaredAgents({ require_declared_agents: 'true' }, false)).toBe(false);
+    expect(workspaceRequiresDeclaredAgents({ require_declared_agents: 1 }, false)).toBe(false);
   });
 });
 
@@ -57,7 +57,7 @@ describe('resolveGovernedAgentGrant — non-subject preserves today\'s exact beh
   test('no [[agents]] section → ok, null grant (unrestricted, back-compat)', () => {
     const result = resolveGovernedAgentGrant('default', loadAgents(''), {
       subject: false,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
     expect(result).toEqual({ ok: true, grant: null });
   });
@@ -70,7 +70,7 @@ kortix_cli = ["project.trigger.create"]
 `);
     const result = resolveGovernedAgentGrant('rogue-agent', loaded, {
       subject: false,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
     expect(result).toEqual({
       ok: true,
@@ -87,7 +87,7 @@ kortix_cli = "all"
 `);
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: false,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
     expect(result).toEqual({ ok: true, grant: null });
   });
@@ -108,7 +108,7 @@ enabled = false
   test('declared, enabled agent → ok, its grant', () => {
     const result = resolveGovernedAgentGrant('support', loaded, {
       subject: true,
-      projectDefaultAgent: 'support',
+      workspaceDefaultAgent: 'support',
     });
     expect(result).toEqual({
       ok: true,
@@ -119,7 +119,7 @@ enabled = false
   test('undeclared concrete agent → rejected with an explicit error (not null, not default-deny)', () => {
     const result = resolveGovernedAgentGrant('never-declared', loaded, {
       subject: true,
-      projectDefaultAgent: 'support',
+      workspaceDefaultAgent: 'support',
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -131,7 +131,7 @@ enabled = false
   test('a declared-but-disabled agent is rejected, same as undeclared', () => {
     const result = resolveGovernedAgentGrant('disabled-one', loaded, {
       subject: true,
-      projectDefaultAgent: 'support',
+      workspaceDefaultAgent: 'support',
     });
     expect(result.ok).toBe(false);
   });
@@ -139,7 +139,7 @@ enabled = false
   test('project with zero [[agents]] declared at all → rejected (no adopt-to-govern escape hatch)', () => {
     const result = resolveGovernedAgentGrant('anything', loadAgents(''), {
       subject: true,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
     expect(result.ok).toBe(false);
   });
@@ -155,7 +155,7 @@ connectors = ["github"]
   test('sentinel + a declared, enabled default_agent → ok, that agent\'s grant (not null)', () => {
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
-      projectDefaultAgent: 'support',
+      workspaceDefaultAgent: 'support',
     });
     expect(result).toEqual({
       ok: true,
@@ -166,7 +166,7 @@ connectors = ["github"]
   test('sentinel + no default_agent configured → rejected', () => {
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('AGENT_NOT_DECLARED');
@@ -175,7 +175,7 @@ connectors = ["github"]
   test('sentinel + a default_agent naming an UNDECLARED agent → rejected', () => {
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
-      projectDefaultAgent: 'ghost-agent',
+      workspaceDefaultAgent: 'ghost-agent',
     });
     expect(result.ok).toBe(false);
   });
@@ -184,7 +184,7 @@ connectors = ["github"]
 // kortix_version 2 — the runtime-wiring fix: extractAgents now reads a v2
 // `agents:` map (not just v1's `[[agents]]` array), and the manifest's own
 // top-level `default_agent` (captured on `LoadedAgents.defaultAgent`) backs
-// `opts.projectDefaultAgent` when the DB-side project.metadata mirror isn't
+// `opts.workspaceDefaultAgent` when the DB-side project.metadata mirror isn't
 // separately set — which is the common case for a v2 project, since nothing
 // syncs the manifest's `default_agent` into project metadata today.
 describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manifest', () => {
@@ -208,7 +208,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 `);
     const result = resolveGovernedAgentGrant('support', loaded, {
       subject: true,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
     expect(result).toEqual({
       ok: true,
@@ -223,7 +223,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 `);
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
-      projectDefaultAgent: null, // no DB-side mirror set — the common case for v2
+      workspaceDefaultAgent: null, // no DB-side mirror set — the common case for v2
     });
     expect(result).toEqual({
       ok: true,
@@ -231,7 +231,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
   });
 
-  test('an explicit DB projectDefaultAgent still wins over the manifest\'s default_agent', () => {
+  test('an explicit DB workspaceDefaultAgent still wins over the manifest\'s default_agent', () => {
     const loaded = loadV2(`
   support:
     connectors: [github]
@@ -240,7 +240,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 `);
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
-      projectDefaultAgent: 'billing',
+      workspaceDefaultAgent: 'billing',
     });
     expect(result).toEqual({
       ok: true,
@@ -255,7 +255,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 `);
     const result = resolveGovernedAgentGrant('never-declared', loaded, {
       subject: true,
-      projectDefaultAgent: 'support',
+      workspaceDefaultAgent: 'support',
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('AGENT_NOT_DECLARED');
@@ -265,7 +265,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 // P0 REGRESSION GUARD: POST /projects/provision (r1.ts) stamps
 // `metadata.require_declared_agents = true` on every new project — so a fresh
 // project is ALWAYS subject to this gate from birth, with no DB-side
-// `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
+// `metadata.default_agent` mirror set (sessions.ts's `workspaceDefaultAgent` is
 // `undefined`/null the very first time). The starter it seeds
 // (@kortix/starter, packages/starter/templates/base) MUST therefore ship a
 // v2 manifest with a `default_agent` that resolves — otherwise
@@ -298,7 +298,7 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     // stamp), and no project.metadata.default_agent mirror set yet.
     const governed = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
 
     expect(governed.ok).toBe(true);
@@ -319,7 +319,7 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     const loaded = extractAgents(manifest);
     const governed = resolveGovernedAgentGrant('kortix', loaded, {
       subject: true,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
     expect(governed.ok).toBe(true);
   });

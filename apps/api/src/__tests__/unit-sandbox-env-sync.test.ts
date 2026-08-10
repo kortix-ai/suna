@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isReservedSandboxEnvName, sanitizeSandboxEnv } from '../projects/lib/sandbox-env-names';
+import { isReservedSandboxEnvName, sanitizeSandboxEnv } from '../workspaces/lib/sandbox-env-names';
 
 describe('isReservedSandboxEnvName', () => {
   test('flags platform-reserved + KORTIX_/OPENCODE_ prefixes', () => {

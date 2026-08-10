@@ -36,7 +36,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import { PROVISIONING_SESSION_STATUSES } from '../../workspaces/lib/session-status';
+import * as realAgents from '../../workspaces/agents';
 import * as realProviders from '../providers';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 
@@ -44,7 +45,7 @@ const dialect = new PgDialect();
 
 const SANDBOX_ID = '00000000-0000-4000-a000-00000000a001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-00000000a002';
-const PROJECT_ID = '00000000-0000-4000-a000-00000000a003';
+const WORKSPACE_ID = '00000000-0000-4000-a000-00000000a003';
 const USER_ID = '00000000-0000-4000-a000-00000000a004';
 const EXTERNAL_ID = 'ext-daytona-1';
 
@@ -159,7 +160,7 @@ mock.module('../../shared/db', () => ({
                     sandboxId: SANDBOX_ID,
                     sessionId: SANDBOX_ID,
                     accountId: ACCOUNT_ID,
-                    projectId: PROJECT_ID,
+                    workspaceId: WORKSPACE_ID,
                     provider: 'daytona',
                     externalId: null,
                     status: 'provisioning',
@@ -222,7 +223,7 @@ mock.module('./provider-balancer', () => ({
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
+  ensureSandboxImage: async (_gitWorkspace: unknown, opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     return {
       snapshotName: 'snap-test-1',
@@ -287,16 +288,17 @@ mock.module('../../shared/account-limits', () => ({
   accountEntitledToLlmGateway: async (_accountId: string) => false,
 }));
 
-mock.module('../../projects/triggers', () => ({
+mock.module('../../workspaces/triggers', () => ({
   readManifest: async () => null,
 }));
 
-mock.module('../../projects/agents', () => ({
-  resolveAgentGrant: async (_agentName: string, _gitProject: unknown) => null,
+mock.module('../../workspaces/agents', () => ({
+  ...realAgents,
+  resolveAgentGrant: async (_agentName: string, _gitWorkspace: unknown) => null,
 }));
 
 mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (_metadata: unknown) => false,
+  workspaceLlmGatewayEnabled: (_metadata: unknown) => false,
 }));
 
 mock.module('../../shared/session-failure-notifier', () => ({
@@ -344,12 +346,12 @@ function baseOpts() {
   return {
     sandboxId: SANDBOX_ID,
     accountId: ACCOUNT_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     userId: USER_ID,
     provider: 'daytona' as const,
-    gitProject: { defaultBranch: 'main' } as unknown as Parameters<
+    gitWorkspace: { defaultBranch: 'main' } as unknown as Parameters<
       typeof provisionSessionSandbox
-    >[0]['gitProject'],
+    >[0]['gitWorkspace'],
     metadata: {},
   };
 }
@@ -366,7 +368,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(accountTokenCreateCalls[0]).toMatchObject({
       accountId: ACCOUNT_ID,
       userId: USER_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: SANDBOX_ID,
       agentGrant: {
         agent: 'meta',

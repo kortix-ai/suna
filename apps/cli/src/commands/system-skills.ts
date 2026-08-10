@@ -111,7 +111,7 @@ Optional (non-system) skills live in the marketplace:
   kortix marketplace list --type skill
 `;
 
-/** Where a skill's files live inside a Kortix project. */
+/** Where a skill's files live inside a Kortix workspace. */
 const SKILLS_DIR = '.kortix/opencode/skills';
 
 function parseFlags(argv: string[]): SkillsFlags {
@@ -320,7 +320,7 @@ async function skillsFile(argv: string[], flags: SkillsFlags, cmd: string): Prom
   return 0;
 }
 
-/** Walk up from cwd to a Kortix project root, else use cwd. Keys on a project
+/** Walk up from cwd to a Kortix workspace root, else use cwd. Keys on a workspace
  *  marker (a `kortix.yaml`/`kortix.toml` manifest or a `.kortix/opencode` dir),
  *  not a bare `.kortix/` — otherwise the CLI's own `~/.kortix` home dir matches. */
 function projectRoot(): string {

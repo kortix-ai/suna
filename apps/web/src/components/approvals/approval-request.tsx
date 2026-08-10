@@ -9,7 +9,7 @@ import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon, XIcon } from '@phospho
 export interface ApprovalRequestData {
   action: string;
   risk: string | null;
-  projectName?: string | null;
+  workspaceName?: string | null;
   requestedAt: string;
   argsPreview: Record<string, unknown> | null;
   reviewComplete?: boolean;
@@ -123,7 +123,7 @@ export function ApprovalRequest({
             ) : null}
           </div>
           <p className="text-muted-foreground text-xs text-pretty">
-            {request.projectName ? `${request.projectName} · ` : ''}
+            {request.workspaceName ? `${request.workspaceName} · ` : ''}
             Requested {new Date(request.requestedAt).toLocaleString()}
           </p>
         </div>

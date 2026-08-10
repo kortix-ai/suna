@@ -134,7 +134,7 @@ test.describe("19 — Feature flags UI", () => {
     const user = await createAuthUser(email, authOptions);
     const session = await signIn(email, authOptions);
     const env = loadEnv();
-    let projectId: string | null = null;
+    let workspaceId: string | null = null;
     const pageErrors: string[] = [];
     // The deprecated alias must stay unused by the web app: the canonical route
     // is `/features` and a silent fallback to `/experimental` would hide a
@@ -144,7 +144,7 @@ test.describe("19 — Feature flags UI", () => {
     page.on("request", (request) => {
       if (
         request.method() === "PATCH" &&
-        request.url().endsWith(`/v1/projects/${projectId}/experimental`)
+        request.url().endsWith(`/v1/projects/${workspaceId}/experimental`)
       ) {
         deprecatedAliasCalls.push(request.url());
       }
@@ -169,7 +169,7 @@ test.describe("19 — Feature flags UI", () => {
         userId: user.id,
         name: `Feature flags UI ${runId}`,
       });
-      projectId = project.id;
+      workspaceId = project.id;
 
       // The server's catalog IS the expectation for what the section renders.
       const before = await api<ProjectResponse>(
@@ -269,8 +269,8 @@ test.describe("19 — Feature flags UI", () => {
       expect(deprecatedAliasCalls).toEqual([]);
       expect(pageErrors).toEqual([]);
     } finally {
-      if (projectId)
-        await deleteDatabaseProject(env, projectId).catch(() => {});
+      if (workspaceId)
+        await deleteDatabaseProject(env, workspaceId).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });

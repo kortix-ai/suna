@@ -110,7 +110,7 @@ export function createInternalGatewayRoutes() {
     const { principal } = await c.req.json();
     const p = principal as AuthedPrincipal;
     return c.json({
-      models: gatewayModelCatalog(p.projectId, {
+      models: gatewayModelCatalog(p.workspaceId, {
         freeManagedOnly: !!p.freeModelsOnly,
       }),
     });

@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { readFileSync } from 'fs';
 const PTKEY = readFileSync('/tmp/ptkey', 'utf8').trim();
 const PID = process.env.PID ?? '6ad48932-59dd-40cd-a8c7-9c58988b36cd';
-const rows = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.projectId, PID));
+const rows = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.workspaceId, PID));
 for (const r of rows) {
   if (!r.externalId) continue;
   const res = await fetch(`https://api.platinum.dev/v1/sandboxes/${r.externalId}`, {

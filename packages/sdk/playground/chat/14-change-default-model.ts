@@ -15,7 +15,7 @@
  *
  * Run:
  *   KORTIX_API_URL=http://localhost:8008/v1 KORTIX_API_KEY=kortix_pat_... \
- *     bun run playground/chat/14-change-default-model.ts claude-opus-4.8 [projectId]
+ *     bun run playground/chat/14-change-default-model.ts claude-opus-4.8 [workspaceId]
  *
  * As an npm consumer, the import lines change to:
  *   import { createKortix } from '@kortix/sdk';
@@ -87,15 +87,15 @@ async function main() {
   }
   const model: ManagedModelId = requested;
 
-  const projectId = process.argv[3] ?? process.env.KORTIX_PROJECT_ID;
-  if (!projectId) {
+  const workspaceId = process.argv[3] ?? process.env.KORTIX_PROJECT_ID;
+  if (!workspaceId) {
     console.error("✗ no project given — pass argv[3] or set KORTIX_PROJECT_ID");
     process.exit(1);
     return;
   }
 
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
-  const project = kortix.project(projectId);
+  const project = kortix.project(workspaceId);
 
   const before = await project.modelDefaults.get();
   if (before.freeTier) {

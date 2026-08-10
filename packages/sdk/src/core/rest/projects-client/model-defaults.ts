@@ -26,26 +26,26 @@ export interface ModelDefaultsResponse {
   freeTier: boolean;
 }
 
-export async function getModelDefaults(projectId: string) {
+export async function getModelDefaults(workspaceId: string) {
   return unwrap(
-    await backendApi.get<ModelDefaultsResponse>(`/projects/${projectId}/model-defaults`),
+    await backendApi.get<ModelDefaultsResponse>(`/projects/${workspaceId}/model-defaults`),
   );
 }
 
 export async function setModelDefault(
-  projectId: string,
+  workspaceId: string,
   input: { scope: ModelDefaultScope; agentName?: string; model: string },
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; scope: string; agentName?: string; model: string }>(
-      `/projects/${projectId}/model-defaults`,
+      `/projects/${workspaceId}/model-defaults`,
       input,
     ),
   );
 }
 
 export async function clearModelDefault(
-  projectId: string,
+  workspaceId: string,
   params: { scope: ModelDefaultScope; agentName?: string },
 ) {
   const qs = new URLSearchParams({
@@ -54,7 +54,7 @@ export async function clearModelDefault(
   }).toString();
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/model-defaults?${qs}`,
+      `/projects/${workspaceId}/model-defaults?${qs}`,
     ),
   );
 }

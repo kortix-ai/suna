@@ -36,7 +36,7 @@ function sessionRow() {
   return {
     session_id: SESSION_ID,
     account_id: ACCOUNT_ID,
-    project_id: PROJECT_ID,
+    workspace_id: PROJECT_ID,
     branch_name: SESSION_ID,
     sandbox_provider: 'daytona',
     sandbox_id: 'sandbox-row-id',
@@ -71,13 +71,13 @@ describe('sessions pending/approve/answer', () => {
         const url = new URL(req.url);
         if (
           req.method === 'GET' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`
         ) {
           return Response.json(sessionRow());
         }
         if (
           req.method === 'POST' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/start`
         ) {
           return Response.json({
             stage: 'ready',

@@ -20,7 +20,7 @@ test.describe('13 — Custom connector OAuth2', () => {
 
   let user: AuthUser;
   let session: AuthSession;
-  let projectId: string;
+  let workspaceId: string;
 
   test.beforeAll(async () => {
     const email = `e2e-connector-oauth-${Date.now()}@kortix.test`;
@@ -39,12 +39,12 @@ test.describe('13 — Custom connector OAuth2', () => {
     expect(body.project_id).toBeTruthy();
     if (!body.project_id)
       throw new Error(`Project provision returned no project_id: ${JSON.stringify(body)}`);
-    projectId = body.project_id;
+    workspaceId = body.project_id;
   });
 
   test.afterAll(async () => {
-    if (projectId && session) {
-      await api(session.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+    if (workspaceId && session) {
+      await api(session.access_token, 'DELETE', `/projects/${workspaceId}`).catch(() => {});
     }
     if (user?.id) await deleteAuthUser(user.id, authOptions);
   });
@@ -58,7 +58,7 @@ test.describe('13 — Custom connector OAuth2', () => {
     await installBrowserSession(
       page,
       session,
-      `/projects/${projectId}/customize/connectors`,
+      `/projects/${workspaceId}/customize/connectors`,
       password,
     );
     await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible();

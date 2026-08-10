@@ -1,4 +1,4 @@
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 
 /**
  * Forward-facing provider label — "App" for the 1-click (Pipedream) connectors.
@@ -14,10 +14,10 @@ import type { AdminConnector } from '@kortix/sdk';
  * The legacy Customize surface imports it back from here. That direction is
  * deliberate: when `connectors-view.tsx` is retired, this module does not move.
  */
-export function providerLabel(p: AdminConnector['provider']): string {
+export function providerLabel(p: WorkspaceAdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
-  if (p === 'computer') return 'Computer';
+  if (p === 'computer') return 'Computers';
   if (p === 'postman') return 'Postman';
   return p.toUpperCase();
 }

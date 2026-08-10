@@ -11,8 +11,8 @@ import { cn } from '@/lib/utils';
  * of (and stricter than) eslint's `no-restricted-syntax` rule, which is now
  * scoped to `@kortix/sdk`/opencode-ish sources and no longer flags this file
  * — but sdk-boundary.mjs still would. `RuntimeMark` mirrors the SDK's own
- * convention for this exact rename (`ProjectOpenCodeSession as
- * ProjectRuntimeSession` in `packages/sdk/src/index.ts`), not "Harness":
+ * convention for this exact rename (`WorkspaceOpenCodeSession as
+ * WorkspaceRuntimeSession` in `packages/sdk/src/index.ts`), not "Harness":
  * this codebase already uses "harness" for the pluggable-agent-runtime
  * concept (OpenCode vs. the Claude Code / Codex / Pi harnesses behind
  * `KORTIX_ACP_RUNTIME`), so reusing it here for an unrelated brand mark

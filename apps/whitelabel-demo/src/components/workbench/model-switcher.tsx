@@ -30,18 +30,18 @@ import { toast } from 'sonner';
  * told the model changed, whose next answer comes from the old one, has been
  * lied to.
  */
-export function ModelSwitcher({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function ModelSwitcher({ workspaceId, sessionId }: { workspaceId: string; sessionId: string }) {
   const qc = useQueryClient();
-  const models = useProjectModels(projectId);
+  const models = useProjectModels(workspaceId);
 
   // The switcher reads its OWN current model through the neutral route, so no
   // caller has to touch the runtime-named field to render it.
   const current = useQuery({
-    queryKey: ['session-model', projectId, sessionId],
+    queryKey: ['session-model', workspaceId, sessionId],
     queryFn: async () => {
       const token = getSessionToken();
       const res = await fetch(
-        `/api/session-model?projectId=${encodeURIComponent(projectId)}&sessionId=${encodeURIComponent(sessionId)}`,
+        `/api/session-model?workspaceId=${encodeURIComponent(workspaceId)}&sessionId=${encodeURIComponent(sessionId)}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
       );
       if (!res.ok) return { model: null as string | null };
@@ -56,7 +56,7 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
     mutationFn: async (model: string) => {
       const token = getSessionToken();
       const res = await fetch(
-        `/api/session-model?projectId=${encodeURIComponent(projectId)}&sessionId=${encodeURIComponent(sessionId)}`,
+        `/api/session-model?workspaceId=${encodeURIComponent(workspaceId)}&sessionId=${encodeURIComponent(sessionId)}`,
         {
           method: 'PUT',
           headers: {
@@ -77,8 +77,8 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
       return body;
     },
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
-      qc.invalidateQueries({ queryKey: ['session-model', projectId, sessionId] });
+      qc.invalidateQueries({ queryKey: qk.session(workspaceId, sessionId) });
+      qc.invalidateQueries({ queryKey: ['session-model', workspaceId, sessionId] });
       // Three outcomes, not two — a stored-but-not-pushed change is NOT a
       // success, and saying so is the whole point of this switcher's doc
       // comment above. See classifyModelChange.

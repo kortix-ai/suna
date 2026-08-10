@@ -24,14 +24,14 @@ import { eq } from 'drizzle-orm';
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
 import { createConnectorRouter } from '../connectors/router';
 import {
-  resolveProjectDefaultConnectorConnection,
+  resolveWorkspaceDefaultConnectorConnection,
   resolveSessionConnectorConnection,
-} from '../projects/lib/session-connector-bindings';
-import { encryptProjectSecret } from '../projects/secrets';
+} from '../workspaces/lib/session-connector-bindings';
+import { encryptWorkspaceSecret } from '../workspaces/secrets';
 import { db } from '../shared/db';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const USER = crypto.randomUUID();
 // Two connectors: one the session binds (veyris), one it does not (unbound).
 const CONNECTOR_BOUND = crypto.randomUUID();
@@ -58,7 +58,7 @@ function principalFor(sessionId: string | null) {
   return {
     userId: USER,
     accountId: ACCOUNT,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     sessionId,
     subject: { userId: USER, groupIds: [] },
     // Agent grant allows both connectors, so the agent-grant filter is not the
@@ -70,7 +70,7 @@ function principalFor(sessionId: string | null) {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'catalog-inherit-test' });
   await db.insert(projects).values({
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     name: 'catalog-inherit-test',
     repoUrl: 'https://example.test/catalog-inherit.git',
@@ -79,7 +79,7 @@ beforeAll(async () => {
     {
       connectorId: CONNECTOR_BOUND,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       slug: 'veyris',
       name: 'Veyris',
       providerType: 'http',
@@ -89,7 +89,7 @@ beforeAll(async () => {
     {
       connectorId: CONNECTOR_UNBOUND,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       slug: 'unbound',
       name: 'Unbound',
       providerType: 'http',
@@ -99,7 +99,7 @@ beforeAll(async () => {
     {
       connectorId: CONNECTOR_REVOKED,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       slug: 'revoked',
       name: 'Revoked',
       providerType: 'http',
@@ -113,7 +113,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_BOUND_DEFAULT,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: CONNECTOR_BOUND,
       label: 'Veyris default',
       isDefault: true,
@@ -121,7 +121,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_BOUND_MEMBER,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: CONNECTOR_BOUND,
       ownerType: 'member',
       ownerId: USER,
@@ -130,7 +130,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_UNBOUND_DEFAULT,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: CONNECTOR_UNBOUND,
       label: 'Unbound default',
       isDefault: true,
@@ -138,7 +138,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_UNBOUND_MEMBER,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: CONNECTOR_UNBOUND,
       ownerType: 'member',
       ownerId: USER,
@@ -150,7 +150,7 @@ beforeAll(async () => {
       // because of the binding-row guard, not because there is no fallback.
       connectionId: CONNECTION_REVOKED_DEFAULT,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: CONNECTOR_REVOKED,
       ownerType: 'member',
       ownerId: USER,
@@ -160,7 +160,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_REVOKED_MEMBER,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: CONNECTOR_REVOKED,
       ownerType: 'member',
       ownerId: USER,
@@ -171,39 +171,39 @@ beforeAll(async () => {
     {
       connectorId: CONNECTOR_BOUND,
       connectionId: CONNECTION_BOUND_DEFAULT,
-      valueEnc: encryptProjectSecret(PROJECT, 'veyris-default-cap'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE, 'veyris-default-cap'),
     },
     {
       connectorId: CONNECTOR_BOUND,
       connectionId: CONNECTION_BOUND_MEMBER,
-      valueEnc: encryptProjectSecret(PROJECT, 'veyris-member-cap'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE, 'veyris-member-cap'),
     },
     {
       connectorId: CONNECTOR_UNBOUND,
       connectionId: CONNECTION_UNBOUND_DEFAULT,
-      valueEnc: encryptProjectSecret(PROJECT, 'unbound-default-cap'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE, 'unbound-default-cap'),
     },
     {
       connectorId: CONNECTOR_UNBOUND,
       connectionId: CONNECTION_UNBOUND_MEMBER,
-      valueEnc: encryptProjectSecret(PROJECT, 'unbound-member-cap'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE, 'unbound-member-cap'),
     },
     {
       connectorId: CONNECTOR_REVOKED,
       connectionId: CONNECTION_REVOKED_DEFAULT,
-      valueEnc: encryptProjectSecret(PROJECT, 'revoked-default-cap'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE, 'revoked-default-cap'),
     },
     {
       connectorId: CONNECTOR_REVOKED,
       connectionId: CONNECTION_REVOKED_MEMBER,
-      valueEnc: encryptProjectSecret(PROJECT, 'revoked-member-cap'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE, 'revoked-member-cap'),
     },
   ]);
   await db.insert(projectSessions).values([
     {
       sessionId: SESSION_EMPTY,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       branchName: SESSION_EMPTY,
       createdBy: USER,
       visibility: 'private',
@@ -214,7 +214,7 @@ beforeAll(async () => {
       // The bug condition: configured + NOT inherit_unbound. Only veyris is bound.
       sessionId: SESSION_BUG,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       branchName: SESSION_BUG,
       createdBy: USER,
       visibility: 'private',
@@ -225,7 +225,7 @@ beforeAll(async () => {
       // Fixed: configured + inherit_unbound = true (what absent now defaults to).
       sessionId: SESSION_INHERIT,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       branchName: SESSION_INHERIT,
       createdBy: USER,
       visibility: 'private',
@@ -236,7 +236,7 @@ beforeAll(async () => {
       // Legacy: no bindings configured at all — always fell back to project default.
       sessionId: SESSION_LEGACY,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       branchName: SESSION_LEGACY,
       createdBy: USER,
       visibility: 'private',
@@ -248,7 +248,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_BUG,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorAlias: 'veyris',
       connectorId: CONNECTOR_BOUND,
       connectionId: CONNECTION_BOUND_MEMBER,
@@ -258,7 +258,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_BUG,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorAlias: 'revoked',
       connectorId: CONNECTOR_REVOKED,
       connectionId: CONNECTION_REVOKED_MEMBER,
@@ -268,7 +268,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_INHERIT,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorAlias: 'veyris',
       connectorId: CONNECTOR_BOUND,
       connectionId: CONNECTION_BOUND_MEMBER,
@@ -285,7 +285,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.projectId, PROJECT));
+  await db.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.workspaceId, WORKSPACE));
   await db.delete(connectionCredentials).where(eq(connectionCredentials.connectorId, CONNECTOR_BOUND));
   await db
     .delete(connectionCredentials)
@@ -293,12 +293,12 @@ afterAll(async () => {
   await db
     .delete(connectionCredentials)
     .where(eq(connectionCredentials.connectorId, CONNECTOR_REVOKED));
-  await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
+  await db.delete(projectSessions).where(eq(projectSessions.workspaceId, WORKSPACE));
   await db
     .delete(connectorConnections)
-    .where(eq(connectorConnections.projectId, PROJECT));
-  await db.delete(connectors).where(eq(connectors.projectId, PROJECT));
-  await db.delete(projects).where(eq(projects.projectId, PROJECT));
+    .where(eq(connectorConnections.workspaceId, WORKSPACE));
+  await db.delete(connectors).where(eq(connectors.workspaceId, WORKSPACE));
+  await db.delete(projects).where(eq(projects.workspaceId, WORKSPACE));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
@@ -306,7 +306,7 @@ describe('connector catalog and call resolver use one session scope', () => {
   test('an explicit empty scope hides every connector from catalog and calls', async () => {
     const unbound = await resolveSessionConnectorConnection({
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       sessionId: SESSION_EMPTY,
       alias: 'unbound',
       actingUserId: USER,
@@ -317,7 +317,7 @@ describe('connector catalog and call resolver use one session scope', () => {
     expect(catalog).toEqual([]);
 
     const deps = dbConnectorRouterDeps.makeGatewayDeps(principalFor(SESSION_EMPTY));
-    expect(await deps.loadConnectorBySlug(PROJECT, 'unbound')).toBeNull();
+    expect(await deps.loadConnectorBySlug(WORKSPACE, 'unbound')).toBeNull();
   });
 
   test('the real project-explicit HTTP routes expose the same empty scope', async () => {
@@ -325,14 +325,14 @@ describe('connector catalog and call resolver use one session scope', () => {
     const app = createConnectorRouter({
       ...dbConnectorRouterDeps,
       resolvePrincipal: async () => principal,
-      resolveProjectPrincipal: async (_c, projectId) => (projectId === PROJECT ? principal : null),
+      resolveWorkspacePrincipal: async (_c, workspaceId) => (workspaceId === WORKSPACE ? principal : null),
     });
 
-    const catalogResponse = await app.request(`/projects/${PROJECT}/catalog`);
+    const catalogResponse = await app.request(`/projects/${WORKSPACE}/catalog`);
     expect(catalogResponse.status).toBe(200);
     expect(await catalogResponse.json()).toEqual({ connectors: [] });
 
-    const callResponse = await app.request(`/projects/${PROJECT}/call`, {
+    const callResponse = await app.request(`/projects/${WORKSPACE}/call`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connector: 'unbound', action: 'read', args: {} }),
@@ -351,24 +351,24 @@ describe('connector catalog and call resolver use one session scope', () => {
     expect(slugs).toEqual(['veyris']);
 
     const deps = dbConnectorRouterDeps.makeGatewayDeps(principalFor(SESSION_BUG));
-    const conn = await deps.loadConnectorBySlug(PROJECT, 'veyris');
+    const conn = await deps.loadConnectorBySlug(WORKSPACE, 'veyris');
     expect(conn?.connectionId).toBe(CONNECTION_BOUND_MEMBER);
-    expect(await deps.loadConnectorBySlug(PROJECT, 'unbound')).toBeNull();
+    expect(await deps.loadConnectorBySlug(WORKSPACE, 'unbound')).toBeNull();
   });
 
   test('a present-but-REVOKED binding fails closed (the safety net does not resurrect it)', async () => {
     const revoked = await resolveSessionConnectorConnection({
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       sessionId: SESSION_BUG,
       alias: 'revoked',
       actingUserId: USER,
     });
     expect(revoked).toBeNull();
 
-    const projectDefault = await resolveProjectDefaultConnectorConnection({
+    const projectDefault = await resolveWorkspaceDefaultConnectorConnection({
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       alias: 'revoked',
       actingUserId: USER,
     });
@@ -383,7 +383,7 @@ describe('connector catalog and call resolver use one session scope', () => {
   test('the fixed create-path default (inherit_unbound=true) lists unbound aliases without the safety net', async () => {
     const unbound = await resolveSessionConnectorConnection({
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       sessionId: SESSION_INHERIT,
       alias: 'unbound',
       actingUserId: USER,
@@ -395,7 +395,7 @@ describe('connector catalog and call resolver use one session scope', () => {
     expect(slugs).toEqual(['revoked', 'unbound', 'veyris']);
 
     const deps = dbConnectorRouterDeps.makeGatewayDeps(principalFor(SESSION_INHERIT));
-    expect((await deps.loadConnectorBySlug(PROJECT, 'unbound'))?.connectionId).toBe(
+    expect((await deps.loadConnectorBySlug(WORKSPACE, 'unbound'))?.connectionId).toBe(
       CONNECTION_UNBOUND_MEMBER,
     );
   });
@@ -410,7 +410,7 @@ describe('connector catalog and call resolver use one session scope', () => {
     expect(slugs).toEqual(['revoked', 'unbound', 'veyris']);
 
     const deps = dbConnectorRouterDeps.makeGatewayDeps(principalFor(SESSION_LEGACY));
-    expect((await deps.loadConnectorBySlug(PROJECT, 'unbound'))?.connectionId).toBe(
+    expect((await deps.loadConnectorBySlug(WORKSPACE, 'unbound'))?.connectionId).toBe(
       CONNECTION_UNBOUND_MEMBER,
     );
   });

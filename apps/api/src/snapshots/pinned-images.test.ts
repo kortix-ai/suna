@@ -19,7 +19,7 @@ async function project(metadata: Record<string, unknown>): Promise<string> {
     .insert(projects)
     .values({ accountId, name: 'pin', repoUrl: 'https://example.test/r.git', metadata })
     .returning();
-  return row!.projectId;
+  return row!.workspaceId;
 }
 
 beforeAll(async () => {

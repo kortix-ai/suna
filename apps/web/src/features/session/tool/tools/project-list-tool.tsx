@@ -13,7 +13,7 @@ import { useMemo } from 'react';
 
 import { type ProjectEntry, parseProjectListOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function WorkspaceListTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const output = partOutput(part);
   const projects = useMemo(() => parseProjectListOutput(output || ''), [output]);
 
@@ -50,7 +50,7 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('project_list', ProjectListTool);
-ToolRegistry.register('project-list', ProjectListTool);
-ToolRegistry.register('oc-project_list', ProjectListTool);
-ToolRegistry.register('oc-project-list', ProjectListTool);
+ToolRegistry.register('project_list', WorkspaceListTool);
+ToolRegistry.register('project-list', WorkspaceListTool);
+ToolRegistry.register('oc-project_list', WorkspaceListTool);
+ToolRegistry.register('oc-project-list', WorkspaceListTool);

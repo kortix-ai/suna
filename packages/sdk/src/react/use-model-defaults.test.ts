@@ -3,13 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import { resolveModelDefault } from './use-model-defaults';
 
 describe('resolveModelDefault', () => {
-  test('uses agent, project, account, then platform precedence', () => {
+  test('uses agent, workspace, account, then platform precedence', () => {
     const data = {
       accountDefault: 'openai/gpt-account',
-      projectDefault: 'anthropic/claude-project',
+      workspaceDefault: 'anthropic/claude-workspace',
       platformDefault: 'kortix/platform',
       agentDefaults: { coder: 'google/gemini-agent' },
-      resolvedForCaller: 'anthropic/claude-project',
+      resolvedForCaller: 'anthropic/claude-workspace',
       freeTier: false,
     };
 
@@ -19,7 +19,7 @@ describe('resolveModelDefault', () => {
     });
     expect(resolveModelDefault(data, 'reviewer')).toEqual({
       providerID: 'kortix',
-      modelID: 'anthropic/claude-project',
+      modelID: 'anthropic/claude-workspace',
     });
   });
 
@@ -28,7 +28,7 @@ describe('resolveModelDefault', () => {
       resolveModelDefault(
         {
           accountDefault: null,
-          projectDefault: null,
+          workspaceDefault: null,
           platformDefault: 'kortix/platform',
           agentDefaults: {},
           resolvedForCaller: null,

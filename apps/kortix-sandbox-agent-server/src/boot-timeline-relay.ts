@@ -1,5 +1,6 @@
 import { logger } from './logger'
 import type { BootMark } from './routes/health'
+import { workspaceIdFromEnv } from './workspace-env'
 
 /**
  * Relays the in-guest boot timeline to the control plane, once, when a
@@ -50,7 +51,7 @@ export function __resetBootTimelineRelayForTests(): void {
 }
 
 async function doRelay(timeline: BootMark[]): Promise<void> {
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const workspaceId = workspaceIdFromEnv()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // Same token fallback order as relayBootstrapPinToApi: prefer the session
   // token, then the sandbox credential (canonical name first, legacy
@@ -62,7 +63,7 @@ async function doRelay(timeline: BootMark[]): Promise<void> {
     ''
   ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return
+  if (!workspaceId || !sessionId || !token || !apiUrl) return
   if (timeline.length === 0) return
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
   const url = `${apiRoot}/platform/boot-timeline`

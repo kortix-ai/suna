@@ -5,16 +5,16 @@
  * (the HKDF input) is present.
  */
 import { describe, expect, test } from 'bun:test';
-import { encryptProjectSecret } from '../projects/secrets';
+import { encryptWorkspaceSecret } from '../workspaces/secrets';
 import { mintSetupLink, resolveSetupLink } from '../setup-links/token';
 
-const PROJECT_A = '11111111-1111-4111-8111-111111111111';
-const PROJECT_B = '22222222-2222-4222-8222-222222222222';
+const WORKSPACE_A = '11111111-1111-4111-8111-111111111111';
+const WORKSPACE_B = '22222222-2222-4222-8222-222222222222';
 
 describe('setup-link token codec', () => {
   test('secret link round-trips with fields, scope, and minting user', () => {
     const { token, expiresAt } = mintSetupLink(
-      PROJECT_A,
+      WORKSPACE_A,
       {
         kind: 'secret',
         fields: [
@@ -33,7 +33,7 @@ describe('setup-link token codec', () => {
     const r = resolveSetupLink(token);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.projectId).toBe(PROJECT_A);
+    expect(r.workspaceId).toBe(WORKSPACE_A);
     expect(r.payload.kind).toBe('secret');
     if (r.payload.kind !== 'secret') return;
     expect(r.payload.fields.map((f) => f.name)).toEqual(['APOLLO_API_KEY', 'SMARTLEAD_API_KEY']);
@@ -42,7 +42,7 @@ describe('setup-link token codec', () => {
   });
 
   test('connector link round-trips with slug and app', () => {
-    const { token } = mintSetupLink(PROJECT_A, {
+    const { token } = mintSetupLink(WORKSPACE_A, {
       kind: 'connector',
       slug: 'smartlead',
       app: 'smartlead',
@@ -56,7 +56,7 @@ describe('setup-link token codec', () => {
   });
 
   test('scope defaults to runtime when omitted', () => {
-    const { token } = mintSetupLink(PROJECT_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
+    const { token } = mintSetupLink(WORKSPACE_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
     const r = resolveSetupLink(token);
     if (!r.ok || r.payload.kind !== 'secret') throw new Error('expected secret');
     expect(r.payload.scope).toBe('runtime');
@@ -73,10 +73,10 @@ describe('setup-link token codec', () => {
       uid: null,
       exp: Date.now() - 120_000,
       nonce: 'x',
-      pid: PROJECT_A,
+      pid: WORKSPACE_A,
     };
-    const envelope = encryptProjectSecret(PROJECT_A, JSON.stringify(payload));
-    const token = `ksl_${Buffer.from(`${PROJECT_A}.${envelope}`, 'utf8').toString('base64url')}`;
+    const envelope = encryptWorkspaceSecret(WORKSPACE_A, JSON.stringify(payload));
+    const token = `ksl_${Buffer.from(`${WORKSPACE_A}.${envelope}`, 'utf8').toString('base64url')}`;
     const r = resolveSetupLink(token);
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -84,7 +84,7 @@ describe('setup-link token codec', () => {
   });
 
   test('tampered envelope resolves to 404 (not 410)', () => {
-    const { token } = mintSetupLink(PROJECT_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
+    const { token } = mintSetupLink(WORKSPACE_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
     // Flip the last base64url char of the wrapped token.
     const tampered = token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A');
     const r = resolveSetupLink(tampered);
@@ -94,11 +94,11 @@ describe('setup-link token codec', () => {
   });
 
   test('a token cannot be decrypted by/for another project', () => {
-    // Re-wrap PROJECT_A's envelope under PROJECT_B's id → wrong HKDF key → 404.
-    const { token } = mintSetupLink(PROJECT_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
+    // Re-wrap WORKSPACE_A's envelope under WORKSPACE_B's id → wrong HKDF key → 404.
+    const { token } = mintSetupLink(WORKSPACE_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
     const decoded = Buffer.from(token.slice('ksl_'.length), 'base64url').toString('utf8');
     const envelope = decoded.slice(decoded.indexOf('.') + 1);
-    const reWrapped = `ksl_${Buffer.from(`${PROJECT_B}.${envelope}`, 'utf8').toString('base64url')}`;
+    const reWrapped = `ksl_${Buffer.from(`${WORKSPACE_B}.${envelope}`, 'utf8').toString('base64url')}`;
     const r = resolveSetupLink(reWrapped);
     expect(r.ok).toBe(false);
   });
@@ -113,7 +113,7 @@ describe('setup-link token codec', () => {
   });
 
   test('secret link carries session id (sid) for callback', () => {
-    const { token } = mintSetupLink(PROJECT_A, {
+    const { token } = mintSetupLink(WORKSPACE_A, {
       kind: 'secret',
       fields: [{ name: 'AGENT_KORTIX_GITHUB_TOKEN' }],
       scope: 'runtime',
@@ -127,7 +127,7 @@ describe('setup-link token codec', () => {
   });
 
   test('secret link sid defaults to null when not provided', () => {
-    const { token } = mintSetupLink(PROJECT_A, {
+    const { token } = mintSetupLink(WORKSPACE_A, {
       kind: 'secret',
       fields: [{ name: 'FOO_KEY' }],
     });
@@ -139,7 +139,7 @@ describe('setup-link token codec', () => {
 
   test('default secret-link TTL is 7 days', () => {
     const before = Date.now();
-    const { expiresAt } = mintSetupLink(PROJECT_A, {
+    const { expiresAt } = mintSetupLink(WORKSPACE_A, {
       kind: 'secret',
       fields: [{ name: 'FOO_KEY' }],
     });

@@ -3,7 +3,7 @@ import { canonicalConnectorAlias } from '../shared/connector-alias';
  * Agent-session scope enforcement — the `kortix_cli` half of per-agent
  * authorization.
  *
- * This runs BESIDE the role check (`assertAuthorized` / `loadProjectForUser`),
+ * This runs BESIDE the role check (`assertAuthorized` / `loadWorkspaceForUser`),
  * not inside the IAM engine (which stays role-only). The account token a
  * session presents carries a resolved `agentGrant` (see projects/agents.ts);
  * a route asserts the Kortix action it performs is in that grant. Combined with
@@ -22,14 +22,14 @@ export function getAgentGrant(c: Context): AgentGrant | null {
   return (c.get('agentGrant') as AgentGrant | null | undefined) ?? null;
 }
 
-export function isProjectSessionPrincipal(c: Context): boolean {
+export function isWorkspaceSessionPrincipal(c: Context): boolean {
   if (c.get('authType') === 'supabase') return false;
   return c.get('sessionId') != null || getAgentGrant(c) != null;
 }
 
 /**
  * Synonym pairs for the change-request capability. A route gates CR creation as
- * `project.cr.open` but the central agent-grant fold (via assertProjectCapability)
+ * `project.cr.open` but the central agent-grant fold (via assertWorkspaceCapability)
  * gates the underlying commit as `project.gitops.push`; likewise CR merge is
  * `project.cr.merge` ≡ `project.gitops.merge`. Without aliasing an agent would
  * need BOTH spellings in its kortix_cli to open/merge a CR — a silent

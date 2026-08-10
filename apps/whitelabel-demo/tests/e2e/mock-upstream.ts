@@ -74,18 +74,18 @@ export interface MockUpstream {
    *  used to simulate a project that exists upstream but this wrapper user
    *  never provisioned, to prove per-user filtering actually filters. */
   seedProject(overrides?: Partial<MockProject>): MockProject;
-  seedSessionCosts(projectId: string, rows: MockSessionCostRow[]): void;
+  seedSessionCosts(workspaceId: string, rows: MockSessionCostRow[]): void;
   /** Seed the connections `/connections` returns for a project. */
   seedConnections(
-    projectId: string,
+    workspaceId: string,
     connections: MockConnection[],
   ): void;
   /** Make GET /v1/usage/session-costs fail for this project id. */
-  failSessionCostsFor(projectId: string): void;
+  failSessionCostsFor(workspaceId: string): void;
   /** Make POST /v1/projects/:id/cli-token return HTTP 200 with a body MISSING
    *  `secret_key` — a malformed success the wrapper must surface as an error,
    *  never as a 200 carrying an undefined token. */
-  malformCliTokenFor(projectId: string): void;
+  malformCliTokenFor(workspaceId: string): void;
   stop(): void;
 }
 
@@ -171,14 +171,14 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       const p = url.pathname.replace(/^\/v1\//, '');
 
       if (p === 'usage/session-costs' && method === 'GET') {
-        const projectId = url.searchParams.get('project_id') ?? '';
-        if (failingSessionCostProjects.has(projectId)) {
+        const workspaceId = url.searchParams.get('project_id') ?? '';
+        if (failingSessionCostProjects.has(workspaceId)) {
           return Response.json(
             { error: 'session costs unavailable' },
             { status: 500 },
           );
         }
-        const rows = sessionCosts.get(projectId) ?? [];
+        const rows = sessionCosts.get(workspaceId) ?? [];
         return Response.json({
           sessions: rows,
           total: rows.length,
@@ -248,7 +248,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         /^projects\/([^/]+)\/sessions\/([^/]+)\/start$/,
       );
       if (sessionStartMatch && method === 'POST') {
-        const [, projectId, sessionId] = sessionStartMatch;
+        const [, workspaceId, sessionId] = sessionStartMatch;
         const now = new Date().toISOString();
         const externalId = `session-${sessionId}`;
         return Response.json({
@@ -261,7 +261,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
           sandbox: {
             sandbox_id: sessionId,
             session_id: sessionId,
-            project_id: projectId,
+            project_id: workspaceId,
             account_id: 'acct_test',
             provider: 'daytona',
             external_id: externalId,
@@ -404,17 +404,17 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       projects.set(project.project_id, project);
       return project;
     },
-    seedSessionCosts(projectId, rows) {
-      sessionCosts.set(projectId, rows);
+    seedSessionCosts(workspaceId, rows) {
+      sessionCosts.set(workspaceId, rows);
     },
-    seedConnections(projectId, connectionRows) {
-      connections.set(projectId, connectionRows);
+    seedConnections(workspaceId, connectionRows) {
+      connections.set(workspaceId, connectionRows);
     },
-    failSessionCostsFor(projectId) {
-      failingSessionCostProjects.add(projectId);
+    failSessionCostsFor(workspaceId) {
+      failingSessionCostProjects.add(workspaceId);
     },
-    malformCliTokenFor(projectId) {
-      malformedCliTokenProjects.add(projectId);
+    malformCliTokenFor(workspaceId) {
+      malformedCliTokenProjects.add(workspaceId);
     },
     stop() {
       for (const interval of activeIntervals) clearInterval(interval);

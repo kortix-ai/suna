@@ -17,7 +17,8 @@ import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
-import { runProjects, runWorkspaces } from './commands/projects.ts';
+import { runProjects } from './commands/projects.ts';
+import { runWorkspaces } from './commands/workspaces.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runAudit } from './commands/audit.ts';
@@ -337,7 +338,7 @@ function printVersion(): void {
   process.stdout.write(`${header('Kortix CLI', VERSION)}\n`);
 }
 
-// The landing screen: ASCII banner → host/account/project context → update
+// The landing screen: ASCII banner → host/account/workspace context → update
 // notice → the grouped command list. `kortix`, `kortix help`, and
 // `kortix --help` all render EXACTLY this, so there's no "which one shows the
 // banner/context" surprise. The one difference is that BARE `kortix` may stop
@@ -345,7 +346,7 @@ function printVersion(): void {
 // request stays a pure, non-blocking render.
 async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
   printBanner();
-  // Always surface what host/account/project commands will act on.
+  // Always surface what host/account/workspace commands will act on.
   process.stdout.write(`${renderContext()}\n`);
   if (opts.offerUpdate) {
     if (await offerInteractiveUpdate()) return; // binary replaced — this help is stale

@@ -1,12 +1,12 @@
 import { config } from '../../config';
-import { lookupEmailsByUserIds } from '../../projects/lib/access';
+import { lookupEmailsByUserIds } from '../../workspaces/lib/access';
 import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
 import { channelModelContext } from '../slack/model-gate';
 import {
   currentChannelSelection,
-  loadProjectAgentGovernance,
+  loadWorkspaceAgentGovernance,
   setChannelAgent,
   setChannelModel,
 } from '../slack/selection';
@@ -21,9 +21,9 @@ import {
 } from './cards';
 import {
   ensureTeamsConversationBinding,
-  listTenantProjects,
-  resolveConversationProject,
-  setConversationProject,
+  listTenantWorkspaces,
+  resolveConversationWorkspace,
+  setConversationWorkspace,
   teamsChannelCtx,
 } from './binding';
 import { lookupTeamsIdentity, revokeTeamsIdentity, teamsUserId } from './identity';
@@ -33,7 +33,7 @@ import type { TeamsActivity, TeamsConversationRef } from './types';
 
 export { parseTeamsCommand } from './util';
 
-function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConversationRef | null {
+function conversationRef(activity: TeamsActivity, workspaceId?: string): TeamsConversationRef | null {
   if (!activity.serviceUrl || !activity.conversation?.id) return null;
   return {
     serviceUrl: activity.serviceUrl,
@@ -41,7 +41,7 @@ function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConv
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     tenantId: activity.conversation.tenantId ?? activity.channelData?.tenant?.id,
-    projectId,
+    workspaceId,
   };
 }
 
@@ -53,9 +53,9 @@ export async function handleTeamsCommand(input: {
   command: TeamsCommand;
   activity: TeamsActivity;
   tenantId: string;
-  projectId: string;
+  workspaceId: string;
 }): Promise<boolean> {
-  const ref = conversationRef(input.activity, input.projectId);
+  const ref = conversationRef(input.activity, input.workspaceId);
   if (!ref) return false;
   const { verb, arg } = input.command;
   const conversationId = ref.conversationId;
@@ -81,7 +81,7 @@ export async function handleTeamsCommand(input: {
       }
       case 'whoami':
       case 'who':
-        await post(await buildWhoamiCard(ctx, input.tenantId, conversationId, userId, input.projectId));
+        await post(await buildWhoamiCard(ctx, input.tenantId, conversationId, userId, input.workspaceId));
         return true;
       case 'help':
         await post(helpCard());
@@ -89,30 +89,31 @@ export async function handleTeamsCommand(input: {
       case 'status':
       case 'config':
       case 'settings':
-        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
+        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.workspaceId));
         return true;
       case 'models':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.workspaceId);
         await post(await buildModelsCard(ctx));
         return true;
       case 'model':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.workspaceId);
         await post(await setModel(ctx, arg));
         return true;
       case 'agents':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
-        await post(await buildAgentsCard(ctx, input.projectId));
+        await ensureBinding(input.tenantId, conversationId, input.workspaceId);
+        await post(await buildAgentsCard(ctx, input.workspaceId));
         return true;
       case 'agent':
-        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await ensureBinding(input.tenantId, conversationId, input.workspaceId);
         await post(await setAgent(ctx, arg));
         return true;
-      case 'projects':
-        await post(await buildProjectsCard(input.tenantId, input.projectId));
+      case 'workspaces':
+      case 'projects': // Legacy command alias.
+        await post(await buildWorkspacesCard(input.tenantId, input.workspaceId));
         return true;
       case 'use':
       case 'switch':
-        await post(await switchProject(input.tenantId, conversationId, arg));
+        await post(await switchWorkspace(input.tenantId, conversationId, arg));
         return true;
       default:
         return false;
@@ -124,8 +125,8 @@ export async function handleTeamsCommand(input: {
   }
 }
 
-async function ensureBinding(tenantId: string, conversationId: string, projectId: string): Promise<void> {
-  await ensureTeamsConversationBinding({ tenantId, conversationId, projectId });
+async function ensureBinding(tenantId: string, conversationId: string, workspaceId: string): Promise<void> {
+  await ensureTeamsConversationBinding({ tenantId, conversationId, workspaceId });
 }
 
 function helpCard() {
@@ -133,11 +134,11 @@ function helpCard() {
     { cmd: '/login', desc: 'connect your Kortix account' },
     { cmd: '/logout', desc: 'disconnect your account' },
     { cmd: '/whoami', desc: 'show who you are linked as' },
-    { cmd: '/status', desc: 'show the effective project, agent and model' },
+    { cmd: '/status', desc: 'show the effective workspace, agent and model' },
     { cmd: '/models', desc: 'pick the model for this conversation' },
     { cmd: '/agents', desc: 'pick the agent for this conversation' },
-    { cmd: '/projects', desc: 'list connected projects' },
-    { cmd: '/use <name>', desc: 'point this conversation at another project' },
+    { cmd: '/workspaces', desc: 'list connected workspaces' },
+    { cmd: '/use <name>', desc: 'point this conversation at another workspace' },
   ]);
 }
 
@@ -145,22 +146,22 @@ async function buildStatusCard(
   ctx: ReturnType<typeof teamsChannelCtx>,
   tenantId: string,
   conversationId: string,
-  projectId: string,
+  workspaceId: string,
 ) {
-  const [selection, projects] = await Promise.all([
+  const [selection, workspaces] = await Promise.all([
     currentChannelSelection(ctx),
-    listTenantProjects(tenantId).catch(() => []),
+    listTenantWorkspaces(tenantId).catch(() => []),
   ]);
-  const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
+  const workspaceName = workspaces.find((workspace) => workspace.workspaceId === workspaceId)?.name ?? workspaceId;
   return buildPanelCard({
     emoji: '⚙️',
     title: 'This conversation',
     rows: [
-      { label: 'Project', value: projectName },
+      { label: 'Workspace', value: workspaceName },
       { label: 'Agent', value: selection?.agentName || 'default' },
-      { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+      { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'workspace default' },
     ],
-    url: `${dashboardBase()}/projects/${projectId}`,
+    url: `${dashboardBase()}/workspaces/${workspaceId}`,
   });
 }
 
@@ -169,7 +170,7 @@ async function buildWhoamiCard(
   tenantId: string,
   conversationId: string,
   userId: string | null,
-  projectId: string,
+  workspaceId: string,
 ) {
   const identity = userId ? await lookupTeamsIdentity(tenantId, userId) : null;
   if (!identity) {
@@ -185,19 +186,19 @@ async function buildWhoamiCard(
       { label: 'Connected as', value: email || identity.userId },
       { label: 'Runs act as', value: 'you — your credentials & secrets' },
     ],
-    url: `${dashboardBase()}/projects/${projectId}`,
+    url: `${dashboardBase()}/workspaces/${workspaceId}`,
   });
 }
 
 async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
   const gate = await channelModelContext(ctx);
-  if (!gate) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
+  if (!gate) return buildNoticeCard('Connect a workspace to this conversation first — try /workspaces.', '📁');
   const selection = await currentChannelSelection(ctx);
   const current = selection?.opencodeModel ?? null;
   const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
 
-  const { models, projectDefault } = await listPickerModels({
-    projectId: gate.projectId,
+  const { models, workspaceDefault } = await listPickerModels({
+    workspaceId: gate.workspaceId,
     userId: gate.ownerUserId,
     accountId: gate.accountId,
     freeManagedOnly: gate.freeManagedOnly,
@@ -205,7 +206,7 @@ async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
   });
 
   const options: SelectOption[] = [
-    { label: 'Project default', hint: projectDefault.label ?? undefined, current: !current, data: { model: '' } },
+    { label: 'Workspace default', hint: workspaceDefault.label ?? undefined, current: !current, data: { model: '' } },
     ...models.slice(0, 6).map((m) => ({
       label: m.label,
       hint: m.id,
@@ -217,7 +218,7 @@ async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
   return buildSelectCard({
     emoji: '🧠',
     title: 'Model',
-    subtitle: current ? `Currently ${labelForModelRef(current)}` : 'Currently the project default',
+    subtitle: current ? `Currently ${labelForModelRef(current)}` : 'Currently the workspace default',
     verb: 'teams_set_model',
     options,
     footer: 'Or set any provider/model-id you have connected in Kortix: `/model anthropic/claude-sonnet-4.6`.',
@@ -228,15 +229,15 @@ async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   const id = arg.trim();
   if (!id) return buildModelsCard(ctx);
   const gate = await channelModelContext(ctx);
-  if (!gate) return buildNoticeCard('Connect a project to this conversation first.');
+  if (!gate) return buildNoticeCard('Connect a workspace to this conversation first.');
   if (id.toLowerCase() === 'default') {
     await setChannelModel(ctx, null);
-    return buildNoticeCard('Model reset to the project default.');
+    return buildNoticeCard('Model reset to the workspace default.');
   }
   const servable = await isModelServableForAccount({
     userId: gate.ownerUserId,
     accountId: gate.accountId,
-    projectId: gate.projectId,
+    workspaceId: gate.workspaceId,
     freeModelsOnly: gate.freeManagedOnly,
     model: id,
   });
@@ -248,15 +249,15 @@ async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   return buildNoticeCard(`Model set to ${labelForModelRef(stored)}. New sessions will use it.`);
 }
 
-async function buildAgentsCard(ctx: ReturnType<typeof teamsChannelCtx>, projectId: string) {
+async function buildAgentsCard(ctx: ReturnType<typeof teamsChannelCtx>, workspaceId: string) {
   const [governance, selection] = await Promise.all([
-    loadProjectAgentGovernance(projectId),
+    loadWorkspaceAgentGovernance(workspaceId),
     currentChannelSelection(ctx),
   ]);
   const current = selection?.agentName ?? null;
   if (governance.agents.length === 0) {
     return buildNoticeCard(
-      'This project has no declared agents, so it runs the default agent. Declare agents in `kortix.yaml` to switch here.',
+      'This workspace has no declared agents, so it runs the default agent. Declare agents in `kortix.yaml` to switch here.',
       '🤖',
     );
   }
@@ -280,45 +281,45 @@ async function buildAgentsCard(ctx: ReturnType<typeof teamsChannelCtx>, projectI
 
 async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
   const name = arg.trim();
-  if (!name) return buildAgentsCard(ctx, (await currentChannelSelection(ctx))?.projectId ?? '');
+  if (!name) return buildAgentsCard(ctx, (await currentChannelSelection(ctx))?.workspaceId ?? '');
   if (name.toLowerCase() === 'default') {
     await setChannelAgent(ctx, null);
-    return buildNoticeCard('Agent reset to the project default.');
+    return buildNoticeCard('Agent reset to the workspace default.');
   }
   const res = await setChannelAgent(ctx, name);
   if (!res.ok && res.reason === 'unknown_agent') {
-    return buildNoticeCard(`\`${name}\` isn't a declared agent in this project. Try /agents.`);
+    return buildNoticeCard(`\`${name}\` isn't a declared agent in this workspace. Try /agents.`);
   }
-  if (!res.ok) return buildNoticeCard('Connect a project to this conversation first.');
+  if (!res.ok) return buildNoticeCard('Connect a workspace to this conversation first.');
   return buildNoticeCard(`Agent set to ${name}. New sessions will use it.`);
 }
 
-async function buildProjectsCard(tenantId: string, currentProjectId: string) {
-  const projects = await listTenantProjects(tenantId);
-  if (projects.length === 0) {
-    return buildNoticeCard('No Kortix projects are connected to this Teams tenant yet.', '📁');
+async function buildWorkspacesCard(tenantId: string, currentWorkspaceId: string) {
+  const workspaces = await listTenantWorkspaces(tenantId);
+  if (workspaces.length === 0) {
+    return buildNoticeCard('No Kortix workspaces are connected to this Teams tenant yet.', '📁');
   }
-  const options: SelectOption[] = projects.slice(0, 8).map((p) => ({
-    label: p.name,
-    current: p.projectId === currentProjectId,
-    data: { projectId: p.projectId },
+  const options: SelectOption[] = workspaces.slice(0, 8).map((workspace) => ({
+    label: workspace.name,
+    current: workspace.workspaceId === currentWorkspaceId,
+    data: { workspaceId: workspace.workspaceId },
   }));
   return buildSelectCard({
     emoji: '📁',
-    title: 'Connected projects',
-    subtitle: 'Pick which project this conversation runs.',
+    title: 'Connected workspaces',
+    subtitle: 'Pick which workspace this conversation runs.',
     verb: 'teams_pick_project',
     options,
   });
 }
 
-async function switchProject(tenantId: string, conversationId: string, arg: string) {
-  const projects = await listTenantProjects(tenantId);
+async function switchWorkspace(tenantId: string, conversationId: string, arg: string) {
+  const workspaces = await listTenantWorkspaces(tenantId);
   const q = arg.trim().toLowerCase();
   const match = q
-    ? projects.find((p) => p.name.toLowerCase() === q || p.projectId === arg.trim())
+    ? workspaces.find((workspace) => workspace.name.toLowerCase() === q || workspace.workspaceId === arg.trim())
     : null;
-  if (!match) return buildProjectsCard(tenantId, (await resolveConversationProject(tenantId, conversationId)) ?? '');
-  await setConversationProject({ tenantId, conversationId, projectId: match.projectId });
+  if (!match) return buildWorkspacesCard(tenantId, (await resolveConversationWorkspace(tenantId, conversationId)) ?? '');
+  await setConversationWorkspace({ tenantId, conversationId, workspaceId: match.workspaceId });
   return buildNoticeCard(`This conversation now runs *${match.name}*.`);
 }

@@ -112,14 +112,14 @@ export const finance: RoleContent = {
       {
         id: 'repo',
         title: 'The method lives in the repo',
-        body: 'How your close works — the matching rules, the coding conventions, the commentary style — is a skill file in the project. It is versioned, it is diffable, and improving it is a change someone reviews.',
+        body: 'How your close works — the matching rules, the coding conventions, the commentary style — is a skill file in the workspace. It is versioned, it is diffable, and improving it is a change someone reviews.',
       },
     ],
   },
 
   reach: {
     title: 'The ledger, the bank feed, the spreadsheet everyone actually uses.',
-    sub: 'Finance systems are the ones where read and write are genuinely different risks. Connect each once for the project; every credential is decrypted on our side and attached to the outbound call, never placed in the machine.',
+    sub: 'Finance systems are the ones where read and write are genuinely different risks. Connect each once for the workspace; every credential is decrypted on our side and attached to the outbound call, never placed in the machine.',
     rows: [
       {
         k: 'Stripe',
@@ -178,7 +178,7 @@ export const finance: RoleContent = {
       {
         id: 'gates',
         k: 'Approval gates are off until you set them',
-        v: 'The shipped default is permissive — an action runs unless you have said otherwise. In a finance project, setting Ask on every write to a system of record and Block on every delete is the first configuration change to make, not something already done for you.',
+        v: 'The shipped default is permissive — an action runs unless you have said otherwise. In a finance workspace, setting Ask on every write to a system of record and Block on every delete is the first configuration change to make, not something already done for you.',
       },
       {
         id: 'block',
@@ -193,7 +193,7 @@ export const finance: RoleContent = {
       {
         id: 'creds',
         k: 'Connector credentials never enter the machine',
-        v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. The banking or ledger credential is decrypted server-side and attached to the outbound request, then thrown away.',
+        v: 'The sandbox carries one workspace-scoped Kortix token and no third-party keys. The banking or ledger credential is decrypted server-side and attached to the outbound request, then thrown away.',
       },
       {
         id: 'audit',

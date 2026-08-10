@@ -23,7 +23,7 @@ export interface AuditFilterInput {
   untilRaw: string | null;
   /** Case-insensitive substring over action + resource_type + resource_id. */
   q: string | null;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorType?: string | null;
   source?: string | null;
@@ -44,7 +44,7 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   if (input.actor) {
     push(eq(auditEvents.actorUserId, input.actor));
   }
-  if (input.projectId) push(eq(auditEvents.projectId, input.projectId));
+  if (input.workspaceId) push(eq(auditEvents.workspaceId, input.workspaceId));
   if (input.sessionId) push(eq(auditEvents.sessionId, input.sessionId));
   if (input.actorType) push(eq(auditEvents.actorType, input.actorType));
   if (input.source) {
@@ -65,14 +65,21 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   if (input.correlationId) push(eq(auditEvents.correlationId, input.correlationId));
 
   if (input.actionPrefix) {
-    push(
-      input.actionPrefix.includes('.') && !input.actionPrefix.endsWith('.')
-        ? or(
-            eq(auditEvents.action, input.actionPrefix),
-            like(auditEvents.action, `${input.actionPrefix}.%`),
-          )
-        : like(auditEvents.action, `${input.actionPrefix}%`),
-    );
+    // `computer.*` was the pre-profile audit namespace. Computer operations are
+    // connector activity now. Keep historical rows inside the Connectors filter
+    // while every new writer emits `connector.computer.*`.
+    if (input.actionPrefix === 'connector.') {
+      push(or(like(auditEvents.action, 'connector.%'), like(auditEvents.action, 'computer.%')));
+    } else {
+      push(
+        input.actionPrefix.includes('.') && !input.actionPrefix.endsWith('.')
+          ? or(
+              eq(auditEvents.action, input.actionPrefix),
+              like(auditEvents.action, `${input.actionPrefix}.%`),
+            )
+          : like(auditEvents.action, `${input.actionPrefix}%`),
+      );
+    }
   }
 
   if (input.resourceType) {
@@ -105,7 +112,7 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
         ilike(auditEvents.requestId, term),
         ilike(auditEvents.traceId, term),
         ilike(auditEvents.correlationId, term),
-        sql`${auditEvents.projectId}::text ilike ${term}`,
+        sql`${auditEvents.workspaceId}::text ilike ${term}`,
       ),
     );
   }

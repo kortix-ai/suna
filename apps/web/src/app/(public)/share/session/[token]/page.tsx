@@ -26,7 +26,7 @@ interface PublicShareMeta {
   share: {
     share_id: string;
     session_id: string;
-    project_id: string;
+    workspace_id: string;
     resource_type: 'preview' | 'file' | string;
     label: string;
     port: number | null;
@@ -116,7 +116,7 @@ export default function PublicSessionSharePage() {
     }
     setStarting(true);
     try {
-      await startSessionWithToken(meta.share.project_id, meta.share.session_id, {
+      await startSessionWithToken(meta.share.workspace_id, meta.share.session_id, {
         backendUrl: base,
         accessToken: authToken,
       });
@@ -161,13 +161,13 @@ export default function PublicSessionSharePage() {
   const sharePermission = isFileShare
     ? 'View only · no workspace browsing'
     : 'No terminal, files, or session controls';
-  const sessionHref = `/workspaces/${meta.share.project_id}/sessions/${meta.share.session_id}`;
+  const sessionHref = `/workspaces/${meta.share.workspace_id}/sessions/${meta.share.session_id}`;
   const offlineTitle = isFileShare
     ? 'This shared file is offline'
     : 'This shared preview is offline';
   const offlineDescription = isFileShare
-    ? 'The session runtime that serves this file is not active. Sign in with access to this project to start it.'
-    : 'The session runtime is not active. Sign in with access to this project to start it.';
+    ? 'The session runtime that serves this file is not active. Sign in with access to this workspace to start it.'
+    : 'The session runtime is not active. Sign in with access to this workspace to start it.';
 
   return (
     <main className={SHARE_PAGE_ROOT_CLASS}>

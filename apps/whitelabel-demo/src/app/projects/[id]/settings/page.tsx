@@ -43,7 +43,7 @@ const TABS = [
 ] as const;
 
 export default function SettingsPage() {
-  const projectId = String(useParams().id);
+  const workspaceId = String(useParams().id);
   return (
     <ProjectShell>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -61,22 +61,22 @@ export default function SettingsPage() {
               <GeneralTab />
             </TabsContent>
             <TabsContent value="capabilities" className="mt-5">
-              <CapabilitiesTab projectId={projectId} />
+              <CapabilitiesTab workspaceId={workspaceId} />
             </TabsContent>
             <TabsContent value="secrets" className="mt-5">
-              <SecretsTab projectId={projectId} />
+              <SecretsTab workspaceId={workspaceId} />
             </TabsContent>
             <TabsContent value="members" className="mt-5">
-              <MembersTab projectId={projectId} />
+              <MembersTab workspaceId={workspaceId} />
             </TabsContent>
             <TabsContent value="connectors" className="mt-5">
-              <ConnectorsTab projectId={projectId} />
+              <ConnectorsTab workspaceId={workspaceId} />
             </TabsContent>
             <TabsContent value="triggers" className="mt-5">
-              <TriggersTab projectId={projectId} />
+              <TriggersTab workspaceId={workspaceId} />
             </TabsContent>
             <TabsContent value="policies" className="mt-5">
-              <PoliciesTab projectId={projectId} />
+              <PoliciesTab workspaceId={workspaceId} />
             </TabsContent>
           </Tabs>
         </div>
@@ -86,40 +86,40 @@ export default function SettingsPage() {
 }
 
 function GeneralTab() {
-  const projectId = String(useParams().id);
+  const workspaceId = String(useParams().id);
   const qc = useQueryClient();
   const router = useRouter();
   const project = useQuery({
-    queryKey: qk.project(projectId),
-    queryFn: () => kortix.project(projectId).get(),
+    queryKey: qk.project(workspaceId),
+    queryFn: () => kortix.project(workspaceId).get(),
   });
   const detail = useQuery({
-    queryKey: qk.projectDetail(projectId),
-    queryFn: () => kortix.project(projectId).detail(),
+    queryKey: qk.projectDetail(workspaceId),
+    queryFn: () => kortix.project(workspaceId).detail(),
   });
   const health = useQuery({
-    queryKey: ['project-sandbox-health', projectId],
-    queryFn: () => kortix.project(projectId).sandboxHealth(),
+    queryKey: ['project-sandbox-health', workspaceId],
+    queryFn: () => kortix.project(workspaceId).sandboxHealth(),
     retry: false,
   });
   const catalog = useQuery({
-    queryKey: ['project-llm-catalog', projectId],
-    queryFn: () => kortix.project(projectId).llmCatalog(),
+    queryKey: ['project-llm-catalog', workspaceId],
+    queryFn: () => kortix.project(workspaceId).llmCatalog(),
     retry: false,
   });
   const [name, setName] = useState('');
 
   const rename = useMutation({
-    mutationFn: () => kortix.project(projectId).update({ name: name.trim() }),
+    mutationFn: () => kortix.project(workspaceId).update({ name: name.trim() }),
     onSuccess: (updated) => {
-      qc.setQueryData(qk.project(projectId), updated);
+      qc.setQueryData(qk.project(workspaceId), updated);
       qc.invalidateQueries({ queryKey: qk.projects });
       toast.success('Project renamed');
     },
     onError: () => toast.error('Could not rename'),
   });
   const archive = useMutation({
-    mutationFn: () => kortix.project(projectId).archive(),
+    mutationFn: () => kortix.project(workspaceId).archive(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.projects });
       toast.success('Project archived');
@@ -184,7 +184,7 @@ function GeneralTab() {
             mono={!!repoUrl}
           />
           {baseRef && <InfoRow label="Default branch" value={baseRef} mono />}
-          <InfoRow label="Project ID" value={projectId} mono />
+          <InfoRow label="Project ID" value={workspaceId} mono />
           {p?.account_id && <InfoRow label="Account" value={p.account_id} mono />}
           {p?.status && <InfoRow label="Status" value={p.status} />}
           <InfoRow label="Created" value={fmtDate(p?.created_at)} />
@@ -198,7 +198,7 @@ function GeneralTab() {
         <Stat label="Runtime" value={healthState ?? '—'} />
       </Card>
 
-      {p && <ExperimentalFeatures projectId={projectId} project={p} />}
+      {p && <ExperimentalFeatures workspaceId={workspaceId} project={p} />}
 
       <Card className="border-destructive/30 p-5">
         <div className="flex items-center justify-between gap-4">
@@ -221,10 +221,10 @@ function GeneralTab() {
 }
 
 function ExperimentalFeatures({
-  projectId,
+  workspaceId,
   project,
 }: {
-  projectId: string;
+  workspaceId: string;
   project: KortixProject;
 }) {
   const features = (project.experimental_features ?? []).filter((feature) => feature.available);
@@ -241,7 +241,7 @@ function ExperimentalFeatures({
       </div>
       <div className="divide-y divide-border">
         {features.map((feature) => (
-          <ExperimentalFeatureRow key={feature.key} projectId={projectId} feature={feature} />
+          <ExperimentalFeatureRow key={feature.key} workspaceId={workspaceId} feature={feature} />
         ))}
       </div>
     </Card>
@@ -249,18 +249,18 @@ function ExperimentalFeatures({
 }
 
 function ExperimentalFeatureRow({
-  projectId,
+  workspaceId,
   feature,
 }: {
-  projectId: string;
+  workspaceId: string;
   feature: ExperimentalFeatureView;
 }) {
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: (enabled: boolean) =>
-      kortix.project(projectId).updateExperimentalFeature(feature.key, enabled),
+      kortix.project(workspaceId).updateExperimentalFeature(feature.key, enabled),
     onSuccess: (updated) => {
-      qc.setQueryData(qk.project(projectId), updated);
+      qc.setQueryData(qk.project(workspaceId), updated);
       qc.invalidateQueries({ queryKey: qk.projects });
       toast.success(
         `${feature.name} ${updated.experimental?.[feature.key] ? 'enabled' : 'disabled'}`,

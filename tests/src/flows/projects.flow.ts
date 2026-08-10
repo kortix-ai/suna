@@ -14,7 +14,7 @@ flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects
   });
 });
 
-flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision"] }, async (ctx) => {
+flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision", "POST /v1/workspaces/provision-stream"] }, async (ctx) => {
   await ctx.step("managed provision → 201 with repo", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("prov") });
     // 502 can occur transiently when the managed git host is rate-limited/unavailable.
@@ -28,45 +28,49 @@ flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v
       .post("/v1/projects/provision", { name: `pasted prompt as name ${"word ".repeat(30)}end` });
     r.status(400);
   });
+  await ctx.step("canonical provision stream rejects an anonymous caller before SSE opens", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).post("/v1/workspaces/provision-stream", {});
+    r.status(401);
+  });
 });
 
-flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:projectId"] }, async (ctx) => {
+flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:workspaceId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("OWNER reads project", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: p.id } });
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:workspaceId", { params: { workspaceId: p.id } });
     r.status(200).body().has("$.project_id", p.id);
   });
   await ctx.step("NONMEMBER → 403/404", async () => {
-    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId", { params: { projectId: p.id } });
+    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:workspaceId", { params: { workspaceId: p.id } });
     r.status([403, 404]);
   });
   await ctx.step("unknown project → 404", async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .get("/v1/projects/:projectId", { params: { projectId: "00000000-0000-4000-a000-000000000000" } });
+      .get("/v1/projects/:workspaceId", { params: { workspaceId: "00000000-0000-4000-a000-000000000000" } });
     r.status(404);
   });
 });
 
-flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detail"] }, async (ctx) => {
+flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:workspaceId/detail"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("detail returns project + manifest", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:workspaceId/detail", { params: { workspaceId: p.id } });
     r.status(200);
   });
   await ctx.step("NONMEMBER → 403", async () => {
-    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
+    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:workspaceId/detail", { params: { workspaceId: p.id } });
     r.status(403);
   });
   if (ctx.env.capabilities.admin) {
     const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
     await ctx.step("platform admin WITHOUT the bypass header → still 403 (no standing access)", async () => {
-      const r = await admin.get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
+      const r = await admin.get("/v1/projects/:workspaceId/detail", { params: { workspaceId: p.id } });
       r.status(403);
     });
     await ctx.step("platform admin WITH x-kortix-admin-bypass → 200 (read-only escape hatch)", async () => {
-      const r = await admin.get("/v1/projects/:projectId/detail", {
-        params: { projectId: p.id },
+      const r = await admin.get("/v1/projects/:workspaceId/detail", {
+        params: { workspaceId: p.id },
         headers: { "x-kortix-admin-bypass": "1" },
       });
       r.status(200).body().has("$.project.project_id", p.id);
@@ -74,18 +78,18 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
   }
 });
 
-flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/projects/:projectId"] }, async (ctx) => {
+flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/projects/:workspaceId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("OWNER renames project", async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .patch("/v1/projects/:projectId", { name: ctx.fixtures.name("renamed") }, { params: { projectId: p.id } });
+      .patch("/v1/projects/:workspaceId", { name: ctx.fixtures.name("renamed") }, { params: { workspaceId: p.id } });
     r.status(200);
   });
   await ctx.step("NONMEMBER cannot patch → 403/404", async () => {
     const r = await ctx.client
       .as(ctx.P.NONMEMBER)
-      .patch("/v1/projects/:projectId", { name: "nope" }, { params: { projectId: p.id } });
+      .patch("/v1/projects/:workspaceId", { name: "nope" }, { params: { workspaceId: p.id } });
     r.status([403, 404]);
   });
 });
@@ -142,16 +146,16 @@ flow(
   },
 );
 
-flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] }, async (ctx) => {
+flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:workspaceId"] }, async (ctx) => {
   // Not tracked: this flow deletes it itself.
   const r0 = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
   const id = r0.json<any>().project_id;
   await ctx.step("OWNER archives project", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
+    const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:workspaceId", { params: { workspaceId: id } });
     r.status(200).body().has("$.ok", true);
   });
   await ctx.step("archived project reads 404", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: id } });
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:workspaceId", { params: { workspaceId: id } });
     r.status(404);
   });
 });

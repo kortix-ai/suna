@@ -3,13 +3,13 @@
  * installed registry items and available updates. All reads — install/remove
  * commit onto the project branch, so they are not exercised here.
  *
- * Run (from packages/sdk):  bun run playground/marketplace/18-marketplace.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/marketplace/18-marketplace.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("marketplace", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
 
   const items = await kortix.marketplace.items();
   console.log(`✓ marketplace.items(): ${JSON.stringify(items).slice(0, 250)}…`);
@@ -22,7 +22,7 @@ run("marketplace", async () => {
   const sources = await kortix.marketplace.sources.list();
   console.log(`✓ sources.list(): ${JSON.stringify(sources).slice(0, 200)}`);
 
-  const registry = kortix.project(projectId).registry;
+  const registry = kortix.project(workspaceId).registry;
   const installed = await registry.list();
   console.log(
     `✓ project registry.list(): ${JSON.stringify(installed).slice(0, 250)}…`,

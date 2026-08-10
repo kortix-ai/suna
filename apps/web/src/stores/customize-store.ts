@@ -3,10 +3,10 @@
 /**
  * Customize overlay store.
  *
- * Customize is a full-screen overlay that floats over whatever project page is
- * active (a session, the project home, …) instead of a route that swaps the
+ * Customize is a full-screen overlay that floats over whatever workspace page is
+ * active (a session, the workspace home, …) instead of a route that swaps the
  * content area and spawns a tab. Keeping the open/section state here lets every
- * trigger — the sidebar button, project-home tiles, the command palette, the
+ * trigger — the sidebar button, workspace-home tiles, the command palette, the
  * sandbox alert, deep-link routes — open the same surface without navigating,
  * so you never lose your place. ESC / backdrop closes it and you're exactly
  * where you were.

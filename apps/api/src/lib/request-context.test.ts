@@ -27,7 +27,7 @@ describe('getDiagnosticFields', () => {
       setContextField('userEmail', 'someone@example.com');
       setContextField('userId', 'user-1');
       setContextField('accountId', 'account-1');
-      setContextField('projectId', 'project-1');
+      setContextField('workspaceId', 'project-1');
 
       const diagnostic = getDiagnosticFields();
       expect(diagnostic).toEqual({ kind: 'execution_heartbeat' });

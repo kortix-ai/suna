@@ -18,7 +18,7 @@ export class ResourceStack {
 
   constructor(
     private admin: Client,
-    private deleteDatabaseProject?: (projectId: string) => Promise<void>,
+    private deleteDatabaseProject?: (workspaceId: string) => Promise<void>,
   ) {}
 
   push(kind: string, id: string, meta?: Record<string, any>): void {
@@ -40,8 +40,8 @@ export class ResourceStack {
   private async delete(r: TrackedResource): Promise<void> {
     switch (r.kind) {
       case "session":
-        await this.admin.del("/v1/projects/:projectId/sessions/:id", {
-          params: { projectId: r.meta?.projectId, id: r.id },
+        await this.admin.del("/v1/projects/:workspaceId/sessions/:id", {
+          params: { workspaceId: r.meta?.workspaceId, id: r.id },
         });
         break;
       case "project":

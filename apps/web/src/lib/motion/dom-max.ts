@@ -6,7 +6,7 @@
 //
 // This is the app-wide feature bundle — not `domAnimation`. Multiple `layout`
 // sites exist across the app (general-tab.tsx, queued-messages.tsx,
-// step-connectors.tsx, projects-page.tsx, review-center.tsx), and
+// step-connectors.tsx, workspaces-page.tsx, review-center.tsx), and
 // framer-motion's feature loading is a global registry
 // (`setFeatureDefinitions`), not scoped per `LazyMotion` boundary — so a
 // smaller `domAnimation` provider plus a narrower local `domMax` boundary

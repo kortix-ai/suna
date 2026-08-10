@@ -136,7 +136,7 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'KORTIX_GITHUB_APP_CLIENT_SECRET', category: 'managed_git', kind: 'operator', required: false },
   { key: 'KORTIX_GITHUB_APP_WEBHOOK_SECRET', category: 'managed_git', kind: 'operator', required: false },
   // Signs the GitHub App install-state HMAC (buildGitHubAppInstallState in
-  // apps/api/src/projects/github.ts). `connect-github` generates this once
+  // apps/api/src/workspaces/github.ts). `connect-github` generates this once
   // (if unset) alongside the App credentials.
   { key: 'KORTIX_GITHUB_APP_STATE_SECRET', category: 'managed_git', kind: 'generated', required: false, rotatable: true },
 

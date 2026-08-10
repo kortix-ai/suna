@@ -78,16 +78,16 @@ export interface ProjectFileHistoryResponse {
   hasMore: boolean;
 }
 
-export async function listProjectBranches(projectId: string) {
+export async function listProjectBranches(workspaceId: string) {
   return unwrap(
     await backendApi.get<ProjectBranchesResponse>(
-      `/projects/${projectId}/branches`,
+      `/projects/${workspaceId}/branches`,
     ),
   );
 }
 
 export async function listProjectCommits(
-  projectId: string,
+  workspaceId: string,
   options?: { ref?: string; path?: string; limit?: number; skip?: number },
 ) {
   const params = new URLSearchParams();
@@ -98,21 +98,21 @@ export async function listProjectCommits(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectCommitsResponse>(
-      `/projects/${projectId}/commits${query}`,
+      `/projects/${workspaceId}/commits${query}`,
     ),
   );
 }
 
-export async function getProjectCommit(projectId: string, sha: string) {
+export async function getProjectCommit(workspaceId: string, sha: string) {
   return unwrap(
     await backendApi.get<ProjectCommitDetail>(
-      `/projects/${projectId}/commits/${encodeURIComponent(sha)}`,
+      `/projects/${workspaceId}/commits/${encodeURIComponent(sha)}`,
     ),
   );
 }
 
 export async function getProjectCommitDiff(
-  projectId: string,
+  workspaceId: string,
   sha: string,
   options?: { path?: string },
 ) {
@@ -121,13 +121,13 @@ export async function getProjectCommitDiff(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectCommitDiffResponse>(
-      `/projects/${projectId}/commits/${encodeURIComponent(sha)}/diff${query}`,
+      `/projects/${workspaceId}/commits/${encodeURIComponent(sha)}/diff${query}`,
     ),
   );
 }
 
 export async function getProjectFileHistory(
-  projectId: string,
+  workspaceId: string,
   path: string,
   options?: { ref?: string; limit?: number; skip?: number },
 ) {
@@ -137,7 +137,7 @@ export async function getProjectFileHistory(
   if (options?.skip != null) params.set('skip', String(options.skip));
   return unwrap(
     await backendApi.get<ProjectFileHistoryResponse>(
-      `/projects/${projectId}/files/history?${params.toString()}`,
+      `/projects/${workspaceId}/files/history?${params.toString()}`,
     ),
   );
 }

@@ -92,7 +92,8 @@ export { buildFilters, type AuditFilterInput } from './audit-filters';
 //   ?action=connector.       — prefix match on action
 //   ?actor=<uuid>           — only events performed by this user
 //   ?actor_type=agent       — human, agent, service_account, or system
-//   ?project_id=<uuid>      — one project
+//   ?workspace_id=<uuid>    — one workspace
+//   ?project_id=<uuid>      — deprecated alias for workspace_id
 //   ?session_id=<id>        — one session
 //   ?source=cli             — one client or execution source
 //   ?outcome=failure        — success, failure, denied, or pending
@@ -101,7 +102,7 @@ export { buildFilters, type AuditFilterInput } from './audit-filters';
 //   ?resource_type=X        — prefix match on resource_type
 //   ?since=ISO              — only events at or after this timestamp
 //   ?until=ISO              — only events at or before this timestamp
-//   ?q=text                 — search action, resource, project, session, request,
+//   ?q=text                 — search action, resource, workspace, session, request,
 //                             trace, and correlation identifiers
 //   ?cursor=ISO|uuid        — keyset pagination cursor (occurredAt|eventId)
 //   ?limit=N                — default 50, max 200
@@ -118,6 +119,7 @@ auditRouter.openapi(
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
         actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        workspace_id: z.string().uuid().optional(),
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
@@ -148,7 +150,8 @@ auditRouter.openapi(
     const actionPrefix = c.req.query('action')?.trim() || null;
     const actor = c.req.query('actor')?.trim() || null;
     const actorType = c.req.query('actor_type')?.trim() || null;
-    const projectId = c.req.query('project_id')?.trim() || null;
+    const workspaceId =
+      c.req.query('workspace_id')?.trim() || c.req.query('project_id')?.trim() || null;
     const sessionId = c.req.query('session_id')?.trim() || null;
     const source = c.req.query('source')?.trim() || null;
     const phase = c.req.query('phase')?.trim() || null;
@@ -173,7 +176,7 @@ auditRouter.openapi(
     const conditions = buildFilters(accountId, {
       actor,
       actorType,
-      projectId,
+      workspaceId,
       sessionId,
       source,
       phase,
@@ -296,6 +299,7 @@ auditRouter.openapi(
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
         actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        workspace_id: z.string().uuid().optional(),
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
@@ -337,7 +341,8 @@ auditRouter.openapi(
     const actionPrefix = c.req.query('action')?.trim() || null;
     const actor = c.req.query('actor')?.trim() || null;
     const actorType = c.req.query('actor_type')?.trim() || null;
-    const projectId = c.req.query('project_id')?.trim() || null;
+    const workspaceId =
+      c.req.query('workspace_id')?.trim() || c.req.query('project_id')?.trim() || null;
     const sessionId = c.req.query('session_id')?.trim() || null;
     const source = c.req.query('source')?.trim() || null;
     const phase = c.req.query('phase')?.trim() || null;
@@ -362,7 +367,7 @@ auditRouter.openapi(
     const conditions = buildFilters(accountId, {
       actor,
       actorType,
-      projectId,
+      workspaceId,
       sessionId,
       source,
       phase,

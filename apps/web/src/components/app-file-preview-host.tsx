@@ -2,7 +2,7 @@
 
 /**
  * The fallback destination for a file-path click on a surface with NO session
- * side panel — the dashboard, project pages, anywhere outside a session.
+ * side panel — the dashboard, workspace pages, anywhere outside a session.
  *
  * `file-preview-store` has always had this branch (`set({ isOpen: true })`),
  * but nothing mounted read `isOpen`, so those clicks were silently inert. One
@@ -24,7 +24,7 @@
 
 import { FilePreviewModal } from '@/features/file-viewer';
 import { workspaceFileSource } from '@/features/files/file-source';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/workspace-files';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 
 const NO_OP = () => {};

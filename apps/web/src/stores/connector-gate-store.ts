@@ -4,7 +4,7 @@ export interface ConnectorGateConnection {
   id: string;
   slug: string;
   name: string;
-  authorization_strategy: 'project' | 'user';
+  authorization_strategy: 'workspace' | 'user';
 }
 
 /**
@@ -14,12 +14,12 @@ export interface ConnectorGateConnection {
  */
 interface ConnectorGateState {
   isOpen: boolean;
-  projectId: string | null;
+  workspaceId: string | null;
   connectorConnections: ConnectorGateConnection[];
   /** Re-run the gated session-create after the connector is connected. */
   retry: (() => void) | null;
   openConnectorGate: (opts: {
-    projectId: string;
+    workspaceId: string;
     connectorConnections: ConnectorGateConnection[];
     retry: () => void;
   }) => void;
@@ -28,11 +28,11 @@ interface ConnectorGateState {
 
 export const useConnectorGateStore = create<ConnectorGateState>((set) => ({
   isOpen: false,
-  projectId: null,
+  workspaceId: null,
   connectorConnections: [],
   retry: null,
-  openConnectorGate: ({ projectId, connectorConnections, retry }) =>
-    set({ isOpen: true, projectId, connectorConnections, retry }),
+  openConnectorGate: ({ workspaceId, connectorConnections, retry }) =>
+    set({ isOpen: true, workspaceId, connectorConnections, retry }),
   closeConnectorGate: () =>
-    set({ isOpen: false, projectId: null, connectorConnections: [], retry: null }),
+    set({ isOpen: false, workspaceId: null, connectorConnections: [], retry: null }),
 }));

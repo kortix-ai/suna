@@ -1,0 +1,282 @@
+import { createRoute, z } from '@hono/zod-openapi';
+import { changeRequests } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { WORKSPACE_ACTIONS } from '../../iam';
+import { assertAgentScope } from '../../iam/agent-scope';
+import { auth, errors, json } from '../../openapi';
+import { db } from '../../shared/db';
+import { kickWorkspaceTemplatePrebuilds } from '../../snapshots/builder';
+import { getCrById, serializeChangeRequest } from '../change-requests';
+import {
+  invalidateWorkspaceMirror,
+  MergeConflictError,
+  mergeBranches,
+  readManifestFromRepo,
+} from '../git';
+import { assertWorkspaceCapability, loadWorkspaceForUser } from '../lib/access';
+import { AnyObject, workspaceRoutesApp } from '../lib/app';
+import { withWorkspaceGitAuth } from '../lib/git';
+import { normalizeString, readBody } from '../lib/serializers';
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/change-requests/{crId}/merge',
+    tags: ['change-requests'],
+    summary: 'POST /:workspaceId/change-requests/:crId/merge',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string(), crId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404, 409, 422, 502),
+    },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const crId = c.req.param('crId');
+    const body = await readBody(c);
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    // Human-side capability gate: merging lands code on the base branch. Editors/
+    // editors hold project.gitops.merge today; a custom role can OMIT it to take
+    // Git-Ops merge away from a department without touching the rest of write.
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GITOPS_MERGE,
+    );
+
+    // Per-agent gate: merging a CR lands code on the base branch — the canonical
+    // destructive action. An agent-session token must be granted project.cr.merge
+    // (default-deny). Non-agent tokens (human dashboard / laptop CLI) pass through.
+    assertAgentScope(c, 'project.cr.merge');
+
+    const cr = await getCrById(crId, workspaceId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    if (cr.status !== 'open') {
+      return c.json({ error: `Change request is ${cr.status}` }, 409);
+    }
+
+    const customMessage = normalizeString(body.message);
+    const workspaceForGit = await withWorkspaceGitAuth(loaded.row);
+
+    // Manifest gate: a CR cannot merge if the would-be-merged manifest doesn't
+    // validate against the canonical schema. We read the manifest from the HEAD
+    // branch (what's about to be merged), preferring kortix.yaml over kortix.toml.
+    // If the head doesn't have a manifest, that's fine — projects with a
+    // `.kortix/`-only layout still merge. The same validator runs in the CLI's
+    // `kortix ship` pre-flight, so CLI users see the same diagnostic before push.
+    try {
+      const { validateManifest, manifestFormatForPath, manifestCandidatePaths } = await import(
+        '@kortix/manifest-schema'
+      );
+      const found = await readManifestFromRepo(
+        workspaceForGit,
+        manifestCandidatePaths(workspaceForGit.manifestPath).map((cand) => cand.path),
+        cr.headRef,
+      );
+      if (found && found.content.trim()) {
+        const verdict = validateManifest(found.content, manifestFormatForPath(found.path));
+        if (!verdict.valid) {
+          return c.json(
+            {
+              error: 'Manifest validation failed — merge blocked.',
+              code: 'MANIFEST_INVALID',
+              issues: verdict.issues,
+            },
+            422,
+          );
+        }
+      }
+    } catch (err) {
+      // Manifest absent on this branch (404 in the mirror) is fine; surface
+      // anything else as a 502 so the user knows something else is broken.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/(not found|enoent|404)/i.test(msg)) {
+        return c.json({ error: `Failed to read the manifest from head branch: ${msg}` }, 502);
+      }
+    }
+
+    let result: Awaited<ReturnType<typeof mergeBranches>>;
+    try {
+      result = await mergeBranches(workspaceForGit, cr.baseRef, cr.headRef, {
+        message: customMessage ?? `Merge CR #${cr.number}: ${cr.title}`,
+        authorName: 'Kortix',
+        authorEmail: 'noreply@kortix.ai',
+      });
+    } catch (error) {
+      if (error instanceof MergeConflictError) {
+        return c.json(
+          {
+            error: error.message,
+            code: error.code,
+            conflicts: error.conflicts,
+          },
+          409,
+        );
+      }
+      return c.json(
+        {
+          error: error instanceof Error ? error.message : 'Merge failed',
+        },
+        409,
+      );
+    }
+
+    const [row] = await db
+      .update(changeRequests)
+      .set({
+        status: 'merged',
+        mergedAt: new Date(),
+        mergedBy: loaded.userId,
+        mergeCommitSha: result.merge_commit_sha,
+        // Capture the SHAs that were active at merge time. head_commit_sha
+        // intentionally stays at the head branch's tip (not the merge commit)
+        // so the merged-CR diff can re-render the changes via base...head.
+        headCommitSha: result.fast_forward
+          ? result.merge_commit_sha
+          : (cr.headCommitSha ?? result.merge_commit_sha),
+        baseCommitSha: result.base_sha_before,
+        updatedAt: new Date(),
+      })
+      .where(eq(changeRequests.crId, crId))
+      .returning();
+
+    invalidateWorkspaceMirror(workspaceId);
+
+    // A merged CR may have edited a `sandbox.templates` Dockerfile or spec.
+    // Reconcile this workspace's own templates and pre-build any whose identity
+    // drifted, so the next session boots off cache instead of a cold build. The
+    // platform default is global (built at startup), so it's deliberately not
+    // touched here. Best-effort, never blocks the merge response.
+    kickWorkspaceTemplatePrebuilds(workspaceForGit, {
+      accountId: loaded.row.accountId,
+      source: 'cr-merge',
+    });
+
+    // A merged CR may have edited kortix.yaml's `connectors:` list. The connector DB
+    // cache (what the gateway + dashboard read) is derived from the manifest, so
+    // reconcile it from the new tip — best-effort, never blocks the merge
+    // response. The manifest in git stays the source of truth either way; the
+    // periodic sweep is the backstop if this best-effort call fails.
+    void import('../../connectors/sync')
+      .then(({ syncWorkspaceConnectors }) => syncWorkspaceConnectors(workspaceId, loaded.row.accountId))
+      .then((res) => {
+        if (res.errors.length) {
+          console.warn('[change-requests] connector reconcile had errors', workspaceId, res.errors);
+        }
+      })
+      .catch((err) =>
+        console.warn(
+          '[change-requests] connector reconcile failed',
+          workspaceId,
+          err instanceof Error ? err.message : err,
+        ),
+      );
+
+    return c.json({
+      change_request: serializeChangeRequest(row),
+      merge: result,
+    });
+  },
+);
+
+// POST /v1/projects/:workspaceId/change-requests/:crId/close
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/change-requests/{crId}/close',
+    tags: ['change-requests'],
+    summary: 'POST /:workspaceId/change-requests/:crId/close',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string(), crId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const crId = c.req.param('crId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: managing a CR's lifecycle is part of the change-request
+    // capability. A scoped agent token must hold project.cr.open (no-op for
+    // human/PAT tokens).
+    assertAgentScope(c, 'project.cr.open');
+
+    const cr = await getCrById(crId, workspaceId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    if (cr.status === 'merged') {
+      return c.json({ error: 'Cannot close a merged change request' }, 409);
+    }
+
+    const [row] = await db
+      .update(changeRequests)
+      .set({
+        status: 'closed',
+        closedAt: new Date(),
+        closedBy: loaded.userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(changeRequests.crId, crId))
+      .returning();
+    return c.json(serializeChangeRequest(row));
+  },
+);
+
+// POST /v1/projects/:workspaceId/change-requests/:crId/reopen
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/change-requests/{crId}/reopen',
+    tags: ['change-requests'],
+    summary: 'POST /:workspaceId/change-requests/:crId/reopen',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string(), crId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const crId = c.req.param('crId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: managing a CR's lifecycle is part of the change-request
+    // capability. A scoped agent token must hold project.cr.open (no-op for
+    // human/PAT tokens).
+    assertAgentScope(c, 'project.cr.open');
+
+    const cr = await getCrById(crId, workspaceId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    if (cr.status !== 'closed') {
+      return c.json({ error: `Cannot reopen a ${cr.status} change request` }, 409);
+    }
+
+    const [row] = await db
+      .update(changeRequests)
+      .set({
+        status: 'open',
+        closedAt: null,
+        closedBy: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(changeRequests.crId, crId))
+      .returning();
+    return c.json(serializeChangeRequest(row));
+  },
+);

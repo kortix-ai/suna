@@ -42,23 +42,23 @@ mock.module('../../billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => true,
 }));
 
-mock.module('../../projects/secrets', () => ({
-  decryptProjectSecret: (_projectId: string, value: string) => value,
-  encryptProjectSecret: (_projectId: string, value: string) => value,
-  getProjectSecretValue: async () => null,
-  getProjectSecretValueForConsumer: async () => null,
-  resolveProjectSecretsForConsumer: async () => [],
-  listProjectSecrets: async () => ({}),
-  listProjectSecretsForUser: async () => ({}),
-  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
-  listProjectSecretNamesForConsumer: async () => [],
-  listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
+mock.module('../../workspaces/secrets', () => ({
+  decryptWorkspaceSecret: (_workspaceId: string, value: string) => value,
+  encryptWorkspaceSecret: (_workspaceId: string, value: string) => value,
+  getWorkspaceSecretValue: async () => null,
+  getWorkspaceSecretValueForConsumer: async () => null,
+  resolveWorkspaceSecretsForConsumer: async () => [],
+  listWorkspaceSecrets: async () => ({}),
+  listWorkspaceSecretsForUser: async () => ({}),
+  listWorkspaceSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listWorkspaceSecretNamesForConsumer: async () => [],
+  listWorkspaceSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   projectSecretsRevision: () => 'empty',
 }));
 
-mock.module('../../repositories/project-routing-policies', () => ({
-  getProjectRoutingPolicy: async () => null,
-  setProjectModelOverrides: async () => undefined,
+mock.module('../../repositories/workspace-routing-policies', () => ({
+  getWorkspaceRoutingPolicy: async () => null,
+  setWorkspaceModelOverrides: async () => undefined,
 }));
 
 mock.module('../credentials/codex', () => ({
@@ -106,7 +106,7 @@ describe('the platform default model is always resolvable', () => {
 
   test('resolving the platform default yields a real upstream candidate', async () => {
     const candidates = await resolveCandidates(
-      { userId: 'u', accountId: 'a', projectId: 'p' },
+      { userId: 'u', accountId: 'a', workspaceId: 'p' },
       platformDefaultModelId(),
     );
     expect(candidates.length).toBeGreaterThan(0);
@@ -115,7 +115,7 @@ describe('the platform default model is always resolvable', () => {
 
   test('naming the unreachable model explicitly still refuses, with an actionable reason', async () => {
     await expect(
-      resolveCandidates({ userId: 'u', accountId: 'a', projectId: 'p' }, 'glm-5.2'),
+      resolveCandidates({ userId: 'u', accountId: 'a', workspaceId: 'p' }, 'glm-5.2'),
     ).rejects.toMatchObject({ name: 'GatewayResolutionError' });
   });
 });

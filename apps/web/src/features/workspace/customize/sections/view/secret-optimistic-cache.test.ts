@@ -1,21 +1,21 @@
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectSecret, ProjectSecretsResponse } from '@kortix/sdk';
+import type { WorkspaceSecret, WorkspaceSecretsResponse } from '@kortix/sdk';
 import {
-  applyProjectSecretResponse,
-  beginOptimisticProjectSecretSave,
-  rollbackOptimisticProjectSecretSave,
-  type OptimisticProjectSecretInput,
+  applyWorkspaceSecretResponse,
+  beginOptimisticWorkspaceSecretSave,
+  rollbackOptimisticWorkspaceSecretSave,
+  type OptimisticWorkspaceSecretInput,
 } from './secret-optimistic-cache';
 
 const QUERY_KEY = ['project-secrets', 'p1'];
 
-function secret(overrides: Partial<ProjectSecret> = {}): ProjectSecret {
+function secret(overrides: Partial<WorkspaceSecret> = {}): WorkspaceSecret {
   return {
     identifier: 'EXAMPLE_TOKEN',
     name: 'EXAMPLE_TOKEN',
-    project_id: 'p1',
+    workspace_id: 'p1',
     secret_id: 'secret-1',
     created_by: 'user-1',
     created_at: '2026-08-01T00:00:00.000Z',
@@ -33,7 +33,7 @@ function secret(overrides: Partial<ProjectSecret> = {}): ProjectSecret {
   };
 }
 
-function response(items: ProjectSecret[]): ProjectSecretsResponse {
+function response(items: WorkspaceSecret[]): WorkspaceSecretsResponse {
   return {
     items,
     required: ['REQUIRED_TOKEN'],
@@ -45,10 +45,10 @@ function response(items: ProjectSecret[]): ProjectSecretsResponse {
 }
 
 function input(
-  overrides: Partial<OptimisticProjectSecretInput> = {},
-): OptimisticProjectSecretInput {
+  overrides: Partial<OptimisticWorkspaceSecretInput> = {},
+): OptimisticWorkspaceSecretInput {
   return {
-    projectId: 'p1',
+    workspaceId: 'p1',
     identifier: 'NEW_TOKEN',
     name: 'NEW_TOKEN',
     strategy: 'broker',
@@ -62,16 +62,16 @@ function input(
   };
 }
 
-describe('beginOptimisticProjectSecretSave', () => {
+describe('beginOptimisticWorkspaceSecretSave', () => {
   test('adds a configured row to the cache before the request finishes', () => {
     const queryClient = new QueryClient();
     const original = response([secret()]);
     queryClient.setQueryData(QUERY_KEY, original);
 
-    const context = beginOptimisticProjectSecretSave(queryClient, QUERY_KEY, input());
+    const context = beginOptimisticWorkspaceSecretSave(queryClient, QUERY_KEY, input());
 
     expect(context.previous).toBe(original);
-    const cached = queryClient.getQueryData<ProjectSecretsResponse>(QUERY_KEY);
+    const cached = queryClient.getQueryData<WorkspaceSecretsResponse>(QUERY_KEY);
     expect(cached?.items).toHaveLength(2);
     expect(cached?.items[1]).toMatchObject({
       identifier: 'NEW_TOKEN',
@@ -88,7 +88,7 @@ describe('beginOptimisticProjectSecretSave', () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(QUERY_KEY, response([secret()]));
 
-    beginOptimisticProjectSecretSave(
+    beginOptimisticWorkspaceSecretSave(
       queryClient,
       QUERY_KEY,
       input({
@@ -101,7 +101,7 @@ describe('beginOptimisticProjectSecretSave', () => {
       }),
     );
 
-    const cached = queryClient.getQueryData<ProjectSecretsResponse>(QUERY_KEY);
+    const cached = queryClient.getQueryData<WorkspaceSecretsResponse>(QUERY_KEY);
     expect(cached?.items).toHaveLength(1);
     expect(cached?.items[0]).toMatchObject({
       identifier: 'EXAMPLE_TOKEN',
@@ -114,11 +114,11 @@ describe('beginOptimisticProjectSecretSave', () => {
 
   test('preserves the legacy bare-array cache shape', () => {
     const queryClient = new QueryClient();
-    queryClient.setQueryData<ProjectSecret[]>(QUERY_KEY, [secret()]);
+    queryClient.setQueryData<WorkspaceSecret[]>(QUERY_KEY, [secret()]);
 
-    beginOptimisticProjectSecretSave(queryClient, QUERY_KEY, input());
+    beginOptimisticWorkspaceSecretSave(queryClient, QUERY_KEY, input());
 
-    const cached = queryClient.getQueryData<ProjectSecret[]>(QUERY_KEY);
+    const cached = queryClient.getQueryData<WorkspaceSecret[]>(QUERY_KEY);
     expect(Array.isArray(cached)).toBe(true);
     expect(cached?.map((item) => item.identifier)).toEqual(['EXAMPLE_TOKEN', 'NEW_TOKEN']);
   });
@@ -126,28 +126,28 @@ describe('beginOptimisticProjectSecretSave', () => {
   test('an empty cache stays empty and returns no snapshot', () => {
     const queryClient = new QueryClient();
 
-    const context = beginOptimisticProjectSecretSave(queryClient, QUERY_KEY, input());
+    const context = beginOptimisticWorkspaceSecretSave(queryClient, QUERY_KEY, input());
 
     expect(context.previous).toBeUndefined();
     expect(queryClient.getQueryData(QUERY_KEY)).toBeUndefined();
   });
 });
 
-describe('rollbackOptimisticProjectSecretSave', () => {
+describe('rollbackOptimisticWorkspaceSecretSave', () => {
   test('restores the exact content that existed before the optimistic write', () => {
     const queryClient = new QueryClient();
     const original = response([secret()]);
     queryClient.setQueryData(QUERY_KEY, original);
-    const { previous } = beginOptimisticProjectSecretSave(queryClient, QUERY_KEY, input());
-    expect(queryClient.getQueryData<ProjectSecretsResponse>(QUERY_KEY)?.items).toHaveLength(2);
+    const { previous } = beginOptimisticWorkspaceSecretSave(queryClient, QUERY_KEY, input());
+    expect(queryClient.getQueryData<WorkspaceSecretsResponse>(QUERY_KEY)?.items).toHaveLength(2);
 
-    rollbackOptimisticProjectSecretSave(queryClient, QUERY_KEY, previous);
+    rollbackOptimisticWorkspaceSecretSave(queryClient, QUERY_KEY, previous);
 
     expect(queryClient.getQueryData(QUERY_KEY)).toEqual(original);
   });
 });
 
-describe('applyProjectSecretResponse', () => {
+describe('applyWorkspaceSecretResponse', () => {
   test('replaces the optimistic row with the authoritative response', () => {
     const optimistic = response([
       secret({
@@ -168,9 +168,9 @@ describe('applyProjectSecretResponse', () => {
       consumer: 'http_broker',
     });
 
-    const result = applyProjectSecretResponse(optimistic, server);
+    const result = applyWorkspaceSecretResponse(optimistic, server);
 
     expect(Array.isArray(result)).toBe(false);
-    expect((result as ProjectSecretsResponse).items[0]).toEqual(server);
+    expect((result as WorkspaceSecretsResponse).items[0]).toEqual(server);
   });
 });

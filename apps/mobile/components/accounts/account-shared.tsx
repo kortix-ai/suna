@@ -8,7 +8,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, TouchableOpacity, ActivityIndicator, Animated, Easing, type ViewStyle } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
-import type { AccountRole } from '@/lib/projects/projects-client';
+import type { AccountRole } from '@/lib/workspaces/workspaces-client';
 import type { AccountCapability } from '@/lib/accounts/hooks';
 
 export type AccountCaps = Record<AccountCapability, boolean>;

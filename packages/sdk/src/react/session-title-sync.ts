@@ -20,7 +20,7 @@ function readRealTitle(value: unknown): string | null {
 
 function cachedSessionHasTitle(
   queryClient: Pick<QueryClient, 'getQueryData'>,
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
 ): boolean {
   // Exact-match reads (`getQueryData`), so these have to be the REAL cache
@@ -28,8 +28,8 @@ function cachedSessionHasTitle(
   // invalidation prefix used below — `getQueryData` never does prefix
   // matching. Default scope ('visible') matches `listProjectSessions`' own
   // default and what the sidebar/list surfaces actually read.
-  const list = queryClient.getQueryData<unknown>(qk.project.sessions(projectId));
-  const detail = queryClient.getQueryData<unknown>(qk.project.session(projectId, sessionId));
+  const list = queryClient.getQueryData<unknown>(qk.workspace.sessions(workspaceId));
+  const detail = queryClient.getQueryData<unknown>(qk.workspace.session(workspaceId, sessionId));
   const candidates = [...(Array.isArray(list) ? list : []), detail];
   return candidates.some((candidate) => {
     if (!candidate || typeof candidate !== 'object') return false;
@@ -47,7 +47,7 @@ function cachedSessionHasTitle(
 
 function refetchSessionTitleQueries(
   queryClient: Pick<QueryClient, 'refetchQueries'>,
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
 ): Promise<unknown[]> {
   return Promise.all([
@@ -56,11 +56,11 @@ function refetchSessionTitleQueries(
     // beneath it, so a manager-only 'project'-scope reader picks up the
     // resolved title too, not only the default 'visible' one.
     queryClient.refetchQueries({
-      queryKey: qk.project.sessionsScope(projectId),
+      queryKey: qk.workspace.sessionsScope(workspaceId),
       type: 'active',
     }),
     queryClient.refetchQueries({
-      queryKey: qk.project.session(projectId, sessionId),
+      queryKey: qk.workspace.session(workspaceId, sessionId),
       type: 'active',
     }),
   ]);
@@ -87,7 +87,7 @@ function sleep(delayMs: number, signal?: AbortSignal): Promise<void> {
  */
 export async function refreshSessionTitleQueryUntilResolved(
   queryClient: SessionTitleQueryClient,
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   options: SessionTitleRefreshOptions = {},
 ): Promise<boolean> {
@@ -97,9 +97,9 @@ export async function refreshSessionTitleQueryUntilResolved(
   for (const delayMs of delays) {
     await wait(delayMs, options.signal);
     if (options.signal?.aborted) return false;
-    if (cachedSessionHasTitle(queryClient, projectId, sessionId)) return true;
-    await refetchSessionTitleQueries(queryClient, projectId, sessionId);
-    if (cachedSessionHasTitle(queryClient, projectId, sessionId)) return true;
+    if (cachedSessionHasTitle(queryClient, workspaceId, sessionId)) return true;
+    await refetchSessionTitleQueries(queryClient, workspaceId, sessionId);
+    if (cachedSessionHasTitle(queryClient, workspaceId, sessionId)) return true;
   }
   return false;
 }
@@ -112,12 +112,12 @@ export async function refreshSessionTitleQueryUntilResolved(
  */
 export async function reconcileHydratedSessionTitle(
   queryClient: SessionTitleQueryClient,
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   userMessageCount: number,
   options: SessionTitleRefreshOptions = {},
 ): Promise<boolean> {
   if (userMessageCount <= 0) return false;
-  if (cachedSessionHasTitle(queryClient, projectId, sessionId)) return true;
-  return refreshSessionTitleQueryUntilResolved(queryClient, projectId, sessionId, options);
+  if (cachedSessionHasTitle(queryClient, workspaceId, sessionId)) return true;
+  return refreshSessionTitleQueryUntilResolved(queryClient, workspaceId, sessionId, options);
 }

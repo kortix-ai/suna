@@ -4,7 +4,7 @@ import {
   type SessionOverrideField,
   canOverride,
   resolveSessionOrigin,
-} from '../projects/lib/session-origin';
+} from '../workspaces/lib/session-origin';
 
 describe('resolveSessionOrigin', () => {
   test('a service-account is backend regardless of surface', () => {

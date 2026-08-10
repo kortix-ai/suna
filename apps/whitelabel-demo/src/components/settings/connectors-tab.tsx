@@ -58,14 +58,14 @@ function statusVariant(status?: string) {
   return 'secondary' as const;
 }
 
-export function ConnectorsTab({ projectId }: { projectId: string }) {
+export function ConnectorsTab({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
-  const key = ['project-connectors', projectId] as const;
+  const key = ['project-connectors', workspaceId] as const;
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   const connectors = useQuery({
     queryKey: key,
-    queryFn: () => kortix.project(projectId).connectors.list(),
+    queryFn: () => kortix.project(workspaceId).connectors.list(),
   });
 
   const [slug, setSlug] = useState('');
@@ -74,7 +74,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
   const [url, setUrl] = useState('');
 
   const sync = useMutation({
-    mutationFn: () => kortix.project(projectId).connectors.sync(),
+    mutationFn: () => kortix.project(workspaceId).connectors.sync(),
     onSuccess: (res) => {
       refresh();
       toast.success(`Synced ${res.synced} connector(s)`);
@@ -84,7 +84,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
 
   const create = useMutation({
     mutationFn: () =>
-      kortix.project(projectId).connectors.create({
+      kortix.project(workspaceId).connectors.create({
         slug: slug.trim(),
         name: name.trim() || undefined,
         provider,
@@ -101,7 +101,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
   });
 
   const remove = useMutation({
-    mutationFn: (s: string) => kortix.project(projectId).connectors.remove(s),
+    mutationFn: (s: string) => kortix.project(workspaceId).connectors.remove(s),
     onSuccess: () => {
       refresh();
       toast.success('Connector removed');
@@ -224,7 +224,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <ConnectorConfigDialog projectId={projectId} slug={cSlug} />
+                <ConnectorConfigDialog workspaceId={workspaceId} slug={cSlug} />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -245,16 +245,16 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
 }
 
 function ConnectorConfigDialog({
-  projectId,
+  workspaceId,
   slug,
 }: {
-  projectId: string;
+  workspaceId: string;
   slug: string;
 }) {
   const [open, setOpen] = useState(false);
   const config = useQuery({
-    queryKey: ['project-connector-config', projectId, slug],
-    queryFn: () => kortix.project(projectId).connectors.config(slug),
+    queryKey: ['project-connector-config', workspaceId, slug],
+    queryFn: () => kortix.project(workspaceId).connectors.config(slug),
     enabled: open,
   });
 

@@ -1,5 +1,5 @@
 /**
- * SkillsPage — the project's OpenCode skills (web parity: customize/sections
+ * SkillsPage — the workspace's OpenCode skills (web parity: customize/sections
  * skills-view). Lists the skills declared under .kortix/opencode/skills/ and,
  * on tap, shows the skill's markdown source. Read-only; skill authoring flows
  * through a session (to be wired next).
@@ -32,9 +32,9 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
-import type { ProjectConfigEntry } from '@/lib/projects/projects-client';
-import { newConfigPrompt, editConfigPrompt } from '@/lib/projects/configure-prompts';
+import { useWorkspaceDetail, useWorkspaceFile } from '@/lib/workspaces/hooks';
+import type { WorkspaceConfigEntry } from '@/lib/workspaces/workspaces-client';
+import { newConfigPrompt, editConfigPrompt } from '@/lib/workspaces/configure-prompts';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -45,7 +45,7 @@ interface PageTabLike {
 
 interface SkillsPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   /** Start an agent-led config session seeded with `prompt` (New / Edit). */
   onConfigure: (prompt: string) => void;
   onOpenDrawer?: () => void;
@@ -63,13 +63,13 @@ function stripFrontmatter(src: string): string {
 // ─── Skill detail (markdown source) ──────────────────────────────────────────
 
 function SkillDetail({
-  projectId,
+  workspaceId,
   skill,
   onBack,
   onConfigure,
 }: {
-  projectId: string;
-  skill: ProjectConfigEntry;
+  workspaceId: string;
+  skill: WorkspaceConfigEntry;
   onBack: () => void;
   onConfigure: (prompt: string) => void;
 }) {
@@ -78,7 +78,7 @@ function SkillDetail({
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
 
-  const fileQuery = useProjectFile(projectId, skill.path);
+  const fileQuery = useWorkspaceFile(workspaceId, skill.path);
   const body = useMemo(
     () => stripFrontmatter(fileQuery.data?.content ?? ''),
     [fileQuery.data?.content],
@@ -185,7 +185,7 @@ function SkillRow({
   onPress,
   isDark,
 }: {
-  skill: ProjectConfigEntry;
+  skill: WorkspaceConfigEntry;
   onPress: () => void;
   isDark: boolean;
 }) {
@@ -223,7 +223,7 @@ function SkillRow({
 
 export function SkillsPage({
   page,
-  projectId,
+  workspaceId,
   onConfigure,
   onOpenDrawer,
   onOpenRightDrawer,
@@ -234,9 +234,9 @@ export function SkillsPage({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<ProjectConfigEntry | null>(null);
+  const [selected, setSelected] = useState<WorkspaceConfigEntry | null>(null);
 
-  const { data, isLoading, isError, error, refetch } = useProjectDetail(projectId);
+  const { data, isLoading, isError, error, refetch } = useWorkspaceDetail(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -267,7 +267,7 @@ export function SkillsPage({
 
       <PageContent>
       {selected ? (
-        <SkillDetail projectId={projectId} skill={selected} onBack={() => setSelected(null)} onConfigure={onConfigure} />
+        <SkillDetail workspaceId={workspaceId} skill={selected} onBack={() => setSelected(null)} onConfigure={onConfigure} />
       ) : (
         <>
           <SearchListHeader
@@ -299,7 +299,7 @@ export function SkillsPage({
             ) : filtered.length === 0 ? (
               <View style={{ padding: 40, alignItems: 'center', gap: 14 }}>
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
-                  {skills.length === 0 ? 'No skills in this project yet.' : 'No skills match your search.'}
+                  {skills.length === 0 ? 'No skills in this workspace yet.' : 'No skills match your search.'}
                 </Text>
                 {skills.length === 0 && (
                   <TouchableOpacity

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
 const accessSource = await Bun.file(
-  new URL('../projects/lib/access.ts', import.meta.url),
+  new URL('../workspaces/lib/access.ts', import.meta.url),
 ).text();
 
 describe('project authorization side effects', () => {

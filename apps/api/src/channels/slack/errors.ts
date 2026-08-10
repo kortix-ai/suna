@@ -133,7 +133,7 @@ function isProviderConfig(name: string, status: number | undefined): boolean {
 }
 
 // The configured agent doesn't exist — deleted/renamed/disabled since the
-// channel (or project default) was pointed at it. On a governed project this is
+// channel (or workspace default) was pointed at it. On a governed project this is
 // caught at session-create (400 AGENT_NOT_DECLARED → inline picker); on a legacy
 // project the session boots and opencode fails here when the agent markdown is
 // missing. Requires 'agent' in the text so it can't shadow the model-not-found
@@ -281,7 +281,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
       title: 'Agent unavailable',
       text:
         `:warning: *The agent configured for this channel isn't available* — it may have been deleted, renamed, or disabled.` +
-        ` Run \`/kortix agents\` to pick one of this project's current agents, then mention me again.`,
+        ` Run \`/kortix agents\` to pick one of this workspace's current agents, then mention me again.`,
       aborted: false,
     };
   }

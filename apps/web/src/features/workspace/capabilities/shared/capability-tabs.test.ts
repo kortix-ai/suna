@@ -17,7 +17,7 @@ describe('CapabilityTabs sidebar toggle', () => {
     expect(source).toContain('peekLeave');
   });
 
-  // The panel's own header carries collapse (ProjectSidebar) and the desktop
+  // The panel's own header carries collapse (WorkspaceSidebar) and the desktop
   // shell draws its own opener in the OS title-bar band, so this page-level
   // toggle exists only to bring a hidden panel back on the web. The rule is
   // pinned as a truth table in project-layout/sidebar-opener.test.ts — this
@@ -103,7 +103,7 @@ describe('CapabilityTabs route prefetch', () => {
     const tabs = body.slice(tabsStart);
 
     expect(tabs).toMatch(
-      /<Link\s+href=\{capabilityTabHref\(projectId, tab\.key\)\}\s+prefetch=\{true\}>/,
+      /<Link\s+href=\{capabilityTabHref\(workspaceId, tab\.key\)\}\s+prefetch=\{true\}>/,
     );
   });
 });
@@ -117,7 +117,7 @@ describe('CapabilityTabs stays pinned to the top', () => {
   const layout = code(
     readFileSync(
       fileURLToPath(
-        new URL('../../../../app/(app)/projects/[id]/(capabilities)/layout.tsx', import.meta.url),
+        new URL('../../../../app/(app)/workspaces/[id]/(capabilities)/layout.tsx', import.meta.url),
       ),
       'utf8',
     ),

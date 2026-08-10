@@ -11,7 +11,7 @@ let endpointResult: { url: string; headers: Record<string, string> } | null = {
 let ensuredPin: string | null = 'oc-root-1';
 let ensuredReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 
-mock.module('../projects/opencode-mapping', () => ({
+mock.module('../workspaces/opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => {
     if (endpointThrow) throw endpointThrow;
     return endpointResult;
@@ -30,7 +30,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { buildSessionTranscriptDigest } = await import('../projects/lib/session-transcript');
+const { buildSessionTranscriptDigest } = await import('../workspaces/lib/session-transcript');
 
 afterEach(() => {
   endpointThrow = null;
@@ -42,7 +42,7 @@ afterEach(() => {
 function session(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'session-1',
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     accountId: 'account-1',
     opencodeSessionId: 'oc-root-1',
     status: 'running',
@@ -65,7 +65,7 @@ describe('buildSessionTranscriptDigest', () => {
     endpointThrow = new Error('DaytonaRateLimitError: ThrottlerException: Too Many Requests');
     const result = await buildSessionTranscriptDigest({
       session: session(),
-      projectId: 'project-1',
+      workspaceId: 'project-1',
       accountId: 'account-1',
       userId: 'user-1',
       limit: 40,
@@ -84,7 +84,7 @@ describe('buildSessionTranscriptDigest', () => {
     endpointResult = null;
     const result = await buildSessionTranscriptDigest({
       session: session(),
-      projectId: 'project-1',
+      workspaceId: 'project-1',
       accountId: 'account-1',
       userId: 'user-1',
       limit: 40,
@@ -108,7 +108,7 @@ describe('buildSessionTranscriptDigest', () => {
     ) as unknown as typeof fetch;
     const result = await buildSessionTranscriptDigest({
       session: session(),
-      projectId: 'project-1',
+      workspaceId: 'project-1',
       accountId: 'account-1',
       userId: 'user-1',
       limit: 40,

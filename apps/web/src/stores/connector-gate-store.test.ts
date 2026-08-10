@@ -13,14 +13,14 @@ const connectorConnections = [
     id: '79d15f28-e955-4f09-a08b-52e96fe97e3b',
     slug: 'slack-project',
     name: 'Slack project',
-    authorization_strategy: 'project' as const,
+    authorization_strategy: 'workspace' as const,
   },
 ];
 
 beforeEach(() => {
   useConnectorGateStore.setState({
     isOpen: false,
-    projectId: null,
+    workspaceId: null,
     connectorConnections: [],
     retry: null,
   });
@@ -35,11 +35,11 @@ describe('useConnectorGateStore', () => {
 
     useConnectorGateStore
       .getState()
-      .openConnectorGate({ projectId: 'project-1', connectorConnections, retry });
+      .openConnectorGate({ workspaceId: 'project-1', connectorConnections, retry });
 
     const state = useConnectorGateStore.getState();
     expect(state.isOpen).toBe(true);
-    expect(state.projectId).toBe('project-1');
+    expect(state.workspaceId).toBe('project-1');
     expect(state.connectorConnections).toEqual(connectorConnections);
     expect(state.retry).toBe(retry);
 
@@ -49,7 +49,7 @@ describe('useConnectorGateStore', () => {
 
   test('close clears every connection and the retry callback', () => {
     useConnectorGateStore.getState().openConnectorGate({
-      projectId: 'project-1',
+      workspaceId: 'project-1',
       connectorConnections,
       retry: () => undefined,
     });
@@ -58,7 +58,7 @@ describe('useConnectorGateStore', () => {
 
     const state = useConnectorGateStore.getState();
     expect(state.isOpen).toBe(false);
-    expect(state.projectId).toBeNull();
+    expect(state.workspaceId).toBeNull();
     expect(state.connectorConnections).toEqual([]);
     expect(state.retry).toBeNull();
   });

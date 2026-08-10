@@ -74,7 +74,7 @@ test.describe("18 — Kortix Apps UI", () => {
     const user = await createAuthUser(email, authOptions);
     const session = await signIn(email, authOptions);
     const env = loadEnv();
-    let projectId: string | null = null;
+    let workspaceId: string | null = null;
     const pageErrors: string[] = [];
     const appsServerErrors: string[] = [];
     const appsCreateRequests: string[] = [];
@@ -93,7 +93,7 @@ test.describe("18 — Kortix Apps UI", () => {
     page.on("request", (request) => {
       if (
         request.method() === "POST" &&
-        request.url().endsWith(`/v1/projects/${projectId}/apps`)
+        request.url().endsWith(`/v1/projects/${workspaceId}/apps`)
       ) {
         appsCreateRequests.push(request.url());
       }
@@ -118,7 +118,7 @@ test.describe("18 — Kortix Apps UI", () => {
         userId: user.id,
         name: `Apps UI ${runId}`,
       });
-      projectId = project.id;
+      workspaceId = project.id;
 
       await api<Record<string, unknown>>(
         session.access_token,
@@ -312,8 +312,8 @@ test.describe("18 — Kortix Apps UI", () => {
       expect(appsServerErrors).toEqual([]);
       expect(appsCreateRequests).toEqual([]);
     } finally {
-      if (projectId)
-        await deleteDatabaseProject(env, projectId).catch(() => {});
+      if (workspaceId)
+        await deleteDatabaseProject(env, workspaceId).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });

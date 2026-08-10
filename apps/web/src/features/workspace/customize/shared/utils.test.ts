@@ -8,7 +8,7 @@ describe('toArray — guards .filter/.map call sites against undefined / non-arr
   //   - `(intermediate value)(intermediate value)(intermediate value).filter is not a function`
   //     (a `(x ?? []).filter` where the prod build downlevels `??` to a ternary
   //     and `x` is a defined non-array object)
-  // `ProjectConfigSummary.{agents,skills,commands}` are typed as required
+  // `WorkspaceConfigSummary.{agents,skills,commands}` are typed as required
   // arrays, but the API returns them as `undefined` (or a non-array) for
   // repo-less / capability-gated / config-build-failure states. Calling
   // `.filter` / `.map` directly throws into prod Sentry; `toArray` must absorb

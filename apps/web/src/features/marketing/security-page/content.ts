@@ -22,7 +22,7 @@
  * against code before this page shipped. Do not "restore" any of them:
  *
  *  1. "Never visible to the model" (the /enterprise secrets bullet) is FALSE
- *     for project secrets. A granted runtime secret is a real environment value
+ *     for workspace secrets. A granted runtime secret is a real environment value
  *     inside the session, readable by any command the agent runs — that is how
  *     a tool uses it. See docs/ENV_SECRET_EXPOSURE_BASELINE.md, which states it
  *     plainly. What IS true, and is all this page claims: connector credentials
@@ -37,7 +37,7 @@
  *     substantiated anywhere in this tree — E2B ships `allowInternetAccess:
  *     true` and the network design is "Proposed — not scheduled". Dropped.
  *  4. Approval gates are NOT on by default. `policy.default_mode` falls back to
- *     `allow_all` for a project with no `policy:` block
+ *     `allow_all` for a workspace with no `policy:` block
  *     (apps/api/src/projects/policies.ts). The copy says "turn it on".
  *  5. "Only a human can merge" is too strong. Merge is default-deny for agents
  *     and needs an explicit `project.cr.merge` grant. The copy says exactly
@@ -61,7 +61,7 @@ export const hero = {
   /** Four mono facts the rest of the page proves. Every value is defensible. */
   specs: [
     { k: 'Isolation', v: 'One sandbox per session' },
-    { k: 'Secrets', v: 'AES-256-GCM, key per project' },
+    { k: 'Secrets', v: 'AES-256-GCM, key per workspace' },
     { k: 'Principals', v: 'People and service accounts' },
     { k: 'Path to main', v: 'Change request, default-deny merge' },
   ],
@@ -81,15 +81,15 @@ export const isolation = {
     label: 'inside one session',
     items: [
       'Its own sandbox, with its own filesystem and its own lifetime',
-      'A clone of the project repo on a branch named after the session',
-      'The tools, dependencies and runtime the project declares',
+      'A clone of the workspace repo on a branch named after the session',
+      'The tools, dependencies and runtime the workspace declares',
       'Only the secrets that session is granted, placed there at boot',
     ],
   },
   outside: {
     label: 'never crosses in',
     items: [
-      'Another session — same project, same team, or another customer',
+      'Another session — same workspace, same team, or another customer',
       'Connector credentials, which are resolved server-side',
       'Kortix’s own upstream provider keys, which no sandbox may hold',
       'Write access to main; a session can only propose',
@@ -121,7 +121,7 @@ export const isolation = {
 
 /* ── 2 · credentials ───────────────────────────────────────────────────────
    Grounded in apps/api/src/projects/secrets.ts (AES-256-GCM, per-project key
-   from HKDF-SHA256 over API_KEY_SECRET salted with the project id, versioned
+   from HKDF-SHA256 over API_KEY_SECRET salted with the workspace id, versioned
    envelope), apps/api/src/iam/agent-scope.ts (the userRole ∩ agentGrant rule),
    apps/api/src/connectors/pipedream.ts (connector credentials resolved
    server-side), apps/api/src/platform/sandbox-env.ts (the allowlist that keeps
@@ -129,7 +129,7 @@ export const isolation = {
    apps/kortix-sandbox-agent-server/src/agent-env-file.ts (tmpfs, 0600,
    shredded on shutdown).
 
-   DO NOT reintroduce "the model never sees it" for project secrets. It is
+   DO NOT reintroduce "the model never sees it" for workspace secrets. It is
    false, we know it is false, and a reviewer will disprove it in one command.
    The claim this section makes instead is narrower and actually holds. */
 export const credentials = {
@@ -138,17 +138,33 @@ export const credentials = {
   sub: 'A tool needs a real credential to do real work, so the honest question is not whether the machine ever holds one. It is which machine holds which key, who decided that, and what never gets in at all.',
   /** The five-step path a credential takes. Drawn as a mono flow. */
   flow: [
-    { n: '01', k: 'Stored', v: 'Encrypted with AES-256-GCM under a key derived per project.' },
-    { n: '02', k: 'Granted', v: 'The person’s role and the agent’s declared grant must both allow it.' },
-    { n: '03', k: 'Delivered', v: 'Placed in the session at boot, by name, on tmpfs at mode 0600.' },
-    { n: '04', k: 'Used', v: 'The tool reads it from the environment. It is not written into the prompt.' },
-    { n: '05', k: 'Shredded', v: 'The file is wiped on shutdown and the machine is destroyed with it.' },
+    { n: '01', k: 'Stored', v: 'Encrypted with AES-256-GCM under a key derived per workspace.' },
+    {
+      n: '02',
+      k: 'Granted',
+      v: 'The person’s role and the agent’s declared grant must both allow it.',
+    },
+    {
+      n: '03',
+      k: 'Delivered',
+      v: 'Placed in the session at boot, by name, on tmpfs at mode 0600.',
+    },
+    {
+      n: '04',
+      k: 'Used',
+      v: 'The tool reads it from the environment. It is not written into the prompt.',
+    },
+    {
+      n: '05',
+      k: 'Shredded',
+      v: 'The file is wiped on shutdown and the machine is destroyed with it.',
+    },
   ],
   rows: [
     {
       id: 'crypto',
-      k: 'Encrypted per project',
-      v: 'Values are sealed with AES-256-GCM. The key is derived per project with HKDF-SHA256, so one project’s ciphertext cannot be opened with another project’s key. The envelope is versioned, so the scheme can move forward without a flag day.',
+      k: 'Encrypted per workspace',
+      v: 'Values are sealed with AES-256-GCM. The key is derived per workspace with HKDF-SHA256, so one workspace’s ciphertext cannot be opened with another workspace’s key. The envelope is versioned, so the scheme can move forward without a flag day.',
     },
     {
       id: 'grant',
@@ -182,7 +198,7 @@ export const identity = {
   matrix: {
     caption: 'Permissions attach to a principal, for an action, on a resource type.',
     principals: ['person', 'group', 'service account'],
-    resources: ['account', 'project', 'sandbox', 'trigger', 'channel', 'member', 'group'],
+    resources: ['account', 'workspace', 'sandbox', 'trigger', 'channel', 'member', 'group'],
   },
   presets: {
     label: 'Built-in roles — on every plan',
@@ -191,10 +207,10 @@ export const identity = {
       { k: 'Admin', v: 'Manage members, groups, roles and tokens.' },
       { k: 'Member', v: 'Baseline account membership.' },
     ],
-    project: [
-      { k: 'Manager', v: 'Full project control, including members and delete.' },
-      { k: 'Editor', v: 'Create and edit project content, run sessions.' },
-      { k: 'Member', v: 'Read, run sessions and fire triggers. The project floor role.' },
+    workspace: [
+      { k: 'Manager', v: 'Full workspace control, including members and delete.' },
+      { k: 'Editor', v: 'Create and edit workspace content, run sessions.' },
+      { k: 'Member', v: 'Read, run sessions and fire triggers. The workspace floor role.' },
     ],
   },
   enterprise: {
@@ -202,9 +218,18 @@ export const identity = {
     /** Every item here is an entitlement key that really exists. SAML only —
         there is no enterprise OIDC login, so never write "SAML/OIDC". */
     items: [
-      { k: 'SAML 2.0 SSO', v: 'Provider config, just-in-time provisioning, and group-claim mapping. One identity provider per account today.' },
-      { k: 'SCIM 2.0', v: 'Directory sync over /scim/v2, with tokens you mint and revoke. Built against Okta and Microsoft Entra.' },
-      { k: 'Custom roles', v: 'Your own roles and fine-grained policy bindings beyond the presets.' },
+      {
+        k: 'SAML 2.0 SSO',
+        v: 'Provider config, just-in-time provisioning, and group-claim mapping. One identity provider per account today.',
+      },
+      {
+        k: 'SCIM 2.0',
+        v: 'Directory sync over /scim/v2, with tokens you mint and revoke. Built against Okta and Microsoft Entra.',
+      },
+      {
+        k: 'Custom roles',
+        v: 'Your own roles and fine-grained policy bindings beyond the presets.',
+      },
       { k: 'Groups', v: 'Grant to a group once instead of to twenty people twenty times.' },
     ],
     note: 'Available on Enterprise, and on a self-hosted instance with an Enterprise licence. The built-in roles above are free on every plan.',
@@ -215,7 +240,7 @@ export const identity = {
   },
   scoping: {
     title: 'Scope a team to specific agents',
-    body: 'A person or a group can be narrowed to named agents and skills inside a project: marketing may use this agent and that skill, and nothing else. Anything you leave unscoped stays project-wide, so narrowing is something you opt into rather than something you have to undo.',
+    body: 'A person or a group can be narrowed to named agents and skills inside a workspace: marketing may use this agent and that skill, and nothing else. Anything you leave unscoped stays workspace-wide, so narrowing is something you opt into rather than something you have to undo.',
   },
 } as const;
 
@@ -223,7 +248,7 @@ export const identity = {
    Grounded in apps/api/src/projects/policies.ts. The YAML below is the real
    parsed shape: `match` globs over fully-qualified tool paths, three actions,
    and argument `conditions`. CORRECTION: default_mode falls back to `allow_all`
-   for a project with no `policy:` block, so the copy tells you to set `risk`
+   for a workspace with no `policy:` block, so the copy tells you to set `risk`
    rather than claiming it is already on. */
 export const control = {
   eyebrow: 'Control',
@@ -272,7 +297,7 @@ export const control = {
     {
       id: 'default',
       k: 'Set the default you want',
-      v: 'default_mode: risk makes reads run and sends writes and destructive calls to a person. A project with no policy block keeps the permissive legacy default, so set this explicitly.',
+      v: 'default_mode: risk makes reads run and sends writes and destructive calls to a person. A workspace with no policy block keeps the permissive legacy default, so set this explicitly.',
     },
   ],
 } as const;

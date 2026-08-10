@@ -114,7 +114,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'marketplace',
     title: 'Kortix Marketplace',
     description:
-      'Browse skills, agents, and commands from every source. Add them to a Kortix project in one click.',
+      'Browse skills, agents, and commands from every source. Add them to a Kortix workspace in one click.',
     htmlPath: '/marketplace',
   },
   {
@@ -122,7 +122,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'developers',
     title: 'Kortix for developers',
     description:
-      'Build with Kortix from the terminal: drive projects, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.',
+      'Build with Kortix from the terminal: drive workspaces, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.',
     htmlPath: '/developers',
     markdownPath: '/markdown/developers.md',
   },
@@ -241,7 +241,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'channels',
     title: 'Kortix Channels',
     description:
-      'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email and voice are in preview.',
+      'Connect Slack or Microsoft Teams to a Kortix workspace and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email and voice are in preview.',
     htmlPath: '/channels',
     markdownPath: '/markdown/channels.md',
   },
@@ -250,7 +250,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'company-as-code',
     title: 'Company as Code',
     description:
-      'A Kortix project is a git repo, and that repo is the company. kortix.yaml and the OpenCode config define it; agents, skills and memory are files beside your code. Every change is a commit a person approves.',
+      'A Kortix workspace is backed by a git repo, and that repo is the company. kortix.yaml and the OpenCode config define it; agents, skills and memory are files beside your code. Every change is a commit a person approves.',
     htmlPath: '/company-as-code',
     markdownPath: '/markdown/company-as-code.md',
   },

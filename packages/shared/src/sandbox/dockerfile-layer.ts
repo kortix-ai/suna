@@ -12,7 +12,7 @@
  *   5. ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]
  *
  * The project workspace is NOT baked in — the daemon git-clones it at boot
- * via `KORTIX_PROJECT_AUTO_CLONE`. That keeps the image identity decoupled
+ * via `KORTIX_WORKSPACE_AUTO_CLONE`. That keeps the image identity decoupled
  * from project source code, so a code change never invalidates a snapshot
  * and most projects share a single global default image.
  *
@@ -107,7 +107,7 @@ export interface KortixToolchainLayerOpts {
   /**
    * Path (in the build context) to the canonical starter `.kortix/opencode`
    * config tree (pty plugin + standard tools + skills). When provided, the
-   * layer warms a real opencode PROJECT INSTANCE against it at build time so the
+   * layer warms a real opencode WORKSPACE INSTANCE against it at build time so the
    * costly first-instance work (Bun plugin auto-install/transpile, models.dev
    * fetch, ripgrep) is cached into the image instead of paid on the session hot
    * path. Optional — omit to skip the instance warm-up.
@@ -160,7 +160,7 @@ export interface KortixToolchainLayerOpts {
 /**
  * Render-time inputs for baking a per-project COLD warm repo checkout into the
  * image. Shared between `kortixToolchainLayer` (the full monolithic build) and
- * `buildPerProjectWarmFromBaseDockerfile` (the FROM-base fast path) so both
+ * `buildPerWorkspaceWarmFromBaseDockerfile` (the FROM-base fast path) so both
  * render the identical COPY step — see `buildWarmRepoCopyLines`.
  *
  * SECURITY (PHASE 1): this shape carries NO credentials. The repo is cloned
@@ -235,7 +235,7 @@ export interface KortixArtifactLayerOpts {
   /**
    * Path (in the build context) to the baked full gateway model catalog JSON.
    * COPY'd into the image so the no-restart warm seed — which has no sandbox
-   * token / projectId to fetch the catalog at PARK — gets the full model picker
+   * token / workspaceId to fetch the catalog at PARK — gets the full model picker
    * instead of the daemon's minimal fallback. Optional; omit to skip.
    */
   catalogPath?: string;
@@ -269,7 +269,7 @@ const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
  * object storage, baked into OCI history, and printed to build logs).
  *
  * Shared verbatim between `kortixToolchainLayer` (the monolithic build) and
- * `buildPerProjectWarmFromBaseDockerfile` (the FROM-base fast path) — the two
+ * `buildPerWorkspaceWarmFromBaseDockerfile` (the FROM-base fast path) — the two
  * MUST render byte-identical steps so the baked checkout is the same either
  * way. Returns `[]` when there's no repo to bake (the shared,
  * project-independent default image).
@@ -307,7 +307,7 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
 }
 
 /**
- * Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
+ * Warm a real opencode WORKSPACE INSTANCE at build time. The first time opencode
  * creates an instance for a project dir it loads that dir's .kortix/opencode
  * surface — importing the pty plugin + tools — which makes Bun auto-install /
  * transpile the plugin dep tree and opencode fetch its model catalog +
@@ -316,7 +316,7 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
  * We pay it ONCE here, against the canonical starter config staged at the SAME
  * runtime path (/workspace) so Bun's content-addressed transpile cache hits at
  * boot. For the SHARED default image we then wipe /workspace (the session
- * clones into it). For a PER-PROJECT COLD warm (warmRepo set) the repo is
+ * clones into it). For a PER-WORKSPACE COLD warm (warmRepo set) the repo is
  * already baked at /workspace and we KEEP it — the daemon boots off the baked
  * checkout with NO clone. For a CUSTOM template we remove only the config we
  * staged: /workspace is the user's. Either way the warmed caches under
@@ -327,7 +327,7 @@ function buildWarmRepoCopyLines(warmRepo: WarmRepoConfig | undefined): string[] 
  * Best effort: a build without network (or a warm-up failure) just falls back
  * to the runtime cost — set +e + trailing `true` keep the image build green.
  *
- * Shared between `kortixToolchainLayer` and `buildPerProjectWarmFromBaseDockerfile`
+ * Shared between `kortixToolchainLayer` and `buildPerWorkspaceWarmFromBaseDockerfile`
  * so both render byte-identical warm-up text. Returns `[]` when there's no
  * starter config to warm against.
  */
@@ -753,7 +753,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     '    && kortix --version \\',
     '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
     '',
-    // The daemon clones the project workspace at boot using KORTIX_PROJECT_AUTO_CLONE
+    // The daemon clones the project workspace at boot using KORTIX_WORKSPACE_AUTO_CLONE
     // — nothing project-specific is baked into the image. /workspace is created
     // empty here; the daemon's materializeRepo path fills it.
     'ENV KORTIX_WORKSPACE=/workspace',
@@ -782,14 +782,14 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
 }
 
 /** Inputs for the FROM-base per-project warm fast path — see
- *  {@link buildPerProjectWarmFromBaseDockerfile}. */
-export interface PerProjectWarmFromBaseOpts {
+ *  {@link buildPerWorkspaceWarmFromBaseDockerfile}. */
+export interface PerWorkspaceWarmFromBaseOpts {
   /**
    * Registry-addressable reference to an ALREADY-BUILT, ACTIVE image that has
    * the full Kortix runtime layer baked in (apt/pip/opencode/bun/agent-browser
    * + Chromium + the artifact tail) — in practice the shared default image's
    * provider-reported image ref (e.g. Daytona `Snapshot.imageName`). The
-   * caller (ensurePerProjectWarmImage in apps/api/src/snapshots/builder.ts) is
+   * caller (ensurePerWorkspaceWarmImage in apps/api/src/snapshots/builder.ts) is
    * responsible for resolving this and MUST verify the source snapshot is
    * `active` first; a `FROM` of a not-yet-built or missing image fails the
    * whole bake immediately (no opportunistic retry-as-full-rebuild happens
@@ -834,7 +834,7 @@ export interface PerProjectWarmFromBaseOpts {
  * FROM semantics carry those forward automatically; this function does not
  * (and must not) re-declare them.
  */
-export function buildPerProjectWarmFromBaseDockerfile(opts: PerProjectWarmFromBaseOpts): string {
+export function buildPerWorkspaceWarmFromBaseDockerfile(opts: PerWorkspaceWarmFromBaseOpts): string {
   const { baseImageRef, warmRepo, opencodeConfigPath, opencodeWarmupScriptPath } = opts;
   return [
     `FROM ${baseImageRef}`,
@@ -858,6 +858,11 @@ export function buildPerProjectWarmFromBaseDockerfile(opts: PerProjectWarmFromBa
   ].join('\n') + '\n';
 }
 
+/** @deprecated Use PerWorkspaceWarmFromBaseOpts. */
+export type PerProjectWarmFromBaseOpts = PerWorkspaceWarmFromBaseOpts;
+/** @deprecated Use buildPerWorkspaceWarmFromBaseDockerfile. */
+export const buildPerProjectWarmFromBaseDockerfile = buildPerWorkspaceWarmFromBaseDockerfile;
+
 export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
   // The legacy starter Dockerfile installed baseline tools that the injected
   // Kortix layer installs again. Strip that exact starter block so existing
@@ -868,7 +873,7 @@ export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
 }
 
 /**
- * A sandbox template defines one bootable image. Projects can declare multiple
+ * A sandbox template defines one bootable image. Workspaces can declare multiple
  * via `sandbox.templates` in kortix.yaml; sessions pick one by slug. The platform
  * default template is always available without any config.
  */

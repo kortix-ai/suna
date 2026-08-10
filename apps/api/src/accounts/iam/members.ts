@@ -26,6 +26,7 @@ import {
   iamRouter,
   MemberParams,
   GroupSchema,
+  WorkspaceAccessSchema,
   ProjectAccessSchema,
   EffectiveResultSchema,
   EffectiveBatchResultSchema,
@@ -166,16 +167,35 @@ iamRouter.openapi(
 //   3. project_group_grants for any group the user belongs to
 // V1 callers can use the route too — the data is real either way — but
 // the V1 UI doesn't surface it (PoliciesTable is the equivalent V1 view).
+for (const accessRoute of [
+  {
+    path: '/{accountId}/iam/members/{userId}/workspace-access',
+    summary: 'List effective Workspace access for a member',
+    schema: WorkspaceAccessSchema,
+    canonical: true,
+  },
+  {
+    path: '/{accountId}/iam/members/{userId}/project-access',
+    summary: 'List effective Project access for a member (deprecated)',
+    schema: ProjectAccessSchema,
+    canonical: false,
+  },
+] as const) {
 iamRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/iam/members/{userId}/project-access',
+    path: accessRoute.path,
     tags: ['iam'],
-    summary: 'List effective project access for a member',
+    summary: accessRoute.summary,
     ...auth,
     request: { params: MemberParams },
     responses: {
-      200: json(z.object({ projects: z.array(ProjectAccessSchema) }), 'Projects the member can reach'),
+      200: json(
+        accessRoute.canonical
+          ? z.object({ workspaces: z.array(accessRoute.schema) })
+          : z.object({ projects: z.array(accessRoute.schema) }),
+        'Workspaces the member can reach',
+      ),
       ...errors(401, 403),
     },
   }),
@@ -195,16 +215,16 @@ iamRouter.openapi(
   const asRole = (raw: string): Role =>
     raw === 'viewer' || raw === 'user' ? 'member' : (raw as Role);
 
-  // Project info we'll need for every row in the response.
-  const allProjects = await db
+  // Workspace info we'll need for every row in the response.
+  const allWorkspaces = await db
     .select({
-      projectId: projects.projectId,
+      workspaceId: projects.workspaceId,
       name: projects.name,
       status: projects.status,
     })
     .from(projects)
     .where(eq(projects.accountId, accountId));
-  const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
+  const projectMeta = new Map(allWorkspaces.map((p) => [p.workspaceId, p] as const));
 
   // 1) implicit manager via account_role
   const [membership] = await db
@@ -218,24 +238,24 @@ iamRouter.openapi(
     )
     .limit(1);
   if (!membership) {
-    return c.json({ projects: [] });
+    return c.json(accessRoute.canonical ? { workspaces: [] } : { projects: [] });
   }
 
-  const byProject = new Map<
+  const byWorkspace = new Map<
     string,
     { role: Role; sources: ('implicit' | 'direct' | 'group')[] }
   >();
   if (membership.accountRole === 'owner' || membership.accountRole === 'admin') {
-    for (const p of allProjects) {
+    for (const p of allWorkspaces) {
       if (p.status !== 'active') continue;
-      byProject.set(p.projectId, { role: 'manager', sources: ['implicit'] });
+      byWorkspace.set(p.workspaceId, { role: 'manager', sources: ['implicit'] });
     }
   }
 
   // 2) direct project_members rows
   const directRows = await db
     .select({
-      projectId: projectMembers.projectId,
+      workspaceId: projectMembers.workspaceId,
       role: projectMembers.projectRole,
     })
     .from(projectMembers)
@@ -247,12 +267,12 @@ iamRouter.openapi(
     );
   for (const r of directRows) {
     const role = asRole(r.role);
-    const cur = byProject.get(r.projectId);
+    const cur = byWorkspace.get(r.workspaceId);
     if (cur) {
       cur.role = max(cur.role, role);
       if (!cur.sources.includes('direct')) cur.sources.push('direct');
     } else {
-      byProject.set(r.projectId, { role, sources: ['direct'] });
+      byWorkspace.set(r.workspaceId, { role, sources: ['direct'] });
     }
   }
 
@@ -265,7 +285,7 @@ iamRouter.openapi(
   if (groupIds.length > 0) {
     const grantRows = await db
       .select({
-        projectId: projectGroupGrants.projectId,
+        workspaceId: projectGroupGrants.workspaceId,
         role: projectGroupGrants.role,
       })
       .from(projectGroupGrants)
@@ -277,36 +297,44 @@ iamRouter.openapi(
       );
     for (const r of grantRows) {
       const role = asRole(r.role);
-      const cur = byProject.get(r.projectId);
+      const cur = byWorkspace.get(r.workspaceId);
       if (cur) {
         cur.role = max(cur.role, role);
         if (!cur.sources.includes('group')) cur.sources.push('group');
       } else {
-        byProject.set(r.projectId, { role, sources: ['group'] });
+        byWorkspace.set(r.workspaceId, { role, sources: ['group'] });
       }
     }
   }
 
   const out: Array<{
-    project_id: string;
-    project_name: string;
+    workspace_id: string;
+    workspace_name: string;
     role: Role;
     sources: ('implicit' | 'direct' | 'group')[];
   }> = [];
-  for (const [projectId, info] of byProject) {
-    const meta = projectMeta.get(projectId);
+  for (const [workspaceId, info] of byWorkspace) {
+    const meta = projectMeta.get(workspaceId);
     if (!meta || meta.status !== 'active') continue;
     out.push({
-      project_id: projectId,
-      project_name: meta.name,
+      workspace_id: workspaceId,
+      workspace_name: meta.name,
       role: info.role,
       sources: info.sources,
     });
   }
-  out.sort((a, b) => a.project_name.localeCompare(b.project_name));
-  return c.json({ projects: out });
+  out.sort((a, b) => a.workspace_name.localeCompare(b.workspace_name));
+  if (accessRoute.canonical) return c.json({ workspaces: out });
+  return c.json({
+    projects: out.map(({ workspace_id, workspace_name, ...rest }) => ({
+      project_id: workspace_id,
+      project_name: workspace_name,
+      ...rest,
+    })),
+  });
   },
 );
+}
 
 // ─── Effective permissions probe ───────────────────────────────────────────
 // The UI uses this to render "what can this user actually do".

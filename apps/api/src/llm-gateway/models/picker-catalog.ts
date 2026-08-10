@@ -7,7 +7,7 @@ import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // PURE catalog logic for the model picker — no DB, no config, so it's unit-
 // testable in isolation. The DB-touching assembly (connected BYOK providers +
-// resolved project default) lives in picker.ts and builds on these.
+// resolved workspace default) lives in picker.ts and builds on these.
 
 export interface PickerModel {
   /** Opencode model ref — `kortix/<id>` for managed, `provider/model` for BYOK. */
@@ -90,14 +90,14 @@ export function isProviderConnected(providerId: string, connectedEnvVars: Set<st
 }
 
 /**
- * Reduce the gateway's runtime catalog to the models a project can actually
+ * Reduce the gateway's runtime catalog to the models a workspace can actually
  * choose without downloading the complete models.dev registry. Managed models
  * are always retained (the caller has already applied free-tier filtering),
  * connected BYOK/Codex providers retain their served models, and configured
  * models are kept so existing defaults and fallback policies remain editable
  * after a provider is disconnected.
  */
-export function projectPickerCatalog<T>(
+export function workspacePickerCatalog<T>(
   fullCatalog: Record<string, T>,
   connectedEnvVars: Set<string>,
   requiredModels: string[],
@@ -127,7 +127,7 @@ export function projectPickerCatalog<T>(
 /**
  * The flagship `provider/model` ref for the provider whose primary credential
  * env var is `envVar` (e.g. `ANTHROPIC_API_KEY` → `anthropic/claude-opus-4.8`),
- * or null. Used to auto-seed a sensible project default when a user connects
+ * or null. Used to auto-seed a sensible workspace default when a user connects
  * their first provider. Non-provider credentials (CODEX_AUTH_JSON,
  * OPENCODE_AUTH_JSON) have no catalog upstream → null, so they're skipped.
  */

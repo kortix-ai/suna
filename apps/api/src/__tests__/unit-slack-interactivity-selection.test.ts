@@ -21,7 +21,7 @@ mock.module('../channels/slack/dispatch', () => ({
   spawnAgentTurn: async () => {},
 }));
 mock.module('../channels/install-store', () => ({
-  loadSlackTokenForProject: async () => 'xoxb',
+  loadSlackTokenForWorkspace: async () => 'xoxb',
   saveSlackOauthInstall: async () => {},
 }));
 mock.module('../channels/slack-api', () => ({
@@ -46,7 +46,7 @@ mock.module('../channels/slack/selection', () => ({
   },
   setChannelModel: async (_c: unknown, m: string | null) => { setModelCalls.push(m); return setResult; },
   setChannelConversationPolicy: async () => undefined,
-  listProjectAgents: async () => [],
+  listWorkspaceAgents: async () => [],
   RECOMMENDED_MODELS: [],
   isValidModelId: (s: string) => { const i = s.indexOf('/'); return i > 0 && i < s.length - 1 && !/\s/.test(s); },
   modelLabel: (id: string) => id,
@@ -139,7 +139,7 @@ describe('agent/model picker clicks', () => {
 
 describe('Open in Kortix message shortcut', () => {
   test('resolves the thread to its session URL', async () => {
-    dbResults = [[{ sessionId: 'sess-9', projectId: 'proj-1' }]];
+    dbResults = [[{ sessionId: 'sess-9', workspaceId: 'proj-1' }]];
     await handleMessageShortcut({
       type: 'message_action',
       callback_id: 'open_session',
@@ -149,7 +149,7 @@ describe('Open in Kortix message shortcut', () => {
       response_url: 'https://hooks.slack/response',
     } as any);
     const txt = JSON.stringify(posts[0]?.body);
-    expect(txt).toContain('/projects/proj-1/sessions/sess-9');
+    expect(txt).toContain('/workspaces/proj-1/sessions/sess-9');
     expect(txt).toContain('Open session');
   });
 

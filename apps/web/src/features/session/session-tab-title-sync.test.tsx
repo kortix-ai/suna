@@ -13,7 +13,7 @@ describe('SessionTabTitleSync', () => {
     try {
       renderToStaticMarkup(
         <QueryClientProvider client={new QueryClient()}>
-          <SessionTabTitleSync projectId="workspace-1" sessionId="session-1" />
+          <SessionTabTitleSync workspaceId="workspace-1" sessionId="session-1" />
         </QueryClientProvider>,
       );
     } finally {

@@ -78,7 +78,7 @@ type AuditInsert = typeof auditEvents.$inferInsert;
 
 export interface OpenCodeAuditScope {
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   /** Canonical attribution resolved from server-owned rows. Payload fields are untrusted. */
   trustedProvenance?: {
@@ -309,7 +309,7 @@ export function parseOpenCodeAuditBatch(
 
     return {
       accountId: scope.accountId,
-      projectId: scope.projectId,
+      workspaceId: scope.workspaceId,
       sessionId: scope.sessionId,
       opencodeSessionId: trusted?.opencodeSessionId ?? null,
       turnId: optionalIdentifier(event.turn_id, index, 'turn_id'),

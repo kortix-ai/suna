@@ -3,7 +3,7 @@ import { gatewayRequestLogs, projectSessions, sandboxComputeSessions } from '@ko
 import { Column, SQL, type SQLWrapper, Table, getTableColumns, is, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { CostSort } from './cost-window';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../workspaces/lib/access';
 
 type QueryRecord = {
   fields: Record<string, unknown>;
@@ -229,7 +229,7 @@ mock.module('./db', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../workspaces/lib/access', () => ({
   ...realAccess,
   resolveSessionOwnerIdentities: async (ownerIds: string[]) =>
     new Map(
@@ -244,19 +244,19 @@ mock.module('../projects/lib/access', () => ({
     ),
 }));
 
-const { getSessionCostRecord, listProjectGatewaySessionSpend, listSessionCosts } = await import(
+const { getSessionCostRecord, listWorkspaceGatewaySessionSpend, listSessionCosts } = await import(
   './session-costs'
 );
 
 const accountId = '00000000-0000-4000-a000-000000000001';
-const projectId = '00000000-0000-4000-a000-000000000002';
+const workspaceId = '00000000-0000-4000-a000-000000000002';
 const ownerId = '00000000-0000-4000-a000-000000000003';
 const sessionId = 'session-service-test';
 
 const baseSessionRow = {
   sessionId,
-  projectId,
-  projectName: 'Project One',
+  workspaceId,
+  projectName: 'Workspace One',
   ownerId,
   status: 'running' as const,
   createdAt: new Date('2026-07-01T10:00:00.000Z'),
@@ -307,7 +307,7 @@ describe('listSessionCosts service', () => {
 
     const result = await listSessionCosts({
       accountId,
-      projectId,
+      workspaceId,
       window: costWindow,
       sort: 'total_desc',
       limit: 1,
@@ -689,7 +689,7 @@ describe('getSessionCostRecord service', () => {
       return [];
     };
 
-    const detail = await getSessionCostRecord({ accountId, projectId, sessionId });
+    const detail = await getSessionCostRecord({ accountId, workspaceId, sessionId });
 
     expect(detail?.model_usage).toEqual([
       {
@@ -716,12 +716,12 @@ describe('getSessionCostRecord service', () => {
   test('returns null when the account and project scoped base session is absent', async () => {
     resultForQuery = () => [];
 
-    expect(await getSessionCostRecord({ accountId, projectId, sessionId })).toBeNull();
+    expect(await getSessionCostRecord({ accountId, workspaceId, sessionId })).toBeNull();
     expect(queryRecords).toHaveLength(1);
   });
 });
 
-describe('listProjectGatewaySessionSpend service', () => {
+describe('listWorkspaceGatewaySessionSpend service', () => {
   test('keeps the existing window_days and sessions response', async () => {
     resultForQuery = (fields, table) => {
       if (table === gatewayRequestLogs && 'tokens' in fields) {
@@ -751,9 +751,9 @@ describe('listProjectGatewaySessionSpend service', () => {
     };
 
     expect(
-      await listProjectGatewaySessionSpend({
+      await listWorkspaceGatewaySessionSpend({
         accountId,
-        projectId,
+        workspaceId,
         days: 45,
       }),
     ).toEqual({

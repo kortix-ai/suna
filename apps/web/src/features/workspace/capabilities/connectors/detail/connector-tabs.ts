@@ -1,4 +1,4 @@
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 
 export type ConnectorTab = 'accounts' | 'tools' | 'settings';
 
@@ -19,21 +19,19 @@ export const CONNECTOR_TAB_LABEL: Record<ConnectorTab, string> = {
  *
  * - The name, icon, status and connect action live in the modal header, above
  *   every tab — so there is no separate Overview tab.
- * - `computer` connectors are paired and audited in Computers, so they get
- *   neither Accounts nor Settings; the generic credential and remove controls
- *   would be a second, wrong way to do the same thing.
+ * - Every connector has Accounts. For a Computers profile, Accounts edits its
+ *   assigned machine set and links to the fleet-management surface.
  * - Tools and Settings mutate project state, so they are writer-only. Accounts
  *   stays for readers: it is how they see whether the connector works, and how
  *   they connect their own account.
  */
 export function connectorTabs(
-  connector: AdminConnector,
+  connector: WorkspaceAdminConnector,
   caps: { canWrite: boolean },
 ): ConnectorTab[] {
-  const isComputer = connector.provider === 'computer';
   const present = new Set<ConnectorTab>();
-  if (!isComputer) present.add('accounts');
+  present.add('accounts');
   if (caps.canWrite) present.add('tools');
-  if (caps.canWrite && !isComputer) present.add('settings');
+  if (caps.canWrite) present.add('settings');
   return CONNECTOR_TABS.filter((tab) => present.has(tab));
 }

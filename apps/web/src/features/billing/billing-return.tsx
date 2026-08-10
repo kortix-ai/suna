@@ -4,7 +4,7 @@ import { successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState } from '@/hooks/billing';
 import { fireConfetti } from '@/lib/confetti';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { latestWorkspacePath } from '@/lib/onboarding/last-workspace-cookie';
 import { syncSubscription } from '@kortix/sdk';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef } from 'react';
  * webhook has already done the real work server-side; all the client owes the
  * user is a refreshed wallet and an acknowledgement.
  *
- * This used to be two near-identical 25-line effects inlined in the projects
+ * This used to be two near-identical 25-line effects inlined in the workspaces
  * LIST page — which is why every checkout return had to land on `/projects`,
  * the one place in the product that is deliberately never a destination. The
  * handling is route-independent now (mounted once in the `(app)` layout), so a
@@ -68,7 +68,7 @@ export const BILLING_RETURN_PARAMS: readonly string[] = RETURNS.map((r) => r.par
  * Build the absolute `success_url` to hand Stripe.
  *
  * Producer and consumer live in one file on purpose. When the handling lived in
- * the projects page, "where does a checkout return land" was an implicit
+ * the workspaces page, "where does a checkout return land" was an implicit
  * consequence of where the effect happened to be mounted, and every producer
  * hardcoded `/projects` to match it. Now the destination is a decision, made
  * once, here: the user's latest project — never the list.
@@ -77,7 +77,7 @@ export function useBillingReturnUrl(): (param: BillingReturnParam) => string {
   const { user } = useAuth();
   return useCallback(
     (param: BillingReturnParam) => {
-      const url = new URL(latestProjectPath(user?.id), window.location.origin);
+      const url = new URL(latestWorkspacePath(user?.id), window.location.origin);
       url.searchParams.set(param, 'success');
       return url.toString();
     },

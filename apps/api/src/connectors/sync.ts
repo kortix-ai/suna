@@ -3,8 +3,8 @@ import {
   connectorActions,
   connectorPolicies,
   connectors,
-  connectorProjectPolicies,
-  connectorProjectSettings,
+  connectorWorkspacePolicies,
+  connectorWorkspaceSettings,
   projectSessionConnectorBindings,
   projects,
 } from '@kortix/db';
@@ -29,23 +29,23 @@ import {
   type ConnectorSpec,
   extractConnectors,
   manifestHashForConnector,
-} from '../projects/connectors';
-import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
-import { withProjectGitAuth } from '../projects/index';
-import { extractProjectPolicies } from '../projects/policies';
-import { extractTriggers, readManifest } from '../projects/triggers';
-import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
+} from '../workspaces/connectors';
+import { type GitBackedWorkspace, isRepoFileNotFoundError, readRepoFile } from '../workspaces/git';
+import { withWorkspaceGitAuth } from '../workspaces/index';
+import { extractWorkspacePolicies } from '../workspaces/policies';
+import { extractTriggers, readManifest } from '../workspaces/triggers';
+import { reconcileWorkspaceTriggerRuntime } from '../workspaces/trigger-runtime-catalog';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
 import { synthesizeComputerConnectors } from './computer-materialize';
-import { computerCatalog } from './computers';
+import { COMPUTER_SLUG, computerCatalog } from './computers';
 import { ensureDefaultConnection } from './credentials';
 import { parseResponseBody } from './call';
-import type { ProjectPolicySpec } from '../projects/policies';
-import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
+import type { WorkspacePolicySpec } from '../workspaces/policies';
+import { connectorConfig, toPolicyRows, toWorkspacePolicyRows } from './materialize';
 import {
   normalizeGraphql,
   normalizeHttp,
@@ -55,6 +55,7 @@ import {
   normalizePostmanCollection,
 } from './normalize';
 import { browsePipedreamApps, pipedreamCatalog, pipedreamConfigured } from './pipedream';
+import type { PolicyAction } from './policy';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
 import { parseSpecDocument } from './spec-doc';
 import {
@@ -69,6 +70,32 @@ import type { HttpRouteSpec, NormalizedAction } from './types';
 export interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
+}
+
+/**
+ * Replace policies on one synthetic computer profile.
+ *
+ * Computer profiles have no manifest entry, but connector policy tables still
+ * keep the same single writer as manifest-derived connectors: this materializer.
+ */
+export async function setMaterializedComputerConnectorPolicies(
+  connectorId: string,
+  policies: Array<{ match: string; action: PolicyAction }>,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, connectorId));
+    if (policies.length > 0) {
+      await tx.insert(connectorPolicies).values(
+        policies.map((policy, position) => ({
+          connectorId,
+          match: policy.match,
+          action: policy.action,
+          position,
+          conditions: null,
+        })),
+      );
+    }
+  });
 }
 
 function connectorAuthTimeoutMs(): number {
@@ -89,16 +116,16 @@ const EMPTY_AUTH_DISCOVERY: ConnectorAuthDiscovery = {
 };
 
 export async function discoverDraftConnectorAuth(
-  projectId: string,
+  workspaceId: string,
   draft: Record<string, unknown>,
 ): Promise<ConnectorAuthDiscovery> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projects).where(eq(projects.workspaceId, workspaceId)).limit(1);
   if (!row) throw new Error('project not found');
-  return discoverConnectorAuthFromSource(await withProjectGitAuth(row), draft);
+  return discoverConnectorAuthFromSource(await withWorkspaceGitAuth(row), draft);
 }
 
 async function discoverConnectorAuthFromSource(
-  project: GitBackedProject,
+  project: GitBackedWorkspace,
   draft: Record<string, unknown>,
 ): Promise<ConnectorAuthDiscovery> {
   const provider = typeof draft.provider === 'string' ? draft.provider.toLowerCase() : '';
@@ -173,7 +200,12 @@ async function discoverConnectorAuthFromSource(
           },
           body:
             provider === 'mcp'
-              ? JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
+              ? JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: 1,
+                  method: 'tools/list',
+                  params: {},
+                })
               : JSON.stringify({ query: 'query{__typename}' }),
         }
       : { method: 'HEAD', headers: { Accept: 'application/json, */*' } },
@@ -194,40 +226,40 @@ async function discoverConnectorAuthFromSource(
  * keeps working. Never throws: a hiccup must not fail the install/uninstall.
  */
 export async function reconcileChannelConnectors(
-  projectId: string,
+  workspaceId: string,
   removed?: { platform: 'email'; slug: string },
 ): Promise<void> {
   try {
     const [row] = await db
       .select({ accountId: projects.accountId, metadata: projects.metadata })
       .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .where(eq(projects.workspaceId, workspaceId))
       .limit(1);
     if (!row) return;
-    const slackInstalled = (await loadSlackInstall(projectId).catch(() => null)) != null;
-    if (slackInstalled) await ensureChannelConnectorDeclared(projectId, 'slack');
-    else await removeChannelConnectorDeclared(projectId, 'slack');
+    const slackInstalled = (await loadSlackInstall(workspaceId).catch(() => null)) != null;
+    if (slackInstalled) await ensureChannelConnectorDeclared(workspaceId, 'slack');
+    else await removeChannelConnectorDeclared(workspaceId, 'slack');
 
     const emailEnabled = resolveFeatureFlag(row.metadata, 'agentmail_email');
     if (removed?.platform === 'email' || !emailEnabled) {
-      await removeChannelConnectorDeclared(projectId, 'email', removed?.slug);
+      await removeChannelConnectorDeclared(workspaceId, 'email', removed?.slug);
     }
     if (emailEnabled) {
-      const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
+      const emailInstalls = await listAgentMailInstalls(workspaceId).catch(() => []);
       for (const install of emailInstalls) {
         await ensureChannelConnectorDeclared(
-          projectId,
+          workspaceId,
           'email',
           install.connectionSlug,
           install.displayName || install.email || 'Email',
         );
       }
-      if (emailInstalls.length === 0) await removeChannelConnectorDeclared(projectId, 'email');
+      if (emailInstalls.length === 0) await removeChannelConnectorDeclared(workspaceId, 'email');
     }
-    await syncProjectConnectors(projectId, row.accountId);
+    await syncWorkspaceConnectors(workspaceId, row.accountId);
   } catch (e) {
     console.warn('[connector] channel connector reconcile failed', {
-      projectId,
+      workspaceId,
       err: (e as Error).message,
     });
   }
@@ -236,21 +268,19 @@ export async function reconcileChannelConnectors(
 /**
  * Best-effort re-materialization after a tunnel (computer) changes for an
  * ACCOUNT (machine connected / removed). Tunnels are account-scoped but
- * connectors are project-scoped, so the single `computer` connector must be
- * (un)materialized across every project of the account — fan out a sync to each.
- * The connector exists iff the account has ≥1 machine, so this is idempotent.
+ * connectors are project-scoped, so every machine profile must be reconciled
+ * across every project of the account. Each profile exists iff its tunnel has
+ * completed a handshake, so this is idempotent.
  * Never throws: a sync hiccup must not fail the connect/remove request.
- * (Machines coming/going *within* an existing connector need no resync —
- * `list_computers` is always live.)
  */
 export async function reconcileComputerConnectors(accountId: string): Promise<void> {
   try {
     const rows = await db
-      .select({ projectId: projects.projectId })
+      .select({ workspaceId: projects.workspaceId })
       .from(projects)
       .where(eq(projects.accountId, accountId));
     for (const r of rows) {
-      await syncProjectConnectors(r.projectId, accountId);
+      await syncWorkspaceConnectors(r.workspaceId, accountId);
     }
   } catch (e) {
     console.warn('[connector] computer connector reconcile failed', {
@@ -283,22 +313,26 @@ interface ResolvedCatalog {
  * Materialize a project's connectors from its manifest. Loads the project +
  * git auth (so private repos resolve), reads kortix.yaml, then upserts.
  */
-export async function syncProjectConnectors(
-  projectId: string,
+export async function syncWorkspaceConnectors(
+  workspaceId: string,
   _accountId: string,
   opts: SyncOptions = {},
 ): Promise<SyncResult> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
-  if (!row) return { synced: 0, errors: [{ slug: '(project)', error: 'project not found' }] };
+  const [row] = await db.select().from(projects).where(eq(projects.workspaceId, workspaceId)).limit(1);
+  if (!row)
+    return {
+      synced: 0,
+      errors: [{ slug: '(project)', error: 'project not found' }],
+    };
   const accountId = row.accountId;
 
   const errors: SyncResult['errors'] = [];
-  let gitProject: GitBackedProject = row;
+  let gitWorkspace: GitBackedWorkspace = row;
   try {
-    gitProject = await withTimeout(
-      withProjectGitAuth(row),
+    gitWorkspace = await withTimeout(
+      withWorkspaceGitAuth(row),
       connectorAuthTimeoutMs(),
-      `resolve git auth ${projectId}`,
+      `resolve git auth ${workspaceId}`,
     );
   } catch (error) {
     errors.push({
@@ -310,9 +344,9 @@ export async function syncProjectConnectors(
   let manifest: Awaited<ReturnType<typeof readManifest>> = null;
   try {
     manifest = await withTimeout(
-      readManifest(gitProject),
+      readManifest(gitWorkspace),
       connectorManifestTimeoutMs(),
-      `read manifest ${projectId}`,
+      `read manifest ${workspaceId}`,
     );
   } catch (error) {
     errors.push({
@@ -328,19 +362,19 @@ export async function syncProjectConnectors(
   let declaredSpecs: ConnectorSpec[] = [];
   if (manifest) {
     const triggers = extractTriggers(manifest);
-    await reconcileProjectTriggerRuntime(projectId, triggers.specs);
+    await reconcileWorkspaceTriggerRuntime(workspaceId, triggers.specs);
     errors.push(...triggers.errors.map((e) => ({ slug: e.slug, error: e.error })));
 
     const parsed = extractConnectors(manifest);
     declaredSpecs = parsed.specs;
     errors.push(...parsed.errors.map((e) => ({ slug: e.slug, error: e.error })));
 
-    // Project-level policies + settings — separate scope, reconciled (cheap).
-    const projectPoliciesParsed = extractProjectPolicies(manifest);
+    // Workspace-level policies + settings — separate scope, reconciled (cheap).
+    const projectPoliciesParsed = extractWorkspacePolicies(manifest);
     for (const e of projectPoliciesParsed.errors) {
       errors.push({ slug: '(policies)', error: e.error });
     }
-    await reconcileProjectPolicies(projectId, projectPoliciesParsed);
+    await reconcileWorkspacePolicies(workspaceId, projectPoliciesParsed);
   }
 
   // Channel connectors (e.g. Slack) are INSTALL-driven, not manifest-driven:
@@ -348,11 +382,11 @@ export async function syncProjectConnectors(
   // the project has no readable kortix.yaml — "connect Slack → the `slack`
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
-  const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
-  // Computer connector (the Agent Computer Tunnel) is install-driven the same
-  // way: a single synthetic connector when the account has a connected machine.
+  const channelSpecs = await synthesizeChannelConnectors(workspaceId, declaredSpecs);
+  // Computer connectors are install-driven the same way: one synthetic profile
+  // for each machine that has completed a tunnel handshake.
   // A regular connector — no experimental opt-in — also manifest-independent.
-  const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
+  const computerSpecs = await synthesizeComputerConnectors(workspaceId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
 
   // No readable manifest AND nothing installed → bail WITHOUT deleting (a
@@ -373,7 +407,7 @@ export async function syncProjectConnectors(
       providerType: connectors.providerType,
     })
     .from(connectors)
-    .where(eq(connectors.projectId, projectId));
+    .where(eq(connectors.workspaceId, workspaceId));
   const existingBySlug = new Map(existing.map((e) => [e.slug, e]));
   const desiredSlugs = new Set(specs.map((s) => s.slug));
 
@@ -384,11 +418,14 @@ export async function syncProjectConnectors(
       if (sourceSpec.authAuto) {
         try {
           const discovery = await discoverConnectorAuthFromSource(
-            gitProject,
+            gitWorkspace,
             sourceSpec as unknown as Record<string, unknown>,
           );
           if (discovery.recommended) {
-            spec = { ...sourceSpec, auth: { ...discovery.recommended, secret: null } };
+            spec = {
+              ...sourceSpec,
+              auth: { ...discovery.recommended, secret: null },
+            };
           }
           if (discovery.status === 'unsupported') {
             errors.push({
@@ -426,9 +463,10 @@ export async function syncProjectConnectors(
         !!ex &&
         ex.status !== 'error' &&
         spec.provider !== 'channel' &&
+        spec.provider !== 'computer' &&
         ex.manifestHash === manifestHashForConnector(spec);
-      const catalog = catalogUnchanged ? null : await resolveCatalog(gitProject, spec);
-      await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);
+      const catalog = catalogUnchanged ? null : await resolveCatalog(gitWorkspace, spec);
+      await upsertConnector(workspaceId, accountId, spec, catalog, ex?.connectorId ?? null);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
       synced++;
     } catch (e) {
@@ -436,7 +474,7 @@ export async function syncProjectConnectors(
     }
   }
 
-  await reconcileEmailConnections(projectId, accountId);
+  await reconcileEmailConnections(workspaceId, accountId);
 
   // Reconcile deletions. When the manifest is readable it's the source of truth
   // for declared connectors — drop any it no longer lists (channel specs are in
@@ -452,14 +490,22 @@ export async function syncProjectConnectors(
         .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
         .limit(1);
       if (bound) {
-        await db
-          .update(connectors)
-          .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
-          .where(eq(connectors.connectorId, e.connectorId));
+        if (e.providerType === 'computer' && e.slug === COMPUTER_SLUG) {
+          // Existing sessions can remain durably bound to the retired aggregate
+          // connector. DB-backed catalog and call resolution expose this row only
+          // to a session with an exact durable binding.
+          await db
+            .update(connectors)
+            .set({ enabled: true, status: 'active', updatedAt: new Date() })
+            .where(eq(connectors.connectorId, e.connectorId));
+        } else {
+          await db
+            .update(connectors)
+            .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
+            .where(eq(connectors.connectorId, e.connectorId));
+        }
       } else {
-        await db
-          .delete(connectors)
-          .where(eq(connectors.connectorId, e.connectorId));
+        await db.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
       }
     }
   }
@@ -468,20 +514,21 @@ export async function syncProjectConnectors(
 }
 
 export async function reconcileEmailConnections(
-  projectId: string,
+  workspaceId: string,
   accountId: string,
 ): Promise<void> {
-  const installs = await listAgentMailInstalls(projectId).catch(() => []);
+  const installs = await listAgentMailInstalls(workspaceId).catch(() => []);
   const canonicalSlug = channelDefaultSlug('email');
   const [connector] = await db
     .select({ connectorId: connectors.connectorId })
     .from(connectors)
-    .where(
-      and(eq(connectors.projectId, projectId), eq(connectors.slug, canonicalSlug)),
-    )
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, canonicalSlug)))
     .limit(1);
   if (!connector) return;
-  await ensureDefaultConnection({ projectId, connectorId: connector.connectorId });
+  await ensureDefaultConnection({
+    workspaceId,
+    connectorId: connector.connectorId,
+  });
   const activeOwnerIds = new Set(installs.map((install) => `agentmail:${install.inboxId}`));
   const existingEmailConnections = await db
     .select({
@@ -536,7 +583,7 @@ export async function reconcileEmailConnections(
     } else {
       await db.insert(connectorConnections).values({
         accountId,
-        projectId,
+        workspaceId,
         connectorId: connector.connectorId,
         ownerType: 'external',
         ownerId,
@@ -556,12 +603,13 @@ export async function reconcileEmailConnections(
  * toggled `enabled` or tweaked policies still lands without a network round-trip.
  */
 async function upsertConnector(
-  projectId: string,
+  workspaceId: string,
   accountId: string,
   spec: ConnectorSpec,
   catalog: ResolvedCatalog | null,
   existingId: string | null,
 ): Promise<void> {
+  const isNew = !existingId;
   const manifestHash = manifestHashForConnector(spec);
   const status = catalog?.error ? 'error' : spec.enabled ? 'active' : 'disabled';
   // New connector definitions never carry a secret reference. An existing
@@ -584,6 +632,21 @@ async function upsertConnector(
     updatedAt: new Date(),
   } as const;
 
+  let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
+  // Computer profiles are synthetic. Their sensitive flag is edited in the
+  // database, so preserve it when a lifecycle reconcile refreshes the native
+  // catalog and bound tunnel config.
+  if (resolvedConfig && spec.provider === 'computer' && existingId) {
+    const [stored] = await db
+      .select({ config: connectors.config })
+      .from(connectors)
+      .where(eq(connectors.connectorId, existingId))
+      .limit(1);
+    if ((stored?.config as { sensitive?: unknown } | null)?.sensitive === true) {
+      resolvedConfig = { ...resolvedConfig, sensitive: true };
+    }
+  }
+
   let connectorId = existingId;
   if (connectorId) {
     // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
@@ -598,7 +661,10 @@ async function upsertConnector(
       .update(connectors)
       .set(
         catalog
-          ? { ...common, config: connectorConfig(spec, catalog.server, catalog.iconUrl) }
+          ? {
+              ...common,
+              config: resolvedConfig!,
+            }
           : { ...common, config: sensitivePatch },
       )
       .where(eq(connectors.connectorId, connectorId));
@@ -609,26 +675,24 @@ async function upsertConnector(
       .insert(connectors)
       .values({
         accountId,
-        projectId,
+        workspaceId,
         slug: spec.slug,
         ...common,
         authSecret,
-        config: connectorConfig(spec, catalog?.server ?? null, catalog?.iconUrl),
+        config: resolvedConfig ?? connectorConfig(spec, null, catalog?.iconUrl),
       })
       .returning({ connectorId: connectors.connectorId });
     connectorId = created!.connectorId;
   }
 
   if (spec.authorizationStrategy === 'project') {
-    await ensureDefaultConnection({ projectId, connectorId });
+    await ensureDefaultConnection({ workspaceId, connectorId });
   }
 
   // Actions only change when the catalog was re-resolved — leave them in place
   // on a cheap reconcile.
   if (catalog) {
-    await db
-      .delete(connectorActions)
-      .where(eq(connectorActions.connectorId, connectorId));
+    await db.delete(connectorActions).where(eq(connectorActions.connectorId, connectorId));
     if (catalog.actions.length > 0) {
       const rows = catalog.actions.map((a) => ({
         connectorId: connectorId!,
@@ -646,27 +710,47 @@ async function upsertConnector(
     }
   }
 
-  // Policies gate calls (not part of the catalog hash) — always reconcile; cheap.
-  await db
-    .delete(connectorPolicies)
-    .where(eq(connectorPolicies.connectorId, connectorId));
-  const policyRows = toPolicyRows(spec);
-  if (policyRows.length > 0) {
-    await db.insert(connectorPolicies).values(
-      policyRows.map((p) => ({
-        connectorId: connectorId!,
-        match: p.match,
-        action: p.action,
-        position: p.position,
-        conditions: p.conditions ?? null,
-      })),
-    );
+  // Computer profiles have no manifest entry. Their policies are edited on the
+  // materialized connector and must survive rename/heartbeat reconciliation.
+  if (spec.provider !== 'computer' || isNew) {
+    await db.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, connectorId));
+    const policyRows = toPolicyRows(spec);
+    if (policyRows.length > 0) {
+      await db.insert(connectorPolicies).values(
+        policyRows.map((p) => ({
+          connectorId: connectorId!,
+          match: p.match,
+          action: p.action,
+          position: p.position,
+          conditions: p.conditions ?? null,
+        })),
+      );
+    }
   }
+}
+
+/** Materialize one platform-managed Computers profile without writing kortix.yaml. */
+export async function materializeComputerConnectorProfile(input: {
+  workspaceId: string;
+  accountId: string;
+  spec: ConnectorSpec;
+  existingId: string | null;
+}): Promise<void> {
+  if (input.spec.provider !== 'computer') {
+    throw new Error('computer profile materialization requires provider="computer"');
+  }
+  await upsertConnector(
+    input.workspaceId,
+    input.accountId,
+    input.spec,
+    { actions: computerCatalog(), server: null },
+    input.existingId,
+  );
 }
 
 /** Fetch + normalize a connector's catalog. Best-effort; never throws. */
 export async function resolveCatalog(
-  project: GitBackedProject,
+  project: GitBackedWorkspace,
   spec: ConnectorSpec,
 ): Promise<ResolvedCatalog> {
   try {
@@ -709,7 +793,10 @@ export async function resolveCatalog(
       }
       case 'graphql': {
         const introspection = await introspectGraphql(spec.endpoint!);
-        return { actions: normalizeGraphql(introspection), server: spec.endpoint };
+        return {
+          actions: normalizeGraphql(introspection),
+          server: spec.endpoint,
+        };
       }
       case 'mcp': {
         const tools = await listMcpTools(spec.url!);
@@ -719,7 +806,10 @@ export async function resolveCatalog(
         if (!pipedreamConfigured() || !spec.app) return { actions: [], server: null };
         const [raw, apps] = await Promise.all([
           pipedreamCatalog(spec.app),
-          browsePipedreamApps(spec.app).catch(() => ({ apps: [], hasMore: false })),
+          browsePipedreamApps(spec.app).catch(() => ({
+            apps: [],
+            hasMore: false,
+          })),
         ]);
         return {
           actions: normalizePipedream(raw, spec.app),
@@ -736,7 +826,7 @@ export async function resolveCatalog(
       }
       case 'computer': {
         // Fixed, local catalog (the tunnel RPC method set) — no network, no
-        // server. Machines are resolved at call time, not from a base URL.
+        // server. The connector config binds the machine at materialization.
         return { actions: computerCatalog(), server: null };
       }
       default:
@@ -747,18 +837,20 @@ export async function resolveCatalog(
   }
 }
 
-async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any> {
+async function loadSpecDoc(project: GitBackedWorkspace, spec: string): Promise<any> {
   return parseSpecDocument(await loadSourceText(project, spec), spec);
 }
 
-async function loadSourceText(project: GitBackedProject, spec: string): Promise<string> {
+async function loadSourceText(project: GitBackedWorkspace, spec: string): Promise<string> {
   let raw: string;
   if (/^https?:\/\//i.test(spec)) {
     assertAllowedSourceAddress(spec);
     const res = await safeEgressFetch(spec, {
       // Signal we accept either form; servers that content-negotiate may hand
       // back JSON, but we parse whatever comes regardless.
-      headers: { accept: 'application/json, application/yaml, text/yaml, text/plain, */*' },
+      headers: {
+        accept: 'application/json, application/yaml, text/yaml, text/plain, */*',
+      },
     });
     if (!res.ok) {
       throw new Error(`failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`);
@@ -788,7 +880,10 @@ async function resolveGithubDefaultBranch(owner: string, repo: string): Promise<
   const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   assertAllowedSourceAddress(url);
   const response = await safeEgressFetch(url, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Kortix-Postman-Importer' },
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'Kortix-Postman-Importer',
+    },
   });
   if (!response.ok) throw new Error(`failed to inspect GitHub repository: HTTP ${response.status}`);
   const body = (await response.json()) as { default_branch?: unknown };
@@ -873,14 +968,17 @@ export function normalizePostmanDocuments(documents: PostmanSourceDocument[]): N
       const basePath = multi ? `${document.namespace}.${action.path}` : action.path;
       const count = seen.get(basePath) ?? 0;
       seen.set(basePath, count + 1);
-      actions.push({ ...action, path: count ? `${basePath}_${count + 1}` : basePath });
+      actions.push({
+        ...action,
+        path: count ? `${basePath}_${count + 1}` : basePath,
+      });
     }
   }
   return actions;
 }
 
 async function loadHttpRoutes(
-  project: GitBackedProject,
+  project: GitBackedWorkspace,
   spec: string | null,
 ): Promise<HttpRouteSpec[]> {
   if (!spec) return [];
@@ -924,21 +1022,21 @@ async function introspectGraphql(endpoint: string): Promise<any> {
  * source of truth, so we don't preserve DB-only edits). Cheap — runs every
  * sync, no network call.
  */
-async function reconcileProjectPolicies(
-  projectId: string,
+async function reconcileWorkspacePolicies(
+  workspaceId: string,
   parsed: {
-    policies: ProjectPolicySpec[];
+    policies: WorkspacePolicySpec[];
     settings: { defaultMode: 'risk' | 'allow_all' };
   },
 ): Promise<void> {
-  await db.delete(connectorProjectPolicies).where(eq(connectorProjectPolicies.projectId, projectId));
-  const rows = toProjectPolicyRows(parsed.policies);
+  await db
+    .delete(connectorWorkspacePolicies)
+    .where(eq(connectorWorkspacePolicies.workspaceId, workspaceId));
+  const rows = toWorkspacePolicyRows(parsed.policies);
   if (rows.length > 0) {
-    await db
-      .insert(connectorProjectPolicies)
-      .values(
+    await db.insert(connectorWorkspacePolicies).values(
       rows.map((p) => ({
-        projectId,
+        workspaceId,
         match: p.match,
         action: p.action,
         position: p.position,
@@ -952,15 +1050,15 @@ async function reconcileProjectPolicies(
   // view used during the physical connector-schema rename.
   const updateExisting = () =>
     db
-      .update(connectorProjectSettings)
+      .update(connectorWorkspaceSettings)
       .set({ defaultMode: parsed.settings.defaultMode, updatedAt: new Date() })
-      .where(eq(connectorProjectSettings.projectId, projectId))
-      .returning({ projectId: connectorProjectSettings.projectId });
+      .where(eq(connectorWorkspaceSettings.workspaceId, workspaceId))
+      .returning({ workspaceId: connectorWorkspaceSettings.workspaceId });
   if ((await updateExisting()).length > 0) return;
   try {
     await db
-      .insert(connectorProjectSettings)
-      .values({ projectId, defaultMode: parsed.settings.defaultMode });
+      .insert(connectorWorkspaceSettings)
+      .values({ workspaceId, defaultMode: parsed.settings.defaultMode });
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     if ((await updateExisting()).length === 0) throw error;
@@ -971,8 +1069,16 @@ async function listMcpTools(url: string): Promise<any[]> {
   assertAllowedSourceAddress(url);
   const res = await safeEgressFetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: {},
+    }),
   });
   // Streamable-HTTP MCP responds with SSE-framed JSON, not plain JSON.
   const json: any = parseResponseBody(await res.text());

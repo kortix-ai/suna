@@ -8,7 +8,7 @@ export interface AuditReconciliationResult {
 }
 
 /**
- * Project durable source ledgers that predate the canonical triggers.
+ * Workspace durable source ledgers that predate the canonical triggers.
  *
  * The query selects only missing `(source_ledger, source_record_id, phase)`
  * tuples. Repeated calls are idempotent and resumable. A bounded page prevents
@@ -164,10 +164,10 @@ export async function reconcileAuditEvents(
       UNION ALL
       SELECT t.account_id, t.project_id, t.session_id, NULL::text, t.actor_user_id,
              COALESCE(t.actor_type, CASE WHEN t.actor_user_id IS NULL THEN 'system' ELSE 'human' END),
-             NULL::text, NULL::text, NULL::text, 0::integer, 'computer', NULL::text,
+             NULL::text, NULL::text, NULL::text, 0::integer, 'connector', NULL::text,
              CASE WHEN t.phase = 'started' THEN 'pending'
                   WHEN t.success THEN 'success' ELSE 'failure' END,
-             'computer.' || t.operation, t.phase, 'computer_tunnel', t.tunnel_id::text,
+             'connector.computer.' || t.operation, t.phase, 'computer_tunnel', t.tunnel_id::text,
              t.log_id::text, NULL::text, NULL::text, 'tunnel_audit_logs', t.log_id::text,
              t.phase,
              jsonb_build_object(

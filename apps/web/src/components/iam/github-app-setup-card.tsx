@@ -255,7 +255,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
         <p className="text-muted-foreground text-xs">
           {status.configured
             ? 'Powers repository creation and pushes for this instance.'
-            : 'Every Kortix project is a git repository the server creates and pushes to on your behalf — connect GitHub to enable projects.'}
+            : 'Every Kortix workspace is a git repository the server creates and pushes to on your behalf — connect GitHub to enable workspaces.'}
         </p>
       </div>
 
@@ -401,11 +401,11 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                 <ul className="text-muted-foreground list-disc space-y-0.5 pl-4">
                   <li>
                     <span className="text-foreground">Resource owner</span>: the user or org that
-                    should own project repos — must match the owner field below.
+                    should own workspace repos — must match the owner field below.
                   </li>
                   <li>
                     <span className="text-foreground">Repository access</span>: All repositories —
-                    Kortix creates a new repo per project, so a fixed repo list can&apos;t cover
+                    Kortix creates a new repo per workspace, so a fixed repo list can&apos;t cover
                     future ones.
                   </li>
                   <li>
@@ -516,7 +516,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
         open={confirmDisconnectOpen}
         onOpenChange={setConfirmDisconnectOpen}
         title="Disconnect GitHub?"
-        description="Projects that already have a repo keep working, but Kortix won't be able to create new managed repos until you reconnect."
+        description="Workspaces that already have a repo keep working, but Kortix won't be able to create new managed repos until you reconnect."
         confirmLabel="Disconnect"
         confirmVariant="destructive"
         onConfirm={() => disconnectMutation.mutate()}

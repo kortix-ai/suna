@@ -14,67 +14,73 @@ import {
   stopApp,
   updateApp,
   updateAppAccess,
-} from '../core/rest/projects-client';
+} from '../core/rest/workspaces-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
-export const projectAppsKey = (projectId: string | null | undefined) =>
-  qk.project.apps(projectId ?? '');
+export const workspaceAppsKey = (workspaceId: string | null | undefined) =>
+  qk.workspace.apps(workspaceId ?? '');
+
+/** @deprecated Use `workspaceAppsKey`. */
+export const projectAppsKey = workspaceAppsKey;
 
 export const appDeploymentsKey = (
-  projectId: string | null | undefined,
+  workspaceId: string | null | undefined,
   appId: string | null | undefined,
-) => qk.project.appDeployments(projectId ?? '', appId ?? '');
+) => qk.workspace.appDeployments(workspaceId ?? '', appId ?? '');
 
-/** Project App inventory and lifecycle mutations. */
-export function useProjectApps(projectId: string | null | undefined) {
+/** Workspace App inventory and lifecycle mutations. */
+export function useWorkspaceApps(workspaceId: string | null | undefined) {
   const queryClient = useQueryClient();
-  const queryKey = projectAppsKey(projectId);
+  const queryKey = workspaceAppsKey(workspaceId);
   const query = useQuery({
     queryKey,
-    queryFn: () => listApps(projectId as string),
-    enabled: !!projectId,
+    queryFn: () => listApps(workspaceId as string),
+    enabled: !!workspaceId,
     ...contract('inventory'),
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const create = useMutation({
-    mutationFn: (input: Parameters<typeof createApp>[1]) => createApp(projectId as string, input),
+    mutationFn: (input: Parameters<typeof createApp>[1]) => createApp(workspaceId as string, input),
     onSuccess: invalidate,
   });
   const update = useMutation({
     mutationFn: (args: { appId: string; input: Parameters<typeof updateApp>[2] }) =>
-      updateApp(projectId as string, args.appId, args.input),
+      updateApp(workspaceId as string, args.appId, args.input),
     onSuccess: invalidate,
   });
   const start = useMutation({
-    mutationFn: (appId: string) => startApp(projectId as string, appId),
+    mutationFn: (appId: string) => startApp(workspaceId as string, appId),
     onSuccess: invalidate,
   });
   const stop = useMutation({
-    mutationFn: (appId: string) => stopApp(projectId as string, appId),
+    mutationFn: (appId: string) => stopApp(workspaceId as string, appId),
     onSuccess: invalidate,
   });
   const remove = useMutation({
-    mutationFn: (appId: string) => deleteApp(projectId as string, appId),
+    mutationFn: (appId: string) => deleteApp(workspaceId as string, appId),
     onSuccess: invalidate,
   });
 
   return { ...query, create, update, start, stop, remove };
 }
 
+/** @deprecated Use `useWorkspaceApps`. */
+export const useProjectApps = useWorkspaceApps;
+
 /** Immutable deployment history and deployment-specific mutations. */
 export function useAppDeployments(
-  projectId: string | null | undefined,
+  workspaceId: string | null | undefined,
   appId: string | null | undefined,
 ) {
   const queryClient = useQueryClient();
-  const queryKey = appDeploymentsKey(projectId, appId);
-  const appsKey = projectAppsKey(projectId);
+  const queryKey = appDeploymentsKey(workspaceId, appId);
+  const appsKey = workspaceAppsKey(workspaceId);
   const query = useQuery({
     queryKey,
-    queryFn: () => listAppDeployments(projectId as string, appId as string),
-    enabled: !!projectId && !!appId,
+    queryFn: () => listAppDeployments(workspaceId as string, appId as string),
+    enabled: !!workspaceId && !!appId,
     ...contract('inventory'),
     refetchInterval: 5_000,
   });
@@ -85,12 +91,12 @@ export function useAppDeployments(
 
   const deploy = useMutation({
     mutationFn: (input: Parameters<typeof createAppDeployment>[2]) =>
-      createAppDeployment(projectId as string, appId as string, input),
+      createAppDeployment(workspaceId as string, appId as string, input),
     onSuccess: invalidate,
   });
   const rollback = useMutation({
     mutationFn: (deploymentId: string) =>
-      rollbackApp(projectId as string, appId as string, deploymentId),
+      rollbackApp(workspaceId as string, appId as string, deploymentId),
     onSuccess: invalidate,
   });
 
@@ -99,34 +105,34 @@ export function useAppDeployments(
 
 /** App access policy plus a short-lived URL that exchanges into a host-only cookie. */
 export function useAppAccess(
-  projectId: string | null | undefined,
+  workspaceId: string | null | undefined,
   appId: string | null | undefined,
 ) {
   const queryClient = useQueryClient();
-  const queryKey = qk.project.appAccess(projectId ?? '', appId ?? '');
-  const sessionQueryKey = qk.project.appAccessSession(projectId ?? '', appId ?? '');
+  const queryKey = qk.workspace.appAccess(workspaceId ?? '', appId ?? '');
+  const sessionQueryKey = qk.workspace.appAccessSession(workspaceId ?? '', appId ?? '');
   const policy = useQuery({
     queryKey,
-    queryFn: () => getAppAccess(projectId as string, appId as string),
-    enabled: !!projectId && !!appId,
+    queryFn: () => getAppAccess(workspaceId as string, appId as string),
+    enabled: !!workspaceId && !!appId,
     ...contract('config'),
   });
   const session = useQuery({
     queryKey: sessionQueryKey,
-    queryFn: () => createAppAccessSession(projectId as string, appId as string),
-    enabled: !!projectId && !!appId,
+    queryFn: () => createAppAccessSession(workspaceId as string, appId as string),
+    enabled: !!workspaceId && !!appId,
     staleTime: 4 * 60_000,
     gcTime: 5 * 60_000,
     retry: false,
   });
   const update = useMutation({
     mutationFn: (input: Parameters<typeof updateAppAccess>[2]) =>
-      updateAppAccess(projectId as string, appId as string, input),
+      updateAppAccess(workspaceId as string, appId as string, input),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey }),
         queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
-        queryClient.invalidateQueries({ queryKey: qk.project.apps(projectId ?? '') }),
+        queryClient.invalidateQueries({ queryKey: qk.workspace.apps(workspaceId ?? '') }),
       ]);
     },
   });

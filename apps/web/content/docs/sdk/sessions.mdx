@@ -6,13 +6,13 @@ description: Run a session, stream its events, and handle the errors it can thro
 import { Callout } from 'fumadocs-ui/components/callout';
 
 A session is one agent run, in its own sandbox, on its own git branch.
-`kortix.session(projectId, sessionId)` returns the handle for everything a
+`kortix.session(workspaceId, sessionId)` returns the handle for everything a
 session does: start it, send prompts, stream events, and read status. This
 page covers the handle, the readiness handshake, streaming, and the typed
 errors an SDK call can throw.
 
 ```ts
-const s = kortix.session(projectId, sessionId);
+const s = kortix.session(workspaceId, sessionId);
 ```
 
 `s` is the handle for everything a session does. The session ID, the sandbox
@@ -23,7 +23,7 @@ ID, and the branch name are the same value. See
 
 | Method | Wraps | What it does |
 |---|---|---|
-| `s.get(opts?)` | `GET /projects/:pid/sessions/:sid` | Reads session details |
+| `s.get(opts?)` | `GET /workspaces/:pid/sessions/:sid` | Reads session details |
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
@@ -45,7 +45,7 @@ Three more read methods round out the handle:
 - `s.previews()` — candidate preview ports the runtime exposes.
 - `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
 - `s.audit(limit?)` — the session's audit trail of agent actions.
-- `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a project-scoped session token.
+- `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a workspace-scoped session token.
 - `s.voiceTranscript(options?)` — this session's live voice-call transcript (spoken turns plus `ask_kortix`/`run_command` worker tool calls). Returns an empty list when the session has no live call, not a 404.
 
 ## Readiness is a handshake
@@ -69,7 +69,7 @@ A server-rendered React host can supply the OpenCode pin already persisted for
 the same Kortix session:
 
 ```tsx
-const session = useSession(projectId, sessionId, {
+const session = useSession(workspaceId, sessionId, {
   initialOpenCodeSessionId: persistedSession.opencode_session_id,
 });
 ```
@@ -115,7 +115,7 @@ const { applied_live } = await s.changeModel('anthropic/claude-opus-4-8');
 
 Restarting the runtime is how the change takes effect, so an in-flight turn ends.
 `applied_live` is `true` when a running session took it now, `false` when it
-applies at the next start. Only the session owner or a project manager may change
+applies at the next start. Only the session owner or a workspace manager may change
 the model; anyone else gets `403`.
 
 `send()` resolves the runtime, then prompts it. `abort()` stops the current
@@ -196,7 +196,7 @@ Stream a session:
 4. Close the stream when you see `session.idle`.
 
 ```ts
-const session = kortix.session(projectId, sessionId);
+const session = kortix.session(workspaceId, sessionId);
 const { opencodeSessionId } = await session.ensureReady();
 
 const stream = await session.stream({
@@ -298,21 +298,21 @@ await s.runtime.session.prompt({
 ```
 
 The OpenCode `sessionID` here is not the session ID you pass to
-`kortix.session(projectId, sessionId)`. The SDK resolves it during
+`kortix.session(workspaceId, sessionId)`. The SDK resolves it during
 `ensureReady()` and caches it on the handle.
 
-## Warm a project session
+## Warm a workspace session
 
-Use the server-owned warm-session operations when a project landing page needs
+Use the server-owned warm-session operations when a workspace landing page needs
 one empty runtime before the first prompt.
 
 ```ts
-const project = kortix.project(projectId);
-const warm = await project.sessions.ensureWarm();
+const workspace = kortix.workspace(workspaceId);
+const warm = await workspace.sessions.ensureWarm();
 
-await kortix.session(projectId, warm.session.session_id).ensureReady();
+await kortix.session(workspaceId, warm.session.session_id).ensureReady();
 
-const claimed = await project.sessions.claimWarm({
+const claimed = await workspace.sessions.claimWarm({
   session_id: warm.session.session_id,
   agent_name: selectedAgent,
   sandbox_slug: selectedSandbox,
@@ -334,7 +334,7 @@ never a plain object. Catch the error, check `instanceof`, and branch on
 import { ApiError, BillingError } from '@kortix/sdk';
 
 try {
-  await kortix.project(projectId).sessions.create();
+  await kortix.workspace(workspaceId).sessions.create();
 } catch (err) {
   if (err instanceof BillingError) {
     // 402 — out of credits or over a plan limit
@@ -380,7 +380,7 @@ Two errors mean the session's sandbox is not ready yet. Handle each one differen
 ```ts
 import { SessionNotReadyError } from '@kortix/sdk';
 
-const s = kortix.session(projectId, sessionId);
+const s = kortix.session(workspaceId, sessionId);
 try {
   const url = s.previewUrl(3000); // throws: not resolved yet
 } catch (err) {
@@ -406,7 +406,7 @@ Call `await session.ensureReady()` first, or call `send()`, which readies the se
 import { formatBillingErrorForUI } from '@kortix/sdk';
 
 try {
-  await kortix.session(projectId, sessionId).start();
+  await kortix.session(workspaceId, sessionId).start();
 } catch (err) {
   const ui = formatBillingErrorForUI(err);
   if (ui) showUpgradeModal(ui.alertTitle, ui.alertSubtitle);
@@ -429,7 +429,7 @@ interface KortixSendError {
 ```
 
 ```tsx
-const s = useSession(projectId, sessionId);
+const s = useSession(workspaceId, sessionId);
 
 if (s.sendError?.kind === 'billing') {
   const ui = formatBillingErrorForUI(s.sendError.billing);

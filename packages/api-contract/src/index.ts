@@ -115,6 +115,9 @@ export type ExperimentalFeatureView = FeatureFlagView;
 export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
+/** Canonical domain name. ProjectRole remains a compatibility export. */
+export const WorkspaceRoleSchema = ProjectRoleSchema;
+export type WorkspaceRole = ProjectRole;
 
 /** Every sandbox provider the current platform can select or emit. */
 export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
@@ -135,6 +138,16 @@ export const SharingIntentSchema = z.discriminatedUnion('mode', [
   }),
 ]);
 export type SharingIntent = z.infer<typeof SharingIntentSchema>;
+export const WorkspaceSharingIntentSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('workspace') }),
+  z.object({ mode: z.literal('private'), ownerId: z.string() }),
+  z.object({
+    mode: z.literal('members'),
+    memberIds: z.array(z.string()).readonly().optional(),
+    groupIds: z.array(z.string()).readonly().optional(),
+  }),
+]);
+export type WorkspaceSharingIntent = z.infer<typeof WorkspaceSharingIntentSchema>;
 
 /** A project as serialized by `serializeProject`. */
 export const ProjectSchema = z.object({
@@ -168,6 +181,19 @@ export const ProjectSchema = z.object({
   available_sandbox_providers: z.array(SandboxProviderSchema),
 });
 export type Project = z.infer<typeof ProjectSchema>;
+/** Canonical domain name. Project remains a compatibility export. */
+export const WorkspaceSchema = ProjectSchema.omit({
+  project_id: true,
+  project_role: true,
+  effective_project_role: true,
+}).extend({
+  workspace_id: z.string(),
+  /** Explicit project_members role, or null when access is inherited. */
+  workspace_role: WorkspaceRoleSchema.nullable(),
+  /** UI label for the caller's effective role (not an auth decision). */
+  effective_workspace_role: WorkspaceRoleSchema.nullable(),
+});
+export type Workspace = z.infer<typeof WorkspaceSchema>;
 
 export const SESSION_STATUSES = [
   'queued',
@@ -184,6 +210,8 @@ export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 export const SESSION_VISIBILITIES = ['private', 'project', 'restricted'] as const;
 export const SessionVisibilitySchema = z.enum(SESSION_VISIBILITIES);
 export type SessionVisibility = z.infer<typeof SessionVisibilitySchema>;
+export const WorkspaceSessionVisibilitySchema = z.enum(['private', 'workspace', 'restricted']);
+export type WorkspaceSessionVisibility = z.infer<typeof WorkspaceSessionVisibilitySchema>;
 
 /**
  * Non-secret, wrapper-supplied context attached durably to one Kortix session.
@@ -307,6 +335,10 @@ export type SessionSecretsAllowlist = z.infer<typeof SessionSecretsAllowlistSche
 
 export const ConnectorAuthorizationStrategySchema = z.enum(['project', 'user']);
 export type ConnectorAuthorizationStrategy = z.infer<typeof ConnectorAuthorizationStrategySchema>;
+export const WorkspaceConnectorAuthorizationStrategySchema = z.enum(['workspace', 'user']);
+export type WorkspaceConnectorAuthorizationStrategy = z.infer<
+  typeof WorkspaceConnectorAuthorizationStrategySchema
+>;
 
 /**
  * Connector aliases a session REQUIRES, whether or not anything is connected.
@@ -392,6 +424,21 @@ export type ConnectorConnectionRequiredError = z.infer<
   typeof ConnectorConnectionRequiredErrorSchema
 >;
 
+export const WorkspaceRequiredConnectorConnectionSchema =
+  RequiredConnectorConnectionSchema.omit({ authorization_strategy: true }).extend({
+    authorization_strategy: WorkspaceConnectorAuthorizationStrategySchema,
+  });
+export type WorkspaceRequiredConnectorConnection = z.infer<
+  typeof WorkspaceRequiredConnectorConnectionSchema
+>;
+export const WorkspaceConnectorConnectionRequiredErrorSchema =
+  ConnectorConnectionRequiredErrorSchema.omit({ connector_connections: true }).extend({
+    connector_connections: z.array(WorkspaceRequiredConnectorConnectionSchema).min(1),
+  });
+export type WorkspaceConnectorConnectionRequiredError = z.infer<
+  typeof WorkspaceConnectorConnectionRequiredErrorSchema
+>;
+
 export const ConnectionOwnerTypeSchema = z.enum([
   'agent',
   'member',
@@ -438,6 +485,10 @@ export const ConnectionSchema = z.object({
   metadata: ConnectionMetadataSchema,
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
+export const WorkspaceConnectionSchema = ConnectionSchema.omit({ owner_type: true }).extend({
+  owner_type: z.enum(['workspace', 'agent', 'member', 'subject', 'external']),
+});
+export type WorkspaceConnection = z.infer<typeof WorkspaceConnectionSchema>;
 
 export const ReconcileConnectionInputSchema = z
   .object({
@@ -453,6 +504,14 @@ export const ReconcileConnectionInputSchema = z
   })
   .strict();
 export type ReconcileConnectionInput = z.infer<typeof ReconcileConnectionInputSchema>;
+export const WorkspaceReconcileConnectionInputSchema = ReconcileConnectionInputSchema.omit({
+  owner_type: true,
+}).extend({
+  owner_type: z.enum(['workspace', 'agent', 'member', 'subject', 'external']),
+});
+export type WorkspaceReconcileConnectionInput = z.infer<
+  typeof WorkspaceReconcileConnectionInputSchema
+>;
 
 export const OAuth2ClientCredentialsSchema = z
   .object({
@@ -676,7 +735,7 @@ export const PendingSessionPromptSchema = z
   });
 export type PendingSessionPrompt = z.infer<typeof PendingSessionPromptSchema>;
 
-/** Authoritative public body for POST /v1/projects/:projectId/sessions. */
+/** Authoritative public body for POST /v1/projects/:workspaceId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
     base_ref: z.string().min(1).optional(),
@@ -781,6 +840,17 @@ export const ProjectSessionSchema = z.object({
   updated_at: z.string(),
 });
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
+/** Canonical domain name. ProjectSession remains a compatibility export. */
+export const WorkspaceSessionSchema = ProjectSessionSchema.omit({
+  project_id: true,
+  visibility: true,
+  sharing: true,
+}).extend({
+  workspace_id: z.string(),
+  visibility: WorkspaceSessionVisibilitySchema,
+  sharing: WorkspaceSharingIntentSchema,
+});
+export type WorkspaceSession = z.infer<typeof WorkspaceSessionSchema>;
 
 export const WarmProjectSessionWorkspaceRefreshSchema = z.object({
   status: z.enum(['skipped', 'unchanged', 'updated', 'failed']),
@@ -798,6 +868,10 @@ export const WarmProjectSessionResultSchema = z.object({
   workspace_refresh: WarmProjectSessionWorkspaceRefreshSchema,
 });
 export type WarmProjectSessionResult = z.infer<typeof WarmProjectSessionResultSchema>;
+export const WarmWorkspaceSessionResultSchema = WarmProjectSessionResultSchema.omit({
+  session: true,
+}).extend({ session: WorkspaceSessionSchema });
+export type WarmWorkspaceSessionResult = z.infer<typeof WarmWorkspaceSessionResultSchema>;
 
 export const ClaimWarmProjectSessionInputSchema = z
   .object({
@@ -813,6 +887,8 @@ export const ClaimWarmProjectSessionInputSchema = z
   })
   .strict();
 export type ClaimWarmProjectSessionInput = z.infer<typeof ClaimWarmProjectSessionInputSchema>;
+export const ClaimWarmWorkspaceSessionInputSchema = ClaimWarmProjectSessionInputSchema;
+export type ClaimWarmWorkspaceSessionInput = ClaimWarmProjectSessionInput;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',
@@ -841,6 +917,10 @@ export const ProjectSessionSandboxSchema = z.object({
   updated_at: z.string(),
 });
 export type ProjectSessionSandbox = z.infer<typeof ProjectSessionSandboxSchema>;
+export const WorkspaceSessionSandboxSchema = ProjectSessionSandboxSchema.omit({ project_id: true }).extend({
+  workspace_id: z.string(),
+});
+export type WorkspaceSessionSandbox = z.infer<typeof WorkspaceSessionSandboxSchema>;
 
 export const SESSION_START_STAGES = [
   'provisioning',
@@ -854,7 +934,12 @@ export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
 
 export const SessionStartFailureSchema = z
   .object({
-    category: z.enum(['provider-capacity', 'git-auth', 'sandbox-provider']),
+    category: z.enum([
+      'provider-capacity',
+      'git-auth',
+      'unsupported-secret-delivery',
+      'sandbox-provider',
+    ]),
     message: z.string(),
     retryable: z.boolean(),
   })
@@ -889,6 +974,12 @@ export const SessionStartResultSchema = z.object({
   reason: z.string().optional(),
 });
 export type SessionStartResult = z.infer<typeof SessionStartResultSchema>;
+
+/** Canonical Workspace readiness payload for `/v1/workspaces/**`. */
+export const WorkspaceSessionStartResultSchema = SessionStartResultSchema.omit({ sandbox: true }).extend({
+  sandbox: WorkspaceSessionSandboxSchema.nullable(),
+});
+export type WorkspaceSessionStartResult = z.infer<typeof WorkspaceSessionStartResultSchema>;
 
 /**
  * The 202 envelope of POST /v1/projects/:id/sessions when the create is
@@ -1054,9 +1145,16 @@ export const SecretSchema = z.object({
   strategy: SecretDeliveryStrategySchema,
   consumer: SecretConsumerSchema.nullable(),
   delivery_status: SecretDeliveryStatusSchema,
+  network_boundary_available: z.boolean().optional(),
   egress_policy: SecretEgressPolicySchema.nullable(),
   strategy_locked: z.boolean(),
   last_rotated_at: z.string().nullable(),
   requires_rotation: z.boolean(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
+
+/** Canonical Workspace secret payload. Secret remains the Project compatibility shape. */
+export const WorkspaceSecretSchema = SecretSchema.omit({ project_id: true }).extend({
+  workspace_id: z.string(),
+});
+export type WorkspaceSecret = z.infer<typeof WorkspaceSecretSchema>;

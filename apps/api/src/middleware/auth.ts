@@ -4,7 +4,7 @@ import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
-import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
+import { canAccessPreviewSandbox, resolveSandboxWorkspaceId } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
 import { setSentryUser } from '../lib/sentry';
@@ -182,14 +182,14 @@ export async function supabaseAuth(c: Context, next: Next) {
       auditLoginFail({ c, reason: result.error ?? 'invalid_pat', authType: 'pat' });
       throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
     }
-    if (result.projectId) {
-      await enforceTokenProjectScope(c, result.projectId);
+    if (result.workspaceId) {
+      await enforceTokenWorkspaceScope(c, result.workspaceId);
     }
     c.set('userId', result.userId);
     c.set('userEmail', '');
     c.set('authType', 'pat');
     if (result.accountId) c.set('accountId', result.accountId);
-    if (result.projectId) c.set('tokenProjectId', result.projectId);
+    if (result.workspaceId) c.set('tokenWorkspaceId', result.workspaceId);
     if (result.sessionId) c.set('sessionId', result.sessionId);
     if (result.tokenId) c.set('iamTokenId', result.tokenId);
     // Per-agent authorization grant (non-null only for agent-session tokens).
@@ -204,7 +204,7 @@ export async function supabaseAuth(c: Context, next: Next) {
       userId: result.userId,
       accountId: result.accountId ?? null,
       authType: 'pat',
-      metadata: result.projectId ? { project_id: result.projectId } : undefined,
+      metadata: result.workspaceId ? { project_id: result.workspaceId } : undefined,
     });
     await next();
     return;
@@ -471,14 +471,14 @@ export async function combinedAuth(c: Context, next: Next) {
       auditLoginFail({ c, reason: patResult.error ?? 'invalid_pat', authType: 'pat' });
       throw new HTTPException(401, { message: patResult.error || 'Invalid PAT' });
     }
-    if (patResult.projectId) {
-      await enforceTokenProjectScope(c, patResult.projectId);
+    if (patResult.workspaceId) {
+      await enforceTokenWorkspaceScope(c, patResult.workspaceId);
     }
     c.set('userId', patResult.userId);
     c.set('userEmail', '');
     c.set('authType', 'pat');
     if (patResult.accountId) c.set('accountId', patResult.accountId);
-    if (patResult.projectId) c.set('tokenProjectId', patResult.projectId);
+    if (patResult.workspaceId) c.set('tokenWorkspaceId', patResult.workspaceId);
     // Set the acting token id so engine gates on combinedAuth-mounted routes can
     // thread it and the agent-grant fold fires (mirrors supabaseAuth). Without
     // this, a capability check on a combinedAuth route silently no-ops the fold —
@@ -691,7 +691,7 @@ function extractPreviewSandboxId(path: string): string | null {
 /**
  * A project-scoped CLI PAT can only act on its bound project. Reject
  * the request if:
- *   - the URL targets a `:projectId` parameter that doesn't match, OR
+ *   - the URL targets a `:workspaceId` parameter that doesn't match, OR
  *   - the URL is an account-level route (`/v1/accounts/*` other than
  *     `/v1/accounts/me`, which we allow as a self-identity probe), OR
  *   - the URL is a webhook / preview / system route the token has no
@@ -701,7 +701,7 @@ function extractPreviewSandboxId(path: string): string | null {
  *
  * Throws HTTPException(403) so the calling middleware aborts the chain.
  */
-async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Promise<void> {
+async function enforceTokenWorkspaceScope(c: Context, tokenWorkspaceId: string): Promise<void> {
   const path = c.req.path;
 
   // Whitelist a couple of self-identity probes the CLI hits even for
@@ -724,11 +724,11 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // Reject other account-level routes outright.
   if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {
     throw new HTTPException(403, {
-      message: 'Project-scoped token cannot call account-level routes',
+      message: 'Workspace-scoped token cannot call account-level routes',
     });
   }
 
-  // `/v1/projects/:projectId/...` AND `/v1/connectors/projects/:projectId/...` —
+  // `/v1/projects/:workspaceId/...` AND `/v1/connectors/projects/:workspaceId/...` —
   // both are project-scoped surfaces. Require the URL id to match the token's
   // project. The connector branch intentionally includes both gateway and
   // connector-management routes: the unified Connector MCP exposes add/remove
@@ -737,10 +737,10 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   const m =
     path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/connectors\/projects\/([^/]+)/);
   if (m) {
-    const urlProjectId = m[1];
-    if (urlProjectId !== tokenProjectId) {
+    const urlWorkspaceId = m[1];
+    if (urlWorkspaceId !== tokenWorkspaceId) {
       throw new HTTPException(403, {
-        message: 'Project-scoped token cannot access a different project',
+        message: 'Workspace-scoped token cannot access a different project',
       });
     }
     return;
@@ -750,7 +750,7 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // token shouldn't enumerate other projects.
   if (path === '/v1/projects') {
     throw new HTTPException(403, {
-      message: 'Project-scoped token cannot list projects',
+      message: 'Workspace-scoped token cannot list projects',
     });
   }
 
@@ -764,18 +764,18 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // never widens access to another project's or another account's sandbox.
   const previewSandboxId = extractPreviewSandboxId(path);
   if (previewSandboxId) {
-    const sandboxProjectId = await resolveSandboxProjectId(previewSandboxId);
-    if (sandboxProjectId && sandboxProjectId === tokenProjectId) {
+    const sandboxWorkspaceId = await resolveSandboxWorkspaceId(previewSandboxId);
+    if (sandboxWorkspaceId && sandboxWorkspaceId === tokenWorkspaceId) {
       return;
     }
     throw new HTTPException(403, {
-      message: 'Project-scoped token cannot access a sandbox outside its project',
+      message: 'Workspace-scoped token cannot access a sandbox outside its project',
     });
   }
 
   // All other surfaces (router, billing, channels, etc.) are
   // account-level — refuse.
   throw new HTTPException(403, {
-    message: 'Project-scoped token cannot call this surface',
+    message: 'Workspace-scoped token cannot call this surface',
   });
 }

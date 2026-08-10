@@ -25,7 +25,7 @@ describe('App deployment actor attribution', () => {
 
   test('resolves personal secret overrides for the deploying caller', () => {
     expect(WORKER).toContain(
-      'listResolvedProjectSecrets(\n      context.app.projectId,\n      context.deployment.createdBy,\n    )',
+      'listResolvedWorkspaceSecrets(\n      context.app.workspaceId,\n      context.deployment.createdBy,\n    )',
     );
     expect(WORKER).not.toContain(
       'context.artifact.createdBy ?? context.app.createdBy',

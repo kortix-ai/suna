@@ -2,16 +2,16 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   buildSessionCostDetailQuery,
-  buildSessionCostProjectsQuery,
+  buildSessionCostWorkspacesQuery,
   buildSessionCostsListQuery,
-  resetSessionCostProjectFilter,
+  resetSessionCostWorkspaceFilter,
   type SessionCostQuerySources,
 } from './use-session-costs';
 
 const sources = {
   list: async () => ({ source: 'list' }),
   get: async () => ({ source: 'detail' }),
-  projects: async () => [{ project_id: 'project-1', name: 'Project One' }],
+  workspaces: async () => [{ workspace_id: 'workspace-1', name: 'Project One' }],
 } as unknown as SessionCostQuerySources;
 
 describe('session cost query builders', () => {
@@ -20,7 +20,7 @@ describe('session cost query builders', () => {
     const query = buildSessionCostsListQuery(
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         limit: 25,
         offset: 0,
       },
@@ -38,7 +38,7 @@ describe('session cost query builders', () => {
       'list',
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         limit: 25,
         offset: 0,
       },
@@ -47,7 +47,7 @@ describe('session cost query builders', () => {
     expect(calls).toEqual([
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         limit: 25,
         offset: 0,
       },
@@ -60,7 +60,7 @@ describe('session cost query builders', () => {
     const query = buildSessionCostsListQuery(
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         limit: 25,
         offset: 0,
         from: '2026-07-01T00:00:00.000Z',
@@ -82,7 +82,7 @@ describe('session cost query builders', () => {
       'list',
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         limit: 25,
         offset: 0,
         from: '2026-07-01T00:00:00.000Z',
@@ -95,7 +95,7 @@ describe('session cost query builders', () => {
     expect(calls).toEqual([
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         ownerId: 'owner-1',
         sort: 'total_desc',
         from: '2026-07-01T00:00:00.000Z',
@@ -108,7 +108,7 @@ describe('session cost query builders', () => {
     const changedWindow = buildSessionCostsListQuery(
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         limit: 25,
         offset: 0,
         from: '2026-06-01T00:00:00.000Z',
@@ -123,23 +123,23 @@ describe('session cost query builders', () => {
 
   test('list query is disabled until an account id is known', () => {
     const disabled = buildSessionCostsListQuery(
-      { accountId: undefined, projectId: null, limit: 25, offset: 0 },
+      { accountId: undefined, workspaceId: null, limit: 25, offset: 0 },
       sources,
     );
     const enabled = buildSessionCostsListQuery(
-      { accountId: 'account-1', projectId: null, limit: 25, offset: 0 },
+      { accountId: 'account-1', workspaceId: null, limit: 25, offset: 0 },
       sources,
     );
     expect(disabled.enabled).toBe(false);
     expect(enabled.enabled).toBe(true);
   });
 
-  test('enables detail only for a selected session and binds its project', async () => {
+  test('enables detail only for a selected session and binds its workspace', async () => {
     const calls: unknown[] = [];
     const disabled = buildSessionCostDetailQuery(
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         sessionId: null,
       },
       sources,
@@ -147,7 +147,7 @@ describe('session cost query builders', () => {
     const enabled = buildSessionCostDetailQuery(
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         sessionId: 'session-1',
       },
       {
@@ -166,7 +166,7 @@ describe('session cost query builders', () => {
       'detail',
       {
         accountId: 'account-1',
-        projectId: 'project-1',
+        workspaceId: 'workspace-1',
         sessionId: 'session-1',
       },
     ]);
@@ -174,34 +174,34 @@ describe('session cost query builders', () => {
     expect(calls).toEqual([
       {
         sessionId: 'session-1',
-        options: { accountId: 'account-1', projectId: 'project-1' },
+        options: { accountId: 'account-1', workspaceId: 'workspace-1' },
       },
     ]);
   });
 
   test('detail query stays disabled without an account id even when a session is selected', () => {
     const query = buildSessionCostDetailQuery(
-      { accountId: undefined, projectId: 'project-1', sessionId: 'session-1' },
+      { accountId: undefined, workspaceId: 'workspace-1', sessionId: 'session-1' },
       sources,
     );
     expect(query.enabled).toBe(false);
   });
 
-  test('scopes the project catalog and resets pagination when the filter changes', async () => {
+  test('scopes the workspace catalog and resets pagination when the filter changes', async () => {
     const calls: unknown[] = [];
-    const query = buildSessionCostProjectsQuery('account-1', {
+    const query = buildSessionCostWorkspacesQuery('account-1', {
       ...sources,
-      projects: async (accountId) => {
+      workspaces: async (accountId) => {
         calls.push(accountId);
         return [];
       },
     });
 
-    expect(query.queryKey).toEqual(['session-costs', 'projects', 'account-1']);
+    expect(query.queryKey).toEqual(['session-costs', 'workspaces', 'account-1']);
     await query.queryFn();
     expect(calls).toEqual(['account-1']);
-    expect(resetSessionCostProjectFilter({ projectId: null, offset: 50 }, 'project-1')).toEqual({
-      projectId: 'project-1',
+    expect(resetSessionCostWorkspaceFilter({ workspaceId: null, offset: 50 }, 'workspace-1')).toEqual({
+      workspaceId: 'workspace-1',
       offset: 0,
     });
   });

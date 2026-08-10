@@ -162,27 +162,27 @@ async function main() {
 
   // 3. project CRUD — provision (managed + seed starter; triggers snapshot build)
   const prov = await api('POST', '/projects/provision', { account_id: accountId, name: `e2e ${Date.now().toString().slice(-6)}`, seed_starter: true });
-  const projectId = prov.json?.project_id || prov.json?.id;
-  if (!ok('POST /projects/provision', !!projectId, `${prov.status}`)) return finish();
+  const workspaceId = prov.json?.project_id || prov.json?.id;
+  if (!ok('POST /projects/provision', !!workspaceId, `${prov.status}`)) return finish();
   if (EXPECTED_MANAGED_GIT_PROVIDER === 'code-storage') {
     ok('provision returns Code Storage git username', prov.json?.git_username === 't', String(prov.json?.git_username));
   }
-  ok('GET /projects/:id (read)', (await api('GET', `/projects/${projectId}`)).status === 200);
-  ok('PATCH /projects/:id (rename)', (await api('PATCH', `/projects/${projectId}`, { name: 'e2e renamed' })).status === 200);
+  ok('GET /projects/:id (read)', (await api('GET', `/projects/${workspaceId}`)).status === 200);
+  ok('PATCH /projects/:id (rename)', (await api('PATCH', `/projects/${workspaceId}`, { name: 'e2e renamed' })).status === 200);
   // The first Code Storage mirror fetch can race provider propagation or a
   // slow local Docker DB. Exercise the user-facing eventual contract without
   // converting a transient 5xx/deadline into a permanent false negative.
   const files = await eventuallyGet(
-    `/projects/${projectId}/files`,
+    `/projects/${workspaceId}/files`,
     (result) => result.status === 200 && Array.isArray(result.json) && result.json.some((file: any) => file.path === 'kortix.yaml'),
   );
   ok('managed repo files cloned into API mirror', files.status === 200 && Array.isArray(files.json) && files.json.some((file: any) => file.path === 'kortix.yaml'), `${files.status} ${files.text.slice(0, 160)}`);
   const manifest = await eventuallyGet(
-    `/projects/${projectId}/files/content?path=kortix.yaml`,
+    `/projects/${workspaceId}/files/content?path=kortix.yaml`,
     (result) => result.status === 200 && typeof result.json?.content === 'string' && result.json.content.length > 0,
   );
   ok('managed repo manifest content readable', manifest.status === 200 && typeof manifest.json?.content === 'string' && manifest.json.content.length > 0, `${manifest.status} ${manifest.text.slice(0, 160)}`);
-  const gitToken = await api('POST', `/projects/${projectId}/git-token`, {});
+  const gitToken = await api('POST', `/projects/${workspaceId}/git-token`, {});
   ok('fresh managed git token', gitToken.status === 200 && !!gitToken.json?.push_token, `${gitToken.status}`);
   if (EXPECTED_MANAGED_GIT_PROVIDER === 'code-storage') {
     ok('fresh token returns Code Storage git username', gitToken.json?.git_username === 't', String(gitToken.json?.git_username));
@@ -193,7 +193,7 @@ async function main() {
   log(snapReady ? 'Skipping snapshot-list wait; session boot will resolve/build its image.' : 'Polling snapshot build...');
   const snapEnd = Date.now() + 9 * 60_000;
   while (!snapReady && Date.now() < snapEnd) {
-    const s = await api('GET', `/projects/${projectId}/snapshots`);
+    const s = await api('GET', `/projects/${workspaceId}/snapshots`);
     const templates = s.json?.templates ?? [];
     const builds = s.json?.builds ?? [];
     const legacy = s.json?.items ?? s.json?.snapshots ?? (Array.isArray(s.json) ? s.json : []);
@@ -214,18 +214,18 @@ async function main() {
     if (!builds.length && legacy.length && legacy.every((x: any) => x.status === 'failed')) { ok('snapshot build', false, legacy[0]?.error?.slice(0, 100)); break; }
     await sleep(10_000);
   }
-  if (!ok('snapshot gate satisfied', snapReady)) return finish({ projectId });
+  if (!ok('snapshot gate satisfied', snapReady)) return finish({ workspaceId });
 
   // 6. session CRUD — create / list / read / rename
   const sessionName = `e2e session ${Date.now()}`;
-  let sess = await api('POST', `/projects/${projectId}/sessions`, {
+  let sess = await api('POST', `/projects/${workspaceId}/sessions`, {
     name: sessionName,
     ...(SANDBOX_PROVIDER ? { provider: SANDBOX_PROVIDER } : {}),
   });
   if (sess.status === 503) {
     const reconcileEnd = Date.now() + 45_000;
     while (Date.now() < reconcileEnd) {
-      const listed = await api('GET', `/projects/${projectId}/sessions`);
+      const listed = await api('GET', `/projects/${workspaceId}/sessions`);
       const rows = Array.isArray(listed.json) ? listed.json : (listed.json?.sessions ?? []);
       const created = rows.find((row: any) => row.name === sessionName);
       if (created) {
@@ -236,10 +236,10 @@ async function main() {
     }
   }
   const sessionId = sess.json?.session_id || sess.json?.id;
-  if (!ok('POST /projects/:id/sessions', !!sessionId, `${sess.status} ${sess.text.slice(0, 160)}`)) return finish({ projectId });
-  ok('GET sessions (list)', (await api('GET', `/projects/${projectId}/sessions`)).status === 200);
-  ok('GET session (read)', (await api('GET', `/projects/${projectId}/sessions/${sessionId}`)).status === 200);
-  ok('PATCH session (rename)', (await api('PATCH', `/projects/${projectId}/sessions/${sessionId}`, { name: 'e2e session 2' })).status === 200);
+  if (!ok('POST /projects/:id/sessions', !!sessionId, `${sess.status} ${sess.text.slice(0, 160)}`)) return finish({ workspaceId });
+  ok('GET sessions (list)', (await api('GET', `/projects/${workspaceId}/sessions`)).status === 200);
+  ok('GET session (read)', (await api('GET', `/projects/${workspaceId}/sessions/${sessionId}`)).status === 200);
+  ok('PATCH session (rename)', (await api('PATCH', `/projects/${workspaceId}/sessions/${sessionId}`, { name: 'e2e session 2' })).status === 200);
 
   // 7. wait for sandbox active. Session creation provisions in the background,
   // while POST /start is the idempotent session-open contract that waits for
@@ -248,7 +248,7 @@ async function main() {
   let ext = '', sbStatus = '', startStage = '';
   const sbEnd = Date.now() + 10 * 60_000;
   while (Date.now() < sbEnd) {
-    const sb = await api('POST', `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`);
+    const sb = await api('POST', `/projects/${workspaceId}/sessions/${sessionId}/start?wait_ms=8000`);
     startStage = sb.json?.stage ?? '';
     const sandbox = sb.json?.sandbox ?? null;
     sbStatus = sandbox?.status ?? '';
@@ -262,9 +262,9 @@ async function main() {
     }
     await sleep(1000);
   }
-  if (!ok('sandbox active', startStage === 'ready' && sbStatus === 'active', `stage=${startStage} status=${sbStatus}`) || !ext) return finish({ projectId, sessionId });
+  if (!ok('sandbox active', startStage === 'ready' && sbStatus === 'active', `stage=${startStage} status=${sbStatus}`) || !ext) return finish({ workspaceId, sessionId });
   const branches = await eventuallyGet(
-    `/projects/${projectId}/branches`,
+    `/projects/${workspaceId}/branches`,
     (result) => {
       const rows = result.json?.branches ?? [];
       return result.status === 200 && rows.some((branch: any) => branch.name === sessionId);
@@ -283,14 +283,14 @@ async function main() {
     if (p.status === 200) { up = true; break; }
     await sleep(5000);
   }
-  if (!ok('OpenCode runtime reachable', up, lastProbe)) return finish({ projectId, sessionId });
+  if (!ok('OpenCode runtime reachable', up, lastProbe)) return finish({ workspaceId, sessionId });
   const runtimeManifest = await api('GET', `/p/${ext}/8000/file/content?path=${encodeURIComponent('kortix.yaml')}`);
   ok('sandbox workspace contains cloned kortix.yaml', runtimeManifest.status === 200 && typeof runtimeManifest.json?.content === 'string' && runtimeManifest.json.content.length > 0, `${runtimeManifest.status} ${runtimeManifest.text.slice(0, 160)}`);
 
   // 9. create OpenCode session, prompt, assert a real assistant reply
   const oc = await api('POST', `/p/${ext}/8000/session`, {});
   const ocId = oc.json?.id;
-  if (!ok('create OpenCode session', !!ocId, `${oc.status} ${oc.text.slice(0, 120)}`)) return finish({ projectId, sessionId });
+  if (!ok('create OpenCode session', !!ocId, `${oc.status} ${oc.text.slice(0, 120)}`)) return finish({ workspaceId, sessionId });
 
   if (!SKIP_AGENT_REPLY) {
     const prompt = await api('POST', `/p/${ext}/8000/session/${ocId}/prompt_async`, {
@@ -323,23 +323,23 @@ async function main() {
     ok('reply contains PONG', /pong/i.test(assistantText), assistantText.slice(0, 60));
   }
 
-  return finish({ projectId, sessionId });
+  return finish({ workspaceId, sessionId });
 }
 
-async function finish(cleanup?: { projectId?: string; sessionId?: string }) {
+async function finish(cleanup?: { workspaceId?: string; sessionId?: string }) {
   if (cleanup?.sessionId) {
-    let deleted = await api('DELETE', `/projects/${cleanup.projectId}/sessions/${cleanup.sessionId}`);
+    let deleted = await api('DELETE', `/projects/${cleanup.workspaceId}/sessions/${cleanup.sessionId}`);
     for (let attempt = 1; deleted.status === 503 && attempt < 4; attempt++) {
       await sleep(1_000 * attempt);
-      deleted = await api('DELETE', `/projects/${cleanup.projectId}/sessions/${cleanup.sessionId}`);
+      deleted = await api('DELETE', `/projects/${cleanup.workspaceId}/sessions/${cleanup.sessionId}`);
     }
     ok('DELETE session', deleted.status === 200 || deleted.status === 404, `${deleted.status}`);
   }
-  if (cleanup?.projectId) {
-    let deleted = await api('DELETE', `/projects/${cleanup.projectId}`);
+  if (cleanup?.workspaceId) {
+    let deleted = await api('DELETE', `/projects/${cleanup.workspaceId}`);
     for (let attempt = 1; deleted.status === 503 && attempt < 4; attempt++) {
       await sleep(1_000 * attempt);
-      deleted = await api('DELETE', `/projects/${cleanup.projectId}`);
+      deleted = await api('DELETE', `/projects/${cleanup.workspaceId}`);
     }
     ok('DELETE project', deleted.status === 200 || deleted.status === 204 || deleted.status === 404, `${deleted.status}`);
   }

@@ -1,6 +1,6 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
-import { type ApiClientOptions, backendApi } from '../../http/api-client';
+import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
   type ProjectFileEntry,
@@ -289,6 +289,9 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
+  /** Default branch for the newly-created managed repo. Omit to accept the
+   *  server's own default (`apps/api/src/projects/routes/r1.ts`). */
+  default_branch?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
   marketplace_items?: string[];
   /** Clone a `registry:project` marketplace item instead of the blank
@@ -344,8 +347,8 @@ export async function listProjectsForAccount(accountId?: string) {
   return unwrap(await backendApi.get<KortixProject[]>(`/projects${query}`));
 }
 
-export async function getProject(projectId: string, options?: ApiClientOptions) {
-  return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`, options));
+export async function getProject(workspaceId: string, options?: ApiClientOptions) {
+  return unwrap(await backendApi.get<KortixProject>(`/projects/${workspaceId}`, options));
 }
 
 /**
@@ -353,12 +356,12 @@ export async function getProject(projectId: string, options?: ApiClientOptions) 
  * creator pull "their" Kortix-managed repo into their own GitHub account.
  */
 export async function inviteRepoCollaborator(
-  projectId: string,
+  workspaceId: string,
   githubUsername: string,
   permission: 'read' | 'write' = 'write',
 ) {
   return unwrap(
-    await backendApi.post<RepoCollaboratorInvite>(`/projects/${projectId}/git/collaborators`, {
+    await backendApi.post<RepoCollaboratorInvite>(`/projects/${workspaceId}/git/collaborators`, {
       github_username: githubUsername,
       permission,
     }),
@@ -381,11 +384,11 @@ export interface ManifestValidationResult {
  * verdict is in the body.
  */
 export async function validateProjectManifest(
-  projectId: string,
+  workspaceId: string,
   raw: string,
 ): Promise<ManifestValidationResult> {
   return unwrap(
-    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, {
+    await backendApi.post<ManifestValidationResult>(`/projects/${workspaceId}/manifest/validate`, {
       raw,
     }),
     'Failed to validate manifest',
@@ -405,9 +408,9 @@ export interface ProjectGitToken {
  * `kortix ship` without persisting credentials in git config). Throws (409)
  * for BYO projects — they push with the user's own git remote auth.
  */
-export async function getProjectGitToken(projectId: string): Promise<ProjectGitToken> {
+export async function getProjectGitToken(workspaceId: string): Promise<ProjectGitToken> {
   return unwrap(
-    await backendApi.post<ProjectGitToken>(`/projects/${projectId}/git-token`, {}),
+    await backendApi.post<ProjectGitToken>(`/projects/${workspaceId}/git-token`, {}),
     'Failed to mint git token',
   );
 }
@@ -421,9 +424,9 @@ export function isManagedGithubProject(project: {
   return git?.provider === 'github' && git?.managed === true;
 }
 
-export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
+export async function getProjectDetail(workspaceId: string, options?: ApiClientOptions) {
   const detail = unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
+    await backendApi.get<ProjectDetail>(`/projects/${workspaceId}/detail`, {
       showErrors: false,
       ...options,
     }),
@@ -437,9 +440,9 @@ export async function getProjectDetail(projectId: string, options?: ApiClientOpt
   };
 }
 
-export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
+export async function getProjectLlmCatalog(workspaceId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/llm-catalog`, {
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${workspaceId}/llm-catalog`, {
       showErrors: false,
       ...options,
     }),
@@ -451,9 +454,9 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
  * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
  * runtime models.dev projection used to configure OpenCode sandboxes.
  */
-export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
+export async function getProjectModelPicker(workspaceId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/model-picker`, {
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${workspaceId}/model-picker`, {
       showErrors: false,
       ...options,
     }),
@@ -486,10 +489,10 @@ export interface ProjectLlmCatalogProvidersResponse {
  * native (non-gateway) projects too — see the route's doc comment
  * (apps/api/src/projects/routes/r4.ts, `/llm-catalog/providers`).
  */
-export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
+export async function getProjectLlmCatalogProviders(workspaceId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<ProjectLlmCatalogProvidersResponse>(
-      `/projects/${projectId}/llm-catalog/providers`,
+      `/projects/${workspaceId}/llm-catalog/providers`,
       { showErrors: false, ...options },
     ),
   );
@@ -527,6 +530,193 @@ export async function provisionProject(
   );
 }
 
+/**
+ * The phases `POST /projects/provision-stream` reports, in the order it
+ * reports them. Mirrors `PROVISION_PHASES` in
+ * `apps/api/src/projects/provision-core.ts` — a separate package, so a
+ * separate declaration, but the two must stay byte-identical. A drift here
+ * (a renamed or reordered phase on one side only) means the UI silently
+ * stops advancing on whichever phase name no longer matches, with no error —
+ * see the exhaustiveness test in `projects.test.ts` that pins this union
+ * against the literal phase list.
+ */
+export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering' | 'seeding';
+
+/**
+ * One frame of `POST /projects/provision-stream`'s SSE body.
+ *
+ * The `error` frame's `status` mirrors the HTTP status the equivalent
+ * `/provision` response would have carried for the same failure — the route
+ * (`apps/api/src/projects/routes/r1.ts`) writes `result.status` from the
+ * shared `runProvision` core alongside `error`/`code`, exactly the fields
+ * `provisionProjectStream` (below) copies onto the error it throws. Without
+ * this, a host reading only `.status`/`.code` (as `apps/web`'s
+ * `messageFor`/`isRetryableError` do) cannot tell a 400 from a 409 on this
+ * transport, even though it can on the plain `provisionProject` path.
+ */
+export type ProvisionStreamEvent =
+  | { type: 'phase'; phase: ProvisionPhase }
+  | { type: 'done'; project: KortixProject }
+  | { type: 'error'; error: string; code?: string; status?: number };
+
+/**
+ * Parse ONE SSE frame — the text between two `\n\n` boundaries — into a
+ * `ProvisionStreamEvent`, or `null` if the frame carries no `data:` line.
+ *
+ * Line-by-line, not `frame.startsWith('data: ')` against the whole frame:
+ * SSE permits `: comment` lines and an `event:` line ahead of `data:`, and
+ * the wire contract here is data-only (no `event:` line) ONLY as an
+ * implementation choice the server documents, not a protocol guarantee a
+ * client should hard-fail without. A parser that rejects any frame that
+ * isn't EXACTLY `data: <json>` breaks the moment a spec-legal frame shows up
+ * that it wasn't exactly expecting. Per the SSE spec, multiple `data:` lines
+ * in one frame are joined with `\n` before parsing.
+ */
+/** How much of an unparseable frame's payload to surface in the thrown error.
+ *  Bounded hard: a frame can be arbitrarily large, and — in the wrong build,
+ *  on the wrong route — could in principle carry something sensitive (a push
+ *  token). Never include more than this, and never log the payload anywhere. */
+const FRAME_PARSE_ERROR_EXCERPT_LENGTH = 200;
+
+function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
+  const dataLines = frame
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).replace(/^ /, ''));
+  if (dataLines.length === 0) return null;
+
+  const payload = dataLines.join('\n');
+  try {
+    return JSON.parse(payload) as ProvisionStreamEvent;
+  } catch (cause) {
+    const excerpt =
+      payload.length > FRAME_PARSE_ERROR_EXCERPT_LENGTH
+        ? `${payload.slice(0, FRAME_PARSE_ERROR_EXCERPT_LENGTH)}…`
+        : payload;
+    // Named + attributed: a bare `SyntaxError: JSON Parse error: Expected
+    // '}'` gives someone debugging a proxy that mangled one frame in
+    // production nothing to go on — no mention of provisionProjectStream, no
+    // mention that this came from an SSE frame, no sight of what the frame
+    // actually contained.
+    throw new Error(
+      `provisionProjectStream: received an unparseable SSE frame (${excerpt})`,
+      { cause },
+    );
+  }
+}
+
+/**
+ * Create a managed-repo project, reporting which phase the server is in as
+ * it happens.
+ *
+ * Same create as {@link provisionProject} — the server runs ONE shared
+ * implementation (`runProvision` in `apps/api/src/projects/provision-core.ts`)
+ * behind both `/projects/provision` and `/projects/provision-stream`. Use
+ * this when a UI needs to show progress; use `provisionProject` for a plain
+ * request/response.
+ *
+ * The stream always ends in a terminal `done` or `error` frame — the server
+ * guarantees it (see the route's `finally`/catch in
+ * `apps/api/src/projects/routes/r1.ts`). A stream that closes with NEITHER is
+ * treated as a failure here too, never as an implicit success: resolving
+ * with no project would hand the caller an undefined project id and route a
+ * user to `/projects/undefined`.
+ *
+ * A pre-stream authorization denial (e.g. "Owner or admin role required")
+ * arrives as a plain non-2xx JSON response, never as a `200` that then opens
+ * an SSE body containing an `error` frame — this function rejects with that
+ * response's message the same way it rejects an in-stream `error` event.
+ * Both rejections are a real `ApiError` carrying `.status`/`.code`, not a
+ * bare `Error` — see the `ProvisionStreamEvent` doc comment above for why
+ * that match to `ApiError`'s shape matters.
+ *
+ * ## Streaming target matrix
+ *
+ * Requires `fetch` with a real `ReadableStream` response body:
+ *
+ * | Target                          | Streams? |
+ * |----------------------------------|----------|
+ * | Modern browsers (Safari 16.4+)   | yes |
+ * | Node >= 18                       | yes |
+ * | Bun                               | yes |
+ * | Cloudflare Workers                | yes |
+ * | **React Native / Expo**          | **NO** |
+ *
+ * **React Native is NOT supported.** RN's `fetch` has no `response.body` —
+ * there is no way to read a stream incrementally on that runtime, full stop.
+ * (This function decodes with plain `TextDecoder.decode()`, not
+ * `TextDecoderStream`, so Hermes's missing `TextDecoderStream` is not what
+ * blocks it here — the absent `response.body` alone is sufficient.) Callers
+ * on RN must use `provisionProject` instead (single request/response, no
+ * progress reporting).
+ */
+export async function provisionProjectStream(
+  input: ProvisionProjectInput,
+  onEvent: (event: ProvisionStreamEvent) => void,
+  options: ApiClientOptions = {},
+): Promise<KortixProject> {
+  const response = await backendApi.postStream(
+    '/projects/provision-stream',
+    { seed_starter: true, ...input },
+    options,
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+    // A REAL `ApiError`, not a bare `Error` — see the `ProvisionStreamEvent`
+    // doc comment above. `apps/web`'s `messageFor`/`isRetryableError` read
+    // `.status`/`.code` off whatever `provisionProject`/`provisionProjectStream`
+    // throw; without this they saw `undefined` for both on this transport.
+    throw new ApiError(body?.error || `Provision failed: HTTP ${response.status}`, {
+      status: response.status,
+      code: body?.code,
+    });
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Provision stream is unavailable on this runtime (no response body)');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let settled: KortixProject | null = null;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf('\n\n');
+
+        const event = parseProvisionStreamFrame(frame);
+        if (!event) continue;
+        onEvent(event);
+        // Same `ApiError` shape as the pre-stream-denial branch above, so a
+        // host classifying create failures gets identical `.status`/`.code`
+        // whichever branch fired.
+        if (event.type === 'error') {
+          throw new ApiError(event.error, { status: event.status, code: event.code });
+        }
+        if (event.type === 'done') settled = event.project;
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+
+  // A stream that closes without a terminal event is a failure, not a
+  // success. Resolving here would hand the caller an undefined project id
+  // and route a user to `/projects/undefined`.
+  if (!settled) throw new Error('Provision stream ended without a result');
+  return settled;
+}
+
 export interface ManagedGitStatus {
   configured: boolean;
   provider: string;
@@ -561,8 +751,8 @@ export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
  * `null` to REMOVE the project's emoji, omit the key to leave it as it is.
  * Everything else ignores an empty value.
  */
-export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
+export async function updateProject(workspaceId: string, input: Partial<ProjectInput>) {
+  return unwrap(await backendApi.patch<KortixProject>(`/projects/${workspaceId}`, input));
 }
 
 /**
@@ -572,12 +762,12 @@ export async function updateProject(projectId: string, input: Partial<ProjectInp
  * Hits the CANONICAL `PATCH /projects/:id/features` route.
  */
 export async function updateFeatureFlag(
-  projectId: string,
+  workspaceId: string,
   feature: FeatureFlagKey,
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/features`, {
+    await backendApi.patch<KortixProject>(`/projects/${workspaceId}/features`, {
       feature,
       enabled,
     }),
@@ -592,12 +782,12 @@ export async function updateFeatureFlag(
  * `/projects/:id/experimental`. Changing its wire path would break them.
  */
 export async function updateExperimentalFeature(
-  projectId: string,
+  workspaceId: string,
   feature: FeatureFlagKey,
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/experimental`, {
+    await backendApi.patch<KortixProject>(`/projects/${workspaceId}/experimental`, {
       feature,
       enabled,
     }),
@@ -656,12 +846,12 @@ export type UpdateProjectSandboxProviderResult =
  *  `kind:'project'` immediate result, or a `kind:'preparation'` transition the
  *  caller polls via {@link getProjectSandboxProviderTransition}. */
 export async function updateProjectSandboxProvider(
-  projectId: string,
+  workspaceId: string,
   provider: SandboxProviderName | null,
 ): Promise<UpdateProjectSandboxProviderResult> {
   return unwrap(
     await backendApi.patch<UpdateProjectSandboxProviderResult>(
-      `/projects/${projectId}/sandbox-provider`,
+      `/projects/${workspaceId}/sandbox-provider`,
       { provider },
     ),
   );
@@ -696,12 +886,12 @@ export interface SandboxProviderTransitionState {
  *  poll this until `latest` reaches a terminal status (activated / failed /
  *  superseded / cancelled) — or `latest` is null (no live transition). */
 export async function getProjectSandboxProviderTransition(
-  projectId: string,
+  workspaceId: string,
   options?: ApiClientOptions,
 ) {
   return unwrap(
     await backendApi.get<SandboxProviderTransitionState>(
-      `/projects/${projectId}/sandbox-provider/transition`,
+      `/projects/${workspaceId}/sandbox-provider/transition`,
       { showErrors: false, ...options },
     ),
   );
@@ -714,15 +904,15 @@ export async function getProjectSandboxProviderTransition(
  * `listProjectSnapshots`.
  */
 export async function updateTemplateWarmPool(
-  projectId: string,
+  workspaceId: string,
   input: { slug: string; enabled?: boolean; size?: number },
 ) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input));
+  return unwrap(await backendApi.patch<KortixProject>(`/projects/${workspaceId}/warm-pool`, input));
 }
 
-export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
+export async function setProjectOnboardingComplete(workspaceId: string, completed: boolean) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { completed }),
+    await backendApi.patch<KortixProject>(`/projects/${workspaceId}/onboarding`, { completed }),
   );
 }
 
@@ -757,14 +947,14 @@ export interface OnboardingProfile {
  * `completed` from a survey save would end onboarding the moment the user
  * answered the first question.
  */
-export async function setProjectOnboardingProfile(projectId: string, profile: OnboardingProfile) {
+export async function setProjectOnboardingProfile(workspaceId: string, profile: OnboardingProfile) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { profile }),
+    await backendApi.patch<KortixProject>(`/projects/${workspaceId}/onboarding`, { profile }),
   );
 }
 
-export async function archiveProject(projectId: string) {
-  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
+export async function archiveProject(workspaceId: string) {
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${workspaceId}`));
 }
 
 // ── Server-side explicit-token variants ──────────────────────────────────────

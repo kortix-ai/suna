@@ -255,12 +255,12 @@ export function getPublicShareByToken<T = Record<string, unknown>>(
 }
 
 export function startSessionWithToken(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   options: HostRequestOptions,
 ): Promise<unknown> {
   return requestJson(
-    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
+    `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}/start`,
     options,
     { method: 'POST', body: {} },
   );
@@ -308,6 +308,8 @@ export async function downloadAccountAudit(
     format: 'csv' | 'jsonl';
     action?: string;
     actor?: string;
+    workspace_id?: string;
+    /** @deprecated Use workspace_id. */
     project_id?: string;
     session_id?: string;
     actor_type?: 'human' | 'agent' | 'service_account' | 'system';
@@ -328,7 +330,8 @@ export async function downloadAccountAudit(
   const params = new URLSearchParams({ format: query.format });
   if (query.action) params.set('action', query.action);
   if (query.actor) params.set('actor', query.actor);
-  if (query.project_id) params.set('project_id', query.project_id);
+  if (query.workspace_id) params.set('workspace_id', query.workspace_id);
+  else if (query.project_id) params.set('project_id', query.project_id);
   if (query.session_id) params.set('session_id', query.session_id);
   if (query.actor_type) params.set('actor_type', query.actor_type);
   if (query.source) params.set('source', query.source);

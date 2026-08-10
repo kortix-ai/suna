@@ -25,7 +25,7 @@ import {
   type MenuItemDef,
   type NavSubGroup,
 } from '@/lib/menu-registry';
-import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
+import { useWorkspaceFeatureFlags } from '@/lib/use-workspace-feature-flags';
 import { cn } from '@/lib/utils';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
@@ -141,10 +141,10 @@ export function SidebarRight() {
   // disabled feature's surface must be invisible on every registry consumer;
   // this one previously rendered whatever the registry listed, so the first
   // flagged item to gain `showIn: ['rightSidebar']` would have leaked. Reads
-  // the project from the route and fails CLOSED — no project id, or the detail
+  // the workspace from the route and fails CLOSED — no workspace id, or the detail
   // query still in flight, hides every flagged item rather than flashing it.
-  const routeProjectId = useParams<{ id?: string }>()?.id ?? null;
-  const { flags: featureFlags } = useProjectFeatureFlags(routeProjectId);
+  const routeWorkspaceId = useParams<{ id?: string }>()?.id ?? null;
+  const { flags: featureFlags } = useWorkspaceFeatureFlags(routeWorkspaceId);
   const flagAllows = useCallback(
     (item: MenuItemDef) => !item.requiresFlag || featureFlags[item.requiresFlag],
     [featureFlags],

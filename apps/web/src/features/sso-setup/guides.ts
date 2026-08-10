@@ -185,8 +185,8 @@ const testStep = (
     opts.accessBullet ??
       'The test user must be allowed to reach the app — otherwise the IdP rejects the sign-in with a “not assigned” error.',
     'On success the user lands in Kortix and appears under Members on the account’s Identity page.',
-    'Groups: if you left “Auto-provision groups” ON at the connect step (the default), your IdP groups appear automatically under Groups — just grant each one a project role. If you turned it off, map them yourself on the Identity page → SAML SSO card → “Group mappings” (IdP group name/ID → Kortix group).',
-    'Either way a group confers NO access until you grant it a project role; changes in the IdP (add/remove from a group) apply on the user’s next sign-in.',
+    'Groups: if you left “Auto-provision groups” ON at the connect step (the default), your IdP groups appear automatically under Groups — just grant each one a workspace role. If you turned it off, map them yourself on the Identity page → SAML SSO card → “Group mappings” (IdP group name/ID → Kortix group).',
+    'Either way a group confers NO access until you grant it a workspace role; changes in the IdP (add/remove from a group) apply on the user’s next sign-in.',
     ...(opts.extra ? [opts.extra] : []),
   ],
   warning:
@@ -1945,7 +1945,7 @@ const scimTestStep = (
   bullets: [
     'A pushed user appears under Members (as a pending invite until their first sign-in).',
     'Deactivating the user in the IdP removes their membership and revokes their tokens.',
-    'Pushed groups appear under Groups — grant them project roles to confer access.',
+    'Pushed groups appear under Groups — grant them workspace roles to confer access.',
     'Group membership for a user who hasn’t signed in yet is held on their invite and applies automatically at their FIRST sign-in — an empty group before that is expected, not a failure.',
     ...(opts.extra ? [opts.extra] : []),
   ],

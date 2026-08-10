@@ -1,6 +1,6 @@
 'use client';
 
-import { SessionSharesModal } from '@/components/projects/session-shares-modal';
+import { SessionSharesModal } from '@/components/workspaces/session-shares-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -52,8 +52,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface PreviewTabContentProps {
   tabId: string;
-  projectId?: string;
-  projectSessionId?: string;
+  workspaceId?: string;
+  workspaceSessionId?: string;
 }
 
 const APP_PREVIEW_TITLE = 'App preview';
@@ -85,7 +85,7 @@ function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: 
  * any localhost:PORT address to navigate within the sandbox. Visited URLs are
  * recorded and offered back as "Recents" on the empty landing state.
  */
-export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabContentProps) {
+export function BrowserPanel({ tabId, workspaceId, workspaceSessionId }: PreviewTabContentProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tab = useTabStore((s) => s.tabs[tabId]);
   const updateTabMetadata = useTabStore((s) => s.openTab);
@@ -470,14 +470,14 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
 
   // Copy-public-link action, surfaced from the "⋯" overflow menu.
   const shareLink = usePublicShareLink({
-    projectId,
-    sessionId: projectSessionId,
+    workspaceId,
+    sessionId: workspaceSessionId,
     input: shareInput,
   });
   const canShare = hasPreview && shareLink.canShare;
 
   const [sharesOpen, setSharesOpen] = useState(false);
-  const { liveShares } = useSessionPublicShares(projectId, projectSessionId);
+  const { liveShares } = useSessionPublicShares(workspaceId, workspaceSessionId);
 
   return (
     <div className="bg-background flex h-full flex-col">
@@ -597,7 +597,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
                 app that produced them. */}
             <DropdownMenuItem
               onClick={() => setSharesOpen(true)}
-              disabled={!projectId || !projectSessionId}
+              disabled={!workspaceId || !workspaceSessionId}
             >
               <Settings2 />
               Manage public links
@@ -612,8 +612,8 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
       </div>
 
       <SessionSharesModal
-        projectId={projectId}
-        sessionId={projectSessionId}
+        workspaceId={workspaceId}
+        sessionId={workspaceSessionId}
         open={sharesOpen}
         onOpenChange={setSharesOpen}
       />

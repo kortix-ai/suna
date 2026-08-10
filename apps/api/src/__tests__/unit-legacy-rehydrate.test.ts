@@ -7,11 +7,11 @@ import {
   buildRestoreScript,
   legacyRehydrateSpec,
   rekeyOpencodeDb,
-} from '../projects/legacy-migration-rehydrate';
+} from '../workspaces/legacy-migration-rehydrate';
 import {
   seedOpencodeSchema,
   writeConversations,
-} from '../projects/suna-migration/opencode-db-writer';
+} from '../workspaces/suna-migration/opencode-db-writer';
 
 describe('legacyRehydrateSpec', () => {
   test('reads source + pin from session metadata', () => {

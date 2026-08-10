@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { canonicalWorkspacePath, workspaceCompatibilityPath } from './workspace-routing';
+import { canonicalWorkspacePath } from './workspace-routing';
 
 describe('Workspace routing', () => {
   test('canonicalizes the full Project route suffix', () => {
@@ -10,11 +10,5 @@ describe('Workspace routing', () => {
 
   test('does not match lookalike paths', () => {
     expect(canonicalWorkspacePath('/projects-old')).toBeNull();
-    expect(workspaceCompatibilityPath('/workspaces-old')).toBeNull();
-  });
-
-  test('rewrites the canonical route onto the current implementation', () => {
-    expect(workspaceCompatibilityPath('/workspaces')).toBe('/projects');
-    expect(workspaceCompatibilityPath('/workspaces/w1/files')).toBe('/projects/w1/files');
   });
 });

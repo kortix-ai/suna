@@ -6,6 +6,10 @@ import {
   invalidateProjectIdentity,
   restoreProjectName,
   writeProjectNameOptimistically,
+  invalidateWorkspace,
+  invalidateWorkspaceIdentity,
+  restoreWorkspaceName,
+  writeWorkspaceNameOptimistically,
 } from './invalidate-project';
 
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -13,6 +17,13 @@ const ID = 'proj_1';
 
 type ProjectsListEntry = { project_id: string; name: string };
 type ProjectDetailEntry = { project: { project_id: string; name: string } };
+
+test('exposes canonical Workspace cache helpers while preserving Project aliases', () => {
+  expect(invalidateProject).toBe(invalidateWorkspace);
+  expect(invalidateProjectIdentity).toBe(invalidateWorkspaceIdentity);
+  expect(restoreProjectName).toBe(restoreWorkspaceName);
+  expect(writeProjectNameOptimistically).toBe(writeWorkspaceNameOptimistically);
+});
 
 describe('invalidateProjectIdentity', () => {
   // The bug this exists to kill: rename invalidated ['projects'] only, so the

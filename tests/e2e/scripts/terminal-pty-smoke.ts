@@ -47,7 +47,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const deadline = (ms: number) => Date.now() + ms;
 const marker = `KORTIX_PTY_${provider.toUpperCase()}_${Date.now()}`;
 let token = '';
-let projectId = '';
+let workspaceId = '';
 let sessionId = '';
 let accountId = '';
 
@@ -109,7 +109,7 @@ async function waitForSandbox(): Promise<{ externalId: string }> {
   const end = deadline(7 * 60_000);
   let last = '';
   while (Date.now() < end) {
-    const response = await api(`/projects/${projectId}/sessions/${sessionId}/start?wait_ms=25000`, {
+    const response = await api(`/projects/${workspaceId}/sessions/${sessionId}/start?wait_ms=25000`, {
       method: 'POST',
       body: '{}',
     });
@@ -142,7 +142,7 @@ async function waitForStoredSessionStatus(expected: string): Promise<void> {
   const end = deadline(60_000);
   let last = '';
   while (Date.now() < end) {
-    const response = await api(`/projects/${projectId}/sessions/${sessionId}`);
+    const response = await api(`/projects/${workspaceId}/sessions/${sessionId}`);
     const status = response.body?.status ?? '';
     last = `${response.status} ${status}`;
     if (response.status === 200 && status === expected) return;
@@ -329,12 +329,12 @@ async function main(): Promise<void> {
       seed_starter: true,
     }),
   });
-  projectId = project.body?.project_id ?? project.body?.id ?? '';
-  if (!projectId) throw new Error(`project provision failed: ${project.status} ${project.text}`);
-  log('project created', projectId);
+  workspaceId = project.body?.project_id ?? project.body?.id ?? '';
+  if (!workspaceId) throw new Error(`project provision failed: ${project.status} ${project.text}`);
+  log('project created', workspaceId);
 
   const sessionName = `terminal ${provider} ${Date.now()}`;
-  let session = await api(`/projects/${projectId}/sessions`, {
+  let session = await api(`/projects/${workspaceId}/sessions`, {
     method: 'POST',
     body: JSON.stringify({ name: sessionName, provider }),
   });
@@ -344,7 +344,7 @@ async function main(): Promise<void> {
   if (session.status === 503) {
     const reconcileEnd = deadline(45_000);
     while (Date.now() < reconcileEnd) {
-      const listed = await api(`/projects/${projectId}/sessions`);
+      const listed = await api(`/projects/${workspaceId}/sessions`);
       const items = Array.isArray(listed.body) ? listed.body : (listed.body?.sessions ?? []);
       // biome-ignore lint/suspicious/noExplicitAny: black-box API payload
       const created = items.find((item: any) => item.name === sessionName);
@@ -373,7 +373,7 @@ async function main(): Promise<void> {
     await sleep(5_000);
   }
 
-  const stopped = await api(`/projects/${projectId}/sessions/${sessionId}/stop`, {
+  const stopped = await api(`/projects/${workspaceId}/sessions/${sessionId}/stop`, {
     method: 'POST',
     body: '{}',
   });
@@ -459,7 +459,7 @@ async function main(): Promise<void> {
   if (removed.status !== 200)
     throw new Error(`PTY delete failed: ${removed.status} ${removed.text}`);
   if (dbClient) {
-    const deleted = await api(`/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' });
+    const deleted = await api(`/projects/${workspaceId}/sessions/${sessionId}`, { method: 'DELETE' });
     if (deleted.status < 200 || deleted.status >= 300) {
       throw new Error(`session delete failed: ${deleted.status} ${deleted.text}`);
     }
@@ -480,13 +480,13 @@ async function main(): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
-  if (sessionId && projectId) {
-    await api(`/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(
+  if (sessionId && workspaceId) {
+    await api(`/projects/${workspaceId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(
       () => null,
     );
   }
-  if (projectId) {
-    await api(`/projects/${projectId}`, { method: 'DELETE' }).catch(() => null);
+  if (workspaceId) {
+    await api(`/projects/${workspaceId}`, { method: 'DELETE' }).catch(() => null);
   }
 }
 

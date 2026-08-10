@@ -19,7 +19,7 @@ function baseConfig(workspace: string): Config {
     branchFetchDelaySec: 0.25,
     defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     apiUrl: 'http://api.test/v1',
     repoUrl: undefined,
     branchName: undefined,

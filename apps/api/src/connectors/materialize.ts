@@ -7,8 +7,8 @@
  * normalize → connector_actions) is the connector layer that calls
  * these. See docs/specs/connector.md §3, §7, §8.
  */
-import type { ConnectorSpec } from '../projects/connectors';
-import type { ProjectPolicySpec } from '../projects/policies';
+import type { ConnectorSpec } from '../workspaces/connectors';
+import type { WorkspacePolicySpec } from '../workspaces/policies';
 import { channelApiBase, channelAuth } from './channels';
 import type { PolicyArgCondition } from './policy';
 
@@ -16,7 +16,7 @@ export interface DesiredPolicy {
   match: string;
   action: 'always_run' | 'require_approval' | 'block';
   position: number;
-  /** Optional ARGUMENT conditions (see ProjectPolicySpec.conditions). Null =
+  /** Optional ARGUMENT conditions (see WorkspacePolicySpec.conditions). Null =
    *  an unconditional tool-name rule, which is what every rule was before. */
   conditions?: PolicyArgCondition[] | null;
 }
@@ -63,7 +63,11 @@ export function connectorConfig(
         // No credential and no base URL — the gateway routes `tunnel` bindings
         // through the shared tunnel RPC core, not executeCall. Carry explicit
         // `none` auth so authOf() resolves hasAuth=false.
-        return { auth: { type: 'none', in: 'header', name: null, prefix: null } };
+        return {
+          tunnel_ids: spec.tunnelIds ?? (spec.tunnelId ? [spec.tunnelId] : []),
+          computer_profile: true,
+          auth: { type: 'none', in: 'header', name: null, prefix: null },
+        };
       default:
         return {};
     }
@@ -91,7 +95,7 @@ export function toPolicyRows(spec: ConnectorSpec): DesiredPolicy[] {
 }
 
 /** Map project-level [[policies]] → ordered policy rows (same shape as connector). */
-export function toProjectPolicyRows(policies: ProjectPolicySpec[]): DesiredPolicy[] {
+export function toWorkspacePolicyRows(policies: WorkspacePolicySpec[]): DesiredPolicy[] {
   // `conditions` is OMITTED (not set to null) for an unconditional rule, so the
   // row shape for the overwhelmingly common case stays exactly as it was.
   return policies.map((p, i) => ({

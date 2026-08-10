@@ -95,13 +95,13 @@ export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
  * emits a title/tree change, refetch the active Kortix session reads so tabs
  * and sidebars pick up the server-side mirror without browser-side writes.
  *
- * `projectId` is the route-scoped project the connected SSE stream belongs to
- * (`useKortixRouteProjectId()` at the `useOpenCodeEventStream` call site) —
+ * `workspaceId` is the route-scoped project the connected SSE stream belongs to
+ * (`useKortixRouteWorkspaceId()` at the `useOpenCodeEventStream` call site) —
  * required, not optional-and-ignored. Pre-migration this used a BARE,
  * id-less flat `project-sessions` array prefix, which TanStack's default
  * partial-key match treats as "any project's sessions list currently
  * mounted". Under `qk` a
- * project id is not a suffix that can be omitted — `qk.project.scope(id)`
+ * project id is not a suffix that can be omitted — `qk.workspace.scope(id)`
  * requires it up front — so there is no key that means "the sessions family,
  * for every project, whichever happens to be mounted" without ALSO matching
  * every other project-scoped family (secrets, connectors, gateway, …) for
@@ -110,16 +110,16 @@ export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
  * project's session queries are ever the ones this event is actually about,
  * and firing a broader refetch would refresh unrelated data (a different
  * project's secrets/gateway state) on every title/tree change for no reason.
- * `qk.project.sessionsScope(projectId)` — the current route's project — is
+ * `qk.workspace.sessionsScope(workspaceId)` — the current route's project — is
  * the correct reach: the list (every scope) and every session/messages entry
  * beneath it, and nothing outside the sessions family, and nothing for a
- * project this event was never about. Outside a project route (`projectId`
+ * project this event was never about. Outside a project route (`workspaceId`
  * null) there is nothing to mirror, so this is a no-op.
  */
 export function refetchKortixSessionMirrors(
   queryClient: QueryClient,
-  projectId: string | null,
+  workspaceId: string | null,
 ): void {
-  if (!projectId) return;
-  void queryClient.refetchQueries({ queryKey: qk.project.sessionsScope(projectId), type: 'active' });
+  if (!workspaceId) return;
+  void queryClient.refetchQueries({ queryKey: qk.workspace.sessionsScope(workspaceId), type: 'active' });
 }

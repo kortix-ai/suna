@@ -26,7 +26,7 @@ three ways a session can start.
 3. The sandbox boots. Its daemon, `kortix-agent`, clones the repo to
    `/workspace`. It starts OpenCode REST.
    Session status becomes `running`.
-4. The agent works. It reads [secrets](/docs/project/secrets) as environment
+4. The agent works. It reads [secrets](/docs/workspace/secrets) as environment
    variables, then commits and pushes to the session branch.
 5. The agent opens a [change request](/docs/work/change-requests). You review
    it and merge it — the only way work reaches the default branch.
@@ -50,12 +50,12 @@ A session starts one of three ways.
 ## Related
 
 <Cards>
-  <Card title="Projects" href="/docs/project">A git repo with a manifest.</Card>
-  <Card title="Agents" href="/docs/project/agents">A markdown persona with scoped tools.</Card>
-  <Card title="Models" href="/docs/project/models">Which model a session uses, and who pays.</Card>
+  <Card title="Workspaces" href="/docs/workspace">A git repo with a manifest.</Card>
+  <Card title="Agents" href="/docs/workspace/agents">A markdown persona with scoped tools.</Card>
+  <Card title="Models" href="/docs/workspace/models">Which model a session uses, and who pays.</Card>
   <Card title="Triggers" href="/docs/connect/triggers">Schedules and webhooks that start sessions.</Card>
   <Card title="Connectors" href="/docs/connect/connectors">Scoped reach into external apps.</Card>
   <Card title="Slack & channels" href="/docs/connect/slack">Chat surfaces that start sessions.</Card>
   <Card title="Computers" href="/docs/connect/computers">Machines distinct from session sandboxes.</Card>
-  <Card title="Accounts" href="/docs/accounts">Who owns projects, and who can access them.</Card>
+  <Card title="Accounts" href="/docs/accounts">Who owns Workspaces, and who can access them.</Card>
 </Cards>

@@ -1,21 +1,21 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { connectors, projectSecrets, projectSessionSecretHandles } from '@kortix/db';
 import { Hono } from 'hono';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../workspaces/lib/access';
 
-const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
+const WORKSPACE_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const SECRET_ID = '55555555-5555-4555-8555-555555555555';
 
-const PROJECT_ACTIONS = {
-  PROJECT_CONNECTOR_READ: 'project.connector.read',
-  PROJECT_CONNECTOR_WRITE: 'project.connector.write',
-  PROJECT_CUSTOMIZE_WRITE: 'project.customize.write',
-  PROJECT_SECRET_READ: 'project.secret.read',
-  PROJECT_SECRET_WRITE: 'project.secret.write',
+const WORKSPACE_ACTIONS = {
+  WORKSPACE_CONNECTOR_READ: 'project.connector.read',
+  WORKSPACE_CONNECTOR_WRITE: 'project.connector.write',
+  WORKSPACE_CUSTOMIZE_WRITE: 'project.customize.write',
+  WORKSPACE_SECRET_READ: 'project.secret.read',
+  WORKSPACE_SECRET_WRITE: 'project.secret.write',
 };
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+mock.module('../iam', () => ({ WORKSPACE_ACTIONS }));
 
 let agentGrant: Record<string, unknown> | null = null;
 let authType: 'service_account' | 'supabase' = 'supabase';
@@ -24,14 +24,14 @@ let row: ReturnType<typeof secretRow> | null = secretRow();
 const updates: Array<Record<string, unknown>> = [];
 const handleUpdates: Array<Record<string, unknown>> = [];
 const audits: Array<Record<string, unknown>> = [];
-const propagations: Array<{ projectId: string; options: unknown }> = [];
+const propagations: Array<{ workspaceId: string; options: unknown }> = [];
 const boundConnectorSlugs: string[] = [];
 
 function secretRow(overrides: Record<string, unknown> = {}) {
   const now = new Date('2026-08-03T10:00:00.000Z');
   return {
     secretId: SECRET_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     identifier: 'SERVICE_API_KEY',
     name: 'SERVICE_API_KEY',
     valueEnc: 'encrypted-value',
@@ -140,23 +140,27 @@ mock.module('../shared/db', () => ({ hasDatabase: true, db: databaseMock }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../workspaces/lib/access', () => ({
   ...realAccess,
-  loadProjectForUser: async () => ({
-    row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
+  loadWorkspaceForUser: async () => ({
+    row: { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID },
     userId: USER_ID,
     accountRole: 'owner',
     projectRole: 'owner',
     effectiveRole: 'owner',
     adminBypass: false,
   }),
-  assertProjectCapability: async () => undefined,
+  assertWorkspaceCapability: async () => undefined,
 }));
 
-mock.module('../projects/lib/sandbox-env-sync', () => ({
-  propagateProjectSecretsToActiveSandboxes: async (projectId: string, options: unknown) => {
-    propagations.push({ projectId, options });
+mock.module('../workspaces/lib/sandbox-env-sync', () => ({
+  propagateWorkspaceSecretsToActiveSandboxes: async (workspaceId: string, options: unknown) => {
+    propagations.push({ workspaceId, options });
   },
+}));
+
+mock.module('../secrets/network-boundary-availability', () => ({
+  networkBoundaryDeliveryAvailable: () => true,
 }));
 
 mock.module('../shared/audit', () => ({
@@ -175,8 +179,8 @@ mock.module('../shared/audit', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/r3');
+const { workspaceRoutesApp: projectsApp } = await import('../workspaces/lib/app');
+await import('../workspaces/routes/r3');
 
 function buildApp() {
   const app = new Hono<{
@@ -196,7 +200,7 @@ function buildApp() {
   return app;
 }
 
-describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
+describe('PUT /v1/projects/:workspaceId/secrets/:identifier/strategy', () => {
   beforeEach(() => {
     row = secretRow();
     agentGrant = null;
@@ -210,7 +214,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
 
   test('changes runtime to denied and records metadata-only audit data', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -234,7 +238,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       actorUserId: USER_ID,
       action: 'secret.strategy.changed',
       resourceType: 'project_secret',
@@ -248,7 +252,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
 
   test('requires an outbound policy for broker delivery', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -269,7 +273,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
       inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
     };
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -299,7 +303,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
 
   test('rejects a network policy on the LLM gateway consumer', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -321,7 +325,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
 
   test('configures the LLM gateway without a network policy', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -345,7 +349,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
 
   test('configures a connector consumer without a network policy', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -372,7 +376,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     boundConnectorSlugs.push('binding-postman-echo');
 
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -391,7 +395,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
 
   test('rejects removed secret consumer values', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -403,34 +407,63 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(updates).toHaveLength(0);
   });
 
-  test('rejects transparent egress until its adapter is available', async () => {
+  test('stores an enforceable network-boundary policy', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           strategy: 'egress',
           egress_policy: {
-            backend: 'llm_gateway',
             rules: [{ host: 'api.example.com' }],
+            inject: {
+              kind: 'header',
+              name: 'authorization',
+              template: 'Bearer {{secret}}',
+            },
+            on_no_match: 'deny',
+          },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'egress',
+      consumer: 'network',
+      delivery_status: 'available',
+    });
+    expect(updates).toHaveLength(1);
+    expect(audits).toHaveLength(1);
+  });
+
+  test('rejects a network policy whose method restriction cannot be enforced', async () => {
+    const response = await buildApp().request(
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: {
+            rules: [{ host: 'api.example.com', methods: ['POST'] }],
             inject: { kind: 'header', name: 'authorization' },
           },
         }),
       },
     );
 
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: 'secret_delivery_unavailable' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'secret_delivery_policy_invalid' });
     expect(updates).toHaveLength(0);
-    expect(audits).toHaveLength(0);
   });
 
   test('attributes a service-account strategy change to automation', async () => {
     authType = 'service_account';
 
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -447,7 +480,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     agentGrant = { env: ['SERVICE_API_KEY'] };
 
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -463,7 +496,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     row = secretRow({ strategyLocked: true });
 
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -478,7 +511,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
 
   test('rejects unexpected request fields', async () => {
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -498,7 +531,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     });
 
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -517,7 +550,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     row = secretRow({ strategy: 'denied', rotatedAt, updatedAt: rotatedAt });
 
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/SERVICE_API_KEY/strategy`,
       {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -536,7 +569,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
   });
 });
 
-describe('POST /v1/projects/:projectId/secrets audit', () => {
+describe('POST /v1/projects/:workspaceId/secrets audit', () => {
   beforeEach(() => {
     row = null;
     agentGrant = null;
@@ -549,7 +582,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 
   test('records a metadata-only create event and marks the value rotated', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'SERVICE_API_KEY', value: 'plaintext-test-value' }),
@@ -576,7 +609,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 
   test('infers the sandbox consumer for explicit runtime creation', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -595,7 +628,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 
   test('infers no consumer for explicit denied creation', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -613,8 +646,37 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
     expect(row).toMatchObject({ strategy: 'denied', consumer: null });
   });
 
+  test('creates an enforceable network-boundary secret', async () => {
+    const policy = {
+      rules: [{ host: 'api.example.com' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+      on_no_match: 'deny',
+      tls: 'terminate',
+    };
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SERVICE_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'egress',
+        consumer: 'network',
+        egress_policy: policy,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'egress',
+      consumer: 'network',
+      delivery_status: 'available',
+      egress_policy: policy,
+    });
+    expect(row).toMatchObject({ strategy: 'egress', consumer: 'network', egressPolicy: policy });
+  });
+
   test('rejects a creation consumer without a strategy', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -630,7 +692,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
 
   test('rejects consumers that conflict with runtime or denied creation', async () => {
     const app = buildApp();
-    const runtime = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const runtime = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -640,7 +702,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
         consumer: 'connector',
       }),
     });
-    const denied = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const denied = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -656,7 +718,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 
   test('requires a named server consumer for broker creation', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -673,7 +735,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 
   test('creates an LLM gateway secret without a runtime delivery transition', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -704,7 +766,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 
   test('defaults a known LLM credential to the LLM gateway', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'ANTHROPIC_API_KEY', value: 'plaintext-test-value' }),
@@ -728,7 +790,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 
   test('keeps an explicit runtime choice for a known LLM credential', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -748,7 +810,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 
   test('creates a connector secret without a runtime delivery transition', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -771,7 +833,7 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
   });
 });
 
-describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
+describe('DELETE /v1/projects/:workspaceId/secrets/:identifier audit', () => {
   beforeEach(() => {
     row = secretRow({
       identifier: 'primary-openai',
@@ -787,7 +849,7 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
   });
 
   test('records the deleted policy metadata without the encrypted value', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets/primary-openai`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets/primary-openai`, {
       method: 'DELETE',
     });
 
@@ -805,7 +867,7 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
     expect(JSON.stringify(audits[0])).not.toContain('encrypted-delete-value');
     expect(propagations).toEqual([
       {
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         options: { refreshModels: true },
       },
     ]);
@@ -820,7 +882,7 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
     });
 
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/CODEX_AUTH_JSON`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/CODEX_AUTH_JSON`,
       { method: 'DELETE' },
     );
 
@@ -839,7 +901,7 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
     boundConnectorSlugs.push('binding-postman-echo');
 
     const response = await buildApp().request(
-      `/v1/projects/${PROJECT_ID}/secrets/POSTMAN_ECHO_TOKEN`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/POSTMAN_ECHO_TOKEN`,
       { method: 'DELETE' },
     );
 
@@ -854,7 +916,7 @@ describe('DELETE /v1/projects/:projectId/secrets/:identifier audit', () => {
   });
 });
 
-describe('DELETE /v1/projects/:projectId/oauth/:provider audit', () => {
+describe('DELETE /v1/projects/:workspaceId/oauth/:provider audit', () => {
   beforeEach(() => {
     row = secretRow({
       identifier: 'CODEX_AUTH_JSON',
@@ -869,7 +931,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider audit', () => {
   });
 
   test('deletes subscription credentials and records metadata only', async () => {
-    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/oauth/openai`, {
+    const response = await buildApp().request(`/v1/projects/${WORKSPACE_ID}/oauth/openai`, {
       method: 'DELETE',
     });
 

@@ -81,7 +81,7 @@ export function countsBySegment(items: ReviewItem[]): Record<ReviewSegment, numb
 export function matchesQuery(item: ReviewItem, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return `${item.title} ${item.summary} ${item.project} ${item.agent}`.toLowerCase().includes(q);
+  return `${item.title} ${item.summary} ${item.workspace} ${item.agent}`.toLowerCase().includes(q);
 }
 
 /** Items visible for the current segment + kind + query + optional session,
@@ -107,7 +107,7 @@ export function filterItems(
 }
 
 /** One "group by session" bucket. `sessionId === null` is the catch-all for
- *  items with no originating session (e.g. a project-level submission). */
+ *  items with no originating session (e.g. a workspace-level submission). */
 export interface SessionGroup {
   sessionId: string | null;
   label: string;

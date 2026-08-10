@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { ApiClient } from '../api/client.ts';
-import type { ProjectSummary } from '../api/types.ts';
+import type { WorkspaceSummary } from '../api/types.ts';
 import {
   authHeaderArgs,
-  linkGitHubBackedProject,
+  linkGitHubBackedWorkspace,
   reconcileShippedManifest,
   resolveExistingShipGitTarget,
   resolveProvisionShipGitTarget,
 } from '../commands/ship.ts';
-import { resolveProjectCloneTarget } from '../commands/projects.ts';
+import { resolveWorkspaceCloneTarget } from '../commands/workspaces.ts';
 
 test('managed git auth headers honor the provider-selected username', () => {
   const args = authHeaderArgs('https://kortix.code.storage/demo.git', 'jwt-token', 't');
@@ -20,9 +20,9 @@ test('managed git auth headers honor the provider-selected username', () => {
   expect(encoded && Buffer.from(encoded, 'base64').toString('utf8')).toBe('t:jwt-token');
 });
 
-function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+function workspace(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
   return {
-    project_id: 'proj_1',
+    workspace_id: 'proj_1',
     account_id: 'acct_1',
     name: 'Demo',
     repo_url: 'https://github.com/managed-kortix/demo.git',
@@ -39,22 +39,22 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
 
 function recordingClient(
   calls: Array<{ path: string; body: unknown }>,
-  linkedProject: ProjectSummary,
+  linkedProject: WorkspaceSummary,
 ): ApiClient {
   return {
     apiBase: 'https://api.kortix.test',
     post: async <T>(path: string, body?: unknown) => {
       calls.push({ path, body });
-      return { project: linkedProject } as T;
+      return { workspace: linkedProject } as T;
     },
   } as unknown as ApiClient;
 }
 
-describe('GitHub-backed project linking', () => {
-  test('uses the projects-mounted route with a GitHub PAT', async () => {
+describe('GitHub-backed workspace linking', () => {
+  test('uses the canonical workspace route with a GitHub PAT', async () => {
     const calls: Array<{ path: string; body: unknown }> = [];
 
-    await linkGitHubBackedProject(recordingClient(calls, project()), {
+    await linkGitHubBackedWorkspace(recordingClient(calls, workspace()), {
       repoUrl: 'https://github.com/acme/demo.git',
       name: 'Demo',
       accountId: 'acct_1',
@@ -64,7 +64,7 @@ describe('GitHub-backed project linking', () => {
 
     expect(calls).toEqual([
       {
-        path: '/projects/link-repository',
+        path: '/workspaces/link-repository',
         body: {
           repo_url: 'https://github.com/acme/demo.git',
           name: 'Demo',
@@ -75,10 +75,10 @@ describe('GitHub-backed project linking', () => {
     ]);
   });
 
-  test('uses the projects-mounted route with the GitHub App', async () => {
+  test('uses the canonical workspace route with the GitHub App', async () => {
     const calls: Array<{ path: string; body: unknown }> = [];
 
-    await linkGitHubBackedProject(recordingClient(calls, project()), {
+    await linkGitHubBackedWorkspace(recordingClient(calls, workspace()), {
       repoUrl: 'https://github.com/acme/demo.git',
       name: 'Demo',
       accountId: 'acct_1',
@@ -87,7 +87,7 @@ describe('GitHub-backed project linking', () => {
 
     expect(calls).toEqual([
       {
-        path: '/projects/link-repository',
+        path: '/workspaces/link-repository',
         body: {
           repo_url: 'https://github.com/acme/demo.git',
           name: 'Demo',
@@ -106,7 +106,7 @@ describe('ship git target resolution', () => {
   // broke `kortix ship` against Kortix Cloud.
   test('first-time managed ship pushes through the proxy origin, not the raw upstream', () => {
     const target = resolveProvisionShipGitTarget({
-      ...project({
+      ...workspace({
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
         metadata: { git: { managed: true } },
       }),
@@ -122,7 +122,7 @@ describe('ship git target resolution', () => {
 
   test('existing managed ship pushes through the proxy origin', () => {
     const target = resolveExistingShipGitTarget(
-      project({
+      workspace({
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
         metadata: { git: { managed: true } },
       }),
@@ -138,7 +138,7 @@ describe('ship git target resolution', () => {
     // Proxy off ⇒ the server mirrors repo_url into git_origin_url.
     const raw = 'https://github.com/managed-kortix/demo.git';
     const target = resolveExistingShipGitTarget(
-      project({ git_origin_url: raw, metadata: { git: { managed: true } } }),
+      workspace({ git_origin_url: raw, metadata: { git: { managed: true } } }),
     );
 
     expect(target).toEqual({ repoUrl: raw, credentialMode: 'managed-git-token' });
@@ -146,7 +146,7 @@ describe('ship git target resolution', () => {
 
   test('first-time managed ship on a proxy-less host mints a provider token', () => {
     const target = resolveProvisionShipGitTarget({
-      ...project({ metadata: { git: { managed: true } } }),
+      ...workspace({ metadata: { git: { managed: true } } }),
       push_token: 'ghp_push',
       repo_id: 'repo_1',
     });
@@ -159,7 +159,7 @@ describe('ship git target resolution', () => {
 
   test('non-managed proxy projects still push through the Kortix git proxy', () => {
     const target = resolveExistingShipGitTarget(
-      project({
+      workspace({
         repo_url: 'https://github.com/acme/byo.git',
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
         metadata: { git: { managed: false } },
@@ -174,7 +174,7 @@ describe('ship git target resolution', () => {
 
   test('plain BYO projects rely on local git credentials', () => {
     const target = resolveExistingShipGitTarget(
-      project({
+      workspace({
         repo_url: 'https://github.com/acme/byo.git',
         metadata: { git: { managed: false } },
       }),
@@ -188,19 +188,19 @@ describe('ship git target resolution', () => {
 
   // The regression this whole module exists to prevent: ship and clone drifted
   // apart and ship picked a credential the server can't issue. They resolve
-  // from the same function now — assert they agree on every project shape.
-  test('ship and clone resolve the same repo URL for every project shape', () => {
+  // from the same function now — assert they agree on every workspace shape.
+  test('ship and clone resolve the same repo URL for every workspace shape', () => {
     const proxy = 'https://api.kortix.com/v1/git/proj_1.git';
-    const shapes: ProjectSummary[] = [
-      project({ git_origin_url: proxy, metadata: { git: { managed: true } } }),
-      project({ git_origin_url: proxy, metadata: { git: { managed: false } } }),
-      project({ metadata: { git: { managed: true } } }),
-      project({ repo_url: 'https://github.com/acme/byo.git', metadata: {} }),
+    const shapes: WorkspaceSummary[] = [
+      workspace({ git_origin_url: proxy, metadata: { git: { managed: true } } }),
+      workspace({ git_origin_url: proxy, metadata: { git: { managed: false } } }),
+      workspace({ metadata: { git: { managed: true } } }),
+      workspace({ repo_url: 'https://github.com/acme/byo.git', metadata: {} }),
     ];
 
     for (const shape of shapes) {
       const ship = resolveExistingShipGitTarget(shape);
-      const clone = resolveProjectCloneTarget(shape, 'kortix_pat_abc');
+      const clone = resolveWorkspaceCloneTarget(shape, 'kortix_pat_abc');
       expect(clone.repoUrl).toBe(ship.repoUrl);
       expect(clone.needsManagedToken).toBe(ship.credentialMode === 'managed-git-token');
       expect(clone.token).toBe(ship.credentialMode === 'kortix-token' ? 'kortix_pat_abc' : null);
@@ -210,13 +210,13 @@ describe('ship git target resolution', () => {
 
 test('ship reconciles the remote manifest independently of connector prompts', async () => {
   const calls: Array<{ path: string; body: unknown }> = [];
-  const client = recordingClient(calls, project());
+  const client = recordingClient(calls, workspace());
 
   await reconcileShippedManifest(client, 'proj_1');
 
   expect(calls).toEqual([
     {
-      path: '/connectors/projects/proj_1/connectors/sync',
+        path: '/connectors/workspaces/proj_1/connectors/sync',
       body: undefined,
     },
   ]);

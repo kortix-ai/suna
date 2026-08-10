@@ -1,8 +1,8 @@
 'use client';
 
 import {
-  type AdminConnector,
-  type ConnectorAuthorizationStrategy,
+  type WorkspaceAdminConnector,
+  type WorkspaceConnectorAuthorizationStrategy,
   deleteConnector,
 } from '@kortix/sdk';
 import { TrashIcon } from '@phosphor-icons/react';
@@ -17,30 +17,28 @@ import { connectorAuthorizationStrategyIsEditable } from '@/features/workspace/c
 import { AuthorizationStrategyField } from '@/features/workspace/customize/sections/connector-connection-modal';
 
 export interface ConnectorSettingsProps {
-  projectId: string;
-  connector: AdminConnector;
+  workspaceId: string;
+  connector: WorkspaceAdminConnector;
   displayName: string;
   canWrite: boolean;
   /** The authorization owner is mid-update — freeze the Remove control too. */
   strategyUpdating: boolean;
-  onAuthorizationStrategyChange: (next: ConnectorAuthorizationStrategy) => void;
+  onAuthorizationStrategyChange: (next: WorkspaceConnectorAuthorizationStrategy) => void;
   onRemoved: () => void;
 }
 
 /**
  * Settings — who the connector runs as, and removing it.
  *
- * `connectorTabs` already restricts this tab to writers and drops it for
- * `computer` connectors, so neither is re-checked here.
+ * `connectorTabs` already restricts this tab to writers.
  *
  * Two rows, one shape: label, statement, trailing control. Every row is a
  * `bg-popover rounded-md border px-4 py-3` box, so they line up as one wall.
  *
- * Renaming is not here — it lives in the modal header (`HeaderName`), so
- * `computer` connectors keep it without having a Settings tab.
+ * Renaming is not here — it lives in the modal header (`HeaderName`).
  */
 export function ConnectorSettings({
-  projectId,
+  workspaceId,
   connector,
   displayName,
   canWrite,
@@ -52,7 +50,7 @@ export function ConnectorSettings({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const remove = useMutation({
-    mutationFn: () => deleteConnector(projectId, connector.slug),
+    mutationFn: () => deleteConnector(workspaceId, connector.slug),
     onSuccess: () => {
       successToast(`Removed ${displayName}`);
       onRemoved();
@@ -96,7 +94,7 @@ export function ConnectorSettings({
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">Remove connector</p>
               <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                Its saved connections and tool rules are deleted too.
+                Its assignments, saved connections, and tool rules are deleted too.
               </p>
             </div>
             <Button
@@ -119,8 +117,8 @@ export function ConnectorSettings({
         title={`Remove ${displayName}?`}
         description={
           <>
-            This deletes <code className="font-mono">{connector.slug}</code>, its saved connections
-            and its tool rules. This can’t be undone.
+            This deletes <code className="font-mono">{connector.slug}</code>, its assignments, saved
+            connections, and tool rules. This can’t be undone.
           </>
         }
         confirmLabel="Remove connector"

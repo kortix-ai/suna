@@ -1,6 +1,6 @@
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -10,7 +10,7 @@ import { C, help, pad, status } from '../style.ts';
 // Resource-access grants — the inheritance PYRAMID. Resources (secrets +
 // connectors) live on AGENTS; you assign an agent to a member or group and
 // they inherit everything that agent declares. This wraps the same
-// /projects/:id/resource-grants routes the dashboard's "Members → Resource
+// /workspaces/:id/resource-grants routes the dashboard's "Members → Resource
 // access" panel uses. Grantable resource types: agent, skill, secret.
 
 const RESOURCE_TYPES = ['agent', 'skill', 'secret'] as const;
@@ -52,7 +52,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const HELP = help`Usage: kortix grants <subcommand> [options]
 
-Assign project resources to people — the inheritance PYRAMID. Secrets and
+Assign workspace resources to people — the inheritance PYRAMID. Secrets and
 connectors live on AGENTS; assign an agent to a member (or group) and they
 inherit everything that agent declares. Mirrors the dashboard's
 "Members → Resource access" panel. Authorization is centralized on the agent:
@@ -69,7 +69,7 @@ Options:
   --group            Treat --to as a group id, not a member.
   --type <t>         agent (the only assignable type; default).
   --expires <iso>    Optional auto-revoke timestamp.
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>     Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -86,7 +86,7 @@ function missing(what: string): number {
   return 2;
 }
 
-/** Resolve a member's user-id from an email via the project access list. */
+/** Resolve a member's user-id from an email via the workspace access list. */
 async function resolveMemberId(
   client: { get: <T>(p: string) => Promise<T> },
   base: string,
@@ -98,7 +98,7 @@ async function resolveMemberId(
   const hit = resp.members.find((m) => (m.email ?? '').toLowerCase() === needle);
   if (!hit) {
     process.stderr.write(
-      `${status.err(`No member with email "${who}" in this project.`)} Use ${C.cyan}kortix access ls${C.reset} to see members, or pass a user-id.\n`,
+      `${status.err(`No member with email "${who}" in this workspace.`)} Use ${C.cyan}kortix access ls${C.reset} to see members, or pass a user-id.\n`,
     );
     return null;
   }
@@ -116,7 +116,7 @@ export async function runGrants(argv: string[]): Promise<number> {
   let json = false;
   let group = false;
   try {
-    f.project = takeFlagValue(rest, ['--project']);
+    f.workspace = takeFlagValue(rest, ['--workspace', '--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.to = takeFlagValue(rest, ['--to']);
     f.type = takeFlagValue(rest, ['--type']);
@@ -128,9 +128,9 @@ export async function runGrants(argv: string[]): Promise<number> {
     return 2;
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveWorkspaceContext({ workspaceArg: f.workspace, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.workspaceId}`;
 
   try {
     switch (sub) {

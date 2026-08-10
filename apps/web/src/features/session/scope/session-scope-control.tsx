@@ -99,6 +99,7 @@ export function setSessionConnectorConnection(
   return {
     ...draft,
     connector_bindings: connectorBindings,
+    connector_bindings_inherited: false,
   };
 }
 
@@ -140,7 +141,11 @@ export function setSessionConnectorEnabled(
   // agent discover it mid-answer.
   return draft.require_connectors?.includes(connector.slug)
     ? draft
-    : { ...draft, require_connectors: [...(draft.require_connectors ?? []), connector.slug] };
+    : {
+        ...draft,
+        connector_bindings_inherited: false,
+        require_connectors: [...(draft.require_connectors ?? []), connector.slug],
+      };
 }
 
 function secretSummary(draft: SessionScopeDraft): string {
@@ -342,7 +347,7 @@ export function SessionScopeControlContent({
                           <span className="flex min-w-0 items-center gap-1.5">
                             <span className="text-foreground truncate">{connector.name}</span>
                             <Badge variant="outline" size="xs">
-                              {connector.authorization_strategy === 'user' ? 'Private' : 'Project'}
+                              {connector.authorization_strategy === 'user' ? 'Private' : 'Workspace'}
                             </Badge>
                             {!hasConnection ? (
                               <span className="text-muted-foreground truncate text-xs font-normal">
@@ -362,8 +367,8 @@ export function SessionScopeControlContent({
                         // Select to offer — rendering it would show an empty
                         // dropdown that looks broken. Say what will happen instead.
                         <p className="text-muted-foreground pr-2 pb-2 pl-10 text-xs text-pretty">
-                          Nothing is connected to {connector.name} yet. This session will ask you
-                          to connect it before its next reply.
+                          Nothing is connected to {connector.name} yet. This session will ask you to
+                          connect it before its next reply.
                         </p>
                       ) : null}
                       {selected && !requiredUnconnected ? (
@@ -373,11 +378,7 @@ export function SessionScopeControlContent({
                             disabled={controlsDisabled}
                             onValueChange={(connectionId) =>
                               onChange(
-                                setSessionConnectorConnection(
-                                  draft,
-                                  connector.slug,
-                                  connectionId,
-                                ),
+                                setSessionConnectorConnection(draft, connector.slug, connectionId),
                               )
                             }
                           >

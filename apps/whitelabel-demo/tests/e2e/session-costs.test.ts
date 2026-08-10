@@ -45,8 +45,8 @@ describe('/api/session-costs', () => {
   test('markup math is exact for a single project', async () => {
     const email = uniqueEmail('cost-single');
     const token = await loginUser(app, email, DEMO_PASSWORD);
-    const projectId = await provision(app, token, 'Usage Single');
-    mock.seedSessionCosts(projectId, [
+    const workspaceId = await provision(app, token, 'Usage Single');
+    mock.seedSessionCosts(workspaceId, [
       { session_id: 's1', total_cost: 10 },
       { session_id: 's2', total_cost: 2.5 },
     ]);
@@ -59,7 +59,7 @@ describe('/api/session-costs', () => {
       markup: number;
       totals: { raw: number; billed: number };
       projects: Array<{
-        projectId: string;
+        workspaceId: string;
         sessions: Array<{ billed_cost: number; total_cost: number }>;
       }>;
     };
@@ -75,7 +75,7 @@ describe('/api/session-costs', () => {
     expect(data).not.toHaveProperty('unattributed_cost');
     expect(JSON.stringify(data)).not.toMatch(REMOVED_ATTRIBUTION_PATTERN);
 
-    const proj = data.projects.find((p) => p.projectId === projectId)!;
+    const proj = data.projects.find((p) => p.workspaceId === workspaceId)!;
     expect(proj.sessions.find((s) => s.total_cost === 10)!.billed_cost).toBe(
       15,
     );
@@ -86,7 +86,7 @@ describe('/api/session-costs', () => {
       mock.requests.some(
         (request) =>
           request.path ===
-          `/v1/usage/session-costs?project_id=${projectId}&limit=100&offset=0`,
+          `/v1/usage/session-costs?project_id=${workspaceId}&limit=100&offset=0`,
       ),
     ).toBe(true);
   });
@@ -127,14 +127,14 @@ describe('/api/session-costs', () => {
     const data = (await res.json()) as {
       totals: { raw: number; billed: number };
       projects: Array<{
-        projectId: string;
+        workspaceId: string;
         sessions: unknown[];
         error?: string;
       }>;
     };
 
-    const healthyEntry = data.projects.find((p) => p.projectId === healthy)!;
-    const brokenEntry = data.projects.find((p) => p.projectId === broken)!;
+    const healthyEntry = data.projects.find((p) => p.workspaceId === healthy)!;
+    const brokenEntry = data.projects.find((p) => p.workspaceId === broken)!;
     expect(healthyEntry.sessions).toHaveLength(1);
     expect(brokenEntry.sessions).toHaveLength(0);
     expect(brokenEntry.error).toBeTruthy();

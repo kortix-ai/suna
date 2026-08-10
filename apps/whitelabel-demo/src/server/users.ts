@@ -44,8 +44,8 @@ function writeData(data: UsersData): void {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function isValidProjectId(projectId: string): boolean {
-  return UUID_RE.test(projectId);
+export function isValidProjectId(workspaceId: string): boolean {
+  return UUID_RE.test(workspaceId);
 }
 
 /** Every project id `userId` owns (created through the wrapper). */
@@ -53,18 +53,18 @@ export function listOwnedProjects(userId: string): string[] {
   return (readData()[userId] ?? []).filter(isValidProjectId);
 }
 
-/** Record that `userId` owns `projectId` — called right after a successful `/projects/provision`. */
-export function addOwnedProject(userId: string, projectId: string): void {
-  if (!userId || !isValidProjectId(projectId)) return;
+/** Record that `userId` owns `workspaceId` — called right after a successful `/projects/provision`. */
+export function addOwnedProject(userId: string, workspaceId: string): void {
+  if (!userId || !isValidProjectId(workspaceId)) return;
   const data = readData();
   const existing = data[userId] ?? [];
-  if (!existing.includes(projectId)) {
-    data[userId] = [...existing, projectId];
+  if (!existing.includes(workspaceId)) {
+    data[userId] = [...existing, workspaceId];
     writeData(data);
   }
 }
 
-/** True if `userId` owns `projectId`. */
-export function isOwner(userId: string, projectId: string): boolean {
-  return listOwnedProjects(userId).includes(projectId);
+/** True if `userId` owns `workspaceId`. */
+export function isOwner(userId: string, workspaceId: string): boolean {
+  return listOwnedProjects(userId).includes(workspaceId);
 }

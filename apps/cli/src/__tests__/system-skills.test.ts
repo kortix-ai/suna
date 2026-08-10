@@ -293,7 +293,7 @@ describe('kortix system-skills — get', () => {
 });
 
 describe('kortix system-skills — path', () => {
-  test('resolves the on-disk skill dir under a project root', async () => {
+  test('resolves the on-disk skill dir under a workspace root', async () => {
     mkdirSync(join(tmp, '.kortix', 'opencode'), { recursive: true });
     const code = await runSystemSkills(['path', 'kortix-system']);
     expect(code).toBe(0);

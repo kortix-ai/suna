@@ -21,10 +21,10 @@ import { Database } from 'bun:sqlite';
 import { sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { getDaytona } from '../shared/daytona';
-import { normalizeAgentpressThread, type AgentpressMessageRow, type NormalizedMessage } from '../projects/suna-migration/agentpress-mapper';
-import { writeConversations, type SessionToWrite } from '../projects/suna-migration/opencode-db-writer';
-import { extractWorkspace, slugify } from '../projects/suna-migration/suna-extract';
-import { pushBundleAsRepo } from '../projects/suna-migration/suna-push';
+import { normalizeAgentpressThread, type AgentpressMessageRow, type NormalizedMessage } from '../workspaces/suna-migration/agentpress-mapper';
+import { writeConversations, type SessionToWrite } from '../workspaces/suna-migration/opencode-db-writer';
+import { extractWorkspace, slugify } from '../workspaces/suna-migration/suna-extract';
+import { pushBundleAsRepo } from '../workspaces/suna-migration/suna-push';
 
 function arg(flag: string): string | undefined {
   const i = Bun.argv.indexOf(flag);
@@ -39,7 +39,7 @@ const mode = pushDir ? 'push-repo' : Bun.argv.includes('--apply') ? 'apply' : bu
 if (!accountId) { console.error('--account-id <uuid> required'); process.exit(2); }
 if (mode === 'build' && !buildDir) { console.error('--build <dir> required'); process.exit(2); }
 
-interface SunaProject { project_id: string; name: string; external_id: string | null; resource_status: string | null; }
+interface SunaWorkspace { project_id: string; name: string; external_id: string | null; resource_status: string | null; }
 
 async function discover(account: string) {
   const projects = (await db.execute(sql`
@@ -48,7 +48,7 @@ async function discover(account: string) {
     LEFT JOIN public.resources r ON r.id = p.sandbox_resource_id AND r.type = 'sandbox'
     WHERE p.account_id = ${account} ORDER BY p.created_at DESC
     ${limit ? sql`LIMIT ${Number(limit)}` : sql``}
-  `)) as unknown as SunaProject[];
+  `)) as unknown as SunaWorkspace[];
   const threads = (await db.execute(sql`
     SELECT thread_id, project_id FROM public.threads WHERE account_id = ${account}
   `)) as unknown as Array<{ thread_id: string; project_id: string | null }>;
@@ -63,18 +63,18 @@ async function threadMessages(threadId: string): Promise<AgentpressMessageRow[]>
   return rows.map((r) => ({ ...r, created_at: String(r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at) }));
 }
 
-interface Unit { project: SunaProject; slug: string; session: SessionToWrite; }
+interface Unit { project: SunaWorkspace; slug: string; session: SessionToWrite; }
 
-async function buildUnits(account: string): Promise<{ units: Unit[]; projects: SunaProject[] }> {
+async function buildUnits(account: string): Promise<{ units: Unit[]; projects: SunaWorkspace[] }> {
   const { projects, threads } = await discover(account);
-  const byProject = new Map<string, string[]>();
-  for (const t of threads) { const k = t.project_id ?? ''; (byProject.get(k) ?? byProject.set(k, []).get(k)!).push(t.thread_id); }
+  const byWorkspace = new Map<string, string[]>();
+  for (const t of threads) { const k = t.project_id ?? ''; (byWorkspace.get(k) ?? byWorkspace.set(k, []).get(k)!).push(t.thread_id); }
 
   const units: Unit[] = [];
   const usedSlugs = new Set<string>();
   for (const p of projects) {
     const messages: NormalizedMessage[] = [];
-    for (const tid of byProject.get(p.project_id) ?? []) messages.push(...normalizeAgentpressThread(await threadMessages(tid)));
+    for (const tid of byWorkspace.get(p.project_id) ?? []) messages.push(...normalizeAgentpressThread(await threadMessages(tid)));
     if (!messages.length) continue;
     let slug = slugify(p.name, p.project_id.slice(0, 8));
     if (usedSlugs.has(slug)) slug = `${slug}-${p.project_id.slice(0, 6)}`;
@@ -154,9 +154,9 @@ async function main() {
     const repo = await pushBundleAsRepo(accountId!, pushDir!);
     console.log(`\n✓ pushed`);
     console.log(`  repo:       ${repo.upstreamUrl}`);
-    console.log(`  project_id: ${repo.projectId}`);
-    console.log(`  opencode.db kept aside: ${join(pushDir!, '..')}/${repo.projectId}.opencode.db`);
-    console.log(`\n  Next: create the kortix.projects row for ${repo.projectId} pointed at this repo,`);
+    console.log(`  project_id: ${repo.workspaceId}`);
+    console.log(`  opencode.db kept aside: ${join(pushDir!, '..')}/${repo.workspaceId}.opencode.db`);
+    console.log(`\n  Next: create the kortix.projects row for ${repo.workspaceId} pointed at this repo,`);
     console.log(`        then provision its sessions + ship the opencode.db (the API-side step).\n`);
     return;
   }
@@ -165,7 +165,7 @@ async function main() {
   //    → db). Needs the full infra (GitHub App, Daytona, reachable KORTIX_URL).
   //    Run against STAGING first, bounded with --limit. ──
   if (mode === 'apply') {
-    const { startSunaMigration, driveSunaMigration, latestSunaMigration } = await import('../projects/suna-migration/suna-migration-runner');
+    const { startSunaMigration, driveSunaMigration, latestSunaMigration } = await import('../workspaces/suna-migration/suna-migration-runner');
     console.log(`Starting migration (limit ${limit ?? 25}, offset ${offset ?? 0}) for ${accountId} …`);
     const { migration } = await startSunaMigration({
       database: db, accountId: accountId!, autoDrive: false,
@@ -173,7 +173,7 @@ async function main() {
     });
     await driveSunaMigration(db, migration.migrationId); // drive synchronously so the script reports the outcome
     const final = await latestSunaMigration(db, accountId!);
-    console.log(`\n  status: ${final?.status}  phase: ${final?.phase}  project_id: ${final?.projectId ?? '—'}`);
+    console.log(`\n  status: ${final?.status}  phase: ${final?.phase}  project_id: ${final?.workspaceId ?? '—'}`);
     if (final?.status === 'failed') { console.error(`  ✗ ${final.error}`); process.exit(1); }
     console.log(`\n✓ ${final?.status}. Open the project to confirm chats rehydrate.\n`);
     return;

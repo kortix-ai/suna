@@ -28,7 +28,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     branchFetchDelaySec: 0.25,
     defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     apiUrl: undefined,
     repoUrl: 'https://git.example.test/repo-abc',
     branchName: 'session-xyz',
@@ -128,7 +128,7 @@ describe('git credential helper', () => {
 
   it('returns null when token/project/api are not all present', async () => {
     expect(await resolveGitCredentialOutput(baseConfig({ apiUrl: undefined }))).toBeNull()
-    expect(await resolveGitCredentialOutput(baseConfig({ projectId: undefined }))).toBeNull()
+    expect(await resolveGitCredentialOutput(baseConfig({ workspaceId: undefined }))).toBeNull()
     expect(await resolveGitCredentialOutput(baseConfig({ sandboxToken: undefined }))).toBeNull()
   })
 

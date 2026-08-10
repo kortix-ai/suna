@@ -46,7 +46,7 @@ const FAMILY_ICON: Record<StepFamily, LucideIcon> = {
   memory: Brain,
   apps: Plug,
   automations: Zap,
-  projects: FolderOpen,
+  workspaces: FolderOpen,
   skills: Wand2,
   ask: CircleHelp,
   retired: Archive,

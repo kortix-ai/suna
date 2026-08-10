@@ -17,7 +17,7 @@ export interface UsageEvent extends TokenCounts {
   actorUserId: string;
   // Per-session attribution carried onto the usage event so usage_events rows
   // (not only the trace) are attributable to the calling project/session.
-  projectId?: string;
+  workspaceId?: string;
   sessionId?: string;
   provider: string;
   model: string;

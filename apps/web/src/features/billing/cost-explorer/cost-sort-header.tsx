@@ -23,7 +23,7 @@ export interface CostSortHeaderProps {
  *
  * Only columns the API can actually order are built with this. A header that
  * looks clickable and does nothing is worse than a plain one, so
- * `projects-level.tsx` and `sessions-level.tsx` each map their sortable columns
+ * `workspaces-level.tsx` and `sessions-level.tsx` each map their sortable columns
  * to the sort tokens their route accepts and leave the rest as plain
  * `TableHead`s.
  *

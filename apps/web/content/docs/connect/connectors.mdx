@@ -5,12 +5,12 @@ description: How connectors and connections give agents scoped access to externa
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-A connector links a project to an external tool or service. The agent
+A connector links a Workspace to an external tool or service. The agent
 calls it as a tool. Kortix brokers each call, so the sandbox never holds the
 connector credential.
 
 You declare most connectors in `kortix.yaml`. See the
-[manifest reference](/docs/project/manifest) for every field. Kortix declares
+[manifest reference](/docs/workspace/manifest) for every field. Kortix declares
 channel and computer connectors when you connect a chat platform or a
 machine.
 
@@ -18,7 +18,7 @@ machine.
 
 A connector is the agent-facing permission package. It contains:
 
-- a project-unique slug
+- a Workspace-unique slug
 - a display name
 - a provider app
 - one authorization strategy
@@ -29,8 +29,8 @@ Every connection uses the connector's policies.
 
 The authorization strategy is:
 
-- `project` for connections available to eligible project members
-- `user` for a connection owned by the acting project member
+- `workspace` for connections available to eligible Workspace members
+- `user` for a connection owned by the acting Workspace member
 
 A service account cannot use a member's `user` connection. Multiple
 connectors can reference the same provider app. Use separate connectors
@@ -44,7 +44,7 @@ A connector uses one provider type:
 - **openapi**, **postman**, **graphql**, **http** — direct API connectors
 - **mcp** — a remote MCP server over HTTP or SSE
 - **channel** — a chat platform connection
-- **computer** — a tunnel to a connected machine
+- **computer** — one permissioned connector profile for one connected machine
 
 See [Slack and channels](/docs/connect/slack) and
 [Computers](/docs/connect/computers) for the managed provider flows.
@@ -62,12 +62,12 @@ agent grant and connector-connection policy, calls the external API, and returns
 the result.
 
 Connector policies belong to the connector. A connection cannot
-override them. Project guardrails apply above connector-connection policies.
+override them. Workspace guardrails apply above connector-connection policies.
 
 By default, an unmatched connector action runs without approval. Set
 `policy.default_mode: risk` to require approval for unmatched write and
 destructive actions. Set `sensitive: true` to make `require_approval` the
-connector's unmatched-action default, including reads. Explicit project
+connector's unmatched-action default, including reads. Explicit Workspace
 or connector-connection rules still apply first.
 
 ### Approve one governed call
@@ -78,7 +78,7 @@ returns `202 pending_approval` with `approval_url`, `approval_summary`, and
 
 Share `approval_url` with any teammate. The URL identifies the request but does
 not grant authority. The page requires a signed-in Kortix account. Kortix then
-verifies that the account can access and approve actions in the project.
+verifies that the account can access and approve actions in the Workspace.
 
 The approval page shows the redacted parameters that the connector will receive.
 Approve or deny the call once. Kortix sends the decision back into the session
@@ -94,16 +94,16 @@ explicit `always_run` policy only when a connector action must run unattended.
 
 <Steps>
 <Step>
-### Open the project's Connectors page
+### Open the Workspace Connectors page
 
-Open the project. Select **Connectors**, then select the app.
+Open the Workspace. Select **Connectors**, then select the app.
 
 </Step>
 <Step>
 ### Select the connection scope
 
-Select **Project** for a shared project connection. Select **User** for a
-connection owned by the acting project member.
+Select **Workspace** for a shared Workspace connection. Select **User** for a
+connection owned by the acting Workspace member.
 
 </Step>
 <Step>
@@ -169,6 +169,8 @@ connectors:
 ```
 
 `authorization_strategy` defaults to `project` when the manifest omits it.
+The manifest keeps `project` as a compatibility value. The canonical API and
+SDK expose this strategy as `workspace`.
 
 </Step>
 <Step>
@@ -223,7 +225,7 @@ session can select a specific connection:
 The binding key is the connector slug. The value is an active connection that
 matches the connector's strategy.
 
-Use `GET /projects/{projectId}/sessions/{sessionId}/scope` to read the effective
+Use `GET /workspaces/{workspaceId}/sessions/{sessionId}/scope` to read the effective
 binding. Use `PUT` on the same path to replace it. The replacement applies to
 the next tool call without restarting the session.
 

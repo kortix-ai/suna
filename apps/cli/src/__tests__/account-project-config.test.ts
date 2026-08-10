@@ -100,7 +100,7 @@ describe('config: account + default-project state', () => {
     expect(clearDefaultProject()).toBe(false);
   });
 
-  test('canonical Workspace storage migrates legacy Project config', () => {
+  test('canonical Workspace storage migrates legacy Workspace config', () => {
     writeConfig({
       test: loggedInHost({
         default_project: { project_id: 'proj_a', account_id: 'account_1', name: 'Alpha' },

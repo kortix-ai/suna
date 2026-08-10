@@ -40,7 +40,7 @@ beforeAll(async () => {
     '../shared/daytona-rate-limit'
   ));
   ({ isPlatinumSandboxNotRunningError } = await import('../shared/platinum'));
-  ({ isGitOperationError } = await import('../projects/git/mirror'));
+  ({ isGitOperationError } = await import('../workspaces/git/mirror'));
   await primeDaytonaRateLimitClassifier();
 });
 

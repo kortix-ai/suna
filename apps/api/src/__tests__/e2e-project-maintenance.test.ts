@@ -73,7 +73,7 @@ mock.module('../sandbox-proxy', () => ({
   },
 }));
 
-mock.module('../projects/git', () => ({
+mock.module('../workspaces/git', () => ({
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   archiveRepoSubtree: async () => undefined,
@@ -83,7 +83,7 @@ mock.module('../projects/git', () => ({
   },
   createRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
-  loadProjectConfig: async () => ({}),
+  loadWorkspaceConfig: async () => ({}),
   readRepoFile: async () => '',
   readManifestFromRepo: async () => null,
   listBranches: async () => [],
@@ -104,10 +104,10 @@ mock.module('../projects/git', () => ({
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   getMergeBase: async () => 'a'.repeat(40),
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
-  invalidateProjectMirror: () => {},
+  invalidateWorkspaceMirror: () => {},
 }));
 
-mock.module('../projects/session-lifecycle/undelivered-prompts', () => ({
+mock.module('../workspaces/session-lifecycle/undelivered-prompts', () => ({
   reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
 }));
 
@@ -116,8 +116,8 @@ mock.module('../projects/session-lifecycle/undelivered-prompts', () => ({
 // hand-maintained lists rot into `SyntaxError: Export named 'x' not found` the
 // moment the module grows one. Neither of these modules connects to anything at
 // import time, so pulling the real one in stays hermetic.
-const actualReaper = await import('../projects/sandbox-reaper');
-mock.module('../projects/sandbox-reaper', () => ({
+const actualReaper = await import('../workspaces/sandbox-reaper');
+mock.module('../workspaces/sandbox-reaper', () => ({
   ...actualReaper,
   reapAndReconcileSandboxes: async () => ({
     candidates: 0,
@@ -137,7 +137,7 @@ const {
   hasOpenPullRequestMarker,
   postgresTimestampParam,
   sweepExpiredSessionBranches,
-} = await import('../projects/maintenance');
+} = await import('../workspaces/maintenance');
 
 beforeEach(() => {
   sandboxCandidates = [];
@@ -171,7 +171,7 @@ describe('project maintenance', () => {
         branchName: 'session-old',
         baseRef: 'main',
         metadata: { existing: true },
-        projectId: '00000000-0000-4000-a000-000000000201',
+        workspaceId: '00000000-0000-4000-a000-000000000201',
         repoUrl: 'https://github.com/kortix-ai/project.git',
         defaultBranch: 'main',
         manifestPath: 'kortix.yaml',
@@ -181,7 +181,7 @@ describe('project maintenance', () => {
         branchName: 'session-pr',
         baseRef: 'main',
         metadata: { pull_request: { state: 'open' } },
-        projectId: '00000000-0000-4000-a000-000000000201',
+        workspaceId: '00000000-0000-4000-a000-000000000201',
         repoUrl: 'https://github.com/kortix-ai/project.git',
         defaultBranch: 'main',
         manifestPath: 'kortix.yaml',

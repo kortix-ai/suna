@@ -1,388 +1,415 @@
 /**
- * Integration test (real local DB): the `computer` connector end-to-end below the
- * HTTP layer — synth materialization → list_computers → permission_required →
- * grant → relay attempt. Proves the real wiring (sync, db-deps, the shared tunnel
- * RPC core) against a real Postgres with a seeded tunnel, no WS agent needed.
+ * Real-DB integration coverage for grouped Computers connector profiles.
  *
- * Runs against the local Postgres (DATABASE_URL). Seeds a project's account with
- * a tunnel + the agent_tunnel flag in beforeAll, cleans up in afterAll. Applies
- * the additive enum value idempotently (mirrors ensureSchema's push locally).
+ * This suite proves explicit profile creation, one-to-many tunnel assignment,
+ * profile-scoped discovery and routing, independent policies, account-boundary
+ * enforcement, and the connector audit namespace.
  */
-import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { sql, eq, and } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accounts,
-  tunnelAuditLogs,
+  auditEvents,
+  connectorActions,
+  connectorConnections,
+  connectorPolicies,
+  connectors,
+  projectSessionConnectorBindings,
+  projectSessions,
   projects,
   tunnelConnections,
   tunnelPermissions,
-  connectors,
-  connectorActions,
 } from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+
 import { synthesizeComputerConnectors } from '../connectors/computer-materialize';
-import { syncProjectConnectors } from '../connectors/sync';
-import { executeComputerCall, listAccountComputers } from '../tunnel/core/rpc-core';
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
+import { db } from '../shared/db';
+import { executeComputerCall } from '../tunnel/core/rpc-core';
 
-let projectId = '';
+let workspaceId = '';
 let accountId = '';
-let tunnelId = '';
-let seeded = false;
-let fixtureRoot = '';
-let previousGitCacheDir: string | undefined;
+let otherAccountId = '';
+let studioTunnelId = '';
+let travelTunnelId = '';
+let unassignedTunnelId = '';
+let crossAccountTunnelId = '';
+const LEGACY_CONNECTOR_ID = crypto.randomUUID();
+const LEGACY_CONNECTION_ID = crypto.randomUUID();
+const LEGACY_SESSION_ID = crypto.randomUUID();
+const LEGACY_USER_ID = crypto.randomUUID();
 
-function git(args: string[], cwd: string): void {
-  execFileSync('git', args, {
-    cwd,
-    stdio: 'pipe',
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-  });
-}
+const GROUP_SLUG = 'team-computers';
+const TRAVEL_SLUG = 'travel-computer';
 
 beforeAll(async () => {
   await db.execute(sql`alter type kortix.connector_provider add value if not exists 'computer'`);
-  await db.execute(sql`
-    alter table kortix.tunnel_connections
-      add column if not exists relay_owner_id varchar(255),
-      add column if not exists relay_owner_instance varchar(255),
-      add column if not exists relay_owner_started_at timestamp with time zone,
-      add column if not exists relay_owner_heartbeat_at timestamp with time zone
-  `);
-
-  fixtureRoot = await mkdtemp(join(tmpdir(), 'kortix-computer-connector-'));
-  previousGitCacheDir = process.env.KORTIX_GIT_CACHE_DIR;
-  process.env.KORTIX_GIT_CACHE_DIR = join(fixtureRoot, 'git-cache');
-  const repository = join(fixtureRoot, 'repository');
-  mkdirSync(repository, { recursive: true });
-  git(['init', '-b', 'main'], repository);
-  git(['config', 'user.email', 'computer-connector@kortix.test'], repository);
-  git(['config', 'user.name', 'Computer Connector Test'], repository);
-  writeFileSync(
-    join(repository, 'kortix.yaml'),
-    ['kortix_version: 2', 'project:', '  name: Computer Connector Test', ''].join('\n'),
-    'utf8',
-  );
-  git(['add', 'kortix.yaml'], repository);
-  git(['commit', '-m', 'initial'], repository);
-
-  projectId = crypto.randomUUID();
+  workspaceId = crypto.randomUUID();
   accountId = crypto.randomUUID();
-  await db.insert(accounts).values({ accountId, name: `computer-connector-${accountId}` });
+  otherAccountId = crypto.randomUUID();
+  await db.insert(accounts).values([
+    { accountId, name: `computer-groups-${accountId}` },
+    {
+      accountId: otherAccountId,
+      name: `computer-groups-other-${otherAccountId}`,
+    },
+  ]);
   await db.insert(projects).values({
-    projectId,
+    workspaceId,
     accountId,
-    name: `computer-connector-${projectId}`,
-    repoUrl: repository,
-    defaultBranch: 'main',
-    manifestPath: 'kortix.yaml',
-    metadata: { experimental: { agent_tunnel: true } },
+    name: `computer-groups-${workspaceId}`,
+    repoUrl: 'https://example.invalid/computer-groups.git',
+    metadata: {},
   });
-
-  // Seed a machine that has connected before and is now offline (closed
-  // laptop) — `lastHeartbeatAt` is set because device-auth approval is
-  // followed within seconds by the CLI's real WS handshake in practice.
-  // A row that has NEVER gone online is a different case, covered below.
-  const [t] = await db
+  const inserted = await db
     .insert(tunnelConnections)
-    .values({
-      accountId,
-      name: 'E2E Test Machine',
-      capabilities: ['filesystem', 'shell', 'desktop'],
-      status: 'offline',
-      lastHeartbeatAt: new Date(),
-      machineInfo: { platform: 'darwin', hostname: 'e2e-host', arch: 'arm64' },
-    })
-    .returning();
-  tunnelId = t!.tunnelId;
-  seeded = true;
+    .values([
+      {
+        accountId,
+        name: 'Studio Mac',
+        capabilities: ['filesystem', 'shell', 'desktop'],
+        status: 'offline',
+        lastHeartbeatAt: new Date(),
+        machineInfo: {
+          platform: 'darwin',
+          hostname: 'studio.local',
+          arch: 'arm64',
+        },
+      },
+      {
+        accountId,
+        name: 'Travel Mac',
+        capabilities: ['filesystem', 'desktop'],
+        status: 'offline',
+        lastHeartbeatAt: new Date(),
+        machineInfo: {
+          platform: 'darwin',
+          hostname: 'travel.local',
+          arch: 'arm64',
+        },
+      },
+      {
+        accountId,
+        name: 'Unassigned Mac',
+        capabilities: ['filesystem'],
+        status: 'offline',
+        lastHeartbeatAt: new Date(),
+      },
+      {
+        accountId: otherAccountId,
+        name: 'Other Account Mac',
+        capabilities: ['filesystem'],
+        status: 'offline',
+        lastHeartbeatAt: new Date(),
+      },
+    ])
+    .returning({
+      tunnelId: tunnelConnections.tunnelId,
+      name: tunnelConnections.name,
+    });
+  studioTunnelId = inserted.find((row) => row.name === 'Studio Mac')!.tunnelId;
+  travelTunnelId = inserted.find((row) => row.name === 'Travel Mac')!.tunnelId;
+  unassignedTunnelId = inserted.find((row) => row.name === 'Unassigned Mac')!.tunnelId;
+  crossAccountTunnelId = inserted.find((row) => row.name === 'Other Account Mac')!.tunnelId;
+
+  const created = await dbConnectorRouterDeps.createConnector!(workspaceId, accountId, {
+    slug: GROUP_SLUG,
+    name: 'Team computers',
+    provider: 'computer',
+    tunnel_ids: [studioTunnelId, travelTunnelId],
+    create_only: true,
+  });
+  expect(created.ok).toBe(true);
+
+  await db.insert(connectors).values({
+    connectorId: LEGACY_CONNECTOR_ID,
+    accountId,
+    workspaceId,
+    slug: 'computer',
+    name: 'Legacy Computers',
+    providerType: 'computer',
+    config: { auth: { type: 'none', in: 'header', name: null, prefix: null } },
+    authorizationStrategy: 'project',
+  });
+  await db.insert(connectorActions).values({
+    connectorId: LEGACY_CONNECTOR_ID,
+    path: 'list_computers',
+    name: 'List computers',
+    description: 'List connected computers.',
+    inputSchema: { type: 'object', properties: {} },
+    risk: 'read',
+    binding: { kind: 'tunnel', method: 'list_computers' },
+  });
+  await db.insert(connectorConnections).values({
+    connectionId: LEGACY_CONNECTION_ID,
+    accountId,
+    workspaceId,
+    connectorId: LEGACY_CONNECTOR_ID,
+    label: 'Legacy default',
+    isDefault: true,
+  });
+  await db.insert(projectSessions).values({
+    sessionId: LEGACY_SESSION_ID,
+    accountId,
+    workspaceId,
+    branchName: LEGACY_SESSION_ID,
+    createdBy: LEGACY_USER_ID,
+    connectorBindingsConfigured: true,
+  });
+  await db.insert(projectSessionConnectorBindings).values({
+    sessionId: LEGACY_SESSION_ID,
+    accountId,
+    workspaceId,
+    connectorAlias: 'computer',
+    connectorId: LEGACY_CONNECTOR_ID,
+    connectionId: LEGACY_CONNECTION_ID,
+    source: 'request',
+    createdBy: LEGACY_USER_ID,
+  });
 });
 
 afterAll(async () => {
-  if (!seeded) return;
-  // Drop the materialized connector + the seeded tunnel (cascades permissions /
-  // requests), then remove the isolated project and account.
   await db
-    .delete(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
-  await db.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
-  await db.delete(projects).where(eq(projects.projectId, projectId));
-  await db.delete(accounts).where(eq(accounts.accountId, accountId));
-  if (previousGitCacheDir === undefined) delete process.env.KORTIX_GIT_CACHE_DIR;
-  else process.env.KORTIX_GIT_CACHE_DIR = previousGitCacheDir;
-  if (fixtureRoot) await rm(fixtureRoot, { recursive: true, force: true });
+    .delete(projectSessionConnectorBindings)
+    .where(eq(projectSessionConnectorBindings.sessionId, LEGACY_SESSION_ID));
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, LEGACY_SESSION_ID));
+  if (workspaceId) await db.delete(projects).where(eq(projects.workspaceId, workspaceId));
+  const tunnelIds = [
+    studioTunnelId,
+    travelTunnelId,
+    unassignedTunnelId,
+    crossAccountTunnelId,
+  ].filter(Boolean);
+  if (tunnelIds.length) {
+    await db.delete(tunnelConnections).where(inArray(tunnelConnections.tunnelId, tunnelIds));
+  }
+  const accountIds = [accountId, otherAccountId].filter(Boolean);
+  if (accountIds.length) await db.delete(accounts).where(inArray(accounts.accountId, accountIds));
 });
 
-describe('computer connector — real DB e2e', () => {
-  test('synth produces ONE computer spec when the account has a connected machine', async () => {
-    if (!seeded) return;
-    const specs = await synthesizeComputerConnectors(projectId, []);
-    expect(specs).toHaveLength(1);
-    expect(specs[0]!.slug).toBe('computer');
-    expect(specs[0]!.provider).toBe('computer');
-    expect(specs[0]!.auth.type).toBe('none');
-  });
-
-  test('synth is a REGULAR connector — a connected machine alone materializes it, no agent_tunnel flag', async () => {
-    if (!seeded) return;
-    // Clear the feature flag entirely: the connector no longer depends on
-    // it (it's machine-driven like the Slack channel connector). Previously this
-    // returned []; now the connected machine alone is enough.
-    await db
-      .update(projects)
-      .set({ metadata: {} as any })
-      .where(eq(projects.projectId, projectId));
-    const specs = await synthesizeComputerConnectors(projectId, []);
-    expect(specs).toHaveLength(1);
-    expect(specs[0]!.slug).toBe('computer');
-  });
-
-  test('full sync materializes the computer connector + the tunnel catalog', async () => {
-    if (!seeded) return;
-    try {
-      await syncProjectConnectors(projectId, accountId);
-    } catch (e) {
-      // Full sync reads the project's git manifest; if the managed git backend
-      // isn't reachable from this test env, the install-driven computer synth
-      // still runs — but if the whole sync throws, fall back to asserting synth
-      // directly (covered above) and skip the row check.
-      console.warn(
-        '[integration] syncProjectConnectors threw (git backend?):',
-        (e as Error).message,
-      );
-      return;
-    }
-    const [conn] = await db
+describe('grouped Computers connector profiles — real DB', () => {
+  test('stores one regular connector with two assigned machine ids and the full catalog', async () => {
+    const [row] = await db
       .select()
       .from(connectors)
-      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
-    expect(conn).toBeTruthy();
-    expect(conn!.providerType).toBe('computer');
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, GROUP_SLUG)));
+    expect(row?.providerType).toBe('computer');
+    expect((row?.config as Record<string, unknown>).tunnel_ids).toEqual([
+      studioTunnelId,
+      travelTunnelId,
+    ]);
+    expect((row?.config as Record<string, unknown>).computer_profile).toBe(true);
 
     const actions = await db
       .select()
       .from(connectorActions)
-      .where(eq(connectorActions.connectorId, conn!.connectorId));
-    expect(actions.length).toBeGreaterThan(5);
-    expect(actions.some((a) => a.path === 'list_computers')).toBe(true);
-    expect(actions.some((a) => a.path === 'fs.read')).toBe(true);
-    for (const a of actions) expect((a.binding as { kind: string }).kind).toBe('tunnel');
+      .where(eq(connectorActions.connectorId, row!.connectorId));
+    expect(actions.some((action) => action.path === 'list_computers')).toBe(true);
+    expect(actions.some((action) => action.path === 'fs.read')).toBe(true);
+    const read = actions.find((action) => action.path === 'fs.read')!;
+    expect(
+      (read.inputSchema as { properties?: Record<string, unknown> }).properties?.computer,
+    ).toBeDefined();
   });
 
-  test('settings reads (policies/config) resolve the SYNTHETIC connector instead of 404ing', async () => {
-    if (!seeded) return;
-    // Reproduces the dashboard bug: a synthetic connector (channel/computer) is
-    // never declared in kortix.yaml, so the manifest-only read returned null →
-    // the route 404'd ("connector not found") on a connector that exists + works.
-    // The fix falls back to the materialized DB row.
-    const [conn] = await db
-      .select()
-      .from(connectors)
-      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'computer')));
-    if (!conn) return; // sync skipped (git backend unreachable) — nothing materialized to read.
-
-    const policies = await dbConnectorRouterDeps.getConnectorPolicies!(projectId, 'computer');
-    expect(policies).not.toBeNull(); // would have been null → 404 before the fix
-    expect(Array.isArray(policies!.policies)).toBe(true);
-
-    const config = await dbConnectorRouterDeps.getConnectorConfig!(projectId, 'computer');
-    expect(config).not.toBeNull();
-    expect(config!.provider).toBe('computer');
-    expect(config!.slug).toBe('computer');
-
-    // A genuinely unknown slug must still be null → a true 404 (fallback doesn't mask it).
-    const missing = await dbConnectorRouterDeps.getConnectorPolicies!(
-      projectId,
-      'no-such-connector-xyz',
-    );
-    expect(missing).toBeNull();
+  test('sync synthesis reads the stored profile instead of generating one connector per tunnel', async () => {
+    const specs = await synthesizeComputerConnectors(workspaceId, []);
+    expect(specs).toHaveLength(1);
+    expect(specs[0]?.slug).toBe(GROUP_SLUG);
+    expect(specs[0]?.tunnelIds).toEqual([studioTunnelId, travelTunnelId]);
   });
 
-  test('list_computers returns the connected machine and DB-backed online status', async () => {
-    if (!seeded) return;
-    await db
-      .update(tunnelConnections)
-      .set({
-        status: 'online',
-        relayOwnerId: 'api-owner-for-test',
-        relayOwnerInstance: 'api-owner-for-test',
-        relayOwnerStartedAt: new Date(),
-        relayOwnerHeartbeatAt: new Date(),
-        lastHeartbeatAt: new Date(),
-      })
-      .where(eq(tunnelConnections.tunnelId, tunnelId));
-
-    try {
-      const out = await executeComputerCall({
-        accountId,
-        selector: null,
-        method: 'list_computers',
-        args: {},
-      });
-      expect(out.ok).toBe(true);
-      const machines = (
-        out as {
-          ok: true;
-          data: { computers: Array<{ id: string; name: string; online: boolean }> };
-        }
-      ).data.computers;
-      expect(
-        machines.some((m) => m.id === tunnelId && m.name === 'E2E Test Machine' && m.online),
-      ).toBe(true);
-
-      // direct helper sanity
-      const direct = await listAccountComputers(accountId);
-      expect(direct.some((m) => m.id === tunnelId && m.online)).toBe(true);
-    } finally {
-      await db
-        .update(tunnelConnections)
-        .set({
-          status: 'offline',
-          relayOwnerId: null,
-          relayOwnerInstance: null,
-          relayOwnerStartedAt: null,
-          relayOwnerHeartbeatAt: null,
-          lastHeartbeatAt: null,
-        })
-        .where(eq(tunnelConnections.tunnelId, tunnelId));
-    }
+  test('config returns the selected machines through the normal connector API model', async () => {
+    const config = await dbConnectorRouterDeps.getConnectorConfig!(workspaceId, GROUP_SLUG);
+    expect(config?.provider).toBe('computer');
+    expect(config?.tunnelIds).toEqual([studioTunnelId, travelTunnelId]);
   });
 
-  test('fs.read with no grant → permission_required (pending approval)', async () => {
-    if (!seeded) return;
-    const out = await executeComputerCall({
+  test('list_computers returns only machines assigned to the profile', async () => {
+    const result = await executeComputerCall({
       accountId,
-      selector: tunnelId,
+      workspaceId,
+      allowedTunnelIds: [studioTunnelId, travelTunnelId],
+      selector: null,
+      method: 'list_computers',
+      args: {},
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const ids = (result.data as { computers: Array<{ id: string }> }).computers.map(
+      (computer) => computer.id,
+    );
+    expect(ids.sort()).toEqual([studioTunnelId, travelTunnelId].sort());
+    expect(ids).not.toContain(unassignedTunnelId);
+  });
+
+  test('assigned selection reaches tunnel authorization while unassigned selection fails first', async () => {
+    const assigned = await executeComputerCall({
+      accountId,
+      workspaceId,
+      allowedTunnelIds: [studioTunnelId, travelTunnelId],
+      selector: studioTunnelId,
       method: 'fs.read',
       args: { path: '/etc/hosts' },
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) {
-      expect(out.kind).toBe('permission_required');
-      if (out.kind === 'permission_required') expect(out.requestId).toBeTruthy();
+    expect(assigned.ok).toBe(false);
+    if (!assigned.ok) expect(assigned.kind).toBe('permission_required');
+
+    const unassigned = await executeComputerCall({
+      accountId,
+      workspaceId,
+      allowedTunnelIds: [studioTunnelId, travelTunnelId],
+      selector: unassignedTunnelId,
+      method: 'fs.read',
+      args: { path: '/etc/hosts' },
+    });
+    expect(unassigned.ok).toBe(false);
+    if (!unassigned.ok) {
+      expect(unassigned.kind).toBe('no_machine');
+      expect(unassigned.message).toContain('not assigned');
     }
   });
 
-  test('after granting filesystem, the call passes permission and reaches the (offline) relay', async () => {
-    if (!seeded) return;
+  test('a cross-account id in a forged allowlist still fails closed', async () => {
+    const result = await executeComputerCall({
+      accountId,
+      workspaceId,
+      allowedTunnelIds: [crossAccountTunnelId],
+      selector: crossAccountTunnelId,
+      method: 'fs.read',
+      args: { path: '/x' },
+    });
+    expect(result).toEqual({
+      ok: false,
+      kind: 'no_machine',
+      message: 'No machines are assigned to this Computers connector profile.',
+    });
+  });
+
+  test('legacy aggregate is hidden from admin and unbound project principals', async () => {
+    const admin = await dbConnectorRouterDeps.listConnectors(workspaceId);
+    expect(admin.map((connector) => connector.slug)).not.toContain('computer');
+
+    const principal = {
+      userId: LEGACY_USER_ID,
+      accountId,
+      workspaceId,
+      sessionId: null,
+      subject: { userId: LEGACY_USER_ID, groupIds: [] },
+      agentGrant: null,
+    };
+    const catalog = await dbConnectorRouterDeps.listCatalog(principal);
+    expect(catalog.map((connector) => connector.slug)).not.toContain('computer');
+    const deps = dbConnectorRouterDeps.makeGatewayDeps(principal);
+    expect(await deps.loadConnectorBySlug(workspaceId, 'computer')).toBeNull();
+  });
+
+  test('legacy aggregate remains callable only for its exact durable session binding', async () => {
+    const principal = {
+      userId: LEGACY_USER_ID,
+      accountId,
+      workspaceId,
+      sessionId: LEGACY_SESSION_ID,
+      subject: { userId: LEGACY_USER_ID, groupIds: [] },
+      agentGrant: null,
+    };
+    const catalog = await dbConnectorRouterDeps.listCatalog(principal);
+    expect(catalog.map((connector) => connector.slug)).toContain('computer');
+    const deps = dbConnectorRouterDeps.makeGatewayDeps(principal);
+    expect(await deps.loadConnectorBySlug(workspaceId, 'computer')).toMatchObject({
+      connectorId: LEGACY_CONNECTOR_ID,
+      tunnelIds: null,
+    });
+  });
+
+  test('multiple profiles can overlap and keep independent policies', async () => {
+    const created = await dbConnectorRouterDeps.createConnector!(workspaceId, accountId, {
+      slug: TRAVEL_SLUG,
+      name: 'Travel computer',
+      provider: 'computer',
+      tunnel_ids: [travelTunnelId],
+      create_only: true,
+    });
+    expect(created.ok).toBe(true);
+    const policyWrite = await dbConnectorRouterDeps.setConnectorPolicies!(
+      workspaceId,
+      accountId,
+      TRAVEL_SLUG,
+      [{ match: 'fs.read', action: 'block' }],
+    );
+    expect(policyWrite.ok).toBe(true);
+
+    const groupPolicies = await dbConnectorRouterDeps.getConnectorPolicies!(workspaceId, GROUP_SLUG);
+    const travelPolicies = await dbConnectorRouterDeps.getConnectorPolicies!(
+      workspaceId,
+      TRAVEL_SLUG,
+    );
+    expect(groupPolicies?.policies).toEqual([]);
+    expect(travelPolicies?.policies).toEqual([{ match: 'fs.read', action: 'block' }]);
+  });
+
+  test('updating a profile replaces its allowlist without changing its policy rows', async () => {
+    const updated = await dbConnectorRouterDeps.createConnector!(workspaceId, accountId, {
+      slug: TRAVEL_SLUG,
+      name: 'Travel and studio',
+      provider: 'computer',
+      tunnel_ids: [travelTunnelId, studioTunnelId],
+    });
+    expect(updated.ok).toBe(true);
+    const config = await dbConnectorRouterDeps.getConnectorConfig!(workspaceId, TRAVEL_SLUG);
+    expect(config?.tunnelIds).toEqual([travelTunnelId, studioTunnelId]);
+    const [policy] = await db
+      .select()
+      .from(connectorPolicies)
+      .innerJoin(connectors, eq(connectors.connectorId, connectorPolicies.connectorId))
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, TRAVEL_SLUG)));
+    expect(policy?.connector_policies.action).toBe('block');
+  });
+
+  test('connector calls remain authoritative connector audit events', async () => {
     await db.insert(tunnelPermissions).values({
-      tunnelId,
+      tunnelId: studioTunnelId,
       accountId,
       capability: 'filesystem',
       scope: {},
       status: 'active',
     });
-    const out = await executeComputerCall({
+    await executeComputerCall({
       accountId,
-      selector: tunnelId,
+      workspaceId,
+      allowedTunnelIds: [studioTunnelId],
+      selector: studioTunnelId,
       method: 'fs.read',
       args: { path: '/etc/hosts' },
     });
-    // Permission now passes; with no live WS agent the relay reports the machine
-    // offline → a plain error (NOT permission_required anymore).
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.kind).toBe('error');
-
-    const [audit] = await db
+    const rows = await db
       .select({
-        phase: tunnelAuditLogs.phase,
-        success: tunnelAuditLogs.success,
-        errorMessage: tunnelAuditLogs.errorMessage,
+        action: auditEvents.action,
+        authoritativeSource: auditEvents.authoritativeSource,
       })
-      .from(tunnelAuditLogs)
-      .where(and(eq(tunnelAuditLogs.tunnelId, tunnelId), eq(tunnelAuditLogs.operation, 'fs.read')));
-    expect(audit?.phase).toBe('failed');
-    expect(audit?.success).toBe(false);
-    expect(audit?.errorMessage).toMatch(/^sha256:[0-9a-f]{64}$/);
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, workspaceId),
+          eq(auditEvents.resourceId, studioTunnelId),
+          eq(auditEvents.action, 'connector.computer.fs.read'),
+        ),
+      );
+    expect(rows.some((row) => row.authoritativeSource === 'connector')).toBe(true);
   });
 
-  test('an unknown machine selector → no_machine error', async () => {
-    if (!seeded) return;
-    const out = await executeComputerCall({
-      accountId,
-      selector: 'does-not-exist',
-      method: 'fs.read',
-      args: { path: '/x' },
-    });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.kind).toBe('no_machine');
-  });
-
-  describe('a tunnel row that has NEVER connected (no heartbeat, ever)', () => {
-    // Reproduces the reported bug: a device-auth approval (or a leftover test
-    // fixture) creates a `tunnel_connections` row up front, but the CLI never
-    // actually dials in. Without the heartbeat gate that row alone was enough
-    // to permanently materialize an "active" `computer` connector across
-    // EVERY project in the account — looking exactly like a real connection
-    // even though nothing had ever connected.
-    let deadTunnelId = '';
-    let otherProjectId = '';
-
-    beforeAll(async () => {
-      if (!seeded) return;
-      const [t] = await db
-        .insert(tunnelConnections)
-        .values({
-          accountId,
-          name: 'Never Connected',
-          capabilities: [],
-          status: 'offline',
-          // lastHeartbeatAt intentionally omitted — this row has never come online.
-        })
-        .returning();
-      deadTunnelId = t!.tunnelId;
-
-      // A second, otherwise-unrelated project on the SAME account — proves the
-      // dead row doesn't fan out a phantom connector account-wide either.
-      const [p] = await db
-        .insert(projects)
-        .values({
-          accountId,
-          name: 'computer-synth-fanout-test',
-          repoUrl: 'https://example.invalid/computer-synth-fanout-test.git',
-        })
-        .returning({ projectId: projects.projectId });
-      otherProjectId = p!.projectId;
-    });
-
-    afterAll(async () => {
-      if (deadTunnelId)
-        await db.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, deadTunnelId));
-      if (otherProjectId) await db.delete(projects).where(eq(projects.projectId, otherProjectId));
-    });
-
-    test('does NOT materialize the computer connector by itself', async () => {
-      if (!seeded) return;
-      // Temporarily remove the real (heartbeat-bearing) seeded tunnel so the
-      // never-connected row is the account's ONLY tunnel_connections row.
-      await db
-        .update(tunnelConnections)
-        .set({ lastHeartbeatAt: null })
-        .where(eq(tunnelConnections.tunnelId, tunnelId));
-      try {
-        const specs = await synthesizeComputerConnectors(otherProjectId, []);
-        expect(specs).toEqual([]);
-      } finally {
-        await db
-          .update(tunnelConnections)
-          .set({ lastHeartbeatAt: new Date() })
-          .where(eq(tunnelConnections.tunnelId, tunnelId));
-      }
-    });
-
-    test('once the account has ANY real (ever-heartbeat) machine, it materializes for other projects too', async () => {
-      if (!seeded) return;
-      // The real seeded tunnel (with a heartbeat) still exists on the account,
-      // so even a project with no direct relationship to it gets the connector
-      // — the dead row contributes nothing either way.
-      const specs = await synthesizeComputerConnectors(otherProjectId, []);
-      expect(specs).toHaveLength(1);
-      expect(specs[0]!.slug).toBe('computer');
-    });
+  test('deleting one profile leaves the other profile intact', async () => {
+    const deleted = await dbConnectorRouterDeps.deleteConnector!(workspaceId, TRAVEL_SLUG);
+    expect(deleted.ok).toBe(true);
+    const remaining = await db
+      .select({ slug: connectors.slug, config: connectors.config })
+      .from(connectors)
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.providerType, 'computer')));
+    expect(
+      remaining
+        .filter(
+          (row) => (row.config as Record<string, unknown> | null)?.computer_profile === true,
+        )
+        .map((row) => row.slug),
+    ).toEqual([GROUP_SLUG]);
   });
 });

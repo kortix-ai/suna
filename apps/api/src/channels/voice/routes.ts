@@ -8,16 +8,16 @@
  * and handed to it via the room's metadata (see runtime.ts's
  * `VoiceRoomMetadata`) — never session/PAT auth. `verifyCallApiToken`
  * (worker-token.ts) is the whole check: it's an HMAC over the call id, and
- * the call id IS the session id, so `projectId`/`sessionId` come straight
+ * the call id IS the session id, so `workspaceId`/`sessionId` come straight
  * from the path with nothing to look up first.
  *
  * `voiceMcpRoutes` is mounted standalone BEFORE `projectsApp` (see
  * index.ts's comment) specifically so this route skips `projectsApp`'s
  * `.use('/*', supabaseAuth)` — a worker token is not a Kortix session and
- * `resolveProjectPrincipal` would 401 it regardless of validity. There used
+ * `resolveWorkspacePrincipal` would 401 it regardless of validity. There used
  * to be a SECOND, Kortix-agent-facing MCP route here too
- * (`/:projectId/mcp/voice`, session/PAT-authed, guarded by its own
- * `voiceMcpRoutes.use('/:projectId/mcp/voice', supabaseAuth)`) for the
+ * (`/:workspaceId/mcp/voice`, session/PAT-authed, guarded by its own
+ * `voiceMcpRoutes.use('/:workspaceId/mcp/voice', supabaseAuth)`) for the
  * agent's own voice_spawn/voice_read/send_prompt/run_command/voice_end
  * tools; that moved to the `kortix_voice` channel connector
  * (connector/channels.ts, connector/db-deps.ts's executeVoiceCall) so it runs
@@ -28,7 +28,7 @@
  * its own path rather than layering another `.use()` onto this one: reusing
  * a path that also carries `supabaseAuth` for a caller that isn't a Kortix
  * session is exactly the mistake that used to 401 a perfectly valid worker
- * token against `resolveProjectPrincipal`.
+ * token against `resolveWorkspacePrincipal`.
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
@@ -43,13 +43,13 @@ export const voiceMcpRoutes = makeOpenApiApp();
 
 /**
  * Builds the worker's MCP context straight from the request: the HMAC proves
- * this caller owns this call, and projectId/sessionId are both in the path —
+ * this caller owns this call, and workspaceId/sessionId are both in the path —
  * which is everything askKortix/runCommandInSandbox/appendTurn use. The call
  * id IS the session id and the room name derives from it, so there is
  * nothing to look up (no in-process call registry — see runtime.ts's
  * `isCallLive` doc for why one used to exist and why it was wrong).
  */
-function buildWorkerContext(c: Context, projectId: string, sessionId: string): VoiceMcpContext | null {
+function buildWorkerContext(c: Context, workspaceId: string, sessionId: string): VoiceMcpContext | null {
   const auth = c.req.header('Authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
   if (!verifyCallApiToken(sessionId, token)) return null;
@@ -57,7 +57,7 @@ function buildWorkerContext(c: Context, projectId: string, sessionId: string): V
   const callId = sessionId;
   const call: VoiceCall = {
     callId,
-    projectId,
+    workspaceId,
     sessionId,
     voice: 'alloy',
     room: roomNameForCall(callId),
@@ -66,19 +66,19 @@ function buildWorkerContext(c: Context, projectId: string, sessionId: string): V
   };
 
   return {
-    projectId,
+    workspaceId,
     sessionId,
     callId,
     askKortix: (request: string) => askKortix(call, request),
     runCommand: (command: string, cwd?: string) => runCommandInSandbox(sessionId, command, cwd),
-    postTurn: (role, text, speaker) => appendTurn({ callId, projectId, sessionId }, role, text, speaker),
+    postTurn: (role, text, speaker) => appendTurn({ callId, workspaceId, sessionId }, role, text, speaker),
   };
 }
 
 voiceMcpRoutes.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/sessions/{sessionId}/mcp/voice',
+    path: '/{workspaceId}/sessions/{sessionId}/mcp/voice',
     tags: ['channels'],
     summary: "POST .../mcp/voice — the voice worker's MCP (JSON-RPC over streamable HTTP)",
     // NO `body` schema on purpose, even though this route takes one. Declaring
@@ -92,7 +92,7 @@ voiceMcpRoutes.openapi(
     // parses. Both are fixed by parsing the body ourselves, after the HMAC.
     // The schema was `z.any()`, so nothing documented is lost.
     request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
     },
     responses: {
       200: json(z.any(), 'JSON-RPC response'),
@@ -100,9 +100,9 @@ voiceMcpRoutes.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const workspaceId = c.req.param('workspaceId');
     const sessionId = c.req.param('sessionId');
-    const ctx = buildWorkerContext(c, projectId, sessionId);
+    const ctx = buildWorkerContext(c, workspaceId, sessionId);
     if (!ctx) return c.json({ error: 'Unauthorized' }, 401);
 
     let body: unknown;

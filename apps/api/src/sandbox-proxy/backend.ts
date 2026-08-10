@@ -50,7 +50,7 @@ export interface SandboxRecord {
   sessionId: string;
   /** Agent the sandbox connector token was minted for. */
   agentName: string | null;
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   provider: string;
   status: string;
@@ -123,7 +123,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
       limit 1
     )`,
-    projectId: sessionSandboxes.projectId,
+    workspaceId: sessionSandboxes.workspaceId,
     accountId: sessionSandboxes.accountId,
     provider: sessionSandboxes.provider,
     status: sessionSandboxes.status,
@@ -158,7 +158,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     externalId: row.externalId ?? externalId,
     sessionId: row.sessionId,
     agentName: row.agentName ?? null,
-    projectId: row.projectId,
+    workspaceId: row.workspaceId,
     accountId: row.accountId,
     provider: row.provider,
     status: row.status,

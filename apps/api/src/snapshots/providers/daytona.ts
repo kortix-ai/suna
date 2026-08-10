@@ -226,7 +226,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
    * "available on some registry" as an alternative to an `Image` build spec).
    * Used by the per-project warm fast path to `FROM` the shared default image
    * instead of rebuilding its whole toolchain — see builder.ts
-   * `ensurePerProjectWarmImage`. Returns null on ANY failure (not found, no
+   * `ensurePerWorkspaceWarmImage`. Returns null on ANY failure (not found, no
    * imageName, network error, unconfigured) — every caller treats null as
    * "fall back to the full rebuild", never as fatal.
    */

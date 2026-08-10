@@ -1,6 +1,6 @@
-import type { ProjectSession } from '@kortix/sdk';
+import type { WorkspaceSession } from '@kortix/sdk';
 
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { getSessionDisplayTitle } from '@/features/workspace/workspace-sidebar/workspace-session-list-helpers';
 import { siteMetadata } from '@/lib/site-metadata';
 
 /**
@@ -12,7 +12,7 @@ import { siteMetadata } from '@/lib/site-metadata';
  * byte-identical string and the hand-off from server metadata to the client
  * updater is invisible instead of a flash.
  *
- * Deliberately NOT `sessionDisplayLabel` (components/projects/session-label.ts):
+ * Deliberately NOT `sessionDisplayLabel` (components/workspaces/session-label.ts):
  * that helper's fallback chain ends at `session.session_id.slice(0, 8)`, which
  * would paint a raw uuid fragment into the tab strip. A tab is read at a glance
  * out of the corner of an eye; "3f9a1c2b" is noise there, "New session" is
@@ -62,7 +62,7 @@ export function sessionTabTitle(name: string | null | undefined): string {
  * the tab and in the app, including its "New session" placeholder. Deriving the
  * precedence a second time here is how the two would drift apart.
  */
-export function sessionTabTitleFromSession(session: ProjectSession | null | undefined): string {
+export function sessionTabTitleFromSession(session: WorkspaceSession | null | undefined): string {
   if (!session) return sessionTabTitle(null);
   return sessionTabTitle(getSessionDisplayTitle(session));
 }

@@ -9,8 +9,8 @@ import {
 } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
-  loadSlackBotUserIdForProject,
-  loadSlackTokenForProject,
+  loadSlackBotUserIdForWorkspace,
+  loadSlackTokenForWorkspace,
 } from '../install-store';
 import {
   deleteMessage,
@@ -28,7 +28,7 @@ import {
 import { ensureSlackThreadParticipant } from './participants';
 import { currentChannelSelection } from './selection';
 import { postIdentityPrompt, resolveSlackActor } from './identity';
-import { resolveProjectAutomationActor } from '../../projects/session-lifecycle';
+import { resolveWorkspaceAutomationActor } from '../../workspaces/session-lifecycle';
 import {
   deleteTurn,
   finalizeTurn,
@@ -46,7 +46,7 @@ import { escapeMrkdwn, sessionWebUrl, stripMentions } from './util';
 import { config } from '../../config';
 import type {
   EventClass,
-  ProjectResolution,
+  WorkspaceResolution,
   SlackEnvelope,
   SlackEvent,
   SlashResponse,
@@ -57,8 +57,8 @@ export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry:
 // Every path that creates/rebinds a chat_channel_bindings row calls this so the
 // web Channels settings page can show the real Slack channel name instead of
 // falling back to the raw channel id (e.g. `C0AENS5MHK9`). Previously only the
-// multi-project "which project?" picker path persisted `channel_name` — the
-// common single-project auto-bind case left it NULL forever. Cheap by design:
+// multi-workspace "which workspace?" picker path persisted `channel_name` — the
+// common single-workspace auto-bind case left it NULL forever. Cheap by design:
 // a DB read first, and the Slack API call only fires when a name isn't already
 // stored, so steady-state dispatch (called on every event) costs one SELECT.
 // Best-effort — a Slack API hiccup here must never break message handling.
@@ -68,9 +68,9 @@ export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry:
 export async function backfillChannelName(
   teamId: string,
   channelId: string,
-  projectId: string,
+  workspaceId: string,
 ): Promise<string | null> {
-  if (!teamId || !channelId || !projectId) return null;
+  if (!teamId || !channelId || !workspaceId) return null;
   try {
     const [row] = await db
       .select({ channelName: chatChannelBindings.channelName })
@@ -78,14 +78,14 @@ export async function backfillChannelName(
       .where(
         and(
           eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
+          eq(chatChannelBindings.platformWorkspaceId, teamId),
           eq(chatChannelBindings.channelId, channelId),
         ),
       )
       .limit(1);
     if (!row) return null;
     if (row.channelName) return row.channelName;
-    const token = await loadSlackTokenForProject(projectId);
+    const token = await loadSlackTokenForWorkspace(workspaceId);
     if (!token) return null;
     // Returns null for DMs (no `name` field on the conversation) — fine, the
     // UI's `channelName ?? channelId` fallback already handles that case.
@@ -97,7 +97,7 @@ export async function backfillChannelName(
       .where(
         and(
           eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
+          eq(chatChannelBindings.platformWorkspaceId, teamId),
           eq(chatChannelBindings.channelId, channelId),
         ),
       );
@@ -110,75 +110,75 @@ export async function backfillChannelName(
 
 // NOTE: deliberately does NOT call backfillChannelName — this runs on EVERY
 // Slack event, and the name is already captured on first-bind (the auto-bind
-// branch in resolveOauthProject below, or the picker flow in interactivity.ts)
+// branch in resolveOauthWorkspace below, or the picker flow in interactivity.ts)
 // plus lazily on the settings-page GET for any pre-existing NULL row. Adding a
 // lookup here would cost an extra query per message forever for zero benefit.
-export async function ensureProjectChannelBinding(
-  projectId: string,
+export async function ensureWorkspaceChannelBinding(
+  workspaceId: string,
   teamId: string,
   channelId: string,
 ): Promise<void> {
-  if (!projectId || !teamId || !channelId) return;
+  if (!workspaceId || !teamId || !channelId) return;
   await db
     .insert(chatChannelBindings)
-    .values({ platform: 'slack', workspaceId: teamId, channelId, projectId, pickerTs: null })
+    .values({ platform: 'slack', platformWorkspaceId: teamId, channelId, workspaceId, pickerTs: null })
     .onConflictDoUpdate({
       target: [
         chatChannelBindings.platform,
-        chatChannelBindings.workspaceId,
+        chatChannelBindings.platformWorkspaceId,
         chatChannelBindings.channelId,
       ],
-      set: { projectId, pickerTs: null },
+      set: { workspaceId, pickerTs: null },
     });
 }
 
-export async function resolveOauthProject(
+export async function resolveOauthWorkspace(
   teamId: string,
   channelId: string | undefined,
-): Promise<ProjectResolution> {
+): Promise<WorkspaceResolution> {
   if (channelId) {
     const [binding] = await db
-      .select({ projectId: chatChannelBindings.projectId })
+      .select({ workspaceId: chatChannelBindings.workspaceId })
       .from(chatChannelBindings)
       .where(
         and(
           eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
+          eq(chatChannelBindings.platformWorkspaceId, teamId),
           eq(chatChannelBindings.channelId, channelId),
         ),
       )
       .limit(1);
     if (binding) {
-      return binding.projectId
-        ? { kind: 'project', projectId: binding.projectId }
+      return binding.workspaceId
+        ? { kind: 'workspace', workspaceId: binding.workspaceId }
         : { kind: 'pending' };
     }
   }
 
   const installs = await db
-    .select({ projectId: chatInstalls.projectId })
+    .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformWorkspaceId, teamId)));
   if (installs.length === 0) return { kind: 'none' };
   if (installs.length === 1) {
-    const onlyProjectId = installs[0].projectId;
+    const onlyWorkspaceId = installs[0].workspaceId;
     if (channelId) {
       await db
         .insert(chatChannelBindings)
-        .values({ platform: 'slack', workspaceId: teamId, channelId, projectId: onlyProjectId })
+        .values({ platform: 'slack', platformWorkspaceId: teamId, channelId, workspaceId: onlyWorkspaceId })
         .onConflictDoNothing({
-          target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+          target: [chatChannelBindings.platform, chatChannelBindings.platformWorkspaceId, chatChannelBindings.channelId],
         });
-      await backfillChannelName(teamId, channelId, onlyProjectId);
+      await backfillChannelName(teamId, channelId, onlyWorkspaceId);
     }
-    return { kind: 'project', projectId: onlyProjectId };
+    return { kind: 'workspace', workspaceId: onlyWorkspaceId };
   }
-  return { kind: 'ambiguous', projectIds: installs.map((i) => i.projectId) };
+  return { kind: 'ambiguous', workspaceIds: installs.map((install) => install.workspaceId) };
 }
 
 export async function maybePostPicker(
   teamId: string,
-  projectIds: string[],
+  workspaceIds: string[],
   envelope: SlackEnvelope,
 ): Promise<void> {
   const event = envelope.event;
@@ -187,9 +187,9 @@ export async function maybePostPicker(
   const isDm = event.type === 'message' && event.channel_type === 'im' && (!event.subtype || event.subtype === 'file_share');
   if (!isMention && !isDm) return;
 
-  await postProjectPicker({
+  await postWorkspacePicker({
     teamId,
-    projectIds,
+    workspaceIds,
     channelId: event.channel,
     threadTs: event.thread_ts ?? event.ts,
     isDm,
@@ -197,55 +197,55 @@ export async function maybePostPicker(
   });
 }
 
-// Post the "which project should this conversation use?" picker — the SAME
+// Post the "which workspace should this conversation use?" picker — the SAME
 // affordance, byte-for-byte, for channels (first @mention) and DMs (assistant
-// open / first message). It guarantees a binding row exists FIRST (projectId
+// open / first message). It guarantees a binding row exists FIRST (workspaceId
 // null) so the pick handler, which UPDATEs by channelId, has a row to write
 // into, and keeps at most one live picker per channel. `envelope`, when present,
 // is replayed after the pick so the message that triggered it runs.
-async function postProjectPicker(opts: {
+async function postWorkspacePicker(opts: {
   teamId: string;
-  projectIds: string[];
+  workspaceIds: string[];
   channelId: string;
   threadTs?: string;
   isDm: boolean;
   envelope?: SlackEnvelope;
 }): Promise<void> {
-  const { teamId, projectIds, channelId, threadTs, isDm, envelope } = opts;
-  if (!channelId || projectIds.length === 0) return;
+  const { teamId, workspaceIds, channelId, threadTs, isDm, envelope } = opts;
+  if (!channelId || workspaceIds.length === 0) return;
 
   const claimed = await db
     .insert(chatChannelBindings)
-    .values({ platform: 'slack', workspaceId: teamId, channelId, projectId: null })
+    .values({ platform: 'slack', platformWorkspaceId: teamId, channelId, workspaceId: null })
     .onConflictDoNothing({
-      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+      target: [chatChannelBindings.platform, chatChannelBindings.platformWorkspaceId, chatChannelBindings.channelId],
     })
     .returning({ id: chatChannelBindings.bindingId });
   const isFreshClaim = claimed.length > 0;
 
-  const token = await loadSlackTokenForProject(projectIds[0]);
+  const token = await loadSlackTokenForWorkspace(workspaceIds[0]);
   if (!token) return;
 
   if (!isFreshClaim) {
     const [existing] = await db
-      .select({ pickerTs: chatChannelBindings.pickerTs, projectId: chatChannelBindings.projectId })
+      .select({ pickerTs: chatChannelBindings.pickerTs, workspaceId: chatChannelBindings.workspaceId })
       .from(chatChannelBindings)
       .where(and(
         eq(chatChannelBindings.platform, 'slack'),
-        eq(chatChannelBindings.workspaceId, teamId),
+        eq(chatChannelBindings.platformWorkspaceId, teamId),
         eq(chatChannelBindings.channelId, channelId),
       ))
       .limit(1);
-    if (existing?.projectId) return;
+    if (existing?.workspaceId) return;
     if (existing?.pickerTs) {
       await deleteMessage(token, channelId, existing.pickerTs);
     }
   }
 
-  const projectRows = await db
-    .select({ projectId: projects.projectId, name: projects.name })
+  const workspaceRows = await db
+    .select({ workspaceId: projects.workspaceId, name: projects.name })
     .from(projects)
-    .where(inArray(projects.projectId, projectIds));
+    .where(inArray(projects.workspaceId, workspaceIds));
 
   const pickerId = randomUUID();
   const channelName = isDm ? null : await getChannelName(token, channelId);
@@ -256,15 +256,15 @@ async function postProjectPicker(opts: {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Which project should ${channelLabel} use?*\nAsked once — I'll remember it for ${isDm ? 'this DM' : 'this channel'}.`,
+        text: `*Which workspace should ${channelLabel} use?*\nAsked once — I'll remember it for ${isDm ? 'this DM' : 'this channel'}.`,
       },
     },
     {
       type: 'actions',
-      elements: projectRows.map((row, idx) => ({
+      elements: workspaceRows.map((row, idx) => ({
         type: 'button',
         text: { type: 'plain_text', text: row.name.slice(0, 75) },
-        value: JSON.stringify({ k: pickerId, p: row.projectId }),
+        value: JSON.stringify({ k: pickerId, p: row.workspaceId }),
         action_id: `pick_project_${idx}`,
       })),
     },
@@ -283,7 +283,7 @@ async function postProjectPicker(opts: {
   const pickerTs = await postBlocks(
     token,
     channelId,
-    `Which project should ${channelLabel} use?`,
+    `Which workspace should ${channelLabel} use?`,
     blocks,
     threadTs,
   );
@@ -294,7 +294,7 @@ async function postProjectPicker(opts: {
       .where(
         and(
           eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
+          eq(chatChannelBindings.platformWorkspaceId, teamId),
           eq(chatChannelBindings.channelId, channelId),
         ),
       );
@@ -302,12 +302,12 @@ async function postProjectPicker(opts: {
 }
 
 // The AI-Assistant DM pane fires `assistant_thread_started` when a user opens
-// (or starts a new) Kortix DM — the natural "which project is this connected
+// (or starts a new) Kortix DM — the natural "which workspace is this connected
 // to?" moment, exactly like inviting the bot to a channel. We run the IDENTICAL
-// resolution the channel path uses (resolveOauthProject): one project →
-// auto-bind silently, two+ unbound → the same project picker right in the
+// resolution the channel path uses (resolveOauthWorkspace): one workspace →
+// auto-bind silently, two+ unbound → the same workspace picker right in the
 // assistant thread, already bound → nothing. So a DM user gets the exact same
-// "choose your Kortix project" experience as a channel, without needing a slash
+// "choose your Kortix workspace" experience as a channel, without needing a slash
 // command (which the Assistant pane can't run).
 export async function handleAssistantThreadStarted(
   teamId: string,
@@ -317,19 +317,19 @@ export async function handleAssistantThreadStarted(
   const threadTs = event.assistant_thread?.thread_ts;
   if (!teamId || !channelId) return;
 
-  const resolution = await resolveOauthProject(teamId, channelId);
+  const resolution = await resolveOauthWorkspace(teamId, channelId);
   if (resolution.kind === 'ambiguous') {
-    await postProjectPicker({ teamId, projectIds: resolution.projectIds, channelId, threadTs, isDm: true });
+    await postWorkspacePicker({ teamId, workspaceIds: resolution.workspaceIds, channelId, threadTs, isDm: true });
   } else if (resolution.kind === 'pending') {
     const installs = await db
-      .select({ projectId: chatInstalls.projectId })
+      .select({ workspaceId: chatInstalls.workspaceId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformWorkspaceId, teamId)));
     if (installs.length > 0) {
-      await postProjectPicker({ teamId, projectIds: installs.map((i) => i.projectId), channelId, threadTs, isDm: true });
+      await postWorkspacePicker({ teamId, workspaceIds: installs.map((install) => install.workspaceId), channelId, threadTs, isDm: true });
     }
   }
-  // 'project' (bound, or auto-bound when there's exactly one) and 'none' →
+  // 'workspace' (bound, or auto-bound when there's exactly one) and 'none' →
   // no picker, identical to a channel that's already resolved.
 }
 
@@ -358,7 +358,7 @@ async function postSlashResponseToChannel(
 export async function maybeHandleDmCommand(
   teamId: string,
   event: SlackEvent,
-  fallbackProjectId?: string,
+  fallbackWorkspaceId?: string,
 ): Promise<boolean> {
   if (event.type !== 'message' || event.channel_type !== 'im' || event.subtype || event.bot_id) {
     return false;
@@ -374,29 +374,29 @@ export async function maybeHandleDmCommand(
   const arg = rest.join(' ').trim();
   const threadTs = event.thread_ts ?? event.ts;
 
-  // A bot token to reply with: prefer the channel's bound project, else the BYO
-  // project this webhook serves, else any workspace install.
-  let tokenProjectId: string | null = null;
+  // A bot token to reply with: prefer the channel's bound workspace, else the BYO
+  // workspace this webhook serves, else any workspace install.
+  let tokenWorkspaceId: string | null = null;
   const [binding] = await db
-    .select({ projectId: chatChannelBindings.projectId })
+    .select({ workspaceId: chatChannelBindings.workspaceId })
     .from(chatChannelBindings)
     .where(and(
       eq(chatChannelBindings.platform, 'slack'),
-      eq(chatChannelBindings.workspaceId, teamId),
+      eq(chatChannelBindings.platformWorkspaceId, teamId),
       eq(chatChannelBindings.channelId, channelId),
     ))
     .limit(1);
-  tokenProjectId = binding?.projectId ?? fallbackProjectId ?? null;
-  if (!tokenProjectId) {
+  tokenWorkspaceId = binding?.workspaceId ?? fallbackWorkspaceId ?? null;
+  if (!tokenWorkspaceId) {
     const [install] = await db
-      .select({ projectId: chatInstalls.projectId })
+      .select({ workspaceId: chatInstalls.workspaceId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)))
+      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformWorkspaceId, teamId)))
       .limit(1);
-    tokenProjectId = install?.projectId ?? null;
+    tokenWorkspaceId = install?.workspaceId ?? null;
   }
-  if (!tokenProjectId) return true; // it WAS a command — just nothing to reply with
-  const token = await loadSlackTokenForProject(tokenProjectId);
+  if (!tokenWorkspaceId) return true; // it WAS a command — just nothing to reply with
+  const token = await loadSlackTokenForWorkspace(tokenWorkspaceId);
   if (!token) return true;
 
   // The Assistant pane has no 3s ACK window and no response_url, so a command
@@ -413,7 +413,7 @@ export async function maybeHandleDmCommand(
       slackUserId: event.user ?? '',
       command,
       deferredDeliver,
-      projectScopedProjectId: fallbackProjectId,
+      workspaceScopedWorkspaceId: fallbackWorkspaceId,
     });
   } catch (err) {
     console.error('[slack-webhook] dm command failed', err);
@@ -471,7 +471,7 @@ async function threadIsOwned(teamId: string, threadTs: string): Promise<boolean>
     .where(
       and(
         eq(chatThreads.platform, 'slack'),
-        eq(chatThreads.workspaceId, teamId),
+        eq(chatThreads.platformWorkspaceId, teamId),
         eq(chatThreads.threadId, threadTs),
       ),
     )
@@ -481,17 +481,17 @@ async function threadIsOwned(teamId: string, threadTs: string): Promise<boolean>
 
 const CHANNEL_INTRO_FALLBACK = "Kortix is now connected to this channel. Mention @Kortix with a task to get started.";
 
-async function postChannelIntro(projectId: string, channelId: string): Promise<void> {
-  const token = await loadSlackTokenForProject(projectId);
+async function postChannelIntro(workspaceId: string, channelId: string): Promise<void> {
+  const token = await loadSlackTokenForWorkspace(workspaceId);
   if (!token) return;
-  const [project] = await db
+  const [workspace] = await db
     .select({ name: projects.name })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
-  const projectLine = project?.name
-    ? `This channel is connected to *${escapeMrkdwn(project.name)}*.`
-    : 'This channel is connected to a Kortix project.';
+  const workspaceLine = workspace?.name
+    ? `This channel is connected to *${escapeMrkdwn(workspace.name)}*.`
+    : 'This channel is connected to a Kortix workspace.';
   const blocks: Array<Record<string, unknown>> = [
     {
       type: 'header',
@@ -503,7 +503,7 @@ async function postChannelIntro(projectId: string, channelId: string): Promise<v
         type: 'mrkdwn',
         text: [
           '`@`-mention Kortix with a task and an agent gets on it — working across your connected tools and replying right here in the thread. Follow-ups stay in the same conversation, with full context.',
-          projectLine,
+          workspaceLine,
           'Agent, model, and session policy settings are shared by this Slack channel.',
           '',
           'Try something like:',
@@ -522,25 +522,25 @@ async function postChannelIntro(projectId: string, channelId: string): Promise<v
 export async function maybePostChannelIntro(teamId: string, event: SlackEvent): Promise<void> {
   if (!event.channel) return;
   const [install] = await db
-    .select({ projectId: chatInstalls.projectId })
+    .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)))
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformWorkspaceId, teamId)))
     .limit(1);
   if (!install) return;
-  const botUserId = await loadSlackBotUserIdForProject(install.projectId);
+  const botUserId = await loadSlackBotUserIdForWorkspace(install.workspaceId);
   if (!botUserId || event.user !== botUserId) return;
-  await postChannelIntro(install.projectId, event.channel);
+  await postChannelIntro(install.workspaceId, event.channel);
 }
 
-export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvelope): Promise<void> {
+export async function dispatchSlackEvent(workspaceId: string, envelope: SlackEnvelope): Promise<void> {
   const event = envelope.event;
   if (!event) return;
 
   const teamId = envelope.team_id ?? event.team ?? '';
   if (teamId && event.channel) {
-    await ensureProjectChannelBinding(projectId, teamId, event.channel);
+    await ensureWorkspaceChannelBinding(workspaceId, teamId, event.channel);
   }
-  const botUserId = await loadSlackBotUserIdForProject(projectId);
+  const botUserId = await loadSlackBotUserIdForWorkspace(workspaceId);
 
   if (
     event.type === 'member_joined_channel' &&
@@ -548,7 +548,7 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
     event.user === botUserId &&
     event.channel
   ) {
-    await postChannelIntro(projectId, event.channel);
+    await postChannelIntro(workspaceId, event.channel);
     return;
   }
 
@@ -574,17 +574,17 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
   // content, so don't stop here — send them to the agent.
   if (eventClass === 'mention' && !stripMentions(event.text ?? '') && !event.files?.length) {
     if (config.SLACK_REQUIRE_USER_IDENTITY) {
-      const [project] = await db
+      const [workspace] = await db
         .select({ accountId: projects.accountId })
         .from(projects)
-        .where(eq(projects.projectId, projectId))
+        .where(eq(projects.workspaceId, workspaceId))
         .limit(1);
-      if (!project) return;
+      if (!workspace) return;
       const slackUserId = event.user ?? '';
-      const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
+      const actor = await resolveSlackActor(teamId, slackUserId, workspace.accountId, workspaceId);
       if ('reason' in actor) {
         await postIdentityPrompt({
-          projectId,
+          workspaceId,
           teamId,
           channel: event.channel,
           threadTs: event.thread_ts,
@@ -594,7 +594,7 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
         return;
       }
     }
-    const token = await loadSlackTokenForProject(projectId);
+    const token = await loadSlackTokenForWorkspace(workspaceId);
     if (token && event.channel) {
       await postMessage(
         token,
@@ -606,11 +606,11 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
     return;
   }
 
-  await spawnAgentTurn(projectId, envelope, event);
+  await spawnAgentTurn(workspaceId, envelope, event);
 }
 
 export async function spawnAgentTurn(
-  projectId: string,
+  workspaceId: string,
   envelope: SlackEnvelope,
   event: SlackEvent,
 ): Promise<void> {
@@ -619,24 +619,24 @@ export async function spawnAgentTurn(
 
   // Resolve who the agent runs AS. Gated by SLACK_REQUIRE_USER_IDENTITY:
   //  • ON  — every sender (first message OR follow-up, channel OR button click)
-  //    must be linked to a Kortix account that is a member of this project's
+  //    must be linked to a Kortix account that is a member of this workspace's
   //    account. No live mapping → block and nudge to `/login`; never fall back
   //    to the owner (the impersonation this fixes).
   //  • OFF — legacy behavior: run as the account owner stand-in.
-  const [project] = await db
+  const [workspace] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
-  if (!project) return;
+  if (!workspace) return;
 
   let actorUserId: string;
   if (config.SLACK_REQUIRE_USER_IDENTITY) {
     const slackUserId = event.user ?? '';
-    const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
+    const actor = await resolveSlackActor(teamId, slackUserId, workspace.accountId, workspaceId);
     if ('reason' in actor) {
       await postIdentityPrompt({
-        projectId,
+        workspaceId,
         teamId,
         channel: event.channel,
         // Top-level ephemeral prompts should render beside the message. Passing
@@ -651,9 +651,9 @@ export async function spawnAgentTurn(
     }
     actorUserId = actor.userId;
   } else {
-    const owner = await resolveProjectAutomationActor(project.accountId);
+    const owner = await resolveWorkspaceAutomationActor(workspace.accountId);
     if (!owner) {
-      console.warn('[slack-webhook] no actor for project', projectId);
+      console.warn('[slack-webhook] no actor for workspace', workspaceId);
       return;
     }
     actorUserId = owner;
@@ -672,7 +672,7 @@ export async function spawnAgentTurn(
       .where(
         and(
           eq(chatThreads.platform, 'slack'),
-          eq(chatThreads.workspaceId, teamId),
+          eq(chatThreads.platformWorkspaceId, teamId),
           eq(chatThreads.threadId, threadId),
         ),
       )
@@ -683,7 +683,7 @@ export async function spawnAgentTurn(
           ? await currentChannelSelection({ teamId, channelId: event.channel })
           : null;
         const allowed = await ensureSlackThreadParticipant({
-          projectId,
+          workspaceId,
           teamId,
           channel: event.channel,
           threadId,
@@ -707,7 +707,7 @@ export async function spawnAgentTurn(
 
       const handle = turnInFlight
         ? null
-        : await startTurn(projectId, teamId, event, 'On it');
+        : await startTurn(workspaceId, teamId, event, 'On it');
       if (handle) {
         handle.sessionId = existing.sessionId;
         await saveTurn(handle);
@@ -728,7 +728,7 @@ export async function spawnAgentTurn(
           .where(
             and(
               eq(chatThreads.platform, 'slack'),
-              eq(chatThreads.workspaceId, teamId),
+              eq(chatThreads.platformWorkspaceId, teamId),
               eq(chatThreads.threadId, threadId),
             ),
           );
@@ -766,7 +766,7 @@ export async function spawnAgentTurn(
         if (handle) {
           await deleteTurn(existing.sessionId);
           if (await claimThreadErrorNotice(teamId, threadId)) {
-            const url = sessionWebUrl(config.FRONTEND_URL, projectId, existing.sessionId);
+            const url = sessionWebUrl(config.FRONTEND_URL, workspaceId, existing.sessionId);
             await finalizeTurn(handle, {
               error: `This thread's session hit an error and couldn't start. <${url}|Open it in Kortix> to see what happened.`,
             });
@@ -795,7 +795,7 @@ export async function spawnAgentTurn(
         .where(
           and(
             eq(chatThreads.platform, 'slack'),
-            eq(chatThreads.workspaceId, teamId),
+            eq(chatThreads.platformWorkspaceId, teamId),
             eq(chatThreads.threadId, threadId),
           ),
         );
@@ -807,5 +807,5 @@ export async function spawnAgentTurn(
 
   // No live mapping for this thread → create the session, or JOIN one that a
   // concurrent handler is creating this very moment. Single atomic create path.
-  await createOrJoinThreadSession({ projectId, teamId, threadId, envelope, event, revived, actorUserId });
+  await createOrJoinThreadSession({ workspaceId, teamId, threadId, envelope, event, revived, actorUserId });
 }

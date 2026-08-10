@@ -4,7 +4,7 @@
  * + active sessions, PAT policy, service accounts, and audit webhooks.
  */
 
-import { apiFetch } from '@/lib/projects/projects-client';
+import { apiFetch } from '@/lib/workspaces/workspaces-client';
 
 const iam = (accountId: string) => `/accounts/${encodeURIComponent(accountId)}/iam`;
 

@@ -9,7 +9,7 @@ import type { FetchImpl } from './http';
 // it end to end (translate in -> pipeline -> translate out) rather than just
 // the pure translation functions covered by ingress/anthropic-messages.test.ts.
 
-const principal = { userId: 'u1', accountId: 'a1', projectId: 'p1', keyId: 'k1' };
+const principal = { userId: 'u1', accountId: 'a1', workspaceId: 'p1', keyId: 'k1' };
 
 const managed: UpstreamDescriptor = {
   provider: 'openrouter',

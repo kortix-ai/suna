@@ -12,7 +12,7 @@ import { Github, ExternalLink, Unplug, Shield } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
-import { listGitHubInstallations, deleteGitHubInstallation } from '@/lib/projects/projects-client';
+import { listGitHubInstallations, deleteGitHubInstallation } from '@/lib/workspaces/workspaces-client';
 import type { AccountDetail } from '@/lib/accounts/accounts-client';
 import { accountColors, SkeletonRow, type AccountCaps } from './account-shared';
 

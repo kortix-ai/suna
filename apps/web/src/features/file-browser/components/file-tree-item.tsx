@@ -9,7 +9,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { getFileIcon } from '@/features/project-files/components/file-icon';
+import { getFileIcon } from '@/features/workspace-files/components/file-icon';
 import { cn } from '@/lib/utils';
 import {
   WarningIcon as AlertTriangle,

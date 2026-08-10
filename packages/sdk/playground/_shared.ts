@@ -61,12 +61,12 @@ export async function pickProjectId(
 /** KORTIX_SESSION_ID if set, otherwise create a fresh session in the project. */
 export async function pickOrCreateSessionId(
   kortix: KortixClient,
-  projectId: string,
+  workspaceId: string,
   name = "sdk playground",
 ): Promise<string> {
   const given = process.env.KORTIX_SESSION_ID;
   if (given) return given;
-  const created = await kortix.projects.createSession(projectId, { name });
+  const created = await kortix.projects.createSession(workspaceId, { name });
   console.log(`created session ${created.session_id}`);
   return created.session_id;
 }

@@ -50,7 +50,7 @@ export interface TeamsConversationRef {
   botId?: string;
   fromId?: string;
   tenantId?: string;
-  projectId?: string;
+  workspaceId?: string;
 }
 
 export interface TeamsChannelRef {
@@ -72,7 +72,7 @@ export interface TeamsLiveTurn {
   steps: StreamTaskChunk[];
   expiry: number;
   finalized: boolean;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   originatingActivity: TeamsActivity;
 }

@@ -13,10 +13,10 @@ export interface TeamsMode {
 
 export function teamsMode(
   baseUrl: string,
-  opts: { enabled: boolean; projectId?: string; byoAppId?: string | null },
+  opts: { enabled: boolean; workspaceId?: string; byoAppId?: string | null },
 ): TeamsMode {
-  // `enabled` is the project's `teams` feature flag, resolved by the
-  // caller from the project row it already holds.
+  // `enabled` is the workspace's `teams` feature flag, resolved by the
+  // caller from the workspace row it already holds.
   const enabled = opts.enabled;
   const byo = Boolean(opts?.byoAppId);
   const appId = opts?.byoAppId || config.MICROSOFT_APP_ID || null;
@@ -25,8 +25,8 @@ export function teamsMode(
   }
   const base = baseUrl.replace(/\/$/, '');
   const messagingEndpoint =
-    byo && opts?.projectId
-      ? `${base}/v1/webhooks/teams/${opts.projectId}/messages`
+    byo && opts?.workspaceId
+      ? `${base}/v1/webhooks/teams/${opts.workspaceId}/messages`
       : `${base}/v1/webhooks/teams/messages`;
   return {
     enabled,

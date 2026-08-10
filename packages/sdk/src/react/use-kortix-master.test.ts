@@ -296,12 +296,12 @@ describe('useKortixTasks (hook query-key + query behavior)', () => {
     expect(cfg.queryKey).toEqual(['kortix', 'tasks', 'proj-1', 'todo']);
   });
 
-  test('is disabled without a projectId', () => {
+  test('is disabled without a workspaceId', () => {
     const cfg = M.useKortixTasks(undefined) as any;
     expect(cfg.enabled).toBe(false);
   });
 
-  test('is enabled once a projectId is supplied', () => {
+  test('is enabled once a workspaceId is supplied', () => {
     const cfg = M.useKortixTasks('proj-1') as any;
     expect(cfg.enabled).toBe(true);
   });

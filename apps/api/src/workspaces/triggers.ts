@@ -1,0 +1,791 @@
+/**
+ * Kortix trigger DSL — lives inside the workspace manifest (kortix.yaml; a
+ * legacy v1 project may instead use kortix.toml) as a `triggers:` list of
+ * entries. The manifest at the repo root is THE source of truth for
+ * trigger config; runtime state (last_fired_at, executions) stays in the
+ * `project_trigger_runtime` DB table.
+ *
+ * Example shape (kortix.yaml):
+ *
+ *   kortix_version: 2
+ *
+ *   project:
+ *     name: example
+ *
+ *   triggers:
+ *     - slug: daily-digest
+ *       name: Daily digest
+ *       type: cron
+ *       agent: default
+ *       enabled: true
+ *       cron: "0 0 9 * * 1-5"
+ *       timezone: UTC
+ *       prompt: "Generate the daily digest…"
+ *
+ *     - slug: slack
+ *       type: webhook
+ *       secret_env: WEBHOOK_SLACK_SECRET
+ *       prompt: "New {{ message.text }}"
+ *
+ * One file, one PR-review surface. Web-UI edits are read-modify-write on
+ * this same file — see writeManifestTriggers / deleteManifestTrigger in
+ * apps/api/src/projects/index.ts.
+ */
+
+import {
+  MANIFEST_FILENAME_YAML,
+  type ManifestFormat,
+  manifestCandidatePaths,
+  manifestFormatForPath,
+  parseManifestText,
+  serializeManifestObject,
+} from '@kortix/manifest-schema';
+import { type GitBackedWorkspace, readManifestFromRepo } from './git';
+import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
+
+/** Where the manifest lives. Same path the rest of the platform looks for.
+ *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —
+ *  reads prefer it if present; this stays the canonical name for breadcrumbs
+ *  and the toml/legacy default. */
+export const MANIFEST_FILENAME = 'kortix.toml';
+export { MANIFEST_FILENAME_YAML };
+
+/**
+ * Schema version of the manifest. Bumped when we make a breaking change to
+ * how the file is parsed. Manifests without `kortix_version` are treated as
+ * v1 (backward compat). `KNOWN_SCHEMA_VERSION` deliberately stays `1` — it is
+ * the version every v1 test fixture across this package stamps into its
+ * `kortix_version` header and the version `parseAgentEntry`/`extractTriggers`'
+ * v1 code paths were authored against; changing its VALUE would silently flip
+ * every one of those v1-shaped fixtures onto the v2 reader below. See
+ * `MAX_SCHEMA_VERSION` for the actual acceptance ceiling.
+ */
+export const KNOWN_SCHEMA_VERSION = 1;
+
+/**
+ * Highest schema version this reader (the one the session/trigger/grant
+ * pipeline actually reads through — `readManifest`/`parseManifestString`)
+ * accepts without throwing. `kortix_version: 2` (the `agents:` map + full
+ * OpenCode `AgentConfig` parity + deny-by-default grants — see
+ * `@kortix/manifest-schema`'s `ManifestV2`) is validated at write time by
+ * `kortix validate` / the CR-merge gate; THIS reader must not also reject it,
+ * or every v2 workspace's session grant resolution would fail closed/open
+ * instead of reading the agent's declared grant (the runtime-wiring gap
+ * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
+ * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
+ * this ceiling is genuinely unknown to the platform and remains refused.
+ */
+export const MAX_SCHEMA_VERSION = 2;
+
+const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+
+/** Local copy — `lib/serializers` imports from this module, so importing back
+ *  would close a cycle for one two-line predicate. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export type GitTriggerType = 'cron' | 'webhook';
+
+export interface GitTriggerSpec {
+  /** URL-safe slug — unique per project. */
+  slug: string;
+  /**
+   * Where the entry is sourced from. Always `<manifest-file>#triggers.<slug>`
+   * now that triggers are centralized — `kortix.yaml` for v2 projects,
+   * `kortix.toml` for legacy v1 ones. The hash is just a hint for the UI;
+   * the platform doesn't use it for routing.
+   */
+  path: string;
+  /** Human label; defaults to the slug when not set. */
+  name: string;
+  type: GitTriggerType;
+  /** Agent name (default: "default"). */
+  agent: string;
+  /**
+   * Model for this trigger's runs (wire form `provider/model`), or null for
+   * "Default" — resolve the chain at fire time (agent → project → account →
+   * platform `auto`). The most-specific *default-time* override for a trigger
+   * run. Catalog-availability is validated at the route layer, not here.
+   */
+  model: string | null;
+  /** When false, the scheduler / webhook receiver skip this entry. */
+  enabled: boolean;
+  /** Mustache-style prompt template — the body sent to the agent on each fire. */
+  promptTemplate: string;
+  /** For type=cron only. 6-field croner expression. Null for one-off (`runAt`) schedules. */
+  cron: string | null;
+  /**
+   * For type=cron only. ISO-8601 instant for a one-off ("run once") schedule.
+   * Mutually exclusive with `cron`: when set, the trigger fires exactly once
+   * at/after this instant and then stays dormant (guarded by last_fired_at).
+   */
+  runAt: string | null;
+  /** For type=cron only. IANA timezone. Defaults to UTC. */
+  timezone: string;
+  /**
+   * For type=webhook only — the workspace_secrets key that holds the HMAC
+   * signing secret. The actual secret value is never inline.
+   */
+  secretEnv: string | null;
+  /**
+   * Session reuse policy.
+   * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +
+   *   new ephemeral branch) — the historical behavior.
+   * - `'reuse'`: re-prompt the most recent session this trigger created
+   *   (resuming its sandbox + opencode root) so ONE long-lived session
+   *   accumulates context across fires. If no reusable session exists yet (or
+   *   the last one is dead/failed), a fresh one is created and becomes the
+   *   canonical session going forward. Primarily meant for recurring cron
+   *   triggers that should feel like a single persistent agent run.
+   * - `'keyed'`: like `'reuse'`, but one canonical session PER `sessionKey`
+   *   value instead of one per trigger. The key is a prompt-style template
+   *   rendered against the delivery payload, so a single trigger can fan out
+   *   into a session per chat / per customer / per repository. This is what
+   *   makes a conversational webhook source (WhatsApp, SMS, email) behave like
+   *   separate threads rather than one blended transcript.
+   */
+  sessionMode: GitTriggerSessionMode;
+  /**
+   * For `sessionMode === 'pinned'` only — the exact `project_sessions.session_id`
+   * this trigger loops. Null for `'fresh'`/`'reuse'`. Stored in the manifest as
+   * `session_id` (portable) AND persisted on `project_trigger_runtime.session_id`.
+   */
+  pinnedSessionId: string | null;
+  /**
+   * For `sessionMode === 'keyed'` only — a `{{ body.path }}` template rendered
+   * against the webhook payload to produce the session key (e.g.
+   * `"{{ body.data.chat_jid }}"`). Null for every other mode. A fire whose key
+   * renders empty degrades to `'fresh'` rather than colliding every keyless
+   * delivery into one shared session.
+   */
+  sessionKey: string | null;
+  /**
+   * Optional payload guard: dotted paths (rooted at the same `body` / `headers`
+   * object the prompt template sees) mapped to the value they must equal for the
+   * trigger to fire. A non-matching delivery is accepted (200) and recorded, but
+   * spawns no session.
+   *
+   * The motivating case is loop-breaking: a webhook source that reports BOTH
+   * directions of a conversation would otherwise re-trigger the agent with the
+   * agent's own reply. `{ "body.data.direction": "inbound" }` ends that without
+   * having to narrow the subscription and lose every other event type.
+   */
+  filter: Record<string, string> | null;
+}
+
+export type GitTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
+
+export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = [
+  'fresh',
+  'reuse',
+  'pinned',
+  'keyed',
+];
+
+export interface GitTriggerParseError {
+  slug: string;
+  path: string;
+  error: string;
+}
+
+export interface ParsedManifest {
+  schemaVersion: number;
+  /** The raw decoded object — callers shouldn't usually need this. */
+  raw: Record<string, unknown>;
+  /** Which on-disk format this manifest is in. Drives serialization back to the
+   *  same format on commit. Required so every construction site is explicit. */
+  format: ManifestFormat;
+  /** The repo-relative file the manifest was read from (or should be written to
+   *  for a synthesized one) — e.g. `kortix.yaml` or `kortix.toml`. Lets the
+   *  commit path write to the exact same file, honoring `.yml` and custom dirs. */
+  path: string;
+  /** Git blob SHA observed with this manifest, or null when the file was absent. */
+  revision?: string | null;
+  /** Logical manifest files in winner-priority order. */
+  candidatePaths?: string[];
+}
+
+/** Result of `loadWorkspaceTriggers` — same shape callers got pre-refactor. */
+export interface LoadedTriggers {
+  specs: GitTriggerSpec[];
+  errors: GitTriggerParseError[];
+}
+
+/* ─── Manifest IO ───────────────────────────────────────────────────────── */
+
+/**
+ * Read + parse the workspace's manifest. Returns null if no manifest file is
+ * present (so the caller can treat the repo as "not a Kortix project yet").
+ * Throws on parse errors so the caller can surface them up — we don't
+ * silently swallow a malformed manifest.
+ *
+ * DUAL-FORMAT: prefers `kortix.yaml` over `kortix.toml` when both exist, else
+ * falls back to whichever is present (honoring a custom `manifest_path`). The
+ * resolved file + format ride along on the ParsedManifest so the commit path
+ * writes back to the exact same file in the same format.
+ */
+export async function readManifest(
+  workspace: GitBackedWorkspace,
+  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
+): Promise<ParsedManifest | null> {
+  let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
+  try {
+    // manifest_path can still say kortix.toml (an older project, or a stale
+    // default) even when the file actually on disk is kortix.yaml — so we
+    // can't rely on it to point at the right format. We actively probe the
+    // .yaml/.yml siblings first (manifestCandidatePaths), which also keeps
+    // per-agent env/connector scoping ON for a yaml-only project (a missing
+    // `agents:` read = grants resolve to null = unrestricted).
+    const candidates = manifestCandidatePaths(workspace.manifestPath).map((c) => c.path);
+    found = await readManifestFromRepo(workspace, candidates, workspace.defaultBranch, {
+      forceRefresh: opts?.forceRefresh,
+    });
+  } catch (err) {
+    // `readManifestFromRepo` returns null for a genuinely ABSENT file and only
+    // THROWS when the read itself failed (mirror refresh, git-proxy hop,
+    // ls-tree/show). Collapsing both to null is fine for callers that just want
+    // "is there a manifest?", but it is unsafe for security decisions: a
+    // transient git failure then looks identical to "blank project", which
+    // `loadWorkspaceAgents` answers with a synthesized `secrets: 'all'` manifest.
+    // Callers that must fail CLOSED on an unreadable manifest opt into the
+    // distinction here. See projects/lib/secret-grant.ts.
+    if (opts?.rethrowReadErrors) throw err;
+    return null;
+  }
+  if (!found) return null;
+  return parseManifestString(
+    found.content,
+    manifestFormatForPath(found.path),
+    found.path,
+    found.sha,
+    found.candidatePaths,
+  );
+}
+
+/**
+ * The agent name a synthesized (no-manifest-yet) v2 manifest declares as its
+ * default — same name `@kortix/starter`'s `base` template seeds (see
+ * packages/starter/templates/base/kortix.yaml's `default_agent: kortix` +
+ * `agents.kortix`). Keeping the two in sync means a blank managed-git project
+ * (provisioned WITHOUT `seed_starter:true`, so no kortix.yaml ever lands on
+ * disk) self-heals into the exact shape a seeded one would already have.
+ *
+ * Exported (not file-local) because more than one reader needs the SAME
+ * synthesized shape: `loadManifestForEdit` (lib/triggers.ts, the agent-config
+ * write path) AND `loadWorkspaceAgents` (./agents.ts, the session-create
+ * declared-agent read path) both treat "no manifest committed yet" as if
+ * this manifest already existed — otherwise the two paths disagree (PR
+ * #4974 fixed only the write side; session-create still read `readManifest`'s
+ * literal `null` and 400'd AGENT_NOT_DECLARED on a blank workspace's very
+ * first session).
+ */
+export const SYNTHESIZED_DEFAULT_AGENT_NAME = 'kortix';
+
+/**
+ * Build the synthesized v2 manifest for a project with no kortix.yaml/
+ * kortix.toml committed yet. Pure (no I/O) — callers decide when a `null`
+ * `readManifest` result should be treated as this shape.
+ *
+ * MUST embed `kortix_version` INSIDE `raw` (not just carry it on the
+ * `schemaVersion` wrapper) — `applyDefaultAgentV2`/`applyAgentBlockV2`
+ * (lib/agent-config-v2.ts) call `validateManifest(manifest.raw, format)`
+ * directly on this raw object (not through `serializeManifest`, which
+ * re-injects `kortix_version` from `schemaVersion` on the way out). Without
+ * the key present here, `validateRoot` reads the raw object as schema-version-
+ * less and rejects it with "kortix_version is required" before ever reaching
+ * the v2 body validators — the exact 400 a blank workspace's first
+ * PUT /default-agent hit.
+ */
+export function synthesizeBlankManifest(workspace: {
+  name?: string;
+  manifestPath?: string | null;
+}): ParsedManifest {
+  const candidatePaths = manifestCandidatePaths(workspace.manifestPath ?? undefined).map(
+    (candidate) => candidate.path,
+  );
+  return {
+    schemaVersion: 2,
+    raw: {
+      kortix_version: 2,
+      project: { name: workspace.name ?? '', description: '' },
+      env: { required: [], optional: [] },
+      default_agent: SYNTHESIZED_DEFAULT_AGENT_NAME,
+      agents: {
+        [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
+          connectors: 'all',
+          secrets: 'all',
+          kortix_cli: 'all',
+          skills: 'all',
+        },
+      },
+    },
+    format: 'yaml',
+    path: candidatePaths[0] ?? MANIFEST_FILENAME_YAML,
+    revision: null,
+    candidatePaths,
+  };
+}
+
+/**
+ * Synchronous parse from a manifest string. Exported so the CRUD path can
+ * round-trip (read existing string, parse, mutate, serialize) without touching
+ * the network. `format`/`path` default to TOML/kortix.toml so an existing
+ * caller passing only a string is unchanged.
+ */
+export function parseManifestString(
+  raw: string,
+  format: ManifestFormat = 'toml',
+  path: string = format === 'yaml' ? MANIFEST_FILENAME_YAML : MANIFEST_FILENAME,
+  revision?: string | null,
+  candidatePaths?: string[],
+): ParsedManifest {
+  const parsed = parseManifestText(raw, format);
+  const version =
+    typeof parsed.kortix_version === 'number'
+      ? parsed.kortix_version
+      : typeof parsed.kortix_version === 'string'
+        ? Number(parsed.kortix_version)
+        : KNOWN_SCHEMA_VERSION;
+
+  if (!Number.isFinite(version) || version < 1) {
+    throw new Error('kortix_version must be a positive integer');
+  }
+  if (Math.floor(version) > MAX_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported ${path} schema version ${version}. This platform understands up to v${MAX_SCHEMA_VERSION}; upgrade the platform or pin the manifest.`,
+    );
+  }
+
+  const manifest: ParsedManifest = {
+    schemaVersion: Math.floor(version),
+    raw: parsed,
+    format,
+    path,
+  };
+  if (revision !== undefined) manifest.revision = revision;
+  if (candidatePaths !== undefined) manifest.candidatePaths = candidatePaths;
+  return manifest;
+}
+
+/** Serialize a parsed manifest back to text (in its own format) for committing. */
+export function serializeManifest(manifest: ParsedManifest): string {
+  // Ensure kortix_version is the FIRST key so the manifest is self-describing at
+  // a glance. Both smol-toml and the yaml package emit keys in insertion order.
+  const out: Record<string, unknown> = { kortix_version: manifest.schemaVersion };
+  for (const [key, value] of Object.entries(manifest.raw)) {
+    if (key === 'kortix_version') continue;
+    out[key] = value;
+  }
+  return serializeManifestObject(out, manifest.format);
+}
+
+/* ─── Trigger extraction ────────────────────────────────────────────────── */
+
+/**
+ * Parse the `[[triggers]]` array out of a loaded manifest, validating each
+ * entry. Never throws — bad entries land in `errors` with a slug + reason
+ * so the UI can render them alongside the good ones.
+ */
+export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
+  const filename = manifest.path || MANIFEST_FILENAME;
+  const rawTriggers = manifest.raw.triggers;
+  if (rawTriggers === undefined || rawTriggers === null) {
+    return { specs: [], errors: [] };
+  }
+  if (!Array.isArray(rawTriggers)) {
+    return {
+      specs: [],
+      errors: [
+        {
+          slug: '(top-level)',
+          path: filename,
+          error:
+            manifest.format === 'yaml'
+              ? '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.'
+              : '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
+        },
+      ],
+    };
+  }
+
+  const specs: GitTriggerSpec[] = [];
+  const errors: GitTriggerParseError[] = [];
+  const seenSlugs = new Set<string>();
+
+  rawTriggers.forEach((entry, index) => {
+    const result = parseTriggerEntry(entry, index, filename);
+    if (!result.ok) {
+      errors.push(result.error);
+      return;
+    }
+    if (seenSlugs.has(result.spec.slug)) {
+      errors.push({
+        slug: result.spec.slug,
+        path: result.spec.path,
+        error: `Duplicate trigger slug "${result.spec.slug}" — slugs must be unique within a workspace`,
+      });
+      return;
+    }
+    seenSlugs.add(result.spec.slug);
+    specs.push(result.spec);
+  });
+
+  specs.sort((a, b) => a.slug.localeCompare(b.slug));
+  errors.sort((a, b) => a.slug.localeCompare(b.slug));
+  return { specs, errors };
+}
+
+/**
+ * Walk a project: read its manifest, extract triggers. Convenience for
+ * callers that don't otherwise need the parsed manifest. Returns empty
+ * arrays + a single top-level error when the manifest fails to parse —
+ * never throws.
+ */
+export async function loadWorkspaceTriggers(workspace: GitBackedWorkspace): Promise<LoadedTriggers> {
+  let manifest: ParsedManifest | null;
+  try {
+    manifest = await readManifest(workspace);
+  } catch (err) {
+    // The manifest failed to parse before we learned which candidate file it
+    // actually was (.yaml/.yml/.toml) — fall back to the workspace's configured
+    // manifestPath (best-effort; may be stale for a project that switched
+    // format by hand without updating it) rather than always naming kortix.toml.
+    return {
+      specs: [],
+      errors: [
+        {
+          slug: '(manifest)',
+          path: workspace.manifestPath || MANIFEST_FILENAME,
+          error: (err as Error).message || 'Failed to read manifest',
+        },
+      ],
+    };
+  }
+  if (!manifest) return { specs: [], errors: [] };
+  return extractTriggers(manifest);
+}
+
+/* ─── Trigger ↔ manifest-entry conversion ───────────────────────────────── */
+
+/**
+ * Convert a TriggerSpec back to the raw object that goes into the `triggers`
+ * array — the shape is format-agnostic (same object serializes to either a
+ * kortix.yaml list entry or a legacy kortix.toml `[[triggers]]` table).
+ * Inverse of `parseTriggerEntry`. Used by the CRUD path to write back to the
+ * project manifest after a UI edit.
+ */
+export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unknown> {
+  const entry: Record<string, unknown> = {
+    slug: spec.slug,
+    name: spec.name,
+    type: spec.type,
+    agent: spec.agent,
+  };
+  // Only emit model when set so manifests on the "Default" path stay byte-stable.
+  if (spec.model) entry.model = spec.model;
+  entry.enabled = spec.enabled;
+  // `keyed` is written as `session_key` alone: the key implies the mode on read
+  // (see parseTriggerEntry), so emitting both would be redundant in the file a
+  // human actually reads. It also keeps the manifest valid against the
+  // `session_mode` enum in @kortix/manifest-schema, which the `kortix validate`
+  // / CR-merge gate gets to before it learns about new modes.
+  const keyedByKey = spec.sessionMode === 'keyed' && !!spec.sessionKey;
+  // Only emit session_mode when it deviates from the default ('fresh') so
+  // existing manifests stay byte-stable on round-trip.
+  if (spec.sessionMode !== 'fresh' && !keyedByKey) {
+    entry.session_mode = spec.sessionMode;
+  }
+  // `pinned` carries the exact session id to loop.
+  if (spec.sessionMode === 'pinned' && spec.pinnedSessionId) {
+    entry.session_id = spec.pinnedSessionId;
+  }
+  // `keyed` carries the template that derives one session per key.
+  if (keyedByKey) {
+    entry.session_key = spec.sessionKey;
+  }
+  if (spec.filter && Object.keys(spec.filter).length > 0) {
+    entry.filter = spec.filter;
+  }
+  if (spec.type === 'cron') {
+    if (spec.runAt) {
+      entry.run_at = spec.runAt;
+    } else {
+      entry.cron = spec.cron ?? '';
+    }
+    entry.timezone = spec.timezone;
+  } else if (spec.secretEnv) {
+    entry.secret_env = spec.secretEnv;
+  }
+  entry.prompt = spec.promptTemplate;
+  return entry;
+}
+
+interface ParseOk {
+  ok: true;
+  spec: GitTriggerSpec;
+}
+interface ParseErr {
+  ok: false;
+  error: GitTriggerParseError;
+}
+
+function parseTriggerEntry(
+  entry: unknown,
+  index: number,
+  filename: string = MANIFEST_FILENAME,
+): ParseOk | ParseErr {
+  const err = (slug: string, message: string): ParseErr =>
+    makeTriggerError(slug, message, filename);
+
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return err('(invalid)', `[[triggers]] entry #${index + 1} is not a table`);
+  }
+  const row = entry as Record<string, unknown>;
+
+  const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
+  if (!slug) return err(`(index-${index})`, `[[triggers]] entry #${index + 1} is missing a slug`);
+  if (!SLUG_RE.test(slug)) {
+    return err(
+      slug,
+      `Invalid slug "${slug}" — lowercase letters, digits, dashes, underscores only`,
+    );
+  }
+
+  const typeRaw = typeof row.type === 'string' ? row.type.trim() : '';
+  if (typeRaw !== 'cron' && typeRaw !== 'webhook') {
+    return err(slug, `type must be "cron" or "webhook" (got "${typeRaw || 'unset'}")`);
+  }
+  const type = typeRaw as GitTriggerType;
+
+  const prompt =
+    typeof row.prompt === 'string'
+      ? row.prompt
+      : typeof row.prompt_template === 'string'
+        ? row.prompt_template
+        : '';
+  if (!prompt.trim()) {
+    return err(slug, 'prompt is required and may not be empty');
+  }
+
+  const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
+  const agent =
+    typeof row.agent === 'string' && row.agent.trim()
+      ? row.agent.trim()
+      : typeof row.agent_name === 'string' && row.agent_name.trim()
+        ? row.agent_name.trim()
+        : 'default';
+  const model = typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null;
+  const enabled = coerceBool(row.enabled, true);
+
+  const sessionModeRaw =
+    typeof row.session_mode === 'string'
+      ? row.session_mode.trim().toLowerCase()
+      : typeof row.sessionMode === 'string'
+        ? row.sessionMode.trim().toLowerCase()
+        : '';
+  if (
+    sessionModeRaw &&
+    !(GIT_TRIGGER_SESSION_MODES as readonly string[]).includes(sessionModeRaw)
+  ) {
+    return err(
+      slug,
+      `session_mode must be one of ${GIT_TRIGGER_SESSION_MODES.map((m) => `"${m}"`).join(', ')} (got "${sessionModeRaw}")`,
+    );
+  }
+  // `keyed` carries the template that derives one session per key
+  // (manifest key `session_key`). Read BEFORE resolving the mode: declaring a
+  // `session_key` is itself the opt-in, so `session_mode: keyed` is redundant
+  // noise a manifest never has to write. An EXPLICIT mode always wins, so
+  // `session_mode: fresh` + a stray key stays fresh (and drops the key below).
+  const sessionKeyRaw =
+    typeof row.session_key === 'string'
+      ? row.session_key.trim()
+      : typeof row.sessionKey === 'string'
+        ? row.sessionKey.trim()
+        : '';
+
+  const sessionMode: GitTriggerSessionMode = sessionModeRaw
+    ? (sessionModeRaw as GitTriggerSessionMode)
+    : sessionKeyRaw
+      ? 'keyed'
+      : 'fresh';
+
+  // `pinned` carries the exact session id to loop (manifest key `session_id`).
+  const pinnedSessionIdRaw =
+    typeof row.session_id === 'string'
+      ? row.session_id.trim()
+      : typeof row.sessionId === 'string'
+        ? row.sessionId.trim()
+        : '';
+  if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
+    return err(slug, 'session_mode "pinned" requires a `session_id` to pin the trigger to');
+  }
+  const pinnedSessionId: string | null = sessionMode === 'pinned' ? pinnedSessionIdRaw : null;
+
+  // An EXPLICIT `session_mode: keyed` with no key is still an error — there is
+  // nothing to bucket sessions by. (The inferred path can't reach this: it only
+  // resolves to `keyed` when a key is present.)
+  if (sessionMode === 'keyed' && !sessionKeyRaw) {
+    return err(
+      slug,
+      'session_mode "keyed" requires a `session_key` template (e.g. "{{ body.data.chat_jid }}")',
+    );
+  }
+  const sessionKey: string | null = sessionMode === 'keyed' ? sessionKeyRaw : null;
+
+  // Optional payload guard. Values are compared as strings against the rendered
+  // path, so `true`/`1` in the manifest behave the same as in the payload.
+  let filter: Record<string, string> | null = null;
+  if (row.filter !== undefined && row.filter !== null) {
+    if (!isPlainObject(row.filter)) {
+      return err(slug, '`filter` must be a table of payload paths to expected values');
+    }
+    const entries: Record<string, string> = {};
+    for (const [key, value] of Object.entries(row.filter)) {
+      const trimmed = key.trim();
+      if (!trimmed) return err(slug, '`filter` keys must be non-empty payload paths');
+      if (value === null || typeof value === 'object') {
+        return err(slug, `\`filter.${trimmed}\` must be a string, number, or boolean`);
+      }
+      entries[trimmed] = String(value);
+    }
+    if (Object.keys(entries).length > 0) filter = entries;
+  }
+
+  const path = `${filename}#triggers.${slug}`;
+
+  if (type === 'cron') {
+    const cron =
+      typeof row.cron === 'string'
+        ? row.cron.trim()
+        : typeof row.schedule === 'string'
+          ? row.schedule.trim()
+          : '';
+    const runAtRaw =
+      typeof row.run_at === 'string'
+        ? row.run_at.trim()
+        : typeof row.runAt === 'string'
+          ? row.runAt.trim()
+          : '';
+    const timezone =
+      typeof row.timezone === 'string' && row.timezone.trim() ? row.timezone.trim() : 'UTC';
+    const timezoneError = validateTriggerTimezone(timezone);
+    if (timezoneError) return err(slug, timezoneError);
+
+    // A one-off ("run once") schedule carries `run_at` instead of `cron`.
+    if (runAtRaw) {
+      const parsed = Date.parse(runAtRaw);
+      if (Number.isNaN(parsed)) {
+        return err(slug, `run_at must be an ISO-8601 datetime (got "${runAtRaw}")`);
+      }
+      return {
+        ok: true,
+        spec: {
+          slug,
+          path,
+          name,
+          type: 'cron',
+          agent,
+          model,
+          enabled,
+          promptTemplate: prompt,
+          cron: null,
+          runAt: new Date(parsed).toISOString(),
+          timezone,
+          secretEnv: null,
+          sessionMode,
+          pinnedSessionId,
+          sessionKey,
+          filter,
+        },
+      };
+    }
+
+    if (!cron)
+      return err(slug, 'cron triggers must declare a `cron` expression or a one-off `run_at`');
+    const cronError = validateTriggerCron(cron, timezone);
+    if (cronError) return err(slug, cronError);
+    return {
+      ok: true,
+      spec: {
+        slug,
+        path,
+        name,
+        type: 'cron',
+        agent,
+        model,
+        enabled,
+        promptTemplate: prompt,
+        cron,
+        runAt: null,
+        timezone,
+        secretEnv: null,
+        sessionMode,
+        pinnedSessionId,
+          sessionKey,
+          filter,
+      },
+    };
+  }
+
+  // webhook
+  const secretEnv =
+    typeof row.secret_env === 'string'
+      ? row.secret_env.trim()
+      : typeof row.secretEnv === 'string'
+        ? row.secretEnv.trim()
+        : '';
+  if (!secretEnv) {
+    return err(
+      slug,
+      'webhook triggers must declare `secret_env` pointing at a project_secrets entry',
+    );
+  }
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(secretEnv)) {
+    return err(slug, `secret_env must look like a project_secrets name (got "${secretEnv}")`);
+  }
+  return {
+    ok: true,
+    spec: {
+      slug,
+      path,
+      name,
+      type: 'webhook',
+      agent,
+      model,
+      enabled,
+      promptTemplate: prompt,
+      cron: null,
+      runAt: null,
+      timezone: 'UTC',
+      secretEnv,
+      sessionMode,
+      pinnedSessionId,
+          sessionKey,
+          filter,
+    },
+  };
+}
+
+function coerceBool(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
+  }
+  return fallback;
+}
+
+function makeTriggerError(
+  slug: string,
+  message: string,
+  filename: string = MANIFEST_FILENAME,
+): ParseErr {
+  return {
+    ok: false,
+    error: { slug, path: `${filename}#triggers.${slug}`, error: message },
+  };
+}

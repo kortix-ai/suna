@@ -119,9 +119,9 @@ export const AGENTS: AgentDef[] = [
 export const CORE_SKILLS: [string, string][] = [
   ['agent-browser', 'Browser automation CLI for AI agents'],
   ['kortix-connectors', 'One interface to every connected connector'],
-  ['kortix-memory', 'Read, write, and curate the project brain'],
+  ['kortix-memory', 'Read, write, and curate the workspace brain'],
   ['kortix-slack', 'Answer in Slack as a teammate'],
-  ['kortix-system', 'Canonical reference for a Kortix project'],
+  ['kortix-system', 'Canonical reference for a Kortix workspace'],
   ['thermo-nuclear-review', 'Strict maintainability & abstraction review'],
 ];
 

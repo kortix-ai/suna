@@ -18,8 +18,8 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { sunaAccountMigrations } from '@kortix/db';
 import { db } from '../shared/db';
-import { extractStep, repoStep, pushStep, dbStep } from '../projects/suna-migration/suna-migration-phases';
-import { latestSunaMigration, type SunaMigrationContext } from '../projects/suna-migration/suna-migration-runner';
+import { extractStep, repoStep, pushStep, dbStep } from '../workspaces/suna-migration/suna-migration-phases';
+import { latestSunaMigration, type SunaMigrationContext } from '../workspaces/suna-migration/suna-migration-runner';
 
 function arg(flag: string): string | undefined {
   const i = Bun.argv.indexOf(flag);
@@ -64,7 +64,7 @@ async function main() {
 
   await db.update(sunaAccountMigrations).set({
     status: 'completed', phase: 'done', error: null, attempts: 0,
-    projectId: (progress.project_id as string) ?? null,
+    workspaceId: (progress.project_id as string) ?? null,
     progress, heartbeatAt: null,
     appliedAt: row.appliedAt ?? new Date(), verifiedAt: new Date(), updatedAt: new Date(),
   }).where(eq(sunaAccountMigrations.migrationId, row.migrationId));

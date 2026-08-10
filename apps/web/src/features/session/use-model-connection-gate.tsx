@@ -4,25 +4,52 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { WorkspaceProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { getWorkspaceDetail, listWorkspaceSecrets } from '@kortix/sdk';
 import { contract, type ModelKey, qk } from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
-export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
+export function workspaceProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
   return tab === 'providers' ? 'catalog' : tab;
 }
 
 /**
- * Shared "connect a model" routing. Project actions open the project-scoped
+ * Which project this gate acts on. An explicitly passed id wins; the `[id]`
+ * route segment is the fallback.
+ *
+ * The fallback is what every original caller relies on — they all render under
+ * `/projects/[id]`. The explicit id exists because the onboarding wizard's plan
+ * step now also runs on `/new` (`app/(app)/new`), which has NO `[id]` segment:
+ * there the route yields `null`, `modal` is therefore `null`, and
+ * `openConnectProvider` renders nothing while the step's only control never
+ * advances the wizard.
+ *
+ * `!== undefined`, never `??`: a caller that deliberately passes `null` means
+ * "act on no project", and must not silently inherit whatever route it happens
+ * to be rendered under.
+ *
+ * Exported so this rule is provable — the hook itself cannot be rendered in
+ * `apps/web`'s test harness (no jsdom, and `mock.module` is process-wide across
+ * a non---isolate `bun test` run).
+ */
+export function resolveGateWorkspaceId(
+  explicitId: string | null | undefined,
+  routeId: unknown,
+): string | null {
+  if (explicitId !== undefined) return explicitId;
+  return typeof routeId === 'string' ? routeId : null;
+}
+
+/**
+ * Shared "connect a model" routing. Project actions open the workspace-scoped
  * provider modal in place. Non-project actions use the global provider modal.
  * Extracted from `ModelSelector` so the picker, chat gate, and onboarding use
  * the same surface.
@@ -30,29 +57,36 @@ export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'c
  * Also computes `hasSelectableModels` — pass the caller's flattened model list
  * (default `[]` for callers that only need the routing actions). This is
  * deliberately NOT `models.length > 0`: the raw provider catalog can carry
- * models the project does not offer. See `isModelOffered` for the check.
+ * models the workspace does not offer. See `isModelOffered` for the check.
+ *
+ * `options.workspaceId` names the workspace explicitly, for callers that render
+ * outside `/projects/[id]`. Omitting it keeps the original route-inferred
+ * behaviour verbatim — see `resolveGateWorkspaceId`.
  */
-export function useModelConnectionGate(models: FlatModel[] = []) {
+export function useModelConnectionGate(
+  models: FlatModel[] = [],
+  options?: { workspaceId?: string | null },
+) {
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const params = useParams<{ id?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const workspaceId = resolveGateWorkspaceId(options?.workspaceId, params?.id);
 
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: !!projectId,
+  const workspaceDetailQuery = useQuery({
+    queryKey: qk.workspace.detail(workspaceId ?? ''),
+    queryFn: () => getWorkspaceDetail(workspaceId as string),
+    enabled: !!workspaceId,
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const llmGatewayEnabled = isLlmGatewayEnabled(workspaceDetailQuery.data?.workspace);
   const canWriteProviders =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_WRITE, {
-      accountId: projectDetailQuery.data?.project.account_id,
+    useWorkspaceCan(workspaceId ?? undefined, WORKSPACE_ACTIONS.WORKSPACE_WRITE, {
+      accountId: workspaceDetailQuery.data?.workspace.account_id,
     }).allowed === true;
 
-  const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
+  const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
+  const [workspaceModalTab, setWorkspaceModalTab] = useState<'connected' | 'catalog' | 'models'>(
     'catalog',
   );
 
@@ -61,9 +95,9 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     [models, llmGatewayEnabled],
   );
   const secretsQuery = useQuery({
-    queryKey: qk.project.secrets(projectId ?? ''),
-    queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled,
+    queryKey: qk.workspace.secrets(workspaceId ?? ''),
+    queryFn: () => listWorkspaceSecrets(workspaceId as string),
+    enabled: !!workspaceId && llmGatewayEnabled,
     ...contract('config'),
   });
   const { isPending: accountStatePending } = useAccountState();
@@ -112,44 +146,49 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   // queries stay `isPending` forever, so each is guarded by its `enabled`
   // condition.
   const entitlementsPending =
-    (!!projectId && projectDetailQuery.isPending) ||
-    (!!projectId && llmGatewayEnabled && secretsQuery.isPending) ||
+    (!!workspaceId && workspaceDetailQuery.isPending) ||
+    (!!workspaceId && llmGatewayEnabled && secretsQuery.isPending) ||
     accountStatePending;
 
   const openConnectProvider = useCallback(
     (tab: ProviderModalTab = 'providers') => {
-      if (projectId) {
-        setProjectModalTab(projectProviderModalTab(tab));
-        setProjectModalOpen(true);
+      if (workspaceId) {
+        setWorkspaceModalTab(workspaceProviderModalTab(tab));
+        setWorkspaceModalOpen(true);
         return;
       }
       openProviderModal(tab);
     },
-    [projectId, openProviderModal],
+    [workspaceId, openProviderModal],
   );
 
   const openUpgrade = useCallback(() => {
     openUpgradeDialog({
       reason: 'subscription_required',
-      accountId: projectDetailQuery.data?.project.account_id,
+      accountId: workspaceDetailQuery.data?.workspace.account_id,
     });
-  }, [openUpgradeDialog, projectDetailQuery.data?.project.account_id]);
+  }, [openUpgradeDialog, workspaceDetailQuery.data?.workspace.account_id]);
 
-  const modal = projectId ? (
-    <ProjectProviderModal
-      projectId={projectId}
-      open={projectModalOpen}
-      onOpenChange={setProjectModalOpen}
-      defaultTab={projectModalTab}
+  const modal = workspaceId ? (
+    <WorkspaceProviderModal
+      workspaceId={workspaceId}
+      open={workspaceModalOpen}
+      onOpenChange={setWorkspaceModalOpen}
+      defaultTab={workspaceModalTab}
       canWrite={canWriteProviders}
     />
   ) : null;
 
   // Billing off (self-host default): there's no Kortix plan to upgrade to and
-  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade() (see
-  // app-providers.tsx's `isBillingEnabled() && <GlobalUpgradeModal />`) — an
-  // "Upgrade" button would be a dead click. Callers should hide it and only
-  // offer "bring your own key" when this is false.
+  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade()
+  // (every host mounts it behind the same flag — `app-providers.tsx`'s
+  // `isBillingEnabled() && <GlobalUpgradeModal />`, and the same line on
+  // `/new`) — an "Upgrade" button would be a dead click. Callers should hide it
+  // and only offer "bring your own key" when this is false.
+  //
+  // This flag answers "is billing ON", NOT "is a host MOUNTED". A route that
+  // enables billing without mounting one still yields a dead click — which is
+  // exactly why `/new` had to mount its own.
   const showUpgradeOption = isBillingEnabled();
 
   return {

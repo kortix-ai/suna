@@ -55,16 +55,16 @@ function renderPart(part: ClassifiedPart): string {
 async function main() {
   const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
   const apiKey = process.env.KORTIX_API_KEY;
-  const projectId = process.env.KORTIX_PROJECT_ID;
+  const workspaceId = process.env.KORTIX_PROJECT_ID;
   const sessionId = process.env.KORTIX_SESSION_ID;
 
-  if (!apiKey || !projectId || !sessionId) {
+  if (!apiKey || !workspaceId || !sessionId) {
     console.error('Set KORTIX_API_KEY, KORTIX_PROJECT_ID, and KORTIX_SESSION_ID and re-run.');
     process.exit(1);
   }
 
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
   const { opencodeSessionId } = await session.ensureReady();
 
   const result = await session.runtime.session.messages({ sessionID: opencodeSessionId });

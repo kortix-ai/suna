@@ -214,7 +214,7 @@ describe('createConnectorWithOptionalOAuth2', () => {
       { slug: 'sharepoint', provider: 'openapi', spec: 'https://example.com/openapi.json' },
       SECRET_FORM,
       {
-        createConnector: async (_projectId, draft) => {
+        createConnector: async (_workspaceId, draft) => {
           calls.push('create');
           createdDraft = draft;
           return { ok: true };
@@ -222,7 +222,7 @@ describe('createConnectorWithOptionalOAuth2', () => {
         deleteConnector: async () => {
           calls.push('delete');
         },
-        setConnectorCredential: async (_projectId, slug, credential) => {
+        setConnectorCredential: async (_workspaceId, slug, credential) => {
           const method =
             'oauth2' in credential ? credential.oauth2.token_endpoint_auth_method : 'static';
           calls.push(`credential:${slug}:${method}`);

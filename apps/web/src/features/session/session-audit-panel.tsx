@@ -29,7 +29,7 @@ import {
   useSessionAudit,
   useSessionAuditTimeline,
 } from '@/features/session/session-audit-shared';
-import type { AuditEvent, SessionAuditAction } from '@kortix/sdk';
+import type { WorkspaceAuditEvent, SessionAuditAction } from '@kortix/sdk';
 import { CaretRightIcon, ShieldCheckIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
@@ -61,22 +61,22 @@ function requestFromAction(
 }
 
 export function SessionAuditPanel({
-  projectId,
-  projectSessionId,
+  workspaceId,
+  workspaceSessionId,
 }: {
-  projectId?: string;
-  projectSessionId?: string;
+  workspaceId?: string;
+  workspaceSessionId?: string;
 }) {
-  const approvalQuery = useSessionAudit(projectId, projectSessionId);
+  const approvalQuery = useSessionAudit(workspaceId, workspaceSessionId);
   const { data } = approvalQuery;
-  const timelineQuery = useSessionAuditTimeline(projectId, projectSessionId, {
+  const timelineQuery = useSessionAuditTimeline(workspaceId, workspaceSessionId, {
     enabled: data !== undefined && data.audit_access !== false,
   });
-  const resolve = useResolveApproval(projectId, projectSessionId);
+  const resolve = useResolveApproval(workspaceId, workspaceSessionId);
   const [busy, setBusy] = useState<Record<string, ApprovalDecisionValue>>({});
   const [outcomes, setOutcomes] = useState<Record<string, ApprovalDecisionValue>>({});
   const [selected, setSelected] = useState<SessionAuditAction | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<WorkspaceAuditEvent | null>(null);
 
   const actions = data?.actions ?? [];
   const events = useMemo(

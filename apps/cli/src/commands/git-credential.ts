@@ -1,8 +1,8 @@
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { clientFromAuth } from '../api/client.ts';
-import type { ProjectSummary } from '../api/types.ts';
-import { loadLink } from '../project-link.ts';
-import { resolveProjectCloneTarget } from './projects.ts';
+import type { WorkspaceSummary } from '../api/types.ts';
+import { loadWorkspaceLink } from '../workspace-link.ts';
+import { resolveWorkspaceCloneTarget } from './workspaces.ts';
 
 export type GitCredentialRequest = Record<string, string>;
 
@@ -44,13 +44,13 @@ export interface ResolvedGitCredential {
   password: string;
 }
 
-export async function resolveGitCredentialForProject(input: {
+export async function resolveGitCredentialForWorkspace(input: {
   requestUrl: string;
-  project: ProjectSummary;
+  workspace: WorkspaceSummary;
   kortixToken: string;
   mintManagedToken: () => Promise<{ push_token: string; git_username?: string }>;
 }): Promise<ResolvedGitCredential | null> {
-  const target = resolveProjectCloneTarget(input.project, input.kortixToken);
+  const target = resolveWorkspaceCloneTarget(input.workspace, input.kortixToken);
   if (canonicalGitUrl(target.repoUrl) !== canonicalGitUrl(input.requestUrl)) return null;
 
   let token = target.token;
@@ -77,8 +77,8 @@ export async function runGitCredential(argv: string[]): Promise<number> {
   if (operation !== 'get') return 2;
 
   const requestUrl = gitCredentialRequestUrl(parseGitCredentialRequest(await stdinText()));
-  const link = loadLink();
-  if (!requestUrl || !link?.project_id) return 0;
+  const link = loadWorkspaceLink();
+  if (!requestUrl || !link?.workspace_id) return 0;
 
   const auth = link.host ? loadAuthForHost(link.host) : loadAuth();
   if (!auth?.token) {
@@ -89,24 +89,24 @@ export async function runGitCredential(argv: string[]): Promise<number> {
   }
 
   const client = clientFromAuth(auth);
-  let project: ProjectSummary;
+  let workspace: WorkspaceSummary;
   try {
-    project = await client.get<ProjectSummary>(`/projects/${link.project_id}`);
+    workspace = await client.get<WorkspaceSummary>(`/workspaces/${link.workspace_id}`);
   } catch (error) {
-    process.stderr.write(`Kortix Git could not load the linked project: ${(error as Error).message}\n`);
+    process.stderr.write(`Kortix Git could not load the linked workspace: ${(error as Error).message}\n`);
     process.stdout.write('quit=true\n\n');
     return 0;
   }
 
   let credential: ResolvedGitCredential | null;
   try {
-    credential = await resolveGitCredentialForProject({
+    credential = await resolveGitCredentialForWorkspace({
       requestUrl,
-      project,
+      workspace,
       kortixToken: auth.token,
       mintManagedToken: () =>
         client.post<{ push_token: string; git_username?: string }>(
-          `/projects/${project.project_id}/git-token`,
+          `/workspaces/${workspace.workspace_id}/git-token`,
         ),
     });
   } catch (error) {
@@ -121,3 +121,6 @@ export async function runGitCredential(argv: string[]): Promise<number> {
   );
   return 0;
 }
+
+/** @deprecated Use `resolveGitCredentialForWorkspace`. */
+export const resolveGitCredentialForProject = resolveGitCredentialForWorkspace;

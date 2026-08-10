@@ -20,6 +20,7 @@
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
+import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { FeatureFlagKey } from '@kortix/sdk';
 import {
@@ -102,7 +103,7 @@ export type SettingsTabId =
   | 'tokens'
   | 'shortcuts'
   | 'instance-members'
-  | 'instance-projects';
+  | 'instance-workspaces';
 
 /** The group / section a menu item belongs to. */
 export type MenuGroup =
@@ -181,18 +182,18 @@ export interface MenuItemDef {
   requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
-  /** If true, item is only shown when a project is active (new project shell).
-   *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
-  requiresProject?: boolean;
-  /** If true, item is only shown when the project / project-paradigm
+  /** If true, item is only shown when a workspace is active (new workspace shell).
+   *  Workspace-scoped hrefs use the `{workspaceId}` token, resolved at render. */
+  requiresWorkspace?: boolean;
+  /** If true, item is only shown when the workspace-paradigm
    *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
-   *  project-paradigm surfaces (Board today; Milestones, Team later). */
-  requiresProjectsFlag?: boolean;
-  /** If set, the item is only shown when the named per-project FEATURE FLAG is
+   *  surfaces are enabled (Board today; Milestones and Team later). */
+  requiresWorkspacesFlag?: boolean;
+  /** If set, the item is only shown when the named per-workspace feature flag is
    *  enabled (mirrors the Customize rail gating). A disabled feature's surface
    *  is invisible, so EVERY registry consumer must honour this — the command
    *  palette and the right sidebar both filter on it, fail-closed while the
-   *  project detail is unresolved. */
+   *  workspace detail is unresolved. */
   requiresFlag?: FeatureFlagKey;
 }
 
@@ -337,17 +338,20 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   // WORKSPACE & APP NAVIGATION (command palette — current workspace shell)
   // App-level items always show; workspace-level items use the compatibility
-  // {projectId} token and only show when a workspace is active.
+  // {workspaceId} token and only show when a workspace is active.
   // ──────────────────────────────────────────────────────────────────────────
   {
-    id: 'nav-projects',
+    id: 'nav-workspaces',
     label: 'Workspaces',
     icon: FolderGit2,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces',
-    keywords: 'workspaces list all projects switch',
+    // Static registry entry — no user id to resolve the latest project with,
+    // so this is the id-free landing door, never the removed `/projects`
+    // list.
+    href: WORKSPACE_LANDING_PATH,
+    keywords: 'workspaces projects switch',
   },
   {
     id: 'nav-accounts',
@@ -360,7 +364,7 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'accounts teams organizations members switch manage',
   },
   {
-    id: 'proj-sessions',
+    id: 'workspace-sessions',
     label: 'Open Session',
     icon: MessagesSquare,
     group: 'navigation',
@@ -369,52 +373,52 @@ export const menuRegistry: MenuItemDef[] = [
     // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
     // the href is the routed fallback for surfaces that consume this registry
     // without the palette's nested picker.
-    href: '/workspaces/{projectId}/sessions',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/sessions',
+    requiresWorkspace: true,
     keywords: 'sessions runs threads project conversations open',
   },
   {
-    id: 'proj-customize',
+    id: 'workspace-customize',
     label: 'Customize',
     icon: SlidersHorizontal,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize',
+    requiresWorkspace: true,
     // 'agents', 'skills' and 'commands' were deliberately dropped: those three
-    // graduated out of the overlay into their own palette entries (proj-agents,
-    // proj-skills, proj-commands). Keeping the words here made this bare
+    // graduated out of the overlay into their own palette entries (workspace-agents,
+    // workspace-skills, workspace-commands). Keeping the words here made this bare
     // Customize entry match those queries too and — since filteredNavItems
     // preserves registry declaration order rather than ranking by relevance —
     // it listed ahead of the real Agents/Skills/Commands entries.
-    keywords: 'customize configure project settings',
+    keywords: 'customize configure workspace settings',
   },
   {
-    id: 'proj-files',
+    id: 'workspace-files',
     label: 'Files',
     icon: FolderOpen,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/files',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/files',
+    requiresWorkspace: true,
     keywords: 'files repository project drive browser explorer',
   },
   {
-    id: 'proj-apps',
+    id: 'workspace-apps',
     label: 'Apps',
     icon: Globe,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/apps',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/apps',
+    requiresWorkspace: true,
     requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   {
-    id: 'proj-agents',
+    id: 'workspace-agents',
     label: 'Agents',
     icon: Bot,
     group: 'navigation',
@@ -423,57 +427,57 @@ export const menuRegistry: MenuItemDef[] = [
     // The standalone page, not `/customize/agents`. That href still works —
     // `legacyCustomizeRedirect` bounces it here — but routing through the
     // redirect costs a second navigation and paints the overlay route first.
-    href: '/workspaces/{projectId}/agent',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/agent',
+    requiresWorkspace: true,
     keywords: 'agents subagents project customize ai',
   },
   {
-    id: 'proj-skills',
+    id: 'workspace-skills',
     label: 'Skills',
     icon: Blocks,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/skills',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/skills',
+    requiresWorkspace: true,
     keywords: 'skills project customize abilities',
   },
   {
-    id: 'proj-commands',
+    id: 'workspace-commands',
     label: 'Commands',
     icon: TerminalSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/commands',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/commands',
+    requiresWorkspace: true,
     keywords: 'commands slash project customize',
   },
   {
-    id: 'proj-secrets',
+    id: 'workspace-secrets',
     label: 'Customize · Secrets',
     icon: KeyRound,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/secrets',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/secrets',
+    requiresWorkspace: true,
     keywords: 'secrets env environment variables project customize',
   },
   {
-    id: 'proj-connectors',
+    id: 'workspace-connectors',
     label: 'Connectors',
     icon: Plug,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/connectors',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/connectors',
+    requiresWorkspace: true,
     keywords:
       'connectors connections pipedream mcp openapi postman collections apps connector project customize',
   },
   {
-    id: 'proj-connectors-policies',
+    id: 'workspace-connectors-policies',
     // Was "Customize · Connectors · Policies" — no longer accurate: this no
     // longer lives under Customize, and the href below cannot deep-link into
     // a Policies tab (the connectors page doesn't host one yet), so the label
@@ -484,162 +488,162 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     // TODO(capabilities): restore deep link to Global rules once the connectors page hosts PoliciesPanel
-    href: '/workspaces/{projectId}/connectors',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/connectors',
+    requiresWorkspace: true,
     keywords:
       'policies approval block require_approval rules tools connector guardrails project customize',
   },
   {
-    id: 'proj-git',
+    id: 'workspace-git',
     label: 'Customize · Git',
     icon: GitPullRequest,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/git',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/git',
+    requiresWorkspace: true,
     keywords:
       'git repository provider github code storage clone proxy branch sync project customize',
   },
   {
-    id: 'proj-sandbox',
+    id: 'workspace-sandbox',
     label: 'Customize · Sandbox templates',
     icon: Container,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/sandbox',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/sandbox',
+    requiresWorkspace: true,
     keywords: 'sandbox templates image snapshot runtime environment project customize',
   },
   {
-    id: 'proj-marketplace',
+    id: 'workspace-marketplace',
     label: 'Customize · Marketplace',
     icon: Store,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/marketplace',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/marketplace',
+    requiresWorkspace: true,
     requiresFlag: 'marketplace',
     keywords: 'marketplace store install templates agents skills browse project customize',
   },
   {
-    id: 'proj-llm',
+    id: 'workspace-llm',
     label: 'Customize · LLM',
     icon: Boxes,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/llm-management',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/llm-management',
+    requiresWorkspace: true,
     requiresFlag: 'llm_gateway',
     keywords:
       'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
   },
   {
-    id: 'proj-computers',
+    id: 'workspace-computers',
     label: 'Customize · Computers',
     icon: Monitor,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/computers',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/computers',
+    requiresWorkspace: true,
     requiresFlag: 'agent_tunnel',
     keywords:
       'computers tunnel machines connect reverse local devices remote agent access project customize',
   },
   {
-    id: 'proj-review',
+    id: 'workspace-review',
     label: 'Customize · Review Center',
     icon: Inbox,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/review',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/review',
+    requiresWorkspace: true,
     requiresFlag: 'review_center',
     keywords:
       'review center inbox approvals change requests approve reject needs you project customize',
   },
   {
-    id: 'proj-voice',
+    id: 'workspace-voice',
     label: 'Customize · Voice',
     icon: Waveform,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/voice',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/voice',
+    requiresWorkspace: true,
     requiresFlag: 'voice',
     keywords: 'voice call speak spoken conversation livekit bot name project customize',
   },
   {
-    id: 'proj-members',
+    id: 'workspace-members',
     label: 'Customize · Members',
     icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/members',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/members',
+    requiresWorkspace: true,
     keywords: 'members team access collaborators project customize',
   },
   {
-    id: 'proj-invite',
+    id: 'workspace-invite',
     label: 'Invite members',
     icon: UserPlus,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'action',
     actionId: 'inviteMembers',
-    requiresProject: true,
+    requiresWorkspace: true,
     keywords: 'invite members add teammate email collaborator people access send project customize',
   },
   {
-    id: 'proj-schedules',
+    id: 'workspace-schedules',
     label: 'Customize · Schedules',
     icon: Calendar,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/schedules',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/schedules',
+    requiresWorkspace: true,
     keywords: 'schedules cron triggers timed project customize',
   },
   {
-    id: 'proj-webhooks',
+    id: 'workspace-webhooks',
     label: 'Customize · Webhooks',
     icon: Webhook,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/webhooks',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/webhooks',
+    requiresWorkspace: true,
     keywords: 'webhooks triggers http project customize',
   },
   {
-    id: 'proj-channels',
+    id: 'workspace-channels',
     label: 'Customize · Channels',
     icon: Hash,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/channels',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/channels',
+    requiresWorkspace: true,
     keywords:
       'channels slack email agent mail agentmail agentic mail inbox messaging notifications connections project customize',
   },
   {
-    id: 'proj-settings',
+    id: 'workspace-settings',
     label: 'Workspace settings',
     icon: CogOneSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/workspaces/{projectId}/customize/settings',
-    requiresProject: true,
+    href: '/workspaces/{workspaceId}/customize/settings',
+    requiresWorkspace: true,
     keywords: 'workspace settings repository general danger zone project',
   },
 

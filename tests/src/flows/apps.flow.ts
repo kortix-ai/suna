@@ -11,24 +11,24 @@ flow(
   {
     domain: "apps",
     routes: [
-      "GET /v1/projects/:projectId/apps",
-      "POST /v1/projects/:projectId/apps",
-      "GET /v1/projects/:projectId/apps/:appId",
-      "PATCH /v1/projects/:projectId/apps/:appId",
-      "DELETE /v1/projects/:projectId/apps/:appId",
-      "GET /v1/projects/:projectId/apps/:appId/access",
-      "PATCH /v1/projects/:projectId/apps/:appId/access",
-      "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "GET /v1/projects/:workspaceId/apps",
+      "POST /v1/projects/:workspaceId/apps",
+      "GET /v1/projects/:workspaceId/apps/:appId",
+      "PATCH /v1/projects/:workspaceId/apps/:appId",
+      "DELETE /v1/projects/:workspaceId/apps/:appId",
+      "GET /v1/projects/:workspaceId/apps/:appId/access",
+      "PATCH /v1/projects/:workspaceId/apps/:appId/access",
+      "POST /v1/projects/:workspaceId/apps/:appId/access-session",
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER);
-    const projectParams = { projectId: project.id };
+    const projectParams = { workspaceId: project.id };
     let appId = "";
 
     await ctx.step("apps flag off (default) → 403 feature_disabled", async () => {
-      const response = await owner.get("/v1/projects/:projectId/apps", {
+      const response = await owner.get("/v1/projects/:workspaceId/apps", {
         params: projectParams,
       });
       response.status(403);
@@ -38,7 +38,7 @@ flow(
 
     await ctx.step("enable the apps flag (canonical /features route)", async () => {
       const response = await owner.patch(
-        "/v1/projects/:projectId/features",
+        "/v1/projects/:workspaceId/features",
         { feature: "apps", enabled: true },
         { params: projectParams },
       );
@@ -46,7 +46,7 @@ flow(
     });
 
     await ctx.step("list starts empty", async () => {
-      const response = await owner.get("/v1/projects/:projectId/apps", {
+      const response = await owner.get("/v1/projects/:workspaceId/apps", {
         params: projectParams,
       });
       response.status(200).body().has("$.apps", []);
@@ -54,7 +54,7 @@ flow(
 
     await ctx.step("invalid slug is rejected", async () => {
       const response = await owner.post(
-        "/v1/projects/:projectId/apps",
+        "/v1/projects/:workspaceId/apps",
         { slug: "Invalid Slug", name: "Invalid App" },
         { params: projectParams },
       );
@@ -68,7 +68,7 @@ flow(
         .replace(/[^a-z0-9-]/g, "-")
         .slice(0, 63);
       const response = await owner.post(
-        "/v1/projects/:projectId/apps",
+        "/v1/projects/:workspaceId/apps",
         {
           slug,
           name: "ke2e App",
@@ -92,13 +92,13 @@ flow(
 
     await ctx.step("get and patch read back the same App", async () => {
       const params = { ...projectParams, appId };
-      const read = await owner.get("/v1/projects/:projectId/apps/:appId", {
+      const read = await owner.get("/v1/projects/:workspaceId/apps/:appId", {
         params,
       });
       read.status(200).body().has("$.app_id", appId);
 
       const updated = await owner.patch(
-        "/v1/projects/:projectId/apps/:appId",
+        "/v1/projects/:workspaceId/apps/:appId",
         { name: "Updated ke2e App", idle_timeout_seconds: 420 },
         { params },
       );
@@ -114,7 +114,7 @@ flow(
       async () => {
         const response = await ctx.client
           .as(ctx.P.NONMEMBER)
-          .get("/v1/projects/:projectId/apps/:appId", {
+          .get("/v1/projects/:workspaceId/apps/:appId", {
             params: { ...projectParams, appId },
           });
         response.status(403);
@@ -125,11 +125,11 @@ flow(
       "delete is soft and removes the App from reads",
       async () => {
         const params = { ...projectParams, appId };
-        const removed = await owner.del("/v1/projects/:projectId/apps/:appId", {
+        const removed = await owner.del("/v1/projects/:workspaceId/apps/:appId", {
           params,
         });
         removed.status(200).body().has("$.ok", true);
-        const read = await owner.get("/v1/projects/:projectId/apps/:appId", {
+        const read = await owner.get("/v1/projects/:workspaceId/apps/:appId", {
           params,
         });
         read.status(404);
@@ -143,28 +143,28 @@ flow(
   {
     domain: "apps",
     routes: [
-      "POST /v1/projects/:projectId/apps/artifacts",
-      "POST /v1/projects/:projectId/apps/artifacts/:artifactId/finalize",
-      "POST /v1/projects/:projectId/apps/:appId/deployments",
-      "GET /v1/projects/:projectId/apps/:appId/deployments",
-      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
-      "GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
-      "POST /v1/projects/:projectId/apps/:appId/rollback",
-      "POST /v1/projects/:projectId/apps/:appId/start",
-      "POST /v1/projects/:projectId/apps/:appId/stop",
-      "GET /v1/projects/:projectId/apps/:appId/access",
-      "PATCH /v1/projects/:projectId/apps/:appId/access",
-      "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "POST /v1/projects/:workspaceId/apps/artifacts",
+      "POST /v1/projects/:workspaceId/apps/artifacts/:artifactId/finalize",
+      "POST /v1/projects/:workspaceId/apps/:appId/deployments",
+      "GET /v1/projects/:workspaceId/apps/:appId/deployments",
+      "GET /v1/projects/:workspaceId/apps/:appId/deployments/:deploymentId",
+      "GET /v1/projects/:workspaceId/apps/:appId/deployments/:deploymentId/logs",
+      "POST /v1/projects/:workspaceId/apps/:appId/rollback",
+      "POST /v1/projects/:workspaceId/apps/:appId/start",
+      "POST /v1/projects/:workspaceId/apps/:appId/stop",
+      "GET /v1/projects/:workspaceId/apps/:appId/access",
+      "PATCH /v1/projects/:workspaceId/apps/:appId/access",
+      "POST /v1/projects/:workspaceId/apps/:appId/access-session",
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER);
-    const projectParams = { projectId: project.id };
+    const projectParams = { workspaceId: project.id };
 
     await ctx.step("enable the apps flag", async () => {
       const response = await owner.patch(
-        "/v1/projects/:projectId/features",
+        "/v1/projects/:workspaceId/features",
         { feature: "apps", enabled: true },
         { params: projectParams },
       );
@@ -178,7 +178,7 @@ flow(
       .slice(0, 63);
 
     const created = await owner.post(
-      "/v1/projects/:projectId/apps",
+      "/v1/projects/:workspaceId/apps",
       { slug, name: "ke2e deployment boundaries" },
       { params: projectParams },
     );
@@ -189,7 +189,7 @@ flow(
 
     await ctx.step("access policy reads back a mode", async () => {
       const response = await owner.get(
-        "/v1/projects/:projectId/apps/:appId/access",
+        "/v1/projects/:workspaceId/apps/:appId/access",
         { params: appParams },
       );
       response.status(200).body().exists("$.mode");
@@ -197,7 +197,7 @@ flow(
 
     await ctx.step("restricted access requires at least one principal", async () => {
       const response = await owner.patch(
-        "/v1/projects/:projectId/apps/:appId/access",
+        "/v1/projects/:workspaceId/apps/:appId/access",
         { mode: "restricted" },
         { params: appParams },
       );
@@ -206,7 +206,7 @@ flow(
 
     await ctx.step("project-wide access persists and read-back agrees", async () => {
       const response = await owner.patch(
-        "/v1/projects/:projectId/apps/:appId/access",
+        "/v1/projects/:workspaceId/apps/:appId/access",
         { mode: "project" },
         { params: appParams },
       );
@@ -215,7 +215,7 @@ flow(
 
     await ctx.step("member access-session returns a signed URL", async () => {
       const response = await owner.post(
-        "/v1/projects/:projectId/apps/:appId/access-session",
+        "/v1/projects/:workspaceId/apps/:appId/access-session",
         {},
         { params: appParams },
       );
@@ -224,7 +224,7 @@ flow(
 
     await ctx.step("register immutable OCI artifact", async () => {
       const response = await owner.post(
-        "/v1/projects/:projectId/apps/artifacts",
+        "/v1/projects/:workspaceId/apps/artifacts",
         { kind: "oci_image", image: "docker.io/library/nginx:alpine" },
         { params: projectParams },
       );
@@ -239,7 +239,7 @@ flow(
 
     await ctx.step("OCI artifact cannot use archive finalization", async () => {
       const response = await owner.post(
-        "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize",
+        "/v1/projects/:workspaceId/apps/artifacts/:artifactId/finalize",
         { sha256: "a".repeat(64), size_bytes: 1 },
         { params: { ...projectParams, artifactId } },
       );
@@ -250,7 +250,7 @@ flow(
       "deployment rejects an image different from its immutable artifact",
       async () => {
         const response = await owner.post(
-          "/v1/projects/:projectId/apps/:appId/deployments",
+          "/v1/projects/:workspaceId/apps/:appId/deployments",
           {
             artifact_id: artifactId,
             source: {
@@ -270,7 +270,7 @@ flow(
       "deployment reads expose empty state and unknown boundaries",
       async () => {
         const list = await owner.get(
-          "/v1/projects/:projectId/apps/:appId/deployments",
+          "/v1/projects/:workspaceId/apps/:appId/deployments",
           {
             params: appParams,
           },
@@ -279,12 +279,12 @@ flow(
 
         const deploymentParams = { ...appParams, deploymentId: UNKNOWN_ID };
         const detail = await owner.get(
-          "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+          "/v1/projects/:workspaceId/apps/:appId/deployments/:deploymentId",
           { params: deploymentParams },
         );
         detail.status(404);
         const logs = await owner.get(
-          "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs",
+          "/v1/projects/:workspaceId/apps/:appId/deployments/:deploymentId/logs",
           { params: deploymentParams },
         );
         logs.status(404);
@@ -295,19 +295,19 @@ flow(
       "rollback, start, and stop require a ready active deployment",
       async () => {
         const rollback = await owner.post(
-          "/v1/projects/:projectId/apps/:appId/rollback",
+          "/v1/projects/:workspaceId/apps/:appId/rollback",
           { deployment_id: UNKNOWN_ID },
           { params: appParams },
         );
         rollback.status(409);
         const start = await owner.post(
-          "/v1/projects/:projectId/apps/:appId/start",
+          "/v1/projects/:workspaceId/apps/:appId/start",
           {},
           { params: appParams },
         );
         start.status(409);
         const stop = await owner.post(
-          "/v1/projects/:projectId/apps/:appId/stop",
+          "/v1/projects/:workspaceId/apps/:appId/stop",
           {},
           { params: appParams },
         );

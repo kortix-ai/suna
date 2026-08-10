@@ -28,13 +28,13 @@ import { Users } from 'lucide-react';
 const DEFAULT_VALUE = 'default';
 
 /** Every alias the project has connections for, with what may be bound. */
-export function useConnectorBindingChoices(projectId: string, enabled = true) {
+export function useConnectorBindingChoices(workspaceId: string, enabled = true) {
   return useQuery({
-    queryKey: ['connector-binding-choices', projectId],
+    queryKey: ['connector-binding-choices', workspaceId],
     queryFn: async () => {
       const token = getSessionToken();
       const res = await fetch(
-        `/api/connections?projectId=${encodeURIComponent(projectId)}`,
+        `/api/connections?workspaceId=${encodeURIComponent(workspaceId)}`,
         {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         },

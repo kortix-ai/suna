@@ -2,23 +2,23 @@
 
 import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listProjectSecrets } from '../core/rest/projects-client';
-import { refreshProjectProviderState } from './provider-refresh';
+import { listWorkspaceSecrets } from '../core/rest/workspaces-client';
+import { refreshWorkspaceProviderState } from './provider-refresh';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
 const REFETCH_DELAYS_MS = [0, 1200, 3000, 6000];
 
-export function useGatewayCatalogSync(projectId: string | null | undefined): void {
+export function useGatewayCatalogSync(workspaceId: string | null | undefined): void {
   const queryClient = useQueryClient();
   const runtimeReady = useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
 
   const secretsQuery = useQuery({
-    // Same entry every other `listProjectSecrets` reader shares.
-    queryKey: qk.project.secrets(projectId ?? ''),
-    queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && runtimeReady,
+    // Same entry every other `listWorkspaceSecrets` reader shares.
+    queryKey: qk.workspace.secrets(workspaceId ?? ''),
+    queryFn: () => listWorkspaceSecrets(workspaceId as string),
+    enabled: !!workspaceId && runtimeReady,
     ...contract('config'),
   });
 
@@ -31,7 +31,7 @@ export function useGatewayCatalogSync(projectId: string | null | undefined): voi
   const previous = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!projectId || secretsQuery.data === undefined) return;
+    if (!workspaceId || secretsQuery.data === undefined) return;
     if (previous.current === null) {
       previous.current = signature;
       return;
@@ -41,9 +41,9 @@ export function useGatewayCatalogSync(projectId: string | null | undefined): voi
 
     const timers = REFETCH_DELAYS_MS.map((delay) =>
       setTimeout(() => {
-        refreshProjectProviderState(queryClient, projectId);
+        refreshWorkspaceProviderState(queryClient, workspaceId);
       }, delay),
     );
     return () => timers.forEach(clearTimeout);
-  }, [projectId, signature, secretsQuery.data, queryClient]);
+  }, [workspaceId, signature, secretsQuery.data, queryClient]);
 }

@@ -25,7 +25,7 @@ describe('member role change is confirmed', () => {
 describe('role copy has a single source of truth', () => {
   test('the page renders role labels/blurbs from ACCOUNT_ROLE_DESCRIPTORS', () => {
     expect(source).toContain(
-      "import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors'",
+      "import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/workspace-role-descriptors'",
     );
     expect(source).toContain('ACCOUNT_ROLE_DESCRIPTORS');
   });

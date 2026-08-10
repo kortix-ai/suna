@@ -12,39 +12,39 @@ import { type ChannelCtx, currentChannelSelection } from './selection';
 // unit-test in isolation.
 
 export interface ChannelModelContext {
-  projectId: string;
+  workspaceId: string;
   accountId: string;
-  /** A representative project-owner user (for codex credential lookups). */
+  /** A representative workspace-owner user for Codex credential lookups. */
   ownerUserId: string;
   /** The account may not use platform-managed Kortix models. */
   freeManagedOnly: boolean;
 }
 
 /**
- * Resolve the project + owner account + tier a channel's model decisions key off.
+ * Resolve the workspace + owner account + tier a channel's model decisions key off.
  * Used to validate a model (isModelServableForAccount) and to list the real
  * picker catalog (listPickerModels). Null when the channel is unbound.
  */
 export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModelContext | null> {
   const selection = await currentChannelSelection(ctx);
-  if (!selection?.projectId) return null;
-  const [project] = await db
+  if (!selection?.workspaceId) return null;
+  const [workspace] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
-    .where(eq(projects.projectId, selection.projectId))
+    .where(eq(projects.workspaceId, selection.workspaceId))
     .limit(1);
-  if (!project) return null;
+  if (!workspace) return null;
   const [owner] = await db
     .select({ userId: accountMembers.userId })
     .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, project.accountId), eq(accountMembers.accountRole, 'owner')))
+    .where(and(eq(accountMembers.accountId, workspace.accountId), eq(accountMembers.accountRole, 'owner')))
     .limit(1);
-  const tier = await getAccountTier(project.accountId);
+  const tier = await getAccountTier(workspace.accountId);
   const freeManagedOnly = config.KORTIX_BILLING_INTERNAL_ENABLED && accountIsFreeTierForModels(tier);
   return {
-    projectId: selection.projectId,
-    accountId: project.accountId,
-    ownerUserId: owner?.userId ?? project.accountId,
+    workspaceId: selection.workspaceId,
+    accountId: workspace.accountId,
+    ownerUserId: owner?.userId ?? workspace.accountId,
     freeManagedOnly,
   };
 }

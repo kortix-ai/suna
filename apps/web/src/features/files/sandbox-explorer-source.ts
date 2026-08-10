@@ -1,6 +1,6 @@
 'use client';
 
-import type { FileExplorerSource } from '@/features/project-files/explorer-source';
+import type { FileExplorerSource } from '@/features/workspace-files/explorer-source';
 import { downloadFile } from './api/runtime-files';
 import { workspaceFileSource } from './file-source';
 import {

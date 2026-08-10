@@ -159,16 +159,16 @@ export function resolveRoutedTemplateState(
 }
 
 /** Resolve the same usable explicit pin as session creation. null is Automatic. */
-export function resolveUsableProjectProviderPin(
+export function resolveUsableWorkspaceProviderPin(
   metadata: Record<string, unknown> | null | undefined,
   isProviderEnabled: (provider: SandboxProviderName) => boolean,
 ): SandboxTemplateProvider | null {
-  const provider = resolveConfiguredProjectProviderPin(metadata);
+  const provider = resolveConfiguredWorkspaceProviderPin(metadata);
   return provider && isProviderEnabled(provider) ? provider : null;
 }
 
 /** A valid project pin remains visible even while that provider is unavailable. */
-export function resolveConfiguredProjectProviderPin(
+export function resolveConfiguredWorkspaceProviderPin(
   metadata: Record<string, unknown> | null | undefined,
 ): SandboxTemplateProvider | null {
   const raw = metadata?.default_sandbox_provider;

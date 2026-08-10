@@ -452,7 +452,7 @@ const envSchema = z.object({
   // Default OFF keeps the session path on one shared image per provider.
   KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
   // Per-provider allowlist for per-project warm images of CUSTOM (non-default-
-  // slug) templates — see `perProjectWarmEligible` in builder.ts. Defaults to
+  // slug) templates — see `perWorkspaceWarmEligible` in builder.ts. Defaults to
   // 'platinum' only: Platinum's per-project templates warm-miss 100% of the
   // time today (`template.isShared` used to gate this off entirely), while
   // Daytona's shared-default warm path already hits 66% and its quota-gc
@@ -478,7 +478,7 @@ const envSchema = z.object({
   // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
   // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
   // E2B Cloud. A self-hosted deployment uses its own base domain.
-  // E2B_TEMPLATE is an optional ready fallback template. Project-specific
+  // E2B_TEMPLATE is an optional ready fallback template. Workspace-specific
   // templates built by the shared snapshot system take precedence.
   E2B_API_KEY: optStr,
   E2B_DOMAIN: optStrDefault('e2b.dev'),
@@ -540,7 +540,7 @@ const envSchema = z.object({
   // ── Pipedream Connect (optional — powers the Connector's 1-click connectors) ─
   PIPEDREAM_CLIENT_ID: optStr,
   PIPEDREAM_CLIENT_SECRET: optStr,
-  PIPEDREAM_PROJECT_ID: optStr,
+  PIPEDREAM_WORKSPACE_ID: optStr,
   PIPEDREAM_ENVIRONMENT: optStrDefault('production'),
   PIPEDREAM_WEBHOOK_SECRET: optStr,
   // Optional: required only when importing a public Postman workspace URL.
@@ -571,7 +571,7 @@ const envSchema = z.object({
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
-  KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
+  KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_WORKSPACE: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED: optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: optInt(1_000),
 
@@ -904,7 +904,7 @@ export const config = {
   // ─── Pipedream Connect (Connector 1-click connectors) ──────────────────────
   PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
   PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
-  PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
+  PIPEDREAM_WORKSPACE_ID: env.PIPEDREAM_WORKSPACE_ID,
   PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
   PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
   POSTMAN_API_KEY: env.POSTMAN_API_KEY,
@@ -1113,8 +1113,8 @@ export const config = {
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
-  KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT:
-    env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
+  KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_WORKSPACE:
+    env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_WORKSPACE,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: env.KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS,
 
@@ -1189,7 +1189,7 @@ export const config = {
 
   /**
    * True iff `provider` is allowlisted to warm-bake per-project images for
-   * CUSTOM (non-default-slug) templates — see `perProjectWarmEligible` in
+   * CUSTOM (non-default-slug) templates — see `perWorkspaceWarmEligible` in
    * builder.ts. Already intersected with ALLOWED_SANDBOX_PROVIDERS at parse
    * time, so this alone is the full gate.
    */

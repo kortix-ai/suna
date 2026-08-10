@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
-import { PoliciesPanel } from '@/components/projects/policies-panel';
+import { PoliciesPanel } from '@/components/workspaces/policies-panel';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import {
@@ -21,14 +21,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
+} from '@/features/workspace/workspace-layout/sidebar-opener';
 
 import { CAPABILITY_TABS, activeCapabilityTab, capabilityTabHref } from './capability-tab-routes';
 
 /**
- * Sidebar opener — same rules as project-home / session header / sessions
+ * Sidebar opener — same rules as workspace-home / session header / sessions
  * inventory. Always on mobile (sheet has no docked affordance); desktop only
- * while the panel is undocked — ProjectSidebar already carries collapse when
+ * while the panel is undocked — WorkspaceSidebar already carries collapse when
  * expanded.
  *
  * Sits in flow with the tabs. Do not absolute-position it over the tab row:
@@ -62,7 +62,7 @@ function CapabilitySidebarToggle() {
 }
 
 /**
- * Project-wide connector rules. Far-right of the shared tab bar so it stays
+ * Workspace-wide connector rules. Far-right of the shared tab bar so it stays
  * reachable from Connectors, Skills, and Commands.
  *
  * Opens as a Sheet, not a Modal: the panel is a long CRUD list that benefits
@@ -71,7 +71,7 @@ function CapabilitySidebarToggle() {
  * stretches to the nearest positioned ancestor (this whole bar) and steals
  * clicks from the tab triggers.
  */
-function GlobalRulesControl({ projectId }: { projectId: string }) {
+function GlobalRulesControl({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -97,13 +97,13 @@ function GlobalRulesControl({ projectId }: { projectId: string }) {
           <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
             <SheetTitle className="text-base font-medium">Global rules</SheetTitle>
             <SheetDescription className="text-xs text-pretty">
-              Approval rules that apply to every connector in this project.
+              Approval rules that apply to every connector in this workspace.
             </SheetDescription>
           </SheetHeader>
           {/* The body is the only scroller, so the panel's save bar can stick
               to its bottom edge. */}
           <SheetBody className="min-h-0 gap-0 px-5 py-5">
-            <PoliciesPanel projectId={projectId} />
+            <PoliciesPanel workspaceId={workspaceId} />
           </SheetBody>
         </SheetContent>
       </Sheet>
@@ -123,7 +123,7 @@ function GlobalRulesControl({ projectId }: { projectId: string }) {
  * `shrink-0` keeps the bar pinned at full height inside the layout's `h-svh`
  * column; the page body below is the flex-1 scroller.
  */
-export function CapabilityTabs({ projectId }: { projectId: string }) {
+export function CapabilityTabs({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
   const activeKey = activeCapabilityTab(pathname);
   // This bar is the first in-flow child of the capabilities layout, which the
@@ -152,14 +152,14 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
               asChild
               className="w-fit flex-none px-1 py-3"
             >
-              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+              <Link href={capabilityTabHref(workspaceId, tab.key)} prefetch={true}>
                 {tab.label}
               </Link>
             </TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
-      <GlobalRulesControl projectId={projectId} />
+      <GlobalRulesControl workspaceId={workspaceId} />
     </div>
   );
 }

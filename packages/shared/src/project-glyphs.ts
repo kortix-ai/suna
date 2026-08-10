@@ -26,7 +26,7 @@
  * consistent with the rest of the catalogue.
  */
 
-export const PROJECT_GLYPH_GROUPS = [
+export const WORKSPACE_GLYPH_GROUPS = [
   {
     label: 'Objects',
     names: [
@@ -316,7 +316,7 @@ export const PROJECT_GLYPH_GROUPS = [
   },
 ] as const;
 
-export const PROJECT_GLYPH_NAMES = PROJECT_GLYPH_GROUPS.flatMap(
+export const WORKSPACE_GLYPH_NAMES = WORKSPACE_GLYPH_GROUPS.flatMap(
   (group) => group.names,
 ) as readonly string[];
 
@@ -324,7 +324,7 @@ export const PROJECT_GLYPH_NAMES = PROJECT_GLYPH_GROUPS.flatMap(
  * `grey` first because it is the default on a first pick — an unedited glyph
  * project should look deliberately neutral, not randomly coloured.
  */
-export const PROJECT_GLYPH_COLORS = [
+export const WORKSPACE_GLYPH_COLORS = [
   'grey',
   'red',
   'orange',
@@ -335,21 +335,38 @@ export const PROJECT_GLYPH_COLORS = [
   'magenta',
 ] as const;
 
-export type ProjectGlyphName = (typeof PROJECT_GLYPH_GROUPS)[number]['names'][number];
-export type ProjectGlyphColor = (typeof PROJECT_GLYPH_COLORS)[number];
+export type WorkspaceGlyphName = (typeof WORKSPACE_GLYPH_GROUPS)[number]['names'][number];
+export type WorkspaceGlyphColor = (typeof WORKSPACE_GLYPH_COLORS)[number];
 
-export interface ProjectGlyph {
-  name: ProjectGlyphName;
-  color: ProjectGlyphColor;
+export interface WorkspaceGlyph {
+  name: WorkspaceGlyphName;
+  color: WorkspaceGlyphColor;
 }
 
-const NAME_SET: ReadonlySet<string> = new Set(PROJECT_GLYPH_NAMES);
-const COLOR_SET: ReadonlySet<string> = new Set(PROJECT_GLYPH_COLORS);
+const NAME_SET: ReadonlySet<string> = new Set(WORKSPACE_GLYPH_NAMES);
+const COLOR_SET: ReadonlySet<string> = new Set(WORKSPACE_GLYPH_COLORS);
 
-export function isProjectGlyphName(value: unknown): value is ProjectGlyphName {
+export function isWorkspaceGlyphName(value: unknown): value is WorkspaceGlyphName {
   return typeof value === 'string' && NAME_SET.has(value);
 }
 
-export function isProjectGlyphColor(value: unknown): value is ProjectGlyphColor {
+export function isWorkspaceGlyphColor(value: unknown): value is WorkspaceGlyphColor {
   return typeof value === 'string' && COLOR_SET.has(value);
 }
+
+/** @deprecated Use Workspace glyph names. */
+export const PROJECT_GLYPH_GROUPS = WORKSPACE_GLYPH_GROUPS;
+/** @deprecated Use Workspace glyph names. */
+export const PROJECT_GLYPH_NAMES = WORKSPACE_GLYPH_NAMES;
+/** @deprecated Use Workspace glyph names. */
+export const PROJECT_GLYPH_COLORS = WORKSPACE_GLYPH_COLORS;
+/** @deprecated Use WorkspaceGlyphName. */
+export type ProjectGlyphName = WorkspaceGlyphName;
+/** @deprecated Use WorkspaceGlyphColor. */
+export type ProjectGlyphColor = WorkspaceGlyphColor;
+/** @deprecated Use WorkspaceGlyph. */
+export type ProjectGlyph = WorkspaceGlyph;
+/** @deprecated Use isWorkspaceGlyphName. */
+export const isProjectGlyphName = isWorkspaceGlyphName;
+/** @deprecated Use isWorkspaceGlyphColor. */
+export const isProjectGlyphColor = isWorkspaceGlyphColor;

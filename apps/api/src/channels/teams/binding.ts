@@ -9,77 +9,77 @@ export function teamsChannelCtx(tenantId: string, conversationId: string): Chann
   return { teamId: tenantId, channelId: conversationId, platform: PLATFORM };
 }
 
-export async function listTenantProjects(
+export async function listTenantWorkspaces(
   tenantId: string,
-): Promise<Array<{ projectId: string; name: string }>> {
+): Promise<Array<{ workspaceId: string; name: string }>> {
   const installs = await db
-    .select({ projectId: chatInstalls.projectId })
+    .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)));
+    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.platformWorkspaceId, tenantId)));
   if (installs.length === 0) return [];
-  const ids = installs.map((i) => i.projectId);
+  const ids = installs.map((i) => i.workspaceId);
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name })
+    .select({ workspaceId: projects.workspaceId, name: projects.name })
     .from(projects);
-  const byId = new Map(rows.map((r) => [r.projectId, r.name]));
+  const byId = new Map(rows.map((r) => [r.workspaceId, r.name]));
   return ids
     .filter((id) => byId.has(id))
-    .map((id) => ({ projectId: id, name: byId.get(id) ?? id }));
+    .map((id) => ({ workspaceId: id, name: byId.get(id) ?? id }));
 }
 
-export async function resolveConversationProject(
+export async function resolveConversationWorkspace(
   tenantId: string,
   conversationId: string,
 ): Promise<string | null> {
   const [binding] = await db
-    .select({ projectId: chatChannelBindings.projectId })
+    .select({ workspaceId: chatChannelBindings.workspaceId })
     .from(chatChannelBindings)
     .where(
       and(
         eq(chatChannelBindings.platform, PLATFORM),
-        eq(chatChannelBindings.workspaceId, tenantId),
+        eq(chatChannelBindings.platformWorkspaceId, tenantId),
         eq(chatChannelBindings.channelId, conversationId),
       ),
     )
     .limit(1);
-  if (binding?.projectId) {
+  if (binding?.workspaceId) {
     const [installed] = await db
-      .select({ projectId: chatInstalls.projectId })
+      .select({ workspaceId: chatInstalls.workspaceId })
       .from(chatInstalls)
       .where(
         and(
           eq(chatInstalls.platform, PLATFORM),
-          eq(chatInstalls.workspaceId, tenantId),
-          eq(chatInstalls.projectId, binding.projectId),
+          eq(chatInstalls.platformWorkspaceId, tenantId),
+          eq(chatInstalls.workspaceId, binding.workspaceId),
         ),
       )
       .limit(1);
-    if (installed) return binding.projectId;
+    if (installed) return binding.workspaceId;
   }
 
   const [install] = await db
-    .select({ projectId: chatInstalls.projectId })
+    .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)))
+    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.platformWorkspaceId, tenantId)))
     .limit(1);
-  return install?.projectId ?? null;
+  return install?.workspaceId ?? null;
 }
 
 export async function ensureTeamsConversationBinding(input: {
   tenantId: string;
   conversationId: string;
-  projectId: string;
+  workspaceId: string;
   channelName?: string | null;
   channelType?: string | null;
 }): Promise<boolean> {
   const [installed] = await db
-    .select({ projectId: chatInstalls.projectId })
+    .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
     .where(
       and(
         eq(chatInstalls.platform, PLATFORM),
-        eq(chatInstalls.workspaceId, input.tenantId),
-        eq(chatInstalls.projectId, input.projectId),
+        eq(chatInstalls.platformWorkspaceId, input.tenantId),
+        eq(chatInstalls.workspaceId, input.workspaceId),
       ),
     )
     .limit(1);
@@ -89,27 +89,27 @@ export async function ensureTeamsConversationBinding(input: {
     .insert(chatChannelBindings)
     .values({
       platform: PLATFORM,
-      workspaceId: input.tenantId,
+      platformWorkspaceId: input.tenantId,
       channelId: input.conversationId,
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       channelName: input.channelName ?? null,
       channelType: input.channelType ?? null,
     })
     .onConflictDoUpdate({
       target: [
         chatChannelBindings.platform,
-        chatChannelBindings.workspaceId,
+        chatChannelBindings.platformWorkspaceId,
         chatChannelBindings.channelId,
       ],
-      set: { projectId: input.projectId },
+      set: { workspaceId: input.workspaceId },
     });
   return true;
 }
 
-export async function setConversationProject(input: {
+export async function setConversationWorkspace(input: {
   tenantId: string;
   conversationId: string;
-  projectId: string;
+  workspaceId: string;
 }): Promise<boolean> {
   return ensureTeamsConversationBinding(input);
 }

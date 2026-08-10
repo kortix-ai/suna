@@ -108,10 +108,10 @@ describe('resolveBatchProbes — per-probe isolation', () => {
   });
 
   test('resource-scoped probes carry their resource_id through both success and probe_error paths', async () => {
-    const projectId = 'proj-42';
+    const workspaceId = 'proj-42';
     const probes: BatchProbe[] = [
-      { action: 'project.read', target: { type: 'project', id: projectId } },
-      { action: 'project.write', target: { type: 'project', id: projectId } },
+      { action: 'project.read', target: { type: 'project', id: workspaceId } },
+      { action: 'project.write', target: { type: 'project', id: workspaceId } },
     ];
     const authorizeFn = makeAuthorize((a) => (a === 'project.read' ? 'allow' : 'throw'));
 
@@ -120,13 +120,13 @@ describe('resolveBatchProbes — per-probe isolation', () => {
     expect(results[0]).toMatchObject({
       action: 'project.read',
       allowed: true,
-      resource_id: projectId,
+      resource_id: workspaceId,
     });
     expect(results[1]).toMatchObject({
       action: 'project.write',
       allowed: false,
       reason: 'probe_error',
-      resource_id: projectId,
+      resource_id: workspaceId,
     });
   });
 

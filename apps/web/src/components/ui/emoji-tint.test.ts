@@ -142,10 +142,10 @@ describe('emoji-tint — the hash fallback', () => {
   });
 
   test('the same emoji gets the same hue every time it is asked', () => {
-    // The guarantee the whole feature rests on: a project keeps one colour
+    // The guarantee the whole feature rests on: a workspace keeps one colour
     // across the card, the picker trigger and the sidebar row, which are three
     // separate renders in three separate trees. Anything non-deterministic —
-    // Math.random, a counter, Date — makes a project change colour on reload.
+    // Math.random, a counter, Date — makes a workspace change colour on reload.
     for (const emoji of [...UNANCHORED, '🌿', '🔥']) {
       const first = emojiHue(emoji);
       for (let i = 0; i < 5; i++) expect(emojiHue(emoji)).toBe(first);
@@ -173,7 +173,7 @@ describe('emoji-tint — the hash fallback', () => {
 describe('emoji-tint — normalisation', () => {
   test('a variation selector does not change the hue', () => {
     // Emoji reach this function from three places — the picker's own
-    // onEmojiSelect, a project row loaded from the API, and a value typed into
+    // onEmojiSelect, a workspace row loaded from the API, and a value typed into
     // the DB by an earlier client — and they do not agree on U+FE0F. '❤️' and
     // '❤' are the same icon and must be the same colour.
     expect(emojiHue('❤️')).toBe(emojiHue('❤'));

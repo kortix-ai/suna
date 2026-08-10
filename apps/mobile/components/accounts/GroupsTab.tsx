@@ -104,7 +104,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
                     <Pill label={g.source} isDark={isDark} />
                   </View>
                   <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 2 }} numberOfLines={1}>
-                    {g.description ? `${g.description} · ` : ''}{g.member_count ?? 0} member{(g.member_count ?? 0) === 1 ? '' : 's'} · {g.project_count ?? 0} workspace{(g.project_count ?? 0) === 1 ? '' : 's'}
+                    {g.description ? `${g.description} · ` : ''}{g.member_count ?? 0} member{(g.member_count ?? 0) === 1 ? '' : 's'} · {g.workspace_count ?? 0} workspace{(g.workspace_count ?? 0) === 1 ? '' : 's'}
                   </Text>
                 </View>
                 {canCreate && (busyId === g.group_id ? <ActivityIndicator size="small" color={c.muted} /> : (

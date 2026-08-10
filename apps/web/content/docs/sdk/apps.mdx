@@ -5,7 +5,7 @@ description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable
 
 Kortix Apps are provider-neutral serverless deployments. An App owns one stable URL. Each deployment is immutable. Failed deployments do not replace active traffic.
 
-Apps is an experimental feature flag and off by default. The Apps navigation remains visible for a selected project and opens an enablement screen. Until a project manager enables **Apps** under Customize → Feature flags, every Apps route answers `403` with `{ error, code: "feature_disabled", feature: "apps" }`, and `kortix apps <subcommand>` prints that message and exits `1`.
+Apps is an experimental feature flag and off by default. The Apps navigation remains visible for a selected workspace and opens an enablement screen. Until a workspace manager enables **Apps** under Customize → Feature flags, every Apps route answers `403` with `{ error, code: "feature_disabled", feature: "apps" }`, and `kortix apps <subcommand>` prints that message and exits `1`.
 
 All current source kinds run through the same Kortix sandbox hosting backend. Kortix selects Daytona, Platinum, or E2B. Static Apps, bundles, Dockerfiles, and OCI images therefore share one deployment and cold-wake contract. Cloudflare, Deno Deploy, Vercel, and other managed hosting backends are not part of the current API or SDK contract.
 
@@ -23,8 +23,8 @@ All current source kinds run through the same Kortix sandbox hosting backend. Ko
 New Apps are private. Choose one access mode:
 
 - `private`: only the creator.
-- `project`: every member who can read the project.
-- `restricted`: selected project members and groups.
+- `workspace`: every member who can read the workspace.
+- `restricted`: selected workspace members and groups.
 - `public`: no authentication.
 - `password`: anyone with the App password.
 
@@ -33,7 +33,7 @@ Kortix access uses a five-minute exchange URL and an eight-hour, host-only, secu
 Every immutable deployment records `created_by`, `actor_type`, and its originating `source_session_id` when an agent deployed it.
 
 ```ts
-const apps = kortix.project(projectId).apps;
+const apps = kortix.workspace(workspaceId).apps;
 const app = await apps.create({ slug: 'docs', name: 'Docs' });
 const artifact = await apps.artifacts.uploadArchive(tarGzBytes);
 const deployment = await apps.deployments.create(app.app_id, {

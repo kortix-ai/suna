@@ -3,7 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 
 import {
-  type ConnectorAuthorizationStrategy,
+  type WorkspaceConnectorAuthorizationStrategy,
   createConnector,
   pipedreamConnect,
   pipedreamConnectConnection,
@@ -25,7 +25,7 @@ export interface ToolConnectInput {
   appName: string;
   connectorName: string;
   connectorSlug: string;
-  authorizationStrategy: ConnectorAuthorizationStrategy;
+  authorizationStrategy: WorkspaceConnectorAuthorizationStrategy;
 }
 
 export function buildToolConnectorDraft(input: ToolConnectInput) {
@@ -40,23 +40,23 @@ export function buildToolConnectorDraft(input: ToolConnectInput) {
 }
 
 export async function requestToolAuthorization(
-  projectId: string,
+  workspaceId: string,
   input: ToolConnectInput,
   deps: {
-    connectProject: typeof pipedreamConnect;
+    connectWorkspace: typeof pipedreamConnect;
     reconcileMember: typeof reconcileMemberConnection;
     connectMember: typeof pipedreamConnectConnection;
   },
 ): Promise<{ token?: string; app?: string; connectionId: string | null }> {
   if (input.authorizationStrategy === 'user') {
-    const connection = await deps.reconcileMember(projectId, {
+    const connection = await deps.reconcileMember(workspaceId, {
       connector_alias: input.connectorSlug,
       label: input.connectorName.trim(),
     });
-    const connect = await deps.connectMember(projectId, connection.connection_id);
+    const connect = await deps.connectMember(workspaceId, connection.connection_id);
     return { ...connect, connectionId: connection.connection_id };
   }
-  const connect = await deps.connectProject(projectId, input.connectorSlug);
+  const connect = await deps.connectWorkspace(workspaceId, input.connectorSlug);
   return { ...connect, connectionId: null };
 }
 
@@ -88,11 +88,11 @@ function withPipedreamOverlayEscape(): () => void {
   };
 }
 
-export function useToolConnect(projectId: string, onConnected: () => void) {
+export function useToolConnect(workspaceId: string, onConnected: () => void) {
   return useMutation({
     mutationFn: async (input: ToolConnectInput) => {
       const draft = buildToolConnectorDraft(input);
-      const created = await createConnector(projectId, draft);
+      const created = await createConnector(workspaceId, draft);
       const syncError = connectorSyncErrorForSlug(created, draft.slug);
       if (syncError) {
         return {
@@ -104,8 +104,8 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
       }
 
       try {
-        const { token, app, connectionId } = await requestToolAuthorization(projectId, input, {
-          connectProject: pipedreamConnect,
+        const { token, app, connectionId } = await requestToolAuthorization(workspaceId, input, {
+          connectWorkspace: pipedreamConnect,
           reconcileMember: reconcileMemberConnection,
           connectMember: pipedreamConnectConnection,
         });
@@ -113,7 +113,7 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
 
         const { createFrontendClient } = await import('@pipedream/sdk/browser');
         const pd = createFrontendClient({
-          externalUserId: `${projectId}:${draft.slug}${connectionId ? `:${connectionId}` : ''}`,
+          externalUserId: `${workspaceId}:${draft.slug}${connectionId ? `:${connectionId}` : ''}`,
           tokenCallback: async () => ({
             token,
             connectLinkUrl: '',
@@ -147,9 +147,9 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
           };
         }
         if (connectionId) {
-          await pipedreamFinalizeConnection(projectId, connectionId);
+          await pipedreamFinalizeConnection(workspaceId, connectionId);
         } else {
-          await pipedreamFinalize(projectId, draft.slug);
+          await pipedreamFinalize(workspaceId, draft.slug);
         }
         return {
           slug: draft.slug,

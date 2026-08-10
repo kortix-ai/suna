@@ -2,7 +2,7 @@
 
 import { resolveSessionPin } from './initial-session-pin';
 import { useOpenCodeSessions, type Session } from './use-opencode-sessions';
-import { useProjectSession } from './use-project-session';
+import { useWorkspaceSession } from './use-project-session';
 
 /**
  * OpenCode ↔ Kortix session mapping — READ side.
@@ -13,7 +13,7 @@ import { useProjectSession } from './use-project-session';
  * the client (the old client-side `ensure-opencode` mutation caused the
  * "session replaced / data lost" drift). It just surfaces the pin:
  *   1. the value /start handed us this render (`pinFromStart`), else
- *   2. the persisted pin on the Kortix session row (`getProjectSession`).
+ *   2. the persisted pin on the Kortix session row (`getWorkspaceSession`).
  *
  * The OpenCode session list is still read (read-only) for ?oc deep-links and
  * sidebar sub-session rendering.
@@ -37,7 +37,7 @@ export interface CanonicalOpenCodeSession {
 }
 
 export function useCanonicalOpenCodeSession(params: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   /** The pin POST /start resolved server-side this render (preferred source). */
   pinFromStart?: string | null;
@@ -46,7 +46,7 @@ export function useCanonicalOpenCodeSession(params: {
   /** Do not list runtime sessions before this session owns the runtime. */
   listRuntimeSessions?: boolean;
 }): CanonicalOpenCodeSession {
-  const { projectId, sessionId, pinFromStart, initialPin, listRuntimeSessions = true } = params;
+  const { workspaceId, sessionId, pinFromStart, initialPin, listRuntimeSessions = true } = params;
   const sessionsQuery = useOpenCodeSessions(listRuntimeSessions);
 
   // The Kortix session row carries the authoritative, server-managed pin — used
@@ -57,8 +57,8 @@ export function useCanonicalOpenCodeSession(params: {
   // reads active but the pin isn't resolved (pinFromStart null → query still runs).
   // On a warm start pinFromStart is always present, so this saves a redundant
   // round-trip that otherwise contends for connections during boot.
-  // Through `useProjectSession`, not a local `useQuery`: this hook POPULATES
-  // the `qk.project.session(id, sid)` entry that `session-files-panel.tsx`,
+  // Through `useWorkspaceSession`, not a local `useQuery`: this hook POPULATES
+  // the `qk.workspace.session(id, sid)` entry that `session-files-panel.tsx`,
   // `session-changes-shared.tsx` and `session-title-sync.ts`'s title-refresh
   // ladder all read. A local `useQuery` here shared the key but not the
   // contract — a bare `staleTime: 10_000` against the panels'
@@ -66,7 +66,7 @@ export function useCanonicalOpenCodeSession(params: {
   // so freshness and error-toast behaviour both came down to which surface
   // mounted first. `enabled` is the one thing that stays local: on a warm
   // start /start already handed us the pin, so this read is pure overhead.
-  const projectSessionQuery = useProjectSession(projectId, sessionId, {
+  const projectSessionQuery = useWorkspaceSession(workspaceId, sessionId, {
     enabled: !pinFromStart && !initialPin,
   });
   const pin = projectSessionQuery.data?.opencode_session_id ?? null;

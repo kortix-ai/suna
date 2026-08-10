@@ -23,7 +23,7 @@ process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 
 const { middleware } = await import('./middleware');
 
-const projectRedirect = await middleware(
+const workspaceRedirect = await middleware(
   new NextRequest('http://localhost/projects/w1/sessions/s1?x=1'),
 );
 
@@ -39,9 +39,9 @@ const authenticatedWorkspace = await middleware(
 
 console.log(
   JSON.stringify({
-    projectRedirect: {
-      status: projectRedirect.status,
-      location: projectRedirect.headers.get('location'),
+    workspaceRedirect: {
+      status: workspaceRedirect.status,
+      location: workspaceRedirect.headers.get('location'),
     },
     unauthenticatedWorkspace: {
       status: unauthenticatedWorkspace.status,

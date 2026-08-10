@@ -17,7 +17,7 @@ import {
   createExtendThrottle,
   extendSandboxDeadline,
   llmActivityGrantMs,
-} from '../projects/sandbox-deadline';
+} from '../workspaces/sandbox-deadline';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { isGatewayKey } from '../shared/crypto';
@@ -59,13 +59,13 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
   if (yolo) return yolo;
   const account = await validateAccountToken(token);
   if (account.isValid && account.userId && account.accountId) {
-    // projectId/sessionId attribute usage to the calling session (the sandbox
+    // workspaceId/sessionId attribute usage to the calling session (the sandbox
     // connector token is minted per-session with session_id = sandbox_id) — the
     // reaper's activity signal + precise per-session billing.
     return {
       userId: account.userId,
       accountId: account.accountId,
-      projectId: account.projectId ?? undefined,
+      workspaceId: account.workspaceId ?? undefined,
       sessionId: account.sessionId ?? undefined,
     };
   }
@@ -93,7 +93,7 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
         return { ...principal, tier, freeModelsOnly: !managedModels };
       })()
     : { ...principal, freeModelsOnly: false };
-  // Resolve the account/project/agent-configured concrete default once, here,
+  // Resolve the account/workspace/agent-configured concrete default once, here,
   // so it travels with the principal across the standalone-gateway RPC boundary.
   // Never let a resolution error break authentication for every LLM call.
   let defaultModel: string | undefined;
@@ -121,13 +121,13 @@ function logGatewayBudgetWarnings(
   for (const message of warnings) {
     logger.warn(`[gateway] budget warn threshold reached: ${message}`, {
       accountId: principal.accountId,
-      projectId: principal.projectId,
+      workspaceId: principal.workspaceId,
       userId: principal.userId,
     });
   }
 }
 
-/** Throw with the budget message when a project/member gateway budget is exhausted. */
+/** Throw with the budget message when a workspace/member gateway budget is exhausted. */
 export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
   const { exceeded, message, warnings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
@@ -228,7 +228,7 @@ const llmActivityThrottle = createExtendThrottle(60_000);
  *
  * `event.sessionId` is safe as the target for exactly the reason `originRef` is:
  * the gateway principal's session id comes from the connector token, minted
- * server-side with sessionId = sandboxId = the project session id, so a caller
+ * server-side with sessionId = sandboxId = the workspace session id, so a caller
  * cannot name someone else's session. Fire-and-forget — a deadline write must
  * never fail a billing settlement.
  */
@@ -253,7 +253,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     : await recordUsageEvent({
         accountId: event.accountId,
         actorUserId: event.actorUserId,
-        projectId: event.projectId ?? null,
+        workspaceId: event.workspaceId ?? null,
         sessionId: event.sessionId ?? null,
         provider: event.provider,
         model: event.model,
@@ -379,7 +379,7 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   await recordGatewayTrace({
     requestId: trace.requestId,
     accountId: trace.accountId,
-    projectId: trace.projectId,
+    workspaceId: trace.workspaceId,
     sessionId: trace.sessionId,
     actorUserId: trace.actorUserId,
     keyId: trace.keyId,
@@ -420,7 +420,7 @@ export function createInProcessGatewayHooks(): GatewayHooks {
     recordUsage: recordGatewayUsage,
     recordTrace: persistGatewayTrace,
     listModels: async (principal) =>
-      gatewayModelCatalog(principal.projectId, {
+      gatewayModelCatalog(principal.workspaceId, {
         freeManagedOnly: !!principal.freeModelsOnly,
       }),
   };

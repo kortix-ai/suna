@@ -21,12 +21,12 @@ export function buildInstallSuccessSummary(
 }
 
 /** Deep-link destination for "View in project" — the customize overlay's
- *  Marketplace section (installed tab lives there), scoped to the project the
+ *  Marketplace section (installed tab lives there), scoped to the workspace the
  *  item just landed in. Kept as a plain path builder (no router dependency)
  *  so it's testable and reusable from both in-app navigation and a toast
  *  action that has to work from any page, including the public marketplace. */
-export function projectMarketplaceHref(projectId: string): string {
-  return `/workspaces/${encodeURIComponent(projectId)}/customize/marketplace`;
+export function workspaceMarketplaceHref(workspaceId: string): string {
+  return `/workspaces/${encodeURIComponent(workspaceId)}/customize/marketplace`;
 }
 
 /** True when an item exposes any secrets/connectors/tools it needs — used to
@@ -48,8 +48,8 @@ export function capabilityCount(caps: ItemCapabilities | null | undefined): numb
  *  can't disagree about when a submit is valid. */
 export function isInstallDisabled(params: {
   hasItem: boolean;
-  targetProjectId: string;
+  targetWorkspaceId: string;
   pending: boolean;
 }): boolean {
-  return !params.hasItem || !params.targetProjectId || params.pending;
+  return !params.hasItem || !params.targetWorkspaceId || params.pending;
 }

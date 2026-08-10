@@ -129,7 +129,7 @@ function inferChangeStatus(patch: string, before: string, after: string): FileCo
 /**
  * Get the commit history for a specific file.
  *
- * @param filePath - Relative file path from the project root
+ * @param filePath - Relative file path from the workspace root
  * @param limit - Maximum number of commits to return (default 50)
  * @param skip - Number of commits to skip for pagination (default 0)
  * @returns Structured file history with commits sorted newest-first

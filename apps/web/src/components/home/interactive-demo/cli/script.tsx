@@ -1,14 +1,14 @@
 'use client';
 
 import { SCENARIOS } from '../chat/scenarios';
-import type { ActiveModel, PageId, ProjectCard, ProjectStatus } from '../types';
+import type { ActiveModel, PageId, WorkspaceCard, WorkspaceStatus } from '../types';
 import { meta, ok, t, type Line, type Span } from './terminal';
 
 /* ───────────────────────────────────────────────────────────────────────────
  * The CLI movie. A flat list of commands; each command is a list of `Beat`s the
  * director walks in order. Beats interleave terminal output (`out`) with the
  * web effects that keep the app in lockstep — `nav` switches tabs, `fx` mutates
- * synced state (projects ship, connectors connect, model switches, sessions run
+ * synced state (workspaces ship, connectors connect, model switches, sessions run
  * chats, triggers/secrets/members get added, Slack connects).
  * Output text mirrors the real `kortix` CLI so the terminal reads as authentic.
  * ─────────────────────────────────────────────────────────────────────────── */
@@ -16,9 +16,9 @@ import { meta, ok, t, type Line, type Span } from './terminal';
 /** The effect surface a `fx` beat can call to drive the web app. */
 export interface DirectorApi {
   nav: (page: PageId) => void;
-  addProject: (project: ProjectCard) => void;
-  patchProject: (name: string, patch: Partial<ProjectCard>) => void;
-  setProjectStatus: (name: string, status: ProjectStatus) => void;
+  addWorkspace: (workspace: WorkspaceCard) => void;
+  patchWorkspace: (name: string, patch: Partial<WorkspaceCard>) => void;
+  setWorkspaceStatus: (name: string, status: WorkspaceStatus) => void;
   connectConnector: (name: string) => void;
   connectProvider: (domain: string) => void;
   setModel: (model: ActiveModel) => void;
@@ -50,7 +50,7 @@ const nav = (page: PageId): Beat => ({ kind: 'nav', page });
 const fx = (run: (api: DirectorApi) => void): Beat => ({ kind: 'fx', run });
 const wait = (ms: number): Beat => ({ kind: 'wait', ms });
 
-export const PROJECT = 'acme-ops';
+export const WORKSPACE = 'acme-ops';
 
 /** Exact prompt of a scripted scenario, so `runChat` matches + renders it. */
 const chat = (id: string): string => SCENARIOS.find((s) => s.id === id)?.prompt ?? '';
@@ -63,7 +63,7 @@ export const CHAT_PROMPT = chat('pipeline');
 
 /** End state after the full tour — shared by the loop bookend and reduced-motion. */
 export const SETTLED: {
-  projects: ProjectCard[];
+  workspaces: WorkspaceCard[];
   model: ActiveModel;
   connectedProviders: string[];
   connectors: string[];
@@ -72,14 +72,14 @@ export const SETTLED: {
   memberAdded: boolean;
   slack: { connected: boolean; workspace: string };
 } = {
-  projects: [
+  workspaces: [
     {
-      name: PROJECT,
+      name: WORKSPACE,
       status: 'live',
       files: 9,
       branch: 'main',
-      repo: `git.kortix.com/acme/${PROJECT}`,
-      url: `kortix.com/p/${PROJECT}`,
+      repo: `git.kortix.com/acme/${WORKSPACE}`,
+      url: `kortix.com/p/${WORKSPACE}`,
     },
   ],
   model: { domain: 'openai.com', name: 'GPT-5' },
@@ -92,20 +92,20 @@ export const SETTLED: {
 };
 
 export const SCRIPT: Command[] = [
-  /* 1 ── kortix init → a draft project appears on the Projects tab ─────────── */
+  /* 1 ── kortix init → a draft workspace appears on the Projects tab ─────────── */
   {
-    input: `kortix init ${PROJECT}`,
+    input: `kortix init ${WORKSPACE}`,
     beats: [
-      nav('projects'),
+      nav('workspaces'),
       wait(260),
       blank(),
       out([
-        t('Initialized Kortix project '),
-        t(`"${PROJECT}"`, 'fg'),
+        t('Initialized Kortix workspace '),
+        t(`"${WORKSPACE}"`, 'fg'),
         t(' in '),
-        t(`~/${PROJECT}`, 'faded'),
+        t(`~/${WORKSPACE}`, 'faded'),
       ]),
-      fx((a) => a.addProject({ name: PROJECT, status: 'draft', files: 9, branch: 'main' })),
+      fx((a) => a.addWorkspace({ name: WORKSPACE, status: 'draft', files: 9, branch: 'main' })),
       out([t('Wrote 9 files:')]),
       out([t('  + ', 'faded'), t('kortix.yaml')]),
       out([t('  + ', 'faded'), t('.kortix/opencode/agents/kortix.md')]),
@@ -114,7 +114,7 @@ export const SCRIPT: Command[] = [
       out([t('Git: initialized (main)', 'dim')]),
       blank(),
       out([t('Next:')]),
-      out([t(`  cd ${PROJECT}`, 'fg')]),
+      out([t(`  cd ${WORKSPACE}`, 'fg')]),
       wait(850),
     ],
   },
@@ -123,27 +123,27 @@ export const SCRIPT: Command[] = [
   {
     input: 'kortix ship',
     beats: [
-      nav('projects'),
+      nav('workspaces'),
       wait(220),
-      fx((a) => a.setProjectStatus(PROJECT, 'shipping')),
+      fx((a) => a.setWorkspaceStatus(WORKSPACE, 'shipping')),
       okLine(t('kortix.yaml verified')),
       blank(),
-      out([t('  '), t('kortix ship', 'kortix'), t('  new project → managed Kortix git', 'dim')]),
-      out(meta('name', PROJECT, 'fg')),
+      out([t('  '), t('kortix ship', 'kortix'), t('  new workspace → managed Kortix git', 'dim')]),
+      out(meta('name', WORKSPACE, 'fg')),
       blank(),
       wait(450),
       okLine(t('Committed: '), t('kortix: ship', 'fg')),
       okLine(t('Pushed '), t('main', 'fg'), t(' → '), t('origin/main', 'fg')),
-      okLine(t('Shipped '), t(PROJECT, 'fg')),
+      okLine(t('Shipped '), t(WORKSPACE, 'fg')),
       fx((a) =>
-        a.patchProject(PROJECT, {
+        a.patchWorkspace(WORKSPACE, {
           status: 'live',
-          repo: `git.kortix.com/acme/${PROJECT}`,
-          url: `kortix.com/p/${PROJECT}`,
+          repo: `git.kortix.com/acme/${WORKSPACE}`,
+          url: `kortix.com/p/${WORKSPACE}`,
         }),
       ),
-      out(meta('repo', `git.kortix.com/acme/${PROJECT}`)),
-      out([t('  live  ', 'dim'), t(`kortix.com/p/${PROJECT}`, 'cyan')]),
+      out(meta('repo', `git.kortix.com/acme/${WORKSPACE}`)),
+      out([t('  live  ', 'dim'), t(`kortix.com/p/${WORKSPACE}`, 'cyan')]),
       wait(1050),
     ],
   },
@@ -191,7 +191,7 @@ export const SCRIPT: Command[] = [
         a.connectProvider('openai.com');
         a.setModel({ domain: 'openai.com', name: 'GPT-5' });
       }),
-      okLine(t('Authorized '), t('openai', 'fg'), t(' on this project')),
+      okLine(t('Authorized '), t('openai', 'fg'), t(' on this workspace')),
       out([t('  active model → ', 'dim'), t('GPT-5', 'fg')]),
       wait(1050),
     ],
@@ -279,7 +279,12 @@ export const SCRIPT: Command[] = [
       nav('security'),
       wait(220),
       fx((a) => a.inviteMember()),
-      okLine(t('Invited '), t('alex@acme.ai', 'fg'), t(' as member '), t('(pending signup)', 'faded')),
+      okLine(
+        t('Invited '),
+        t('alex@acme.ai', 'fg'),
+        t(' as member '),
+        t('(pending signup)', 'faded'),
+      ),
       wait(1400),
     ],
   },

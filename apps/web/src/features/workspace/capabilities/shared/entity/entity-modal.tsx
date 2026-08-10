@@ -26,11 +26,11 @@ import {
   editConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import { cn } from '@/lib/utils';
-import { listProjectFiles, readProjectFile } from '@kortix/sdk';
-import { useProjectAccountId } from '@kortix/sdk/react';
+import { listWorkspaceFiles, readWorkspaceFile } from '@kortix/sdk';
+import { useWorkspaceAccountId } from '@kortix/sdk/react';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -46,7 +46,7 @@ export interface EntityDetailEntity {
 }
 
 export interface EntityDetailModalProps {
-  projectId: string;
+  workspaceId: string;
   /** The skill/command to show, or `null` when it has not resolved yet. `open`
    *  is driven by the SELECTION, not by this — see
    *  `shared/detail-selection.ts`. Selecting a different card while `open`
@@ -73,9 +73,9 @@ export interface EntityDetailModalProps {
 }
 
 const WRITE_ACTION: Record<EntityKind, string> = {
-  skill: PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
-  command: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
-  agent: PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+  skill: WORKSPACE_ACTIONS.WORKSPACE_SKILL_WRITE,
+  command: WORKSPACE_ACTIONS.WORKSPACE_COMMAND_WRITE,
+  agent: WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE,
 };
 
 /**
@@ -85,7 +85,7 @@ const WRITE_ACTION: Record<EntityKind, string> = {
  * its own scripts and templates — so the listing is exactly its file tree.
  * An agent is a single file in a SHARED directory
  * (`.kortix/opencode/agents/<name>.md`), so the same listing returns every
- * other agent in the project. Rendering that as "this agent's files" would let
+ * other agent in the workspace. Rendering that as "this agent's files" would let
  * a click swap the source pane to a different agent while the modal title,
  * the badges, and the configuration aside all still describe the first one.
  *
@@ -113,7 +113,7 @@ const OWNS_ITS_DIRECTORY: Record<EntityKind, boolean> = {
  * drop focus trap continuity.
  */
 export function EntityDetailModal({
-  projectId,
+  workspaceId,
   entity,
   kind,
   open,
@@ -141,7 +141,7 @@ export function EntityDetailModal({
         {entity ? (
           <EntityModalBody
             key={entity.path}
-            projectId={projectId}
+            workspaceId={workspaceId}
             entity={entity}
             kind={kind}
             aside={aside}
@@ -194,25 +194,25 @@ function EntityModalSkeleton({ kind }: { kind: EntityKind }) {
 }
 
 function EntityModalBody({
-  projectId,
+  workspaceId,
   entity,
   kind,
   aside,
   meta,
   paneOverride,
 }: {
-  projectId: string;
+  workspaceId: string;
   entity: EntityDetailEntity;
   kind: EntityKind;
   aside?: ReactNode;
   meta?: ReactNode;
   paneOverride?: ReactNode;
 }) {
-  const configure = useConfigureThread(projectId);
-  // `accountId` skips useProjectCan's own getProject and lets the IAM probe
+  const configure = useConfigureThread(workspaceId);
+  // `accountId` skips useWorkspaceCan's own getWorkspace and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
-  const accountId = useProjectAccountId(projectId);
-  const canWrite = useProjectCan(projectId, WRITE_ACTION[kind], { accountId }).allowed === true;
+  const accountId = useWorkspaceAccountId(workspaceId);
+  const canWrite = useWorkspaceCan(workspaceId, WRITE_ACTION[kind], { accountId }).allowed === true;
 
   // The real repo path, with any manifest anchor stripped. Agents declared in
   // the manifest rather than as their own file carry one
@@ -230,8 +230,8 @@ function EntityModalBody({
   // Not fetched at all for a single-file kind: the listing would be every
   // sibling entity's source, and nothing renders it (see OWNS_ITS_DIRECTORY).
   const filesQuery = useQuery({
-    queryKey: ['entity-files', projectId, dir],
-    queryFn: () => listProjectFiles(projectId, { path: dir }),
+    queryKey: ['entity-files', workspaceId, dir],
+    queryFn: () => listWorkspaceFiles(workspaceId, { path: dir }),
     enabled: hasFileRail && dir !== '',
     staleTime: 30_000,
   });
@@ -242,8 +242,8 @@ function EntityModalBody({
   );
 
   const fileQuery = useQuery({
-    queryKey: ['entity-file-content', projectId, selectedPath],
-    queryFn: () => readProjectFile(projectId, selectedPath),
+    queryKey: ['entity-file-content', workspaceId, selectedPath],
+    queryFn: () => readWorkspaceFile(workspaceId, selectedPath),
     staleTime: 30_000,
   });
 

@@ -1,7 +1,7 @@
 /**
  * Preview proxy ownership gate + user-context resolver.
  *
- * Project-sessions on Daytona model:
+ * Workspace-sessions on Daytona model:
  *   - A sandbox lives in `kortix.session_sandboxes`.
  *   - A user can hit the sandbox if they're a member of the account that owns
  *     it (account_members.account_id == session_sandboxes.account_id), or if
@@ -44,7 +44,7 @@ const sessionVisibilityCache = new Map<string, { allowed: boolean; expiresAt: nu
  */
 export async function canAccessSandboxSession(input: {
   sessionId: string;
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   userId: string;
   /** The caller's own session when the credential is bound to one, or null.
@@ -70,7 +70,7 @@ export async function canAccessSandboxSession(input: {
     .where(
       and(
         eq(projectSessions.sessionId, input.sessionId),
-        eq(projectSessions.projectId, input.projectId),
+        eq(projectSessions.workspaceId, input.workspaceId),
         eq(projectSessions.accountId, input.accountId),
       ),
     )
@@ -118,11 +118,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 async function resolveSandboxRef(
   previewSandboxId: string,
-): Promise<{ sandboxId: string; accountId: string; projectId: string } | null> {
+): Promise<{ sandboxId: string; accountId: string; workspaceId: string } | null> {
   const columns = {
     sandboxId: sessionSandboxes.sandboxId,
     accountId: sessionSandboxes.accountId,
-    projectId: sessionSandboxes.projectId,
+    workspaceId: sessionSandboxes.workspaceId,
   };
 
   const idCondition = UUID_RE.test(previewSandboxId)
@@ -168,9 +168,9 @@ async function resolveSandboxRef(
  * sandbox row can't be found — callers must treat that as "deny", not
  * "unscoped ok".
  */
-export async function resolveSandboxProjectId(previewSandboxId: string): Promise<string | null> {
+export async function resolveSandboxWorkspaceId(previewSandboxId: string): Promise<string | null> {
   const ref = await resolveSandboxRef(previewSandboxId);
-  return ref?.projectId ?? null;
+  return ref?.workspaceId ?? null;
 }
 
 async function isAccountMember(userId: string, accountId: string): Promise<boolean> {

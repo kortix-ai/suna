@@ -100,13 +100,13 @@ describe('collectOwnerOptions', () => {
 describe('buildSessionsLevelListInput', () => {
   test('forwards the selected owner, sort and page to the session-costs query', () => {
     expect(
-      buildSessionsLevelListInput('project-1', range, {
+      buildSessionsLevelListInput('workspace-1', range, {
         ownerId: 'owner-9',
         sort: 'recent',
         offset: 50,
       }),
     ).toEqual({
-      projectId: 'project-1',
+      workspaceId: 'workspace-1',
       limit: SESSION_COST_PAGE_SIZE,
       offset: 50,
       from: range.from,
@@ -117,7 +117,7 @@ describe('buildSessionsLevelListInput', () => {
   });
 
   test('omits the owner filter (not a null) when no owner is selected', () => {
-    const input = buildSessionsLevelListInput('project-1', range, {
+    const input = buildSessionsLevelListInput('workspace-1', range, {
       ownerId: null,
       sort: 'total_desc',
       offset: 0,
@@ -127,14 +127,14 @@ describe('buildSessionsLevelListInput', () => {
 });
 
 describe('buildSessionsLevelExportFilters', () => {
-  test('exports the same project, owner and sort the table is narrowed by', () => {
+  test('exports the same workspace, owner and sort the table is narrowed by', () => {
     expect(
-      buildSessionsLevelExportFilters('project-1', {
+      buildSessionsLevelExportFilters('workspace-1', {
         ownerId: 'owner-9',
         sort: 'recent',
         offset: 50,
       }),
-    ).toEqual({ projectId: 'project-1', ownerId: 'owner-9', sort: 'recent' });
+    ).toEqual({ workspaceId: 'workspace-1', ownerId: 'owner-9', sort: 'recent' });
   });
 
   test('omits the owner filter (not a null) when no owner is selected', () => {
@@ -142,7 +142,7 @@ describe('buildSessionsLevelExportFilters', () => {
     // the wire — asserted anyway because the export options type says
     // `ownerId?: string`, and a null there is a lie the compiler stops
     // catching the moment someone widens it.
-    const filters = buildSessionsLevelExportFilters('project-1', {
+    const filters = buildSessionsLevelExportFilters('workspace-1', {
       ownerId: null,
       sort: 'total_desc',
       offset: 0,
@@ -155,7 +155,7 @@ describe('buildSessionsLevelExportFilters', () => {
     // a page cannot narrow an export even if one were sent. Pinned so a
     // future "keep the export in sync with the table" change does not start
     // forwarding `filters.offset` in the belief that it does something.
-    const filters = buildSessionsLevelExportFilters('project-1', {
+    const filters = buildSessionsLevelExportFilters('workspace-1', {
       ownerId: null,
       sort: 'total_desc',
       offset: 75,
@@ -172,8 +172,8 @@ describe('buildSessionsLevelOwnerCatalogInput', () => {
     // one narrowed by whichever owner happens to be selected right now (that
     // would collapse the dropdown to a single option the moment one is
     // picked).
-    expect(buildSessionsLevelOwnerCatalogInput('project-1', range)).toEqual({
-      projectId: 'project-1',
+    expect(buildSessionsLevelOwnerCatalogInput('workspace-1', range)).toEqual({
+      workspaceId: 'workspace-1',
       limit: 100,
       offset: 0,
       from: range.from,
@@ -190,7 +190,7 @@ describe('buildSessionsLevelOwnerCatalogInput', () => {
   // regression back to the table's page size fails on the exact number, not
   // just on "some field changed".
   test('uses a wider page than the visible table, not SESSION_COST_PAGE_SIZE', () => {
-    const input = buildSessionsLevelOwnerCatalogInput('project-1', range);
+    const input = buildSessionsLevelOwnerCatalogInput('workspace-1', range);
     expect(input.limit).not.toBe(SESSION_COST_PAGE_SIZE);
     expect(input.limit).toBe(100);
   });
@@ -229,7 +229,7 @@ describe('nextSessionSort', () => {
     }
   });
 
-  // `name_asc` is a valid ProjectCostSort and a 400 on this route. The session
+  // `name_asc` is a valid WorkspaceCostSort and a 400 on this route. The session
   // headers must never produce it.
   test('never produces name_asc, which this route rejects', () => {
     const accepted: SessionCostSort[] = ['total_desc', 'total_asc', 'recent'];
@@ -312,14 +312,14 @@ describe('applySessionSort', () => {
 });
 
 // ── SessionsLevelTable — the presentational half, tested the way
-// SessionCostExplorerContent / ProjectsLevelContent already are: plain props,
+// SessionCostExplorerContent / WorkspacesLevelContent already are: plain props,
 // renderToStaticMarkup, no react-query or Supabase context required ────────
 
 function session(overrides: Partial<SessionCostSummary>): SessionCostSummary {
   return {
     session_id: 'session-default',
-    project_id: 'project-1',
-    project_name: 'Support workflows',
+    workspace_id: 'workspace-1',
+    workspace_name: 'Support workflows',
     owner_id: 'user-1',
     owner_type: 'user',
     owner_name: 'User Owner',
@@ -458,9 +458,9 @@ describe('SessionsLevelTable', () => {
   });
 
   // Defect 2. This footer sums `sessions` — one page — while the Total tile
-  // rendered above the table by `CostLevelShell` is the project's whole
+  // rendered above the table by `CostLevelShell` is the workspace's whole
   // window, from `/usage/cost-summary`. Measured on the seed account's
-  // largest project over 2026-07-01..2026-08-03: 55 sessions totalling
+  // largest workspace over 2026-07-01..2026-08-03: 55 sessions totalling
   // $24.2324, top 25 of them $24.1103. Both figures are right; they are not
   // the same quantity, so they do not share a label.
   test('the footer row is labelled "Page total", never a bare "Total"', () => {
@@ -660,7 +660,7 @@ describe('SessionsLevelTable', () => {
     expect(html).toContain('No sessions');
   });
 
-  // ── "no page was ever read" is not "this project has no sessions" ────────
+  // ── "no page was ever read" is not "this workspace has no sessions" ────────
   //
   // The empty state is a factual claim about the data. It may only render
   // once a page has actually come back. Every React Query state that is
@@ -670,7 +670,7 @@ describe('SessionsLevelTable', () => {
   // — reports `isLoading: false`, `error: null`, `data: undefined`. Gating
   // the skeleton on `isLoading && !data` let all of those fall through to
   // "No sessions", which is how a 500 on `/usage/session-costs` presented as
-  // "this project has no sessions" during Task 15's live check.
+  // "this workspace has no sessions" during Task 15's live check.
   test('renders the loading state, not "No sessions", when no page has been read and nothing is in flight', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
@@ -775,7 +775,7 @@ describe('the state a failed /usage/session-costs request hands the table', () =
       const options = buildSessionCostsListQuery(
         {
           accountId: 'acct-1',
-          projectId: 'project-1',
+          workspaceId: 'workspace-1',
           limit: SESSION_COST_PAGE_SIZE,
           offset: 0,
           from: range.from,
@@ -787,7 +787,7 @@ describe('the state a failed /usage/session-costs request hands the table', () =
             throw new ApiError('column reference "last_at" is ambiguous', { status: 500 });
           },
           get: (async () => {}) as never,
-          projects: (async () => []) as never,
+          workspaces: (async () => []) as never,
         },
       );
       const observer = new QueryObserver(client, client.defaultQueryOptions(options));
@@ -840,7 +840,7 @@ describe('the state a failed /usage/session-costs request hands the table', () =
       const options = buildSessionCostsListQuery(
         {
           accountId: 'acct-1',
-          projectId: 'project-1',
+          workspaceId: 'workspace-1',
           limit: SESSION_COST_PAGE_SIZE,
           offset: 0,
           from: range.from,
@@ -852,7 +852,7 @@ describe('the state a failed /usage/session-costs request hands the table', () =
             throw new ApiError('column reference "last_at" is ambiguous', { status: 500 });
           },
           get: (async () => {}) as never,
-          projects: (async () => []) as never,
+          workspaces: (async () => []) as never,
         },
       );
       const observer = new QueryObserver(client, client.defaultQueryOptions(options));
@@ -905,7 +905,7 @@ describe('SessionsLevel', () => {
           <BillingAccountProvider accountId="acc_1">
             <TooltipProvider>
               <SessionsLevel
-                projectId="project-1"
+                workspaceId="workspace-1"
                 range={range}
                 onRangeChange={() => {}}
                 onSelectSession={() => {}}
@@ -949,4 +949,3 @@ describe('SessionsLevel', () => {
     expect(html).toContain('aria-label="Filter sessions by owner"');
   });
 });
-

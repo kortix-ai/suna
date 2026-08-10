@@ -21,9 +21,9 @@ import { Text } from '@/components/ui/text';
 import { SheetTextInput } from '@/components/ui/SheetInput';
 import { useToast } from '@/components/ui/toast-provider';
 import { getSheetBg } from '@/lib/theme-colors';
-import { useCreateAccount } from '@/lib/projects/hooks';
+import { useCreateAccount } from '@/lib/workspaces/hooks';
 import { haptics } from '@/lib/haptics';
-import type { KortixAccount } from '@/lib/projects/projects-client';
+import type { KortixAccount } from '@/lib/workspaces/workspaces-client';
 import { InitialsAvatar, PrimaryButton, accountColors } from './account-shared';
 
 interface NewAccountSheetProps {

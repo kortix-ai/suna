@@ -4,7 +4,7 @@ import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
-import { KortixProjectScope } from '@/components/kortix-project-scope';
+import { KortixWorkspaceScope } from '@/components/kortix-workspace-scope';
 import { LazyMotionProvider } from '@/components/lazy-motion-provider';
 import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -356,7 +356,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                         event (coded 403) and walks the user through a TOTP
                         step-up so the retried action passes the IAM gate. */}
                         <MfaStepUpProvider>
-                          <KortixProjectScope>{children}</KortixProjectScope>
+                          <KortixWorkspaceScope>{children}</KortixWorkspaceScope>
                         </MfaStepUpProvider>
                       </RequestDemoProvider>
                       {/* Global maintenance/incident banner (info/warning/critical).
@@ -365,7 +365,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                         <MaintenanceBannerHost />
                       </Suspense>
                       {/* Fallback file-preview modal for surfaces with no session side
-                      panel (dashboard, project pages). Its file/history hooks need
+                      panel (dashboard, workspace pages). Its file/history hooks need
                       the query client, so it mounts inside ReactQueryProvider like
                       MaintenanceBannerHost above. */}
                       <Suspense fallback={null}>

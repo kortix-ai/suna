@@ -3,11 +3,9 @@ import { dirname, resolve } from 'node:path';
 
 import { getStarterFiles, type StarterFile, type StarterTemplateId } from '@kortix/starter';
 
-export interface ScaffoldInput {
+interface ScaffoldInputBase {
   /** Absolute path of the destination directory. Must already exist. */
   repoRoot: string;
-  /** Display name written into kortix.yaml + README. */
-  projectName: string;
   /** Optional "owner/repo" placeholder for README clone URL. */
   repoFullName?: string;
   /** Starter variant. Defaults to the minimal Kortix runtime floor. */
@@ -21,6 +19,21 @@ export interface ScaffoldInput {
   preserveExisting?: boolean;
 }
 
+export type ScaffoldInput = ScaffoldInputBase &
+  (
+    | {
+        /** Display name written into kortix.yaml and README. */
+        workspaceName: string;
+        /** @deprecated Use `workspaceName`. */
+        projectName?: never;
+      }
+    | {
+        /** @deprecated Use `workspaceName`. */
+        projectName: string;
+        workspaceName?: never;
+      }
+  );
+
 export interface ScaffoldResult {
   written: string[];
   skipped: string[];
@@ -32,8 +45,9 @@ export interface ScaffoldResult {
  * scaffold without clobbering a user's in-progress edits.
  */
 export function applyScaffold(input: ScaffoldInput): ScaffoldResult {
+  const workspaceName = input.workspaceName ?? input.projectName;
   const files: StarterFile[] = getStarterFiles({
-    projectName: input.projectName,
+    projectName: workspaceName,
     repoFullName: input.repoFullName,
     template: input.template,
   });

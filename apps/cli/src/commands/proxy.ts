@@ -1,13 +1,13 @@
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { ApiError } from '../api/client.ts';
 import { C, help, status } from '../style.ts';
-import type { ProjectSession } from '../api/types.ts';
+import type { WorkspaceSession } from '../api/types.ts';
 
 const HELP = help`Usage: kortix proxy <subcommand> [options]
 
@@ -23,12 +23,12 @@ Subcommands:
   rm <session-id> <token>            Revoke a share link.
 
 Global options:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>     Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 `;
 
-type CtxOpts = { projectArg?: string; hostArg?: string };
+type CtxOpts = { workspaceArg?: string; hostArg?: string };
 
 export async function runProxy(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
@@ -37,14 +37,14 @@ export async function runProxy(argv: string[]): Promise<number> {
   }
   const sub = argv[0];
   const rest = argv.slice(1);
-  let projectFlag: string | undefined;
+  let workspaceFlag: string | undefined;
   let hostFlag: string | undefined;
   let portFlag: string | undefined;
   let ttlFlag: string | undefined;
   let labelFlag: string | undefined;
   let json = false;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    workspaceFlag = takeFlagValue(rest, ['--workspace', '--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     portFlag = takeFlagValue(rest, ['--port', '-p']);
     ttlFlag = takeFlagValue(rest, ['--ttl']);
@@ -54,7 +54,7 @@ export async function runProxy(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
+  const ctxOpts: CtxOpts = { workspaceArg: workspaceFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'share':
@@ -76,16 +76,16 @@ export async function runProxy(argv: string[]): Promise<number> {
 
 async function resolveSandboxId(
   sessionId: string | undefined,
-  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveWorkspaceContext>>>,
 ): Promise<string | null> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return null;
   }
-  let session: ProjectSession;
+  let session: WorkspaceSession;
   try {
-    session = await ctx.client.get<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions/${sessionId}`,
+    session = await ctx.client.get<WorkspaceSession>(
+      `/workspaces/${ctx.workspaceId}/sessions/${sessionId}`,
     );
   } catch (err) {
     surfaceApiError(err);
@@ -115,7 +115,7 @@ async function proxyShare(
     return 2;
   }
 
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   const sandboxId = await resolveSandboxId(sessionId, ctx);
   if (!sandboxId) return 1;
@@ -150,7 +150,7 @@ async function proxyShare(
 }
 
 async function proxyLs(sessionId: string | undefined, opts: CtxOpts, json = false): Promise<number> {
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   const sandboxId = await resolveSandboxId(sessionId, ctx);
   if (!sandboxId) return 1;
@@ -207,7 +207,7 @@ async function proxyRm(
     process.stderr.write(`${status.err('Pass the share token.')}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   const sandboxId = await resolveSandboxId(sessionId, ctx);
   if (!sandboxId) return 1;

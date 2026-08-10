@@ -1,9 +1,9 @@
 /**
- * FilesNavPage — the project's repo files (web parity: features/project-files).
+ * FilesNavPage — the workspace's repo files (web parity: features/workspace-files).
  * A READ-ONLY git-repo browser: the `/files` endpoint returns a FLAT recursive
  * file list, so folders are derived client-side from the paths. Browse by
  * version (branch), view file content, see a file's history, and download a
- * file or a subtree zip. No write/rename/delete (project files come from git).
+ * file or a subtree zip. No write/rename/delete (workspace files come from git).
  *
  * Mobile branding: reuses the old files page's FileItem rows + preview
  * renderers, with PageHeader + PageContent chrome.
@@ -55,16 +55,16 @@ import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { FileItem, getFileIconComponent, getMutedIconColor } from '@/components/files/FileItem';
 import { FilePreview, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
 import { PatchDiffView } from '@/components/diff/PatchDiffView';
-import { relativeTime } from '@/lib/projects/triggers-format';
+import { relativeTime } from '@/lib/workspaces/triggers-format';
 import {
-  useProjectBranches,
-  useProjectFiles,
-  useProjectFileContent,
-  useProjectFileHistory,
-  useProjectCommitDiff,
-} from '@/lib/projects/hooks';
-import { projectArchiveUrl } from '@/lib/projects/projects-client';
-import type { ProjectFileEntry, ProjectBranch, ProjectCommit } from '@/lib/projects/projects-client';
+  useWorkspaceBranches,
+  useWorkspaceFiles,
+  useWorkspaceFileContent,
+  useWorkspaceFileHistory,
+  useWorkspaceCommitDiff,
+} from '@/lib/workspaces/hooks';
+import { workspaceArchiveUrl } from '@/lib/workspaces/workspaces-client';
+import type { WorkspaceFileEntry, WorkspaceBranch, WorkspaceCommit } from '@/lib/workspaces/workspaces-client';
 import type { SandboxFile } from '@/api/types';
 import { getAuthToken } from '@/api/config';
 import { haptics } from '@/lib/haptics';
@@ -77,7 +77,7 @@ interface PageTabLike {
 
 interface FilesNavPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -94,7 +94,7 @@ const ext = (name: string) => {
 
 // Pinned, described config dirs (web parity).
 const ELEVATED: Record<string, string> = {
-  '.kortix': 'Project config, tasks, context',
+  '.kortix': 'Workspace config, tasks, context',
   '.opencode': 'Agents, skills, commands',
 };
 
@@ -102,10 +102,10 @@ type SortBy = 'name' | 'type';
 type SortOrder = 'asc' | 'desc';
 
 /** Immediate children of `dir` derived from the flat file list. */
-function childrenOf(entries: ProjectFileEntry[], dir: string): { dirs: string[]; files: ProjectFileEntry[] } {
+function childrenOf(entries: WorkspaceFileEntry[], dir: string): { dirs: string[]; files: WorkspaceFileEntry[] } {
   const prefix = dir ? `${dir}/` : '';
   const dirSet = new Set<string>();
-  const files: ProjectFileEntry[] = [];
+  const files: WorkspaceFileEntry[] = [];
   for (const e of entries) {
     if (dir && !e.path.startsWith(prefix)) continue;
     const rest = e.path.slice(prefix.length);
@@ -147,7 +147,7 @@ function VersionSheet({
   isLoading,
   isDark,
 }: {
-  branches: ProjectBranch[];
+  branches: WorkspaceBranch[];
   defaultBranch: string;
   value: string;
   onSelect: (ref: string) => void;
@@ -279,7 +279,7 @@ function VersionSheet({
 // ─── File viewer (full-screen modal) ──────────────────────────────────────────
 
 function FileViewerModal({
-  projectId,
+  workspaceId,
   ref_,
   files,
   index,
@@ -287,7 +287,7 @@ function FileViewerModal({
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   ref_: string;
   files: { name: string; path: string }[];
   index: number;
@@ -299,11 +299,11 @@ function FileViewerModal({
   const insets = useSafeAreaInsets();
   const file = files[index];
   const [view, setView] = useState<'content' | 'history'>('content');
-  const [historyCommit, setHistoryCommit] = useState<ProjectCommit | null>(null);
+  const [historyCommit, setHistoryCommit] = useState<WorkspaceCommit | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const content = useProjectFileContent(projectId, file?.path ?? null, ref_);
-  const history = useProjectFileHistory(projectId, view === 'history' ? (file?.path ?? null) : null, ref_);
+  const content = useWorkspaceFileContent(workspaceId, file?.path ?? null, ref_);
+  const history = useWorkspaceFileHistory(workspaceId, view === 'history' ? (file?.path ?? null) : null, ref_);
 
   const bg = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -379,7 +379,7 @@ function FileViewerModal({
         )}
 
         {/* Checkpoint changes — animated bottom sheet */}
-        <CheckpointSheet commit={historyCommit} projectId={projectId} path={file.path} isDark={isDark} onClose={() => setHistoryCommit(null)} />
+        <CheckpointSheet commit={historyCommit} workspaceId={workspaceId} path={file.path} isDark={isDark} onClose={() => setHistoryCommit(null)} />
       </View>
     </Modal>
   );
@@ -387,13 +387,13 @@ function FileViewerModal({
 
 function CheckpointSheet({
   commit,
-  projectId,
+  workspaceId,
   path,
   isDark,
   onClose,
 }: {
-  commit: ProjectCommit | null;
-  projectId: string;
+  commit: WorkspaceCommit | null;
+  workspaceId: string;
   path: string;
   isDark: boolean;
   onClose: () => void;
@@ -406,7 +406,7 @@ function CheckpointSheet({
   const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
 
   // Keep the last commit rendered while the close animation plays out.
-  const [rendered, setRendered] = useState<ProjectCommit | null>(commit);
+  const [rendered, setRendered] = useState<WorkspaceCommit | null>(commit);
   const translateY = useRef(new Animated.Value(H)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
 
@@ -450,7 +450,7 @@ function CheckpointSheet({
           </TouchableOpacity>
         </View>
         <ScrollView style={{ maxHeight: H * 0.58 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-          <CommitDiff projectId={projectId} sha={rendered.hash} path={path} isDark={isDark} />
+          <CommitDiff workspaceId={workspaceId} sha={rendered.hash} path={path} isDark={isDark} />
         </ScrollView>
       </Animated.View>
     </View>
@@ -462,8 +462,8 @@ function FileHistoryView({
   onSelectCommit,
   isDark,
 }: {
-  historyQuery: ReturnType<typeof useProjectFileHistory>;
-  onSelectCommit: (c: ProjectCommit) => void;
+  historyQuery: ReturnType<typeof useWorkspaceFileHistory>;
+  onSelectCommit: (c: WorkspaceCommit) => void;
   isDark: boolean;
 }) {
   const insets = useSafeAreaInsets();
@@ -511,9 +511,9 @@ function FileHistoryView({
   );
 }
 
-function CommitDiff({ projectId, sha, path, isDark }: { projectId: string; sha: string; path: string; isDark: boolean }) {
+function CommitDiff({ workspaceId, sha, path, isDark }: { workspaceId: string; sha: string; path: string; isDark: boolean }) {
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const diff = useProjectCommitDiff(projectId, sha, path);
+  const diff = useWorkspaceCommitDiff(workspaceId, sha, path);
   if (diff.isLoading) {
     return <View style={{ paddingVertical: 18, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>;
   }
@@ -566,7 +566,7 @@ function FileCard({
 
 export function FilesNavPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -586,15 +586,15 @@ export function FilesNavPage({
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const versionSheetRef = React.useRef<BottomSheetModal>(null);
 
-  const branchesQuery = useProjectBranches(projectId);
+  const branchesQuery = useWorkspaceBranches(workspaceId);
   const defaultBranch = branchesQuery.data?.default_branch ?? '';
 
-  // Default to the project's default branch once branches resolve.
+  // Default to the workspace's default branch once branches resolve.
   useEffect(() => {
     if (!ref_ && defaultBranch) setRef(defaultBranch);
   }, [defaultBranch, ref_]);
 
-  const filesQuery = useProjectFiles(projectId, ref_);
+  const filesQuery = useWorkspaceFiles(workspaceId, ref_);
   const entries = filesQuery.data ?? [];
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
@@ -663,8 +663,8 @@ export function FilesNavPage({
     if (downloadingDir || !ref_) return;
     setDownloadingDir(true);
     try {
-      const name = (path ? basename(path) : (projectId ? 'workspace' : 'repo')) || 'workspace';
-      await downloadAndShare(projectArchiveUrl(projectId, ref_, path || undefined), `${name}.zip`, true);
+      const name = (path ? basename(path) : (workspaceId ? 'workspace' : 'repo')) || 'workspace';
+      await downloadAndShare(workspaceArchiveUrl(workspaceId, ref_, path || undefined), `${name}.zip`, true);
       haptics.tap();
     } catch (e: any) {
       Alert.alert('Download failed', e?.message || 'Could not download the archive.');
@@ -766,7 +766,7 @@ export function FilesNavPage({
               <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg, textAlign: 'center' }}>{path ? 'This folder is empty' : 'No files in this version'}</Text>
               {!path && (
                 <Text style={{ fontSize: 13, color: muted, textAlign: 'center', lineHeight: 19 }}>
-                  These are the project’s git files — they’re read-only here. To add or edit files, ask the agent in a session, or open a different version.
+                  These are the workspace’s git files — they’re read-only here. To add or edit files, ask the agent in a session, or open a different version.
                 </Text>
               )}
               <TouchableOpacity onPress={() => { haptics.tap(); filesQuery.refetch(); branchesQuery.refetch(); }} activeOpacity={0.7} style={{ marginTop: 4, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}>
@@ -869,7 +869,7 @@ export function FilesNavPage({
       {/* File viewer */}
       {viewerIndex != null && (
         <FileViewerModal
-          projectId={projectId}
+          workspaceId={workspaceId}
           ref_={ref_}
           files={fileRows}
           index={viewerIndex}

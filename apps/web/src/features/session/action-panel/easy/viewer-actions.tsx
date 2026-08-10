@@ -9,7 +9,7 @@
  * two copies that drift apart the first time either is touched.
  */
 
-import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
+import { PublicShareLinkButton } from '@/components/workspaces/public-share-link-button';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
@@ -20,7 +20,7 @@ import {
 
 /** Project-session ids a share link is scoped to. */
 export interface ShareContext {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }
 
@@ -47,7 +47,7 @@ export function ShareFileButton({
     // this row — the toolbar's uniformity contract requires every icon button
     // here to match its siblings exactly, so override all three.
     <PublicShareLinkButton
-      projectId={shareContext.projectId}
+      workspaceId={shareContext.workspaceId}
       sessionId={shareContext.sessionId}
       input={{ file: { label: fileName, path }, mode: 'view' }}
       tooltip="Copy a public view-only link"

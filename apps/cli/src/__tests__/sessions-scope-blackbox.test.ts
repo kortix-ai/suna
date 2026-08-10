@@ -27,7 +27,7 @@ function session() {
   return {
     session_id: SESSION_ID,
     account_id: ACCOUNT_ID,
-    project_id: PROJECT_ID,
+    workspace_id: PROJECT_ID,
     branch_name: SESSION_ID,
     base_ref: "main",
     sandbox_provider: "daytona",
@@ -104,27 +104,27 @@ beforeEach(() => {
       requests.push(entry);
       if (
         request.method === "GET" &&
-        url.pathname === `/v1/projects/${PROJECT_ID}/sessions`
+        url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions`
       ) {
         return Response.json([session()]);
       }
       if (
         request.method === "GET" &&
-        url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`
+        url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`
       ) {
         return Response.json(session());
       }
       if (
         request.method === "GET" &&
         url.pathname ===
-          `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/scope`
+          `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/scope`
       ) {
         return Response.json(currentScope);
       }
       if (
         request.method === "PUT" &&
         url.pathname ===
-          `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/scope`
+          `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/scope`
       ) {
         const body = entry.body as {
           secrets?: string[] | null;
@@ -200,11 +200,11 @@ describe("kortix sessions scope", () => {
     expect(requests).toEqual([
       {
         method: "GET",
-        path: `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
+        path: `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`,
       },
       {
         method: "GET",
-        path: `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/scope`,
+        path: `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/scope`,
       },
     ]);
   });
@@ -215,8 +215,8 @@ describe("kortix sessions scope", () => {
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(currentScope);
     expect(requests).toEqual([
-      { method: "GET", path: `/v1/projects/${PROJECT_ID}/sessions` },
-      { method: "GET", path: `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/scope` },
+      { method: "GET", path: `/v1/workspaces/${PROJECT_ID}/sessions` },
+      { method: "GET", path: `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/scope` },
     ]);
   });
 
@@ -245,7 +245,7 @@ describe("kortix sessions scope", () => {
     });
     expect(requests.at(-1)).toEqual({
       method: "PUT",
-      path: `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/scope`,
+      path: `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/scope`,
       body: {
         secrets: ["MAIL_KEY", "BILLING_KEY"],
         connector_bindings: { gmail: { connection_id: "AUTH-NEW" } },

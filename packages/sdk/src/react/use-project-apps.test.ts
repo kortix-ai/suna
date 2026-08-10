@@ -11,14 +11,29 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { appDeploymentsKey, projectAppsKey, useAppAccess, useAppDeployments, useProjectApps } =
-  await import('./use-project-apps');
+const {
+  appDeploymentsKey,
+  projectAppsKey,
+  useAppAccess,
+  useAppDeployments,
+  useProjectApps,
+  useWorkspaceApps,
+  workspaceAppsKey,
+} = await import('./use-project-apps');
 
 beforeEach(() => {
   invalidated = [];
 });
 
 describe('Kortix Apps React Query bindings', () => {
+  test('exposes Workspace bindings while preserving Project aliases', () => {
+    expect(workspaceAppsKey).toBe(projectAppsKey);
+    expect(useWorkspaceApps).toBe(useProjectApps);
+    expect((useWorkspaceApps('workspace-1') as any).queryKey).toEqual(
+      qk.workspace.apps('workspace-1'),
+    );
+  });
+
   test('uses stable project and App scoped query keys', () => {
     expect((useProjectApps('project-1') as any).queryKey).toEqual(projectAppsKey('project-1'));
     expect((useProjectApps(null) as any).enabled).toBe(false);

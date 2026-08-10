@@ -14,7 +14,7 @@ import { makeOpenApiApp, errors } from '../openapi';
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 interface StatePayload {
-  projectId: string;
+  workspaceId: string;
   userId: string;
   exp: number;
   nonce: string;
@@ -41,19 +41,19 @@ function verifyState(token: string): StatePayload | null {
   try {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as StatePayload;
     if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
-    if (typeof payload.projectId !== 'string' || typeof payload.userId !== 'string') return null;
+    if (typeof payload.workspaceId !== 'string' || typeof payload.userId !== 'string') return null;
     return payload;
   } catch {
     return null;
   }
 }
 
-export function buildSlackInstallUrl(projectId: string, userId: string): string {
+export function buildSlackInstallUrl(workspaceId: string, userId: string): string {
   const mode = slackOauthMode();
   if (!mode.available || !mode.clientId) {
     throw new Error('Slack OAuth is not configured on this server.');
   }
-  const state = signState({ projectId, userId, exp: Date.now() + STATE_TTL_MS });
+  const state = signState({ workspaceId, userId, exp: Date.now() + STATE_TTL_MS });
   const params = new URLSearchParams({
     client_id: mode.clientId,
     scope: mode.scopes,
@@ -93,7 +93,7 @@ slackOauthApp.openapi(
   const state = c.req.query('state');
   const slackError = c.req.query('error');
   const payload = state ? verifyState(state) : null;
-  if (slackError) return redirectToDashboard(c, { projectId: payload?.projectId, error: slackError });
+  if (slackError) return redirectToDashboard(c, { workspaceId: payload?.workspaceId, error: slackError });
   if (!code || !state) return c.json({ error: 'Missing code or state' }, 400);
   if (!payload) return c.json({ error: 'Invalid or expired state' }, 400);
 
@@ -114,52 +114,52 @@ slackOauthApp.openapi(
     tokenJson = (await tokenRes.json()) as SlackOauthResponse;
   } catch (err) {
     console.error('[slack-oauth] token exchange failed', {
-      projectId: payload.projectId,
+      workspaceId: payload.workspaceId,
       error: (err as Error).message,
     });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'oauth_exchange_failed' });
+    return redirectToDashboard(c, { workspaceId: payload.workspaceId, error: 'oauth_exchange_failed' });
   }
   if (!tokenJson.ok || !tokenJson.access_token || !tokenJson.team?.id) {
     return redirectToDashboard(c, {
-      projectId: payload.projectId,
+      workspaceId: payload.workspaceId,
       error: tokenJson.error ?? 'oauth_exchange_failed',
     });
   }
 
-  let project: { projectId: string } | undefined;
+  let workspace: { workspaceId: string } | undefined;
   try {
-    [project] = await db
-      .select({ projectId: projects.projectId })
+    [workspace] = await db
+      .select({ workspaceId: projects.workspaceId })
       .from(projects)
-      .where(eq(projects.projectId, payload.projectId))
+      .where(eq(projects.workspaceId, payload.workspaceId))
       .limit(1);
   } catch (err) {
-    console.error('[slack-oauth] project lookup failed', {
-      projectId: payload.projectId,
-      workspaceId: tokenJson.team.id,
+    console.error('[slack-oauth] workspace lookup failed', {
+      workspaceId: payload.workspaceId,
+      platformWorkspaceId: tokenJson.team.id,
       error: (err as Error).message,
     });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_lookup_failed' });
+    return redirectToDashboard(c, { workspaceId: payload.workspaceId, error: 'workspace_lookup_failed' });
   }
-  if (!project) {
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_not_found' });
+  if (!workspace) {
+    return redirectToDashboard(c, { workspaceId: payload.workspaceId, error: 'workspace_not_found' });
   }
 
   try {
     await saveSlackOauthInstall({
-      projectId: payload.projectId,
-      workspaceId: tokenJson.team.id,
+      workspaceId: payload.workspaceId,
+      platformWorkspaceId: tokenJson.team.id,
       botToken: tokenJson.access_token,
       botUserId: tokenJson.bot_user_id ?? '',
       teamName: tokenJson.team.name ?? null,
     });
   } catch (err) {
     console.error('[slack-oauth] install save failed', {
-      projectId: payload.projectId,
-      workspaceId: tokenJson.team.id,
+      workspaceId: payload.workspaceId,
+      platformWorkspaceId: tokenJson.team.id,
       error: (err as Error).message,
     });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'slack_install_save_failed' });
+    return redirectToDashboard(c, { workspaceId: payload.workspaceId, error: 'slack_install_save_failed' });
   }
 
   // Seed the installer's identity so the admin who just connected is linked
@@ -175,7 +175,7 @@ slackOauthApp.openapi(
       });
     } catch (err) {
       console.warn('[slack-oauth] installer identity seed failed', {
-        projectId: payload.projectId,
+        workspaceId: payload.workspaceId,
         error: (err as Error).message,
       });
     }
@@ -183,9 +183,9 @@ slackOauthApp.openapi(
 
   // Materialize the Slack channel connector so it appears in the Connector right
   // after connecting (best-effort; never blocks the redirect).
-  void reconcileChannelConnectors(payload.projectId);
+  void reconcileChannelConnectors(payload.workspaceId);
 
-  return redirectToDashboard(c, { projectId: payload.projectId, success: '1' });
+  return redirectToDashboard(c, { workspaceId: payload.workspaceId, success: '1' });
 },
 );
 
@@ -201,12 +201,12 @@ function redirectToDashboard(
   for (const [k, v] of Object.entries(qs)) {
     if (v) params.set(k, v);
   }
-  // Land on the real project page, then let the web shell open Customize from
+  // Land on the real workspace page, then let the web shell open Customize from
   // query params. The /customize shim renders null while client routing runs,
   // which is too fragile as an external OAuth callback target.
-  if (qs.projectId) params.set('customize', 'connectors');
-  const target = qs.projectId
-    ? `${base}/projects/${qs.projectId}?${params.toString()}`
+  if (qs.workspaceId) params.set('customize', 'connectors');
+  const target = qs.workspaceId
+    ? `${base}/workspaces/${qs.workspaceId}?${params.toString()}`
     : `${base}/?${params.toString()}`;
   return c.redirect(target, 302);
 }

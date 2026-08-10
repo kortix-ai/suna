@@ -94,7 +94,7 @@ export function serializePublicShare(row: PublicShareRow, token?: string) {
   return {
     share_id: row.shareId,
     session_id: row.sessionId,
-    project_id: row.projectId,
+    project_id: row.workspaceId,
     resource_type: row.resourceType as PublicShareResourceType,
     label: row.label,
     port: row.port,
@@ -123,7 +123,7 @@ export async function listPublicSharesForSession(sessionId: string) {
 
 export function buildPublicShareInsert(input: PublicShareInput, ctx: {
   sessionId: string;
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   userId: string;
 }) {
@@ -186,7 +186,7 @@ function parseExpiresAt(value: unknown): Date | null | false {
 
 export async function createPublicShare(input: PublicShareInput, ctx: {
   sessionId: string;
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   userId: string;
 }) {
@@ -201,7 +201,7 @@ export async function createPublicShare(input: PublicShareInput, ctx: {
       shareId,
       tokenHash: publicShareTokenHash(token),
       sessionId: built.values.sessionId,
-      projectId: built.values.projectId,
+      workspaceId: built.values.workspaceId,
       accountId: built.values.accountId,
       createdBy: built.values.userId,
       resourceType: built.values.resourceType,
@@ -250,7 +250,7 @@ export async function resolvePublicShare(token: string) {
     .select({
       shareId: projectSessionPublicShares.shareId,
       sessionId: projectSessionPublicShares.sessionId,
-      projectId: projectSessionPublicShares.projectId,
+      workspaceId: projectSessionPublicShares.workspaceId,
       accountId: projectSessionPublicShares.accountId,
       resourceType: projectSessionPublicShares.resourceType,
       label: projectSessionPublicShares.label,

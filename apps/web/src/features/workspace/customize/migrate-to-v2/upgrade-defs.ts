@@ -1,7 +1,7 @@
 /**
- * The project-upgrade registry — every one-off, agent-run upgrade the
+ * The workspace-upgrade registry — every one-off, agent-run upgrade the
  * Upgrades section can offer. An upgrade is nothing but a detection rule and
- * a seed prompt: running one mints a fresh session, the project's default
+ * a seed prompt: running one mints a fresh session, the workspace's default
  * agent makes the change, and the result lands as a change request for human
  * review (never merged by the agent). Adding a new upgrade = adding an entry
  * here; the view renders whatever is applicable.
@@ -10,20 +10,20 @@
 import type { ManifestVersion } from './manifest-version';
 import { MIGRATE_TO_V2_PROMPT } from './migration-prompt';
 
-export interface ProjectUpgradeContext {
+export interface WorkspaceUpgradeContext {
   /** `null` while the manifest read hasn't resolved. */
   manifestVersion: ManifestVersion | null;
 }
 
-export interface ProjectUpgrade {
+export interface WorkspaceUpgrade {
   id: string;
   title: string;
   description: string;
-  applicable: (ctx: ProjectUpgradeContext) => boolean;
+  applicable: (ctx: WorkspaceUpgradeContext) => boolean;
   prompt: string;
 }
 
-export const PROJECT_UPGRADES: readonly ProjectUpgrade[] = [
+export const WORKSPACE_UPGRADES: readonly WorkspaceUpgrade[] = [
   {
     id: 'manifest-v2',
     title: 'Migrate manifest to v2 (kortix.yaml)',
@@ -34,19 +34,19 @@ export const PROJECT_UPGRADES: readonly ProjectUpgrade[] = [
   },
 ];
 
-export function applicableUpgrades(ctx: ProjectUpgradeContext): readonly ProjectUpgrade[] {
-  return PROJECT_UPGRADES.filter((u) => u.applicable(ctx));
+export function applicableUpgrades(ctx: WorkspaceUpgradeContext): readonly WorkspaceUpgrade[] {
+  return WORKSPACE_UPGRADES.filter((u) => u.applicable(ctx));
 }
 
 /**
- * Wrap a freeform "just do this one thing to the project" request in the
+ * Wrap a freeform "just do this one thing to the workspace" request in the
  * landing contract every upgrade session must follow. The wrapper is what
  * makes a one-off prompt safe to fire-and-review: whatever the request says,
  * the session still validates, pushes, opens a CR, verifies it's non-empty,
  * and never merges.
  */
 export function buildOneOffUpgradePrompt(request: string): string {
-  return `Run a one-off, self-contained upgrade of this project. The goal:
+  return `Run a one-off, self-contained upgrade of this workspace. The goal:
 
 ${request.trim()}
 

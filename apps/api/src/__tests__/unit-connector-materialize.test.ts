@@ -6,11 +6,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   connectorConfig,
   toPolicyRows,
-  toProjectPolicyRows,
+  toWorkspacePolicyRows,
 } from '../connectors/materialize';
-import { extractConnectors } from '../projects/connectors';
-import { extractProjectPolicies } from '../projects/policies';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { extractConnectors } from '../workspaces/connectors';
+import { extractWorkspacePolicies } from '../workspaces/policies';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../workspaces/triggers';
 
 function specFrom(body: string) {
   const m = parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`);
@@ -137,7 +137,7 @@ spec = "https://x/y.json"
   });
 });
 
-describe('toProjectPolicyRows', () => {
+describe('toWorkspacePolicyRows', () => {
   test('top-level [[policies]] preserves order as position', () => {
     const m = parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}
 [project]
@@ -151,8 +151,8 @@ action = "block"
 match = "stripe.*"
 action = "require_approval"
 `);
-    const parsed = extractProjectPolicies(m);
-    expect(toProjectPolicyRows(parsed.policies)).toEqual([
+    const parsed = extractWorkspacePolicies(m);
+    expect(toWorkspacePolicyRows(parsed.policies)).toEqual([
       { match: '*.delete*', action: 'block', position: 0 },
       { match: 'stripe.*', action: 'require_approval', position: 1 },
     ]);

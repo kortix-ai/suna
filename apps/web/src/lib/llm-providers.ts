@@ -1,5 +1,5 @@
 /**
- * LLM-provider catalog for the per-project Provider Modal.
+ * LLM-provider catalog for the per-workspace Provider Modal.
  *
  * *** DATA SOURCE — baked SEED, live OVERRIDE ***
  * The module initializes from a slim BAKED snapshot of models.dev's
@@ -21,7 +21,7 @@
  * seed — reassigning the exported bindings below (ES module bindings are
  * live: existing `import { LLM_PROVIDERS }` call sites read the CURRENT
  * value on every access, no re-import needed). Until a live fetch lands (or
- * on a project whose caller doesn't fetch it, e.g. non-browser contexts),
+ * on a workspace whose caller doesn't fetch it, e.g. non-browser contexts),
  * the baked seed is what's served — never a hard failure.
  *
  * Provider display names, doc URLs, and hints are rendered VERBATIM from

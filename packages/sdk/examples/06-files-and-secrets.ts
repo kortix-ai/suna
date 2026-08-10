@@ -22,16 +22,16 @@ import { createKortix } from '../src/index';
 async function main() {
   const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
   const apiKey = process.env.KORTIX_API_KEY;
-  const projectId = process.env.KORTIX_PROJECT_ID;
+  const workspaceId = process.env.KORTIX_PROJECT_ID;
   const sessionId = process.env.KORTIX_SESSION_ID;
 
-  if (!apiKey || !projectId || !sessionId) {
+  if (!apiKey || !workspaceId || !sessionId) {
     console.error('Set KORTIX_API_KEY, KORTIX_PROJECT_ID, and KORTIX_SESSION_ID and re-run.');
     process.exit(1);
   }
 
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
 
   // Every `session.files.*` call auto-provisions the runtime via
   // `ensureReady()` internally — no explicit `ensureReady()` call needed here.
@@ -49,11 +49,11 @@ async function main() {
 
   // Project secret — scoped to the project, available to every session's
   // agent (not just this one) unless further restricted via `agentScope`.
-  await kortix.project(projectId).secrets.upsert({
+  await kortix.project(workspaceId).secrets.upsert({
     name: 'EXAMPLE_API_KEY',
     value: 'sk-example-do-not-use',
   });
-  const secrets = await kortix.project(projectId).secrets.list();
+  const secrets = await kortix.project(workspaceId).secrets.list();
   console.log(
     `\nProject now has ${secrets.items.length} secret(s): ${secrets.items.map((s) => s.name).join(', ')}`,
   );

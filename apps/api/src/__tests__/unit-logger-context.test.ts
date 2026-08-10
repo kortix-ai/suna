@@ -61,7 +61,7 @@ describe('managed structured logger', () => {
       () => {
         setContextField('userId', 'user-1');
         setContextField('accountId', 'account-1');
-        setContextField('projectId', 'project-1');
+        setContextField('workspaceId', 'project-1');
         setContextField('sessionId', 'session-1');
 
         logger.info('Request completed: POST /v1/projects/project-1/sessions/session-1 201 42ms', {

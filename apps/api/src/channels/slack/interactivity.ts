@@ -2,13 +2,13 @@ import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { loadSlackTokenForProject } from '../install-store';
+import { loadSlackTokenForWorkspace } from '../install-store';
 import { updateMessage } from '../slack-api';
 import { backfillChannelName, dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
 import { createSlackAccessRequest, notifyAdminsOfAccessRequest, resolveSlackActor } from './identity';
 import { parseReviewActionId, reviewVerbToVerdict, type ReviewVerb } from './review-cards';
-import { applyVerdict, getReviewItemById } from '../../projects/review-items';
-import { isAdaptedId } from '../../projects/review-adapters';
+import { applyVerdict, getReviewItemById } from '../../workspaces/review-items';
+import { isAdaptedId } from '../../workspaces/review-adapters';
 import { decideSlackThreadJoin } from './participants';
 import { attachPendingSlackAuthResponseUrl } from './auth-resume';
 import { verifyLoginState } from './login';
@@ -44,11 +44,11 @@ async function handleAgentClick(
   });
 
   const [thread] = await db
-    .select({ projectId: chatThreads.projectId })
+    .select({ workspaceId: chatThreads.workspaceId })
     .from(chatThreads)
     .where(and(
       eq(chatThreads.platform, 'slack'),
-      eq(chatThreads.workspaceId, teamId),
+      eq(chatThreads.platformWorkspaceId, teamId),
       eq(chatThreads.threadId, threadTs),
     ))
     .limit(1);
@@ -73,7 +73,7 @@ async function handleAgentClick(
     team_id: teamId,
     event,
   };
-  await spawnAgentTurn(thread.projectId, envelope, event);
+  await spawnAgentTurn(thread.workspaceId, envelope, event);
 }
 
 // A click on one of the agent's `question` options (rendered as buttons by
@@ -110,11 +110,11 @@ async function handleQuestionAnswer(
   });
 
   const [thread] = await db
-    .select({ projectId: chatThreads.projectId })
+    .select({ workspaceId: chatThreads.workspaceId })
     .from(chatThreads)
     .where(and(
       eq(chatThreads.platform, 'slack'),
-      eq(chatThreads.workspaceId, teamId),
+      eq(chatThreads.platformWorkspaceId, teamId),
       eq(chatThreads.threadId, threadTs),
     ))
     .limit(1);
@@ -135,7 +135,7 @@ async function handleQuestionAnswer(
     team: teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
-  await spawnAgentTurn(thread.projectId, envelope, event);
+  await spawnAgentTurn(thread.workspaceId, envelope, event);
 }
 
 // A click on a Review Center card button (rendered by buildReviewCardBlocks,
@@ -169,19 +169,19 @@ async function handleReviewAction(
     return;
   }
 
-  // Resolve the thread → its project so we can scope the item + the actor.
+  // Resolve the thread to its workspace so we can scope the item and actor.
   const [thread] = await db
-    .select({ projectId: chatThreads.projectId })
+    .select({ workspaceId: chatThreads.workspaceId })
     .from(chatThreads)
     .where(and(
       eq(chatThreads.platform, 'slack'),
-      eq(chatThreads.workspaceId, teamId),
+      eq(chatThreads.platformWorkspaceId, teamId),
       eq(chatThreads.threadId, threadTs),
     ))
     .limit(1);
   if (!thread) return;
 
-  const item = await getReviewItemById(parsed.id, thread.projectId);
+  const item = await getReviewItemById(parsed.id, thread.workspaceId);
   if (!item) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
@@ -190,22 +190,22 @@ async function handleReviewAction(
     return;
   }
 
-  // The actor must be a linked Kortix user with write access to this project.
+  // The actor must be a linked Kortix user with write access to this workspace.
   // Self-approve is allowed (launcher or any editor) — there's no separation-of-
   // duties gate. No live mapping → nudge to connect / request access.
-  const actor = await resolveSlackActor(teamId, slackUserId, item.accountId, thread.projectId);
+  const actor = await resolveSlackActor(teamId, slackUserId, item.accountId, thread.workspaceId);
   if ('reason' in actor) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
       text:
         actor.reason === 'unlinked'
           ? 'Connect your Kortix account first (`/kortix login`) to act on reviews.'
-          : "You don't have access to act on this project's reviews.",
+          : "You don't have access to act on this workspace's reviews.",
     });
     return;
   }
 
-  await applyVerdict(parsed.id, thread.projectId, {
+  await applyVerdict(parsed.id, thread.workspaceId, {
     verdict,
     feedback: null,
     actingUserId: actor.userId,
@@ -244,63 +244,63 @@ async function handleReviewAction(
     team: teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
-  await spawnAgentTurn(thread.projectId, envelope, event);
+  await spawnAgentTurn(thread.workspaceId, envelope, event);
 }
 
-async function handleSwitchProject(payload: SlackInteractionPayload, rawValue: string): Promise<void> {
+async function handleSwitchWorkspace(payload: SlackInteractionPayload, rawValue: string): Promise<void> {
   let value: { p?: string; c?: string };
   try {
     value = JSON.parse(rawValue || '{}') as { p?: string; c?: string };
   } catch {
     return;
   }
-  const projectId = value.p;
+  const workspaceId = value.p;
   const channelId = value.c ?? payload.channel?.id;
   const teamId = payload.team?.id ?? '';
-  if (!projectId || !channelId || !teamId) return;
+  if (!workspaceId || !channelId || !teamId) return;
 
   const [install] = await db
     .select({ id: chatInstalls.installId })
     .from(chatInstalls)
     .where(and(
       eq(chatInstalls.platform, 'slack'),
-      eq(chatInstalls.workspaceId, teamId),
-      eq(chatInstalls.projectId, projectId),
+      eq(chatInstalls.platformWorkspaceId, teamId),
+      eq(chatInstalls.workspaceId, workspaceId),
     ))
     .limit(1);
   if (!install) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
       replace_original: true,
-      text: 'That project is no longer connected to this workspace.',
+      text: 'That workspace is no longer connected to this workspace.',
     });
     return;
   }
 
   await db
     .insert(chatChannelBindings)
-    .values({ platform: 'slack', workspaceId: teamId, channelId, projectId, pickerTs: null })
+    .values({ platform: 'slack', platformWorkspaceId: teamId, channelId, workspaceId, pickerTs: null })
     .onConflictDoUpdate({
-      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
-      set: { projectId, pickerTs: null },
+      target: [chatChannelBindings.platform, chatChannelBindings.platformWorkspaceId, chatChannelBindings.channelId],
+      set: { workspaceId, pickerTs: null },
     });
-  await backfillChannelName(teamId, channelId, projectId);
+  await backfillChannelName(teamId, channelId, workspaceId);
 
-  const [p] = await db
+  const [workspace] = await db
     .select({ name: projects.name })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
 
   await respondViaUrl(payload.response_url, {
     response_type: 'ephemeral',
     replace_original: true,
-    text: `Switched this channel to *${p?.name ?? 'project'}*.`,
+    text: `Switched this channel to *${workspace?.name ?? 'workspace'}*.`,
   });
 }
 
 // Pick an agent/model from the `/kortix agents` or `/kortix models` picker.
-// The value carries the channel + selection ('' = clear → project default).
+// The value carries the channel + selection ('' = clear → workspace default).
 async function handleSetSelection(
   payload: SlackInteractionPayload,
   rawValue: string,
@@ -325,11 +325,11 @@ async function handleSetSelection(
       replace_original: true,
       text: !result.ok
         ? result.reason === 'unknown_agent'
-          ? `"${escapeMrkdwn(agentName ?? '')}" is not a declared agent in this project's manifest.`
-          : 'That channel is no longer bound to a project — run `/kortix switch` first.'
+          ? `"${escapeMrkdwn(agentName ?? '')}" is not a declared agent in this workspace's manifest.`
+          : 'That channel is no longer bound to a workspace — run `/kortix switch` first.'
         : agentName
           ? `✓ Agent for this channel set to *${escapeMrkdwn(agentName)}*. New sessions will use it.`
-          : '✓ Agent reset to the project default.',
+          : '✓ Agent reset to the workspace default.',
     });
     return;
   }
@@ -341,8 +341,8 @@ async function handleSetSelection(
       response_type: 'ephemeral',
       replace_original: true,
       text: ok
-        ? '✓ Model reset to the project default.'
-        : 'That channel is no longer connected to a project — run `/kortix` first.',
+        ? '✓ Model reset to the workspace default.'
+        : 'That channel is no longer connected to a workspace — run `/kortix` first.',
     });
     return;
   }
@@ -353,7 +353,7 @@ async function handleSetSelection(
     const servable = await isModelServableForAccount({
       userId: gate.ownerUserId,
       accountId: gate.accountId,
-      projectId: gate.projectId,
+      workspaceId: gate.workspaceId,
       freeModelsOnly: gate.freeManagedOnly,
       model: requested,
     });
@@ -373,11 +373,11 @@ async function handleSetSelection(
     replace_original: true,
     text: ok
       ? `✓ Model for this channel set to *${escapeMrkdwn(labelForModelRef(stored))}* (\`${escapeMrkdwn(stored)}\`). New sessions will use it.`
-      : 'That channel is no longer connected to a project — run `/kortix` first.',
+      : 'That channel is no longer connected to a workspace — run `/kortix` first.',
   });
 }
 
-// A `/kortix` panel "Change model/agent/project" button. Re-runs the matching
+// A `/kortix` panel "Change model/agent/workspace" button. Re-runs the matching
 // slash subcommand for the channel and replaces the panel with that picker, so
 // the whole config flow lives behind one command + inline buttons.
 async function handleConfigOpen(
@@ -419,11 +419,11 @@ export async function handleMessageShortcut(payload: SlackInteractionPayload): P
   }
 
   const [thread] = await db
-    .select({ sessionId: chatThreads.sessionId, projectId: chatThreads.projectId })
+    .select({ sessionId: chatThreads.sessionId, workspaceId: chatThreads.workspaceId })
     .from(chatThreads)
     .where(and(
       eq(chatThreads.platform, 'slack'),
-      eq(chatThreads.workspaceId, teamId),
+      eq(chatThreads.platformWorkspaceId, teamId),
       eq(chatThreads.threadId, threadTs),
     ))
     .limit(1);
@@ -435,7 +435,7 @@ export async function handleMessageShortcut(payload: SlackInteractionPayload): P
     return;
   }
 
-  const url = sessionWebUrl(config.FRONTEND_URL, thread.projectId, thread.sessionId);
+  const url = sessionWebUrl(config.FRONTEND_URL, thread.workspaceId, thread.sessionId);
   await respondViaUrl(payload.response_url, {
     response_type: 'ephemeral',
     blocks: [
@@ -457,21 +457,21 @@ export async function handleMessageShortcut(payload: SlackInteractionPayload): P
 }
 
 // "Request access" (the ephemeral nudge for a connected-but-no-access user) →
-// file a project access request and ping the account's admins. Replaces the
+// file a workspace access request and ping the account's admins. Replaces the
 // ephemeral in place via the interaction's response_url so the user gets an
 // immediate, only-visible-to-them confirmation.
 async function handleRequestAccess(payload: SlackInteractionPayload, value: string): Promise<void> {
   const teamId = payload.team?.id ?? '';
   const slackUserId = payload.user?.id ?? '';
-  let projectId = '';
+  let workspaceId = '';
   try {
-    projectId = (JSON.parse(value || '{}') as { projectId?: string }).projectId ?? '';
+    workspaceId = (JSON.parse(value || '{}') as { workspaceId?: string }).workspaceId ?? '';
   } catch {
-    projectId = '';
+    workspaceId = '';
   }
-  if (!teamId || !slackUserId || !projectId) return;
+  if (!teamId || !slackUserId || !workspaceId) return;
 
-  const result = await createSlackAccessRequest({ teamId, slackUserId, projectId });
+  const result = await createSlackAccessRequest({ teamId, slackUserId, workspaceId });
   const message =
     result.status === 'created'
       ? "Access requested ✓ — an admin will review it. Once you're approved, send your message again and I'll get on it."
@@ -485,7 +485,7 @@ async function handleRequestAccess(payload: SlackInteractionPayload, value: stri
   if (result.status === 'created') {
     await notifyAdminsOfAccessRequest({
       teamId,
-      projectId,
+      workspaceId,
       accountId: result.accountId,
       requesterUserId: result.requesterUserId,
       requesterSlackUserId: slackUserId,
@@ -502,7 +502,7 @@ async function handleThreadJoinDecision(
   const channelId = payload.channel?.id ?? '';
   const deciderSlackUserId = payload.user?.id ?? '';
   let parsed: {
-    projectId?: string;
+    workspaceId?: string;
     sessionId?: string;
     threadId?: string;
     requesterUserId?: string;
@@ -517,7 +517,7 @@ async function handleThreadJoinDecision(
     !teamId ||
     !channelId ||
     !deciderSlackUserId ||
-    !parsed.projectId ||
+    !parsed.workspaceId ||
     !parsed.sessionId ||
     !parsed.threadId ||
     !parsed.requesterUserId ||
@@ -534,7 +534,7 @@ async function handleThreadJoinDecision(
     teamId,
     channelId,
     deciderSlackUserId,
-    projectId: parsed.projectId,
+    workspaceId: parsed.workspaceId,
     sessionId: parsed.sessionId,
     threadId: parsed.threadId,
     requesterUserId: parsed.requesterUserId,
@@ -687,7 +687,7 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
   }
 
   if (action.action_id.startsWith('switch_project_')) {
-    await handleSwitchProject(payload, action.value ?? '');
+    await handleSwitchWorkspace(payload, action.value ?? '');
     return;
   }
 
@@ -707,13 +707,13 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
     return;
   }
   const pickerId = value.k;
-  const projectId = value.p;
+  const workspaceId = value.p;
   const teamId = payload.team?.id ?? '';
   const channelId = payload.channel?.id ?? '';
   const pickerTs = payload.message?.ts ?? '';
-  if (!pickerId || !projectId || !teamId || !channelId) return;
+  if (!pickerId || !workspaceId || !teamId || !channelId) return;
 
-  const token = await loadSlackTokenForProject(projectId);
+  const token = await loadSlackTokenForWorkspace(workspaceId);
 
   const stillInstalled = await db
     .select({ id: chatInstalls.installId })
@@ -721,8 +721,8 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
     .where(
       and(
         eq(chatInstalls.platform, 'slack'),
-        eq(chatInstalls.workspaceId, teamId),
-        eq(chatInstalls.projectId, projectId),
+        eq(chatInstalls.platformWorkspaceId, teamId),
+        eq(chatInstalls.workspaceId, workspaceId),
       ),
     )
     .limit(1);
@@ -732,7 +732,7 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
         token,
         channelId,
         pickerTs,
-        'That project is no longer connected here — @mention me again to pick another.',
+        'That workspace is no longer connected here — @mention me again to pick another.',
       );
     }
     return;
@@ -740,19 +740,19 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
 
   await db
     .update(chatChannelBindings)
-    .set({ projectId, pickerTs: null })
+    .set({ workspaceId, pickerTs: null })
     .where(
       and(
         eq(chatChannelBindings.platform, 'slack'),
-        eq(chatChannelBindings.workspaceId, teamId),
+        eq(chatChannelBindings.platformWorkspaceId, teamId),
         eq(chatChannelBindings.channelId, channelId),
       ),
     );
 
-  const [proj] = await db
+  const [workspace] = await db
     .select({ name: projects.name })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
   if (token && pickerTs) {
     // DM channel ids start with 'D' — a <#D…> mention renders as a dead link
@@ -762,13 +762,13 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
       token,
       channelId,
       pickerTs,
-      `✓ Linked ${target} to *${proj?.name ?? 'project'}*.`,
+      `✓ Linked ${target} to *${workspace?.name ?? 'workspace'}*.`,
     );
   }
 
   const pending = pendingPickers.get(pickerId);
   if (pending) {
     pendingPickers.delete(pickerId);
-    await dispatchSlackEvent(projectId, pending.envelope);
+    await dispatchSlackEvent(workspaceId, pending.envelope);
   }
 }

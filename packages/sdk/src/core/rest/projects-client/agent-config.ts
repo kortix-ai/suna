@@ -78,10 +78,10 @@ export interface AgentConfigResponse {
   block: AgentConfigBlock | null;
 }
 
-export async function getAgentConfig(projectId: string, agentName: string) {
+export async function getAgentConfig(workspaceId: string, agentName: string) {
   const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
-      `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
+      `/projects/${workspaceId}/agents/${encodeURIComponent(agentName)}/config`,
     ),
   );
   return {
@@ -91,7 +91,7 @@ export async function getAgentConfig(projectId: string, agentName: string) {
 }
 
 export async function updateAgentConfig(
-  projectId: string,
+  workspaceId: string,
   agentName: string,
   block: AgentConfigBlock,
 ) {
@@ -102,7 +102,7 @@ export async function updateAgentConfig(
       agent: string;
       schema_version: number;
       block: AgentConfigBlock | null;
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
+    }>(`/projects/${workspaceId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
   );
   return {
     ...response,
@@ -149,10 +149,10 @@ export interface UpdateProjectDefaultAgentResponse {
 }
 
 /** Set the declared project default in `kortix.yaml` (v2 projects). */
-export async function updateProjectDefaultAgent(projectId: string, agentName: string) {
+export async function updateProjectDefaultAgent(workspaceId: string, agentName: string) {
   return unwrap(
     await backendApi.put<UpdateProjectDefaultAgentResponse>(
-      `/projects/${projectId}/default-agent`,
+      `/projects/${workspaceId}/default-agent`,
       { agent: agentName },
     ),
   );

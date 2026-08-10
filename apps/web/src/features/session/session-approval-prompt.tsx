@@ -10,14 +10,14 @@
  *     and nothing else — no recipient, no subject — so "is this allowed?" could
  *     not actually be judged. Whether a call is safe depends on its ARGUMENTS.
  *  2. It offered one-click escape hatches — "Allow for session", "Allow
- *     everything", and a persistent "Always allow <tool>" that wrote a project
+ *     everything", and a persistent "Always allow <tool>" that wrote a workspace
  *     policy. Each let the reflex click that clears today's prompt silently
  *     pre-authorise every later call, including ones with entirely different
  *     arguments. An approval that is waived in one click is not a control.
  *
  * The decision moved to the standalone /approve/<token> page (minted per gated
  * call, mirroring how secret-entry links work): it shows the redacted arguments,
- * requires a signed-in account with authority on the project, and offers exactly
+ * requires a signed-in account with authority on the workspace, and offers exactly
  * Approve / Deny for that one call. The same link works when relayed
  * out-of-band, so the human need not be watching the session.
  *
@@ -80,12 +80,12 @@ function argsSummary(action: SessionAuditAction): string | null {
 }
 
 export function SessionApprovalPrompt() {
-  const { id: projectId, sessionId: projectSessionId } = useParams<{
+  const { id: workspaceId, sessionId: workspaceSessionId } = useParams<{
     id: string;
     sessionId: string;
   }>();
   // Poll faster while the callback decision is pending.
-  const { data } = useSessionAudit(projectId, projectSessionId, { refetchInterval: 5_000 });
+  const { data } = useSessionAudit(workspaceId, workspaceSessionId, { refetchInterval: 5_000 });
 
   const pending = (data?.actions ?? []).filter(isPendingAction);
   if (pending.length === 0) return null;

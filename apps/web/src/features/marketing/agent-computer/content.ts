@@ -54,7 +54,7 @@ export const boot = {
     {
       n: '01',
       title: 'The repo clones',
-      body: 'The machine clones the project repo into /workspace. Your agents, skills, memory, connectors and triggers arrive with it, because all of them are files in that repo.',
+      body: 'The machine clones the workspace repo into /workspace. Your agents, skills, memory, connectors and triggers arrive with it, because all of them are files in that repo.',
     },
     {
       n: '02',
@@ -122,7 +122,7 @@ export const declared = {
   yaml: {
     title: 'kortix.yaml',
     lines: [
-      '# the machine every session of this project boots',
+      '# the machine every session of this workspace boots',
       'kortix_version: 2',
       'runtime: opencode',
       '',
@@ -164,7 +164,7 @@ export const declared = {
     ],
   },
   notes: [
-    'One image per project, or a named image per agent.',
+    'One image per workspace, or a named image per agent.',
     'The default image already carries the Kortix runtime layer.',
     'Change the image the way you change any other file: in a change request.',
   ],
@@ -176,7 +176,11 @@ export const files = {
   sub: 'Agents, skills, memory, connectors and triggers are not rows in a database you cannot see. They are files and config in the repo the machine cloned — readable by a person, editable by an agent, versioned like code.',
   tree: [
     { path: 'your-company/', note: '', depth: 0 },
-    { path: 'kortix.yaml', note: 'sandbox image, triggers, channels, connectors, secrets', depth: 1 },
+    {
+      path: 'kortix.yaml',
+      note: 'sandbox image, triggers, channels, connectors, secrets',
+      depth: 1,
+    },
     { path: '.kortix/opencode/', note: 'the runtime your agents think in', depth: 1 },
     { path: 'agents/', note: 'one OpenCode agent per file', depth: 2 },
     { path: 'skills/', note: 'how this company does a specific job', depth: 2 },

@@ -25,13 +25,13 @@ import * as realPreviewOwnership from '../shared/preview-ownership';
 const TEST_USER_ID = '00000000-0000-4000-a000-000000000001';
 const TEST_SANDBOX_ID = 'sandbox-abc-123';
 const TEST_SESSION_SANDBOX_ID = '11111111-1111-4111-8111-111111111111';
-const TEST_PROJECT_ID = '33333333-3333-4333-8333-333333333333';
+const TEST_WORKSPACE_ID = '33333333-3333-4333-8333-333333333333';
 const TEST_SERVICE_KEY = 'test-service-key-123';
 const TEST_PORT = 8080;
 
 let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
-  projectId: TEST_PROJECT_ID,
+  workspaceId: TEST_WORKSPACE_ID,
   accountId: 'account-001',
   agentName: 'default',
   status: 'active',
@@ -121,7 +121,7 @@ mock.module('../shared/db', () => {
         // sandbox-field check below, since that query also selects `agentName`
         // (a field the sandbox-row query shape shares), which would otherwise
         // misclassify it as a sandbox-table query and starve resolveOwnerRawEnv.
-        const isProjectSessionQuery = fieldKeys.includes('createdBy');
+        const isWorkspaceSessionQuery = fieldKeys.includes('createdBy');
         // `wakeSandbox`'s deadline probe: a one-column projection of
         // session_sandboxes. It must be classified BEFORE the loose sandbox
         // check and served a LIVE deadline, otherwise every wake in this file is
@@ -130,12 +130,12 @@ mock.module('../shared/db', () => {
         const isDeadlineProbe = fieldKeys.length === 1 && fieldKeys[0] === 'deadlineAt';
         const isSandboxQuery =
           !isDeadlineProbe &&
-          !isProjectSessionQuery &&
+          !isWorkspaceSessionQuery &&
           fieldKeys.some((key) =>
             [
               'accountId',
               'sandboxId',
-              'projectId',
+              'workspaceId',
               'agentName',
               'status',
               'config',
@@ -146,7 +146,7 @@ mock.module('../shared/db', () => {
         const isMembershipQuery = fieldKeys.includes('accountRole');
 
         const rowsFor = (ordered = false): any[] => {
-          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
+          if (isWorkspaceSessionQuery) return [{ createdBy: TEST_USER_ID }];
           if (isDeadlineProbe) {
             return mockSandboxRows().length === 0
               ? []
@@ -203,7 +203,7 @@ mock.module('../shared/db', () => {
 // non-binding 'default' sentinel, and the no-round-trip ordinary turn — is pinned
 // in sandbox-proxy/routes/preview-agent-authz.test.ts.
 mock.module('../iam', () => ({
-  PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
+  WORKSPACE_ACTIONS: { WORKSPACE_AGENT_READ: 'project.agent.read' },
   authorize: async () => ({ allowed: true, reason: 'project_role' }),
 }));
 
@@ -236,7 +236,7 @@ mock.module('../shared/preview-ownership', () => ({
   // combinedAuth is bypassed in this suite (see above), so no project-scoped
   // PAT ever reaches this — stub so the real module's shape stays satisfied
   // for anything that imports it.
-  resolveSandboxProjectId: async () => null,
+  resolveSandboxWorkspaceId: async () => null,
 }));
 
 // Daytona SDK mock
@@ -331,14 +331,14 @@ mock.module('../config', () => ({
   },
 }));
 
-mock.module('../projects/secrets', () => {
-  const snapshot = (projectId: string) => ({
+mock.module('../workspaces/secrets', () => {
+  const snapshot = (workspaceId: string) => ({
     env: {
       OPENROUTER_API_KEY: 'sk-live',
       SENTRY_DSN: 'https://example.test/1',
     },
     names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
-    revision: `rev-${projectId}`,
+    revision: `rev-${workspaceId}`,
   });
   // mock.module REPLACES the module wholesale — an export omitted here is a
   // SyntaxError for anything else in the graph that imports it, which takes the
@@ -356,28 +356,28 @@ mock.module('../projects/secrets', () => {
     secretsAllowlistPayloadConflicts: () => false,
     isValidIdentifier: () => true,
     identifierKeyConflicts: () => false,
-    encryptProjectSecret: (_projectId: string, value: string) => value,
-    decryptProjectSecret: (_projectId: string, value: string) => value,
-    writeSharedProjectSecret: async () => ({}),
-    listResolvedProjectSecrets: async () => [],
-    listProjectSecrets: async (projectId: string) => snapshot(projectId).env,
-    listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
-    listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
-    listProjectSecretNamesForConsumer: async () => [],
-    listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
+    encryptWorkspaceSecret: (_projectId: string, value: string) => value,
+    decryptWorkspaceSecret: (_projectId: string, value: string) => value,
+    writeSharedWorkspaceSecret: async () => ({}),
+    listResolvedWorkspaceSecrets: async () => [],
+    listWorkspaceSecrets: async (workspaceId: string) => snapshot(workspaceId).env,
+    listWorkspaceSecretsForUser: async (workspaceId: string) => snapshot(workspaceId).env,
+    listWorkspaceSecretsSnapshot: async (workspaceId: string) => snapshot(workspaceId),
+    listWorkspaceSecretNamesForConsumer: async () => [],
+    listWorkspaceSecretsSnapshotForUser: async (workspaceId: string) => snapshot(workspaceId),
     materializeSecretDelivery: async () => undefined,
-    projectSecretIsConfiguredForConsumer: async () => false,
-    projectSecretsRevision: (env: Record<string, string>) =>
+    workspaceSecretIsConfiguredForConsumer: async () => false,
+    workspaceSecretsRevision: (env: Record<string, string>) =>
       `rev-${Object.keys(env).sort().join('-')}`,
-    getProjectSecretValue: async () => null,
-    getProjectSecretValueForConsumer: async () => null,
-    resolveProjectSecretForConsumer: async () => null,
-    resolveProjectSecretsForConsumer: async () => ({}),
+    getWorkspaceSecretValue: async () => null,
+    getWorkspaceSecretValueForConsumer: async () => null,
+    resolveWorkspaceSecretForConsumer: async () => null,
+    resolveWorkspaceSecretsForConsumer: async () => ({}),
     withholdUndeliverable: () => undefined,
   };
 });
 
-mock.module('../projects/opencode-session-snapshot', () => ({
+mock.module('../workspaces/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: (input: Record<string, unknown>) => {
     mockSnapshotSyncCalls.push(input);
   },
@@ -387,8 +387,8 @@ mock.module('../projects/opencode-session-snapshot', () => ({
 // (that is the part the proxy actually decides) and capture only the generator
 // call, whose own idempotency/CAS is covered by unit + integration tests.
 let mockTitleCalls: Array<Record<string, unknown>> = [];
-const realTitleGenerate = await import('../projects/session-title-generate');
-mock.module('../projects/session-title-generate', () => ({
+const realTitleGenerate = await import('../workspaces/session-title-generate');
+mock.module('../workspaces/session-title-generate', () => ({
   ...realTitleGenerate,
   generateSessionTitleFromFirstPrompt: async (input: Record<string, unknown>) => {
     mockTitleCalls.push(input);
@@ -499,7 +499,7 @@ beforeEach(() => {
   mockDbSandbox = {
     sandboxId: TEST_SESSION_SANDBOX_ID,
     sessionId: '22222222-2222-4222-8222-222222222222',
-    projectId: TEST_PROJECT_ID,
+    workspaceId: TEST_WORKSPACE_ID,
     accountId: 'account-001',
     status: 'active',
     config: { serviceKey: TEST_SERVICE_KEY },
@@ -900,7 +900,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockTitleCalls).toEqual([
       {
         sessionId: mockDbSandbox.sessionId,
-        projectId: TEST_PROJECT_ID,
+        workspaceId: TEST_WORKSPACE_ID,
         accountId: mockDbSandbox.accountId,
         userId: TEST_USER_ID,
         firstPromptText: 'set up the MS Graph connector',

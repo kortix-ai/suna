@@ -28,11 +28,11 @@ export interface SecretRequestLink {
 
 /** Mint a link a human opens to enter one or more secret values. */
 export async function requestProjectSecret(
-  projectId: string,
+  workspaceId: string,
   input: RequestProjectSecretInput,
 ): Promise<SecretRequestLink> {
   return unwrap(
-    await backendApi.post<SecretRequestLink>(`/projects/${projectId}/secret-requests`, {
+    await backendApi.post<SecretRequestLink>(`/projects/${workspaceId}/secret-requests`, {
       names: input.names,
       labels: input.labels,
       descriptions: input.descriptions,
@@ -59,11 +59,11 @@ export interface ConnectorRequestLink {
 
 /** Mint a link a human opens to 1-click connect a Pipedream app (Quick Connect). */
 export async function requestProjectConnector(
-  projectId: string,
+  workspaceId: string,
   input: RequestProjectConnectorInput,
 ): Promise<ConnectorRequestLink> {
   return unwrap(
-    await backendApi.post<ConnectorRequestLink>(`/projects/${projectId}/connect-requests`, {
+    await backendApi.post<ConnectorRequestLink>(`/projects/${workspaceId}/connect-requests`, {
       slug: input.slug,
       expires_in_minutes: input.expiresInMinutes,
     }),

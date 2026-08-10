@@ -96,13 +96,13 @@ interface PreviewUrlResponse {
 
 async function resolvePreviewUrl({
   wrapperMode,
-  projectId,
+  workspaceId,
   sessionId,
   preview,
   targetUrl,
 }: {
   wrapperMode: boolean;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   preview?: { port: number; path: string };
   targetUrl?: string;
@@ -115,7 +115,7 @@ async function resolvePreviewUrl({
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({
-      projectId,
+      workspaceId,
       sessionId,
       ...(preview ? { preview } : {}),
       ...(targetUrl ? { targetUrl } : {}),
@@ -133,18 +133,18 @@ async function resolvePreviewUrl({
 }
 
 export function PreviewPanel({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   const qc = useQueryClient();
   const wrapperMode = useWrapperMode();
-  const session = useMemo(() => kortix.session(projectId, sessionId), [projectId, sessionId]);
+  const session = useMemo(() => kortix.session(workspaceId, sessionId), [workspaceId, sessionId]);
 
-  const previewsKey = ['session-previews', projectId, sessionId];
-  const sharesKey = ['session-shares', projectId, sessionId];
+  const previewsKey = ['session-previews', workspaceId, sessionId];
+  const sharesKey = ['session-shares', workspaceId, sessionId];
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -186,7 +186,7 @@ export function PreviewPanel({
   const previewUrlQuery = useQuery({
     queryKey: [
       'preview-url',
-      projectId,
+      workspaceId,
       sessionId,
       selected?.id,
       selected?.port,
@@ -197,7 +197,7 @@ export function PreviewPanel({
       if (!selected) throw new Error('No preview selected');
       return resolvePreviewUrl({
         wrapperMode,
-        projectId,
+        workspaceId,
         sessionId,
         preview: { port: selected.port, path: selected.path || '/' },
       });
@@ -213,7 +213,7 @@ export function PreviewPanel({
     mutationFn: async ({ targetUrl, popup }: { targetUrl: string; popup: Window }) => {
       const resolved = await resolvePreviewUrl({
         wrapperMode,
-        projectId,
+        workspaceId,
         sessionId,
         targetUrl,
       });

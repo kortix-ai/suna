@@ -10,7 +10,7 @@ import {
   getGitHubAppInstallation,
   listLinkableGitHubAppInstallations,
   verifyGitHubInstallationAdmin,
-} from '../projects/github';
+} from '../workspaces/github';
 import { runWithContext } from '../lib/request-context';
 
 const originalFetch = globalThis.fetch;

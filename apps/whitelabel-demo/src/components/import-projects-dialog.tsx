@@ -45,14 +45,14 @@ export function ImportProjectsDialog() {
   });
 
   const importProject = useMutation({
-    mutationFn: async (projectId: string) => {
+    mutationFn: async (workspaceId: string) => {
       const res = await fetch('/api/projects/import', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId }),
+        body: JSON.stringify({ project_id: workspaceId }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Import failed');
-      return projectId;
+      return workspaceId;
     },
     onSuccess: () => {
       toast.success('Project imported');

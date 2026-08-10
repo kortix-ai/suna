@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 
 import { logger } from './logger'
-import type { ProjectEnvStore } from './project-env'
+import type { WorkspaceSecretEnvStore } from './workspace-secret-env'
 
 // tmpfs (RAM-backed) so plaintext secrets never land on the persisted container
 // disk — Daytona hibernate/archive keeps the disk, /dev/shm is never captured.
@@ -41,6 +41,7 @@ const SHELL_SESSION_CREDS = [
   'KORTIX_CLI_TOKEN',
   'KORTIX_SANDBOX_TOKEN',
   'KORTIX_CLI_TOKEN',
+  'KORTIX_WORKSPACE_ID',
   'KORTIX_PROJECT_ID',
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',
@@ -79,7 +80,7 @@ function atomicWrite(file: string, contents: string): boolean {
 }
 
 function bootSecretNames(bootEnv: NodeJS.ProcessEnv): string[] {
-  return (bootEnv.KORTIX_PROJECT_SECRET_NAMES ?? '')
+  return (bootEnv.KORTIX_WORKSPACE_SECRET_NAMES ?? bootEnv.KORTIX_PROJECT_SECRET_NAMES ?? '')
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean)
@@ -140,7 +141,7 @@ function renderShellEnv(
 }
 
 export function writeAgentEnvFile(
-  store: ProjectEnvStore,
+  store: WorkspaceSecretEnvStore,
   opts: { sh?: string; bootEnv?: NodeJS.ProcessEnv } = {},
 ): boolean {
   const snapshot = store.snapshot()

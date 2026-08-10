@@ -2,7 +2,7 @@ import { loadAuth } from '../api/auth.ts';
 import {
   accountLabel,
   activeAccount,
-  defaultProject,
+  defaultWorkspace,
   setActiveAccount,
 } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
@@ -15,7 +15,7 @@ const HELP = help`Usage: kortix accounts <subcommand> [options]
 
 Switch the active account within the current host. One Kortix login can
 belong to many accounts (your personal account, a company account, …);
-exactly one is "active" — every account-scoped command (\`projects ls\`,
+exactly one is "active" — every account-scoped command (\`workspaces ls\`,
 \`ship\`, …) operates on it unless overridden. To switch instance instead,
 use \`kortix hosts use\`; to sign in, \`kortix hosts login\`.
 
@@ -32,7 +32,7 @@ Global options:
 Examples:
   kortix accounts ls
   kortix accounts use kortix
-  kortix projects ls          # lists the active account's projects
+  kortix workspaces ls        # lists the active account's workspaces
 `;
 
 export async function runAccounts(argv: string[]): Promise<number> {
@@ -179,8 +179,8 @@ async function accountsUse(arg?: string): Promise<number> {
     target = picked;
   }
 
-  // Capture whether switching will orphan the current default project.
-  const prevDefault = defaultProject();
+  // Capture whether switching will orphan the current default workspace.
+  const prevDefault = defaultWorkspace();
   setActiveAccount({ id: target.account_id, slug: target.slug, name: target.name });
 
   process.stdout.write(
@@ -188,8 +188,8 @@ async function accountsUse(arg?: string): Promise<number> {
   );
   if (prevDefault && prevDefault.account_id !== target.account_id) {
     process.stdout.write(
-      `  ${C.dim}Cleared default project ${prevDefault.name ?? prevDefault.project_id} (it lived in another account).${C.reset}\n` +
-        `  ${C.dim}Set a new one with ${C.reset}${C.cyan}kortix projects use <id>${C.reset}\n`,
+      `  ${C.dim}Cleared default workspace ${prevDefault.name ?? prevDefault.workspace_id} (it lived in another account).${C.reset}\n` +
+        `  ${C.dim}Set a new one with ${C.reset}${C.cyan}kortix workspaces use <id>${C.reset}\n`,
     );
   }
   return 0;

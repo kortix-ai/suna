@@ -9,6 +9,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
+  computersCatalogEntry,
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
@@ -54,7 +55,7 @@ export interface CatalogState {
 
 /**
  * The catalogue behind the Discovery and All tabs, from whichever of the two
- * sources this project actually has.
+ * sources this workspace actually has.
  *
  * **Why two sources.** `connectors_api_discover` resolves to `false` by
  * default (`apps/api/src/experimental/features.ts:83`, asserted in
@@ -96,7 +97,7 @@ export interface CatalogState {
  * loop that has to be broken.
  */
 export function useCatalog(
-  projectId: string,
+  workspaceId: string,
   query: string,
   opts: {
     enabled: boolean;
@@ -110,9 +111,9 @@ export function useCatalog(
   const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
 
   const discoverQuery = useInfiniteQuery({
-    queryKey: ['discover-connectors', projectId, activeQuery],
+    queryKey: ['discover-connectors', workspaceId, activeQuery],
     queryFn: ({ pageParam }) =>
-      listDiscoverConnectors(projectId, activeQuery || undefined, pageParam as string | undefined),
+      listDiscoverConnectors(workspaceId, activeQuery || undefined, pageParam as string | undefined),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,
@@ -121,9 +122,9 @@ export function useCatalog(
   });
 
   const easyConnectQuery = useInfiniteQuery({
-    queryKey: ['easy-connect-apps', projectId, activeQuery],
+    queryKey: ['easy-connect-apps', workspaceId, activeQuery],
     queryFn: ({ pageParam }) =>
-      listPipedreamApps(projectId, activeQuery || undefined, pageParam as string | undefined),
+      listPipedreamApps(workspaceId, activeQuery || undefined, pageParam as string | undefined),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 60_000,
@@ -134,15 +135,26 @@ export function useCatalog(
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
 
   const entries = useMemo(() => {
+    const native = computersCatalogEntry();
+    const includeComputers =
+      !activeQuery ||
+      `${native.name} ${native.description ?? ''}`
+        .toLowerCase()
+        .includes(activeQuery.toLowerCase());
+    const nativeEntries = includeComputers ? [native] : [];
     if (source === 'discover') {
-      return (discoverQuery.data?.pages ?? [])
-        .flatMap((page) => page.items)
-        .map(catalogEntryFromDiscover);
+      return nativeEntries.concat(
+        (discoverQuery.data?.pages ?? [])
+          .flatMap((page) => page.items)
+          .map(catalogEntryFromDiscover),
+      );
     }
-    return (easyConnectQuery.data?.pages ?? [])
-      .flatMap((page) => page.apps)
-      .map(catalogEntryFromEasyConnect);
-  }, [source, discoverQuery.data, easyConnectQuery.data]);
+    return nativeEntries.concat(
+      (easyConnectQuery.data?.pages ?? [])
+        .flatMap((page) => page.apps)
+        .map(catalogEntryFromEasyConnect),
+    );
+  }, [activeQuery, source, discoverQuery.data, easyConnectQuery.data]);
 
   const {
     fetchNextPage,
@@ -173,7 +185,8 @@ export function useCatalog(
         hasNextPage,
         isFetchingNextPage,
         isPlaceholderData,
-        focus: focusCategory === null ? null : { loaded: focusLoaded, target: CATALOG_FOCUS_TARGET },
+        focus:
+          focusCategory === null ? null : { loaded: focusLoaded, target: CATALOG_FOCUS_TARGET },
         initialPages: CATALOG_INITIAL_PAGES,
         maxPages: CATALOG_AUTOLOAD_MAX_PAGES,
       })
@@ -210,7 +223,8 @@ export function useCatalog(
     source === 'discover'
       ? discoverQuery.data?.pages[0]?.total
       : easyConnectQuery.data?.pages[0]?.total;
-  const total = typeof reportedTotal === 'number' ? reportedTotal : entries.length;
+  const nativeCount = entries.some((entry) => entry.source === 'computer') ? 1 : 0;
+  const total = typeof reportedTotal === 'number' ? reportedTotal + nativeCount : entries.length;
 
   return {
     entries,

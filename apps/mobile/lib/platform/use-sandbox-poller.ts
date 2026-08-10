@@ -17,7 +17,7 @@ import {
   STAGE_DURATION_MS,
   type ProvisioningStageInfo,
 } from './provisioning-stages';
-import { findProjectSessionSandbox } from './client';
+import { findWorkspaceSessionSandbox } from './client';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -185,7 +185,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
   const fetchStatus = useCallback(async (): Promise<StatusResponse | null> => {
     if (!sandboxId) return null;
     try {
-      const row = await findProjectSessionSandbox(sandboxId || externalId || undefined);
+      const row = await findWorkspaceSessionSandbox(sandboxId || externalId || undefined);
       if (!row) {
         return { status: 'not_found', stage: null, stageProgress: 0, stageMessage: 'Session not found', machineInfo: null, stages: null, startedAt: null };
       }

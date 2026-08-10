@@ -76,42 +76,42 @@ import {
 } from './scope-bar-model';
 
 export function ScopeBar({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   const router = useRouter();
   const qc = useQueryClient();
 
   const session = useQuery({
-    queryKey: qk.session(projectId, sessionId),
+    queryKey: qk.session(workspaceId, sessionId),
     queryFn: () =>
-      kortix.session(projectId, sessionId).get({ showErrors: false }),
+      kortix.session(workspaceId, sessionId).get({ showErrors: false }),
     retry: false,
   });
   const secrets = useQuery({
-    queryKey: qk.secrets(projectId),
-    queryFn: () => kortix.project(projectId).secrets.list(),
+    queryKey: qk.secrets(workspaceId),
+    queryFn: () => kortix.project(workspaceId).secrets.list(),
     retry: false,
   });
   const scope = useQuery({
-    queryKey: qk.sessionScope(projectId, sessionId),
-    queryFn: () => kortix.session(projectId, sessionId).scope(),
+    queryKey: qk.sessionScope(workspaceId, sessionId),
+    queryFn: () => kortix.session(workspaceId, sessionId).scope(),
     retry: false,
   });
-  const connectors = useConnectorBindingChoices(projectId);
+  const connectors = useConnectorBindingChoices(workspaceId);
   // Same query key the switcher inside the popover uses, so this label is the
   // switcher's own answer rather than a second opinion — and costs no second
   // request. The upstream field is named after the runtime, which is why this
   // goes through the neutral route instead of the SDK.
   const model = useQuery({
-    queryKey: ['session-model', projectId, sessionId],
+    queryKey: ['session-model', workspaceId, sessionId],
     queryFn: async () => {
       const token = getSessionToken();
       const res = await fetch(
-        `/api/session-model?projectId=${encodeURIComponent(projectId)}&sessionId=${encodeURIComponent(sessionId)}`,
+        `/api/session-model?workspaceId=${encodeURIComponent(workspaceId)}&sessionId=${encodeURIComponent(sessionId)}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
       );
       if (!res.ok) return { model: null as string | null };
@@ -163,7 +163,7 @@ export function ScopeBar({
   const start = useMutation({
     mutationFn: async () => {
       const nextId = generateSessionId();
-      await kortix.project(projectId).sessions.create(
+      await kortix.project(workspaceId).sessions.create(
         buildSessionCreateInput(
           // The agent comes along too, or "with this scope" would quietly drop
           // the one part of the scope that is already right.
@@ -179,8 +179,8 @@ export function ScopeBar({
       return nextId;
     },
     onSuccess: (nextId) => {
-      invalidateSessions(qc, projectId);
-      router.push(`/projects/${projectId}/sessions/${nextId}`);
+      invalidateSessions(qc, workspaceId);
+      router.push(`/projects/${workspaceId}/sessions/${nextId}`);
     },
     onError: (err) => {
       const failure = sessionCreateFailure(err);
@@ -199,7 +199,7 @@ export function ScopeBar({
         throw new Error('The current session scope is not available');
       }
       return kortix
-        .session(projectId, sessionId)
+        .session(workspaceId, sessionId)
         .rescope(
           buildCompleteSessionScopeReplacement(authoritativeScope, patch),
         );
@@ -221,7 +221,7 @@ export function ScopeBar({
           body.detail ?? 'Scope updated — applies from the next prompt.',
         );
       }
-      qc.setQueryData(qk.sessionScope(projectId, sessionId), body);
+      qc.setQueryData(qk.sessionScope(workspaceId, sessionId), body);
       setDraftSecrets(undefined);
       setDraftBindings(undefined);
     },
@@ -508,7 +508,7 @@ export function ScopeBar({
         {startAction}
         {/* The call behind the control, next to the control — the demo's job is
             to teach what to send, and re-scoping is the least obvious of these. */}
-        <CallSnippet id="session.rescope" context={{ projectId, sessionId }} />
+        <CallSnippet id="session.rescope" context={{ workspaceId, sessionId }} />
       </ScopeChip>
 
       <ScopeChip
@@ -590,7 +590,7 @@ export function ScopeBar({
           </div>
         )}
         {startAction}
-        <CallSnippet id="session.rescope" context={{ projectId, sessionId }} />
+        <CallSnippet id="session.rescope" context={{ workspaceId, sessionId }} />
       </ScopeChip>
 
       <ScopeChip
@@ -602,7 +602,7 @@ export function ScopeBar({
         note={scopeControl('model').note}
       >
         <div className="-ml-2 mt-2">
-          <ModelSwitcher projectId={projectId} sessionId={sessionId} />
+          <ModelSwitcher workspaceId={workspaceId} sessionId={sessionId} />
         </div>
       </ScopeChip>
     </div>

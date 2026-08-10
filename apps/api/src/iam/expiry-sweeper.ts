@@ -99,7 +99,7 @@ async function runOnce(): Promise<void> {
       ),
     )
     .returning({
-      projectId: projectMembers.projectId,
+      workspaceId: projectMembers.workspaceId,
       userId: projectMembers.userId,
       accountId: projectMembers.accountId,
       projectRole: projectMembers.projectRole,
@@ -113,7 +113,7 @@ async function runOnce(): Promise<void> {
         actorUserId: null, // system event
         action: 'iam.project.member.expired',
         resourceType: 'project_member',
-        resourceId: `${m.projectId}:${m.userId}`,
+        resourceId: `${m.workspaceId}:${m.userId}`,
         before: {
           project_role: m.projectRole,
           expires_at: m.expiresAt?.toISOString() ?? null,
@@ -139,7 +139,7 @@ async function runOnce(): Promise<void> {
       ),
     )
     .returning({
-      projectId: projectGroupGrants.projectId,
+      workspaceId: projectGroupGrants.workspaceId,
       groupId: projectGroupGrants.groupId,
       accountId: projectGroupGrants.accountId,
       role: projectGroupGrants.role,
@@ -153,7 +153,7 @@ async function runOnce(): Promise<void> {
         actorUserId: null,
         action: 'iam.project.group.expired',
         resourceType: 'project_group_grant',
-        resourceId: `${g.projectId}:${g.groupId}`,
+        resourceId: `${g.workspaceId}:${g.groupId}`,
         before: {
           role: g.role,
           expires_at: g.expiresAt?.toISOString() ?? null,

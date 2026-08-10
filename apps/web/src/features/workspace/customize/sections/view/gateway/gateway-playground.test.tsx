@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { GatewayPlaygroundResult } from '@/lib/projects-gateway-client';
+import type { GatewayPlaygroundResult } from '@/lib/workspaces-gateway-client';
 
 import { fmtLatency, PlaygroundResultCard } from './gateway-playground';
 

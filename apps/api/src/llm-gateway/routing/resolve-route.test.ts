@@ -63,15 +63,15 @@ describe('gateway control-plane route resolver', () => {
     expect(explicit.primaryModel).toBe('explicit-text-model');
   });
 
-  test('project exact rules override the project default chain and unmatched explicit models stay direct', async () => {
-    const projectResolver = createGatewayRouteResolver({
+  test('workspace exact rules override the workspace default chain and unmatched explicit models stay direct', async () => {
+    const workspaceResolver = createGatewayRouteResolver({
       defaultModel: 'platform-default',
       visionModel: 'platform-vision',
       policies: [],
       supportsImage: () => false,
-      getProjectPolicy: async () => ({
-        visionModel: 'project-vision',
-        defaultFallback: { models: ['project-fallback'], fallbackOn: 'any-error' },
+      getWorkspacePolicy: async () => ({
+        visionModel: 'workspace-vision',
+        defaultFallback: { models: ['workspace-fallback'], fallbackOn: 'any-error' },
         rules: [{
           model: 'explicit-primary',
           fallbackModels: ['specific-fallback'],
@@ -80,7 +80,7 @@ describe('gateway control-plane route resolver', () => {
       }),
     });
 
-    expect(await projectResolver({ ...principal, projectId: 'p1' }, {
+    expect(await workspaceResolver({ ...principal, workspaceId: 'p1' }, {
       requestedModel: 'explicit-primary',
       requires: { imageInput: false },
     })).toEqual({
@@ -92,7 +92,7 @@ describe('gateway control-plane route resolver', () => {
       generationDefaultsForModel: expect.any(Function),
     });
 
-    expect(await projectResolver({ ...principal, projectId: 'p1' }, {
+    expect(await workspaceResolver({ ...principal, workspaceId: 'p1' }, {
       requestedModel: 'unmatched-primary',
       requires: { imageInput: false },
     })).toEqual({
@@ -105,45 +105,45 @@ describe('gateway control-plane route resolver', () => {
     });
   });
 
-  test('the concrete default uses project fallback and vision policies', async () => {
+  test('the concrete default uses workspace fallback and vision policies', async () => {
     let disabled = false;
-    const projectResolver = createGatewayRouteResolver({
+    const workspaceResolver = createGatewayRouteResolver({
       defaultModel: 'platform-default',
       visionModel: 'platform-vision',
       policies: [],
-      supportsImage: (model) => model === 'project-vision',
-      getProjectPolicy: async () => ({
-        visionModel: 'project-vision',
+      supportsImage: (model) => model === 'workspace-vision',
+      getWorkspacePolicy: async () => ({
+        visionModel: 'workspace-vision',
         defaultFallback: {
-          models: disabled ? [] : ['project-fallback'],
+          models: disabled ? [] : ['workspace-fallback'],
           fallbackOn: 'any-error',
         },
         rules: [],
       }),
     });
 
-    expect(await projectResolver({ ...principal, projectId: 'p1', defaultModel: 'project-default' }, {
-      requestedModel: 'project-default',
+    expect(await workspaceResolver({ ...principal, workspaceId: 'p1', defaultModel: 'workspace-default' }, {
+      requestedModel: 'workspace-default',
       requires: { imageInput: false },
     })).toEqual({
       policyId: 'project:default',
-      primaryModel: 'project-default',
-      fallbackModels: ['project-fallback'],
+      primaryModel: 'workspace-default',
+      fallbackModels: ['workspace-fallback'],
       fallbackOn: 'any-error',
       generationDefaults: undefined,
       generationDefaultsForModel: expect.any(Function),
     });
 
-    const vision = await projectResolver(
-      { ...principal, projectId: 'p1', defaultModel: 'text-only' },
+    const vision = await workspaceResolver(
+      { ...principal, workspaceId: 'p1', defaultModel: 'text-only' },
       { requestedModel: 'text-only', requires: { imageInput: true } },
     );
-    expect(vision.primaryModel).toBe('project-vision');
-    expect(vision.fallbackModels).toEqual(['project-fallback']);
+    expect(vision.primaryModel).toBe('workspace-vision');
+    expect(vision.fallbackModels).toEqual(['workspace-fallback']);
 
     disabled = true;
-    const noFallback = await projectResolver(
-      { ...principal, projectId: 'p1' },
+    const noFallback = await workspaceResolver(
+      { ...principal, workspaceId: 'p1' },
       { requestedModel: 'platform-default', requires: { imageInput: false } },
     );
     expect(noFallback.fallbackModels).toEqual([]);
@@ -152,7 +152,7 @@ describe('gateway control-plane route resolver', () => {
 });
 
 describe('gateway control-plane route resolver — generation-defaults clamping', () => {
-  const genPrincipal = { ...principal, projectId: 'p1' };
+  const genPrincipal = { ...principal, workspaceId: 'p1' };
 
   const reasoningModel = {
     id: 'reasoning-model',
@@ -169,7 +169,7 @@ describe('gateway control-plane route resolver — generation-defaults clamping'
       visionModel: 'model-vision',
       policies: [],
       supportsImage: () => true,
-      getProjectPolicy: async () => ({
+      getWorkspacePolicy: async () => ({
         visionModel: null,
         defaultFallback: null,
         rules: [],
@@ -229,7 +229,7 @@ describe('gateway control-plane route resolver — generation-defaults clamping'
       visionModel: 'model-vision',
       policies: [],
       supportsImage: () => true,
-      getProjectPolicy: async () => ({
+      getWorkspacePolicy: async () => ({
         visionModel: null,
         defaultFallback: null,
         rules: [],

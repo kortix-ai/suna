@@ -40,7 +40,7 @@ A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials stay server-side.
 
 ```ts
-const connectors = kortix.project(projectId).connectors;
+const connectors = kortix.workspace(workspaceId).connectors;
 
 await connectors.catalog();
 await connectors.search('send email');
@@ -48,16 +48,16 @@ await connectors.describe('gmail.send_email');
 await connectors.call('gmail.send_email', { to, subject, body });
 ```
 
-An agent-minted session token already carries its project scope. Use
-`kortix.connectors` when the agent does not have a separate `projectId` value.
+An agent-minted session token already carries its workspace scope. Use
+`kortix.connectors` when the agent does not have a separate `workspaceId` value.
 
 ## Start your first session
 
-1. Create a session in your project.
+1. Create a session in your workspace.
 
    ```ts
-   const created = await kortix.project(projectId).sessions.create();
-   const session = kortix.session(projectId, created.session_id);
+   const created = await kortix.workspace(workspaceId).sessions.create();
+   const session = kortix.session(workspaceId, created.session_id);
    ```
 
 2. Wait for the sandbox to accept work.
@@ -76,7 +76,7 @@ An agent-minted session token already carries its project scope. Use
 
    `send()` calls `ensureReady()` for you, then sends the message.
 
-`createKortix` gives you an imperative client: call methods for every action, like projects, sessions, secrets, and triggers. `@kortix/sdk/react` gives you hooks for live UI data — `useSession` runs a whole session in one hook.
+`createKortix` gives you an imperative client for workspaces, sessions, secrets, and triggers. The legacy `projects` and `project(id)` surfaces remain available for compatibility. `@kortix/sdk/react` gives you hooks for live UI data — `useSession` runs a whole session in one hook.
 
 <Cards>
   <Card title="Full example" href="/docs/sdk/example">

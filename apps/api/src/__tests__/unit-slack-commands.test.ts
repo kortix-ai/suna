@@ -17,7 +17,7 @@ mock.module('../shared/db', () => ({
 }));
 
 // Controllable selection layer.
-let selection: unknown = { projectId: 'p1', agentName: null, opencodeModel: null };
+let selection: unknown = { workspaceId: 'p1', agentName: null, opencodeModel: null };
 let setAgentResult: { ok: true } | { ok: false; reason: 'no_binding' | 'unknown_agent' } = { ok: true };
 let setModelResult = true;
 const setAgentCalls: Array<string | null> = [];
@@ -26,7 +26,7 @@ mock.module('../channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
   setChannelAgent: async (_ctx: unknown, a: string | null) => { setAgentCalls.push(a); return setAgentResult; },
   setChannelModel: async (_ctx: unknown, m: string | null) => { setModelCalls.push(m); return setModelResult; },
-  listProjectAgents: async () => [{ name: 'reviewer', description: 'Reviews code', mode: null }],
+  listWorkspaceAgents: async () => [{ name: 'reviewer', description: 'Reviews code', mode: null }],
   RECOMMENDED_MODELS: [
     { id: 'anthropic/claude-opus-4-8', label: 'Claude Opus 4.8', hint: 'Most capable' },
     { id: 'openai/gpt-5.5', label: 'GPT-5.5', hint: 'OpenAI flagship' },
@@ -37,20 +37,20 @@ mock.module('../channels/slack/selection', () => ({
 }));
 
 // Model decisions no longer read a hardcoded RECOMMENDED_MODELS list off the
-// selection module. They resolve the channel's project/account through
+// selection module. They resolve the channel's workspace/account through
 // `model-gate`, then list the REAL served catalog (managed + connected BYOK)
 // through the picker, so a pick can never 404. Mock that graph — mocking only
 // `selection` leaves `channelModelContext` unmocked, it returns null against no
-// DB, and every model command answers "connect a project first" instead of
+// DB, and every model command answers "connect a workspace first" instead of
 // exercising what these tests are about.
 let modelGate: unknown = {
-  projectId: 'p1',
+  workspaceId: 'p1',
   accountId: 'a1',
   ownerUserId: 'u1',
   freeManagedOnly: false,
 };
 mock.module('../channels/slack/model-gate', () => ({
-  // The gate follows the binding: an unbound channel has no project.
+  // The gate follows the binding: an unbound channel has no workspace.
   channelModelContext: async () => (selection ? modelGate : null),
 }));
 let servable = true;
@@ -70,7 +70,7 @@ mock.module('../llm-gateway/models/picker', () => ({
       },
       { id: 'kortix/glm-5.2', label: 'GLM 5.2', provider: 'kortix', managed: true, hint: null },
     ],
-    projectDefault: { model: 'kortix/glm-5.2', source: 'project', label: 'GLM 5.2' },
+    workspaceDefault: { model: 'kortix/glm-5.2', source: 'project', label: 'GLM 5.2' },
   }),
   labelForModelRef: (id: string) =>
     id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id,
@@ -111,7 +111,7 @@ function actionIds(resp: any): string[] {
 beforeEach(() => {
   dbResults = [];
   identityRow = null;
-  selection = { projectId: 'p1', agentName: null, opencodeModel: null };
+  selection = { workspaceId: 'p1', agentName: null, opencodeModel: null };
   setAgentResult = { ok: true };
   setModelResult = true;
   setAgentCalls.length = 0;
@@ -137,6 +137,20 @@ describe('unknown subcommand', () => {
   test('points at help', async () => {
     const resp = await handleSlashCommand('frobnicate', '', ctx);
     expect(resp.text).toContain('Unknown subcommand');
+  });
+});
+
+describe('/kortix workspaces compatibility', () => {
+  test('uses workspaces as the canonical list command', async () => {
+    dbResults = [[]];
+    const resp = await handleSlashCommand('workspaces', '', ctx);
+    expect(allText(resp)).toContain('No Kortix workspaces connected yet');
+  });
+
+  test('keeps projects as a legacy list-command alias', async () => {
+    dbResults = [[]];
+    const resp = await handleSlashCommand('projects', '', ctx);
+    expect(allText(resp)).toContain('No Kortix workspaces connected yet');
   });
 });
 
@@ -166,8 +180,8 @@ describe('identity feature gated OFF', () => {
 });
 
 describe('/kortix models', () => {
-  test('renders a picker of recommended models + a project-default reset', async () => {
-    selection = { projectId: 'p1', agentName: null, opencodeModel: 'anthropic/claude-opus-4-8' };
+  test('renders a picker of recommended models + a workspace-default reset', async () => {
+    selection = { workspaceId: 'p1', agentName: null, opencodeModel: 'anthropic/claude-opus-4-8' };
     const resp = await handleSlashCommand('models', '', ctx);
     const ids = actionIds(resp);
     expect(ids).toContain('set_model_default');
@@ -178,7 +192,7 @@ describe('/kortix models', () => {
   test('unbound channel → prompts to connect one', async () => {
     selection = null;
     const resp = await handleSlashCommand('models', '', ctx);
-    expect(allText(resp)).toContain('No project is connected to this channel yet');
+    expect(allText(resp)).toContain('No workspace is connected to this channel yet');
   });
 });
 
@@ -210,7 +224,7 @@ describe('/kortix model <id>', () => {
   test('unbound channel → prompts to connect one, no write', async () => {
     selection = null;
     const resp = await handleSlashCommand('model', 'anthropic/claude-opus-4-8', ctx);
-    expect(resp.text).toContain('Connect a project first');
+    expect(resp.text).toContain('Connect a workspace first');
     expect(setModelCalls.length).toBe(0);
   });
 });
@@ -230,7 +244,7 @@ describe('/kortix agent <name>', () => {
     expect(resp.text).toContain('Usage');
     expect(setAgentCalls.length).toBe(0);
   });
-  test('unknown agent in a governed project → clear error, not the generic "bind a project" message', async () => {
+  test('unknown agent in a governed workspace → clear error, not the generic "bind a workspace" message', async () => {
     setAgentResult = { ok: false, reason: 'unknown_agent' };
     const resp = await handleSlashCommand('agent', 'ghost', ctx);
     expect(resp.text).toContain('is not a declared agent');
@@ -239,7 +253,7 @@ describe('/kortix agent <name>', () => {
   test('no binding → prompts to switch', async () => {
     setAgentResult = { ok: false, reason: 'no_binding' };
     const resp = await handleSlashCommand('agent', 'reviewer', ctx);
-    expect(resp.text).toContain('Bind a project first');
+    expect(resp.text).toContain('Bind a workspace first');
   });
 });
 
@@ -261,7 +275,7 @@ describe('/kortix session (singular)', () => {
     const ids = actionIds(resp);
     expect(ids).toContain('session_open');
     const txt = allText(resp);
-    expect(txt).toContain('/projects/p1/sessions/sess-9');
+    expect(txt).toContain('/workspaces/p1/sessions/sess-9');
     expect(txt).toContain('running');
   });
   test('no sessions yet → empty state', async () => {
@@ -272,15 +286,15 @@ describe('/kortix session (singular)', () => {
   test('unbound channel → prompts to switch', async () => {
     selection = null;
     const resp = await handleSlashCommand('session', '', ctx);
-    expect(allText(resp)).toContain('No project bound');
+    expect(allText(resp)).toContain('No workspace bound');
   });
 });
 
 describe('/kortix whoami', () => {
   test('surfaces the current agent + model', async () => {
-    selection = { projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' };
-    // whoami also fetches the project row.
-    dbResults = [[{ projectId: 'p1', name: 'Proj', repoUrl: 'https://github.com/o/r' }]];
+    selection = { workspaceId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' };
+    // whoami also fetches the workspace row.
+    dbResults = [[{ workspaceId: 'p1', name: 'Proj', repoUrl: 'https://github.com/o/r' }]];
     const resp = await handleSlashCommand('whoami', '', ctx);
     const txt = allText(resp);
     expect(txt).toContain('reviewer');

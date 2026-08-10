@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { readFileSync } from "node:fs";
 
 let invalidated: unknown[][] = [];
 mock.module("@tanstack/react-query", () => ({
@@ -18,7 +19,16 @@ beforeEach(() => {
 });
 
 describe("useGatewayRoutingPolicy", () => {
-  test("uses a stable project-scoped query key and disables without a project", () => {
+  test("binds to the canonical Workspace REST client", () => {
+    const source = readFileSync(
+      new URL("./use-gateway-routing-policy.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain("../core/rest/workspaces-client");
+    expect(source).not.toContain("../core/rest/projects-client");
+  });
+
+  test("uses a stable workspace-scoped query key and disables without a workspace", () => {
     expect((useGatewayRoutingPolicy("P1") as any).queryKey).toEqual(
       gatewayRoutingPolicyKey("P1"),
     );

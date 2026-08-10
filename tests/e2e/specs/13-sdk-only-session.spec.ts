@@ -117,7 +117,7 @@ interface SessionStart {
 
 async function waitForReadySession(
   token: string,
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
 ): Promise<void> {
   const deadline = Date.now() + 10 * 60_000;
@@ -126,7 +126,7 @@ async function waitForReadySession(
     const result = await api<SessionStart>(
       token,
       'POST',
-      `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`,
+      `/projects/${workspaceId}/sessions/${sessionId}/start?wait_ms=8000`,
       {},
     );
     last = `${result.stage}:${result.sandbox?.status ?? 'none'}`;
@@ -149,7 +149,7 @@ test.describe.serial('13 — SDK-only web session', () => {
   let user: AuthUser;
   let auth: AuthSession;
   let accountId = '';
-  let projectId = '';
+  let workspaceId = '';
   let sessionId = '';
 
   test.beforeAll(async () => {
@@ -175,12 +175,12 @@ test.describe.serial('13 — SDK-only web session', () => {
       },
       201,
     );
-    projectId = project.project_id;
+    workspaceId = project.project_id;
     expect(readAccountTier(accountId)).toBe('tier_2_20');
     await api(
       auth.access_token,
       'PATCH',
-      `/projects/${projectId}/onboarding`,
+      `/projects/${workspaceId}/onboarding`,
       { completed: true },
     );
     expect(readAccountTier(accountId)).toBe('tier_2_20');
@@ -193,37 +193,37 @@ test.describe.serial('13 — SDK-only web session', () => {
     const defaults = await api<ModelDefaults>(
       auth.access_token,
       'GET',
-      `/projects/${projectId}/model-defaults`,
+      `/projects/${workspaceId}/model-defaults`,
     );
     expect(defaults.freeTier).toBe(false);
     expect(defaults.resolvedForCaller).toBeTruthy();
     const picker = await api<ModelPicker>(
       auth.access_token,
       'GET',
-      `/projects/${projectId}/model-picker`,
+      `/projects/${workspaceId}/model-picker`,
     );
     expect(Object.keys(picker.models).length).toBeGreaterThan(0);
 
     const session = await api<ProjectSession>(
       auth.access_token,
       'POST',
-      `/projects/${projectId}/sessions`,
+      `/projects/${workspaceId}/sessions`,
       {
         name: 'SDK-only browser session',
       },
       201,
     );
     sessionId = session.session_id;
-    await waitForReadySession(auth.access_token, projectId, sessionId);
+    await waitForReadySession(auth.access_token, workspaceId, sessionId);
   });
 
   test.afterAll(async () => {
-    if (projectId && sessionId) {
-      await api(auth.access_token, 'DELETE', `/projects/${projectId}/sessions/${sessionId}`)
+    if (workspaceId && sessionId) {
+      await api(auth.access_token, 'DELETE', `/projects/${workspaceId}/sessions/${sessionId}`)
         .catch(() => {});
     }
-    if (projectId) {
-      await api(auth.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+    if (workspaceId) {
+      await api(auth.access_token, 'DELETE', `/projects/${workspaceId}`).catch(() => {});
     }
     if (accountId) {
       execFileSync(
@@ -261,14 +261,14 @@ test.describe.serial('13 — SDK-only web session', () => {
       }
       if (
         request.method() === 'POST'
-        && url.pathname.endsWith(`/projects/${projectId}/sessions/${sessionId}/start`)
+        && url.pathname.endsWith(`/projects/${workspaceId}/sessions/${sessionId}/start`)
       ) {
         startRequests.push(request.url());
       }
     });
 
-    await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
-    await expect(page).toHaveURL(`/projects/${projectId}`);
+    await installBrowserSessionDirect(page, auth, `/projects/${workspaceId}`, authOptions);
+    await expect(page).toHaveURL(`/projects/${workspaceId}`);
     await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({
       timeout: 120_000,
     });
@@ -280,7 +280,7 @@ test.describe.serial('13 — SDK-only web session', () => {
     const sessions = await api<ProjectSession[]>(
       auth.access_token,
       'GET',
-      `/projects/${projectId}/sessions`,
+      `/projects/${workspaceId}/sessions`,
     );
     const session = sessions.find((item) => item.session_id === sessionId);
     const runtimeUrl = session?.sandbox_url;
@@ -294,7 +294,7 @@ test.describe.serial('13 — SDK-only web session', () => {
     await api(
       auth.access_token,
       'POST',
-      `/projects/${projectId}/sessions/${sessionId}/stop`,
+      `/projects/${workspaceId}/sessions/${sessionId}/stop`,
       {},
     );
     await expect
@@ -327,10 +327,10 @@ test.describe.serial('13 — SDK-only web session', () => {
       const url = new URL(request.url());
       return (
         request.method() === 'POST'
-        && url.pathname.endsWith(`/projects/${projectId}/sessions/${sessionId}/start`)
+        && url.pathname.endsWith(`/projects/${workspaceId}/sessions/${sessionId}/start`)
       );
     });
-    await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
+    await page.goto(`/projects/${workspaceId}/sessions/${sessionId}`, {
       waitUntil: 'domcontentloaded',
     });
     await explicitStart;
@@ -377,11 +377,11 @@ test.describe.serial('13 — SDK-only web session', () => {
     await installBrowserSessionDirect(
       page,
       auth,
-      `/projects/${projectId}/sessions/${sessionId}`,
+      `/projects/${workspaceId}/sessions/${sessionId}`,
       authOptions,
     );
 
-    await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
+    await expect(page).toHaveURL(`/projects/${workspaceId}/sessions/${sessionId}`);
     await expect(page.getByTestId('session-layout')).toBeVisible({ timeout: 120_000 });
     await expect(page.getByTestId('session-chat')).toBeVisible({ timeout: 120_000 });
     await expect(page.getByRole('button', { name: 'Agent picker' })).toBeVisible();
@@ -405,7 +405,7 @@ test.describe.serial('13 — SDK-only web session', () => {
     expect(failedKortixResponses).toEqual([]);
 
     await page.getByRole('button', { name: /^Files$/ }).click();
-    await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
+    await expect(page).toHaveURL(`/projects/${workspaceId}/sessions/${sessionId}`);
     await expect(page.getByText('kortix.yaml', { exact: true }).first()).toBeVisible({
       timeout: 60_000,
     });
@@ -430,10 +430,10 @@ test.describe.serial('13 — SDK-only web session', () => {
 
     const warmReady = page.waitForResponse((response) => (
       response.request().method() === 'POST'
-      && response.url().endsWith(`/projects/${projectId}/sessions/warm`)
+      && response.url().endsWith(`/projects/${workspaceId}/sessions/warm`)
       && response.status() === 200
     ));
-    await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
+    await installBrowserSessionDirect(page, auth, `/projects/${workspaceId}`, authOptions);
     await warmReady;
 
     const input = page.getByRole('textbox', { name: 'Message input' });
@@ -446,12 +446,12 @@ test.describe.serial('13 — SDK-only web session', () => {
 
     const mismatchResponse = page.waitForResponse((response) => (
       response.request().method() === 'POST'
-      && response.url().endsWith(`/projects/${projectId}/sessions/warm/claim`)
+      && response.url().endsWith(`/projects/${workspaceId}/sessions/warm/claim`)
       && response.status() === 409
     ));
     const fallbackCreate = page.waitForResponse((response) => (
       response.request().method() === 'POST'
-      && response.url().endsWith(`/projects/${projectId}/sessions`)
+      && response.url().endsWith(`/projects/${workspaceId}/sessions`)
       && response.status() === 201
     ));
     const startedAt = Date.now();
@@ -459,7 +459,7 @@ test.describe.serial('13 — SDK-only web session', () => {
     await mismatchResponse;
     await fallbackCreate;
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${projectId}/sessions/[0-9a-f-]+$`),
+      new RegExp(`/projects/${workspaceId}/sessions/[0-9a-f-]+$`),
       { timeout: 60_000 },
     );
     await expect(page.getByText('PONG', { exact: true }).last()).toBeVisible({

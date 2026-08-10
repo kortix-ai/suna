@@ -35,8 +35,8 @@ const SLUG = APP;
 // A stable external-user key so re-runs reuse an existing authorization.
 const PROJECT_KEY = process.env.PD_PROJECT_KEY ?? 'e2e-pipedream-live';
 
-function externalUserId(projectId: string, slug: string): string {
-  return `${projectId}:${slug}`;
+function externalUserId(workspaceId: string, slug: string): string {
+  return `${workspaceId}:${slug}`;
 }
 
 let passed = 0;

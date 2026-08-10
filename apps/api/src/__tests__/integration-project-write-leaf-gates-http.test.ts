@@ -4,7 +4,7 @@ import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { PROJECT_ACTIONS } from '../iam';
+import { WORKSPACE_ACTIONS } from '../iam';
 
 // Every capability checkbox must be authoritative: unchecking a leaf must DENY
 // its endpoint. These endpoints previously gated on a coarse floor only (or an
@@ -15,7 +15,7 @@ import { PROJECT_ACTIONS } from '../iam';
 // AGENT_GRANT_EXEMPT_ACTIONS — so the coarse floor always passes and only the
 // specific leaf gate is under test).
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
 const EDITOR = crypto.randomUUID();
 
@@ -28,7 +28,7 @@ beforeAll(async () => {
 
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'write-leaf-gate-test' });
   await db.insert(projects).values({
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     name: 'write-leaf-gate-test-project',
     repoUrl: 'https://example.com/write-leaf-gate-test.git',
@@ -42,8 +42,8 @@ beforeAll(async () => {
     { userId: EDITOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
   await db.insert(projectMembers).values([
-    { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: EDITOR, projectRole: 'editor' },
+    { accountId: ACCOUNT, workspaceId: WORKSPACE, userId: MEMBER, projectRole: 'member' },
+    { accountId: ACCOUNT, workspaceId: WORKSPACE, userId: EDITOR, projectRole: 'editor' },
   ]);
 });
 
@@ -59,7 +59,7 @@ async function mint(userId: string, kortixCli: string[] | null): Promise<string>
   const t = await createAccountToken({
     accountId: ACCOUNT,
     userId,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     name: 'write-leaf-gate-test',
     agentGrant: (kortixCli ? { agent: 'scoped-bot', kortixCli, connectors: [] } : null) as any,
   });
@@ -78,8 +78,8 @@ function req(method: string, path: string, secret: string, body?: unknown) {
   });
 }
 
-// An IAM denial (403) from either loadProjectForUser (floor) or
-// assertProjectCapability (leaf). Both phrase it distinctively; a non-IAM 403
+// An IAM denial (403) from either loadWorkspaceForUser (floor) or
+// assertWorkspaceCapability (leaf). Both phrase it distinctively; a non-IAM 403
 // (e.g. the "email is experimental" gate) matches none of these, so the ALLOW
 // cases can still 403 for an unrelated reason without being counted as a leaf
 // denial.
@@ -104,59 +104,59 @@ interface WCase {
   allowGrant: string[];
 }
 
-const A = PROJECT_ACTIONS;
+const A = WORKSPACE_ACTIONS;
 const sid = () => crypto.randomUUID();
 
 const CASES: WCase[] = [
   // ── Session lifecycle ────────────────────────────────────────────────────
   {
     name: 'session start (floor session.start)',
-    leaf: A.PROJECT_SESSION_START, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/start`,
-    tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SESSION_START],
+    leaf: A.WORKSPACE_SESSION_START, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/sessions/${sid()}/start`,
+    tier: 'member', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_SESSION_START],
   },
   {
     name: 'session stop (leaf session.stop)',
-    leaf: A.PROJECT_SESSION_STOP, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/stop`,
+    leaf: A.WORKSPACE_SESSION_STOP, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/sessions/${sid()}/stop`,
     tier: 'member',
     // floor is session.start, so the deny grant must hold start (to reach the
     // stop assert) but not stop.
-    denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+    denyGrant: [A.WORKSPACE_SESSION_START], allowGrant: [A.WORKSPACE_SESSION_START, A.WORKSPACE_SESSION_STOP],
   },
   {
     name: 'session model change (leaf session.stop)',
-    leaf: A.PROJECT_SESSION_STOP, method: 'PUT',
-    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/model`,
+    leaf: A.WORKSPACE_SESSION_STOP, method: 'PUT',
+    path: () => `/v1/projects/${WORKSPACE}/sessions/${sid()}/model`,
     body: { opencode_model: 'openai/gpt-5' },
     tier: 'member',
     // A live model change restarts opencode, so the scoped token must hold the
     // same destructive capability as the stop route.
-    denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+    denyGrant: [A.WORKSPACE_SESSION_START], allowGrant: [A.WORKSPACE_SESSION_START, A.WORKSPACE_SESSION_STOP],
   },
   {
     name: 'session scope replacement (leaf session.stop)',
-    leaf: A.PROJECT_SESSION_STOP, method: 'PUT',
-    path: () => `/v1/projects/${PROJECT}/sessions/${sid()}/scope`,
+    leaf: A.WORKSPACE_SESSION_STOP, method: 'PUT',
+    path: () => `/v1/projects/${WORKSPACE}/sessions/${sid()}/scope`,
     body: { connector_bindings: {} },
     tier: 'member',
-    denyGrant: [A.PROJECT_SESSION_START],
-    allowGrant: [A.PROJECT_SESSION_START, A.PROJECT_SESSION_STOP],
+    denyGrant: [A.WORKSPACE_SESSION_START],
+    allowGrant: [A.WORKSPACE_SESSION_START, A.WORKSPACE_SESSION_STOP],
   },
   // ── Review ───────────────────────────────────────────────────────────────
   {
     name: 'CR request-changes (review.act, not gitops.push)',
-    leaf: A.PROJECT_REVIEW_ACT, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/change-requests/${sid()}/request-changes`, body: {},
+    leaf: A.WORKSPACE_REVIEW_ACT, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/change-requests/${sid()}/request-changes`, body: {},
     tier: 'editor',
     // deny with gitops.push (the OLD leaf) to prove the gate is now review.act.
-    denyGrant: [A.PROJECT_GITOPS_PUSH], allowGrant: [A.PROJECT_REVIEW_ACT],
+    denyGrant: [A.WORKSPACE_GITOPS_PUSH], allowGrant: [A.WORKSPACE_REVIEW_ACT],
   },
   {
     name: 'review item submit (review.submit)',
-    leaf: A.PROJECT_REVIEW_SUBMIT, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/review/items`, body: {},
-    tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_REVIEW_SUBMIT],
+    leaf: A.WORKSPACE_REVIEW_SUBMIT, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/review/items`, body: {},
+    tier: 'member', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_REVIEW_SUBMIT],
   },
   // ── Triggers ─────────────────────────────────────────────────────────────
   {
@@ -164,132 +164,132 @@ const CASES: WCase[] = [
     // though it HOLDS trigger.fire, so a plain member could never fire. Floor is
     // now 'read', so the trigger.fire leaf is the gate and member can fire.
     name: 'trigger fire (trigger.fire — member floor role must be able to fire)',
-    leaf: A.PROJECT_TRIGGER_FIRE, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/triggers/some-slug/fire`, body: {},
-    tier: 'member', denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_TRIGGER_FIRE],
+    leaf: A.WORKSPACE_TRIGGER_FIRE, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/triggers/some-slug/fire`, body: {},
+    tier: 'member', denyGrant: [A.WORKSPACE_SESSION_START], allowGrant: [A.WORKSPACE_TRIGGER_FIRE],
   },
   // ── Connectors (write) ───────────────────────────────────────────────────
   {
     name: 'email connect (connector.write)',
-    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/channels/email/connect`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    leaf: A.WORKSPACE_CONNECTOR_WRITE, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/channels/email/connect`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_WRITE],
   },
   {
     name: 'email installation PATCH (connector.write)',
-    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'PATCH',
-    path: () => `/v1/projects/${PROJECT}/channels/email/installation`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    leaf: A.WORKSPACE_CONNECTOR_WRITE, method: 'PATCH',
+    path: () => `/v1/projects/${WORKSPACE}/channels/email/installation`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_WRITE],
   },
   {
     name: 'email installation DELETE (connector.write)',
-    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
-    path: () => `/v1/projects/${PROJECT}/channels/email/installation`,
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    leaf: A.WORKSPACE_CONNECTOR_WRITE, method: 'DELETE',
+    path: () => `/v1/projects/${WORKSPACE}/channels/email/installation`,
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_WRITE],
   },
   {
     // Teams disconnect — twin of email installation DELETE; no feature-flag
     // pre-gate, so the connector-write assert is directly exercised.
     name: 'teams installation DELETE (connector.write)',
-    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
-    path: () => `/v1/projects/${PROJECT}/channels/teams/installation`,
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    leaf: A.WORKSPACE_CONNECTOR_WRITE, method: 'DELETE',
+    path: () => `/v1/projects/${WORKSPACE}/channels/teams/installation`,
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_WRITE],
   },
   {
     // Teams connect — the capability assert runs BEFORE the per-project `teams`
     // feature check, so the 403 fires whether or not the project enabled Teams.
     // (While the gate was an operator env var this case was untestable here.)
     name: 'teams connect (connector.write)',
-    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/channels/teams/connect`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    leaf: A.WORKSPACE_CONNECTOR_WRITE, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/channels/teams/connect`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_WRITE],
   },
   {
     // Binding a Slack thread wires inbound channel→session routing — a
     // connector-write action; empty body reaches the gate before validation.
     name: 'slack bind-thread (connector.write)',
-    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/channels/slack/bind-thread`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    leaf: A.WORKSPACE_CONNECTOR_WRITE, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/channels/slack/bind-thread`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_WRITE],
   },
   {
     name: 'channel binding PATCH (connector.write)',
-    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'PATCH',
-    path: () => `/v1/projects/${PROJECT}/channels/bindings/${sid()}`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    leaf: A.WORKSPACE_CONNECTOR_WRITE, method: 'PATCH',
+    path: () => `/v1/projects/${WORKSPACE}/channels/bindings/${sid()}`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_WRITE],
   },
   {
     name: 'connect-requests (connector.write)',
-    leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/connect-requests`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    leaf: A.WORKSPACE_CONNECTOR_WRITE, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/connect-requests`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_WRITE],
   },
   // ── Connectors (read) ────────────────────────────────────────────────────
   {
     name: 'channel bindings list (connector.read)',
-    leaf: A.PROJECT_CONNECTOR_READ, method: 'GET',
-    path: () => `/v1/projects/${PROJECT}/channels/bindings`,
-    tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_READ],
+    leaf: A.WORKSPACE_CONNECTOR_READ, method: 'GET',
+    path: () => `/v1/projects/${WORKSPACE}/channels/bindings`,
+    tier: 'member', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CONNECTOR_READ],
   },
   // ── Customize (write) ────────────────────────────────────────────────────
   {
     name: 'meet bot name (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
-    path: () => `/v1/projects/${PROJECT}/channels/meet/name`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    leaf: A.WORKSPACE_CUSTOMIZE_WRITE, method: 'PUT',
+    path: () => `/v1/projects/${WORKSPACE}/channels/meet/name`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CUSTOMIZE_WRITE],
   },
   {
     // Strict body (ModelDefaultBody) is validated at the OpenAPI layer BEFORE the
     // handler, so send a schema-valid body — otherwise a 400 pre-empts the gate.
     name: 'model-defaults PUT (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
-    path: () => `/v1/projects/${PROJECT}/model-defaults`, body: { scope: 'project', model: 'openai/gpt-4o' },
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    leaf: A.WORKSPACE_CUSTOMIZE_WRITE, method: 'PUT',
+    path: () => `/v1/projects/${WORKSPACE}/model-defaults`, body: { scope: 'project', model: 'openai/gpt-4o' },
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CUSTOMIZE_WRITE],
   },
   {
     name: 'model-defaults DELETE (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'DELETE',
-    path: () => `/v1/projects/${PROJECT}/model-defaults?scope=project`,
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    leaf: A.WORKSPACE_CUSTOMIZE_WRITE, method: 'DELETE',
+    path: () => `/v1/projects/${WORKSPACE}/model-defaults?scope=project`,
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CUSTOMIZE_WRITE],
   },
   {
     name: 'default-agent PUT (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
-    path: () => `/v1/projects/${PROJECT}/default-agent`, body: { agent: 'support' },
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    leaf: A.WORKSPACE_CUSTOMIZE_WRITE, method: 'PUT',
+    path: () => `/v1/projects/${WORKSPACE}/default-agent`, body: { agent: 'support' },
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CUSTOMIZE_WRITE],
   },
   {
     name: 'feature-flag toggle (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
-    path: () => `/v1/projects/${PROJECT}/features`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    leaf: A.WORKSPACE_CUSTOMIZE_WRITE, method: 'PATCH',
+    path: () => `/v1/projects/${WORKSPACE}/features`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CUSTOMIZE_WRITE],
   },
   {
     // The deprecated alias published SDKs still call must gate identically.
     name: 'feature-flag toggle via the /experimental alias (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
-    path: () => `/v1/projects/${PROJECT}/experimental`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    leaf: A.WORKSPACE_CUSTOMIZE_WRITE, method: 'PATCH',
+    path: () => `/v1/projects/${WORKSPACE}/experimental`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CUSTOMIZE_WRITE],
   },
   {
     name: 'sandbox-provider (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
-    path: () => `/v1/projects/${PROJECT}/sandbox-provider`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    leaf: A.WORKSPACE_CUSTOMIZE_WRITE, method: 'PATCH',
+    path: () => `/v1/projects/${WORKSPACE}/sandbox-provider`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_CUSTOMIZE_WRITE],
   },
   // ── Agent scope (agent.write) ────────────────────────────────────────────
   {
     name: 'agent scope PUT (agent.write)',
-    leaf: A.PROJECT_AGENT_WRITE, method: 'PUT',
-    path: () => `/v1/projects/${PROJECT}/agents/scoped-bot/scope`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_AGENT_WRITE],
+    leaf: A.WORKSPACE_AGENT_WRITE, method: 'PUT',
+    path: () => `/v1/projects/${WORKSPACE}/agents/scoped-bot/scope`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_AGENT_WRITE],
   },
   // ── Secrets (write) ──────────────────────────────────────────────────────
   {
     name: 'secret-requests (secret.write)',
-    leaf: A.PROJECT_SECRET_WRITE, method: 'POST',
-    path: () => `/v1/projects/${PROJECT}/secret-requests`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SECRET_WRITE],
+    leaf: A.WORKSPACE_SECRET_WRITE, method: 'POST',
+    path: () => `/v1/projects/${WORKSPACE}/secret-requests`, body: {},
+    tier: 'editor', denyGrant: [A.WORKSPACE_TRIGGER_FIRE], allowGrant: [A.WORKSPACE_SECRET_WRITE],
   },
 ];
 

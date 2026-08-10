@@ -42,7 +42,7 @@ function makeHandle(over: Partial<LiveTurn> = {}): LiveTurn {
     steps: [],
     expiry: Date.now() + 60_000,
     finalized: false,
-    projectId: 'p1',
+    workspaceId: 'p1',
     sessionId: 's1',
     teamId: 'T1',
     originatingEvent: { channel: 'C1', ts: '100.1', user: 'U1', thread_ts: '100.0' } as never,

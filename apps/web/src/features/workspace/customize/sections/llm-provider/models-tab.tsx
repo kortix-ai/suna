@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import {
   useModelDefaults,
   useModelEnablement,
-  useProjectModels,
+  useWorkspaceModels,
   wireToModelKey,
 } from '@kortix/sdk/react';
 import { StarIcon as Star } from '@phosphor-icons/react';
@@ -21,19 +21,19 @@ import { ModelIdCopyButton } from './model-id-copy-button';
 import { buildModelGroups } from './model-rows';
 import { formatPricePerMillion, formatTokenCount } from './utils';
 
-export function ModelsTab({ projectId, search }: { projectId: string; search: string }) {
+export function ModelsTab({ workspaceId, search }: { workspaceId: string; search: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   // The SAME server list the session picker renders (`GET /model-picker`), so
   // the two views can never show different models — and each model's `enabled`
   // flag is resolved server-side and enforced by the gateway, so a switch here
   // is the one and only thing deciding whether it appears there.
-  const models = useProjectModels(projectId);
-  const enablement = useModelEnablement(projectId);
-  // Setting the project default from here is what makes the locked row
+  const models = useWorkspaceModels(workspaceId);
+  const enablement = useModelEnablement(workspaceId);
+  // Setting the workspace default from here is what makes the locked row
   // actionable: the only way to turn the default off is to make something else
   // the default, so the control for that belongs on the same screen.
-  const defaults = useModelDefaults(projectId);
+  const defaults = useModelDefaults(workspaceId);
 
   const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
   const enabledCount = useMemo(() => models.filter((m) => m.enabled).length, [models]);
@@ -100,7 +100,7 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                 // every default request — the server refuses it with a 409.
                 // Lock the switch and say why instead of letting the click
                 // become a failed action.
-                const isProjectDefault = wireId === enablement.defaultModel;
+                const isWorkspaceDefault = wireId === enablement.defaultModel;
                 const ctx = formatTokenCount(model.contextWindow);
                 const priceIn = model.cost ? formatPricePerMillion(model.cost.input) : '';
                 const priceOut = model.cost ? formatPricePerMillion(model.cost.output) : '';
@@ -129,7 +129,7 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                         {/* Same display name as its pinned snapshots — say which
                             row is the one that rolls forward. */}
                         {isRollingAlias && <Tag>latest</Tag>}
-                        {isProjectDefault && <Tag>project default</Tag>}
+                        {isWorkspaceDefault && <Tag>workspace default</Tag>}
                       </div>
                       <div className="flex min-w-0 items-center gap-0.5">
                         <code className="text-muted-foreground/50 min-w-0 truncate font-mono text-xs">
@@ -148,12 +148,12 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                         </InlineMeta>
                       )}
                     </div>
-                    {!isProjectDefault && enabled && (
+                    {!isWorkspaceDefault && enabled && (
                       <button
                         type="button"
                         disabled={defaults.isUpdating}
-                        title={`Make ${model.modelName} this project's default model`}
-                        onClick={() => void defaults.setProjectDefault(wireToModelKey(wireId))}
+                        title={`Make ${model.modelName} this workspace's default model`}
+                        onClick={() => void defaults.setWorkspaceDefault(wireToModelKey(wireId))}
                         className="text-muted-foreground/50 hover:text-foreground hover:bg-muted mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Star className="size-3.5" />
@@ -161,15 +161,15 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
                     )}
                     <Switch
                       checked={enabled}
-                      disabled={enablement.isUpdating || isProjectDefault}
+                      disabled={enablement.isUpdating || isWorkspaceDefault}
                       aria-label={
-                        isProjectDefault
-                          ? `${model.modelName} is this project's default model and cannot be turned off`
+                        isWorkspaceDefault
+                          ? `${model.modelName} is this workspace's default model and cannot be turned off`
                           : `Offer ${model.modelName}`
                       }
                       title={
-                        isProjectDefault
-                          ? "This project's default model — set a different default to turn it off."
+                        isWorkspaceDefault
+                          ? "This workspace's default model — set a different default to turn it off."
                           : undefined
                       }
                       onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}

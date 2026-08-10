@@ -20,7 +20,7 @@ const remoteFile = (): AttachedFile => ({
 
 describe('resolveComposerResetOnSend', () => {
   test('clearOnSend=false → clears nothing and revokes no URLs (message survives navigation)', () => {
-    // The project-home composer navigates away on send; nothing must be cleared
+    // The workspace-home composer navigates away on send; nothing must be cleared
     // or revoked, or the message + attachments would be lost mid-navigation.
     const files = [localFile('blob:local-1'), remoteFile()];
     expect(resolveComposerResetOnSend(false, files)).toEqual({ clear: false, urlsToRevoke: [] });

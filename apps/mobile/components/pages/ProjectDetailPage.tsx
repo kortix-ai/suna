@@ -76,7 +76,7 @@ import {
   useKortixProject,
   useKortixProjectSessions,
   useKortixTasks,
-  useUpdateProject,
+  useUpdateWorkspace,
   useDeleteProject,
   useCreateKortixTask,
   useUpdateKortixTask,
@@ -158,7 +158,7 @@ export function ProjectDetailPage({
   const { data: project, isLoading, refetch } = useKortixProject(sandboxUrl, projectId);
   const { data: sessions } = useKortixProjectSessions(sandboxUrl, projectId);
   const { data: tasks } = useKortixTasks(sandboxUrl, project?.id);
-  const updateProject = useUpdateProject(sandboxUrl);
+  const updateProject = useUpdateWorkspace(sandboxUrl);
   const deleteProject = useDeleteProject(sandboxUrl);
   const createTask = useCreateKortixTask(sandboxUrl);
   const updateTask = useUpdateKortixTask(sandboxUrl);

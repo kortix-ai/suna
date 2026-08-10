@@ -8,7 +8,7 @@ import { getFileCategory } from '@/features/file-viewer';
 import { isRich, reportsIntrinsicSize } from './file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';
 
-const SHARE_CONTEXT = { projectId: 'p1', sessionId: 's1' };
+const SHARE_CONTEXT = { workspaceId: 'p1', sessionId: 's1' };
 
 function Wrapped({ children }: { children: React.ReactNode }) {
   return (

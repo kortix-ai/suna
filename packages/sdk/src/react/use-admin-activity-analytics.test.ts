@@ -113,7 +113,44 @@ describe('useAdminActivityAnalytics', () => {
       },
     };
     const hook = useAdminActivityAnalytics(30) as any;
-    await expect(hook.queryFn()).resolves.toEqual(nextData);
+    await expect(hook.queryFn()).resolves.toMatchObject({
+      ...(nextData as any),
+      days: [{ ...(nextData as any).days[0], activeWorkspaces: 2, activeProjects: 2 }],
+      summary: {
+        ...(nextData as any).summary,
+        totalWorkspaces: 12,
+        totalProjects: 12,
+      },
+    });
+  });
+
+  test('normalizes canonical Workspace counters and preserves deprecated Project aliases', async () => {
+    nextData = {
+      days: [
+        {
+          date: '2026-08-07',
+          sessionsCreated: 3,
+          activeAccounts: 2,
+          activeUsers: 2,
+          newAccounts: 1,
+          activeWorkspaces: 2,
+        },
+      ],
+      summary: {
+        sessionsLast7d: 3,
+        sessionsPrev7d: 1,
+        dau: 2,
+        wau: 2,
+        mau: 5,
+        totalAccounts: 10,
+        totalWorkspaces: 12,
+      },
+    };
+    const hook = useAdminActivityAnalytics(30) as any;
+    const result = await hook.queryFn();
+
+    expect(result.days[0]).toMatchObject({ activeWorkspaces: 2, activeProjects: 2 });
+    expect(result.summary).toMatchObject({ totalWorkspaces: 12, totalProjects: 12 });
   });
 
   test('throws the API error message instead of resolving undefined', async () => {

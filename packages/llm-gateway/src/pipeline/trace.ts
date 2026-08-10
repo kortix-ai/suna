@@ -42,7 +42,7 @@ export function createTraceEmitter(
       startedAt,
       accountId: fields.accountId ?? '',
       actorUserId: fields.actorUserId ?? '',
-      projectId: fields.projectId,
+      workspaceId: fields.workspaceId,
       sessionId: fields.sessionId,
       keyId: fields.keyId,
       requestedModel: fields.requestedModel ?? '',

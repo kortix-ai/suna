@@ -12,7 +12,7 @@ import {
   projects,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { PROJECT_ACTIONS } from '../iam';
+import { WORKSPACE_ACTIONS } from '../iam';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
@@ -20,7 +20,7 @@ import { db } from '../shared/db';
 // These endpoints are the project-scoped members-governance surface (group
 // grants, resource grants, approvals, access requests). Each already asserts
 // the project.members.manage leaf — but the coarse floor was
-// loadProjectForUser(..,'manage'), which maps to project.write. That OVER-GATED
+// loadWorkspaceForUser(..,'manage'), which maps to project.write. That OVER-GATED
 // them: a custom "member manager" role (project.read + members.manage, but NOT
 // project.write) was wrongly denied at the floor before its members.manage
 // grant was ever consulted. The fix lowers the floor to 'read' so the
@@ -28,7 +28,7 @@ import { db } from '../shared/db';
 // GAINED the leaf assert — it previously ran on the floor alone, so a plain
 // editor could list pending requests; now it's manager-only like its siblings.)
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 const EDITOR = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
@@ -53,7 +53,7 @@ beforeAll(async () => {
     demoEnterprise: true,
   });
   await db.insert(projects).values({
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     name: 'members-manage-gate-test-project',
     repoUrl: 'https://example.com/members-manage-gate-test.git',
@@ -71,9 +71,9 @@ beforeAll(async () => {
     { userId: CUSTOM, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
   await db.insert(projectMembers).values([
-    { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: EDITOR, projectRole: 'editor' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
+    { accountId: ACCOUNT, workspaceId: WORKSPACE, userId: MANAGER, projectRole: 'manager' },
+    { accountId: ACCOUNT, workspaceId: WORKSPACE, userId: EDITOR, projectRole: 'editor' },
+    { accountId: ACCOUNT, workspaceId: WORKSPACE, userId: MEMBER, projectRole: 'member' },
   ]);
   // Custom "member manager" role — members.manage WITHOUT project.write.
   await db.insert(iamRoles).values({
@@ -84,8 +84,8 @@ beforeAll(async () => {
     scopeType: 'project',
   });
   await db.insert(iamRoleActions).values([
-    { roleId: CUSTOM_ROLE, action: PROJECT_ACTIONS.PROJECT_READ },
-    { roleId: CUSTOM_ROLE, action: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE },
+    { roleId: CUSTOM_ROLE, action: WORKSPACE_ACTIONS.WORKSPACE_READ },
+    { roleId: CUSTOM_ROLE, action: WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE },
   ]);
   await db.insert(iamPolicies).values({
     accountId: ACCOUNT,
@@ -93,7 +93,7 @@ beforeAll(async () => {
     principalId: CUSTOM,
     roleId: CUSTOM_ROLE,
     scopeType: 'project',
-    scopeId: PROJECT,
+    scopeId: WORKSPACE,
   });
 });
 
@@ -115,7 +115,7 @@ async function mint(userId: string): Promise<string> {
   const t = await createAccountToken({
     accountId: ACCOUNT,
     userId,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     name: 'members-manage-gate-test',
     agentGrant: null as any,
   });
@@ -156,15 +156,15 @@ interface EP {
 }
 
 const ENDPOINTS: EP[] = [
-  { name: 'GET /audit', method: 'GET', path: () => `/v1/projects/${PROJECT}/audit` },
-  { name: 'POST /group-grants', method: 'POST', path: () => `/v1/projects/${PROJECT}/group-grants`, body: {} },
-  { name: 'PATCH /group-grants/{id}', method: 'PATCH', path: () => `/v1/projects/${PROJECT}/group-grants/${crypto.randomUUID()}`, body: {} },
-  { name: 'DELETE /group-grants/{id}', method: 'DELETE', path: () => `/v1/projects/${PROJECT}/group-grants/${crypto.randomUUID()}` },
-  { name: 'GET /approvals', method: 'GET', path: () => `/v1/projects/${PROJECT}/approvals` },
-  { name: 'GET /resource-grants', method: 'GET', path: () => `/v1/projects/${PROJECT}/resource-grants` },
-  { name: 'POST /resource-grants', method: 'POST', path: () => `/v1/projects/${PROJECT}/resource-grants`, body: {} },
-  { name: 'DELETE /resource-grants/{id}', method: 'DELETE', path: () => `/v1/projects/${PROJECT}/resource-grants/${crypto.randomUUID()}` },
-  { name: 'GET /access-requests', method: 'GET', path: () => `/v1/projects/${PROJECT}/access-requests` },
+  { name: 'GET /audit', method: 'GET', path: () => `/v1/projects/${WORKSPACE}/audit` },
+  { name: 'POST /group-grants', method: 'POST', path: () => `/v1/projects/${WORKSPACE}/group-grants`, body: {} },
+  { name: 'PATCH /group-grants/{id}', method: 'PATCH', path: () => `/v1/projects/${WORKSPACE}/group-grants/${crypto.randomUUID()}`, body: {} },
+  { name: 'DELETE /group-grants/{id}', method: 'DELETE', path: () => `/v1/projects/${WORKSPACE}/group-grants/${crypto.randomUUID()}` },
+  { name: 'GET /approvals', method: 'GET', path: () => `/v1/projects/${WORKSPACE}/approvals` },
+  { name: 'GET /resource-grants', method: 'GET', path: () => `/v1/projects/${WORKSPACE}/resource-grants` },
+  { name: 'POST /resource-grants', method: 'POST', path: () => `/v1/projects/${WORKSPACE}/resource-grants`, body: {} },
+  { name: 'DELETE /resource-grants/{id}', method: 'DELETE', path: () => `/v1/projects/${WORKSPACE}/resource-grants/${crypto.randomUUID()}` },
+  { name: 'GET /access-requests', method: 'GET', path: () => `/v1/projects/${WORKSPACE}/access-requests` },
 ];
 
 describe('HTTP enforcement — project members.manage gates (floor lowered read; leaf is the gate)', () => {
@@ -172,14 +172,14 @@ describe('HTTP enforcement — project members.manage gates (floor lowered read;
     const secret = await mint(MANAGER);
     const res = await req(
       'POST',
-      `/v1/projects/${PROJECT}/group-grants`,
+      `/v1/projects/${WORKSPACE}/group-grants`,
       secret,
       { group_id: GROUP, role: 'editor' },
     );
 
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({
-      project_id: PROJECT,
+      project_id: WORKSPACE,
       group_id: GROUP,
       role: 'editor',
     });

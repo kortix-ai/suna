@@ -351,7 +351,7 @@ describe('resolveSecretDelivery — what each strategy emits', () => {
     }
   });
 
-  test('denied emits NOTHING — and that is what keeps its name out of KORTIX_PROJECT_SECRET_NAMES', () => {
+  test('denied emits NOTHING — and that is what keeps its name out of KORTIX_WORKSPACE_SECRET_NAMES', () => {
     const delivery = resolve({ strategy: 'denied' });
     expect(delivery).toEqual({ emit: 'nothing', strategy: 'denied', reason: 'denied' });
     expect(secretNamesForSandbox([{ key: 'ALPHA_KEY', delivery }])).toEqual([]);

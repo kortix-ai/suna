@@ -50,8 +50,8 @@ import { cn } from '@/lib/utils';
 import {
   downloadAccountAudit,
   listAccountMembers,
-  listProjectSessions,
-  listProjectsForAccount,
+  listWorkspaceSessions,
+  listWorkspacesForAccount,
 } from '@kortix/sdk';
 import {
   type AuditActionDescription,
@@ -67,7 +67,7 @@ interface AuditFilterState {
   action: string;
   actor: string;
   actorType: ActorType | '';
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   source: string;
   phase: string;
@@ -82,7 +82,7 @@ const EMPTY_FILTER: AuditFilterState = {
   action: '',
   actor: '',
   actorType: '',
-  projectId: '',
+  workspaceId: '',
   sessionId: '',
   source: '',
   phase: '',
@@ -105,17 +105,16 @@ const QUICK_FILTERS: Array<{
   { label: 'Agents', actorType: 'agent' },
   { label: 'Sessions', resourceType: 'project_session' },
   { label: 'Connectors', action: 'connector.' },
-  { label: 'Computer', action: 'computer.' },
   { label: 'Failures', outcome: 'failure' },
 ];
 
 const RESOURCE_TYPES = [
   { label: 'Any resource', value: '' },
-  { label: 'Project', value: 'project' },
+  { label: 'Workspace', value: 'workspace' },
   { label: 'Session', value: 'project_session' },
   { label: 'Connector action', value: 'connector_action' },
   { label: 'Connector approval', value: 'connector_approval' },
-  { label: 'Computer', value: 'computer_tunnel' },
+  { label: 'Computer connection', value: 'computer_tunnel' },
   { label: 'Secret', value: 'project_secret' },
   { label: 'Group', value: 'group' },
   { label: 'Account', value: 'account' },
@@ -132,6 +131,7 @@ const SOURCES = [
   { label: 'LLM gateway', value: 'llm_gateway' },
   { label: 'Provider', value: 'provider' },
   { label: 'Automation', value: 'automation' },
+  { label: 'Connector', value: 'connector' },
   { label: 'Voice', value: 'voice' },
   { label: 'Tunnel', value: 'tunnel' },
   { label: 'API', value: 'api' },
@@ -200,15 +200,15 @@ export function AuditTab({ accountId }: { accountId: string }) {
     queryFn: () => listAccountMembers(accountId),
     staleTime: 30_000,
   });
-  const projectsQuery = useQuery({
-    queryKey: ['audit-projects', accountId],
-    queryFn: () => listProjectsForAccount(accountId),
+  const workspacesQuery = useQuery({
+    queryKey: ['audit-workspaces', accountId],
+    queryFn: () => listWorkspacesForAccount(accountId),
     staleTime: 30_000,
   });
   const sessionsQuery = useQuery({
-    queryKey: ['audit-project-sessions', filter.projectId],
-    queryFn: () => listProjectSessions(filter.projectId, { scope: 'project' }),
-    enabled: !!filter.projectId,
+    queryKey: ['audit-workspace-sessions', filter.workspaceId],
+    queryFn: () => listWorkspaceSessions(filter.workspaceId, { scope: 'workspace' }),
+    enabled: !!filter.workspaceId,
     staleTime: 15_000,
   });
 
@@ -221,15 +221,21 @@ export function AuditTab({ accountId }: { accountId: string }) {
       ),
     [membersQuery.data],
   );
-  const projectNameById = useMemo(
-    () => new Map((projectsQuery.data ?? []).map((project) => [project.project_id, project.name])),
-    [projectsQuery.data],
+  const workspaceNameById = useMemo(
+    () =>
+      new Map(
+        (workspacesQuery.data ?? []).map((workspace) => [
+          workspace.workspace_id,
+          workspace.name,
+        ]),
+      ),
+    [workspacesQuery.data],
   );
 
   const filterCount = [
     filter.actor,
     filter.actorType,
-    filter.projectId,
+    filter.workspaceId,
     filter.sessionId,
     filter.source,
     filter.phase,
@@ -249,7 +255,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
         action: filter.action || undefined,
         actor: filter.actor || undefined,
         actor_type: filter.actorType || undefined,
-        project_id: filter.projectId || undefined,
+        workspace_id: filter.workspaceId || undefined,
         session_id: filter.sessionId || undefined,
         source: filter.source || undefined,
         phase: filter.phase || undefined,
@@ -291,7 +297,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
             action: filter.action || undefined,
             actor: filter.actor || undefined,
             actor_type: filter.actorType || undefined,
-            project_id: filter.projectId || undefined,
+            workspace_id: filter.workspaceId || undefined,
             session_id: filter.sessionId || undefined,
             source: filter.source || undefined,
             phase: filter.phase || undefined,
@@ -347,8 +353,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
         <div className="space-y-1">
           <p className="text-foreground text-sm font-medium">Audit log</p>
           <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
-            Reconstruct activity across people, agents, sessions, API requests, connectors, and
-            computers.
+            Reconstruct activity across people, agents, sessions, API requests, and connectors.
           </p>
         </div>
         <DropdownMenu>
@@ -391,30 +396,30 @@ export function AuditTab({ accountId }: { accountId: string }) {
               }
             }}
             onBlur={() => setFilter((current) => ({ ...current, q: qInput.trim() }))}
-            placeholder="Search action, project, session, request, or correlation ID"
+            placeholder="Search action, workspace, session, request, or correlation ID"
             aria-label="Search audit events"
             className="h-9 pl-8"
           />
         </div>
 
         <Select
-          value={filter.projectId || 'all'}
+          value={filter.workspaceId || 'all'}
           onValueChange={(value) =>
             setFilter((current) => ({
               ...current,
-              projectId: value === 'all' ? '' : value,
+              workspaceId: value === 'all' ? '' : value,
               sessionId: '',
             }))
           }
         >
           <SelectTrigger size="sm" className="h-9 w-[210px]">
-            <SelectValue placeholder="Project" />
+            <SelectValue placeholder="Workspace" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All projects</SelectItem>
-            {(projectsQuery.data ?? []).map((project) => (
-              <SelectItem key={project.project_id} value={project.project_id}>
-                {project.name}
+            <SelectItem value="all">All workspaces</SelectItem>
+            {(workspacesQuery.data ?? []).map((workspace) => (
+              <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                {workspace.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -422,7 +427,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
 
         <Select
           value={filter.sessionId || 'all'}
-          disabled={!filter.projectId}
+          disabled={!filter.workspaceId}
           onValueChange={(value) =>
             setFilter((current) => ({
               ...current,
@@ -431,7 +436,9 @@ export function AuditTab({ accountId }: { accountId: string }) {
           }
         >
           <SelectTrigger size="sm" className="h-9 w-[220px]">
-            <SelectValue placeholder={filter.projectId ? 'All sessions' : 'Select project first'} />
+            <SelectValue
+              placeholder={filter.workspaceId ? 'All sessions' : 'Select workspace first'}
+            />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All sessions</SelectItem>
@@ -512,8 +519,8 @@ export function AuditTab({ accountId }: { accountId: string }) {
                   actorEmail={
                     event.actor_user_id ? (emailByUserId.get(event.actor_user_id) ?? null) : null
                   }
-                  projectName={
-                    event.project_id ? (projectNameById.get(event.project_id) ?? null) : null
+                  workspaceName={
+                    event.workspace_id ? (workspaceNameById.get(event.workspace_id) ?? null) : null
                   }
                 />
               ))}
@@ -757,11 +764,11 @@ function FilterField({ label, children }: { label: string; children: ReactNode }
 function AuditRow({
   event,
   actorEmail,
-  projectName,
+  workspaceName,
 }: {
   event: IamAuditEvent;
   actorEmail: string | null;
-  projectName: string | null;
+  workspaceName: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const occurred = new Date(event.occurred_at);
@@ -770,7 +777,8 @@ function AuditRow({
   const actorLabel =
     actorEmail ?? event.actor_user_id ?? (event.actor_type === 'system' ? 'System' : 'Unknown');
   const scopeLabel =
-    projectName ?? (event.project_id ? `Project ${event.project_id.slice(0, 8)}` : 'Account');
+    workspaceName ??
+    (event.workspace_id ? `Workspace ${event.workspace_id.slice(0, 8)}` : 'Account');
 
   return (
     <>
@@ -882,7 +890,7 @@ function AuditRow({
                 <ResourcePanel
                   resource={resource}
                   resourceId={event.resource_id}
-                  projectName={projectName}
+                  workspaceName={workspaceName}
                   sessionId={event.session_id}
                 />
               </div>
@@ -899,7 +907,7 @@ function AuditRow({
                 <Detail label="Trace ID" value={event.trace_id} />
                 <Detail label="Correlation ID" value={event.correlation_id} />
                 <Detail label="Causation ID" value={event.causation_id ?? null} />
-                <Detail label="Project ID" value={event.project_id} />
+                <Detail label="Workspace ID" value={event.workspace_id} />
                 <Detail label="Session ID" value={event.session_id} />
                 <Detail label="OpenCode session" value={event.opencode_session_id ?? null} />
                 <Detail label="Turn ID" value={event.turn_id ?? null} />
@@ -1015,12 +1023,12 @@ function RequestPanel({
 function ResourcePanel({
   resource,
   resourceId,
-  projectName,
+  workspaceName,
   sessionId,
 }: {
   resource: string | null;
   resourceId: string | null;
-  projectName: string | null;
+  workspaceName: string | null;
   sessionId: string | null;
 }) {
   return (
@@ -1030,7 +1038,7 @@ function ResourcePanel({
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-3">
         <SummaryValue label="Resource" value={resource} />
-        <SummaryValue label="Project" value={projectName} />
+        <SummaryValue label="Workspace" value={workspaceName} />
         <SummaryValue label="Resource ID" value={resourceId} mono />
         <SummaryValue label="Session ID" value={sessionId} mono />
       </div>

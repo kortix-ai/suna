@@ -30,7 +30,7 @@ import {
   type ConnectorRouterDeps,
 } from '../connectors/router';
 
-const PROJECT = 'proj-1';
+const WORKSPACE = 'proj-1';
 const ALICE = 'user-alice';
 
 /** Minimal deps: an admin always resolves, but NO optional capability is
@@ -41,9 +41,9 @@ const deps: ConnectorRouterDeps = {
     const u = c.req.header('x-test-user');
     return u ? ({ accountId: 'acct-1', userId: u } as ConnectorPrincipal) : null;
   },
-  resolveProjectPrincipal: async (c, projectId) => {
+  resolveWorkspacePrincipal: async (c, workspaceId) => {
     const u = c.req.header('x-test-user');
-    return u && projectId === PROJECT ? ({ accountId: 'acct-1', userId: u } as ConnectorPrincipal) : null;
+    return u && workspaceId === WORKSPACE ? ({ accountId: 'acct-1', userId: u } as ConnectorPrincipal) : null;
   },
   makeGatewayDeps: (() => ({} as unknown)) as ConnectorRouterDeps['makeGatewayDeps'],
   listCatalog: async () => [],
@@ -82,7 +82,7 @@ async function expectFeatureNotSupported(res: Response, feature: string) {
 
 describe('connector router: optional-capability 501 is a TYPED feature_not_supported envelope', () => {
   test('POST /connectors/auth-discovery (the BS 1f3c4d96 path)', async () => {
-    const res = await req(`/projects/${PROJECT}/connectors/auth-discovery`, {
+    const res = await req(`/projects/${WORKSPACE}/connectors/auth-discovery`, {
       method: 'POST',
       headers: { ...admin, 'content-type': 'application/json' },
       body: JSON.stringify({ provider: 'openapi', spec: 'https://example.com/openapi.json' }),
@@ -91,7 +91,7 @@ describe('connector router: optional-capability 501 is a TYPED feature_not_suppo
   });
 
   test('POST /connectors (create)', async () => {
-    const res = await req(`/projects/${PROJECT}/connectors`, {
+    const res = await req(`/projects/${WORKSPACE}/connectors`, {
       method: 'POST',
       headers: { ...admin, 'content-type': 'application/json' },
       body: JSON.stringify({ slug: 'x', provider: 'openapi', spec: 'https://example.com/openapi.json' }),
@@ -100,7 +100,7 @@ describe('connector router: optional-capability 501 is a TYPED feature_not_suppo
   });
 
   test('DELETE /connectors/:slug', async () => {
-    const res = await req(`/projects/${PROJECT}/connectors/stripe`, {
+    const res = await req(`/projects/${WORKSPACE}/connectors/stripe`, {
       method: 'DELETE',
       headers: admin,
     });
@@ -108,14 +108,14 @@ describe('connector router: optional-capability 501 is a TYPED feature_not_suppo
   });
 
   test('GET /pipedream/apps (pipedream not configured)', async () => {
-    const res = await req(`/projects/${PROJECT}/pipedream/apps`, {
+    const res = await req(`/projects/${WORKSPACE}/pipedream/apps`, {
       headers: admin,
     });
     await expectFeatureNotSupported(res, 'pipedream_apps');
   });
 
   test('PUT /connectors/:slug/credential (set credential)', async () => {
-    const res = await req(`/projects/${PROJECT}/connectors/stripe/credential`, {
+    const res = await req(`/projects/${WORKSPACE}/connectors/stripe/credential`, {
       method: 'PUT',
       headers: { ...admin, 'content-type': 'application/json' },
       body: JSON.stringify({ value: 'sk_live_x' }),
@@ -124,7 +124,7 @@ describe('connector router: optional-capability 501 is a TYPED feature_not_suppo
   });
 
   test('GET /projects/:id/policies (project policies read)', async () => {
-    const res = await req(`/projects/${PROJECT}/policies`, {
+    const res = await req(`/projects/${WORKSPACE}/policies`, {
       headers: admin,
     });
     await expectFeatureNotSupported(res, 'project_policies_read');

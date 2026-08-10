@@ -11,7 +11,7 @@ const NOW = new Date('2026-08-02T20:00:00.000Z');
 
 const scope: ConnectorAttachmentScope = {
   accountId: '019fc40d-04dd-7f52-a591-65ab13d2a111',
-  projectId: '019fc40d-04dd-7f52-a591-65ab13d2a222',
+  workspaceId: '019fc40d-04dd-7f52-a591-65ab13d2a222',
   sessionId: '019fc40d-04dd-7f52-a591-65ab13d2a333',
   userId: '019fc40d-04dd-7f52-a591-65ab13d2a444',
 };
@@ -22,10 +22,10 @@ function row(overrides: Partial<AttachmentRow> = {}): AttachmentRow {
   return {
     attachmentId: ID,
     accountId: scope.accountId,
-    projectId: scope.projectId,
+    workspaceId: scope.workspaceId,
     sessionId: scope.sessionId,
     userId: scope.userId,
-    objectPath: `connector-attachments/${scope.projectId}/${ID}`,
+    objectPath: `connector-attachments/${scope.workspaceId}/${ID}`,
     filename: 'memo.pdf',
     contentType: 'application/pdf',
     contentDisposition: 'attachment',
@@ -48,7 +48,7 @@ describe('Connector attachment claim isolation', () => {
 
   test.each([
     ['account', { accountId: '019fc40d-04dd-7f52-a591-65ab13d2aff1' }],
-    ['project', { projectId: '019fc40d-04dd-7f52-a591-65ab13d2aff2' }],
+    ['project', { workspaceId: '019fc40d-04dd-7f52-a591-65ab13d2aff2' }],
     ['session', { sessionId: '019fc40d-04dd-7f52-a591-65ab13d2aff3' }],
     ['user', { userId: '019fc40d-04dd-7f52-a591-65ab13d2aff4' }],
   ])('hides a handle from another %s scope', (_label, mismatch) => {

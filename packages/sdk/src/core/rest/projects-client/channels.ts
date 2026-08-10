@@ -35,9 +35,9 @@ export interface SlackInstallation {
   installedAt: string;
 }
 
-export async function getSlackInstallation(projectId: string): Promise<SlackInstallation | null> {
+export async function getSlackInstallation(workspaceId: string): Promise<SlackInstallation | null> {
   const res = await backendApi.get<SlackInstallation | null>(
-    `/projects/${encodeURIComponent(projectId)}/channels/slack/installation`,
+    `/projects/${encodeURIComponent(workspaceId)}/channels/slack/installation`,
     { showErrors: false },
   );
   if (!res.success) return null;
@@ -50,12 +50,12 @@ export interface ConnectSlackInput {
 }
 
 export async function connectSlack(
-  projectId: string,
+  workspaceId: string,
   input: ConnectSlackInput,
 ): Promise<SlackInstallation> {
   return unwrap(
     await backendApi.post<SlackInstallation>(
-      `/projects/${encodeURIComponent(projectId)}/channels/slack/connect`,
+      `/projects/${encodeURIComponent(workspaceId)}/channels/slack/connect`,
       input,
       { showErrors: false },
     ),
@@ -70,28 +70,28 @@ export interface SlackMode {
 
 const DEFAULT_SLACK_MODE: SlackMode = { oauth_available: false, install_url: null };
 
-export async function getSlackMode(projectId: string): Promise<SlackMode> {
+export async function getSlackMode(workspaceId: string): Promise<SlackMode> {
   const res = await backendApi.get<SlackMode>(
-    `/projects/${encodeURIComponent(projectId)}/channels/slack/mode`,
+    `/projects/${encodeURIComponent(workspaceId)}/channels/slack/mode`,
     { showErrors: false },
   );
   if (!res.success || !res.data) return DEFAULT_SLACK_MODE;
   return res.data;
 }
 
-export async function getSlackManifest(projectId: string): Promise<Record<string, unknown>> {
+export async function getSlackManifest(workspaceId: string): Promise<Record<string, unknown>> {
   return unwrap(
     await backendApi.get<Record<string, unknown>>(
-      `/webhooks/slack/${encodeURIComponent(projectId)}/manifest`,
+      `/webhooks/slack/${encodeURIComponent(workspaceId)}/manifest`,
       { showErrors: false },
     ),
     'Failed to load Slack manifest',
   );
 }
 
-export async function disconnectSlack(projectId: string): Promise<void> {
+export async function disconnectSlack(workspaceId: string): Promise<void> {
   const res = await backendApi.delete(
-    `/projects/${encodeURIComponent(projectId)}/channels/slack/installation`,
+    `/projects/${encodeURIComponent(workspaceId)}/channels/slack/installation`,
     { showErrors: false },
   );
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
@@ -101,10 +101,10 @@ export async function disconnectSlack(projectId: string): Promise<void> {
  * Download a Slack-hosted file through the server-side proxy (SSRF-guarded to
  * `*.slack.com`) — the bot token never reaches the sandbox. Backs `slack download`.
  */
-export async function getSlackChannelFile(projectId: string, url: string): Promise<Blob> {
+export async function getSlackChannelFile(workspaceId: string, url: string): Promise<Blob> {
   return unwrap(
     await backendApi.get<Blob>(
-      `/projects/${encodeURIComponent(projectId)}/channels/slack/file?url=${encodeURIComponent(url)}`,
+      `/projects/${encodeURIComponent(workspaceId)}/channels/slack/file?url=${encodeURIComponent(url)}`,
       { showErrors: false },
     ),
     'Failed to download Slack file',
@@ -127,12 +127,12 @@ export interface UploadSlackChannelFileResult {
 
 /** Upload a file to Slack through the server-side 3-step external-upload proxy. Backs `slack send --file`. */
 export async function uploadSlackChannelFile(
-  projectId: string,
+  workspaceId: string,
   input: UploadSlackChannelFileInput,
 ): Promise<UploadSlackChannelFileResult> {
   return unwrap(
     await backendApi.post<UploadSlackChannelFileResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/slack/file/upload`,
+      `/projects/${encodeURIComponent(workspaceId)}/channels/slack/file/upload`,
       {
         channel: input.channel,
         filename: input.filename,
@@ -207,21 +207,21 @@ export interface EmailMode {
 const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'agentmail', managed_available: false };
 
 export async function getEmailInstallation(
-  projectId: string,
+  workspaceId: string,
   connectorSlug?: string | null,
 ): Promise<EmailConnectionInstallation | null> {
   const query = connectorSlug ? `?connector_slug=${encodeURIComponent(connectorSlug)}` : '';
   const res = await backendApi.get<EmailInstallationWire | null>(
-    `/projects/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
+    `/projects/${encodeURIComponent(workspaceId)}/channels/email/installation${query}`,
     { showErrors: false },
   );
   if (!res.success) return null;
   return res.data ? normalizeEmailInstallation(res.data) : null;
 }
 
-export async function getEmailMode(projectId: string): Promise<EmailMode> {
+export async function getEmailMode(workspaceId: string): Promise<EmailMode> {
   const res = await backendApi.get<EmailMode>(
-    `/projects/${encodeURIComponent(projectId)}/channels/email/mode`,
+    `/projects/${encodeURIComponent(workspaceId)}/channels/email/mode`,
     { showErrors: false },
   );
   if (!res.success || !res.data) return DEFAULT_EMAIL_MODE;
@@ -240,12 +240,12 @@ export interface ConnectEmailInput {
 }
 
 export async function connectEmail(
-  projectId: string,
+  workspaceId: string,
   input: ConnectEmailInput,
 ): Promise<EmailConnectionInstallation> {
   const installation = unwrap(
     await backendApi.post<EmailInstallationWire>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/connect`,
+      `/projects/${encodeURIComponent(workspaceId)}/channels/email/connect`,
       input,
       { showErrors: false },
     ),
@@ -255,25 +255,25 @@ export async function connectEmail(
 }
 
 export async function disconnectEmail(
-  projectId: string,
+  workspaceId: string,
   connectorSlug?: string | null,
 ): Promise<void> {
   const query = connectorSlug ? `?connector_slug=${encodeURIComponent(connectorSlug)}` : '';
   const res = await backendApi.delete(
-    `/projects/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
+    `/projects/${encodeURIComponent(workspaceId)}/channels/email/installation${query}`,
     { showErrors: false },
   );
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect email');
 }
 
 export async function updateEmailPolicy(
-  projectId: string,
+  workspaceId: string,
   connectorSlug: string | null | undefined,
   senderPolicy: EmailSenderPolicy,
 ): Promise<EmailConnectionInstallation> {
   const installation = unwrap(
     await backendApi.patch<EmailInstallationWire>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/installation`,
+      `/projects/${encodeURIComponent(workspaceId)}/channels/email/installation`,
       { connector_slug: connectorSlug ?? 'kortix_email', sender_policy: senderPolicy },
       { showErrors: false },
     ),
@@ -287,12 +287,12 @@ export async function updateEmailPolicy(
 // ElevenLabs pick, so the name is all that's left to configure here.
 
 export async function setMeetBotName(
-  projectId: string,
+  workspaceId: string,
   name: string,
 ): Promise<{ bot_name: string }> {
   return unwrap(
     await backendApi.put<{ bot_name: string }>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/name`,
+      `/projects/${encodeURIComponent(workspaceId)}/channels/meet/name`,
       { name },
       { showErrors: false },
     ),
@@ -341,10 +341,10 @@ export interface ChannelBindingsResponse {
   bindings: ChannelBinding[];
 }
 
-export async function listChannelBindings(projectId: string): Promise<ChannelBindingsResponse> {
+export async function listChannelBindings(workspaceId: string): Promise<ChannelBindingsResponse> {
   return unwrap(
     await backendApi.get<ChannelBindingsResponse>(
-      `/projects/${encodeURIComponent(projectId)}/channels/bindings`,
+      `/projects/${encodeURIComponent(workspaceId)}/channels/bindings`,
       { showErrors: false },
     ),
     'Failed to load channel bindings',
@@ -360,13 +360,13 @@ export interface UpdateChannelBindingInput {
 }
 
 export async function updateChannelBinding(
-  projectId: string,
+  workspaceId: string,
   bindingId: string,
   input: UpdateChannelBindingInput,
 ): Promise<ChannelBinding> {
   return unwrap(
     await backendApi.patch<ChannelBinding>(
-      `/projects/${encodeURIComponent(projectId)}/channels/bindings/${encodeURIComponent(bindingId)}`,
+      `/projects/${encodeURIComponent(workspaceId)}/channels/bindings/${encodeURIComponent(bindingId)}`,
       input,
       { showErrors: false },
     ),

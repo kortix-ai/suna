@@ -119,7 +119,7 @@ export interface SessionChatInputProps {
   stopDisabled?: boolean;
   /**
    * The send is in flight but hasn't navigated/settled yet — swap the send
-   * button for a spinner (used by the project-home composer while the session
+   * button for a spinner (used by the workspace-home composer while the session
    * create POST round-trips). Distinct from `isBusy`, which means "the agent is
    * running" and shows a stop button instead.
    */
@@ -142,14 +142,14 @@ export interface SessionChatInputProps {
   messages?: MessageWithParts[];
   /** Session ID — used for message queue, todo chip, and mention filtering */
   sessionId?: string;
-  /** Project ID — lets the reasoning-effort control read/write this
+  /** Workspace ID — lets the reasoning-effort control read/write this
    *  project's per-model generation config (see reasoning-effort-selector.tsx). */
-  projectId?: string;
+  workspaceId?: string;
   /** If true, disables the input (e.g. during session creation redirect) */
   disabled?: boolean;
   /**
    * Clear the composer optimistically on send (default true). Set false when the
-   * send navigates the composer away (project-home → new session): the component
+   * send navigates the composer away (workspace-home → new session): the component
    * is about to unmount, so clearing first only flashes an empty box before the
    * route swaps — and would discard the user's text if the send is gated (e.g. a
    * paywall) instead of navigating. The instant session shell then carries the
@@ -197,7 +197,7 @@ export interface SessionChatInputProps {
   toolbarSlot?: React.ReactNode;
 
   /** Extra classes for the input card — e.g. a radius override for the
-   *  project-home hero composer (`rounded-xl`). The drag overlay follows. */
+   *  workspace-home hero composer (`rounded-xl`). The drag overlay follows. */
   cardClassName?: string;
 
   /** Reply context — shows a banner in the input indicating what's being replied to */
@@ -251,7 +251,7 @@ function SessionChatInputImpl({
   onVariantChange,
   messages,
   sessionId,
-  projectId,
+  workspaceId,
   disabled = false,
   clearOnSend = true,
   modelRequired = false,
@@ -797,7 +797,7 @@ function SessionChatInputImpl({
     const mentionsToSend = mentions.length > 0 ? [...mentions] : undefined;
 
     // Optimistically clear input — UNLESS this send navigates the composer away
-    // (project-home → new session, `clearOnSend={false}`). There, clearing first
+    // (workspace-home → new session, `clearOnSend={false}`). There, clearing first
     // only flashes an empty box before the route swaps, discards the text on a
     // gated send, and would revoke the local file URLs the instant shell still
     // needs to preview. The text/files ride across via the start-stash instead.
@@ -1344,7 +1344,7 @@ function SessionChatInputImpl({
             variants={variants}
             selectedVariant={selectedVariant}
             onVariantChange={onVariantChange}
-            projectId={projectId}
+            workspaceId={workspaceId}
             messages={messages}
             onContextClick={onContextClick}
             toolbarSlot={toolbarSlot}

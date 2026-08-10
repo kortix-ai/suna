@@ -45,11 +45,11 @@ export function isQuickDecidableApproval(
  *  item's originating session. Returns `null` when the item has no
  *  originating session to link to (nothing to deep-link into). */
 export function itemDeepLink(
-  projectId: string,
+  workspaceId: string,
   sessionId: string | undefined | null,
 ): string | null {
-  if (!projectId || !sessionId) return null;
-  return `/workspaces/${projectId}/sessions/${sessionId}`;
+  if (!workspaceId || !sessionId) return null;
+  return `/workspaces/${workspaceId}/sessions/${sessionId}`;
 }
 
 /**

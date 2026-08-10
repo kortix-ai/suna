@@ -33,12 +33,12 @@ import { useMutation } from '@tanstack/react-query';
 import { ExternalLink, Link2, Plug } from 'lucide-react';
 
 export function ConnectRequiredCard({
-  projectId,
+  workspaceId,
   requirement,
   onRetry,
   onDismiss,
 }: {
-  projectId: string;
+  workspaceId: string;
   requirement: ConnectorRequirement;
   /** Offered only after the user has been told what to do; never auto-fires. */
   onRetry?: () => void;
@@ -67,7 +67,7 @@ export function ConnectRequiredCard({
           {requirement.connectors.map((connector) => (
             <ConnectorRemedyBlock
               key={connector.alias}
-              projectId={projectId}
+              workspaceId={workspaceId}
               connector={connector}
               wrapperMode={wrapperMode}
             />
@@ -92,11 +92,11 @@ export function ConnectRequiredCard({
 }
 
 function ConnectorRemedyBlock({
-  projectId,
+  workspaceId,
   connector,
   wrapperMode,
 }: {
-  projectId: string;
+  workspaceId: string;
   connector: RequiredConnector;
   wrapperMode: boolean;
 }) {
@@ -111,7 +111,7 @@ function ConnectorRemedyBlock({
   const mint = useMutation({
     mutationFn: () =>
       kortix
-        .project(projectId)
+        .project(workspaceId)
         .setupLinks.requestConnector({ slug: connector.alias }),
   });
   const mintError = mint.error
@@ -171,7 +171,7 @@ function ConnectorRemedyBlock({
           <CallSnippet
             id="connector.connect-link"
             className="mt-2"
-            context={{ projectId, connector: connector.alias }}
+            context={{ workspaceId, connector: connector.alias }}
           />
         </div>
       ) : (

@@ -40,7 +40,7 @@ case "$mode" in
     # the flag is required explicitly. Without it, cross-file mock.module()
     # collisions are order-dependent and can silently pass or fail depending
     # on which files happen to run adjacently.
-    exec bun test --isolate --env-file=scripts/test.env $cov $files
+    exec bun test --isolate --timeout "${KORTIX_TEST_TIMEOUT_MS:-30000}" --env-file=scripts/test.env $cov $files
     ;;
   *)
     echo "usage: test.sh [default|integration|live]" >&2

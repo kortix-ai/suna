@@ -236,13 +236,25 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
     }
     assertSlo('GET /v1/health p95', percentile(healthDurations, 95), healthLimit);
 
+    // Final-review FIX 4: `/projects` used to paint a list of `h3` project
+    // cards directly. It's a redirect now (Task 21) — it resolves the
+    // selected account's project via `ensureFirstProject` and lands on
+    // `/projects/<id>`. This SLO now measures that whole hop-and-resolve,
+    // not a list's first paint, so its label is renamed to say so; the
+    // budget env var (`E2E_SLO_PROJECTS_FIRST_PAINT_MS`) is left as-is — it
+    // still budgets the same "reach a usable workspace" user experience.
     await installBrowserSession(page, ownerSession, '/projects', password);
     await selectAccountForUi(page, personalAccount!.account_id);
-    const { durationMs: projectsFirstPaintMs } = await measure(async () => {
+    const { durationMs: projectsRedirectFirstPaintMs } = await measure(async () => {
       await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-      await expect(page.locator('h3', { hasText: project.name })).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
+      await expect(page.getByText(project.name).first()).toBeVisible();
     });
-    assertSlo('web /projects first paint', projectsFirstPaintMs, projectsFirstPaintLimit);
+    assertSlo(
+      'web /projects → project redirect first paint',
+      projectsRedirectFirstPaintMs,
+      projectsFirstPaintLimit,
+    );
 
     await api<{ ok: true }>(ownerSession.access_token, 'DELETE', `/projects/${project.project_id}`);
   });

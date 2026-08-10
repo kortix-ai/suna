@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../workspaces/lib/access';
 
 // Stage A of the Slack access-flow redesign: connecting your Kortix account is
 // decoupled from having access, and a connected-but-no-access user requests
@@ -30,18 +30,18 @@ mock.module('../shared/db', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../workspaces/lib/access', () => ({
   ...realAccess,
   lookupEmailsByUserIds: async () => new Map<string, string | null>(),
-  grantProjectRole: async () => {},
+  grantWorkspaceRole: async () => {},
   ensureOrgMembership: async () => 'member',
-  loadProjectForUser: async () => null,
+  loadWorkspaceForUser: async () => null,
 }));
 mock.module('../iam', () => ({
   authorize: async () => ({ allowed: authorizeAllowed }),
 }));
 mock.module('../channels/install-store', () => ({
-  loadSlackTokenForProject: async () => 'xoxb-test',
+  loadSlackTokenForWorkspace: async () => 'xoxb-test',
 }));
 mock.module('../channels/slack-api', () => ({
   openDmChannel: async () => {
@@ -89,10 +89,10 @@ describe('access nudge blocks — the action_id contract the router relies on', 
     expect(JSON.parse(btn.value)).toEqual({ url: 'https://kortix.com/login?x=1', pendingId: 'pending-1' });
   });
 
-  test('request-access block carries slack_request_access and the projectId in its value', () => {
+  test('request-access block carries slack_request_access and the workspaceId in its value', () => {
     const btn = firstButton(requestAccessBlocks('proj-1') as any[]);
     expect(btn.action_id).toBe('slack_request_access');
-    expect(JSON.parse(btn.value)).toEqual({ projectId: 'proj-1' });
+    expect(JSON.parse(btn.value)).toEqual({ workspaceId: 'proj-1' });
     expect(btn.url).toBeUndefined(); // it's an action button, not a link
   });
 });
@@ -100,7 +100,7 @@ describe('access nudge blocks — the action_id contract the router relies on', 
 describe('postIdentityPrompt — never invisible: in-thread ephemeral AND a DM', () => {
   test('not_member prompt posts BOTH an ephemeral and a DM', async () => {
     await postIdentityPrompt({
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       teamId: 'T1',
       channel: 'C1',
       threadTs: '90.0',
@@ -114,7 +114,7 @@ describe('postIdentityPrompt — never invisible: in-thread ephemeral AND a DM',
 
   test('still DMs even with no channel to post the ephemeral into', async () => {
     await postIdentityPrompt({
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       teamId: 'T1',
       slackUserId: 'U1',
       reason: 'not_member',
@@ -124,17 +124,17 @@ describe('postIdentityPrompt — never invisible: in-thread ephemeral AND a DM',
   });
 });
 
-describe('createSlackAccessRequest — file (or find) a project access request', () => {
+describe('createSlackAccessRequest — file or find a workspace access request', () => {
   test('unlinked Slack user → no-identity (nothing to request as)', async () => {
     dbResults = [[]]; // lookupSlackIdentity → none
-    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', projectId: 'proj-1' });
+    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', workspaceId: 'proj-1' });
     expect(r.status).toBe('no-identity');
   });
 
-  test('unknown project → no-project', async () => {
+  test('unknown workspace → no-workspace', async () => {
     dbResults = [[{ userId: 'u1' }], []]; // identity ok, project missing
-    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', projectId: 'proj-1' });
-    expect(r.status).toBe('no-project');
+    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', workspaceId: 'proj-1' });
+    expect(r.status).toBe('no-workspace');
   });
 
   test('already project-write-capable → already-member (no request filed)', async () => {
@@ -143,7 +143,7 @@ describe('createSlackAccessRequest — file (or find) a project access request',
       [{ accountId: 'a1' }], // project
       [{ userId: 'u1' }], // isAccountMember → member
     ];
-    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', projectId: 'proj-1' });
+    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', workspaceId: 'proj-1' });
     expect(r).toEqual({ status: 'already-member', requesterUserId: 'u1', accountId: 'a1' });
   });
 
@@ -156,7 +156,7 @@ describe('createSlackAccessRequest — file (or find) a project access request',
       [], // no existing pending
       [], // insert
     ];
-    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', projectId: 'proj-1' });
+    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', workspaceId: 'proj-1' });
     expect(r).toEqual({ status: 'created', requesterUserId: 'u1', accountId: 'a1' });
   });
 
@@ -167,7 +167,7 @@ describe('createSlackAccessRequest — file (or find) a project access request',
       [], // not a member
       [{ requestId: 'r1' }], // existing pending request
     ];
-    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', projectId: 'proj-1' });
+    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', workspaceId: 'proj-1' });
     expect(r).toEqual({ status: 'pending', requesterUserId: 'u1', accountId: 'a1' });
   });
 
@@ -179,7 +179,7 @@ describe('createSlackAccessRequest — file (or find) a project access request',
       [], // no existing pending
       [], // insert
     ];
-    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', projectId: 'proj-1' });
+    const r = await createSlackAccessRequest({ teamId: 'T1', slackUserId: 'U1', workspaceId: 'proj-1' });
     expect(r).toEqual({ status: 'created', requesterUserId: 'u1', accountId: 'a1' });
   });
 });
@@ -196,7 +196,7 @@ describe('notifyAdminsOfAccessRequest', () => {
 
     await notifyAdminsOfAccessRequest({
       teamId: 'T1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       accountId: 'acct-1',
       requesterUserId: 'user-1',
       requesterSlackUserId: 'UREQ',
@@ -204,6 +204,6 @@ describe('notifyAdminsOfAccessRequest', () => {
 
     const button = firstButton(sentBlocks[0]?.blocks ?? []);
     expect(sentBlocks[0]?.channel).toBe('D1');
-    expect(button.url).toBe('http://localhost:3000/projects/proj-1/customize/members');
+    expect(button.url).toBe('http://localhost:3000/workspaces/proj-1/customize/members');
   });
 });

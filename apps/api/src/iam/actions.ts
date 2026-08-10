@@ -57,41 +57,41 @@ export const ACCOUNT_ACTIONS = {
 
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
-  PROJECT_CREATE: 'project.create',
+  WORKSPACE_CREATE: 'project.create',
 } as const;
 
-// ─── Project-scoped actions ────────────────────────────────────────────────
+// ─── Workspace-scoped actions ────────────────────────────────────────────────
 // Can be granted at scope_type='project' (a specific project) OR at
 // scope_type='account' (every project in the account).
 
-export const PROJECT_ACTIONS = {
-  PROJECT_READ: 'project.read',
-  PROJECT_WRITE: 'project.write',
-  PROJECT_DELETE: 'project.delete',
+export const WORKSPACE_ACTIONS = {
+  WORKSPACE_READ: 'project.read',
+  WORKSPACE_WRITE: 'project.write',
+  WORKSPACE_DELETE: 'project.delete',
   // Change requests. Distinct from write so an agent can be granted
   // "open a CR" WITHOUT "merge it to the base branch" — merge is the canonical
   // destructive action (it lands code on main), and stays human/explicit.
-  PROJECT_CR_OPEN: 'project.cr.open',
-  PROJECT_CR_MERGE: 'project.cr.merge',
+  WORKSPACE_CR_OPEN: 'project.cr.open',
+  WORKSPACE_CR_MERGE: 'project.cr.merge',
 
-  PROJECT_SESSION_READ: 'project.session.read',
-  PROJECT_SESSION_START: 'project.session.start',
-  PROJECT_SESSION_STOP: 'project.session.stop',
-  PROJECT_SESSION_BINDINGS_WRITE: 'project.session.bindings.write',
+  WORKSPACE_SESSION_READ: 'project.session.read',
+  WORKSPACE_SESSION_START: 'project.session.start',
+  WORKSPACE_SESSION_STOP: 'project.session.stop',
+  WORKSPACE_SESSION_BINDINGS_WRITE: 'project.session.bindings.write',
 
-  PROJECT_MEMBERS_READ: 'project.members.read',
-  PROJECT_MEMBERS_MANAGE: 'project.members.manage',
+  WORKSPACE_MEMBERS_READ: 'project.members.read',
+  WORKSPACE_MEMBERS_MANAGE: 'project.members.manage',
 
-  PROJECT_TRIGGER_READ: 'project.trigger.read',
-  PROJECT_TRIGGER_CREATE: 'project.trigger.create',
-  PROJECT_TRIGGER_UPDATE: 'project.trigger.update',
-  PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
-  PROJECT_TRIGGER_FIRE: 'project.trigger.fire',
+  WORKSPACE_TRIGGER_READ: 'project.trigger.read',
+  WORKSPACE_TRIGGER_CREATE: 'project.trigger.create',
+  WORKSPACE_TRIGGER_UPDATE: 'project.trigger.update',
+  WORKSPACE_TRIGGER_DELETE: 'project.trigger.delete',
+  WORKSPACE_TRIGGER_FIRE: 'project.trigger.fire',
 
-  PROJECT_GATEWAY_LOGS_READ: 'project.gateway.logs.read',
-  PROJECT_GATEWAY_SPEND_READ: 'project.gateway.spend.read',
-  PROJECT_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
-  PROJECT_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
+  WORKSPACE_GATEWAY_LOGS_READ: 'project.gateway.logs.read',
+  WORKSPACE_GATEWAY_SPEND_READ: 'project.gateway.spend.read',
+  WORKSPACE_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
+  WORKSPACE_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
 
   // ── Per-capability leaf actions (IAM v1) ────────────────────────────────
   // Each project feature gets its own read/write leaf so a custom role can
@@ -101,32 +101,32 @@ export const PROJECT_ACTIONS = {
   // built-in role and every read leaf into the User floor role (see
   // role-perms.ts), so no existing editor/user loses a capability. All resolve to 'project' scope
   // (prefix = 'project') via resourceTypeForAction.
-  PROJECT_AGENT_READ: 'project.agent.read',
-  PROJECT_AGENT_WRITE: 'project.agent.write',
-  PROJECT_SKILL_READ: 'project.skill.read',
-  PROJECT_SKILL_WRITE: 'project.skill.write',
-  PROJECT_COMMAND_READ: 'project.command.read',
-  PROJECT_COMMAND_WRITE: 'project.command.write',
-  PROJECT_FILE_READ: 'project.file.read',
-  PROJECT_FILE_WRITE: 'project.file.write',
-  PROJECT_CUSTOMIZE_READ: 'project.customize.read',
-  PROJECT_CUSTOMIZE_WRITE: 'project.customize.write',
-  PROJECT_GITOPS_READ: 'project.gitops.read',
-  PROJECT_GITOPS_PUSH: 'project.gitops.push',
-  PROJECT_GITOPS_MERGE: 'project.gitops.merge',
-  PROJECT_SECRET_READ: 'project.secret.read',
-  PROJECT_SECRET_WRITE: 'project.secret.write',
-  PROJECT_CONNECTOR_READ: 'project.connector.read',
-  PROJECT_CONNECTOR_CONNECTIONS_MANAGE: 'project.connector.connections.manage',
-  PROJECT_CONNECTOR_WRITE: 'project.connector.write',
+  WORKSPACE_AGENT_READ: 'project.agent.read',
+  WORKSPACE_AGENT_WRITE: 'project.agent.write',
+  WORKSPACE_SKILL_READ: 'project.skill.read',
+  WORKSPACE_SKILL_WRITE: 'project.skill.write',
+  WORKSPACE_COMMAND_READ: 'project.command.read',
+  WORKSPACE_COMMAND_WRITE: 'project.command.write',
+  WORKSPACE_FILE_READ: 'project.file.read',
+  WORKSPACE_FILE_WRITE: 'project.file.write',
+  WORKSPACE_CUSTOMIZE_READ: 'project.customize.read',
+  WORKSPACE_CUSTOMIZE_WRITE: 'project.customize.write',
+  WORKSPACE_GITOPS_READ: 'project.gitops.read',
+  WORKSPACE_GITOPS_PUSH: 'project.gitops.push',
+  WORKSPACE_GITOPS_MERGE: 'project.gitops.merge',
+  WORKSPACE_SECRET_READ: 'project.secret.read',
+  WORKSPACE_SECRET_WRITE: 'project.secret.write',
+  WORKSPACE_CONNECTOR_READ: 'project.connector.read',
+  WORKSPACE_CONNECTOR_CONNECTIONS_MANAGE: 'project.connector.connections.manage',
+  WORKSPACE_CONNECTOR_WRITE: 'project.connector.write',
 
   // Review Center. `read` = see the inbox (floor user). `submit` = an agent puts
   // an output / decision / batch up for human review (floor user + their agent).
   // `act` = approve / reject / request-changes / answer — a consequential
   // decision on agent work, so it sits with the editor tier (like gitops).
-  PROJECT_REVIEW_READ: 'project.review.read',
-  PROJECT_REVIEW_SUBMIT: 'project.review.submit',
-  PROJECT_REVIEW_ACT: 'project.review.act',
+  WORKSPACE_REVIEW_READ: 'project.review.read',
+  WORKSPACE_REVIEW_SUBMIT: 'project.review.submit',
+  WORKSPACE_REVIEW_ACT: 'project.review.act',
 } as const;
 
 // ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────
@@ -140,7 +140,7 @@ const TRIGGER_ACTIONS = {
 
 // Channel-scoped actions (channel.read/connect/send/disconnect) were removed
 // (dead-catalog cleanup, IAM enforcement audit): they were cataloged with
-// resource_type='channel' but never wired to assertProjectCapability (which
+// resource_type='channel' but never wired to assertWorkspaceCapability (which
 // only ever asserts project-scoped actions), so granting or omitting them in
 // a custom role was a silent no-op. The two routes that needed a real
 // send-primitive gate (Slack file upload, meet/speak) were moved onto
@@ -150,7 +150,7 @@ const TRIGGER_ACTIONS = {
 
 const ALL_ACTIONS = {
   ...ACCOUNT_ACTIONS,
-  ...PROJECT_ACTIONS,
+  ...WORKSPACE_ACTIONS,
   ...TRIGGER_ACTIONS,
 } as const;
 
@@ -161,7 +161,7 @@ export type Action = (typeof ALL_ACTIONS)[keyof typeof ALL_ACTIONS];
 // create a role that grants nothing useful.
 export const VALID_ACTIONS: ReadonlySet<string> = new Set([
   ...Object.values(ACCOUNT_ACTIONS),
-  ...Object.values(PROJECT_ACTIONS),
+  ...Object.values(WORKSPACE_ACTIONS),
   ...Object.values(TRIGGER_ACTIONS),
 ]);
 
@@ -188,7 +188,7 @@ export const ACTION_CATALOG: ActionCatalogEntry[] = [
     label: label(a),
     resourceType: resourceTypeForAction(a),
   })),
-  ...Object.values(PROJECT_ACTIONS).map((a) => ({
+  ...Object.values(WORKSPACE_ACTIONS).map((a) => ({
     action: a,
     label: label(a),
     resourceType: resourceTypeForAction(a),

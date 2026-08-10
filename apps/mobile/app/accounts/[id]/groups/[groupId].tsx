@@ -28,7 +28,7 @@ import {
   listGroupProjectGrants,
 } from '@/lib/accounts/groups-client';
 import { listAccountMembers, addGroupMembers } from '@/lib/accounts/accounts-client';
-import { detachGroupFromProject, removeGroupMember } from '@/lib/projects/projects-client';
+import { detachGroupFromWorkspace, removeGroupMember } from '@/lib/workspaces/workspaces-client';
 import { accountColors, InitialsAvatar, Pill, PrimaryButton } from '@/components/accounts/account-shared';
 
 function formatDate(input: string | null | undefined) {
@@ -81,7 +81,7 @@ export default function GroupDetailScreen() {
     onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to remove member.'),
   });
   const detach = useMutation({
-    mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
+    mutationFn: (workspaceId: string) => detachGroupFromWorkspace(workspaceId, groupId),
     onSuccess: () => { haptics.success(); queryClient.invalidateQueries({ queryKey: ['group-grants', accountId, groupId] }); queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] }); },
     onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to detach group.'),
   });
@@ -106,8 +106,8 @@ export default function GroupDetailScreen() {
   const confirmRemove = (userId: string) => Alert.alert('Remove from group', `Remove ${emailByUserId.get(userId) ?? userId} from this group?`, [
     { text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => { haptics.medium(); removeMember.mutate(userId); } },
   ]);
-  const confirmDetach = (projectId: string, projectName: string) => Alert.alert('Detach from workspace', `Members lose their inherited access to "${projectName}" (unless granted another way).`, [
-    { text: 'Cancel', style: 'cancel' }, { text: 'Detach', style: 'destructive', onPress: () => { haptics.medium(); detach.mutate(projectId); } },
+  const confirmDetach = (workspaceId: string, projectName: string) => Alert.alert('Detach from workspace', `Members lose their inherited access to "${projectName}" (unless granted another way).`, [
+    { text: 'Cancel', style: 'cancel' }, { text: 'Detach', style: 'destructive', onPress: () => { haptics.medium(); detach.mutate(workspaceId); } },
   ]);
 
   return (

@@ -52,14 +52,14 @@ describe('white-label SDK boundary', () => {
   });
 
   test('detects provider names embedded inside legacy identifiers', () => {
-    const fixture = `useCanonicalOpenCodeSession(projectId);`;
+    const fixture = `useCanonicalOpenCodeSession(workspaceId);`;
     expect(scanSource(fixture).map((violation) => violation.rule)).toContain(
       'provider-term',
     );
   });
 
   test('rejects dynamic fetch targets in client code', () => {
-    const fixture = `fetch(resolveRuntimeEndpoint(projectId));`;
+    const fixture = `fetch(resolveRuntimeEndpoint(workspaceId));`;
     expect(scanSource(fixture).map((violation) => violation.rule)).toContain(
       'raw-kortix-fetch',
     );

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 
 interface MiddlewareProof {
-  projectRedirect: { status: number; location: string | null };
+  workspaceRedirect: { status: number; location: string | null };
   unauthenticatedWorkspace: {
     status: number;
     pathname: string;
@@ -26,7 +26,7 @@ const proof = JSON.parse(run.stdout.toString()) as MiddlewareProof;
 
 describe('Workspace middleware routing', () => {
   test('redirects a Project URL to its canonical Workspace URL with query intact', () => {
-    expect(proof.projectRedirect).toEqual({
+    expect(proof.workspaceRedirect).toEqual({
       status: 308,
       location: 'http://localhost/workspaces/w1/sessions/s1?x=1',
     });
@@ -40,10 +40,10 @@ describe('Workspace middleware routing', () => {
     });
   });
 
-  test('rewrites an authenticated Workspace request to the compatibility implementation', () => {
+  test('serves an authenticated Workspace request from the canonical route tree', () => {
     expect(proof.authenticatedWorkspace).toEqual({
       status: 200,
-      rewrite: 'http://localhost/projects/w1?x=1',
+      rewrite: null,
     });
   });
 });

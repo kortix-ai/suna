@@ -111,7 +111,7 @@ import {
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
-import { ProjectIconPicker } from '@/components/ui/project-icon-picker';
+import { WorkspaceIconPicker } from '@/components/ui/workspace-icon-picker';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Section as BrandSection } from '@/components/ui/section';
@@ -585,7 +585,7 @@ const TOC_SECTIONS = [
       { id: 'comp-tooltip', label: 'Tooltip' },
       { id: 'comp-popover', label: 'Popover' },
       { id: 'comp-emoji-picker', label: 'Emoji Picker' },
-      { id: 'comp-project-icon-picker', label: 'Project Icon Picker' },
+      { id: 'comp-workspace-icon-picker', label: 'Workspace Icon Picker' },
       { id: 'comp-alert', label: 'Alert' },
       { id: 'comp-toast', label: 'Toast' },
       { id: 'comp-alert-dialog', label: 'Alert Dialog' },
@@ -889,7 +889,7 @@ function ComponentDesc({ children }: { children: React.ReactNode }) {
 
 /**
  * EmojiPicker demo — the same composition the create-project modal ships
- * (features/projects/modal/project-icon-field.tsx): an icon-button trigger and
+ * (features/workspaces/modal/workspace-icon-field.tsx): an icon-button trigger and
  * the picker in a popover sized to the grid's exact width.
  *
  * Behind a trigger rather than inline on the page, deliberately. The picker
@@ -946,8 +946,8 @@ function EmojiPickerDemo() {
 }
 
 /**
- * ProjectIconPicker demo — Emoji and Icon tabs sharing one popover, the same
- * composition Task 9 wires into project-icon-field.tsx. The trigger renders
+ * WorkspaceIconPicker demo — Emoji and Icon tabs sharing one popover, the same
+ * composition Task 9 wires into workspace-icon-field.tsx. The trigger renders
  * whichever face was picked last; picking from one tab clears the other
  * tab's selection so the trigger never has to arbitrate between two stale
  * picks.
@@ -956,7 +956,7 @@ function EmojiPickerDemo() {
  * tab still mounts frimousse and pays its ~782 KB fetch on first open, and
  * this is a public marketing route.
  */
-function ProjectIconPickerDemo() {
+function WorkspaceIconPickerDemo() {
   const [open, setOpen] = useState(false);
   const [emoji, setEmoji] = useState<EmojiSelection | null>(null);
   const [glyph, setGlyph] = useState<GlyphSelection | null>(null);
@@ -975,7 +975,7 @@ function ProjectIconPickerDemo() {
                 ? `Icon: ${emoji.label}. Change it`
                 : glyph
                   ? `Icon: ${glyph.name}. Change it`
-                  : 'Choose a project icon'
+                  : 'Choose a workspace icon'
             }
             className={cn(
               'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-150 active:scale-[0.96]',
@@ -996,14 +996,14 @@ function ProjectIconPickerDemo() {
           </Button>
         </PopoverTrigger>
         {/* Same exact width as EmojiPickerDemo's popover above — both tabs
-            inside ProjectIconPicker share the emoji grid's 9-column geometry,
+            inside WorkspaceIconPicker share the emoji grid's 9-column geometry,
             so the popover never resizes when the Icon tab is selected. */}
         <PopoverContent
           align="start"
-          aria-label="Choose a project icon"
+          aria-label="Choose a workspace icon"
           className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
         >
-          <ProjectIconPicker
+          <WorkspaceIconPicker
             onEmojiSelect={(next) => {
               setEmoji(next);
               setGlyph(null);
@@ -2656,7 +2656,7 @@ export default function BrandPage() {
               <div id="comp-emoji-picker" className="mb-12">
                 <ComponentLabel>Emoji Picker</ComponentLabel>
                 <ComponentDesc>
-                  Emoji grid for picking a project icon — search, keyboard grid navigation, and a
+                  Emoji grid for picking a workspace icon — search, keyboard grid navigation, and a
                   skin-tone selector. The hovered cell takes one of six tints, rotated by three on
                   alternating rows. The dataset is self-hosted from <code>public/emojibase/</code>{' '}
                   and fetched on first open, never from a CDN.
@@ -2666,8 +2666,8 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              <div id="comp-project-icon-picker" className="mb-12">
-                <ComponentLabel>Project Icon Picker</ComponentLabel>
+              <div id="comp-workspace-icon-picker" className="mb-12">
+                <ComponentLabel>Workspace Icon Picker</ComponentLabel>
                 <ComponentDesc>
                   Emoji and Icon side by side in one popover — <code>Tabs</code> wrapping the emoji
                   grid above and a 64-glyph grid, both fixed to the same <code>368px</code> height and
@@ -2676,7 +2676,7 @@ export default function BrandPage() {
                   Emoji tab puts its skin-tone selector.
                 </ComponentDesc>
                 <DemoContainer>
-                  <ProjectIconPickerDemo />
+                  <WorkspaceIconPickerDemo />
                 </DemoContainer>
               </div>
 

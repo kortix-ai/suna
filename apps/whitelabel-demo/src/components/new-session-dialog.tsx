@@ -55,11 +55,11 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 export function NewSessionDialog({
-  projectId,
+  workspaceId,
   trigger,
   initialAgent = null,
 }: {
-  projectId: string;
+  workspaceId: string;
   trigger: React.ReactNode;
   /** Pre-picked agent — used when a refused agent switch sends someone here. */
   initialAgent?: string | null;
@@ -81,7 +81,7 @@ export function NewSessionDialog({
             page that renders the sidebar. */}
         {open && (
           <NewSessionForm
-            projectId={projectId}
+            workspaceId={workspaceId}
             initialAgent={initialAgent}
             onDone={() => setOpen(false)}
           />
@@ -92,11 +92,11 @@ export function NewSessionDialog({
 }
 
 function NewSessionForm({
-  projectId,
+  workspaceId,
   initialAgent,
   onDone,
 }: {
-  projectId: string;
+  workspaceId: string;
   initialAgent: string | null;
   onDone: () => void;
 }) {
@@ -116,12 +116,12 @@ function NewSessionForm({
     null,
   );
 
-  const agents = useVisibleAgents({ projectId });
-  const config = useProjectConfig(projectId);
-  const connectors = useConnectorBindingChoices(projectId);
+  const agents = useVisibleAgents({ workspaceId });
+  const config = useProjectConfig(workspaceId);
+  const connectors = useConnectorBindingChoices(workspaceId);
   const secrets = useQuery({
-    queryKey: qk.secrets(projectId),
-    queryFn: () => kortix.project(projectId).secrets.list(),
+    queryKey: qk.secrets(workspaceId),
+    queryFn: () => kortix.project(workspaceId).secrets.list(),
     retry: false,
   });
 
@@ -156,7 +156,7 @@ function NewSessionForm({
   const start = useMutation({
     mutationFn: async () => {
       const sessionId = generateSessionId();
-      await kortix.project(projectId).sessions.create(
+      await kortix.project(workspaceId).sessions.create(
         buildSessionCreateInput(overrides, {
           sessionId,
         }),
@@ -164,9 +164,9 @@ function NewSessionForm({
       return sessionId;
     },
     onSuccess: (sessionId) => {
-      invalidateSessions(qc, projectId);
+      invalidateSessions(qc, workspaceId);
       onDone();
-      router.push(`/projects/${projectId}/sessions/${sessionId}`);
+      router.push(`/projects/${workspaceId}/sessions/${sessionId}`);
     },
     onError: (err) => {
       // Each KaaB refusal has a distinct code and a different person who can
@@ -285,7 +285,7 @@ function NewSessionForm({
           />
           {/* Where the options in that picker come from — including why an
               alias can be listed with nothing to choose. */}
-          <CallSnippet id="connections.list" context={{ projectId }} />
+          <CallSnippet id="connections.list" context={{ workspaceId }} />
         </section>
       )}
 
@@ -294,14 +294,14 @@ function NewSessionForm({
       <CallSnippet
         id="session.create"
         context={{
-          projectId,
+          workspaceId,
           overrides,
         }}
       />
 
       {requirement && (
         <ConnectRequiredCard
-          projectId={projectId}
+          workspaceId={workspaceId}
           requirement={requirement}
           onRetry={() => {
             setRequirement(null);

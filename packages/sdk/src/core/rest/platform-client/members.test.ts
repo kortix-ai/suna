@@ -192,7 +192,7 @@ test('fetchKortixMaster falls back to "Request failed (status)" when the error b
   await expect(revokeSandboxProjectAccess(sandbox, 'proj-1', 'user-9')).rejects.toThrow('Request failed (500)');
 });
 
-test('URL-encodes projectId and userId with special characters', async () => {
+test('URL-encodes workspaceId and userId with special characters', async () => {
   nextBodyText = '{}';
   nextStatus = 200;
 

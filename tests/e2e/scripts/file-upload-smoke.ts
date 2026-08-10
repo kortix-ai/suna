@@ -137,9 +137,9 @@ async function main() {
 
   // 3. provision project (managed + starter -> snapshot build)
   const prov = await api('POST', '/projects/provision', { account_id: accountId, name: `e2e upload ${Date.now().toString().slice(-6)}`, seed_starter: true });
-  const projectId = prov.json?.project_id || prov.json?.id;
-  if (!ok('POST /projects/provision', !!projectId, `${prov.status} ${prov.text.slice(0, 160)}`)) return finish();
-  if (OPENROUTER) await api('POST', `/projects/${projectId}/secrets`, { name: 'OPENROUTER_API_KEY', value: OPENROUTER });
+  const workspaceId = prov.json?.project_id || prov.json?.id;
+  if (!ok('POST /projects/provision', !!workspaceId, `${prov.status} ${prov.text.slice(0, 160)}`)) return finish();
+  if (OPENROUTER) await api('POST', `/projects/${workspaceId}/secrets`, { name: 'OPENROUTER_API_KEY', value: OPENROUTER });
 
   // 4. snapshot ready — the refactored endpoint returns { templates, builds }.
   //    A template is usable when `ready: true` (image present on the provider).
@@ -147,7 +147,7 @@ async function main() {
   let snapReady = false;
   const snapEnd = Date.now() + 11 * 60_000;
   while (Date.now() < snapEnd) {
-    const s = await api('GET', `/projects/${projectId}/snapshots`);
+    const s = await api('GET', `/projects/${workspaceId}/snapshots`);
     const templates: any[] = s.json?.templates ?? [];
     const builds: any[] = s.json?.builds ?? [];
     const tStates = templates.map((t) => `${t.slug}:${t.ready ? 'ready' : t.daytona_state || t.provider_state || '?'}`).join(',');
@@ -157,12 +157,12 @@ async function main() {
     if (builds.length && builds.every((b) => b.status === 'failed')) { ok('snapshot build', false, builds[0]?.error?.slice(0, 200)); break; }
     await sleep(10_000);
   }
-  if (!ok('snapshot ready', snapReady)) return finish({ projectId });
+  if (!ok('snapshot ready', snapReady)) return finish({ workspaceId });
 
   // 5. session
-  const sess = await api('POST', `/projects/${projectId}/sessions`, { name: 'upload session' });
+  const sess = await api('POST', `/projects/${workspaceId}/sessions`, { name: 'upload session' });
   const sessionId = sess.json?.session_id || sess.json?.id;
-  if (!ok('POST session', !!sessionId, `${sess.status} ${sess.text.slice(0, 160)}`)) return finish({ projectId });
+  if (!ok('POST session', !!sessionId, `${sess.status} ${sess.text.slice(0, 160)}`)) return finish({ workspaceId });
 
   // 6. sandbox active. The current session-open contract is POST /start: it is
   // idempotent, provisions/resumes the runtime, and returns the serialized
@@ -171,7 +171,7 @@ async function main() {
   let ext = '', sbStatus = '', startStage = '';
   const sbEnd = Date.now() + 5 * 60_000;
   while (Date.now() < sbEnd) {
-    const sb = await api('POST', `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`);
+    const sb = await api('POST', `/projects/${workspaceId}/sessions/${sessionId}/start?wait_ms=8000`);
     startStage = sb.json?.stage ?? '';
     const sandbox = sb.json?.sandbox ?? null;
     sbStatus = sandbox?.status ?? '';
@@ -185,7 +185,7 @@ async function main() {
     }
     await sleep(1000);
   }
-  if (!ok('sandbox active', startStage === 'ready' && sbStatus === 'active', `stage=${startStage} status=${sbStatus}`) || !ext) return finish({ projectId, sessionId });
+  if (!ok('sandbox active', startStage === 'ready' && sbStatus === 'active', `stage=${startStage} status=${sbStatus}`) || !ext) return finish({ workspaceId, sessionId });
 
   // 7. OpenCode reachable
   log('Probing OpenCode runtime...');
@@ -197,7 +197,7 @@ async function main() {
     if (p.status === 200) { up = true; break; }
     await sleep(5000);
   }
-  if (!ok('OpenCode runtime reachable', up, lastProbe)) return finish({ projectId, sessionId });
+  if (!ok('OpenCode runtime reachable', up, lastProbe)) return finish({ workspaceId, sessionId });
 
   // ===== THE ACTUAL FILE-UPLOAD ASSERTIONS =====
 
@@ -210,7 +210,7 @@ async function main() {
   form.append('file', new File([fileBody], fileName, { type: 'text/plain' }));
   const up1 = await proxy(ext, 'POST', '/file/upload', { body: form });
   const uploadedPath = Array.isArray(up1.json) ? up1.json[0]?.path : undefined;
-  if (!ok('POST /file/upload (path+file)', up1.status === 200 && !!uploadedPath, `${up1.status} ${up1.text.slice(0, 200)}`)) return finish({ projectId, sessionId });
+  if (!ok('POST /file/upload (path+file)', up1.status === 200 && !!uploadedPath, `${up1.status} ${up1.text.slice(0, 200)}`)) return finish({ workspaceId, sessionId });
   ok('uploaded path under /workspace/uploads', String(uploadedPath).startsWith('/workspace/uploads/'), String(uploadedPath));
   ok('upload reports correct byte size', Array.isArray(up1.json) && up1.json[0]?.size === Buffer.byteLength(fileBody), `${up1.json?.[0]?.size} vs ${Buffer.byteLength(fileBody)}`);
 
@@ -313,12 +313,12 @@ async function main() {
     log('⚠️  no OPENROUTER key — skipping agent-reads-file assertion (file I/O still fully verified)');
   }
 
-  return finish({ projectId, sessionId });
+  return finish({ workspaceId, sessionId });
 }
 
-async function finish(cleanup?: { projectId?: string; sessionId?: string }) {
-  if (cleanup?.sessionId) await api('DELETE', `/projects/${cleanup.projectId}/sessions/${cleanup.sessionId}`);
-  if (cleanup?.projectId) await api('DELETE', `/projects/${cleanup.projectId}`);
+async function finish(cleanup?: { workspaceId?: string; sessionId?: string }) {
+  if (cleanup?.sessionId) await api('DELETE', `/projects/${cleanup.workspaceId}/sessions/${cleanup.sessionId}`);
+  if (cleanup?.workspaceId) await api('DELETE', `/projects/${cleanup.workspaceId}`);
   log('==============================');
   log(`RESULT: ${PASS} passed, ${FAIL} failed`);
   process.exit(FAIL > 0 ? 1 : 0);

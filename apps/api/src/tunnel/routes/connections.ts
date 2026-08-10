@@ -137,7 +137,8 @@ export function createConnectionsRouter() {
         })
         .returning(SAFE_CONNECTION_COLUMNS);
 
-      // Materialize the account's `computer` connector (first machine).
+      // Reconcile now for previously-connected rows; a first-time machine is
+      // materialized by the WS handshake after last_heartbeat_at is set.
       void reconcileComputerConnectors(accountId);
 
       return c.json({ ...connection, setupToken }, 201);
@@ -164,12 +165,7 @@ export function createConnectionsRouter() {
       const [connection] = await db
         .select(SAFE_CONNECTION_COLUMNS)
         .from(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        );
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause));
 
       if (!connection) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
@@ -206,7 +202,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { ownerClause } = await getTunnelOwnerContext(c);
+      const { accountId, ownerClause } = await getTunnelOwnerContext(c);
       const tunnelId = c.req.param('tunnelId');
       const body = await c.req.json();
 
@@ -218,17 +214,16 @@ export function createConnectionsRouter() {
       const [updated] = await db
         .update(tunnelConnections)
         .set(updates)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        )
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
         .returning(SAFE_CONNECTION_COLUMNS);
 
       if (!updated) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
+
+      // Machine names are connector profile names. Keep every project copy in
+      // sync after a rename or capability update.
+      void reconcileComputerConnectors(accountId);
 
       return c.json(updated);
     },
@@ -257,12 +252,7 @@ export function createConnectionsRouter() {
       const [tunnel] = await db
         .select()
         .from(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        );
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause));
 
       if (!tunnel) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
@@ -307,19 +297,14 @@ export function createConnectionsRouter() {
 
       const [deleted] = await db
         .delete(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        )
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
         .returning();
 
       if (!deleted) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      // Tear down the account's `computer` connector if that was the last machine.
+      // Tear down this machine's connector profile across the account's projects.
       void reconcileComputerConnectors(accountId);
 
       return c.json({ success: true });

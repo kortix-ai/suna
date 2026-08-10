@@ -2,25 +2,25 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import { useKortixRouteProjectId } from '../route-project';
+import { useKortixRouteWorkspaceId } from '../route-project';
 import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
-  getProjectDetail,
-  getProjectModelPicker,
-  listProjectSecrets,
-} from '../../core/rest/projects-client';
+  getWorkspaceDetail,
+  getWorkspaceModelPicker,
+  listWorkspaceSecrets,
+} from '../../core/rest/workspaces-client';
 import {
   filterToGatewayProviders,
   filterToNativeProviders,
   GATEWAY_PROVIDER_IDS,
   LLM_PROVIDER_CREDENTIALS,
-  mergeProjectSecretConnectedProviders,
+  mergeWorkspaceSecretConnectedProviders,
   normalizeProviderList,
-  projectLlmCatalogToProviderList,
+  workspaceLlmCatalogToProviderList,
   providerListHasModels,
 } from '../provider-selection';
 import { shouldLoadProjectModelPicker } from './provider-load-plan';
@@ -33,27 +33,27 @@ export { GATEWAY_PROVIDER_IDS };
 
 export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
-  const projectId = useKortixRouteProjectId();
+  const workspaceId = useKortixRouteWorkspaceId();
   const projectDetailQuery = useQuery({
-    // Same fetcher and same response shape every other `getProjectDetail`
-    // reader caches under `qk.project.detail(id)` — sharing the key (instead
+    // Same fetcher and same response shape every other `getWorkspaceDetail`
+    // reader caches under `qk.workspace.detail(id)` — sharing the key (instead
     // of the old standalone flat `project-detail` array literal) is what stops
     // this hook from firing a second `GET /projects/:id/detail` on every
     // session page purely to duplicate data the project shell already has.
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId!),
-    enabled: !!projectId,
+    queryKey: qk.workspace.detail(workspaceId ?? ''),
+    queryFn: () => getWorkspaceDetail(workspaceId!),
+    enabled: !!workspaceId,
     ...contract('config'),
   });
-  const projectGatewayEnabled =
-    projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
-  const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
-  const gatewayCacheScope = projectId ? `proj:${projectId}:gateway` : CACHE_SCOPE_GLOBAL;
+  const workspaceGatewayEnabled =
+    workspaceId ? projectDetailQuery.data?.workspace.experimental?.llm_gateway === true : false;
+  const workspaceModeKnown = !workspaceId || projectDetailQuery.isSuccess;
+  const gatewayCacheScope = workspaceId ? `proj:${workspaceId}:gateway` : CACHE_SCOPE_GLOBAL;
   const gatewayProvidersQuery = useQuery<ProviderListResponse>({
-    queryKey: ['project-providers', projectId, 'gateway'],
+    queryKey: ['workspace-providers', workspaceId, 'gateway'],
     queryFn: async () => {
-      const catalog = await getProjectModelPicker(projectId!);
-      const providers = projectLlmCatalogToProviderList(catalog);
+      const catalog = await getWorkspaceModelPicker(workspaceId!);
+      const providers = workspaceLlmCatalogToProviderList(catalog);
       setLSCache(LS_PROVIDERS, providers, gatewayCacheScope);
       return providers;
     },
@@ -64,37 +64,37 @@ export function useOpenCodeProviders() {
       return providerListHasModels(providers) ? providers : undefined;
     },
     enabled: shouldLoadProjectModelPicker({
-      projectId,
-      projectModeKnown,
-      projectGatewayEnabled,
+      workspaceId,
+      projectModeKnown: workspaceModeKnown,
+      projectGatewayEnabled: workspaceGatewayEnabled,
     }),
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
     retry: (failureCount) =>
-      (!projectModeKnown || projectGatewayEnabled) && failureCount < 10,
+      (!workspaceModeKnown || workspaceGatewayEnabled) && failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
 
   // BYOK makes the connected model set project-specific. A provider connected
   // in one project must not leak into another or remain after removal.
-  const nativeCacheScope = projectId ? `proj:${projectId}:native` : CACHE_SCOPE_GLOBAL;
+  const nativeCacheScope = workspaceId ? `proj:${workspaceId}:native` : CACHE_SCOPE_GLOBAL;
   const nativeProvidersQuery = useQuery<ProviderListResponse>({
-    queryKey: projectId ? ['project-providers', projectId, 'native'] : opencodeKeys.providers(),
+    queryKey: workspaceId ? ['workspace-providers', workspaceId, 'native'] : opencodeKeys.providers(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.provider.list();
       let rawProviders = normalizeProviderList(unwrap(result));
-      if (projectId) {
-        const secrets = await listProjectSecrets(projectId);
+      if (workspaceId) {
+        const secrets = await listWorkspaceSecrets(workspaceId);
         const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
         const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
-        rawProviders = mergeProjectSecretConnectedProviders(
+        rawProviders = mergeWorkspaceSecretConnectedProviders(
           rawProviders,
           secretNames,
           LLM_PROVIDER_CREDENTIALS,
         );
       }
-      const providers = projectId ? filterToNativeProviders(rawProviders) : rawProviders;
+      const providers = workspaceId ? filterToNativeProviders(rawProviders) : rawProviders;
 
       // During sandbox boot the OpenCode server frequently answers
       // /provider/list BEFORE its provider config is wired up, returning zero
@@ -123,14 +123,14 @@ export function useOpenCodeProviders() {
     placeholderData: () => {
       const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, nativeCacheScope);
       if (!providerListHasModels(cached)) return undefined;
-      if (projectId) {
+      if (workspaceId) {
         const nativeProviders = filterToNativeProviders(cached as ProviderListResponse);
         return providerListHasModels(nativeProviders) ? nativeProviders : undefined;
       }
       return cached;
     },
-    enabled: projectId
-      ? projectModeKnown && !projectGatewayEnabled && runtimeReady
+    enabled: workspaceId
+      ? workspaceModeKnown && !workspaceGatewayEnabled && runtimeReady
       : runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
@@ -139,5 +139,5 @@ export function useOpenCodeProviders() {
     retry: (failureCount) => failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
-  return projectId && projectGatewayEnabled ? gatewayProvidersQuery : nativeProvidersQuery;
+  return workspaceId && workspaceGatewayEnabled ? gatewayProvidersQuery : nativeProvidersQuery;
 }

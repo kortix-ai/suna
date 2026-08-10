@@ -4,7 +4,7 @@
  *
  * Design (see references/kortix/credentials-and-setup-links.md):
  *   • STATELESS. There is no `setup_requests` table. The token IS the request:
- *     an AEAD envelope encrypted with the PROJECT's key (the same per-project
+ *     an AEAD envelope encrypted with the WORKSPACE's key (the same per-project
  *     HKDF key used for project secrets), so a token from one project can't be
  *     decrypted by another, and a tampered token simply fails to decrypt.
  *   • The token carries everything the public intake endpoints need: the kind,
@@ -16,12 +16,12 @@
  *     leaked token can only SET the named keys in that one project before it
  *     expires — it can never read an existing secret or target another key.
  *
- * Wire format: `ksl_<base64url(projectId "." envelope)>`. projectId rides
+ * Wire format: `ksl_<base64url(workspaceId "." envelope)>`. workspaceId rides
  * outside only to pick the decryption key; the envelope is what's authenticated,
  * and `payload.pid` is cross-checked against it on resolve.
  */
 import { randomBytes } from 'node:crypto';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { decryptWorkspaceSecret, encryptWorkspaceSecret } from '../workspaces/secrets';
 
 const TOKEN_PREFIX = 'ksl_';
 // Secret/connector links are relayed out-of-band (Slack, email) to a human who
@@ -44,7 +44,7 @@ export type SecretScope = 'runtime' | 'connector';
 interface BasePayload {
   exp: number;
   nonce: string;
-  /** projectId sealed inside the envelope; cross-checked against the outer id. */
+  /** workspaceId sealed inside the envelope; cross-checked against the outer id. */
   pid: string;
   /** The member who minted the link (the session owner). Recorded as created_by. */
   uid: string | null;
@@ -104,14 +104,14 @@ type ApprovalSpec = {
 const APPROVAL_TTL_MINUTES = 24 * 60;
 
 export function mintSetupLink(
-  projectId: string,
+  workspaceId: string,
   spec: SecretSpec | ConnectorSpec | ApprovalSpec,
   opts?: { expiresInMinutes?: number | null },
 ): { token: string; expiresAt: number } {
   const defaultTtl = spec.kind === 'approval' ? APPROVAL_TTL_MINUTES : undefined;
   const exp = Date.now() + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
   const nonce = randomBytes(9).toString('base64url');
-  const base: BasePayload = { exp, nonce, pid: projectId, uid: spec.uid ?? null };
+  const base: BasePayload = { exp, nonce, pid: workspaceId, uid: spec.uid ?? null };
 
   const payload: SetupLinkPayload =
     spec.kind === 'secret'
@@ -120,9 +120,9 @@ export function mintSetupLink(
         ? { ...base, kind: 'approval', eid: spec.executionId, sid: spec.sessionId ?? null }
         : { ...base, kind: 'connector', slug: spec.slug, app: spec.app ?? null };
 
-  const envelope = encryptProjectSecret(projectId, JSON.stringify(payload));
+  const envelope = encryptWorkspaceSecret(workspaceId, JSON.stringify(payload));
   const token =
-    TOKEN_PREFIX + Buffer.from(`${projectId}.${envelope}`, 'utf8').toString('base64url');
+    TOKEN_PREFIX + Buffer.from(`${workspaceId}.${envelope}`, 'utf8').toString('base64url');
   return { token, expiresAt: exp };
 }
 
@@ -135,13 +135,13 @@ export function mintSetupLink(
  * caller can degrade instead of throwing on a display path.
  */
 export function approvalPageUrl(
-  projectId: string,
+  workspaceId: string,
   executionId: string,
   sessionId: string | null,
   frontendUrl?: string | null,
 ): string | null {
   try {
-    const { token } = mintSetupLink(projectId, { kind: 'approval', executionId, sessionId });
+    const { token } = mintSetupLink(workspaceId, { kind: 'approval', executionId, sessionId });
     const base = (frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000').replace(
       /\/+$/,
       '',
@@ -153,14 +153,14 @@ export function approvalPageUrl(
 }
 
 export type ResolvedSetupLink =
-  | { ok: true; projectId: string; payload: SetupLinkPayload }
+  | { ok: true; workspaceId: string; payload: SetupLinkPayload }
   | { ok: false; status: 404 | 410; error: string };
 
 export function resolveSetupLink(token: string | undefined | null): ResolvedSetupLink {
   if (!token || !token.startsWith(TOKEN_PREFIX)) {
     return { ok: false, status: 404, error: 'Invalid or unknown link' };
   }
-  let projectId: string;
+  let workspaceId: string;
   let envelope: string;
   try {
     // Reject non-canonical base64url spellings before decrypting the envelope.
@@ -172,7 +172,7 @@ export function resolveSetupLink(token: string | undefined | null): ResolvedSetu
     const decoded = decodedBytes.toString('utf8');
     const dot = decoded.indexOf('.');
     if (dot <= 0) return { ok: false, status: 404, error: 'Invalid or unknown link' };
-    projectId = decoded.slice(0, dot);
+    workspaceId = decoded.slice(0, dot);
     envelope = decoded.slice(dot + 1);
   } catch {
     return { ok: false, status: 404, error: 'Invalid or unknown link' };
@@ -180,14 +180,14 @@ export function resolveSetupLink(token: string | undefined | null): ResolvedSetu
 
   let payload: SetupLinkPayload;
   try {
-    payload = JSON.parse(decryptProjectSecret(projectId, envelope)) as SetupLinkPayload;
+    payload = JSON.parse(decryptWorkspaceSecret(workspaceId, envelope)) as SetupLinkPayload;
   } catch {
     // Wrong project key, tampered ciphertext, or garbage → indistinguishable
     // from "never existed". Don't leak which.
     return { ok: false, status: 404, error: 'Invalid or unknown link' };
   }
 
-  if (payload.pid !== projectId)
+  if (payload.pid !== workspaceId)
     return { ok: false, status: 404, error: 'Invalid or unknown link' };
   // 60-second clock-skew buffer: in a load-balanced deployment the instance
   // that MINTED the token and the instance that RESOLVES it may have slightly
@@ -200,5 +200,5 @@ export function resolveSetupLink(token: string | undefined | null): ResolvedSetu
       error: 'This link has expired — ask the agent for a fresh one',
     };
   }
-  return { ok: true, projectId, payload };
+  return { ok: true, workspaceId, payload };
 }

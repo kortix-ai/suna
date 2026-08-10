@@ -6,7 +6,7 @@ import { config } from '../../config';
 import { combinedAuth } from '../../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
-import { listProjectsForWorkspace, loadTeamsInstall } from '../install-store';
+import { listWorkspacesForWorkspace, loadTeamsInstall } from '../install-store';
 import { consumePendingTeamsAuthMessage } from './auth-resume';
 import { isAccountMember, linkTeamsIdentity } from './identity';
 import { verifyTeamsLoginState } from './login';
@@ -79,14 +79,14 @@ teamsIdentityApp.openapi(
         410,
       );
 
-    const projectIds = await listProjectsForWorkspace('teams', payload.tenantId);
-    if (projectIds.length === 0) {
-      return c.json({ error: 'This Teams tenant is not connected to any Kortix project.' }, 403);
+    const workspaceIds = await listWorkspacesForWorkspace('teams', payload.tenantId);
+    if (workspaceIds.length === 0) {
+      return c.json({ error: 'This Teams tenant is not connected to any Kortix workspace.' }, 403);
     }
     const accountRows = await db
       .select({ accountId: projects.accountId })
       .from(projects)
-      .where(inArray(projects.projectId, projectIds));
+      .where(inArray(projects.workspaceId, workspaceIds));
     const accountIds = Array.from(new Set(accountRows.map((r) => r.accountId)));
     const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
     const hasAccess = memberships.some(Boolean);
@@ -106,7 +106,7 @@ teamsIdentityApp.openapi(
     if (pending) {
       resumed = true;
       void createOrJoinTeamsConversationSession({
-        projectId: pending.projectId,
+        workspaceId: pending.workspaceId,
         tenantId: payload.tenantId,
         conversationId: pending.activity.conversation?.id ?? '',
         activity: pending.activity,
@@ -116,7 +116,7 @@ teamsIdentityApp.openapi(
     }
 
     const workspaceName =
-      (await loadTeamsInstall(projectIds[0]).catch(() => null))?.teamName ?? null;
+      (await loadTeamsInstall(workspaceIds[0]).catch(() => null))?.teamName ?? null;
     return c.json({ ok: true, workspaceName, hasAccess, resumed });
   },
 );

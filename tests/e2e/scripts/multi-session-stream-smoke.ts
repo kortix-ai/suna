@@ -106,12 +106,12 @@ function openStream(ext: string, label: string) {
   return { state, close: () => ctrl.abort() };
 }
 
-async function waitSandbox(projectId: string, sessionId: string, label: string): Promise<string> {
+async function waitSandbox(workspaceId: string, sessionId: string, label: string): Promise<string> {
   log(`Polling sandbox for ${label}...`);
   let ext = '', status = '';
   const end = Date.now() + 6 * 60_000;
   while (Date.now() < end) {
-    const sb = await api('GET', `/projects/${projectId}/sessions/${sessionId}/sandbox`);
+    const sb = await api('GET', `/projects/${workspaceId}/sessions/${sessionId}/sandbox`);
     if (sb.status === 404) { await sleep(4000); continue; }
     status = sb.json?.status ?? '';
     ext = sb.json?.external_id || '';
@@ -167,34 +167,34 @@ async function main() {
   if (!ok('account', !!accountId)) return finish();
 
   const prov = await api('POST', '/projects/provision', { account_id: accountId, name: `e2e multistream ${Date.now().toString().slice(-6)}`, seed_starter: true });
-  const projectId = prov.json?.project_id || prov.json?.id;
-  if (!ok('provision project', !!projectId, `${prov.status}`)) return finish();
-  await api('POST', `/projects/${projectId}/secrets`, { name: 'OPENROUTER_API_KEY', value: OPENROUTER });
+  const workspaceId = prov.json?.project_id || prov.json?.id;
+  if (!ok('provision project', !!workspaceId, `${prov.status}`)) return finish();
+  await api('POST', `/projects/${workspaceId}/secrets`, { name: 'OPENROUTER_API_KEY', value: OPENROUTER });
 
   log('Polling snapshot...');
   let snapReady = false;
   const snapEnd = Date.now() + 9 * 60_000;
   while (Date.now() < snapEnd) {
-    const s = await api('GET', `/projects/${projectId}/snapshots`);
+    const s = await api('GET', `/projects/${workspaceId}/snapshots`);
     const list = s.json?.items ?? s.json?.snapshots ?? (Array.isArray(s.json) ? s.json : []);
     if (list.some((x: any) => x.status === 'ready')) { snapReady = true; break; }
     if (list.length && list.every((x: any) => x.status === 'failed')) break;
     await sleep(10_000);
   }
-  if (!ok('snapshot ready', snapReady)) return finish({ projectId });
+  if (!ok('snapshot ready', snapReady)) return finish({ workspaceId });
 
   // Two sessions in parallel.
-  const s1 = await api('POST', `/projects/${projectId}/sessions`, { name: 'session A' });
-  const s2 = await api('POST', `/projects/${projectId}/sessions`, { name: 'session B' });
+  const s1 = await api('POST', `/projects/${workspaceId}/sessions`, { name: 'session A' });
+  const s2 = await api('POST', `/projects/${workspaceId}/sessions`, { name: 'session B' });
   const sid1 = s1.json?.session_id || s1.json?.id;
   const sid2 = s2.json?.session_id || s2.json?.id;
-  if (!ok('two sessions created', !!sid1 && !!sid2, `${sid1} / ${sid2}`)) return finish({ projectId });
+  if (!ok('two sessions created', !!sid1 && !!sid2, `${sid1} / ${sid2}`)) return finish({ workspaceId });
 
   const [ext1, ext2] = await Promise.all([
-    waitSandbox(projectId, sid1, 'A'),
-    waitSandbox(projectId, sid2, 'B'),
+    waitSandbox(workspaceId, sid1, 'A'),
+    waitSandbox(workspaceId, sid2, 'B'),
   ]);
-  if (!ext1 || !ext2) return finish({ projectId, sessionIds: [sid1, sid2] });
+  if (!ext1 || !ext2) return finish({ workspaceId, sessionIds: [sid1, sid2] });
 
   await Promise.all([probeOpenCode(ext1, 'A'), probeOpenCode(ext2, 'B')]);
 
@@ -225,15 +225,15 @@ async function main() {
     `A=${A.state.events} B=${B.state.events}`);
 
   A.close(); B.close();
-  return finish({ projectId, sessionIds: [sid1, sid2] });
+  return finish({ workspaceId, sessionIds: [sid1, sid2] });
 }
 
-async function finish(cleanup?: { projectId?: string; sessionIds?: string[] }) {
+async function finish(cleanup?: { workspaceId?: string; sessionIds?: string[] }) {
   try {
     for (const sid of cleanup?.sessionIds ?? []) {
-      if (sid) await api('DELETE', `/projects/${cleanup!.projectId}/sessions/${sid}`);
+      if (sid) await api('DELETE', `/projects/${cleanup!.workspaceId}/sessions/${sid}`);
     }
-    if (cleanup?.projectId) await api('DELETE', `/projects/${cleanup.projectId}`);
+    if (cleanup?.workspaceId) await api('DELETE', `/projects/${cleanup.workspaceId}`);
   } catch { /* best effort */ }
   log('==============================');
   log(`RESULT: ${PASS} passed, ${FAIL} failed`);

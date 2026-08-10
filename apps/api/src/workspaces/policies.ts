@@ -1,0 +1,195 @@
+/**
+ * Workspace-level `policies:` + `policy:` parsing for kortix.yaml (a legacy v1
+ * project spells these as `[[policies]]` + `[policy]` in kortix.toml — same
+ * parsed shape either way).
+ *
+ * Workspace policies span EVERY connector in the workspace — patterns are
+ * fully-qualified (`<connector-slug>.<path>` or globs over that), and they're
+ * evaluated before any connector-scoped rule (docs/specs/connector.md §8).
+ * `policy.default_mode` controls the fallback when no rule matches:
+ *   • `risk` — read = always_run, write/destructive = require_approval
+ *   • `allow_all` — every tool runs (legacy default for back-compat)
+ *
+ * Mirror the connectors / triggers / apps parser shape: never throws on a bad
+ * entry, collects them in `errors` so the UI can render them next to the good
+ * ones. Defaults are permissive (no policies + allow_all) so existing projects
+ * without a `policy:` block keep current behavior.
+ */
+import {
+  type PolicyArgCondition,
+  areValidConditions,
+  normalizeConditions,
+} from '../connectors/policy';
+import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
+
+type WorkspacePolicyAction = 'always_run' | 'require_approval' | 'block';
+const POLICY_ACTIONS: readonly WorkspacePolicyAction[] = ['always_run', 'require_approval', 'block'];
+
+export type DefaultMode = 'risk' | 'allow_all';
+const DEFAULT_MODES: readonly DefaultMode[] = ['risk', 'allow_all'];
+
+export interface WorkspacePolicySpec {
+  /** Glob over fully-qualified tool paths: `*`, `stripe.*`, `*.delete*`, `stripe.charges.create`. */
+  match: string;
+  action: WorkspacePolicyAction;
+  /**
+   * Optional ARGUMENT conditions — ALL must hold for the rule to apply.
+   *
+   * A `match` alone can only gate a tool NAME ("may the agent send email"); it
+   * cannot gate the target ("…but only to these addresses"), which is what a
+   * real guardrail needs. Written in kortix.yaml as:
+   *
+   *   policies:
+   *     - match: gmail.send_email
+   *       action: require_approval
+   *       conditions:
+   *         - arg: to
+   *           match: /^(owner|admin)@example\.com$/
+   *     - match: gmail.send_email      # anything else is refused outright
+   *       action: block
+   *
+   * Semantics (incl. how an unevaluable condition fails closed) live in
+   * connector/policy.ts.
+   */
+  conditions?: PolicyArgCondition[] | null;
+}
+
+export interface WorkspacePolicySettings {
+  /** Falls back to `allow_all` for missing `policy` blocks (back-compat). */
+  defaultMode: DefaultMode;
+}
+
+interface WorkspacePolicyParseError {
+  path: string;
+  error: string;
+}
+
+export interface LoadedWorkspacePolicies {
+  policies: WorkspacePolicySpec[];
+  settings: WorkspacePolicySettings;
+  errors: WorkspacePolicyParseError[];
+}
+
+const DEFAULT_SETTINGS: WorkspacePolicySettings = { defaultMode: 'allow_all' };
+
+/**
+ * Extract `policies` + `policy` from a parsed manifest. Never throws.
+ */
+export function extractWorkspacePolicies(manifest: ParsedManifest): LoadedWorkspacePolicies {
+  const errors: WorkspacePolicyParseError[] = [];
+  // Use the ACTUAL manifest file in error paths so a YAML workspace reports
+  // `kortix.yaml#policy`, not a hardcoded `kortix.toml#…`.
+  const filename = manifest.path || MANIFEST_FILENAME;
+
+  // ── policy block (default_mode) ────────────────────────────────────────────
+  let settings: WorkspacePolicySettings = { ...DEFAULT_SETTINGS };
+  const policyBlock = manifest.raw.policy;
+  if (policyBlock !== undefined && policyBlock !== null) {
+    if (typeof policyBlock !== 'object' || Array.isArray(policyBlock)) {
+      errors.push({ path: `${filename}#policy`, error: '`policy` must be an object' });
+    } else {
+      const row = policyBlock as Record<string, unknown>;
+      if (row.default_mode !== undefined) {
+        const mode =
+          typeof row.default_mode === 'string' ? row.default_mode.trim().toLowerCase() : '';
+        if (!DEFAULT_MODES.includes(mode as DefaultMode)) {
+          errors.push({
+            path: `${filename}#policy.default_mode`,
+            error: `policy.default_mode must be one of ${DEFAULT_MODES.join(', ')} (got "${mode || 'unset'}")`,
+          });
+        } else {
+          settings = { defaultMode: mode as DefaultMode };
+        }
+      }
+    }
+  }
+
+  // ── policies array ──────────────────────────────────────────────────────────
+  const policies: WorkspacePolicySpec[] = [];
+  const raw = manifest.raw.policies;
+  if (raw !== undefined && raw !== null) {
+    if (!Array.isArray(raw)) {
+      errors.push({
+        path: filename,
+        error:
+          '`policies` must be an array of tables — a YAML list (or a legacy TOML [[policies]]), not a single mapping',
+      });
+    } else {
+      raw.forEach((entry, i) => {
+        const path = `${filename}#policies[${i}]`;
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          errors.push({ path, error: `policies entry #${i + 1} is not an object` });
+          return;
+        }
+        const row = entry as Record<string, unknown>;
+        const match = typeof row.match === 'string' && row.match.trim() ? row.match.trim() : '';
+        if (!match) {
+          errors.push({ path, error: `policies entry #${i + 1} is missing \`match\`` });
+          return;
+        }
+        const action = typeof row.action === 'string' ? row.action.trim().toLowerCase() : '';
+        if (!POLICY_ACTIONS.includes(action as WorkspacePolicyAction)) {
+          errors.push({
+            path,
+            error: `policies entry #${i + 1} \`action\` must be one of ${POLICY_ACTIONS.join(', ')} (got "${action || 'unset'}")`,
+          });
+          return;
+        }
+        // A malformed `conditions` is a HARD error, never a silently-dropped
+        // field: quietly ignoring it would turn "allow only these recipients"
+        // into "allow", which is the exact failure this feature exists to stop.
+        if (row.conditions !== undefined && row.conditions !== null) {
+          if (!areValidConditions(row.conditions)) {
+            errors.push({
+              path,
+              error: `policies entry #${i + 1} has invalid \`conditions\` — each needs an \`arg\` (a dot path, not __proto__/constructor/prototype), a \`match\` glob or /regex/, and an optional boolean \`negate\``,
+            });
+            return;
+          }
+          policies.push({
+            match,
+            action: action as WorkspacePolicyAction,
+            conditions: normalizeConditions(row.conditions),
+          });
+          return;
+        }
+        policies.push({ match, action: action as WorkspacePolicyAction });
+      });
+    }
+  }
+
+  return { policies, settings, errors };
+}
+
+/**
+ * Convert a list of project policies back to the raw entries that live in
+ * `manifest.raw.policies` (format-agnostic — same shape serializes to a
+ * kortix.yaml list or a legacy kortix.toml `[[policies]]` table array).
+ * Inverse of `extractWorkspacePolicies`. Used by the admin CRUD path to
+ * round-trip a dashboard edit before committing.
+ */
+export function workspacePoliciesToTomlEntries(
+  policies: WorkspacePolicySpec[],
+): Array<Record<string, unknown>> {
+  return policies.map((p) => {
+    const entry: Record<string, unknown> = { match: p.match, action: p.action };
+    // Omitted when absent so a rule without conditions serializes byte-identically
+    // to before (no spurious `conditions: []` churn in every workspace's manifest).
+    if (p.conditions && p.conditions.length > 0) {
+      entry.conditions = p.conditions.map((c) => ({
+        arg: c.arg,
+        match: c.match,
+        ...(c.negate ? { negate: true } : {}),
+      }));
+    }
+    return entry;
+  });
+}
+
+/** Serialize `policy` settings — null when default (so we don't write empty blocks). */
+export function workspacePolicySettingsToToml(
+  settings: WorkspacePolicySettings,
+): Record<string, unknown> | null {
+  if (settings.defaultMode === DEFAULT_SETTINGS.defaultMode) return null;
+  return { default_mode: settings.defaultMode };
+}

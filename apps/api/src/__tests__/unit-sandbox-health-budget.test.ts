@@ -1,5 +1,5 @@
 /**
- * Regression coverage for the `/projects/:projectId/sandbox-health` poll's
+ * Regression coverage for the `/projects/:workspaceId/sandbox-health` poll's
  * whole-handler wall-clock budget.
  *
  * Incident: the frontend (Kortix Frontend, prod) reported
@@ -8,7 +8,7 @@
  *
  * A prior fix (PR #3361) bounded only the Daytona `snapshot.get` /
  * `listSandboxTemplates` portion. But the handler also awaits git-auth
- * resolution (`loadGitProject`) and the build-log DB query
+ * resolution (`loadGitWorkspace`) and the build-log DB query
  * (`listSnapshotBuilds`) with no bound — so a slow DB or git-auth call still
  * let the request hang to the client's 30s abort and re-fire the same error.
  *

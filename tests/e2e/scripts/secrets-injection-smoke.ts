@@ -34,7 +34,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const deadline = (ms: number) => Date.now() + ms;
 let token = '';
 let userId = '';
-let projectId = '';
+let workspaceId = '';
 let sessionId = '';
 let externalId = '';
 
@@ -78,7 +78,7 @@ async function waitForSandbox(): Promise<void> {
   const end = deadline(12 * 60_000);
   let last = '';
   while (Date.now() < end) {
-    const response = await api(`/projects/${projectId}/sessions/${sessionId}/start?wait_ms=25000`, {
+    const response = await api(`/projects/${workspaceId}/sessions/${sessionId}/start?wait_ms=25000`, {
       method: 'POST',
       body: '{}',
     });
@@ -185,7 +185,7 @@ async function syncAndAssert(
   exported: number,
   phase: string,
 ): Promise<SyncTarget> {
-  const response = await api(`/projects/${projectId}/secrets/sync`, {
+  const response = await api(`/projects/${workspaceId}/secrets/sync`, {
     method: 'POST',
     body: '{}',
   });
@@ -254,17 +254,17 @@ async function main(): Promise<void> {
       seed_starter: true,
     }),
   });
-  projectId = project.body?.project_id ?? project.body?.id ?? '';
-  if (!projectId) throw new Error(`project provision failed: ${project.status} ${project.text}`);
-  log('project created', projectId);
+  workspaceId = project.body?.project_id ?? project.body?.id ?? '';
+  if (!workspaceId) throw new Error(`project provision failed: ${project.status} ${project.text}`);
+  log('project created', workspaceId);
 
-  const setSecret = await api(`/projects/${projectId}/secrets`, {
+  const setSecret = await api(`/projects/${workspaceId}/secrets`, {
     method: 'POST',
     body: JSON.stringify({ identifier: secretName, name: secretName, value: secretValue }),
   });
   requireStatus(setSecret, 200, 'set sentinel secret');
 
-  const session = await api(`/projects/${projectId}/sessions`, {
+  const session = await api(`/projects/${workspaceId}/sessions`, {
     method: 'POST',
     body: JSON.stringify({ name: `secrets ${provider} ${Date.now()}`, provider }),
   });
@@ -282,7 +282,7 @@ async function main(): Promise<void> {
   const initial = await syncAndAssert('inherit', 1, 'identical-revision sync replay');
   await shellSeesSecret('PRESENT', 'post-sync injection');
 
-  const deny = await api(`/projects/${projectId}/sessions/${sessionId}/scope`, {
+  const deny = await api(`/projects/${workspaceId}/sessions/${sessionId}/scope`, {
     method: 'PUT',
     body: JSON.stringify({ secrets: [] }),
   });
@@ -290,7 +290,7 @@ async function main(): Promise<void> {
   await syncAndAssert('none', 0, 'deny-all sync');
   await shellSeesSecret('ABSENT', 'deny-all revocation');
 
-  const restore = await api(`/projects/${projectId}/sessions/${sessionId}/scope`, {
+  const restore = await api(`/projects/${workspaceId}/sessions/${sessionId}/scope`, {
     method: 'PUT',
     body: JSON.stringify({ secrets: null }),
   });
@@ -301,7 +301,7 @@ async function main(): Promise<void> {
   }
   await shellSeesSecret('PRESENT', 'restored injection');
 
-  const removed = await api(`/projects/${projectId}/secrets/${encodeURIComponent(secretName)}`, {
+  const removed = await api(`/projects/${workspaceId}/secrets/${encodeURIComponent(secretName)}`, {
     method: 'DELETE',
   });
   requireStatus(removed, 200, 'delete sentinel secret');
@@ -311,15 +311,15 @@ async function main(): Promise<void> {
   }
   await shellSeesSecret('ABSENT', 'deleted-secret revocation');
 
-  log('PASS', { projectId, sessionId, externalId });
+  log('PASS', { workspaceId, sessionId, externalId });
 }
 
 async function cleanup(): Promise<void> {
-  if (sessionId && projectId) {
-    await api(`/projects/${projectId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => null);
+  if (sessionId && workspaceId) {
+    await api(`/projects/${workspaceId}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => null);
   }
-  if (projectId) {
-    await api(`/projects/${projectId}`, { method: 'DELETE' }).catch(() => null);
+  if (workspaceId) {
+    await api(`/projects/${workspaceId}`, { method: 'DELETE' }).catch(() => null);
   }
   if (userId) {
     await jsonRequest(`${supabaseBase}/auth/v1/admin/users/${userId}`, {

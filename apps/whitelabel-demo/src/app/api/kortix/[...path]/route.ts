@@ -78,7 +78,7 @@ async function handle(
   const policy = evaluatePolicy(
     req.method,
     upstreamPath,
-    (projectId) => isOwner(session.userId, projectId),
+    (workspaceId) => isOwner(session.userId, workspaceId),
     resolveRuntimeProject,
   );
   if (!policy.allow) return jsonError(policy.status, policy.reason);
@@ -119,8 +119,8 @@ async function handle(
     }
 
     if (policy.recordProvisionOwner && upstreamRes.ok) {
-      const projectId = (body as { project_id?: string } | null)?.project_id;
-      if (projectId) addOwnedProject(session.userId, projectId);
+      const workspaceId = (body as { project_id?: string } | null)?.project_id;
+      if (workspaceId) addOwnedProject(session.userId, workspaceId);
     }
 
     if (policy.recordRuntimeProjectId && upstreamRes.ok) {

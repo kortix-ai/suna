@@ -62,26 +62,26 @@ import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { WorkspaceProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
-  type ProjectSecret,
-  type ProjectSecretsResponse,
+  type WorkspaceSecret,
+  type WorkspaceSecretsResponse,
   type SecretConsumer,
   type SecretDeliveryStatus,
   type SecretDeliveryStrategy,
   type SecretEgressPolicy,
-  deleteProjectSecret,
-  getProjectDetail,
+  deleteWorkspaceSecret,
+  getWorkspaceDetail,
   listConnectors,
-  listProjectSecrets,
+  listWorkspaceSecrets,
   setConnectorSecretBinding,
-  setProjectSecretStrategy,
-  upsertProjectSecret,
+  setWorkspaceSecretStrategy,
+  upsertWorkspaceSecret,
 } from '@kortix/sdk';
-import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, qk, refreshWorkspaceProviderState } from '@kortix/sdk/react';
 import {
   WarningIcon as DangerTriangleSolid,
   PencilSimpleIcon,
@@ -91,6 +91,7 @@ import {
 import {
   brokerConsumerForSecret,
   buildBrokerPolicy,
+  buildNetworkBoundaryPolicy,
   canSaveSecretDelivery,
   connectorBindingChanges,
   connectorBindingOptions,
@@ -98,11 +99,11 @@ import {
   secretDeliveryPresentation,
 } from './secret-delivery';
 import {
-  type OptimisticProjectSecretInput,
-  type ProjectSecretsCache,
-  applyProjectSecretResponse,
-  beginOptimisticProjectSecretSave,
-  rollbackOptimisticProjectSecretSave,
+  type OptimisticWorkspaceSecretInput,
+  type WorkspaceSecretsCache,
+  applyWorkspaceSecretResponse,
+  beginOptimisticWorkspaceSecretSave,
+  rollbackOptimisticWorkspaceSecretSave,
 } from './secret-optimistic-cache';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
@@ -111,9 +112,9 @@ const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 type Requirement = 'required' | 'optional' | null;
 
 /**
- * A project secret is `{ identifier, key, value }` — authorization is
+ * A workspace secret is `{ identifier, key, value }` — authorization is
  * centralized on the agent grant (by identifier, in kortix.yaml); this page is
- * project-wide create/configure/value only. `identifier` is the unique handle;
+ * workspace-wide create/configure/value only. `identifier` is the unique handle;
  * `key` (the env var name) is NOT unique — two identifiers may share one.
  */
 interface SecretRow {
@@ -143,30 +144,33 @@ type SecretSavePlan = {
   shouldSetStrategy: boolean;
   egressPolicy: SecretEgressPolicy | undefined;
   bindingChanges: { bind: string[]; unbind: string[] };
-  optimistic: OptimisticProjectSecretInput;
+  optimistic: OptimisticWorkspaceSecretInput;
 };
 
-export function SecretsView({ projectId }: { projectId: string }) {
+export function SecretsView({ workspaceId }: { workspaceId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
-  const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+  const queryKey = useMemo(() => qk.workspace.secrets(workspaceId), [workspaceId]);
+  const workspaceDetailQuery = useQuery({
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const llmGatewayEnabled = isLlmGatewayEnabled(workspaceDetailQuery.data?.workspace);
+  const networkBoundaryAvailable = Boolean(
+    workspaceDetailQuery.data?.workspace.available_sandbox_providers?.includes('platinum'),
+  );
 
   const secretsQuery = useQuery({
     queryKey,
-    queryFn: () => listProjectSecrets(projectId),
+    queryFn: () => listWorkspaceSecrets(workspaceId),
     ...contract('config'),
   });
   const connectorsQuery = useQuery({
-    queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryKey: qk.workspace.connectors(workspaceId),
+    queryFn: () => listConnectors(workspaceId),
     ...contract('config'),
   });
 
@@ -184,11 +188,11 @@ export function SecretsView({ projectId }: { projectId: string }) {
 
   const refreshSecretsAndProviders = useCallback(() => {
     queryClient.invalidateQueries({ queryKey });
-    refreshProjectProviderState(queryClient, projectId);
-  }, [projectId, queryClient, queryKey]);
+    refreshWorkspaceProviderState(queryClient, workspaceId);
+  }, [workspaceId, queryClient, queryKey]);
 
   const removeShared = useMutation({
-    mutationFn: (identifier: string) => deleteProjectSecret(projectId, identifier),
+    mutationFn: (identifier: string) => deleteWorkspaceSecret(workspaceId, identifier),
     onSuccess: refreshSecretsAndProviders,
   });
 
@@ -340,18 +344,19 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 key={dialogRow?.identifier ?? 'new'}
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
-                projectId={projectId}
+                workspaceId={workspaceId}
                 row={dialogRow}
                 connectors={connectorsQuery.data?.connectors ?? []}
                 connectorsLoading={connectorsQuery.isLoading}
+                networkBoundaryAvailable={networkBoundaryAvailable}
                 onSaved={refreshSecretsAndProviders}
               />
             </>
           )}
         </div>
       </CustomizeSectionWrapper>
-      <ProjectProviderModal
-        projectId={projectId}
+      <WorkspaceProviderModal
+        workspaceId={workspaceId}
         open={providerModalOpen}
         onOpenChange={setProviderModalOpen}
         canWrite={canManage}
@@ -389,8 +394,8 @@ export function SecretsView({ projectId }: { projectId: string }) {
  * manifests that left required/optional missing.
  */
 function normalizeResponse(
-  data: ProjectSecretsResponse | ProjectSecret[] | null | undefined,
-): ProjectSecretsResponse {
+  data: WorkspaceSecretsResponse | WorkspaceSecret[] | null | undefined,
+): WorkspaceSecretsResponse {
   if (Array.isArray(data)) {
     return { items: data, required: [], optional: [] };
   }
@@ -405,7 +410,7 @@ function normalizeResponse(
   };
 }
 
-function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefined): SecretRow[] {
+function buildRows(raw: WorkspaceSecretsResponse | WorkspaceSecret[] | null | undefined): SecretRow[] {
   const data = normalizeResponse(raw);
   const requirementByKey = new Map<string, Requirement>();
   for (const key of data.required) requirementByKey.set(key, 'required');
@@ -413,7 +418,7 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
     if (!requirementByKey.has(key)) requirementByKey.set(key, 'optional');
   }
 
-  const toRow = (item: ProjectSecret, requirement: Requirement): SecretRow => ({
+  const toRow = (item: WorkspaceSecret, requirement: Requirement): SecretRow => ({
     identifier: item.identifier,
     key: item.name,
     requirement,
@@ -575,18 +580,20 @@ function SecretTableRow({
 function SecretDialog({
   open,
   onOpenChange,
-  projectId,
+  workspaceId,
   row,
   connectors,
   connectorsLoading,
+  networkBoundaryAvailable,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  projectId: string;
+  workspaceId: string;
   row: SecretRow | null;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
+  networkBoundaryAvailable: boolean;
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -655,6 +662,11 @@ function SecretDialog({
     injectionTarget,
     template: injectionTemplate,
   });
+  const networkBoundaryPolicy = buildNetworkBoundaryPolicy({
+    hosts: brokerHosts,
+    injectionTarget,
+    template: injectionTemplate,
+  });
 
   const prepareSavePlan = (): SecretSavePlan => {
     const finalKey = (row?.key ?? key).trim().toUpperCase();
@@ -682,6 +694,9 @@ function SecretDialog({
     if (strategy === 'broker' && brokerConsumer === 'http_broker' && !brokerPolicy) {
       throw new Error('Complete the broker destination and credential placement.');
     }
+    if (strategy === 'egress' && !networkBoundaryPolicy) {
+      throw new Error('Add an exact HTTPS host and a valid header placement.');
+    }
     if (
       strategy === 'broker' &&
       brokerConsumer === 'connector' &&
@@ -700,13 +715,16 @@ function SecretDialog({
             : brokerConsumer;
     const hasValueChange = Boolean(value.trim()) || !row?.configured;
     const egressPolicy =
-      strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
-        ? brokerPolicy
-        : undefined;
+      strategy === 'egress'
+        ? (networkBoundaryPolicy ?? undefined)
+        : strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
+          ? brokerPolicy
+          : undefined;
     const shouldSetStrategy =
       strategy !== (row?.strategy ?? 'runtime') ||
       nextConsumer !== (row?.consumer ?? 'sandbox') ||
-      strategy === 'broker';
+      strategy === 'broker' ||
+      strategy === 'egress';
     return {
       finalKey,
       finalIdentifier,
@@ -718,7 +736,7 @@ function SecretDialog({
       egressPolicy,
       bindingChanges,
       optimistic: {
-        projectId,
+        workspaceId,
         identifier: finalIdentifier,
         name: finalKey,
         strategy,
@@ -746,12 +764,12 @@ function SecretDialog({
 
       if (!(strategy === 'broker' && nextConsumer === 'connector')) {
         await Promise.all(
-          bindingChanges.unbind.map((slug) => setConnectorSecretBinding(projectId, slug, null)),
+          bindingChanges.unbind.map((slug) => setConnectorSecretBinding(workspaceId, slug, null)),
         );
       }
 
       if (hasValueChange) {
-        const result = await upsertProjectSecret(projectId, {
+        const result = await upsertWorkspaceSecret(workspaceId, {
           name: finalKey,
           identifier: finalIdentifier,
           ...(nextValue ? { value: nextValue } : {}),
@@ -762,27 +780,27 @@ function SecretDialog({
         if (strategy === 'broker' && nextConsumer === 'connector') {
           await Promise.all([
             ...bindingChanges.unbind.map((slug) =>
-              setConnectorSecretBinding(projectId, slug, null),
+              setConnectorSecretBinding(workspaceId, slug, null),
             ),
             ...bindingChanges.bind.map((slug) =>
-              setConnectorSecretBinding(projectId, slug, finalIdentifier),
+              setConnectorSecretBinding(workspaceId, slug, finalIdentifier),
             ),
           ]);
         }
         return result;
       }
       if (shouldSetStrategy) {
-        const result = await setProjectSecretStrategy(projectId, finalIdentifier, strategy, {
+        const result = await setWorkspaceSecretStrategy(workspaceId, finalIdentifier, strategy, {
           consumer: nextConsumer,
           ...(egressPolicy ? { egress_policy: egressPolicy } : {}),
         });
         if (strategy === 'broker' && nextConsumer === 'connector') {
           await Promise.all([
             ...bindingChanges.unbind.map((slug) =>
-              setConnectorSecretBinding(projectId, slug, null),
+              setConnectorSecretBinding(workspaceId, slug, null),
             ),
             ...bindingChanges.bind.map((slug) =>
-              setConnectorSecretBinding(projectId, slug, finalIdentifier),
+              setConnectorSecretBinding(workspaceId, slug, finalIdentifier),
             ),
           ]);
         }
@@ -791,35 +809,35 @@ function SecretDialog({
       return null;
     },
     onMutate: async (plan) => {
-      const queryKey = qk.project.secrets(projectId);
+      const queryKey = qk.workspace.secrets(workspaceId);
       await queryClient.cancelQueries({ queryKey });
-      const context = beginOptimisticProjectSecretSave(queryClient, queryKey, plan.optimistic);
+      const context = beginOptimisticWorkspaceSecretSave(queryClient, queryKey, plan.optimistic);
       onOpenChange(false);
       return context;
     },
     onSuccess: (result, plan) => {
       if (result) {
-        queryClient.setQueryData<ProjectSecretsCache>(qk.project.secrets(projectId), (cache) =>
-          cache ? applyProjectSecretResponse(cache, result) : cache,
+        queryClient.setQueryData<WorkspaceSecretsCache>(qk.workspace.secrets(workspaceId), (cache) =>
+          cache ? applyWorkspaceSecretResponse(cache, result) : cache,
         );
       }
       successToast(`Saved ${plan.finalIdentifier}`);
       resetForm();
       onSaved();
-      queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.connectors(workspaceId) });
     },
     onError: (err: Error, _plan, context) => {
-      rollbackOptimisticProjectSecretSave(
+      rollbackOptimisticWorkspaceSecretSave(
         queryClient,
-        qk.project.secrets(projectId),
+        qk.workspace.secrets(workspaceId),
         context?.previous,
       );
       onOpenChange(true);
       errorToast(err.message || 'Failed to save secret');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-      queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.secrets(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.connectors(workspaceId) });
     },
   });
 
@@ -845,7 +863,11 @@ function SecretDialog({
   );
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
   const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
-  const deliveryOptions = secretDeliveryOptions(strategy, row?.deliveryStatus ?? 'available');
+  const deliveryOptions = secretDeliveryOptions(
+    strategy,
+    row?.deliveryStatus ?? 'available',
+    networkBoundaryAvailable,
+  );
   const canSave = canSaveSecretDelivery({
     isEdit,
     key,
@@ -863,6 +885,7 @@ function SecretDialog({
             ? 'network'
             : brokerConsumer,
     brokerPolicyValid: brokerPolicy !== null,
+    networkBoundaryPolicyValid: networkBoundaryPolicy !== null,
     selectedConnectorCount: effectiveSelectedConnectorSlugs.length,
   });
 
@@ -988,6 +1011,72 @@ function SecretDialog({
               </InfoBanner>
             )}
 
+            {strategy === 'egress' && (
+              <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Network boundary</p>
+                  <p className="text-muted-foreground text-xs text-pretty">
+                    Platinum adds this value to matching HTTPS requests outside the sandbox.
+                  </p>
+                </div>
+
+                <InfoBanner tone="neutral" title="Not readable inside the sandbox">
+                  The sandbox receives no value, alias, or placeholder. Secret values echoed by an
+                  upstream response are blocked at the boundary.
+                </InfoBanner>
+
+                <Field>
+                  <FieldLabel htmlFor="secret-dialog-boundary-hosts">Allowed hosts</FieldLabel>
+                  <Textarea
+                    id="secret-dialog-boundary-hosts"
+                    value={brokerHosts}
+                    onChange={(event) => setBrokerHosts(event.target.value)}
+                    placeholder={'api.example.com\nuploads.example.com'}
+                    minHeight={56}
+                    maxHeight={112}
+                    variant="outline"
+                    className="font-mono text-xs"
+                    disabled={save.isPending}
+                  />
+                  <FieldDescription>
+                    One exact HTTPS host per line. Wildcards, paths, and ports are not accepted.
+                  </FieldDescription>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="secret-dialog-boundary-header">Header name</FieldLabel>
+                  <Input
+                    id="secret-dialog-boundary-header"
+                    value={injectionTarget}
+                    onChange={(event) => setInjectionTarget(event.target.value)}
+                    placeholder="authorization"
+                    className="font-mono text-xs"
+                    disabled={save.isPending}
+                  />
+                  <FieldDescription>
+                    Platinum replaces this header only for the allowed hosts.
+                  </FieldDescription>
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="secret-dialog-boundary-template">
+                    Header value template
+                  </FieldLabel>
+                  <Input
+                    id="secret-dialog-boundary-template"
+                    value={injectionTemplate}
+                    onChange={(event) => setInjectionTemplate(event.target.value)}
+                    placeholder="Bearer {{secret}}"
+                    className="font-mono text-xs"
+                    disabled={save.isPending}
+                  />
+                  <FieldDescription>
+                    Optional. Include {'{{secret}}'} where Platinum inserts the value.
+                  </FieldDescription>
+                </Field>
+              </div>
+            )}
+
             {strategy === 'broker' && (
               <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
                 <div className="space-y-1">
@@ -1042,7 +1131,7 @@ function SecretDialog({
                       </div>
                     ) : connectorOptions.length === 0 ? (
                       <InfoBanner tone="neutral" title="No connectors available">
-                        Add a connector that requires project-owned authentication first.
+                        Add a connector that requires workspace-owned authentication first.
                       </InfoBanner>
                     ) : (
                       <div className="bg-popover overflow-hidden rounded-md border">

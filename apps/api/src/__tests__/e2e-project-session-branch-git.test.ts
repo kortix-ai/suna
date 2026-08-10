@@ -27,7 +27,7 @@ function bunEval(script: string): string {
 }
 
 function gitTransportModuleUrl(): string {
-  return pathToFileURL(join(import.meta.dir, '..', 'projects', 'git.ts')).href;
+  return pathToFileURL(join(import.meta.dir, '..', 'workspaces', 'git.ts')).href;
 }
 
 describe('session branch git transport', () => {
@@ -75,7 +75,7 @@ describe('session branch git transport', () => {
       const { createRemoteSessionBranch } = await import(${JSON.stringify(gitTransportModuleUrl())});
       await createRemoteSessionBranch(
         {
-          projectId: '00000000-0000-4000-a000-000000000998',
+          workspaceId: '00000000-0000-4000-a000-000000000998',
           repoUrl: 'https://github.com/kortix-ai/suna.git',
           defaultBranch: 'main',
           manifestPath: 'kortix.yaml',
@@ -121,7 +121,7 @@ describe('session branch git transport', () => {
       const { createRemoteSessionBranch } = await import(${JSON.stringify(gitTransportModuleUrl())});
       await createRemoteSessionBranch(
         {
-          projectId: '00000000-0000-4000-a000-000000000999',
+          workspaceId: '00000000-0000-4000-a000-000000000999',
           repoUrl: ${JSON.stringify(origin)},
           defaultBranch: 'main',
           manifestPath: 'kortix.yaml',

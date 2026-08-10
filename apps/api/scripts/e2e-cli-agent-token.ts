@@ -58,7 +58,7 @@ let failed = 0;
 let jwt = '';
 let userId = '';
 let accountId = '';
-let projectId = '';
+let workspaceId = '';
 let sessionId = '';
 let agentToken = '';
 
@@ -122,7 +122,7 @@ async function cli(args: string[], input?: string): Promise<CliResult> {
       ...process.env,
       KORTIX_API_URL: API,
       KORTIX_CLI_TOKEN: agentToken,
-      KORTIX_PROJECT_ID: projectId,
+      KORTIX_PROJECT_ID: workspaceId,
       KORTIX_SESSION_ID: sessionId,
       KORTIX_NO_UPDATE_CHECK: '1',
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
@@ -168,7 +168,7 @@ async function waitForProjectFile(timeoutMs = 120_000): Promise<void> {
   const end = Date.now() + timeoutMs;
   let last = '';
   while (Date.now() < end) {
-    const result = await api(`/projects/${projectId}/files/content?path=kortix.yaml`);
+    const result = await api(`/projects/${workspaceId}/files/content?path=kortix.yaml`);
     last = `${result.status} ${result.text.slice(0, 120)}`;
     if (result.status === 200 && typeof result.body?.content === 'string') return;
     await Bun.sleep(2_000);
@@ -235,9 +235,9 @@ async function setup(): Promise<void> {
       seed_starter: true,
     }),
   });
-  projectId = project.body?.project_id ?? project.body?.id ?? '';
-  check('managed project provisioned', project.status >= 200 && project.status < 300 && !!projectId);
-  if (!projectId) throw new Error(`project provision failed: ${project.status} ${project.text}`);
+  workspaceId = project.body?.project_id ?? project.body?.id ?? '';
+  check('managed project provisioned', project.status >= 200 && project.status < 300 && !!workspaceId);
+  if (!workspaceId) throw new Error(`project provision failed: ${project.status} ${project.text}`);
   await waitForProjectFile();
   check('kortix.yaml is readable through the live API', true);
 
@@ -245,7 +245,7 @@ async function setup(): Promise<void> {
   await db.insert(projectSessions).values({
     sessionId,
     accountId,
-    projectId,
+    workspaceId,
     branchName: sessionId,
     createdBy: userId,
     agentName: 'kortix',
@@ -255,7 +255,7 @@ async function setup(): Promise<void> {
   const minted = await createAccountToken({
     accountId,
     userId,
-    projectId,
+    workspaceId,
     sessionId,
     name: `Connector Session ${sessionId.slice(0, 8)}`,
     agentGrant: {
@@ -268,7 +268,7 @@ async function setup(): Promise<void> {
   agentToken = minted.secretKey;
   const [stored] = await db
     .select({
-      projectId: accountTokens.projectId,
+      workspaceId: accountTokens.workspaceId,
       sessionId: accountTokens.sessionId,
       agentGrant: accountTokens.agentGrant,
     })
@@ -277,7 +277,7 @@ async function setup(): Promise<void> {
     .limit(1);
   check(
     'production token mint stored project_id + session_id + agent_grant',
-    stored?.projectId === projectId &&
+    stored?.workspaceId === workspaceId &&
       stored?.sessionId === sessionId &&
       stored?.agentGrant?.agent === 'kortix' &&
       stored?.agentGrant?.kortixCli === 'all' &&
@@ -289,7 +289,7 @@ async function seedCallableAction(): Promise<void> {
   const [connector] = await db
     .select({ id: connectors.connectorId })
     .from(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, FIXTURE_SLUG)))
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, FIXTURE_SLUG)))
     .limit(1);
   if (!connector) throw new Error(`connector ${FIXTURE_SLUG} was not materialized`);
   await db.delete(connectorActions).where(eq(connectorActions.connectorId, connector.id));
@@ -311,7 +311,7 @@ async function driveConnectorSdk(): Promise<void> {
   const client = createKortix({
     backendUrl: API,
     getToken: async () => agentToken,
-  }).project(projectId).connectors;
+  }).project(workspaceId).connectors;
   const catalog = await client.catalog();
   check(
     'connector SDK live catalog uses the agent token',
@@ -345,7 +345,7 @@ async function driveExistingSessionGrantRefresh(): Promise<void> {
   const stale = await createAccountToken({
     accountId,
     userId,
-    projectId,
+    workspaceId,
     sessionId,
     name: `Connector Session stale grant ${sessionId.slice(0, 8)}`,
     agentGrant: {
@@ -378,7 +378,7 @@ async function driveExecutorCompatibilityAdapter(): Promise<void> {
   const client = createExecutorClient({
     apiUrl: API,
     token: agentToken,
-    projectId,
+    workspaceId,
   });
   const catalog = await client.connectors();
   check(
@@ -402,7 +402,7 @@ async function driveMcp(): Promise<void> {
       ...process.env,
       KORTIX_API_URL: API,
       KORTIX_CLI_TOKEN: agentToken,
-      KORTIX_PROJECT_ID: projectId,
+      KORTIX_PROJECT_ID: workspaceId,
       KORTIX_SESSION_ID: sessionId,
       KORTIX_NO_UPDATE_CHECK: '1',
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
@@ -465,7 +465,7 @@ async function commandMatrix(): Promise<void> {
   await expectCli('token reports session token context', ['token'], { stdout: /session token|session/ });
   await expectCli('whoami works with agent token', ['whoami'], { stdout: /kortix|agent|session/i });
   await expectCli('system-skills list works', ['system-skills'], { stdout: /kortix-system/ });
-  await expectCli('projects info works for bound project', ['projects', 'info', projectId], { stdout: new RegExp(projectId) });
+  await expectCli('projects info works for bound project', ['projects', 'info', workspaceId], { stdout: new RegExp(workspaceId) });
   await expectCli('projects ls fails closed for project-scoped agent token', ['projects', 'ls'], {
     code: 1,
     stderr: /Project-scoped token cannot list projects|project-scoped token/i,
@@ -511,7 +511,7 @@ async function commandMatrix(): Promise<void> {
     .select({ id: connectorConnections.connectionId, status: connectorConnections.status })
     .from(connectorConnections)
     .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, FIXTURE_SLUG)))
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, FIXTURE_SLUG)))
     .limit(1);
   const [credential] = connection
     ? await db
@@ -651,7 +651,7 @@ async function commandMatrix(): Promise<void> {
   }
   if (!approvalExecutionId) throw new Error('approval execution id was not returned');
   const agentApproval = await api(
-    `/projects/${projectId}/approvals/${approvalExecutionId}`,
+    `/projects/${workspaceId}/approvals/${approvalExecutionId}`,
     { method: 'POST', body: JSON.stringify({ decision: 'approve' }) },
     agentToken,
   );
@@ -660,7 +660,7 @@ async function commandMatrix(): Promise<void> {
     agentApproval.status === 403 && agentApproval.body?.code === 'APPROVAL_REQUIRES_HUMAN',
     `${agentApproval.status} ${agentApproval.text}`,
   );
-  const humanApproval = await api(`/projects/${projectId}/approvals/${approvalExecutionId}`, {
+  const humanApproval = await api(`/projects/${workspaceId}/approvals/${approvalExecutionId}`, {
     method: 'POST',
     body: JSON.stringify({ decision: 'approve' }),
   });
@@ -691,7 +691,7 @@ async function commandMatrix(): Promise<void> {
     !!denialExecutionId && denialExecutionId !== approvalExecutionId,
   );
   if (!denialExecutionId) throw new Error('denial execution id was not returned');
-  const humanDenial = await api(`/projects/${projectId}/approvals/${denialExecutionId}`, {
+  const humanDenial = await api(`/projects/${workspaceId}/approvals/${denialExecutionId}`, {
     method: 'POST',
     body: JSON.stringify({ decision: 'deny' }),
   });
@@ -732,7 +732,7 @@ async function commandMatrix(): Promise<void> {
       connectionId: connectorCalls.connectionId,
     })
     .from(connectorCalls)
-    .where(and(eq(connectorCalls.projectId, projectId), eq(connectorCalls.actionPath, `${FIXTURE_SLUG}.get`)))
+    .where(and(eq(connectorCalls.workspaceId, workspaceId), eq(connectorCalls.actionPath, `${FIXTURE_SLUG}.get`)))
     .orderBy(desc(connectorCalls.createdAt))
     .limit(1);
   check(
@@ -852,7 +852,7 @@ async function deniedGrantBoundary(): Promise<void> {
   const denied = await createAccountToken({
     accountId,
     userId,
-    projectId,
+    workspaceId,
     sessionId,
     name: `Connector Session denied ${sessionId.slice(0, 8)}`,
     agentGrant: { agent: 'locked', kortixCli: [], connectors: [], env: [] },
@@ -877,8 +877,8 @@ async function deniedGrantBoundary(): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
-  if (projectId && jwt) {
-    await api(`/projects/${projectId}`, { method: 'DELETE' }, jwt).catch(() => null);
+  if (workspaceId && jwt) {
+    await api(`/projects/${workspaceId}`, { method: 'DELETE' }, jwt).catch(() => null);
   }
   if (userId) {
     await fetch(`${SUPABASE}/auth/v1/admin/users/${userId}`, {

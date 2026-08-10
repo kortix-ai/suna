@@ -11,8 +11,8 @@ import { Bot, type LucideIcon, Slash, Sparkles } from 'lucide-react';
  * runtime). The same source powers the agent picker + the composer's command
  * menu; this tab just makes the full roster visible.
  */
-export function CapabilitiesTab({ projectId }: { projectId: string }) {
-  const config = useProjectConfig(projectId);
+export function CapabilitiesTab({ workspaceId }: { workspaceId: string }) {
+  const config = useProjectConfig(workspaceId);
   if (!config) return <Skeleton className="h-40 rounded-xl" />;
 
   return (

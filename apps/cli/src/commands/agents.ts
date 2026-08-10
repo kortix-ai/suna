@@ -1,26 +1,26 @@
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// Mirrors GET /projects/:id/model-defaults (apps/api/src/projects/routes/model-defaults.ts).
+// Mirrors GET /workspaces/:id/model-defaults (apps/api/src/workspaces/routes/model-defaults.ts).
 interface ModelDefaults {
   platformDefault: string | null;
   accountDefault: string | null;
-  projectDefault: string | null;
+  workspaceDefault: string | null;
   agentDefaults: Record<string, string>;
   resolvedForCaller: string | null;
 }
 
 const HELP = help`Usage: kortix agents <subcommand> [options]
 
-Per-agent settings on the linked Kortix project. Today: which MODEL each agent
+Per-agent settings on the linked Kortix workspace. Today: which MODEL each agent
 runs on — an explicit concrete model (scope=agent), applied instantly with no
-kortix.yaml commit. An agent without a pin follows the project → account →
+kortix.yaml commit. An agent without a pin follows the workspace → account →
 platform default. (The declarative default lives in kortix.yaml as
 [[agents]].model.)
 
@@ -30,7 +30,7 @@ Subcommands:
   model <agent> --clear           Clear the pin — the agent follows the default again.
 
 Global:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>     Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 `;
@@ -45,12 +45,12 @@ export async function runAgents(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   let json = false;
   let clear = false;
-  let projectFlag: string | undefined;
+  let workspaceFlag: string | undefined;
   let hostFlag: string | undefined;
   try {
     json = takeFlagBool(rest, ['--json']);
     clear = takeFlagBool(rest, ['--clear', '--default', '--reset']);
-    projectFlag = takeFlagValue(rest, ['--project']);
+    workspaceFlag = takeFlagValue(rest, ['--workspace', '--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
@@ -58,9 +58,9 @@ export async function runAgents(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
+  const ctx = await resolveWorkspaceContext({ workspaceArg: workspaceFlag, hostArg: hostFlag });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/model-defaults`;
+  const base = `/workspaces/${ctx.workspaceId}/model-defaults`;
 
   try {
     switch (sub) {
@@ -73,11 +73,11 @@ export async function runAgents(argv: string[]): Promise<number> {
           return 0;
         }
         const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
+          d.workspaceDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
         const entries = Object.entries(d.agentDefaults ?? {});
         process.stdout.write('\n');
         process.stdout.write(
-          `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
+          `  ${C.dim}Default (workspace → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
         );
         if (entries.length === 0) {
           process.stdout.write(

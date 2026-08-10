@@ -133,10 +133,10 @@ export function buildConnectAccountCard(loginUrl: string): Record<string, unknow
   );
 }
 
-export function buildRequestAccessCard(projectId: string): Record<string, unknown> {
+export function buildRequestAccessCard(workspaceId: string): Record<string, unknown> {
   return card(
-    headerBlock('🔒', 'Request access', "You're connected, but your account can't run this project yet."),
-    [executeAction('Request access', 'teams_request_access', { projectId })],
+    headerBlock('🔒', 'Request access', "You're connected, but your account can't run this workspace yet."),
+    [executeAction('Request access', 'teams_request_access', { workspaceId })],
   );
 }
 

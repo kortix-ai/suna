@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  type AdminConnector,
+  type WorkspaceAdminConnector,
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
   getConnectorPolicies,
@@ -52,6 +52,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 
+import { providerLabel } from '@/features/workspace/capabilities/connectors/provider-label';
 import {
   draftToRules,
   type PatternDraftRow,
@@ -66,7 +67,7 @@ import {
 } from '@/features/workspace/capabilities/connectors/tools/tool-groups';
 import {
   applyBulkPolicy,
-  isLockedByProject,
+  isLockedByWorkspace,
   isPatternRule,
   orderPolicyRules,
   type PolicyChoice,
@@ -87,7 +88,7 @@ const SEARCH_THRESHOLD = 6;
 const POLICY_QUERY_STALE_MS = 5_000;
 
 const LOCKED_REASON =
-  'A project rule already decides this tool. Change it under Global rules in the capability tabs.';
+  'A workspace rule already decides this tool. Change it under Global rules in the capability tabs.';
 
 type PoliciesData = Awaited<ReturnType<typeof getConnectorPolicies>>;
 
@@ -108,8 +109,8 @@ let patternRowSeq = 0;
 const nextPatternRowId = () => `pattern-${++patternRowSeq}`;
 
 export interface ConnectorToolsProps {
-  projectId: string;
-  connector: AdminConnector;
+  workspaceId: string;
+  connector: WorkspaceAdminConnector;
   displayName: string;
   canWrite: boolean;
   /** The authorization owner is mid-update — freeze every write on this tab. */
@@ -131,7 +132,7 @@ export interface ConnectorToolsProps {
  * 2. **Default is a state, not a value.** A tool the platform allows by
  *    default renders with NO segment lit and a `Hint` naming the default.
  *    Lighting Allow would claim a choice nobody made.
- * 3. **A project rule is not editable here.** Project scope is evaluated first
+ * 3. **A workspace rule is not editable here.** Workspace scope is evaluated first
  *    and wins (`resolveEffectiveAction`, connectors/policy.ts:342), so those rows
  *    are disabled and say where the rule actually lives.
  *
@@ -140,7 +141,7 @@ export interface ConnectorToolsProps {
  * shipped panel; they are just not the common case.
  */
 export function ConnectorTools({
-  projectId,
+  workspaceId,
   connector,
   displayName,
   canWrite,
@@ -149,7 +150,7 @@ export function ConnectorTools({
 }: ConnectorToolsProps) {
   const queryClient = useQueryClient();
   const slug = connector.slug;
-  const queryKey = useMemo(() => ['connector-policies', projectId, slug], [projectId, slug]);
+  const queryKey = useMemo(() => ['connector-policies', workspaceId, slug], [workspaceId, slug]);
 
   // Reading policies is admin-gated on the server (`resolveAdmin`,
   // connectors/router.ts:1193), so a reader would get a 403 and a permanent
@@ -157,7 +158,7 @@ export function ConnectorTools({
   // below keeps that true if it ever stops doing so.
   const policiesQuery = useQuery({
     queryKey,
-    queryFn: () => getConnectorPolicies(projectId, slug),
+    queryFn: () => getConnectorPolicies(workspaceId, slug),
     staleTime: POLICY_QUERY_STALE_MS,
     enabled: canWrite,
   });
@@ -190,8 +191,8 @@ export function ConnectorTools({
   );
   const groups = useMemo(() => groupToolsByRisk(matches), [matches]);
 
-  const projectLockedCount = useMemo(
-    () => effective.filter((entry) => entry.source === 'project').length,
+  const workspaceLockedCount = useMemo(
+    () => effective.filter((entry) => entry.source === 'workspace').length,
     [effective],
   );
 
@@ -201,7 +202,7 @@ export function ConnectorTools({
     PolicyWrite,
     { previous: PoliciesData | undefined }
   >({
-    mutationFn: (write) => setConnectorPolicies(projectId, slug, orderPolicyRules(write.rules)),
+    mutationFn: (write) => setConnectorPolicies(workspaceId, slug, orderPolicyRules(write.rules)),
     onMutate: async (write) => {
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<PoliciesData>(queryKey);
@@ -229,7 +230,7 @@ export function ConnectorTools({
   });
 
   const sensitiveMutation = useMutation({
-    mutationFn: (next: boolean) => setConnectorSensitive(projectId, slug, next),
+    mutationFn: (next: boolean) => setConnectorSensitive(workspaceId, slug, next),
     onSuccess: (_result, next) => {
       successToast(
         next ? 'Every tool will ask before it runs' : 'Tools follow the rules below again',
@@ -253,13 +254,13 @@ export function ConnectorTools({
   // ── Bulk apply ──────────────────────────────────────────────────────────
   // One click that rewrites every row in a group is the one whose blast radius
   // is not visible from the control, so it goes through ConfirmDialog with the
-  // exact count. Project-locked paths are excluded: writing a connector rule
-  // under a project rule changes nothing.
+  // exact count. Workspace-locked paths are excluded: writing a connector rule
+  // under a workspace rule changes nothing.
   const [bulk, setBulk] = useState<{ group: ToolGroup; choice: PolicyChoice } | null>(null);
   const bulkPathsFor = (group: ToolGroup) =>
     group.actions
       .map((action) => action.path)
-      .filter((path) => !isLockedByProject(path, effective));
+      .filter((path) => !isLockedByWorkspace(path, effective));
   const bulkPaths = bulk ? bulkPathsFor(bulk.group) : [];
 
   // ── Advanced: pattern rules ─────────────────────────────────────────────
@@ -295,13 +296,13 @@ export function ConnectorTools({
   if (!canWrite) {
     return (
       <p className="text-muted-foreground text-sm text-pretty">
-        What agents may do with {displayName} is set by a project manager. You do not have
+        What agents may do with {displayName} is set by a workspace manager. You do not have
         permission to change it.
       </p>
     );
   }
 
-  const providerBadge = connector.provider.toUpperCase();
+  const providerBadge = providerLabel(connector.provider);
 
   return (
     <div className="space-y-5">
@@ -328,13 +329,13 @@ export function ConnectorTools({
         ) : null}
       </div>
 
-      {projectLockedCount > 0 ? (
+      {workspaceLockedCount > 0 ? (
         <InfoBanner
           tone="warning"
           icon={LockIcon}
-          title={`${projectLockedCount} ${projectLockedCount === 1 ? 'tool is' : 'tools are'} decided by a project rule`}
+          title={`${workspaceLockedCount} ${workspaceLockedCount === 1 ? 'tool is' : 'tools are'} decided by a workspace rule`}
         >
-          Project rules apply to every connector and are evaluated first, so those tools cannot be
+          Workspace rules apply to every connector and are evaluated first, so those tools cannot be
           changed here. Edit them under Global rules in the capability tabs.
         </InfoBanner>
       ) : null}
@@ -412,7 +413,7 @@ export function ConnectorTools({
 
             <ul className="divide-border/60 divide-y border-y">
               {group.actions.map((action) => {
-                const locked = isLockedByProject(action.path, effective);
+                const locked = isLockedByWorkspace(action.path, effective);
                 const row = toolRowText(action);
                 return (
                   <li
@@ -422,7 +423,7 @@ export function ConnectorTools({
                     <div className="min-w-0 flex-1 basis-48 space-y-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="text-foreground text-sm font-medium">{row.title}</span>
-                        <Badge variant="secondary" size="xs" className="font-mono uppercase">
+                        <Badge variant="secondary" size="xs">
                           {providerBadge}
                         </Badge>
                       </div>

@@ -68,14 +68,13 @@ export interface FeatureFlagDef {
 /**
  * The registry. Order here is the order shown in Settings → Feature flags.
  *
- * agent_tunnel → connector: connected machines flow through the Connector as a
- * regular `computer` connector (one connector fronts all the account's machines;
- * `connectors`/`discover`/`describe`/`call`, one audit + policy path). That
- * connector is NOT gated by this flag — it auto-materializes whenever the
- * account has a connected machine, exactly like the Slack channel connector
- * (see connectors/computer-materialize.ts). This flag only gates the dedicated
- * tunnel surface (Customize → Computers, the device-auth / permissions UI).
- * See docs/specs/computer-connector.md.
+ * agent_tunnel → connector: paired machines are selectable accounts inside a
+ * regular `computer` connector profile. A profile can contain one or more
+ * machines and uses the normal connector grant, policy, call, and audit paths.
+ * Pairing does not auto-create project access. This flag gates the dedicated
+ * fleet surface (Customize → Computers, device auth, and tunnel permissions).
+ * Connector profiles remain API-managed because tunnel ids do not belong in
+ * repository configuration. See docs/specs/computer-connector.md.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {

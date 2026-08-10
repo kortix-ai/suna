@@ -41,7 +41,7 @@ mock.module('../platform/services/managed-github-app', () => ({
   },
 }));
 
-const { githubBackend } = await import('../projects/git-backends/github');
+const { githubBackend } = await import('../workspaces/git-backends/github');
 
 // This repo's local `.env` (loaded automatically by `bun test`) sets real
 // MANAGED_GIT_GITHUB_*/KORTIX_GITHUB_APP_* values for interactive dev use —
@@ -138,7 +138,7 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       slug: 'demo',
       defaultBranch: 'main',
       isPrivate: true,
@@ -163,7 +163,7 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       slug: 'demo',
       defaultBranch: 'main',
       isPrivate: true,
@@ -184,7 +184,7 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       slug: 'demo',
       defaultBranch: 'main',
       isPrivate: true,
@@ -204,7 +204,7 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       slug: 'demo',
       defaultBranch: 'main',
       isPrivate: true,
@@ -219,7 +219,7 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
 
     const repo = await githubBackend.createRepo({
       accountId: 'acct-1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       slug: 'demo',
       defaultBranch: 'main',
       isPrivate: true,

@@ -34,13 +34,14 @@ const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
+  'KORTIX_WORKSPACE_ID',
   'KORTIX_PROJECT_ID',
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
   'KORTIX_AUTH_FILE',
 ] as const;
 
-const PROJECT = 'proj-1';
+const WORKSPACE = 'workspace-1';
 const INVITE_URL = 'https://app.test/invite/inv_abc123';
 
 let saved: Record<string, string | undefined>;
@@ -126,7 +127,7 @@ const invite = (extra: Record<string, unknown>) => ({
   status: 'invited',
   email: 'bob@corp.com',
   invite_id: 'inv_abc123',
-  project_role: 'editor',
+  workspace_role: 'editor',
   invite_url: INVITE_URL,
   ...extra,
 });
@@ -135,7 +136,7 @@ describe('kortix access invite — email honesty', () => {
   test('a SKIPPED email is reported as such, with the link that still works', async () => {
     inviteResponse = invite({ email_sent: false, email_skip_reason: 'email_not_configured' });
 
-    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor']);
+    const code = await runAccess(['invite', 'bob@corp.com', '--workspace', WORKSPACE, '--role', 'editor']);
     const out = stripAnsi(stdout);
 
     expect(code).toBe(0);
@@ -150,7 +151,7 @@ describe('kortix access invite — email honesty', () => {
   test('a SENT email still reads as a plain success', async () => {
     inviteResponse = invite({ email_sent: true, email_skip_reason: null });
 
-    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor']);
+    const code = await runAccess(['invite', 'bob@corp.com', '--workspace', WORKSPACE, '--role', 'editor']);
     const out = stripAnsi(stdout);
 
     expect(code).toBe(0);
@@ -167,7 +168,7 @@ describe('kortix access invite — email honesty', () => {
     // predates the field would cry wolf on every deployment that is fine.
     inviteResponse = { status: 'invited' };
 
-    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor']);
+    const code = await runAccess(['invite', 'bob@corp.com', '--workspace', WORKSPACE, '--role', 'editor']);
     const out = stripAnsi(stdout);
 
     expect(code).toBe(0);
@@ -181,7 +182,7 @@ describe('kortix access invite — email honesty', () => {
     inviteResponse = invite({ email_sent: false, email_skip_reason: 'email_not_configured' });
 
     const code = await runAccess([
-      'invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor', '--json',
+      'invite', 'bob@corp.com', '--workspace', WORKSPACE, '--role', 'editor', '--json',
     ]);
 
     expect(code).toBe(0);
@@ -197,17 +198,26 @@ describe('kortix access invite — email honesty', () => {
         {
           invite_id: 'inv_abc123',
           email: 'pending@corp.com',
-          project_role: 'editor',
+          workspace_role: 'editor',
           invited_by_email: 'owner@corp.com',
           invite_expired: false,
         },
       ],
     };
 
-    const code = await runAccess(['pending', '--project', PROJECT]);
+    const code = await runAccess(['pending', '--workspace', WORKSPACE]);
 
     expect(code).toBe(0);
     expect(stripAnsi(stdout)).toContain('pending@corp.com');
     expect(stripAnsi(stdout)).not.toContain('undefined');
+  });
+
+  test('the deprecated --project flag remains an alias for --workspace', async () => {
+    inviteResponse = invite({ email_sent: true });
+
+    const code = await runAccess(['invite', 'bob@corp.com', '--project', WORKSPACE, '--role', 'editor']);
+
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain('Invited');
   });
 });

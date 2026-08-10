@@ -10,7 +10,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
-import type { GatewaySeriesPoint } from '@/lib/projects-gateway-client';
+import type { GatewaySeriesPoint } from '@/lib/workspaces-gateway-client';
 import { cn } from '@/lib/utils';
 
 export const RANGES = [

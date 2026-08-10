@@ -147,43 +147,43 @@ export interface UpdateProjectTriggerInput {
   filter?: Record<string, string> | null;
 }
 
-export async function listProjectTriggers(projectId: string) {
+export async function listProjectTriggers(workspaceId: string) {
   return unwrap(
     await backendApi.get<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers`,
+      `/projects/${workspaceId}/triggers`,
     ),
   );
 }
 
 export async function createProjectTrigger(
-  projectId: string,
+  workspaceId: string,
   input: CreateProjectTriggerInput,
 ) {
   return unwrap(
     await backendApi.post<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers`,
+      `/projects/${workspaceId}/triggers`,
       input,
     ),
   );
 }
 
 export async function updateProjectTrigger(
-  projectId: string,
+  workspaceId: string,
   slug: string,
   input: UpdateProjectTriggerInput,
 ) {
   return unwrap(
     await backendApi.patch<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers/${slug}`,
+      `/projects/${workspaceId}/triggers/${slug}`,
       input,
     ),
   );
 }
 
-export async function deleteProjectTrigger(projectId: string, slug: string) {
+export async function deleteProjectTrigger(workspaceId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/triggers/${slug}`,
+      `/projects/${workspaceId}/triggers/${slug}`,
     ),
   );
 }
@@ -194,12 +194,12 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
  * updated trigger listing, including the new `triggers_paused` value.
  */
 export async function setProjectTriggersActivation(
-  projectId: string,
+  workspaceId: string,
   paused: boolean,
 ) {
   return unwrap(
     await backendApi.patch<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers/activation`,
+      `/projects/${workspaceId}/triggers/activation`,
       { paused },
     ),
   );
@@ -212,10 +212,10 @@ export interface FireProjectTriggerResponse {
   error?: string;
 }
 
-export async function fireProjectTrigger(projectId: string, slug: string) {
+export async function fireProjectTrigger(workspaceId: string, slug: string) {
   return unwrap(
     await backendApi.post<FireProjectTriggerResponse>(
-      `/projects/${projectId}/triggers/${slug}/fire`,
+      `/projects/${workspaceId}/triggers/${slug}/fire`,
       {},
     ),
   );

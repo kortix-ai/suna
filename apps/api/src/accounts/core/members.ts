@@ -172,14 +172,17 @@ export function registerMemberRoutes(): void {
             // member's own row and to member-managers — never across rows for
             // plain members.
             const showSensitive = canSeeSensitiveMemberColumns(userId, r.userId, canManageMembers);
+            const explicitWorkspaceCount = showSensitive
+              ? (projectGrantCountByUser.get(r.userId) ?? 0)
+              : 0;
             return {
               user_id: r.userId,
               email: emails.get(r.userId) ?? null,
               account_role: r.accountRole,
               is_super_admin: r.isSuperAdmin,
-              explicit_project_count: showSensitive
-                ? (projectGrantCountByUser.get(r.userId) ?? 0)
-                : 0,
+              explicit_workspace_count: explicitWorkspaceCount,
+              // Deprecated wire alias for clients that predate Workspace terminology.
+              explicit_project_count: explicitWorkspaceCount,
               groups: showSensitive ? (groupsByUser.get(r.userId) ?? []) : [],
               active_pat_count: showSensitive ? (patCountByUser.get(r.userId) ?? 0) : 0,
               has_verified_mfa: showSensitive ? (mfaByUser.get(r.userId) ?? false) : false,

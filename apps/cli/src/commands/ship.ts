@@ -4,41 +4,41 @@ import { basename } from 'node:path';
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
 import { activeHostName, hasEnvTokenHost } from '../api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
-import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
+import { isKortixWorkspace, loadWorkspaceLink, saveWorkspaceLink, resolveWorkspaceId } from '../workspace-link.ts';
 import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
 import { confirm, prompt, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
 import {
-  configureProjectGitAuth,
-  projectIsManaged,
-  resolveProjectGitTarget,
-  type ProjectGitTarget,
-} from '../project-git.ts';
+  configureWorkspaceGitAuth,
+  workspaceIsManaged,
+  resolveWorkspaceGitTarget,
+  type WorkspaceGitTarget,
+} from '../workspace-git.ts';
 import { C, help, status } from '../style.ts';
-import { projectWebUrl } from '../web-url.ts';
+import { workspaceWebUrl } from '../web-url.ts';
 import type {
-  ProjectSummary,
+  WorkspaceSummary,
   MeResponse,
   AccountMembership,
-  ProjectSecretsResponse,
+  WorkspaceSecretsResponse,
 } from '../api/types.ts';
 
 const HELP = help`Usage: kortix ship [options]
 
-Stage everything, commit, and push your current branch to the project's git
-repo — in one command. Run it once to create the project, then run it again
+Stage everything, commit, and push your current branch to the workspace's git
+repo — in one command. Run it once to create the workspace, then run it again
 any time to sync. It's the everyday "save my work to the cloud" command.
 
 Every run:
   1. verify kortix.yaml parses + validates   (skip with --no-verify)
   2. git add -A + commit                      (skipped if nothing changed)
   3. offer to set any [env] secret not yet set (prompts you; skip with --no-env)
-  4. push the branch you're on → the same-named branch on the project's repo
+  4. push the branch you're on → the same-named branch on the workspace's repo
   5. connect any declared connector that still needs auth   (skip with --no-connect)
 
 First ship vs. after:
-  * First ship   creates the cloud project + a git repo, links this folder
+  * First ship   creates the cloud workspace + a git repo, links this folder
                  (.kortix/link.json), then pushes.
   * Every ship   after that sees the link, skips setup, and just commits +
                  pushes. Continuous by design — re-run as often as you like.
@@ -49,7 +49,7 @@ Branches:
   Ship pushes whatever branch you're on to the matching remote branch — on
   \`main\` it pushes main; checked out on a \`feature\` branch, it pushes feature.
 
-Where it backs the project (origin is inferred, never asked):
+Where it backs the workspace (origin is inferred, never asked):
   * Existing GitHub \`origin\` (e.g. github.com/you/repo) → links it directly,
     GitHub-backed. If the Kortix GitHub App isn't installed yet, ship prints a
     one-click install link (same as the web UI import); or pass
@@ -61,11 +61,11 @@ Where it backs the project (origin is inferred, never asked):
 
 Accounts:
   On first ship, if you belong to more than one account you're asked which to
-  create the project under (skip with --account or -y). No snapshot builds.
+  create the workspace under (skip with --account or -y). No snapshot builds.
 
 Options:
-  --name <project>     Display name for a new project (default: folder name).
-  --account <id|slug>  Account to create the project under (first ship only).
+  --name <workspace>     Display name for a new workspace (default: folder name).
+  --account <id|slug>  Account to create the workspace under (first ship only).
   --origin <value>     Override origin choice:
                          managed      force a managed Kortix repo
                          <git-url>    register + push to this remote
@@ -78,7 +78,7 @@ Options:
   --no-connect         Skip the connector connect/credential prompts.
   -y, --yes            Don't prompt; use the active account, skip secret prompts.
   -n, --dry-run        Print what would happen, do nothing.
-  --project <id>       Operate on this project id (default: linked).
+  --workspace <id>       Operate on this workspace id (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 `;
@@ -95,12 +95,12 @@ interface ShipFlags {
   noConnect: boolean;
   yes: boolean;
   dryRun: boolean;
-  project?: string;
+  workspace?: string;
   host?: string;
   help: boolean;
 }
 
-interface ProvisionResponse extends ProjectSummary {
+interface ProvisionResponse extends WorkspaceSummary {
   push_token: string | null;
   git_username?: string | null;
   repo_id: string;
@@ -113,15 +113,15 @@ interface GitTokenResponse {
   repo_url: string;
 }
 
-/** Both ship paths use the shared resolver (see ../project-git.ts) so ship,
+/** Both ship paths use the shared resolver (see ../workspace-git.ts) so ship,
  *  clone, and the git credential helper can never disagree about how to reach
- *  a project's repo again. */
-export function resolveProvisionShipGitTarget(project: ProvisionResponse): ProjectGitTarget {
-  return resolveProjectGitTarget(project);
+ *  a workspace's repo again. */
+export function resolveProvisionShipGitTarget(workspace: ProvisionResponse): WorkspaceGitTarget {
+  return resolveWorkspaceGitTarget(workspace);
 }
 
-export function resolveExistingShipGitTarget(project: ProjectSummary): ProjectGitTarget {
-  return resolveProjectGitTarget(project);
+export function resolveExistingShipGitTarget(workspace: WorkspaceSummary): WorkspaceGitTarget {
+  return resolveWorkspaceGitTarget(workspace);
 }
 
 export async function runShip(argv: string[]): Promise<number> {
@@ -138,9 +138,9 @@ export async function runShip(argv: string[]): Promise<number> {
   }
 
   // ── Guards ───────────────────────────────────────────────────────────────
-  if (!isKortixProject()) {
+  if (!isKortixWorkspace()) {
     process.stderr.write(
-      `${status.err(`Not a Kortix project — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n` +
+      `${status.err(`Not a Kortix workspace — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n` +
         `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} here first.${C.reset}\n`,
     );
     return 1;
@@ -154,7 +154,7 @@ export async function runShip(argv: string[]): Promise<number> {
   }
 
   // ── Auth (host: --host → sandbox env token → link.json → active) ──────────
-  const hostFromLink = !flags.host && !hasEnvTokenHost() ? loadLink()?.host : undefined;
+  const hostFromLink = !flags.host && !hasEnvTokenHost() ? loadWorkspaceLink()?.host : undefined;
   const hostName = flags.host ?? hostFromLink;
   const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth?.token) {
@@ -172,13 +172,13 @@ export async function runShip(argv: string[]): Promise<number> {
 
   // ── Verify the manifest "compiles" before we touch the cloud ──────────────
   // Parse + validate kortix.yaml locally so a broken config fails fast — long
-  // before we create a project, commit, or push. Also yields the env: spec
+  // before we create a workspace, commit, or push. Also yields the env: spec
   // we use to make sure required secrets are set.
   const prepared = prepareManifest(flags);
   if (!prepared.ok) return 1;
 
   // ── Resolve state: already linked (sync) vs first ship (create) ───────────
-  const linkedId = resolveProjectId(flags.project);
+  const linkedId = resolveWorkspaceId(flags.workspace);
   try {
     if (linkedId) {
       return await shipExisting(client, auth, linkedId, flags, prepared.env);
@@ -217,7 +217,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
     return { ok: false, env: empty };
   }
 
-  // No kortix.yaml at all (a `.kortix/`-only project) — nothing to verify.
+  // No kortix.yaml at all (a `.kortix/`-only workspace) — nothing to verify.
   if (!manifest) return { ok: true, env: empty };
 
   if (!flags.noVerify) {
@@ -243,25 +243,25 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
 
 /**
  * Make sure the env vars the manifest declares (`[env]` required + optional)
- * are set on the cloud project. Missing ones are prompted for (masked) and
- * uploaded in place — so a single `kortix ship` leaves the project ready to
+ * are set on the cloud workspace. Missing ones are prompted for (masked) and
+ * uploaded in place — so a single `kortix ship` leaves the workspace ready to
  * run. Required and optional are both offered (blank skips); skipping a
  * required one warns but never hard-fails (required is advisory at boot).
  * Non-interactive / --yes / --no-env: skip prompts, warn only about missing
  * required vars.
  */
-async function ensureProjectEnv(
+async function ensureWorkspaceEnv(
   client: ApiClient,
-  projectId: string,
+  workspaceId: string,
   spec: EnvSpec,
   flags: ShipFlags,
 ): Promise<void> {
   if (flags.noEnv || (spec.required.length === 0 && spec.optional.length === 0)) return;
 
-  // Which declared secrets already exist on the cloud project?
+  // Which declared secrets already exist on the cloud workspace?
   let setNames = new Set<string>();
   try {
-    const resp = await client.get<ProjectSecretsResponse>(`/projects/${projectId}/secrets`);
+    const resp = await client.get<WorkspaceSecretsResponse>(`/workspaces/${workspaceId}/secrets`);
     setNames = new Set(resp.items.map((s) => s.name));
   } catch {
     // Couldn't read cloud secrets — don't block the ship over env setup.
@@ -308,7 +308,7 @@ async function ensureProjectEnv(
       continue;
     }
     try {
-      await client.post(`/projects/${projectId}/secrets`, { name, value });
+      await client.post(`/workspaces/${workspaceId}/secrets`, { name, value });
       setCount += 1;
       process.stdout.write(`    ${status.ok(`${C.bold}${name}${C.reset} set`)}\n`);
     } catch (err) {
@@ -319,7 +319,7 @@ async function ensureProjectEnv(
   }
   if (setCount > 0) {
     process.stdout.write(
-      `  ${C.dim}${setCount} secret${setCount === 1 ? '' : 's'} saved to the cloud project.${C.reset}\n`,
+      `  ${C.dim}${setCount} secret${setCount === 1 ? '' : 's'} saved to the cloud workspace.${C.reset}\n`,
     );
   }
   if (stillMissing.length > 0) {
@@ -345,17 +345,17 @@ interface ShipConnector {
  * manifest and walk the user through connecting anything that still needs auth —
  * Pipedream apps via an auto-finalizing one-click connection URL, and
  * HTTP/OpenAPI/GraphQL/MCP connectors via their credential secret. Mirrors
- * `ensureProjectEnv` so a single `kortix ship` leaves the project ready to run.
+ * `ensureWorkspaceEnv` so a single `kortix ship` leaves the workspace ready to run.
  * Skipped with --no-connect; non-interactive / --yes only nags with the slugs
  * left to connect. Never hard-fails the ship.
  */
 async function ensureConnectorsConnected(
   client: ApiClient,
-  projectId: string,
+  workspaceId: string,
   flags: ShipFlags,
 ): Promise<void> {
   if (flags.noConnect) return;
-  const ex = `/connectors/projects/${projectId}`;
+  const ex = `/connectors/workspaces/${workspaceId}`;
 
   let connectors: ShipConnector[];
   try {
@@ -393,7 +393,7 @@ async function ensureConnectorsConnected(
   let connectionLinks = 0;
   for (const c of pending) {
     if (c.provider === 'pipedream') {
-      if (await connectPipedreamApp(client, projectId, c)) connectionLinks += 1;
+      if (await connectPipedreamApp(client, workspaceId, c)) connectionLinks += 1;
     } else if (c.authSecret) {
       if (await setConnectorCredential(client, ex, c)) connected += 1;
     } else {
@@ -419,25 +419,25 @@ async function ensureConnectorsConnected(
  */
 export async function reconcileShippedManifest(
   client: ApiClient,
-  projectId: string,
+  workspaceId: string,
 ): Promise<void> {
   try {
-    await client.post(`/connectors/projects/${projectId}/connectors/sync`);
+    await client.post(`/connectors/workspaces/${workspaceId}/connectors/sync`);
   } catch {
     // A reconcile failure does not invalidate the completed git push.
-    // The rotating server discovery sweep retries the project.
+    // The rotating server discovery sweep retries the workspace.
   }
 }
 
 /** Mint one auto-finalizing Pipedream connection URL for the user. */
 async function connectPipedreamApp(
   client: ApiClient,
-  projectId: string,
+  workspaceId: string,
   c: ShipConnector,
 ): Promise<boolean> {
   try {
     const resp = await client.post<{ url: string; expires_at: string }>(
-      `/projects/${projectId}/connect-requests`,
+      `/workspaces/${workspaceId}/connect-requests`,
       { slug: c.slug },
     );
     process.stdout.write(`\n    ${C.bold}${c.slug}${C.reset} ${C.faded}(${c.name})${C.reset}\n`);
@@ -480,21 +480,21 @@ function isGitHubUrl(url: string): boolean {
 }
 
 interface LinkRepoResponse {
-  project: ProjectSummary;
+  workspace: WorkspaceSummary;
 }
 
 /**
- * Link an existing GitHub repo to a new cloud project — the same import the
+ * Link an existing GitHub repo to a new cloud workspace — the same import the
  * web UI does, from your terminal. Default path is the one-click GitHub App
  * install (no secret to manage): if the app isn't installed yet, we print the
  * install link, you authorize, and we retry. `--github-token <PAT>` skips the
  * app entirely (the App-free fallback — handy where the app can't be installed,
  * e.g. local dev whose callback points at prod).
  */
-export async function linkGitHubBackedProject(
+export async function linkGitHubBackedWorkspace(
   client: ApiClient,
   opts: { repoUrl: string; name: string; accountId: string; githubToken?: string; yes: boolean },
-): Promise<ProjectSummary> {
+): Promise<WorkspaceSummary> {
   const body = (token?: string) => ({
     repo_url: opts.repoUrl,
     name: opts.name,
@@ -505,17 +505,17 @@ export async function linkGitHubBackedProject(
   // PAT path: one shot, no app needed.
   if (opts.githubToken) {
     const res = await client.post<LinkRepoResponse>(
-      '/projects/link-repository',
+      '/workspaces/link-repository',
       body(opts.githubToken),
     );
-    return res.project;
+    return res.workspace;
   }
 
   // App path: retry around the one-click install.
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
-      const res = await client.post<LinkRepoResponse>('/projects/link-repository', body());
-      return res.project;
+      const res = await client.post<LinkRepoResponse>('/workspaces/link-repository', body());
+      return res.workspace;
     } catch (err) {
       const installUrl =
         err instanceof ApiError && err.status === 409
@@ -539,7 +539,7 @@ export async function linkGitHubBackedProject(
   throw new Error('GitHub App still not detected after several tries — install it, or use --github-token <PAT>.');
 }
 
-// ── First ship: create the cloud project, wire the remote, push ─────────────
+// ── First ship: create the cloud workspace, wire the remote, push ─────────────
 async function shipFirstTime(
   client: ApiClient,
   auth: Auth,
@@ -547,9 +547,9 @@ async function shipFirstTime(
   flags: ShipFlags,
   env: EnvSpec,
 ): Promise<number> {
-  const name = flags.name ?? manifestProjectName() ?? basename(process.cwd());
+  const name = flags.name ?? manifestWorkspaceName() ?? basename(process.cwd());
 
-  // Which account owns the new project? Ask when there's a real choice.
+  // Which account owns the new workspace? Ask when there's a real choice.
   const accountId = await resolveShipAccount(client, auth, flags);
 
   // Decide origin without asking: explicit flag → existing remote → managed.
@@ -561,57 +561,57 @@ async function shipFirstTime(
   const existingOrigin = forceManaged ? null : detectOrigin();
   const byoUrl = explicitUrl ?? existingOrigin;
 
-  let project: ProjectSummary;
-  let gitTarget: ProjectGitTarget;
+  let workspace: WorkspaceSummary;
+  let gitTarget: WorkspaceGitTarget;
   let pushToken: string | null = null;
   let pushUsername = 'x-access-token';
 
   if (byoUrl) {
     const github = isGitHubUrl(byoUrl);
     process.stdout.write(
-      `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}new project → your git${C.reset}\n` +
+      `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}new workspace → your git${C.reset}\n` +
         `  ${C.dim}origin  ${C.reset}${byoUrl}${github ? `  ${C.faded}(GitHub)${C.reset}` : ''}\n\n`,
     );
     if (flags.dryRun) {
       const how = github
         ? `link ${byoUrl} via GitHub App${flags.githubToken ? ' token' : ' (1-click install if needed)'}`
-        : `POST /projects {repo_url:"${byoUrl}"}`;
+        : `POST /workspaces {repo_url:"${byoUrl}"}`;
       process.stdout.write(`  ${C.dim}[dry-run] would: ${how} + push${C.reset}\n\n`);
       return 0;
     }
     // GitHub origin → the seamless import (one-click App install, or --github-token).
-    // Non-GitHub remote → the generic project link.
-    project = github
-      ? await linkGitHubBackedProject(client, { repoUrl: byoUrl, name, accountId, githubToken: flags.githubToken, yes: flags.yes })
-      : await client.post<ProjectSummary>('/projects', { repo_url: byoUrl, name, account_id: accountId });
-    bindShippedFolder(project, hostName, auth);
+    // Non-GitHub remote → the generic workspace link.
+    workspace = github
+      ? await linkGitHubBackedWorkspace(client, { repoUrl: byoUrl, name, accountId, githubToken: flags.githubToken, yes: flags.yes })
+      : await client.post<WorkspaceSummary>('/workspaces', { repo_url: byoUrl, name, account_id: accountId });
+    bindShippedFolder(workspace, hostName, auth);
     // BYO stays BYO: push with the user's own git credentials, to their remote.
-    gitTarget = { repoUrl: project.repo_url, credentialMode: 'none' };
+    gitTarget = { repoUrl: workspace.repo_url, credentialMode: 'none' };
     // Only touch the remote when the user named one explicitly — an existing
     // `origin` is left exactly as-is so their credential setup keeps working.
     if (explicitUrl) setOrigin(explicitUrl);
   } else {
     process.stdout.write(
-      `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}new project → managed Kortix git${C.reset}\n` +
+      `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}new workspace → managed Kortix git${C.reset}\n` +
         `  ${C.dim}name    ${C.reset}${name}\n\n`,
     );
     if (flags.dryRun) {
       process.stdout.write(
-        `  ${C.dim}[dry-run] would: POST /projects/provision {name:"${name}"}, set origin, push${C.reset}\n\n`,
+        `  ${C.dim}[dry-run] would: POST /workspaces/provision {name:"${name}"}, set origin, push${C.reset}\n\n`,
       );
       return 0;
     }
-    const prov = await client.post<ProvisionResponse>('/projects/provision', {
+    const prov = await client.post<ProvisionResponse>('/workspaces/provision', {
       name,
       account_id: accountId,
     });
-    project = prov;
-    // Bind the folder to the project the INSTANT it exists — before resolving a
+    workspace = prov;
+    // Bind the folder to the workspace the INSTANT it exists — before resolving a
     // push credential, committing, or pushing, any of which can fail. Without
-    // this, a failure after provision left an unlinked cloud project behind and
+    // this, a failure after provision left an unlinked cloud workspace behind and
     // the retry provisioned a SECOND one, silently burning the account's
-    // project quota until creation started 403ing on the limit.
-    bindShippedFolder(project, hostName, auth);
+    // workspace quota until creation started 403ing on the limit.
+    bindShippedFolder(workspace, hostName, auth);
     gitTarget = resolveProvisionShipGitTarget(prov);
     if (gitTarget.credentialMode === 'kortix-token') {
       // Proxy origin — we push with our own Kortix token; the API resolves the
@@ -625,7 +625,7 @@ async function shipFirstTime(
       // Never fall back to a server-global PAT (the server refuses to export it).
       if (!pushToken) {
         const tok = await client.post<GitTokenResponse>(
-          `/projects/${project.project_id}/git-token`,
+          `/workspaces/${workspace.workspace_id}/git-token`,
         );
         pushToken = tok.push_token;
         pushUsername = tok.git_username ?? pushUsername;
@@ -633,49 +633,49 @@ async function shipFirstTime(
     }
     setOrigin(gitTarget.repoUrl);
     if (gitTarget.credentialMode === 'kortix-token') {
-      configureProjectGitAuth(process.cwd(), gitTarget.repoUrl);
+      configureWorkspaceGitAuth(process.cwd(), gitTarget.repoUrl);
     }
   }
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
 
-  await ensureProjectEnv(client, project.project_id, env, flags);
+  await ensureWorkspaceEnv(client, workspace.workspace_id, env, flags);
 
-  const pushed = await pushProjectBranch(client, project, gitTarget, pushToken, pushUsername);
+  const pushed = await pushWorkspaceBranch(client, workspace, gitTarget, pushToken, pushUsername);
   if (!pushed) return 1;
 
-  await reconcileShippedManifest(client, project.project_id);
-  await ensureConnectorsConnected(client, project.project_id, flags);
+  await reconcileShippedManifest(client, workspace.workspace_id);
+  await ensureConnectorsConnected(client, workspace.workspace_id, flags);
 
-  reportShipped(auth, project, gitTarget.repoUrl);
+  reportShipped(auth, workspace, gitTarget.repoUrl);
   return 0;
 }
 
-// ── Subsequent ship: commit + push to the linked project ────────────────────
+// ── Subsequent ship: commit + push to the linked workspace ────────────────────
 async function shipExisting(
   client: ApiClient,
   auth: Auth,
-  projectId: string,
+  workspaceId: string,
   flags: ShipFlags,
   env: EnvSpec,
 ): Promise<number> {
-  let project: ProjectSummary;
+  let workspace: WorkspaceSummary;
   try {
-    project = await client.get<ProjectSummary>(`/projects/${projectId}`);
+    workspace = await client.get<WorkspaceSummary>(`/workspaces/${workspaceId}`);
   } catch (err) {
-    const handled = explainLinkedProjectError(err, projectId, auth);
+    const handled = explainLinkedWorkspaceError(err, workspaceId, auth);
     if (handled !== null) return handled;
     throw err;
   }
-  const target = resolveExistingShipGitTarget(project);
+  const target = resolveExistingShipGitTarget(workspace);
   const mintsProviderToken = target.credentialMode === 'managed-git-token';
   const kortixOwnsOrigin = target.credentialMode !== 'none';
   const repoUrl = target.repoUrl;
 
   process.stdout.write(
     `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}sync${C.reset}\n` +
-      `  ${C.dim}project ${C.reset}${project.name} ${C.faded}(${project.project_id})${C.reset}\n` +
+      `  ${C.dim}workspace ${C.reset}${workspace.name} ${C.faded}(${workspace.workspace_id})${C.reset}\n` +
       `  ${C.dim}branch  ${C.reset}${currentBranch()}\n\n`,
   );
 
@@ -694,47 +694,47 @@ async function shipExisting(
   if (target.credentialMode === 'kortix-token') {
     pushToken = auth.token;
   } else if (mintsProviderToken) {
-    const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
+    const tok = await client.post<GitTokenResponse>(`/workspaces/${workspaceId}/git-token`);
     pushToken = tok.push_token;
     pushUsername = tok.git_username ?? pushUsername;
   }
-  // Kortix owns the remote URL for proxy + managed projects, so keep origin
+  // Kortix owns the remote URL for proxy + managed workspaces, so keep origin
   // aligned with the target the credential above matches. BYO repos may have
   // lost their remote (fresh clone of a linked repo); heal only when missing so
   // user-managed credentials stay untouched.
   if (kortixOwnsOrigin) setOrigin(repoUrl);
   else ensureOrigin(repoUrl);
   // Leave the repo able to `git push` on its own afterwards, same as a
-  // `kortix projects clone` — the helper hands git a Kortix token on demand
+  // `kortix workspaces clone` — the helper hands git a Kortix token on demand
   // without ever writing one into .git/config.
-  if (target.credentialMode === 'kortix-token') configureProjectGitAuth(process.cwd(), repoUrl);
+  if (target.credentialMode === 'kortix-token') configureWorkspaceGitAuth(process.cwd(), repoUrl);
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
 
-  await ensureProjectEnv(client, projectId, env, flags);
+  await ensureWorkspaceEnv(client, workspaceId, env, flags);
 
-  const pushed = await pushProjectBranch(client, project, target, pushToken, pushUsername);
+  const pushed = await pushWorkspaceBranch(client, workspace, target, pushToken, pushUsername);
   if (!pushed) return 1;
 
-  await reconcileShippedManifest(client, projectId);
-  await ensureConnectorsConnected(client, projectId, flags);
+  await reconcileShippedManifest(client, workspaceId);
+  await ensureConnectorsConnected(client, workspaceId, flags);
 
-  reportShipped(auth, project, repoUrl);
+  reportShipped(auth, workspace, repoUrl);
   return 0;
 }
 
-/** Write `.kortix/link.json` so this folder is bound to the cloud project.
- *  Called the moment the project exists — see the note at its first-ship call
+/** Write `.kortix/link.json` so this folder is bound to the cloud workspace.
+ *  Called the moment the workspace exists — see the note at its first-ship call
  *  site for why ordering matters. */
 function bindShippedFolder(
-  project: ProjectSummary,
+  workspace: WorkspaceSummary,
   hostName: string | undefined,
   auth: Auth,
 ): void {
-  saveLink({
-    project_id: project.project_id,
-    account_id: project.account_id,
+  saveWorkspaceLink({
+    workspace_id: workspace.workspace_id,
+    account_id: workspace.account_id,
     host: hostName ?? activeHostName() ?? 'default',
     host_url: auth.api_base,
     linked_at: new Date().toISOString(),
@@ -743,13 +743,13 @@ function bindShippedFolder(
 
 // ── git helpers ─────────────────────────────────────────────────────────────
 
-/** The display name from kortix.yaml's project.name, if present. Lets a
+/** The display name from kortix.yaml's workspace.name, if present. Lets a
  *  first ship honor the manifest instead of defaulting to the folder name. */
-function manifestProjectName(): string | undefined {
+function manifestWorkspaceName(): string | undefined {
   try {
     const m = loadLocalManifest();
-    const project = m?.data?.project as { name?: unknown } | undefined;
-    const name = typeof project?.name === 'string' ? project.name.trim() : '';
+    const workspace = m?.data?.workspace as { name?: unknown } | undefined;
+    const name = typeof workspace?.name === 'string' ? workspace.name.trim() : '';
     return name || undefined;
   } catch {
     return undefined;
@@ -872,19 +872,19 @@ function pushCurrentBranch(
  * But the CLI talks to hosts it wasn't shipped with: an older API authorizes
  * the proxy on ACCOUNT OWNERSHIP alone, so a token bound to a different account
  * of the same user is refused there while POST /git-token (which gates on the
- * per-project `gitops.push` capability) would still serve it. So when a proxy
+ * per-workspace `gitops.push` capability) would still serve it. So when a proxy
  * push fails on a managed repo, retry once against the raw upstream with a
  * minted repo-scoped token before giving up: either transport being unavailable
  * is survivable, only both failing is a real error. Returns the branch, or null.
  */
-async function pushProjectBranch(
+async function pushWorkspaceBranch(
   client: ApiClient,
-  project: ProjectSummary,
-  target: ProjectGitTarget,
+  workspace: WorkspaceSummary,
+  target: WorkspaceGitTarget,
   pushToken: string | null,
   pushUsername: string,
 ): Promise<string | null> {
-  const canRetry = target.credentialMode === 'kortix-token' && projectIsManaged(project);
+  const canRetry = target.credentialMode === 'kortix-token' && workspaceIsManaged(workspace);
   const pushed = pushCurrentBranch(target.repoUrl, pushToken, pushUsername, {
     quietOnFailure: canRetry,
   });
@@ -892,7 +892,7 @@ async function pushProjectBranch(
 
   let minted: GitTokenResponse;
   try {
-    minted = await client.post<GitTokenResponse>(`/projects/${project.project_id}/git-token`);
+    minted = await client.post<GitTokenResponse>(`/workspaces/${workspace.workspace_id}/git-token`);
   } catch {
     // No second transport available — report the push failure we swallowed.
     process.stderr.write(`\n${status.err('git push failed.')}\n`);
@@ -901,13 +901,13 @@ async function pushProjectBranch(
   process.stdout.write(
     `  ${status.warn('Proxy push rejected — retrying against the managed upstream.')}\n`,
   );
-  const upstreamUrl = minted.repo_url || project.repo_url;
+  const upstreamUrl = minted.repo_url || workspace.repo_url;
   setOrigin(upstreamUrl);
   return pushCurrentBranch(upstreamUrl, minted.push_token, minted.git_username || pushUsername);
 }
 
 /** `-c http.<scheme>://<host>/.extraheader=AUTHORIZATION: basic <b64>` —
- *  mirrors the backend's git auth scheme (projects/git.ts). The extraheader
+ *  mirrors the backend's git auth scheme (workspaces/git.ts). The extraheader
  *  key MUST carry the remote's actual scheme (http for a localhost proxy,
  *  https in prod) or git won't apply it (scheme-scoped config). */
 export function authHeaderArgs(
@@ -928,19 +928,19 @@ export function authHeaderArgs(
   return ['-c', `http.${origin}/.extraheader=Authorization: Basic ${enc}`];
 }
 
-function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {
+function reportShipped(auth: Auth, workspace: WorkspaceSummary, repoUrl: string): void {
   // Prefer the server-provided dashboard URL; only fall back to guessing from
   // the API host for older backends that don't return one.
-  const url = projectWebUrl(auth.api_base, project.project_id, project.dashboard_url);
+  const url = workspaceWebUrl(auth.api_base, workspace.workspace_id, workspace.dashboard_url);
   process.stdout.write(
-    `\n${status.ok(`Shipped ${C.bold}${project.name}${C.reset}`)}\n` +
+    `\n${status.ok(`Shipped ${C.bold}${workspace.name}${C.reset}`)}\n` +
       `  ${C.dim}repo  ${C.reset}${repoUrl}\n` +
       `  ${C.dim}live  ${C.reset}${C.cyan}${url}${C.reset}\n\n`,
   );
 }
 
 /**
- * Resolve which account a new project should belong to:
+ * Resolve which account a new workspace should belong to:
  *   --account flag (id or slug) → exact match
  *   single account               → that one
  *   multiple accounts            → prompt (unless -y / non-interactive / dry-run,
@@ -1006,7 +1006,7 @@ function parseFlags(argv: string[]): ShipFlags {
   flags.origin = takeFlagValue(rest, ['--origin']);
   flags.githubToken = takeFlagValue(rest, ['--github-token']);
   flags.message = takeFlagValue(rest, ['--message', '-m']);
-  flags.project = takeFlagValue(rest, ['--project']);
+  flags.workspace = takeFlagValue(rest, ['--workspace', '--project']);
   flags.host = takeFlagValue(rest, ['--host']);
   flags.noCommit = takeFlagBool(rest, ['--no-commit']);
   flags.noVerify = takeFlagBool(rest, ['--no-verify']);
@@ -1020,37 +1020,37 @@ function parseFlags(argv: string[]): ShipFlags {
 }
 
 /**
- * When the linked project can't be fetched, explain *why* in terms of the
+ * When the linked workspace can't be fetched, explain *why* in terms of the
  * link — the common case is "you shipped under account A, then logged in as
  * account B that can't see it." Returns an exit code if it handled the error,
  * or null to let the generic handler take over.
  */
-function explainLinkedProjectError(err: unknown, projectId: string, auth: Auth): number | null {
+function explainLinkedWorkspaceError(err: unknown, workspaceId: string, auth: Auth): number | null {
   if (!(err instanceof ApiError)) return null;
-  const link = loadLink();
+  const link = loadWorkspaceLink();
   const host = link?.host ?? 'default';
 
   if (err.status === 403) {
     const linkedAccount = link?.account_id ? ` ${C.faded}(account ${link.account_id.slice(0, 8)})${C.reset}` : '';
     process.stderr.write(
-      `\n${status.err("This folder is linked to a project on an account you can't access.")}\n` +
-        `  ${C.dim}linked project ${C.reset}${projectId}${linkedAccount}\n` +
+      `\n${status.err("This folder is linked to a workspace on an account you can't access.")}\n` +
+        `  ${C.dim}linked workspace ${C.reset}${workspaceId}${linkedAccount}\n` +
         `  ${C.dim}logged in as   ${C.reset}account ${auth.account_id.slice(0, 8)} ${C.faded}(host "${host}")${C.reset} — no access to that account\n\n` +
         `  ${C.dim}The link lives in ${C.reset}.kortix/link.json${C.dim}. Fix it one way:${C.reset}\n` +
         `    ${C.dim}• Log in with the account that has access:${C.reset}  ${C.cyan}kortix logout && kortix login${C.reset}\n` +
-        `    ${C.dim}• Or get invited / granted access to that project, then retry.${C.reset}\n` +
-        `    ${C.dim}• Or register this folder as a new project:${C.reset}  ${C.cyan}kortix projects unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n\n`,
+        `    ${C.dim}• Or get invited / granted access to that workspace, then retry.${C.reset}\n` +
+        `    ${C.dim}• Or register this folder as a new workspace:${C.reset}  ${C.cyan}kortix workspaces unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n\n`,
     );
     return 1;
   }
 
   if (err.status === 404) {
     process.stderr.write(
-      `\n${status.err('The linked project no longer exists (or was archived).')}\n` +
-        `  ${C.dim}linked project ${C.reset}${projectId} ${C.faded}(host "${host}")${C.reset}\n\n` +
+      `\n${status.err('The linked workspace no longer exists (or was archived).')}\n` +
+        `  ${C.dim}linked workspace ${C.reset}${workspaceId} ${C.faded}(host "${host}")${C.reset}\n\n` +
         `  ${C.dim}Re-point this folder:${C.reset}\n` +
-        `    ${C.dim}• New project under your account:${C.reset}  ${C.cyan}kortix projects unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n` +
-        `    ${C.dim}• Existing project:${C.reset}  ${C.cyan}kortix projects link <id>${C.reset}\n\n`,
+        `    ${C.dim}• New workspace under your account:${C.reset}  ${C.cyan}kortix workspaces unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n` +
+        `    ${C.dim}• Existing workspace:${C.reset}  ${C.cyan}kortix workspaces link <id>${C.reset}\n\n`,
     );
     return 1;
   }

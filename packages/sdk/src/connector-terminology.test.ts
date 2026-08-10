@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const SOURCE_FILES = [
-  'core/rest/projects-client/connectors.ts',
-  'core/rest/projects-client/sessions.ts',
-  'core/rest/projects-client/channels.ts',
-  'core/rest/projects-client/secrets.ts',
+  'core/rest/workspaces-client/connectors.ts',
+  'core/rest/workspaces-client/sessions.ts',
+  'core/rest/workspaces-client/channels.ts',
+  'core/rest/workspaces-client/secrets.ts',
   'core/client/kortix.ts',
 ] as const;
 

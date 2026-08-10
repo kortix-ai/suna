@@ -63,8 +63,8 @@ export function seedSelfHostedProject({
   name,
   repoUrl,
 }: SeedSelfHostedProjectOptions): string {
-  const projectId = randomUUID();
-  const projectRepoUrl = repoUrl ?? `https://github.com/kortix-ai/sandbox-template-${projectId}.git`;
+  const workspaceId = randomUUID();
+  const projectRepoUrl = repoUrl ?? `https://github.com/kortix-ai/sandbox-template-${workspaceId}.git`;
   const sql = `
 insert into kortix.projects (
   project_id,
@@ -76,7 +76,7 @@ insert into kortix.projects (
   status,
   metadata
 ) values (
-  '${projectId}'::uuid,
+  '${workspaceId}'::uuid,
   '${escapeSql(accountId)}'::uuid,
   '${escapeSql(name)}',
   '${escapeSql(projectRepoUrl)}',
@@ -94,7 +94,7 @@ insert into kortix.project_members (
   granted_by
 ) values (
   '${escapeSql(accountId)}'::uuid,
-  '${projectId}'::uuid,
+  '${workspaceId}'::uuid,
   '${escapeSql(userId)}'::uuid,
   'editor',
   '${escapeSql(userId)}'::uuid
@@ -104,5 +104,5 @@ insert into kortix.project_members (
   const seeded = runSelfHostedSql(sql);
   if (!seeded) throw new Error('E2E_ENV_FILE with adjacent docker-compose.yml is required for self-host project seeding');
 
-  return projectId;
+  return workspaceId;
 }

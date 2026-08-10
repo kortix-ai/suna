@@ -24,7 +24,7 @@ mock.module('../channels/teams-auth', () => ({
 }));
 mock.module('../channels/install-store', () => ({
   loadTeamsBotCredentials: async () => ({ appId: 'app-1', appPassword: 'secret' }),
-  loadTeamsTenantForProject: async () => 'tenant-1',
+  loadTeamsTenantForWorkspace: async () => 'tenant-1',
   saveTeamsServiceUrl: async () => {},
 }));
 

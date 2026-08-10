@@ -44,4 +44,18 @@ describe('classifySandboxProvisioningFailure', () => {
     });
     expect(result.userMessage).not.toContain(secretProviderMessage);
   });
+
+  test('returns an actionable contract when the provider cannot enforce protected delivery', () => {
+    const result = classifySandboxProvisioningFailure(
+      new Error('Sandbox provider daytona does not support network-boundary secret delivery'),
+    );
+
+    expect(result).toEqual({
+      category: 'unsupported-secret-delivery',
+      userMessage:
+        'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+      isCapacity: false,
+      isGitAuth: false,
+    });
+  });
 });

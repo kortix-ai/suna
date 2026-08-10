@@ -1,7 +1,7 @@
 import { flow } from '../core/flow';
 
 const REQ = { domain: 'kaab', timeoutMs: 120_000 };
-const CREATE = 'POST /v1/projects/:projectId/sessions';
+const CREATE = 'POST /v1/projects/:workspaceId/sessions';
 
 flow('KAAB-1', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, async (ctx) => {
   const project = await ctx.fixtures.sharedSeededProject();
@@ -9,14 +9,14 @@ flow('KAAB-1', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     const response = await ctx.client
       .as(ctx.P.PAT_ACCT)
       .post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/projects/:workspaceId/sessions',
         { runtime_context: { ticket_id: 'ticket-123' } },
-        { params: { projectId: project.id } },
+        { params: { workspaceId: project.id } },
       );
     response.status(201);
     response.body().has('$.origin', 'backend').exists('$.session_id');
     const sessionId = response.json<{ session_id?: string }>()?.session_id;
-    if (sessionId) ctx.track('session', sessionId, { projectId: project.id });
+    if (sessionId) ctx.track('session', sessionId, { workspaceId: project.id });
   });
 });
 
@@ -26,9 +26,9 @@ flow('KAAB-2', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     const response = await ctx.client
       .as(ctx.P.OWNER)
       .post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/projects/:workspaceId/sessions',
         { secrets: ['ANYTHING'] },
-        { params: { projectId: project.id } },
+        { params: { workspaceId: project.id } },
       );
     response.status(403);
     response.body().has('$.code', 'origin_override_forbidden');
@@ -41,9 +41,9 @@ flow('KAAB-3', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     const response = await ctx.client
       .as(ctx.P.PAT_ACCT)
       .post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/projects/:workspaceId/sessions',
         { secrets: ['DEFINITELY_NOT_A_REAL_SECRET_XYZ'] },
-        { params: { projectId: project.id } },
+        { params: { workspaceId: project.id } },
       );
     response.status(404);
     response.body().has('$.code', 'SECRET_IDENTIFIER_NOT_FOUND');
@@ -52,14 +52,14 @@ flow('KAAB-3', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     const response = await ctx.client
       .as(ctx.P.PAT_ACCT)
       .post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/projects/:workspaceId/sessions',
         { secrets: [] },
-        { params: { projectId: project.id } },
+        { params: { workspaceId: project.id } },
       );
     response.status(201);
     response.body().has('$.secrets_allowlist', []);
     const sessionId = response.json<{ session_id?: string }>()?.session_id;
-    if (sessionId) ctx.track('session', sessionId, { projectId: project.id });
+    if (sessionId) ctx.track('session', sessionId, { workspaceId: project.id });
   });
 });
 
@@ -69,9 +69,9 @@ flow('KAAB-4', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     const response = await ctx.client
       .as(ctx.P.PAT_ACCT)
       .post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/projects/:workspaceId/sessions',
         { opencode_model: 'totally-bogus-model-xyz-9999' },
-        { params: { projectId: project.id } },
+        { params: { workspaceId: project.id } },
       );
     response.status(400);
     response.body().has('$.code', 'INVALID_SESSION_MODEL');
@@ -84,9 +84,9 @@ flow('KAAB-5', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     const response = await ctx.client
       .as(ctx.P.PAT_ACCT)
       .post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/projects/:workspaceId/sessions',
         { runtime_context: { api_key: 'x' } },
-        { params: { projectId: project.id } },
+        { params: { workspaceId: project.id } },
       );
     response.status(400);
     response.body().has('$.code', 'INVALID_SESSION_RUNTIME_CONTEXT');
@@ -97,9 +97,9 @@ flow('KAAB-5', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     const response = await ctx.client
       .as(ctx.P.PAT_ACCT)
       .post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/projects/:workspaceId/sessions',
         { runtime_context: runtimeContext },
-        { params: { projectId: project.id } },
+        { params: { workspaceId: project.id } },
       );
     response.status(400);
     response.body().has('$.code', 'INVALID_SESSION_RUNTIME_CONTEXT');
@@ -115,19 +115,19 @@ flow('KAAB-6', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   await ctx.step('first idempotent session create succeeds', async () => {
     const response = await ctx.client
       .as(ctx.P.PAT_ACCT)
-      .post('/v1/projects/:projectId/sessions', body, {
-        params: { projectId: project.id },
+      .post('/v1/projects/:workspaceId/sessions', body, {
+        params: { workspaceId: project.id },
         headers: { 'Idempotency-Key': key },
       });
     response.status(201);
     sessionId = response.json<{ session_id?: string }>()?.session_id;
-    if (sessionId) ctx.track('session', sessionId, { projectId: project.id });
+    if (sessionId) ctx.track('session', sessionId, { workspaceId: project.id });
   });
   await ctx.step('same key and body return the same session', async () => {
     const response = await ctx.client
       .as(ctx.P.PAT_ACCT)
-      .post('/v1/projects/:projectId/sessions', body, {
-        params: { projectId: project.id },
+      .post('/v1/projects/:workspaceId/sessions', body, {
+        params: { workspaceId: project.id },
         headers: { 'Idempotency-Key': key },
       });
     response.status([201, 202]);
@@ -135,10 +135,10 @@ flow('KAAB-6', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   });
   await ctx.step('changed secret scope conflicts with the idempotency key', async () => {
     const response = await ctx.client.as(ctx.P.PAT_ACCT).post(
-      '/v1/projects/:projectId/sessions',
+      '/v1/projects/:workspaceId/sessions',
       { ...body, secrets: [] },
       {
-        params: { projectId: project.id },
+        params: { workspaceId: project.id },
         headers: { 'Idempotency-Key': key },
       },
     );
@@ -153,23 +153,23 @@ flow('KAAB-7', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
 
   await ctx.step('first runtime context claims the idempotency key', async () => {
     const response = await ctx.client.as(ctx.P.PAT_ACCT).post(
-      '/v1/projects/:projectId/sessions',
+      '/v1/projects/:workspaceId/sessions',
       { runtime_context: { ticket_id: 'ticket-123' } },
       {
-        params: { projectId: project.id },
+        params: { workspaceId: project.id },
         headers: { 'Idempotency-Key': key },
       },
     );
     response.status(201);
     const sessionId = response.json<{ session_id?: string }>()?.session_id;
-    if (sessionId) ctx.track('session', sessionId, { projectId: project.id });
+    if (sessionId) ctx.track('session', sessionId, { workspaceId: project.id });
   });
   await ctx.step('changed runtime context conflicts with the idempotency key', async () => {
     const response = await ctx.client.as(ctx.P.PAT_ACCT).post(
-      '/v1/projects/:projectId/sessions',
+      '/v1/projects/:workspaceId/sessions',
       { runtime_context: { ticket_id: 'ticket-456' } },
       {
-        params: { projectId: project.id },
+        params: { workspaceId: project.id },
         headers: { 'Idempotency-Key': key },
       },
     );
@@ -178,10 +178,10 @@ flow('KAAB-7', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   });
   await ctx.step('oversized idempotency key is rejected', async () => {
     const response = await ctx.client.as(ctx.P.PAT_ACCT).post(
-      '/v1/projects/:projectId/sessions',
+      '/v1/projects/:workspaceId/sessions',
       {},
       {
-        params: { projectId: project.id },
+        params: { workspaceId: project.id },
         headers: { 'Idempotency-Key': 'x'.repeat(300) },
       },
     );

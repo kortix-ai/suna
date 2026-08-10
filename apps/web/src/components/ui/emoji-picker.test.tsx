@@ -211,7 +211,7 @@ describe('emoji picker conventions', () => {
  * The design system's own rule for this repo: a new `components/ui/*` primitive
  * is not shipped until the living styleguide renders it. The page is public and
  * unauthenticated, so it is also the only place the picker can be looked at
- * without a project, an account, or a create-modal.
+ * without a workspace, an account, or a create-modal.
  */
 const designSystemPage = readFileSync(
   join(import.meta.dir, '../../app/(public)/(marketing)/design-system/page.tsx'),
@@ -251,7 +251,7 @@ describe('emoji picker on /design-system', () => {
     // The picker fetches ~782 KB of emoji data the first time it mounts. Inline
     // on the page, every visitor to a PUBLIC marketing route would pay that
     // without ever opening it; inside the popover it is paid on click, which is
-    // also how the picker is really used (features/projects/modal).
+    // also how the picker is really used (features/workspaces/modal).
     //
     // "Inside a PopoverContent" rather than "a PopoverTrigger appears earlier in
     // the file": the last PopoverContent opened before the picker has to still

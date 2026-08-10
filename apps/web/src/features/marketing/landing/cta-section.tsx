@@ -8,7 +8,7 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { cta } from '@/features/marketing/landing/content';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { latestWorkspacePath } from '@/lib/onboarding/last-workspace-cookie';
 import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
@@ -23,7 +23,7 @@ export function CtaSection() {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? latestProjectPath(user.id) : '/auth';
+    window.location.href = user ? latestWorkspacePath(user.id) : '/auth';
   }, [user]);
 
   return (

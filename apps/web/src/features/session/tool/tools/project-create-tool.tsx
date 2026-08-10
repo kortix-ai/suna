@@ -14,7 +14,7 @@ import { useMemo } from 'react';
 
 import { parseProjectCreateOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectCreateTool({ part }: ToolProps) {
+export function WorkspaceCreateTool({ part }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
@@ -55,7 +55,7 @@ export function ProjectCreateTool({ part }: ToolProps) {
     />
   );
 }
-ToolRegistry.register('project_create', ProjectCreateTool);
-ToolRegistry.register('project-create', ProjectCreateTool);
-ToolRegistry.register('oc-project_create', ProjectCreateTool);
-ToolRegistry.register('oc-project-create', ProjectCreateTool);
+ToolRegistry.register('project_create', WorkspaceCreateTool);
+ToolRegistry.register('workspace-create', WorkspaceCreateTool);
+ToolRegistry.register('oc-project_create', WorkspaceCreateTool);
+ToolRegistry.register('oc-project-create', WorkspaceCreateTool);

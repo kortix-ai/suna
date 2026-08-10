@@ -3,7 +3,7 @@ import { accountGroups, accountMembers, appAccessGrants, apps } from '@kortix/db
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
-import { authorize, PROJECT_ACTIONS } from '../iam';
+import { authorize, WORKSPACE_ACTIONS } from '../iam';
 import { db } from '../shared/db';
 
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
@@ -198,7 +198,7 @@ export async function persistAppAccessPolicy(
       updatedAt: new Date(),
     }).where(and(
       eq(apps.appId, current.appId),
-      eq(apps.projectId, current.projectId),
+      eq(apps.workspaceId, current.workspaceId),
       isNull(apps.deletedAt),
     )).returning();
     if (!updated) throw new Error('App access update lost its target row');
@@ -226,7 +226,7 @@ export async function appAccessibleToUser(
   app: {
     appId: string;
     accountId: string;
-    projectId: string;
+    workspaceId: string;
     accessMode: string;
     createdBy: string | null;
   },
@@ -235,8 +235,8 @@ export async function appAccessibleToUser(
   const projectAccess = await authorize(
     userId,
     app.accountId,
-    PROJECT_ACTIONS.PROJECT_READ,
-    { type: 'project', id: app.projectId },
+    WORKSPACE_ACTIONS.WORKSPACE_READ,
+    { type: 'project', id: app.workspaceId },
   );
   if (!projectAccess.allowed) return false;
   const subject = await resolveShareSubject(userId);

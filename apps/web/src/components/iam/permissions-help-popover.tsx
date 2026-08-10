@@ -7,9 +7,9 @@ import { QuestionIcon as HelpCircle } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import {
   ACCOUNT_ROLE_DESCRIPTORS,
-  PROJECT_ROLE_DESCRIPTORS,
-  PROJECT_ROLES_ASCENDING,
-} from './project-role-descriptors';
+  WORKSPACE_ROLE_DESCRIPTORS,
+  WORKSPACE_ROLES_ASCENDING,
+} from './workspace-role-descriptors';
 
 const ACCOUNT_ROLES_DESCENDING: AccountRole[] = ['owner', 'admin', 'member'];
 
@@ -67,8 +67,8 @@ export function PermissionsHelpPopover({
             )}
           </p>
           <ul className="space-y-1 text-xs">
-            {[...PROJECT_ROLES_ASCENDING].reverse().map((role) => {
-              const d = PROJECT_ROLE_DESCRIPTORS[role];
+            {[...WORKSPACE_ROLES_ASCENDING].reverse().map((role) => {
+              const d = WORKSPACE_ROLE_DESCRIPTORS[role];
               return (
                 <li key={role}>
                   <span className="text-foreground font-medium">{d.label}</span> · {d.summary}

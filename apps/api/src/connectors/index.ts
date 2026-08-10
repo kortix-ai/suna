@@ -7,4 +7,8 @@
 import { createConnectorRouter } from './router';
 import { dbConnectorRouterDeps } from './db-deps';
 
-export const connectorApp = createConnectorRouter(dbConnectorRouterDeps);
+/** Canonical Workspace connector surface. */
+export const connectorApp = createConnectorRouter(dbConnectorRouterDeps, 'workspaces');
+
+/** Deprecated Project compatibility surface. */
+export const legacyConnectorApp = createConnectorRouter(dbConnectorRouterDeps, 'projects');

@@ -41,12 +41,12 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Rate limited' }, { status: 429 });
 
   const url = new URL(req.url);
-  const projectId = url.searchParams.get('projectId') ?? '';
+  const workspaceId = url.searchParams.get('workspaceId') ?? '';
   const connector = url.searchParams.get('connector') ?? '';
-  if (!isValidProjectId(projectId)) {
+  if (!isValidProjectId(workspaceId)) {
     return Response.json({ error: 'Invalid identifiers' }, { status: 400 });
   }
-  if (!isOwner(session.userId, projectId)) {
+  if (!isOwner(session.userId, workspaceId)) {
     return Response.json({ error: 'Not found' }, { status: 404 });
   }
 
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await kortix
-      .project(projectId)
+      .project(workspaceId)
       .connectors.connections.list();
     const connectors = selectConnectorBindingChoices(result.connections).filter(
       (choice) => !connector || choice.alias === connector,

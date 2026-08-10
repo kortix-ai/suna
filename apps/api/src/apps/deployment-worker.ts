@@ -14,7 +14,7 @@ import { pauseComputeSession, startComputeSession } from '../billing/services/co
 import { config, SANDBOX_VERSION, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
-import { listResolvedProjectSecrets } from '../projects/secrets';
+import { listResolvedWorkspaceSecrets } from '../workspaces/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
 import { AppHostingProvider } from './hosting';
@@ -364,8 +364,8 @@ export async function driveAppDeployment(
       );
     }
 
-    const availableSecrets = await listResolvedProjectSecrets(
-      context.app.projectId,
+    const availableSecrets = await listResolvedWorkspaceSecrets(
+      context.app.workspaceId,
       context.deployment.createdBy,
     );
     let runtimeEnvironment;

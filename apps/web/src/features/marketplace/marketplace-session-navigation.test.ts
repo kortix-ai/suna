@@ -47,7 +47,7 @@ describe('marketplace install session navigation', () => {
       '/workspaces/project-123/sessions/session-123',
     ]);
     expect(prefetchedQueries).toHaveLength(1);
-    expect(invalidatedQueries).toEqual([{ queryKey: qk.project.sessionsScope('project-123') }]);
+    expect(invalidatedQueries).toEqual([{ queryKey: qk.workspace.sessionsScope('project-123') }]);
   });
 
   test('returns null and does nothing when no session was created', () => {

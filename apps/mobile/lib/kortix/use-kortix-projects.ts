@@ -261,7 +261,7 @@ export function useKortixAgents(sandboxUrl: string | undefined, projectId: strin
 }
 // ── Mutation hooks ───────────────────────────────────────────────────────────
 
-export function useUpdateProject(sandboxUrl: string | undefined) {
+export function useUpdateWorkspace(sandboxUrl: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string; name?: string; description?: string }) =>

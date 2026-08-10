@@ -44,10 +44,19 @@ export function workspaceCompatibilityRoute(
   method: string,
   path: string,
 ): string | null {
-  if (path !== "/v1/projects" && !path.startsWith("/v1/projects/")) {
-    return null;
+  const namespacePairs = [
+    ["/v1/projects", "/v1/workspaces"],
+    ["/v1/connectors/projects", "/v1/connectors/workspaces"],
+  ] as const;
+  for (const [legacy, canonical] of namespacePairs) {
+    if (path === legacy || path.startsWith(`${legacy}/`)) {
+      return normalize(method, path.replace(legacy, canonical));
+    }
+    if (path === canonical || path.startsWith(`${canonical}/`)) {
+      return normalize(method, path.replace(canonical, legacy));
+    }
   }
-  return normalize(method, path.replace("/v1/projects", "/v1/workspaces"));
+  return null;
 }
 
 function parseRouteString(raw: string): Route | null {

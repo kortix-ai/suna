@@ -73,7 +73,7 @@ export function deliversPlaintextToSandbox(strategy: SecretStrategy): boolean {
 }
 
 /** True when the name should not appear in the sandbox at all — not even as a
- *  handle, and not in `KORTIX_PROJECT_SECRET_NAMES`. */
+ *  handle, and not in `KORTIX_WORKSPACE_SECRET_NAMES`. */
 export function isFullyWithheld(strategy: SecretStrategy): boolean {
   return strategy === 'denied';
 }
@@ -403,7 +403,7 @@ export type SecretWithheldReason =
  * credential in `env`, `handle` puts a mintable placeholder there (so the caller
  * must go and mint one), and `nothing` must also suppress the NAME. Collapsing
  * the last two into "no value" is exactly the mistake that desynchronises
- * `KORTIX_PROJECT_SECRET_NAMES` from the env map.
+ * `KORTIX_WORKSPACE_SECRET_NAMES` from the env map.
  */
 export type SecretDelivery =
   | { emit: 'plaintext'; strategy: 'runtime' }
@@ -521,7 +521,7 @@ export interface DeliveredSecret {
 }
 
 /**
- * Exactly what belongs in `KORTIX_PROJECT_SECRET_NAMES`.
+ * Exactly what belongs in `KORTIX_WORKSPACE_SECRET_NAMES`.
  *
  * The invariant, which is not cosmetic: **a name appears here IFF a value (real
  * or handle) is emitted for it.** The daemon's env store seeds `knownNames` from

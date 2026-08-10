@@ -11,14 +11,14 @@
 //
 // `member` is the floor project role (read + run sessions + fire triggers).
 // The old `user` and `viewer` tiers were folded into `member`; they survive
-// only as deprecated input aliases (see `normalizeProjectRole`) — `user` was
+// only as deprecated input aliases (see `normalizeWorkspaceRole`) — `user` was
 // renamed in the enum, `viewer` is a dormant value Postgres can't drop.
 // Nothing emits either.
 
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from './actions';
+import { ACCOUNT_ACTIONS, WORKSPACE_ACTIONS } from './actions';
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'member';
+export type WorkspaceRole = 'manager' | 'editor' | 'member';
 
 // ─── Account roles ─────────────────────────────────────────────────────────
 
@@ -57,7 +57,7 @@ const ADMIN_EXTRAS: readonly string[] = [
   ACCOUNT_ACTIONS.POLICY_CREATE,
   ACCOUNT_ACTIONS.POLICY_DELETE,
 
-  ACCOUNT_ACTIONS.PROJECT_CREATE,
+  ACCOUNT_ACTIONS.WORKSPACE_CREATE,
 ];
 
 /** Baseline a plain account member sees. No write surface; the engine
@@ -76,15 +76,15 @@ export const ACCOUNT_ROLE_PERMS: Record<AccountRole, ReadonlySet<string>> = {
   owner: new Set<string>([...MEMBER_BASELINE, ...ADMIN_EXTRAS, ...OWNER_ONLY]),
 };
 
-// ─── Project roles ─────────────────────────────────────────────────────────
+// ─── Workspace roles ─────────────────────────────────────────────────────────
 
 /** Manager-only actions on a project: delete + member management. */
 const MANAGER_ONLY: readonly string[] = [
-  PROJECT_ACTIONS.PROJECT_DELETE,
-  PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-  PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE,
-  PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+  WORKSPACE_ACTIONS.WORKSPACE_DELETE,
+  WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE,
+  WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_KEYS_MANAGE,
+  WORKSPACE_ACTIONS.WORKSPACE_SESSION_BINDINGS_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_CONNECTIONS_MANAGE,
 ];
 
 /** Actions an editor gets on top of member. Editing the project and triggers
@@ -92,37 +92,37 @@ const MANAGER_ONLY: readonly string[] = [
  *  editor from a member. Running sessions is NOT here: it's part of the
  *  member baseline (see below). */
 const EDITOR_EXTRAS: readonly string[] = [
-  PROJECT_ACTIONS.PROJECT_WRITE,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
+  WORKSPACE_ACTIONS.WORKSPACE_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_CREATE,
+  WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_UPDATE,
+  WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_DELETE,
+  WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_FIRE,
 
-  PROJECT_ACTIONS.PROJECT_GATEWAY_BUDGET_SET,
+  WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_BUDGET_SET,
 
   // Per-capability write leaves (IAM v1). Editor keeps every capability it has
   // today (all of these previously collapsed to project.write); a custom role
   // deactivates a capability by OMITTING its leaf, never by editing this set.
-  PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
-  PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
-  PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
-  PROJECT_ACTIONS.PROJECT_FILE_WRITE,
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-  PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
-  PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
-  PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_SKILL_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_COMMAND_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_FILE_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_GITOPS_PUSH,
+  WORKSPACE_ACTIONS.WORKSPACE_GITOPS_MERGE,
+  WORKSPACE_ACTIONS.WORKSPACE_SECRET_WRITE,
+  WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE,
 
   // Sensitive READS — moved out of the floor `member` role. A plain member can
   // use the project (run the agent/chat) but can't browse the file tree via the
   // files page or view secret values; editor+ retains both. Makes "project
   // access without files/secrets" expressible as the built-in `member` role.
-  PROJECT_ACTIONS.PROJECT_FILE_READ,
-  PROJECT_ACTIONS.PROJECT_SECRET_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_FILE_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_SECRET_READ,
 
   // Acting on a review item (approve / reject / answer) is a decision on agent
   // work — editor-tier, alongside gitops.
-  PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
+  WORKSPACE_ACTIONS.WORKSPACE_REVIEW_ACT,
 ];
 
 /** Baseline for the floor project role. `member` is the base *usable* role:
@@ -132,36 +132,36 @@ const EDITOR_EXTRAS: readonly string[] = [
  *  and this is the role new members get by default, so it has to be able to
  *  drive Kortix. What it CANNOT do is customize the project (edit settings,
  *  deploy, manage members, create/delete triggers) OR read files/secrets —
- *  those live in EDITOR_EXTRAS / MANAGER_ONLY above. Named PROJECT_MEMBER_* to
+ *  those live in EDITOR_EXTRAS / MANAGER_ONLY above. Named WORKSPACE_MEMBER_* to
  *  avoid colliding with the account-role MEMBER_BASELINE above. */
-const PROJECT_MEMBER_BASELINE: readonly string[] = [
-  PROJECT_ACTIONS.PROJECT_READ,
-  PROJECT_ACTIONS.PROJECT_SESSION_READ,
-  PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+const WORKSPACE_MEMBER_BASELINE: readonly string[] = [
+  WORKSPACE_ACTIONS.WORKSPACE_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_SESSION_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_READ,
 
-  PROJECT_ACTIONS.PROJECT_SESSION_START,
-  PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+  WORKSPACE_ACTIONS.WORKSPACE_SESSION_START,
+  WORKSPACE_ACTIONS.WORKSPACE_SESSION_STOP,
 
-  PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
-  PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_LOGS_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_SPEND_READ,
 
   // Per-capability read leaves (IAM v1). NOTE: project.file.read and
   // project.secret.read are DELIBERATELY NOT here — they moved to EDITOR_EXTRAS
   // so a floor `member` can run the agent/chat but can't browse the file tree or
   // view secret values (the sensitive reads are an editor concern). This is the
   // one place `member ⊂ editor` is a real capability difference on reads.
-  PROJECT_ACTIONS.PROJECT_AGENT_READ,
-  PROJECT_ACTIONS.PROJECT_SKILL_READ,
-  PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
-  PROJECT_ACTIONS.PROJECT_GITOPS_READ,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_AGENT_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_SKILL_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_COMMAND_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_GITOPS_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_READ,
 
   // Review Center: the floor role can see the inbox and (via its agent) submit
   // outputs/decisions for review. Acting on them is editor-tier (EDITOR_EXTRAS).
-  PROJECT_ACTIONS.PROJECT_REVIEW_READ,
-  PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT,
+  WORKSPACE_ACTIONS.WORKSPACE_REVIEW_READ,
+  WORKSPACE_ACTIONS.WORKSPACE_REVIEW_SUBMIT,
 ];
 
 /** What the floor `member` role gets on top of the read+run baseline: manually
@@ -169,17 +169,17 @@ const PROJECT_MEMBER_BASELINE: readonly string[] = [
  *  config, deploy, gitops, members or secret write. This keeps the chain a
  *  clean superset: member ⊂ editor ⊂ manager (editor's EDITOR_EXTRAS also
  *  includes fire). */
-const PROJECT_MEMBER_EXTRAS: readonly string[] = [PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE];
+const WORKSPACE_MEMBER_EXTRAS: readonly string[] = [WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_FIRE];
 
-export const PROJECT_ROLE_PERMS: Record<ProjectRole, ReadonlySet<string>> = {
-  member: new Set<string>([...PROJECT_MEMBER_BASELINE, ...PROJECT_MEMBER_EXTRAS]),
-  editor: new Set<string>([...PROJECT_MEMBER_BASELINE, ...EDITOR_EXTRAS]),
-  manager: new Set<string>([...PROJECT_MEMBER_BASELINE, ...EDITOR_EXTRAS, ...MANAGER_ONLY]),
+export const WORKSPACE_ROLE_PERMS: Record<WorkspaceRole, ReadonlySet<string>> = {
+  member: new Set<string>([...WORKSPACE_MEMBER_BASELINE, ...WORKSPACE_MEMBER_EXTRAS]),
+  editor: new Set<string>([...WORKSPACE_MEMBER_BASELINE, ...EDITOR_EXTRAS]),
+  manager: new Set<string>([...WORKSPACE_MEMBER_BASELINE, ...EDITOR_EXTRAS, ...MANAGER_ONLY]),
 };
 
 // ─── Role ranking helpers ──────────────────────────────────────────────────
 
-export const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
+export const WORKSPACE_ROLE_RANK: Record<WorkspaceRole, number> = {
   member: 1,
   editor: 2,
   manager: 3,
@@ -187,12 +187,12 @@ export const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
 
 /**
  * Coerce any raw role value (DB column, request body, legacy token) into a
- * canonical ProjectRole. The retired `user` and `viewer` tiers fold into
+ * canonical WorkspaceRole. The retired `user` and `viewer` tiers fold into
  * `member` — they can still arrive from old rows, tokens, or clients, so we
  * normalize rather than reject. Returns null for anything unrecognized,
  * including non-string input (untyped request bodies included).
  */
-export function normalizeProjectRole(raw: unknown): ProjectRole | null {
+export function normalizeWorkspaceRole(raw: unknown): WorkspaceRole | null {
   if (typeof raw !== 'string') return null;
   const v = raw.trim().toLowerCase();
   if (v === 'viewer' || v === 'user') return 'member';
@@ -202,13 +202,13 @@ export function normalizeProjectRole(raw: unknown): ProjectRole | null {
 /** Return the higher-ranked of two project roles. Used when a user's
  *  effective project role comes from multiple sources (direct membership
  *  + several group grants) — they get the strongest of the bunch. */
-export function maxProjectRole(a: ProjectRole, b: ProjectRole): ProjectRole {
-  return PROJECT_ROLE_RANK[a] >= PROJECT_ROLE_RANK[b] ? a : b;
+export function maxWorkspaceRole(a: WorkspaceRole, b: WorkspaceRole): WorkspaceRole {
+  return WORKSPACE_ROLE_RANK[a] >= WORKSPACE_ROLE_RANK[b] ? a : b;
 }
 
 /** Owner/admin get implicit Manager on every project in their account.
  *  Member does not — they only see projects they've been added to. */
-export function implicitProjectRoleForAccount(accountRole: AccountRole): ProjectRole | null {
+export function implicitWorkspaceRoleForAccount(accountRole: AccountRole): WorkspaceRole | null {
   return accountRole === 'owner' || accountRole === 'admin' ? 'manager' : null;
 }
 
@@ -220,6 +220,6 @@ export function accountRoleAllows(role: AccountRole, action: string): boolean {
 }
 
 /** Does the project role grant this action? */
-export function projectRoleAllows(role: ProjectRole, action: string): boolean {
-  return PROJECT_ROLE_PERMS[role].has(action);
+export function projectRoleAllows(role: WorkspaceRole, action: string): boolean {
+  return WORKSPACE_ROLE_PERMS[role].has(action);
 }

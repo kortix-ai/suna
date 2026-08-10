@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { selectSessionRowsForViewer } from '../projects/lib/session-inventory';
+import { selectSessionRowsForViewer } from '../workspaces/lib/session-inventory';
 
 const subject = { userId: 'viewer-1', groupIds: [] } as any;
 
@@ -20,7 +20,7 @@ describe('selectSessionRowsForViewer — migrated sessions', () => {
     const selected = selectSessionRowsForViewer({
       rows: [migrated],
       scope: 'visible',
-      canManageProject: false,
+      canManageWorkspace: false,
       subject,
       callerSessionId: null,
       grantsBySession: new Map(),
@@ -35,7 +35,7 @@ describe('selectSessionRowsForViewer — migrated sessions', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row({ status: 'stopped' })],
       scope: 'visible',
-      canManageProject: false,
+      canManageWorkspace: false,
       subject,
       callerSessionId: null,
       grantsBySession: new Map(),

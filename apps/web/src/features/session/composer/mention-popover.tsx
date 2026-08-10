@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
 
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/workspace-files';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { FolderIcon as Folder, ChatIcon as MessageSquare } from '@phosphor-icons/react';

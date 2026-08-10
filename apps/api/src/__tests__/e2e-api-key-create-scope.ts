@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Live E2E for creating a PROJECT-SCOPED API key THROUGH THE API
+ * Live E2E for creating a WORKSPACE-SCOPED API key THROUGH THE API
  * (POST /v1/accounts/tokens { project_id }). Run against a running API + Postgres.
  *
  *   bun run apps/api/src/__tests__/e2e-api-key-create-scope.ts
@@ -68,7 +68,7 @@ async function main() {
   `);
   const foreignRows = (foreignRes as unknown as { rows?: Array<{ project_id: string; account_id: string }> }).rows
     ?? (foreignRes as unknown as Array<{ project_id: string; account_id: string }>);
-  const foreignProject = foreignRows[0] ?? null;
+  const foreignWorkspace = foreignRows[0] ?? null;
 
   // 3. CREATE a project-scoped key via the API — the new capability.
   const created = await call<{ secret_key: string; token_id: string; project_id: string | null }>(
@@ -102,36 +102,36 @@ async function main() {
       { method: 'POST', body: JSON.stringify({ name: 'e2e-create-scope-key-b', project_id: projB }) },
     );
     if (createdB.status !== 201) die(`create projB token → ${createdB.status} ${JSON.stringify(createdB.body)}`);
-    const wrongProjectRevoke = await call<Record<string, unknown>>(
+    const wrongWorkspaceRevoke = await call<Record<string, unknown>>(
       admin.secretKey,
       `/projects/${projA}/cli-token/${createdB.body.token_id}`,
       { method: 'DELETE' },
     );
-    if (wrongProjectRevoke.status !== 404) {
+    if (wrongWorkspaceRevoke.status !== 404) {
       die(
-        `revoking projB token through projA route should 404, got ${wrongProjectRevoke.status}: ${JSON.stringify(wrongProjectRevoke.body)}`,
+        `revoking projB token through projA route should 404, got ${wrongWorkspaceRevoke.status}: ${JSON.stringify(wrongWorkspaceRevoke.body)}`,
       );
     }
     ok('DELETE /projects/<projA>/cli-token/<projB-token> → 404');
-    const rightProjectRevoke = await call<Record<string, unknown>>(
+    const rightWorkspaceRevoke = await call<Record<string, unknown>>(
       admin.secretKey,
       `/projects/${projB}/cli-token/${createdB.body.token_id}`,
       { method: 'DELETE' },
     );
-    if (rightProjectRevoke.status !== 200) {
+    if (rightWorkspaceRevoke.status !== 200) {
       die(
-        `revoking projB token through projB route should 200, got ${rightProjectRevoke.status}: ${JSON.stringify(rightProjectRevoke.body)}`,
+        `revoking projB token through projB route should 200, got ${rightWorkspaceRevoke.status}: ${JSON.stringify(rightWorkspaceRevoke.body)}`,
       );
     }
     ok('DELETE /projects/<projB>/cli-token/<projB-token> → 200');
   }
 
-  if (foreignProject) {
-    dim('foreign', `${foreignProject.project_id} (${foreignProject.account_id})`);
+  if (foreignWorkspace) {
+    dim('foreign', `${foreignWorkspace.project_id} (${foreignWorkspace.account_id})`);
     const foreignCreate = await call<Record<string, unknown>>(
       admin.secretKey,
       '/accounts/tokens',
-      { method: 'POST', body: JSON.stringify({ name: 'e2e-foreign-scope-denied', project_id: foreignProject.project_id }) },
+      { method: 'POST', body: JSON.stringify({ name: 'e2e-foreign-scope-denied', project_id: foreignWorkspace.project_id }) },
     );
     if (foreignCreate.status !== 403) {
       die(`foreign project scope mint should 403, got ${foreignCreate.status}: ${JSON.stringify(foreignCreate.body)}`);

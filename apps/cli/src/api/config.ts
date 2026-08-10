@@ -204,7 +204,7 @@ export function deleteConfig(): void {
  *      (The SANDBOX credential
  *      — KORTIX_SANDBOX_TOKEN / its legacy KORTIX_TOKEN alias — is deliberately
  *      NOT used here: it's the daemon's identity, not the user's, and does not
- *      authenticate against the project-scoped API routes the CLI calls.)
+ *      authenticate against the workspace-scoped API routes the CLI calls.)
  *   2. KORTIX_API_URL env var (URL override for the stored active host)
  *   3. `--host` flag (handled at the call site via `getHost(name)`)
  *   4. The `active` host in config.json

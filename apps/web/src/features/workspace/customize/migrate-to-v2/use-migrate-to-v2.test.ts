@@ -13,7 +13,7 @@ describe('buildMigrateToV2Stash', () => {
     });
   });
 
-  test('agent is null so the session boots the project default agent', () => {
+  test('agent is null so the session boots the workspace default agent', () => {
     expect(buildMigrateToV2Stash().agent).toBeNull();
   });
 });

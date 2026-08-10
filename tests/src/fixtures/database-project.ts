@@ -40,7 +40,7 @@ export async function createDatabaseProject(
   open: OpenProjectDb = openProjectDb,
 ): Promise<CreatedProject> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, 'create');
-  const projectId = randomUUID();
+  const workspaceId = randomUUID();
   const client = await open(databaseUrl);
   try {
     await client.query(
@@ -81,18 +81,18 @@ export async function createDatabaseProject(
          'manager'::kortix.project_role,
          $3::uuid
        FROM inserted_project`,
-      [projectId, input.accountId, input.userId, input.name],
+      [workspaceId, input.accountId, input.userId, input.name],
     );
   } finally {
     await client.end();
   }
-  return { id: projectId, name: input.name };
+  return { id: workspaceId, name: input.name };
 }
 
 export async function createDatabaseSession(
   env: Env,
   input: {
-    projectId: string;
+    workspaceId: string;
     accountId: string;
     userId: string;
   },
@@ -117,7 +117,7 @@ export async function createDatabaseSession(
          'session/' || $1,
          $4::uuid
        )`,
-      [sessionId, input.accountId, input.projectId, input.userId],
+      [sessionId, input.accountId, input.workspaceId, input.userId],
     );
   } finally {
     await client.end();
@@ -127,7 +127,7 @@ export async function createDatabaseSession(
 
 export async function deleteDatabaseProject(
   env: Env,
-  projectId: string,
+  workspaceId: string,
   open: OpenProjectDb = openProjectDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, 'delete');
@@ -136,7 +136,7 @@ export async function deleteDatabaseProject(
     await client.query(
       `DELETE FROM kortix.projects
        WHERE project_id = $1::uuid`,
-      [projectId],
+      [workspaceId],
     );
   } finally {
     await client.end();

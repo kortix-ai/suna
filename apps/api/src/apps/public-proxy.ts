@@ -256,7 +256,7 @@ function accessTokenMatchesMode(
 type AppAccessRow = {
   appId: string;
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   name: string;
   accessMode: string;
   accessPasswordHash: string | null;
@@ -283,7 +283,7 @@ function safeAppReturnTo(value: string): string {
 
 function appAccessResponse(
   request: Request,
-  app: { appId: string; projectId: string; name: string; accessMode: string },
+  app: { appId: string; workspaceId: string; name: string; accessMode: string },
   invalidPassword = false,
   returnTo = safeAppReturnTo(new URL(request.url).pathname + new URL(request.url).search),
 ): Response {
@@ -298,7 +298,7 @@ function appAccessResponse(
   const isPassword = mode === 'password';
   const action = isPassword
     ? `<form method="post" action="/_kortix/access/password"><label for="password">Password</label><input id="password" name="password" type="password" minlength="8" required autocomplete="current-password"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><button type="submit">Open App</button>${invalidPassword ? '<p class="error" role="alert">The password is incorrect.</p>' : ''}</form>`
-    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/projects/${app.projectId}/apps?open_app=${app.appId}`)}">Continue with Kortix</a>`;
+    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/projects/${app.workspaceId}/apps?open_app=${app.appId}`)}">Continue with Kortix</a>`;
   const message = isPassword
     ? 'Enter the password configured by the App owner.'
     : 'Sign in with a Kortix account that can access this App.';
@@ -461,13 +461,13 @@ export function verifyAppEdgeRequest(
 
 export async function loadPublicAppState(routeKey: string) {
   const [loaded] = await db
-    .select({ app: apps, projectMetadata: projects.metadata })
+    .select({ app: apps, workspaceMetadata: projects.metadata })
     .from(apps)
-    .innerJoin(projects, eq(projects.projectId, apps.projectId))
+    .innerJoin(projects, eq(projects.workspaceId, apps.workspaceId))
     .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt)))
     .limit(1);
   const app = loaded?.app;
-  if (!loaded || !resolveFeatureFlag(loaded.projectMetadata, 'apps')) return null;
+  if (!loaded || !resolveFeatureFlag(loaded.workspaceMetadata, 'apps')) return null;
   if (!app) return null;
   let [deployment] = app.activeDeploymentId
     ? await db.select().from(appDeployments)

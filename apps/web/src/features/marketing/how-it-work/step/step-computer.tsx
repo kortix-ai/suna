@@ -47,7 +47,7 @@ const SCRIPT: Stage<ComputerState>[] = [
       },
       {
         line: ok(t('sandbox ready · branch '), t(SESSION, 'faded')),
-        state: { phase: 'running', done: ['Machine booted'], doing: 'Cloning the project repo' },
+        state: { phase: 'running', done: ['Machine booted'], doing: 'Cloning the workspace repo' },
         pause: 800,
       },
       {

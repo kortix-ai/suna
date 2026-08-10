@@ -43,10 +43,10 @@ describe('shouldQueryAccountState', () => {
     ).toBe(false);
   });
 
-  test('the project-shell boot sequence never fetches twice', () => {
+  test('the workspace-shell boot sequence never fetches twice', () => {
     // Cold load: the shell mounts with no project-detail, so the sidebar's
     // billing items must stay quiet rather than resolve against the primary
-    // account and then re-resolve against the project's — the two paints that
+    // account and then re-resolve against the workspace's — the two paints that
     // made Upgrade Plan flicker in and out.
     const beforeDetail = shouldQueryAccountState({
       enabled: true,

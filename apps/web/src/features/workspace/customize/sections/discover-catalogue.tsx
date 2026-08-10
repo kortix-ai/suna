@@ -6,7 +6,7 @@ import {
   getDiscoverConnector,
   listDiscoverConnectors,
   listPipedreamApps,
-  type ConnectorDraftInput,
+  type WorkspaceConnectorDraftInput,
   type DiscoverConnector,
   type DiscoverConnectorVariant,
   type PipedreamApp,
@@ -75,11 +75,11 @@ type DiscoverConnectorTarget =
  * records why they were not unified.
  */
 export function DiscoverCatalogue({
-  projectId,
+  workspaceId,
   existingSlugs,
   onAdded,
 }: {
-  projectId: string;
+  workspaceId: string;
   existingSlugs: readonly string[];
   onAdded: (slug?: string) => void;
 }) {
@@ -97,10 +97,10 @@ export function DiscoverCatalogue({
   const pipedreamEnabled = connectorsEnabled && connectStatus.data?.configured === true;
 
   const connectorsQuery = useInfiniteQuery({
-    queryKey: ['discover-connectors', projectId, deferredQuery],
+    queryKey: ['discover-connectors', workspaceId, deferredQuery],
     queryFn: ({ pageParam }) =>
       listDiscoverConnectors(
-        projectId,
+        workspaceId,
         deferredQuery || undefined,
         pageParam as string | undefined,
       ),
@@ -109,19 +109,19 @@ export function DiscoverCatalogue({
     staleTime: 5 * 60_000,
   });
   const pipedreamQuery = useInfiniteQuery({
-    queryKey: ['discover-pipedream-oauth', projectId, deferredQuery],
+    queryKey: ['discover-pipedream-oauth', workspaceId, deferredQuery],
     queryFn: ({ pageParam }) =>
-      listPipedreamApps(projectId, deferredQuery || undefined, pageParam as string | undefined),
+      listPipedreamApps(workspaceId, deferredQuery || undefined, pageParam as string | undefined),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 60_000,
     enabled: pipedreamEnabled,
   });
   const detailQuery = useQuery({
-    queryKey: ['discover-connector-detail', projectId, selectedConnector?.id],
+    queryKey: ['discover-connector-detail', workspaceId, selectedConnector?.id],
     queryFn: () =>
       selectedConnector
-        ? getDiscoverConnector(projectId, selectedConnector.id)
+        ? getDiscoverConnector(workspaceId, selectedConnector.id)
         : Promise.reject(new Error('No connector selected')),
     enabled: Boolean(selectedConnector),
     staleTime: 15 * 60_000,
@@ -144,7 +144,7 @@ export function DiscoverCatalogue({
       target: DiscoverConnectorTarget;
       connection: EasyConnectConnectionInput;
     }) => {
-      let draft: ConnectorDraftInput;
+      let draft: WorkspaceConnectorDraftInput;
       if (target.source === 'pipedream') {
         draft = {
           slug: connection.slug,
@@ -180,7 +180,7 @@ export function DiscoverCatalogue({
         };
       }
       const createDraft = createOnlyConnectorDraft(draft);
-      const result = await createConnector(projectId, createDraft);
+      const result = await createConnector(workspaceId, createDraft);
       return {
         slug: createDraft.slug,
         name: createDraft.name ?? createDraft.slug,
@@ -445,7 +445,7 @@ export function DiscoverCatalogue({
         open={connectorTarget !== null}
         idPrefix="discover-connector"
         title={`Add ${connectionDisplayName || 'connector'}`}
-        description="Create a connector. The display name and slug identify it in project configuration."
+        description="Create a connector. The display name and slug identify it in workspace configuration."
         initialName={connectionDisplayName}
         initialSlug={
           connectorTarget

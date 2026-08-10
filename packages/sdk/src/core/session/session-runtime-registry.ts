@@ -55,9 +55,9 @@ const MAX_ENTRIES = 512;
 // yields, which is exactly what we evict on overflow.
 const registry = new Map<string, SessionRuntimeEntry>();
 
-/** Key a registry entry by the (projectId, sessionId) pair it belongs to. */
-function registryKey(projectId: string, sessionId: string): string {
-  return `${projectId}::${sessionId}`;
+/** Key a registry entry by the (workspaceId, sessionId) pair it belongs to. */
+function registryKey(workspaceId: string, sessionId: string): string {
+  return `${workspaceId}::${sessionId}`;
 }
 
 /** Move `key` to the most-recently-used end of the map (re-insert). */
@@ -68,10 +68,10 @@ function touch(key: string, entry: SessionRuntimeEntry): void {
 
 /** Read a session's last-resolved runtime, if any handle has resolved it. */
 export function getSessionRuntime(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
 ): SessionRuntimeEntry | undefined {
-  const key = registryKey(projectId, sessionId);
+  const key = registryKey(workspaceId, sessionId);
   const entry = registry.get(key);
   if (entry) touch(key, entry);
   return entry;
@@ -83,11 +83,11 @@ export function getSessionRuntime(
  * registry past `MAX_ENTRIES` — see the eviction-safety note above.
  */
 export function setSessionRuntime(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   entry: SessionRuntimeEntry,
 ): void {
-  const key = registryKey(projectId, sessionId);
+  const key = registryKey(workspaceId, sessionId);
   if (!registry.has(key) && registry.size >= MAX_ENTRIES) {
     const oldestKey = registry.keys().next().value;
     if (oldestKey !== undefined) registry.delete(oldestKey);
@@ -100,6 +100,6 @@ export function setSessionRuntime(
  * established sandbox identity, but every handle must still re-resolve
  * readiness via `ensureReady()`/`startProjectSession` after the reboot.
  */
-export function clearSessionRuntime(projectId: string, sessionId: string): void {
-  registry.delete(registryKey(projectId, sessionId));
+export function clearSessionRuntime(workspaceId: string, sessionId: string): void {
+  registry.delete(registryKey(workspaceId, sessionId));
 }

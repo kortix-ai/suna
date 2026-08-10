@@ -20,7 +20,7 @@ function refOf(handle: TeamsLiveTurn): TeamsConversationRef {
     botId: handle.botId,
     fromId: handle.fromId,
     tenantId: handle.tenantId,
-    projectId: handle.projectId,
+    workspaceId: handle.workspaceId,
   };
 }
 
@@ -37,7 +37,7 @@ function rowToHandle(row: typeof chatTurnStreams.$inferSelect): TeamsLiveTurn {
     steps: (row.steps as StreamTaskChunk[]) ?? [],
     expiry: new Date(row.expiresAt).getTime(),
     finalized: row.finalized,
-    projectId: row.projectId,
+    workspaceId: row.workspaceId,
     sessionId: row.sessionId,
     originatingActivity: row.originatingEvent as TeamsActivity,
   };
@@ -70,7 +70,7 @@ export async function saveTurn(handle: TeamsLiveTurn): Promise<void> {
   };
   const values = {
     sessionId: handle.sessionId,
-    projectId: handle.projectId,
+    workspaceId: handle.workspaceId,
     teamId: handle.tenantId,
     channel: handle.conversationId,
     triggerTs: handle.triggerActivityId,
@@ -103,7 +103,7 @@ export async function claimFinalize(sessionId: string): Promise<boolean> {
 }
 
 export async function startTurn(
-  projectId: string,
+  workspaceId: string,
   tenantId: string,
   activity: TeamsActivity,
 ): Promise<TeamsLiveTurn | null> {
@@ -117,7 +117,7 @@ export async function startTurn(
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     tenantId,
-    projectId,
+    workspaceId,
   };
   await sendTyping(ref);
   const messageActivityId = (await sendCard(ref, buildPlanCard(LIVE_PLAN_TITLE, []))) ?? '';
@@ -133,7 +133,7 @@ export async function startTurn(
     steps: [],
     expiry: Date.now() + STREAM_TTL_MS,
     finalized: false,
-    projectId,
+    workspaceId,
     sessionId: '',
     originatingActivity: activity,
   };
@@ -243,8 +243,8 @@ export async function finalizeTurn(
   const body = (opts.answer ?? opts.error ?? '').slice(0, 11000);
   const title = opts.title ?? (opts.error ? 'Run failed' : 'Task complete');
   const sessionUrl =
-    handle.projectId && handle.sessionId
-      ? sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId)
+    handle.workspaceId && handle.sessionId
+      ? sessionWebUrl(config.FRONTEND_URL, handle.workspaceId, handle.sessionId)
       : undefined;
 
   try {
@@ -276,8 +276,8 @@ export function buildTeamsTurnEnv(tenantId: string, activity: TeamsActivity): Re
   return env;
 }
 
-export async function persistServiceUrl(projectId: string, serviceUrl?: string): Promise<void> {
-  if (serviceUrl) await saveTeamsServiceUrl(projectId, serviceUrl).catch(() => {});
+export async function persistServiceUrl(workspaceId: string, serviceUrl?: string): Promise<void> {
+  if (serviceUrl) await saveTeamsServiceUrl(workspaceId, serviceUrl).catch(() => {});
 }
 
 setInterval(() => {

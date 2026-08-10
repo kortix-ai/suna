@@ -34,14 +34,14 @@ function errorText(error: unknown): string {
 
 async function listProjectSessionCosts(
   kortix: ReturnType<typeof createScopedKortix>,
-  projectId: string,
+  workspaceId: string,
 ): Promise<SessionCostSummary[]> {
   const sessions: SessionCostSummary[] = [];
   let offset: number | null = 0;
 
   while (offset !== null) {
     const page = await kortix.billing.sessionCosts.list({
-      projectId,
+      workspaceId,
       limit: 100,
       offset,
     });
@@ -77,11 +77,11 @@ export async function GET(req: NextRequest) {
   });
 
   const projects: SessionCostProject[] = await Promise.all(
-    projectIds.map(async (projectId) => {
+    projectIds.map(async (workspaceId) => {
       try {
-        const sessions = await listProjectSessionCosts(kortix, projectId);
+        const sessions = await listProjectSessionCosts(kortix, workspaceId);
         return {
-          projectId,
+          workspaceId,
           sessions: sessions.map((sessionCost) => ({
             session_id: sessionCost.session_id,
             llm_cost: sessionCost.llm_cost,
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
           })),
         };
       } catch (error) {
-        return { projectId, sessions: [], error: errorText(error) };
+        return { workspaceId, sessions: [], error: errorText(error) };
       }
     }),
   );

@@ -3,7 +3,7 @@ import { parseOpenCodeAuditBatch } from './opencode-audit-ingestion';
 
 const scope = {
   accountId: 'a7100000-0000-4000-a000-000000000001',
-  projectId: 'a7200000-0000-4000-a000-000000000001',
+  workspaceId: 'a7200000-0000-4000-a000-000000000001',
   sessionId: 'a7300000-0000-4000-a000-000000000001',
 };
 
@@ -41,7 +41,7 @@ describe('parseOpenCodeAuditBatch', () => {
     expect(parsed.accepted).toBe(1);
     expect(parsed.values[0]).toMatchObject({
       accountId: scope.accountId,
-      projectId: scope.projectId,
+      workspaceId: scope.workspaceId,
       sessionId: scope.sessionId,
       actorType: 'agent',
       authoritativeSource: 'opencode',

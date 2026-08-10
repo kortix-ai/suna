@@ -167,7 +167,7 @@ function abort(name: string, err: unknown): never {
 }
 
 // ── step 1 + 3 helpers: provision a real user/project/session ──────────────
-async function provisionUser(): Promise<{ projectId: string; userJwt: string }> {
+async function provisionUser(): Promise<{ workspaceId: string; userJwt: string }> {
   const stamp = Date.now();
   const email = `voice-full-flow-${stamp}@example.test`;
   const password = `Voice-${stamp}!aA`;
@@ -201,15 +201,15 @@ async function provisionUser(): Promise<{ projectId: string; userJwt: string }> 
     body: JSON.stringify({ name: `voice-full-flow-${stamp}`, seed_starter: true }),
   });
   const proj = await j(projRes);
-  const projectId = proj?.project_id ?? proj?.project?.project_id ?? proj?.id;
-  if (!projectId) throw new Error(`project create failed: ${JSON.stringify(proj).slice(0, 400)}`);
+  const workspaceId = proj?.project_id ?? proj?.project?.project_id ?? proj?.id;
+  if (!workspaceId) throw new Error(`project create failed: ${JSON.stringify(proj).slice(0, 400)}`);
 
-  return { projectId, userJwt };
+  return { workspaceId, userJwt };
 }
 
-async function createSessionAndWaitReady(projectId: string, userJwt: string): Promise<string> {
+async function createSessionAndWaitReady(workspaceId: string, userJwt: string): Promise<string> {
   const H = { Authorization: `Bearer ${userJwt}`, 'content-type': 'application/json' };
-  const sessRes = await fetch(`${API}/projects/${projectId}/sessions`, {
+  const sessRes = await fetch(`${API}/projects/${workspaceId}/sessions`, {
     method: 'POST',
     headers: H,
     body: JSON.stringify({ initial_prompt: 'Say hello and wait for instructions.' }),
@@ -219,7 +219,7 @@ async function createSessionAndWaitReady(projectId: string, userJwt: string): Pr
   if (!sessionId) throw new Error(`session create failed: ${JSON.stringify(sess).slice(0, 500)}`);
 
   for (let i = 0; i < 80; i++) {
-    const s = await j(await fetch(`${API}/projects/${projectId}/sessions/${sessionId}`, { headers: H }));
+    const s = await j(await fetch(`${API}/projects/${workspaceId}/sessions/${sessionId}`, { headers: H }));
     const stage = s?.session?.sandbox?.stage ?? s?.sandbox?.stage ?? s?.session?.status ?? s?.status;
     if (i % 5 === 0) console.log(`  …sandbox ${stage}`);
     if (stage === 'ready' || stage === 'running') return sessionId;
@@ -231,14 +231,14 @@ async function createSessionAndWaitReady(projectId: string, userJwt: string): Pr
 
 // ── voice MCP over HTTP, exactly as an in-sandbox agent would call it ──────
 async function mcpCall(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   token: string,
   method: string,
   params: Record<string, unknown> | undefined,
   id: number,
 ): Promise<{ status: number; body: any }> {
-  const res = await fetch(`${API}/projects/${projectId}/mcp/voice`, {
+  const res = await fetch(`${API}/projects/${workspaceId}/mcp/voice`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -355,7 +355,7 @@ async function main() {
   console.log('=== voice-full-flow ===\n');
 
   const skipProvision = flag('skip-provision');
-  let projectId = arg('project');
+  let workspaceId = arg('project');
   let sessionId = arg('call');
   let userJwt: string | undefined;
 
@@ -363,9 +363,9 @@ async function main() {
   if (!skipProvision) {
     try {
       const p = await provisionUser();
-      projectId = p.projectId;
+      workspaceId = p.workspaceId;
       userJwt = p.userJwt;
-      record('1-provision', 'PASS', `project=${projectId}`);
+      record('1-provision', 'PASS', `project=${workspaceId}`);
     } catch (err) {
       abort('1-provision', err);
     }
@@ -374,16 +374,16 @@ async function main() {
       console.error('--skip-provision requires --call <sessionId>');
       process.exit(1);
     }
-    if (!projectId) {
+    if (!workspaceId) {
       const [row] = await db
-        .select({ projectId: projectSessions.projectId })
+        .select({ workspaceId: projectSessions.workspaceId })
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, sessionId))
         .limit(1);
       if (!row) abort('1-provision', new Error(`session ${sessionId} not found in DB — pass --project explicitly`));
-      projectId = row!.projectId;
+      workspaceId = row!.workspaceId;
     }
-    record('1-provision', 'SKIP', `reusing project=${projectId} call=${sessionId}`);
+    record('1-provision', 'SKIP', `reusing project=${workspaceId} call=${sessionId}`);
   }
 
   // ── step 2: enable the voice experimental flag ─────────────────────────
@@ -396,7 +396,7 @@ async function main() {
     record('2-voice-flag', 'SKIP', 'no fresh user token (reusing a project)');
   } else {
     try {
-      const res = await fetch(`${API}/projects/${projectId}/experimental`, {
+      const res = await fetch(`${API}/projects/${workspaceId}/experimental`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${userJwt}`, 'content-type': 'application/json' },
         body: JSON.stringify({ feature: 'voice', enabled: true }),
@@ -416,7 +416,7 @@ async function main() {
   // ── step 3: create a session and wait for its sandbox ──────────────────
   if (!skipProvision) {
     try {
-      sessionId = await createSessionAndWaitReady(projectId!, userJwt!);
+      sessionId = await createSessionAndWaitReady(workspaceId!, userJwt!);
       record('3-session', 'PASS', `session=${sessionId}`);
     } catch (err) {
       abort('3-session', err);
@@ -460,7 +460,7 @@ async function main() {
   } else {
     try {
       const { status, body } = await mcpCall(
-        projectId!,
+        workspaceId!,
         sessionId!,
         connectorToken,
         'tools/call',
@@ -488,7 +488,7 @@ async function main() {
     record('5-mcp-tools-list', 'SKIP', 'no session token available');
   } else {
     try {
-      const { status, body } = await mcpCall(projectId!, sessionId!, connectorToken, 'tools/list', undefined, 5);
+      const { status, body } = await mcpCall(workspaceId!, sessionId!, connectorToken, 'tools/list', undefined, 5);
       if (status !== 200) {
         record('5-mcp-tools-list', 'FAIL', `HTTP ${status} ${JSON.stringify(body).slice(0, 200)}`);
       } else {
@@ -600,7 +600,7 @@ async function main() {
   } else {
     try {
       const { status, body } = await mcpCall(
-        projectId!,
+        workspaceId!,
         sessionId!,
         connectorToken,
         'tools/call',
@@ -645,7 +645,7 @@ async function main() {
       );
       const before = await svc.listRooms([roomName]).catch(() => []);
       const { status, body } = await mcpCall(
-        projectId!,
+        workspaceId!,
         sessionId!,
         connectorToken,
         'tools/call',

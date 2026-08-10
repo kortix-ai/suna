@@ -7,13 +7,13 @@
  * the registry entries in `upgrade-defs.ts` and the one-off prompt runner;
  * `useMigrateToV2` is the v2-specific wrapper kept for its button.
  *
- * Deliberately does NOT pass `agent_name` — the session boots the project's
+ * Deliberately does NOT pass `agent_name` — the session boots the workspace's
  * default agent (the one with git/CR powers).
  */
 
 import { useCallback, useState } from 'react';
 
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { useNewWorkspaceSession } from '@/hooks/workspaces/use-new-workspace-session';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { type StartStash, writeStartStash } from '@kortix/sdk/react';
 
@@ -29,10 +29,10 @@ export interface RunUpgrade {
   pending: boolean;
 }
 
-export function useRunUpgrade(projectId: string): RunUpgrade {
+export function useRunUpgrade(workspaceId: string): RunUpgrade {
   const closeCustomize = useCustomizeStore((s) => s.close);
   const [pending, setPending] = useState(false);
-  const newSession = useNewProjectSession(projectId);
+  const newSession = useNewWorkspaceSession(workspaceId);
 
   const start = useCallback(
     (prompt: string) => {

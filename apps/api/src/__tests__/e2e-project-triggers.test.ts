@@ -16,7 +16,7 @@ import {
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
-const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000000201';
 const MANIFEST_PATH = 'kortix.yaml';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
@@ -29,7 +29,7 @@ process.env.LLM_GATEWAY_ENABLED = 'true';
 // ─── In-memory git mock ─────────────────────────────────────────────────────
 // Every git read/write goes through this map so a test's "commitFile" is
 // observable by the very next "listRepoFiles" / "readRepoFile" call. That
-// mirrors the post-write `invalidateProjectMirror` behavior in production.
+// mirrors the post-write `invalidateWorkspaceMirror` behavior in production.
 
 let repoFiles: Map<string, string>;
 let commitCalls: Array<{ path: string; message: string }>;
@@ -50,7 +50,7 @@ let manifestCommitConflictsRemaining = 0;
 let modelDefaults: {
   account: string | null;
   agents: Record<string, string>;
-  projects: Record<string, string>;
+  workspaces: Record<string, string>;
 };
 
 function setTestAuth(userId = USER_ID, userEmail = 'triggers@example.test') {
@@ -62,9 +62,9 @@ function getTestAuth() {
 }
 
 const projectRow: typeof projects.$inferSelect = {
-  projectId: PROJECT_ID,
+  workspaceId: WORKSPACE_ID,
   accountId: ACCOUNT_ID,
-  name: 'Trigger Project',
+  name: 'Trigger Workspace',
   sandboxProviderGeneration: 0,
   secretDefaultStrategy: 'runtime' as const,
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
@@ -97,7 +97,7 @@ function resetState() {
   manifestReadCalls = 0;
   mirrorInvalidationCalls = 0;
   manifestCommitConflictsRemaining = 0;
-  modelDefaults = { account: null, agents: {}, projects: {} };
+  modelDefaults = { account: null, agents: {}, workspaces: {} };
   projectRow.metadata = {};
   secretValues.clear();
   secretConsumerReads.length = 0;
@@ -122,8 +122,8 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-const actualGit = await import('../projects/git');
-mock.module('../projects/git', () => ({
+const actualGit = await import('../workspaces/git');
+mock.module('../workspaces/git', () => ({
   ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
@@ -158,14 +158,14 @@ mock.module('../projects/git', () => ({
     }
     return null;
   },
-  loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
+  loadWorkspaceConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
   remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
-  invalidateProjectMirror: () => {
+  invalidateWorkspaceMirror: () => {
     mirrorInvalidationCalls += 1;
   },
   resolveCommitSha: async () => 'a'.repeat(40),
@@ -204,13 +204,13 @@ mock.module("../snapshots/builder", () => ({
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
   templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
-  kickProjectTemplatePrebuilds: () => {},
+  kickWorkspaceTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
-  reconcileProjectTemplates: async () => undefined,
+  reconcileWorkspaceTemplates: async () => undefined,
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => "a".repeat(40),
-  ensurePerProjectWarmImage: async () => ({
+  ensurePerWorkspaceWarmImage: async () => ({
     snapshotName: "kortix-ppwarm-test",
     tip: "a".repeat(40),
     built: false,
@@ -219,7 +219,7 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
-mock.module('../projects/github', () => ({
+mock.module('../workspaces/github', () => ({
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: 'kortix-org',
     repo: repoUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'trigger-project',
@@ -279,14 +279,14 @@ mock.module('../projects/github', () => ({
   createBranchRef: async () => undefined,
 }));
 
-const realProjectGit = await import('../projects/lib/git');
-mock.module('../projects/lib/git', () => ({
-  ...realProjectGit,
-  resolveProjectGitAuth: async () => ({
+const realWorkspaceGit = await import('../workspaces/lib/git');
+mock.module('../workspaces/lib/git', () => ({
+  ...realWorkspaceGit,
+  resolveWorkspaceGitAuth: async () => ({
     auth: { token: 'test-git-token', source: 'project_credential' },
     authSource: 'project_credential',
   }),
-  withProjectGitAuth: async (project: Record<string, unknown>) => ({
+  withWorkspaceGitAuth: async (project: Record<string, unknown>) => ({
     ...project,
     gitAuthToken: 'test-git-token',
     gitAuthHeaders: {},
@@ -305,7 +305,7 @@ mock.module('../platform/services/provider-balancer', () => ({
 }));
 
 mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (metadata: unknown) =>
+  workspaceLlmGatewayEnabled: (metadata: unknown) =>
     (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
       ?.llm_gateway === true,
 }));
@@ -344,19 +344,19 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // Tests can read/override `secretValues` to drive specific behaviors.
 const secretValues = new Map<string, string>();
 const secretConsumerReads: Array<Record<string, unknown>> = [];
-const realProjectSecrets = await import('../projects/secrets');
-mock.module('../projects/secrets', () => ({
-  ...realProjectSecrets,
-  encryptProjectSecret: (_p: string, v: string) => `enc:${v}`,
-  decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
+const realWorkspaceSecrets = await import('../workspaces/secrets');
+mock.module('../workspaces/secrets', () => ({
+  ...realWorkspaceSecrets,
+  encryptWorkspaceSecret: (_p: string, v: string) => `enc:${v}`,
+  decryptWorkspaceSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
-  listProjectSecrets: async () => ({}),
-  listProjectSecretsForUser: async () => ({}),
-  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
-  listProjectSecretNamesForConsumer: async () => [],
-  listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listWorkspaceSecrets: async () => ({}),
+  listWorkspaceSecretsForUser: async () => ({}),
+  listWorkspaceSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listWorkspaceSecretNamesForConsumer: async () => [],
+  listWorkspaceSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   projectSecretsRevision: async () => 'empty',
-  getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) => {
+  getWorkspaceSecretValueForConsumer: async (input: { name: string; consumer: string }) => {
     secretConsumerReads.push(input);
     return input.consumer === 'connector' ? (secretValues.get(input.name) ?? null) : null;
   },
@@ -378,7 +378,7 @@ const triggerDbMock: any = {
                     ? [projectRow]
                     : [];
             const ordered = {
-              // `selectActiveProjects` chains `.orderBy(...).limit(n).offset(m)` —
+              // `selectActiveWorkspaces` chains `.orderBy(...).limit(n).offset(m)` —
               // `limit()` must return a chainable (and still awaitable) object so
               // both `await ...limit(n)` and `...limit(n).offset(m)` resolve.
               limit: (limit: number) => {
@@ -413,7 +413,7 @@ const triggerDbMock: any = {
             // every retry (masking backpressure clearing). Mirrors the `.then()`
             // fallback below.
             if (table === projectTriggerRuntime) {
-              return runtimeRows.filter((r) => r.projectId === PROJECT_ID).slice(0, 1);
+              return runtimeRows.filter((r) => r.workspaceId === WORKSPACE_ID).slice(0, 1);
             }
             return [];
           };
@@ -422,7 +422,7 @@ const triggerDbMock: any = {
           // the runtime rows for that table when iterated.
           (result as any).then = (resolve: (rows: any[]) => unknown) => {
             if (table === projectTriggerRuntime) {
-              resolve(runtimeRows.filter((r) => r.projectId === PROJECT_ID));
+              resolve(runtimeRows.filter((r) => r.workspaceId === WORKSPACE_ID));
             } else if (table === projectSecrets) resolve(secretRows);
             else if (table === sessionLifecycleCommands) resolve(lifecycleCommandRows);
             else resolve([]);
@@ -439,7 +439,7 @@ const triggerDbMock: any = {
             const row: typeof projectSessions.$inferSelect = {
               sessionId: values.sessionId,
               accountId: values.accountId,
-              projectId: values.projectId,
+              workspaceId: values.workspaceId,
               branchName: values.branchName,
               baseRef: values.baseRef,
               sandboxProvider: values.sandboxProvider,
@@ -470,7 +470,7 @@ const triggerDbMock: any = {
               commandType: values.commandType,
               source: values.source,
               status: values.status ?? 'queued',
-              projectId: values.projectId,
+              workspaceId: values.workspaceId,
               sessionId: values.sessionId ?? null,
               accountId: values.accountId,
               actorUserId: values.actorUserId ?? null,
@@ -503,7 +503,7 @@ const triggerDbMock: any = {
               commandType: values.commandType,
               source: values.source,
               status: values.status ?? 'queued',
-              projectId: values.projectId,
+              workspaceId: values.workspaceId,
               sessionId: values.sessionId ?? null,
               accountId: values.accountId,
               actorUserId: values.actorUserId ?? null,
@@ -530,14 +530,14 @@ const triggerDbMock: any = {
           const apply = (): any[] => {
             if (table === projectTriggerRuntime) {
               const idx = runtimeRows.findIndex(
-                (r) => r.projectId === values.projectId && r.slug === values.slug,
+                (r) => r.workspaceId === values.workspaceId && r.slug === values.slug,
               );
               const existing = idx >= 0 ? runtimeRows[idx] : undefined;
               const next = {
                 ...existing,
                 ...values,
                 ...set,
-                projectId: values.projectId,
+                workspaceId: values.workspaceId,
                 slug: values.slug,
                 lastFiredAt: (set.lastFiredAt ??
                   values.lastFiredAt ??
@@ -593,7 +593,7 @@ mock.module('../shared/db', () => ({
   db: triggerDbMock,
 }));
 
-mock.module('../projects/trigger-execution-store', () => ({
+mock.module('../workspaces/trigger-execution-store', () => ({
   claimDueScheduleSlots: async ({ now, limit }: { now: Date; limit: number }) => {
     const due = runtimeRows
       .filter(
@@ -609,7 +609,7 @@ mock.module('../projects/trigger-execution-store', () => ({
       const scheduledFor = row.nextFireAt as Date;
       const execution = {
         executionId: randomUUID(),
-        projectId: row.projectId,
+        workspaceId: row.workspaceId,
         slug: row.slug,
         scheduleRevision: row.scheduleRevision,
         scheduledFor,
@@ -700,7 +700,7 @@ mock.module('../projects/trigger-execution-store', () => ({
     });
     return terminal ? 'dead_lettered' : 'queued';
   },
-  countUncatalogedTriggerProjects: async () =>
+  countUncatalogedTriggerWorkspaces: async () =>
     runtimeRows.some((row) => !row.scheduleRevision) ? 1 : 0,
 }));
 
@@ -721,7 +721,7 @@ const {
   drainTriggerExecutionQueue,
   projectsApp,
   projectWebhooksApp,
-  runProjectTriggerSweep,
+  runWorkspaceTriggerSweep,
 } = await import('../projects/index');
 const { resetRateLimiters } = await import('../shared/rate-limit');
 
@@ -745,7 +745,7 @@ function createApp() {
 // `JSON.stringify` so cron expressions (leading `*`), mustache prompts
 // (`{{ ... }}`) etc. round-trip as valid YAML scalars without special-casing.
 
-const MANIFEST_PREAMBLE = `kortix_version: 1\nproject:\n  name: Trigger Project\n`;
+const MANIFEST_PREAMBLE = `kortix_version: 1\nproject:\n  name: Trigger Workspace\n`;
 
 function seedManifest(...triggerBlocks: string[]) {
   const body = triggerBlocks.length === 0
@@ -783,7 +783,7 @@ function seedRuntimeCron(opts: {
   nextFireAt: Date;
 }) {
   runtimeRows.push({
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     slug: opts.slug,
     lastFiredAt: null,
     lastStatus: null,
@@ -851,7 +851,7 @@ describe('git-backed triggers — CRUD', () => {
 
   test('POST /triggers commits a new cron trigger into kortix.yaml and returns the listing', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -895,7 +895,7 @@ describe('git-backed triggers — CRUD', () => {
 
   test('POST /triggers commits a webhook trigger and exposes the URL on listing', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -914,7 +914,7 @@ describe('git-backed triggers — CRUD', () => {
       type: 'webhook',
       secret_env: 'SLACK_WEBHOOK_SECRET',
     });
-    expect(body.triggers[0].webhook_url).toContain(`/v1/webhooks/projects/${PROJECT_ID}/slack-hook`);
+    expect(body.triggers[0].webhook_url).toContain(`/v1/webhooks/projects/${WORKSPACE_ID}/slack-hook`);
   });
 
   test('POST /triggers reloads and retries one manifest revision conflict', async () => {
@@ -922,7 +922,7 @@ describe('git-backed triggers — CRUD', () => {
     manifestCommitConflictsRemaining = 1;
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -949,7 +949,7 @@ describe('git-backed triggers — CRUD', () => {
     }));
     const app = createApp();
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -972,7 +972,7 @@ describe('git-backed triggers — CRUD', () => {
       { body: { name: 'X', prompt_template: 'x' }, expect: /type must be/ },
     ];
     for (const c of cases) {
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(c.body),
@@ -989,14 +989,14 @@ describe('git-backed triggers — CRUD', () => {
       webhookEntry({ slug: 'two', name: 'Two', secretEnv: 'TWO_SECRET', prompt: 'body' }),
     );
     runtimeRows.push({
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       slug: 'one',
       lastFiredAt: new Date('2026-01-03T12:00:00Z'),
       updatedAt: new Date('2026-01-03T12:00:00Z'),
     });
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.triggers).toHaveLength(2);
@@ -1013,7 +1013,7 @@ describe('git-backed triggers — CRUD', () => {
     );
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.triggers).toHaveLength(1);
@@ -1025,14 +1025,14 @@ describe('git-backed triggers — CRUD', () => {
   test('GET /triggers preserves runtime rows when the manifest is not parseable', async () => {
     repoFiles.set(MANIFEST_PATH, 'kortix_version: [invalid');
     runtimeRows.push({
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       slug: 'existing',
       lastFiredAt: null,
       updatedAt: new Date('2026-01-03T12:00:00Z'),
     });
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`);
 
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -1054,7 +1054,7 @@ describe('git-backed triggers — CRUD', () => {
     }));
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/one`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'New name', enabled: false }),
@@ -1085,7 +1085,7 @@ describe('git-backed triggers — CRUD', () => {
     manifestCommitConflictsRemaining = 1;
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/one`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'New name', enabled: false }),
@@ -1100,7 +1100,7 @@ describe('git-backed triggers — CRUD', () => {
 
   test('POST /triggers accepts and returns a pinned model', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1135,7 +1135,7 @@ describe('git-backed triggers — CRUD', () => {
     }));
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/one`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'openai/gpt-5' }),
@@ -1145,14 +1145,14 @@ describe('git-backed triggers — CRUD', () => {
     expect(commitCalls[0]!.message).toBe('chore: update trigger one');
     expect(repoFiles.get(MANIFEST_PATH)).toContain('model: openai/gpt-5');
 
-    const listing = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
+    const listing = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers`);
     const body = await listing.json();
     expect(body.triggers[0].model).toBe('openai/gpt-5');
   });
 
   test('PATCH /triggers/:slug returns 404 when the slug is not in the manifest', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/ghost`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/ghost`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: false }),
@@ -1168,7 +1168,7 @@ describe('git-backed triggers — CRUD', () => {
     );
     const app = createApp();
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/one`, {
       method: 'DELETE',
     });
     expect(res.status).toBe(200);
@@ -1191,7 +1191,7 @@ describe('git-backed triggers — CRUD', () => {
     manifestCommitConflictsRemaining = 1;
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/one`, {
       method: 'DELETE',
     });
 
@@ -1204,7 +1204,7 @@ describe('git-backed triggers — CRUD', () => {
 
   test('DELETE /triggers/:slug returns 404 when the entry is already gone', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/ghost`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/ghost`, {
       method: 'DELETE',
     });
     expect(res.status).toBe(404);
@@ -1225,7 +1225,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     }));
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/daily/fire`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -1255,7 +1255,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     }));
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/daily/fire`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -1269,7 +1269,7 @@ describe('git-backed triggers — runtime fire paths', () => {
   });
 
   test('manual fire without overrides resolves the project model and selected agent before provisioning', async () => {
-    modelDefaults.projects[PROJECT_ID] = 'glm-5.2';
+    modelDefaults.workspaces[WORKSPACE_ID] = 'glm-5.2';
     projectRow.metadata = {
       default_agent: 'asana-refresher',
       experimental: { llm_gateway: true },
@@ -1282,7 +1282,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     }));
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/daily/fire`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -1294,7 +1294,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
     expect(sessionRows.at(-1)?.metadata).toMatchObject({
       opencode_model: 'kortix/glm-5.2',
-      opencode_model_source: 'project',
+      opencode_model_source: 'workspace',
     });
   });
 
@@ -1308,7 +1308,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     provisioningSessionCount = 3;
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/triggers/daily/fire`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -1335,7 +1335,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const scheduledFor = new Date('2026-01-01T00:00:30Z');
     seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: scheduledFor });
 
-    const result = await runProjectTriggerSweep(scheduledFor);
+    const result = await runWorkspaceTriggerSweep(scheduledFor);
     expect(result).toMatchObject({ scanned: 1, fired: 0, failed: 0 });
     expect(await drainTriggerExecutionQueue(scheduledFor)).toMatchObject({
       fired: 1,
@@ -1358,7 +1358,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: firstSlot });
     provisioningSessionCount = 3;
 
-    const result = await runProjectTriggerSweep(firstSlot);
+    const result = await runWorkspaceTriggerSweep(firstSlot);
     expect(result).toMatchObject({ scanned: 1, fired: 0, queued: 0, failed: 0 });
     expect(await drainTriggerExecutionQueue(firstSlot)).toMatchObject({
       fired: 0,
@@ -1375,7 +1375,7 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     provisioningSessionCount = 0;
     const secondSlot = new Date('2026-01-01T00:00:31Z');
-    const retry = await runProjectTriggerSweep(secondSlot);
+    const retry = await runWorkspaceTriggerSweep(secondSlot);
     expect(retry).toMatchObject({ scanned: 1, fired: 0, queued: 0, failed: 0 });
     expect(await drainTriggerExecutionQueue(secondSlot)).toMatchObject({
       fired: 1,
@@ -1401,7 +1401,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const app = createApp();
 
     const rawBody = JSON.stringify({ action: 'opened' });
-    const missing = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const missing = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: rawBody,
@@ -1410,7 +1410,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(manifestReadCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
 
-    const wrong = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const wrong = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1422,7 +1422,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(mirrorInvalidationCalls).toBe(1);
     expect(manifestReadCalls).toBe(1);
 
-    const repeated = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const repeated = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1446,7 +1446,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const app = createApp();
 
     const rawBody = JSON.stringify({ action: 'opened' });
-    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const res = await app.request(`/v1/webhooks/workspaces/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1459,7 +1459,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const body = await res.json();
     expect(body.status).toBe('fired');
     expect(secretConsumerReads[0]).toMatchObject({
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       accountId: ACCOUNT_ID,
       name: 'HOOK_SECRET',
       consumer: 'connector',
@@ -1468,7 +1468,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
 
-    const duplicate = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const duplicate = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1496,7 +1496,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const app = createApp();
 
     const rawBody = JSON.stringify({ action: 'opened' });
-    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const res = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1535,7 +1535,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const app = createApp();
 
     const rawBody = JSON.stringify({ action: 'opened' });
-    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const res = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1567,7 +1567,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const rawBody = JSON.stringify({ action: 'opened' });
 
     // Wrong token → 401, no provision.
-    const wrong = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const wrong = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Kortix-Token': 'nope' },
       body: rawBody,
@@ -1576,7 +1576,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(sandboxProvisionCalls).toBe(0);
 
     // Correct X-Kortix-Token (no signature header) → fires.
-    const viaHeader = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const viaHeader = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Kortix-Token': 'shhh' },
       body: rawBody,
@@ -1585,7 +1585,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect((await viaHeader.json()).status).toBe('fired');
 
     // Same secret via Authorization: Bearer also works.
-    const viaBearer = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+    const viaBearer = await app.request(`/v1/webhooks/projects/${WORKSPACE_ID}/hook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer shhh' },
       body: rawBody,

@@ -6,27 +6,27 @@
  * agent ≤ user is preserved (the route's role check provides the ∩ user).
  */
 import { describe, expect, test } from 'bun:test';
-import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
+import { extractAgents, grantFromLoadedAgents } from '../workspaces/agents';
 import {
   agentMayPerform,
   agentMayUseConnector,
   agentMayUseEnv,
   assertAgentScope,
-  isProjectSessionPrincipal,
+  isWorkspaceSessionPrincipal,
 } from '../iam/agent-scope';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../workspaces/triggers';
 
 function loadAgents(body: string) {
   return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
 }
 
-describe('isProjectSessionPrincipal', () => {
+describe('isWorkspaceSessionPrincipal', () => {
   const context = (values: Record<string, unknown>) =>
     ({ get: (key: string) => values[key] }) as never;
 
   test('does not treat a Supabase auth session as a project session', () => {
     expect(
-      isProjectSessionPrincipal(
+      isWorkspaceSessionPrincipal(
         context({ authType: 'supabase', sessionId: 'supabase-auth-session' }),
       ),
     ).toBe(false);
@@ -34,7 +34,7 @@ describe('isProjectSessionPrincipal', () => {
 
   test('recognizes a project-scoped token session', () => {
     expect(
-      isProjectSessionPrincipal(context({ authType: 'pat', sessionId: 'project-session' })),
+      isWorkspaceSessionPrincipal(context({ authType: 'pat', sessionId: 'project-session' })),
     ).toBe(true);
   });
 });

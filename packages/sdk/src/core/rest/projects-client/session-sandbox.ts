@@ -148,7 +148,7 @@ function classifySessionStartFailure(error?: Error): SessionStartError | null {
  * stage='ready'.
  */
 export async function startProjectSession(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   // Optional server-side long-poll budget (ms): the server holds the request
   // until readiness flips (or its bounded deadline), so we learn `ready` the
@@ -157,7 +157,7 @@ export async function startProjectSession(
 ): Promise<SessionStartResult | null> {
   const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : "";
   const response = await backendApi.post<SessionStartResult>(
-    `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
+    `/projects/${workspaceId}/sessions/${sessionId}/start${qs}`,
     {},
     // Keep toasts quiet here. Terminal client errors are rendered by the host;
     // transient transport/server failures still yield null so polling can recover.
@@ -166,7 +166,7 @@ export async function startProjectSession(
   if (!response.success || !response.data) {
     const terminal = classifySessionStartFailure(response.error);
     // A 404 for a session minted in THIS tab is the optimistic create-vs-start
-    // race: `useNewProjectSession` fires this /start before its background
+    // race: `useNewWorkspaceSession` fires this /start before its background
     // create POST has landed, so the row doesn't exist yet. Yield null so the
     // poll keeps going; a 404 for any other session stays terminal.
     if (terminal && !(terminal.status === 404 && isSessionFresh(sessionId))) throw terminal;
@@ -181,7 +181,7 @@ export async function startProjectSession(
   // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
   const externalId = result.sandbox?.external_id;
   if (result.stage === "ready" && externalId && result.opencode_session_id) {
-    setSessionRuntime(projectId, sessionId, {
+    setSessionRuntime(workspaceId, sessionId, {
       opencodeSessionId: result.opencode_session_id,
       runtimeUrl: getSandboxUrlForExternalId(externalId),
       sandboxId: externalId,
@@ -196,6 +196,6 @@ export async function startProjectSession(
  * the keys can never drift — a mismatch would issue a SECOND `/start` POST
  * instead of adopting the in-flight one.
  */
-export function sessionStartKey(projectId: string, sessionId: string) {
-  return ["session-start", projectId, sessionId] as const;
+export function sessionStartKey(workspaceId: string, sessionId: string) {
+  return ["session-start", workspaceId, sessionId] as const;
 }

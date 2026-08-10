@@ -1,6 +1,6 @@
 'use client';
 
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 import {
   CubeIcon as Boxes,
   CheckIcon,
@@ -34,7 +34,7 @@ import { cn } from '@/lib/utils';
  * the old file used them.
  */
 
-const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
+const PROVIDER_ICON: Record<WorkspaceAdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
   mcp: Boxes,
   openapi: Globe,
@@ -53,7 +53,7 @@ export function ConnectorAppIcon({
   connector,
   size = 'lg',
 }: {
-  connector: AdminConnector;
+  connector: WorkspaceAdminConnector;
   size?: 'sm' | 'lg';
 }) {
   const imgSrc = connector.iconUrl ?? null;
@@ -106,11 +106,11 @@ export function ConnectorConnectedMark({ className }: { className?: string } = {
 }
 
 /**
- * Problem / setup pills for a project connector. Deliberately returns `null`
+ * Problem / setup pills for a workspace connector. Deliberately returns `null`
  * when status is `connected` — put {@link ConnectorConnectedMark} in the card's
  * `trailing` slot instead so Connected matches Discovery's `✓` affordance.
  */
-export function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
+export function ConnectorStatusBadge({ connector }: { connector: WorkspaceAdminConnector }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const status = connectorSetupStatus(connector);
   if (status === 'error')

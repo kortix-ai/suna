@@ -107,7 +107,7 @@ describe('buildActivityDays', () => {
           sessionsCreated: 12,
           activeAccounts: 4,
           activeUsers: 5,
-          activeProjects: 3,
+          activeWorkspaces: 3,
         },
       ],
       [{ date: '2026-08-06', newAccounts: 2 }],
@@ -120,7 +120,7 @@ describe('buildActivityDays', () => {
         activeAccounts: 0,
         activeUsers: 0,
         newAccounts: 0,
-        activeProjects: 0,
+        activeWorkspaces: 0,
       },
       {
         date: '2026-08-06',
@@ -128,7 +128,7 @@ describe('buildActivityDays', () => {
         activeAccounts: 0,
         activeUsers: 0,
         newAccounts: 2,
-        activeProjects: 0,
+        activeWorkspaces: 0,
       },
       {
         date: '2026-08-07',
@@ -136,7 +136,7 @@ describe('buildActivityDays', () => {
         activeAccounts: 4,
         activeUsers: 5,
         newAccounts: 0,
-        activeProjects: 3,
+        activeWorkspaces: 3,
       },
     ]);
   });
@@ -150,7 +150,7 @@ describe('buildActivityDays', () => {
           sessionsCreated: 999,
           activeAccounts: 9,
           activeUsers: 9,
-          activeProjects: 9,
+          activeWorkspaces: 9,
         },
       ],
       [{ date: '2026-01-01', newAccounts: 999 }],

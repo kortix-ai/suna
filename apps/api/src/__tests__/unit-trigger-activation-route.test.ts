@@ -1,8 +1,8 @@
 // Regression guard for the project-level trigger kill-switch route.
 //
-// `PATCH /projects/:projectId/triggers/activation` (pause/resume all of a
+// `PATCH /workspaces/:workspaceId/triggers/activation` (pause/resume all of a
 // project's triggers) is a STATIC route that lives in the same namespace as the
-// per-trigger `PATCH /projects/:projectId/triggers/:slug` route. OpenAPIHono
+// per-trigger `PATCH /workspaces/:workspaceId/triggers/:slug` route. OpenAPIHono
 // matches routes in registration order, so if the `:slug` route is registered
 // first it captures `activation` as a slug — the activation handler is shadowed
 // and the request 404s ("no trigger named 'activation'"). That silently breaks
@@ -26,14 +26,14 @@ function buildRouter(order: Order): OpenAPIHono {
   const app = new OpenAPIHono();
   const slugRoute = createRoute({
     method: 'patch',
-    path: '/{projectId}/triggers/{slug}',
-    request: { params: z.object({ projectId: z.string(), slug: z.string() }) },
+    path: '/{workspaceId}/triggers/{slug}',
+    request: { params: z.object({ workspaceId: z.string(), slug: z.string() }) },
     responses: { 200: { description: 'ok' } },
   });
   const activationRoute = createRoute({
     method: 'patch',
-    path: '/{projectId}/triggers/activation',
-    request: { params: z.object({ projectId: z.string() }) },
+    path: '/{workspaceId}/triggers/activation',
+    request: { params: z.object({ workspaceId: z.string() }) },
     responses: { 200: { description: 'ok' } },
   });
   const slugHandler = (c: any) => c.json({ handler: 'slug', slug: c.req.param('slug') });
@@ -78,12 +78,12 @@ describe('trigger activation route ordering', () => {
 
   test('r4.ts registers the static activation route BEFORE the :slug routes', () => {
     const source = readFileSync(
-      join(import.meta.dir, '..', 'projects', 'routes', 'r4.ts'),
+      join(import.meta.dir, '..', 'workspaces', 'routes', 'r4.ts'),
       'utf8',
     );
     // Quote-agnostic (r4 may use single or double quotes after formatting).
-    const activationIdx = source.indexOf('/{projectId}/triggers/activation');
-    const slugIdx = source.indexOf('/{projectId}/triggers/{slug}');
+    const activationIdx = source.indexOf('/{workspaceId}/triggers/activation');
+    const slugIdx = source.indexOf('/{workspaceId}/triggers/{slug}');
     expect(activationIdx).toBeGreaterThan(-1);
     expect(slugIdx).toBeGreaterThan(-1);
     // If this fails, the activation kill-switch is shadowed and unreachable —

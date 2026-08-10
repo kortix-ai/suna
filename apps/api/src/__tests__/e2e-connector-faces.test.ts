@@ -23,7 +23,7 @@ import {
 } from '../connectors/router';
 
 const ACCOUNT = 'acct-faces';
-const PROJECT = 'proj-faces';
+const WORKSPACE = 'proj-faces';
 const USER = 'user-faces';
 const TOKEN = 'kortix_test_connector_faces';
 const DENIED_TOKEN = 'kortix_test_connector_faces_no_email';
@@ -42,6 +42,7 @@ interface World {
 let world: World;
 let server: ReturnType<typeof Bun.serve>;
 let apiUrl: string;
+let cliHome: string;
 
 const connector: GatewayConnector = {
   connectorId: 'conn-echo',
@@ -85,7 +86,7 @@ function principal(): ConnectorPrincipal {
   return {
     userId: USER,
     accountId: ACCOUNT,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     sessionId: 'sess-faces',
     subject: { userId: USER, groupIds: [] },
     agentGrant: {
@@ -192,11 +193,11 @@ function makeDeps(): ConnectorRouterDeps {
       }
       return null;
     },
-    // Project-explicit gateway: same principal, but the project comes from the
+    // Workspace-explicit gateway: same principal, but the project comes from the
     // path (the production impl accepts a logged-in user token here — this is the
     // local-connector unlock). Authorize only the matching project.
-    resolveProjectPrincipal: async (c, projectId) => {
-      if (projectId !== PROJECT) return null;
+    resolveWorkspacePrincipal: async (c, workspaceId) => {
+      if (workspaceId !== WORKSPACE) return null;
       const authorization = c.req.header('authorization');
       if (authorization === `Bearer ${TOKEN}`) return principal();
       if (authorization === `Bearer ${DENIED_TOKEN}`) {
@@ -221,7 +222,7 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
     cwd: REPO_ROOT,
     env: {
       PATH: process.env.PATH,
-      HOME: process.env.HOME,
+      HOME: cliHome,
       KORTIX_API_URL: apiUrl,
       KORTIX_CLI_TOKEN: TOKEN,
       ...extraEnv,
@@ -234,8 +235,11 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  expect(stderr).toBe('');
-  expect(exitCode).toBe(0);
+  if (exitCode !== 0 || stderr !== '') {
+    throw new Error(
+      `Connector CLI failed with exit ${exitCode}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+    );
+  }
   return JSON.parse(stdout);
 }
 
@@ -261,22 +265,26 @@ async function requestMcp(
   return json.result;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  cliHome = await mkdtemp(join(tmpdir(), 'kortix-connectors-cli-home-'));
   world = { executions: [], upstream: [], attachmentUploads: [] };
-  const app = createConnectorRouter(makeDeps());
+  const legacyApp = createConnectorRouter(makeDeps(), 'projects');
+  const canonicalApp = createConnectorRouter(makeDeps(), 'workspaces');
   server = Bun.serve({
     port: 0,
     fetch: (req) => {
       const url = new URL(req.url);
       url.pathname = url.pathname.replace(/^\/v1\/connectors/, '') || '/';
+      const app = url.pathname.startsWith('/workspaces/') ? canonicalApp : legacyApp;
       return app.fetch(new Request(url, req));
     },
   });
   apiUrl = `http://127.0.0.1:${server.port}`;
 });
 
-afterEach(() => {
+afterEach(async () => {
   server.stop(true);
+  await rm(cliHome, { recursive: true, force: true });
 });
 
 describe('TS SDK face', () => {
@@ -284,7 +292,7 @@ describe('TS SDK face', () => {
     const sdk = createKortix({
       backendUrl: `${apiUrl}/v1`,
       getToken: async () => TOKEN,
-    }).project(PROJECT).connectors;
+    }).project(WORKSPACE).connectors;
     expect((await sdk.catalog())[0]?.slug).toBe('echo');
     expect((await sdk.search('query'))[0]).toMatchObject({
       tool: 'echo.get',
@@ -307,7 +315,7 @@ describe('TS SDK face', () => {
     const sdk = createKortix({
       backendUrl: `${apiUrl}/v1`,
       getToken: async () => TOKEN,
-    }).project(PROJECT).connectors;
+    }).project(WORKSPACE).connectors;
 
     const connectors = await sdk.catalog();
     const echo = connectors.find((c) => c.slug === 'echo');
@@ -419,24 +427,35 @@ describe('HTTP call validation', () => {
   });
 });
 
-describe('Project-explicit gateway face (the local-connector unlock)', () => {
-  test('SDK with a projectId hits /projects/:id/{catalog,call}', async () => {
+describe('Workspace-explicit gateway face (the local-connector unlock)', () => {
+  test('legacy SDK Project handle keeps /projects/:id/{catalog,call}', async () => {
     const sdk = createKortix({
       backendUrl: `${apiUrl}/v1`,
       getToken: async () => TOKEN,
-    }).project(PROJECT).connectors;
+    }).project(WORKSPACE).connectors;
     expect((await sdk.catalog())[0]?.slug).toBe('echo');
     const result = await sdk.call<{ url: string }>('echo.get', { q: 'proj-sdk' });
     expect(result.ok).toBe(true);
     expect(result.data?.url).toBe('https://example.test/anything?q=proj-sdk');
   });
 
-  test('CLI with KORTIX_PROJECT_ID set routes through the project-explicit gateway', async () => {
-    // This is exactly the local path: a project (here via env, in practice
-    // .kortix/link.json or --project) makes `kortix connectors` use the routes that
+  test('canonical SDK Workspace handle uses /workspaces/:id/{catalog,call}', async () => {
+    const sdk = createKortix({
+      backendUrl: `${apiUrl}/v1`,
+      getToken: async () => TOKEN,
+    }).workspace(WORKSPACE).connectors;
+    expect((await sdk.catalog())[0]?.slug).toBe('echo');
+    const result = await sdk.call<{ url: string }>('echo.get', { q: 'workspace-sdk' });
+    expect(result.ok).toBe(true);
+    expect(result.data?.url).toBe('https://example.test/anything?q=workspace-sdk');
+  });
+
+  test('CLI with KORTIX_WORKSPACE_ID uses the Workspace-explicit gateway', async () => {
+    // This is exactly the local path: a workspace (here via env, in practice
+    // .kortix/link.json or --workspace) makes `kortix connectors` use the routes that
     // accept a plain user token. Same command, same result as in-sandbox.
     const connectors = await runCli(['ls', '--session', 'sess-faces'], {
-      KORTIX_PROJECT_ID: PROJECT,
+      KORTIX_WORKSPACE_ID: WORKSPACE,
       KORTIX_SESSION_ID: 'sess-faces',
     });
     expect(connectors.connectors[0]).toMatchObject({
@@ -444,13 +463,13 @@ describe('Project-explicit gateway face (the local-connector unlock)', () => {
       tools: ['echo.get', 'echo.reply'],
     });
     const call = await runCli(['call', 'echo', 'get', '{"q":"proj-cli"}'], {
-      KORTIX_PROJECT_ID: PROJECT,
+      KORTIX_WORKSPACE_ID: WORKSPACE,
     });
     expect(call).toMatchObject({ ok: true, risk: 'read' });
     expect(call.data.url).toBe('https://example.test/anything?q=proj-cli');
   });
 
-  test('an unauthorized project is rejected (403 → SDK throws)', async () => {
+  test('an unauthorized legacy Project is rejected (403 → SDK throws)', async () => {
     const sdk = createKortix({
       backendUrl: `${apiUrl}/v1`,
       getToken: async () => TOKEN,
@@ -461,7 +480,8 @@ describe('Project-explicit gateway face (the local-connector unlock)', () => {
   test('both attachment routes reject agents without the email connector before staging bytes', async () => {
     for (const path of [
       '/v1/connectors/attachments',
-      `/v1/connectors/projects/${PROJECT}/attachments`,
+      `/v1/connectors/projects/${WORKSPACE}/attachments`,
+      `/v1/connectors/workspaces/${WORKSPACE}/attachments`,
     ]) {
       const response = await fetch(`${apiUrl}${path}`, {
         method: 'POST',
@@ -491,7 +511,7 @@ describe('MCP face', () => {
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,
-        HOME: process.env.HOME,
+        HOME: cliHome,
         KORTIX_API_URL: apiUrl,
         KORTIX_CLI_TOKEN: TOKEN,
       },
@@ -576,7 +596,7 @@ describe('MCP face', () => {
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,
-        HOME: process.env.HOME,
+        HOME: cliHome,
         KORTIX_API_URL: apiUrl,
         KORTIX_CLI_TOKEN: TOKEN,
         KORTIX_INTERNAL_WORKSPACE_ROOT: workspace,

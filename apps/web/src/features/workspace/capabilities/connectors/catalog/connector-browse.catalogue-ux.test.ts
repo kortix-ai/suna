@@ -332,7 +332,7 @@ describe('the connectors page has three tabs', () => {
   });
 
   test('no tab filters connected apps out of the catalogue', () => {
-    // Available was the catalogue minus what the project has. Every card it
+    // Available was the catalogue minus what the workspace has. Every card it
     // removed already carried a `✓` on the other two tabs, so it only ever
     // made an app the user could see was connected disappear.
     expect(page).not.toContain('isCatalogEntryConnected');

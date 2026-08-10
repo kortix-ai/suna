@@ -206,7 +206,7 @@ export default function AdminAnalyticsPage() {
       <ChartPanel
         icon={ChartBarIcon}
         title="Sessions created per day"
-        subtitle={`${formatCount(summary?.totalProjects ?? 0)} projects on the platform`}
+        subtitle={`${formatCount(summary?.totalWorkspaces ?? 0)} workspaces on the platform`}
       >
         {hasActivity ? (
           <ChartContainer config={sessionsConfig} className="h-[260px] w-full">

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/workspace-files';
 import { cn } from '@/lib/utils';
 import { XIcon as X } from '@phosphor-icons/react';
 

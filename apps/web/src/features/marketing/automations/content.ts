@@ -8,7 +8,7 @@
  * Voice rules: the `comms` skill.
  * ACCURACY GATE for this page specifically — every claim below traces to
  * `apps/web/content/docs/connect/triggers.mdx` and
- * `apps/web/content/docs/project/manifest.mdx`:
+ * `apps/web/content/docs/workspace/manifest.mdx`:
  *  - There are exactly TWO trigger types, `cron` and `webhook`. No third.
  *  - `session_mode` has FOUR values — fresh | reuse | pinned | keyed — and the
  *    default is `fresh`. Do not ship a three-value list.
@@ -66,7 +66,7 @@ export const types = {
 export const schedule = {
   eyebrow: 'The cron surface',
   title: 'A schedule you can read in one column.',
-  sub: 'Every trigger in a project is one row: what it is called, when it fires, in whose timezone, as which agent, and which session that fire lands in. Nothing about it is hidden state you have to click into.',
+  sub: 'Every trigger in a workspace is one row: what it is called, when it fires, in whose timezone, as which agent, and which session that fire lands in. Nothing about it is hidden state you have to click into.',
   columns: ['Trigger', 'Cron', 'Timezone', 'Agent', 'Session'] as const,
   rows: [
     {
@@ -116,12 +116,12 @@ export const schedule = {
     {
       id: 'pause',
       k: 'One switch pauses everything',
-      v: 'A project-level pause stops every trigger at once, on top of each trigger’s own enabled flag. Use it when the same repo runs on two control planes so nothing fires twice.',
+      v: 'A workspace-level pause stops every trigger at once, on top of each trigger’s own enabled flag. Use it when the same repo runs on two control planes so nothing fires twice.',
     },
     {
       id: 'queue',
       k: 'A burst queues, it does not drop',
-      v: 'A project runs 3 triggered sessions provisioning at once by default. A fire past that limit comes back queued and runs when a slot frees, rather than failing.',
+      v: 'A workspace runs 3 triggered sessions provisioning at once by default. A fire past that limit comes back queued and runs when a slot frees, rather than failing.',
     },
   ],
 } as const;
@@ -183,17 +183,26 @@ export const declared = {
 export const webhook = {
   eyebrow: 'Webhooks',
   title: 'Signed, or it does not fire.',
-  sub: 'Every webhook trigger names a project secret that signs it. A trigger without one is rejected at validation — there is no unauthenticated webhook to forget to lock down later.',
-  endpoint: 'POST /v1/webhooks/projects/{projectId}/{slug}',
+  sub: 'Every webhook trigger names a workspace secret that signs it. A trigger without one is rejected at validation — there is no unauthenticated webhook to forget to lock down later.',
+  endpoint: 'POST /v1/webhooks/workspaces/{workspaceId}/{slug}',
   header: 'X-Kortix-Signature: sha256=<hmac>',
   headerNote:
     'HMAC-SHA256 over the raw request body, compared in constant time. The GitHub-compatible X-Hub-Signature-256 header works too, so a repo webhook needs no adapter.',
   rows: [
-    { code: '202', v: 'Signature valid. The session fired, queued behind the concurrency limit, or deduped against a delivery Kortix already saw.' },
-    { code: '200', v: 'Valid, and deliberately skipped — the project is paused, or the payload did not match the trigger’s filter.' },
+    {
+      code: '202',
+      v: 'Signature valid. The session fired, queued behind the concurrency limit, or deduped against a delivery Kortix already saw.',
+    },
+    {
+      code: '200',
+      v: 'Valid, and deliberately skipped — the workspace is paused, or the payload did not match the trigger’s filter.',
+    },
     { code: '401', v: 'Signature and token both missing or wrong. Nothing runs.' },
     { code: '404', v: 'No such trigger, or it is disabled, or it is not a webhook trigger.' },
-    { code: '409', v: 'The secret named by secret_env has no value set. Fails loudly rather than firing unprotected.' },
+    {
+      code: '409',
+      v: 'The secret named by secret_env has no value set. Fails loudly rather than firing unprotected.',
+    },
   ],
   footnote:
     'A filter is a dotted path matched against the same payload the prompt sees. It exists to break loops: a source that reports both sides of a conversation would otherwise fire the agent on its own reply.',
@@ -226,7 +235,7 @@ export const session = {
     },
   ],
   footnote:
-    'A triggered session is visible to the whole project, not private to whoever configured the trigger. It stops itself after 5 minutes idle, so an automation that runs at 3am is not a machine billing until morning.',
+    'A triggered session is visible to the whole workspace, not private to whoever configured the trigger. It stops itself after 5 minutes idle, so an automation that runs at 3am is not a machine billing until morning.',
 } as const;
 
 export const review = {

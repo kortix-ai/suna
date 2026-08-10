@@ -7,7 +7,7 @@
  * rejected with AGENT_NOT_DECLARED before a sandbox was ever provisioned.
  *
  * This exercises the closest testable seam to the real HTTP route: the exact
- * seed-building function r1.ts calls (`buildProjectSeedFiles`, same inputs a
+ * seed-building function r1.ts calls (`buildWorkspaceSeedFiles`, same inputs a
  * web "Create project" request produces), then feeds its actual output
  * through the same manifest-parse -> agent-extraction -> grant-resolution
  * pipeline `sessions.ts` runs when a session is created. No DB/HTTP mocking
@@ -16,13 +16,13 @@
 import { describe, expect, test } from 'bun:test';
 import { validateManifest } from '@kortix/manifest-schema';
 import { DEFAULT_STARTER_TEMPLATE_ID } from '@kortix/starter';
-import { buildProjectSeedFiles } from '../projects/seed-files';
-import { extractAgents, resolveGovernedAgentGrant } from '../projects/agents';
-import { parseManifestString } from '../projects/triggers';
+import { buildWorkspaceSeedFiles } from '../workspaces/seed-files';
+import { extractAgents, resolveGovernedAgentGrant } from '../workspaces/agents';
+import { parseManifestString } from '../workspaces/triggers';
 
-describe('buildProjectSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
+describe('buildWorkspaceSeedFiles — the seeded manifest satisfies its own require_declared_agents stamp', () => {
   test('seeds a v2 kortix.yaml, not a v1 kortix.toml', async () => {
-    const seed = await buildProjectSeedFiles({
+    const seed = await buildWorkspaceSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
       template: 'minimal',
@@ -37,7 +37,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
   });
 
   test('the seeded manifest is schema-valid with zero errors', async () => {
-    const seed = await buildProjectSeedFiles({
+    const seed = await buildWorkspaceSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
       template: 'minimal',
@@ -51,7 +51,7 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
   });
 
   test('a first session with no explicit agent (the "default" sentinel) RESOLVES on a project stamped require_declared_agents:true — matches r1.ts /projects/provision + sessions.ts exactly', async () => {
-    const seed = await buildProjectSeedFiles({
+    const seed = await buildWorkspaceSeedFiles({
       projectName: 'Acme Co',
       repoFullName: 'kortix/acme-co',
       template: 'minimal',
@@ -63,11 +63,11 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
     const loaded = extractAgents(manifest);
 
     // r1.ts stamps require_declared_agents:true and never sets
-    // metadata.default_agent — sessions.ts's projectDefaultAgent is therefore
+    // metadata.default_agent — sessions.ts's workspaceDefaultAgent is therefore
     // null on a brand-new project's very first session.
     const governed = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     });
 
     expect(governed.ok).toBe(true);

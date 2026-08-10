@@ -6,7 +6,7 @@ import {
   flagshipRefForEnvVar,
   labelForModelRef,
   managedPickerModels,
-  projectPickerCatalog,
+  workspacePickerCatalog,
   providerFlagship,
 } from './picker-catalog';
 
@@ -82,7 +82,7 @@ describe('flagshipRefForEnvVar (auto-seed mapping)', () => {
   });
 });
 
-describe('projectPickerCatalog', () => {
+describe('workspacePickerCatalog', () => {
   test('keeps managed and connected-provider models without returning the full runtime catalog', () => {
     const full = {
       auto: { name: 'Auto' },
@@ -94,7 +94,7 @@ describe('projectPickerCatalog', () => {
     };
 
     expect(
-      projectPickerCatalog(full, new Set(['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON']), [
+      workspacePickerCatalog(full, new Set(['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON']), [
         'openai/gpt-a',
       ]),
     ).toEqual({
@@ -114,6 +114,6 @@ describe('projectPickerCatalog', () => {
       'codex/gpt-5.6-sol': { name: 'GPT-5.6 Sol' },
     };
 
-    expect(Object.keys(projectPickerCatalog(full, new Set(), []))).toEqual([]);
+    expect(Object.keys(workspacePickerCatalog(full, new Set(), []))).toEqual([]);
   });
 });

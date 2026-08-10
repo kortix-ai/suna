@@ -42,7 +42,7 @@ describe('marketplace catalog', () => {
     // Browseable: a starter skill like `pdf` is a top-level browse tile again…
     const pdf = all.find((i) => i.name === 'pdf');
     expect(pdf).toBeTruthy();
-    expect(pdf!.partOfProject).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
+    expect(pdf!.partOfWorkspace).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
 
     // …and it's still resolvable by id and shows up typed inside the starter
     // project's "what's inside" list.
@@ -75,13 +75,13 @@ describe('marketplace catalog', () => {
     // WITHOUT the "Part of Kortix Starter" badge.
     const deepResearch = all.find((i) => i.name === 'deep-research');
     expect(deepResearch).toBeTruthy();
-    expect(deepResearch!.partOfProject).toBeUndefined();
+    expect(deepResearch!.partOfWorkspace).toBeUndefined();
 
     // A use-case runbook skill is browseable but badged into the Use-case
     // pack — the explore grid folds it under that tile, never the starter.
     const invoiceMath = all.find((i) => i.name === 'invoice-math');
     expect(invoiceMath).toBeTruthy();
-    expect(invoiceMath!.partOfProject).toEqual({
+    expect(invoiceMath!.partOfWorkspace).toEqual({
       id: 'kortix-projects:use-case-pack',
       title: 'Use-case pack',
     });
@@ -130,8 +130,8 @@ describe('marketplace catalog', () => {
     // `agent-browser` ships in the SCAFFOLD now (driving a browser is a floor
     // capability), so it is no longer an opt-in default marketplace install —
     // it arrives with the repo and is badged as part of the starter instead.
-    expect(agentBrowserDetail!.defaultProjectInstall).toBe(false);
-    expect(agentBrowserDetail!.partOfProject?.title).toBe('Kortix Starter');
+    expect(agentBrowserDetail!.defaultWorkspaceInstall).toBe(false);
+    expect(agentBrowserDetail!.partOfWorkspace?.title).toBe('Kortix Starter');
 
     const starterDetail = await getCatalogItemDetail('kortix-projects:starter');
     expect(starterDetail!.dependencyItems.some((d) => d.name === 'agent-browser')).toBe(true);
@@ -154,9 +154,9 @@ describe('marketplace catalog', () => {
     const starterDepIds = starterDetail!.dependencyItems.map((d) => d.id);
     const depDetails = await Promise.all(starterDepIds.map((id) => getCatalogItemDetail(id)));
     const defaultInstallNames = new Set(
-      depDetails.filter((d) => d?.defaultProjectInstall).map((d) => d!.name),
+      depDetails.filter((d) => d?.defaultWorkspaceInstall).map((d) => d!.name),
     );
-    // The artifact floor that carries `defaultProjectInstall`. `deep-research`,
+    // The artifact floor that carries `defaultWorkspaceInstall`. `deep-research`,
     // `document-review` and the GTM skills moved to the marketplace with the flag
     // stripped (leaving it on would have silently re-installed exactly what the
     // slim-down removed); `research-report` was deleted; `agent-browser` is
@@ -172,10 +172,10 @@ describe('marketplace catalog', () => {
       'xlsx',
     ]) {
       expect(defaultInstallNames.has(name)).toBe(true);
-      expect(all.find((i) => i.name === name)?.defaultProjectInstall).toBe(true);
+      expect(all.find((i) => i.name === name)?.defaultWorkspaceInstall).toBe(true);
     }
     for (const name of ['deep-research', 'document-review', 'account-research', 'search']) {
-      expect(all.find((i) => i.name === name)?.defaultProjectInstall).toBe(false);
+      expect(all.find((i) => i.name === name)?.defaultWorkspaceInstall).toBe(false);
     }
     expect(all.find((i) => i.name === 'research-report')).toBeUndefined();
   });
@@ -253,7 +253,7 @@ describe('marketplace catalog', () => {
     expect(kortix.external).toBe(false);
     // Kortix browses as the "Kortix Starter" + "Use-case pack" projects PLUS
     // every individual kortix-starter skill as its own top-level browse tile
-    // (starter-floor and runbook skills carry a partOfProject badge, so the
+    // (starter-floor and runbook skills carry a partOfWorkspace badge, so the
     // web folds them under their project tile) — the facet count is the full
     // browseable kortix set, not the folded model's single hero tile (1).
     expect(kortix.count).toBeGreaterThan(20);
@@ -284,7 +284,7 @@ describe('marketplace catalog', () => {
   test('item detail carries files + a readme', async () => {
     const all = await listCatalogItems({ source: 'kortix' });
     const pdf = all.find((i) => i.name === 'pdf')!;
-    expect(pdf.partOfProject?.title).toBe('Kortix Starter');
+    expect(pdf.partOfWorkspace?.title).toBe('Kortix Starter');
     const detail = (await getCatalogItemDetail(pdf.id))!;
     expect(detail.files.length).toBeGreaterThan(1);
     expect(detail.files.every((f) => f.target.startsWith('@skills/'))).toBe(true);

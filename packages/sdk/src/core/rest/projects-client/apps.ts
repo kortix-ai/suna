@@ -220,89 +220,89 @@ export interface AppLogsOptions {
   limit?: number;
 }
 
-export async function listApps(projectId: string): Promise<App[]> {
+export async function listApps(workspaceId: string): Promise<App[]> {
   const data = unwrap(
-    await backendApi.get<{ apps: App[] }>(`/projects/${projectId}/apps`),
+    await backendApi.get<{ apps: App[] }>(`/projects/${workspaceId}/apps`),
     'Failed to list Apps',
   );
   return data.apps;
 }
 
-export async function createApp(projectId: string, input: CreateAppInput): Promise<App> {
+export async function createApp(workspaceId: string, input: CreateAppInput): Promise<App> {
   return unwrap(
-    await backendApi.post<App>(`/projects/${projectId}/apps`, input),
+    await backendApi.post<App>(`/projects/${workspaceId}/apps`, input),
     'Failed to create App',
   );
 }
 
-export async function getApp(projectId: string, appId: string): Promise<App> {
+export async function getApp(workspaceId: string, appId: string): Promise<App> {
   return unwrap(
-    await backendApi.get<App>(`/projects/${projectId}/apps/${appId}`),
+    await backendApi.get<App>(`/projects/${workspaceId}/apps/${appId}`),
     'Failed to load App',
   );
 }
 
 export async function updateApp(
-  projectId: string,
+  workspaceId: string,
   appId: string,
   input: UpdateAppInput,
 ): Promise<App> {
   return unwrap(
-    await backendApi.patch<App>(`/projects/${projectId}/apps/${appId}`, input),
+    await backendApi.patch<App>(`/projects/${workspaceId}/apps/${appId}`, input),
     'Failed to update App',
   );
 }
 
-export async function deleteApp(projectId: string, appId: string): Promise<{ ok: boolean }> {
+export async function deleteApp(workspaceId: string, appId: string): Promise<{ ok: boolean }> {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/apps/${appId}`),
+    await backendApi.delete<{ ok: boolean }>(`/projects/${workspaceId}/apps/${appId}`),
     'Failed to delete App',
   );
 }
 
-export async function getAppAccess(projectId: string, appId: string): Promise<AppAccessConfig> {
+export async function getAppAccess(workspaceId: string, appId: string): Promise<AppAccessConfig> {
   return unwrap(
-    await backendApi.get<AppAccessConfig>(`/projects/${projectId}/apps/${appId}/access`),
+    await backendApi.get<AppAccessConfig>(`/projects/${workspaceId}/apps/${appId}/access`),
     'Failed to load App access policy',
   );
 }
 
 export async function updateAppAccess(
-  projectId: string,
+  workspaceId: string,
   appId: string,
   input: UpdateAppAccessInput,
 ): Promise<AppAccessConfig> {
   return unwrap(
-    await backendApi.patch<AppAccessConfig>(`/projects/${projectId}/apps/${appId}/access`, input),
+    await backendApi.patch<AppAccessConfig>(`/projects/${workspaceId}/apps/${appId}/access`, input),
     'Failed to update App access policy',
   );
 }
 
-export async function createAppAccessSession(projectId: string, appId: string): Promise<AppAccessSession> {
+export async function createAppAccessSession(workspaceId: string, appId: string): Promise<AppAccessSession> {
   return unwrap(
-    await backendApi.post<AppAccessSession>(`/projects/${projectId}/apps/${appId}/access-session`, {}),
+    await backendApi.post<AppAccessSession>(`/projects/${workspaceId}/apps/${appId}/access-session`, {}),
     'Failed to create App access session',
   );
 }
 
 export async function registerAppArtifact(
-  projectId: string,
+  workspaceId: string,
   input: RegisterAppArtifactInput,
 ): Promise<RegisterAppArtifactResponse> {
   return unwrap(
-    await backendApi.post<RegisterAppArtifactResponse>(`/projects/${projectId}/apps/artifacts`, input),
+    await backendApi.post<RegisterAppArtifactResponse>(`/projects/${workspaceId}/apps/artifacts`, input),
     'Failed to register App artifact',
   );
 }
 
 export async function finalizeAppArtifact(
-  projectId: string,
+  workspaceId: string,
   artifactId: string,
   input: FinalizeAppArtifactInput,
 ): Promise<AppArtifact> {
   return unwrap(
     await backendApi.post<AppArtifact>(
-      `/projects/${projectId}/apps/artifacts/${artifactId}/finalize`,
+      `/projects/${workspaceId}/apps/artifacts/${artifactId}/finalize`,
       input,
     ),
     'Failed to finalize App artifact',
@@ -329,13 +329,13 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
 
 /** Register, upload, hash, and finalize one immutable `.tar.gz` artifact. */
 export async function uploadAppArtifactArchive(
-  projectId: string,
+  workspaceId: string,
   input: Blob | Uint8Array,
   options: UploadAppArtifactOptions = {},
 ): Promise<AppArtifact> {
   const bytes = await archiveBytes(input);
   const mediaType = options.mediaType ?? 'application/gzip';
-  const registered = await registerAppArtifact(projectId, { kind: 'archive', media_type: mediaType });
+  const registered = await registerAppArtifact(workspaceId, { kind: 'archive', media_type: mediaType });
   if (!registered.upload) throw new Error('App artifact registration did not return an upload URL');
   if (bytes.byteLength > registered.upload.max_bytes) {
     throw new Error(`App artifact exceeds ${registered.upload.max_bytes} bytes`);
@@ -357,27 +357,27 @@ export async function uploadAppArtifactArchive(
   }
   options.onProgress?.(bytes.byteLength, bytes.byteLength);
 
-  return finalizeAppArtifact(projectId, registered.artifact.artifact_id, {
+  return finalizeAppArtifact(workspaceId, registered.artifact.artifact_id, {
     sha256: await sha256Hex(bytes),
     size_bytes: bytes.byteLength,
   });
 }
 
 export async function createAppDeployment(
-  projectId: string,
+  workspaceId: string,
   appId: string,
   input: CreateAppDeploymentInput,
 ): Promise<AppDeployment> {
   return unwrap(
-    await backendApi.post<AppDeployment>(`/projects/${projectId}/apps/${appId}/deployments`, input),
+    await backendApi.post<AppDeployment>(`/projects/${workspaceId}/apps/${appId}/deployments`, input),
     'Failed to create App deployment',
   );
 }
 
-export async function listAppDeployments(projectId: string, appId: string): Promise<AppDeployment[]> {
+export async function listAppDeployments(workspaceId: string, appId: string): Promise<AppDeployment[]> {
   const data = unwrap(
     await backendApi.get<{ deployments: AppDeployment[] }>(
-      `/projects/${projectId}/apps/${appId}/deployments`,
+      `/projects/${workspaceId}/apps/${appId}/deployments`,
     ),
     'Failed to list App deployments',
   );
@@ -385,20 +385,20 @@ export async function listAppDeployments(projectId: string, appId: string): Prom
 }
 
 export async function getAppDeployment(
-  projectId: string,
+  workspaceId: string,
   appId: string,
   deploymentId: string,
 ): Promise<AppDeploymentDetail> {
   return unwrap(
     await backendApi.get<AppDeploymentDetail>(
-      `/projects/${projectId}/apps/${appId}/deployments/${deploymentId}`,
+      `/projects/${workspaceId}/apps/${appId}/deployments/${deploymentId}`,
     ),
     'Failed to load App deployment',
   );
 }
 
 export async function getAppDeploymentLogs(
-  projectId: string,
+  workspaceId: string,
   appId: string,
   deploymentId: string,
   options: AppLogsOptions = {},
@@ -409,33 +409,33 @@ export async function getAppDeploymentLogs(
   const suffix = query.size ? `?${query.toString()}` : '';
   return unwrap(
     await backendApi.get<AppLogsResponse>(
-      `/projects/${projectId}/apps/${appId}/deployments/${deploymentId}/logs${suffix}`,
+      `/projects/${workspaceId}/apps/${appId}/deployments/${deploymentId}/logs${suffix}`,
     ),
     'Failed to load App logs',
   );
 }
 
-export async function startApp(projectId: string, appId: string): Promise<App> {
+export async function startApp(workspaceId: string, appId: string): Promise<App> {
   return unwrap(
-    await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/start`, {}),
+    await backendApi.post<App>(`/projects/${workspaceId}/apps/${appId}/start`, {}),
     'Failed to start App',
   );
 }
 
-export async function stopApp(projectId: string, appId: string): Promise<App> {
+export async function stopApp(workspaceId: string, appId: string): Promise<App> {
   return unwrap(
-    await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/stop`, {}),
+    await backendApi.post<App>(`/projects/${workspaceId}/apps/${appId}/stop`, {}),
     'Failed to stop App',
   );
 }
 
 export async function rollbackApp(
-  projectId: string,
+  workspaceId: string,
   appId: string,
   deploymentId: string,
 ): Promise<App> {
   return unwrap(
-    await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/rollback`, {
+    await backendApi.post<App>(`/projects/${workspaceId}/apps/${appId}/rollback`, {
       deployment_id: deploymentId,
     }),
     'Failed to roll back App',

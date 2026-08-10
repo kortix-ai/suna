@@ -82,7 +82,7 @@ mock.module('../channels/voice/answer-watch', () => ({
   speakAnswerWhenReady: () => {},
 }));
 
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../workspaces/session-lifecycle', () => ({
   continueSession: async () => 'delivered',
 }));
 
@@ -297,7 +297,7 @@ describe('a result is authoritative, and says so', () => {
 
 describe('promptVoiceAgent records what the room was given', () => {
   test('delivers the instruction and writes the payload as an agent turn', async () => {
-    const res = await promptVoiceAgent('sess-1', kortixSay('deploy is green'), { projectId: 'proj-1' });
+    const res = await promptVoiceAgent('sess-1', kortixSay('deploy is green'), { workspaceId: 'proj-1' });
 
     expect(res.delivered).toBe(true);
     expect(sent).toHaveLength(1);
@@ -308,7 +308,7 @@ describe('promptVoiceAgent records what the room was given', () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toEqual({
       callId: 'sess-1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       sessionId: 'sess-1',
       role: 'agent',
       speaker: 'kortix',
@@ -320,19 +320,19 @@ describe('promptVoiceAgent records what the room was given', () => {
     // turn.ts and answer-watch.ts only ever hold a session id — project_id is
     // NOT NULL on voice_call_turns, so a missing lookup here means the turn is
     // silently never recorded.
-    dbResults = [[{ projectId: 'proj-9' }]];
+    dbResults = [[{ workspaceId: 'proj-9' }]];
 
     await promptVoiceAgent('sess-2', kortixResult('four tests failed'));
 
     expect(inserts).toHaveLength(1);
-    expect(inserts[0]!.projectId).toBe('proj-9');
+    expect(inserts[0]!.workspaceId).toBe('proj-9');
     expect(inserts[0]!.text).toBe('four tests failed');
   });
 
   test('records nothing when the room has no worker — the utterance was never delivered', async () => {
     agentInRoom = false;
 
-    const res = await promptVoiceAgent('sess-3', kortixSay('nobody is listening'), { projectId: 'p' });
+    const res = await promptVoiceAgent('sess-3', kortixSay('nobody is listening'), { workspaceId: 'p' });
 
     expect(res.delivered).toBe(false);
     expect(res.reason).toContain('no voice agent');
@@ -344,7 +344,7 @@ describe('promptVoiceAgent records what the room was given', () => {
     // Otherwise the agent believes the room did not hear it and says it again.
     insertThrows = true;
 
-    const res = await promptVoiceAgent('sess-4', kortixSay('deploy is green'), { projectId: 'p' });
+    const res = await promptVoiceAgent('sess-4', kortixSay('deploy is green'), { workspaceId: 'p' });
 
     expect(res.delivered).toBe(true);
     expect(sent).toHaveLength(1);
@@ -370,7 +370,7 @@ describe('promptVoiceAgent records what the room was given', () => {
 describe('askKortix — one hand-off in flight per call', () => {
   const call = {
     callId: 'sess-ask',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     sessionId: 'sess-ask',
     voice: 'alloy',
     room: 'voice-sess-ask',
@@ -389,7 +389,7 @@ describe('askKortix — one hand-off in flight per call', () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toEqual({
       callId: 'sess-ask',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       sessionId: 'sess-ask',
       role: 'tool',
       speaker: ASK_SPEAKER,
@@ -457,14 +457,14 @@ describe('askKortix — one hand-off in flight per call', () => {
 
 describe('settleAsk — the arriving answer is what clears the flag', () => {
   test('it writes a settle row naming the outcome, in the shape every tool row uses', async () => {
-    dbResults = [[{ projectId: 'proj-9' }]]; // projectIdForSession
+    dbResults = [[{ workspaceId: 'proj-9' }]]; // projectIdForSession
 
     await settleAsk('sess-settle', 'answered');
 
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({
       callId: 'sess-settle',
-      projectId: 'proj-9',
+      workspaceId: 'proj-9',
       role: 'tool',
       speaker: ASK_SETTLED_SPEAKER,
       // `<tool>: <detail>` — so the call page's existing splitter renders it
@@ -474,7 +474,7 @@ describe('settleAsk — the arriving answer is what clears the flag', () => {
   });
 
   test('it never throws — a settle that throws costs the call its next hand-off', async () => {
-    dbResults = [[{ projectId: 'proj-9' }]];
+    dbResults = [[{ workspaceId: 'proj-9' }]];
     insertThrows = true;
 
     await settleAsk('sess-settle', 'timed out');
@@ -491,7 +491,7 @@ describe('settleAsk — the arriving answer is what clears the flag', () => {
 
 describe('in-call turn relay lands in the transcript', () => {
   test('an answer spoken into the call is recorded as an agent turn', async () => {
-    dbResults = [[{ projectId: 'proj-1' }]];
+    dbResults = [[{ workspaceId: 'proj-1' }]];
 
     expect(await relayTurnAnswer('sess-answer', 'the migration applied cleanly')).toBe(true);
 
@@ -505,7 +505,7 @@ describe('in-call turn relay lands in the transcript', () => {
   });
 
   test('a spoken progress step is recorded; a throttled one is not spoken and not recorded', async () => {
-    dbResults = [[{ projectId: 'proj-1' }]];
+    dbResults = [[{ workspaceId: 'proj-1' }]];
 
     expect(await relayTurnStep('sess-step', 'reading the config')).toBe(true);
     expect(inserts).toHaveLength(1);
@@ -522,7 +522,7 @@ describe('in-call turn relay lands in the transcript', () => {
   });
 
   test('a failed turn is spoken and recorded with its cause', async () => {
-    dbResults = [[{ projectId: 'proj-1' }]];
+    dbResults = [[{ workspaceId: 'proj-1' }]];
 
     expect(await relayTurnEnd('sess-err', 'error', { message: 'sandbox not ready' })).toBe(true);
 
@@ -658,7 +658,7 @@ let storedPosition = 0;
 async function agentRead(args: Record<string, unknown> = {}) {
   dbResults = [[{ cursor: storedPosition }]];
   inserts = [];
-  const res = await readTranscriptForAgent({ callId: 'call-1', projectId: 'proj-1', args });
+  const res = await readTranscriptForAgent({ callId: 'call-1', workspaceId: 'proj-1', args });
   const advance = inserts.find((i) => 'cursor' in i && 'callId' in i && !('role' in i));
   if (advance) storedPosition = Math.max(storedPosition, Number(advance.cursor));
   return res;

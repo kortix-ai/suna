@@ -45,10 +45,10 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   listMemberGroups,
-  listMemberProjectAccess,
+  listMemberWorkspaceAccess,
   setMemberSuperAdmin,
   type MemberGroupSummary,
-  type MemberProjectAccess,
+  type MemberWorkspaceAccess,
 } from '@/lib/iam-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -132,7 +132,7 @@ export default function MemberDetailPage() {
 
   const account = accountQuery.data;
 
-  // listAccountMembers's AccountMember.is_super_admin is what decides Grant
+  // listAccountMembers's WorkspaceAccountMember.is_super_admin is what decides Grant
   // vs Revoke below — it's a required field on the wire (AccountMemberSchema),
   // so `member` always carries the real current state, no extra fetch needed.
 
@@ -242,7 +242,7 @@ export default function MemberDetailPage() {
       ) : null}
 
       {account && member ? (
-        <MemberProjectAccessCard
+        <MemberWorkspaceAccessCard
           accountId={account.account_id}
           memberUserId={member.user_id}
           accountRole={member.account_role}
@@ -327,12 +327,12 @@ const CAPABILITY_GROUPS: Array<{
     ],
   },
   {
-    heading: 'Projects',
+    heading: 'Workspaces',
     items: [
-      { label: 'Create projects', action: 'project.create' },
-      { label: 'Read every project', action: 'project.read' },
-      { label: 'Write every project', action: 'project.write' },
-      { label: 'Delete every project', action: 'project.delete' },
+      { label: 'Create workspaces', action: 'project.create' },
+      { label: 'Read every workspace', action: 'project.read' },
+      { label: 'Write every workspace', action: 'project.write' },
+      { label: 'Delete every workspace', action: 'project.delete' },
     ],
   },
 ];
@@ -487,14 +487,14 @@ function MemberGroupsCard({
 
 // ─── V2: Projects this member can reach ───────────────────────────────────
 
-const PROJECT_ROLE_RANK = { manager: 3, editor: 2, member: 1 } as const;
-const SOURCE_LABEL: Record<MemberProjectAccess['sources'][number], string> = {
+const WORKSPACE_ROLE_RANK = { manager: 3, editor: 2, member: 1 } as const;
+const SOURCE_LABEL: Record<MemberWorkspaceAccess['sources'][number], string> = {
   implicit: 'Account admin',
   direct: 'Direct',
   group: 'Group',
 };
 
-function MemberProjectAccessCard({
+function MemberWorkspaceAccessCard({
   accountId,
   memberUserId,
   accountRole,
@@ -506,7 +506,7 @@ function MemberProjectAccessCard({
   const router = useRouter();
   const query = useQuery({
     queryKey: ['iam-member-project-access', accountId, memberUserId],
-    queryFn: () => listMemberProjectAccess(accountId, memberUserId),
+    queryFn: () => listMemberWorkspaceAccess(accountId, memberUserId),
     staleTime: 30_000,
   });
   const items = query.data ?? [];
@@ -515,11 +515,11 @@ function MemberProjectAccessCard({
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <Label>Projects{items.length > 0 ? ` · ${items.length}` : ''}</Label>
+        <Label>Workspaces{items.length > 0 ? ` · ${items.length}` : ''}</Label>
         <p className="text-muted-foreground text-xs">
           {isAdminLike
-            ? `${accountRole === 'owner' ? 'Owners' : 'Admins'} are implicit Manager on every active project in the account.`
-            : 'Projects this member can reach via direct grants or groups they belong to.'}
+            ? `${accountRole === 'owner' ? 'Owners' : 'Admins'} are implicit Manager on every active workspace in the account.`
+            : 'Workspaces this member can reach via direct grants or groups they belong to.'}
         </p>
       </div>
 
@@ -528,7 +528,7 @@ function MemberProjectAccessCard({
       ) : query.isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load project access"
+          title="Failed to load workspace access"
           description={(query.error as Error)?.message}
           action={
             <Button variant="outline" size="sm" onClick={() => query.refetch()}>
@@ -538,7 +538,7 @@ function MemberProjectAccessCard({
         />
       ) : items.length === 0 ? (
         <div className={cn(PANEL, 'text-muted-foreground px-4 py-4 text-xs')}>
-          No project access.
+          No workspace access.
         </div>
       ) : (
         <div className={cn(PANEL, 'divide-border divide-y overflow-hidden')}>
@@ -546,19 +546,19 @@ function MemberProjectAccessCard({
             .slice()
             .sort(
               (a, b) =>
-                PROJECT_ROLE_RANK[b.role] - PROJECT_ROLE_RANK[a.role] ||
-                a.project_name.localeCompare(b.project_name),
+                WORKSPACE_ROLE_RANK[b.role] - WORKSPACE_ROLE_RANK[a.role] ||
+                a.workspace_name.localeCompare(b.workspace_name),
             )
             .map((p) => (
               <button
-                key={p.project_id}
+                key={p.workspace_id}
                 type="button"
-                onClick={() => router.push(`/workspaces/${p.project_id}`)}
+                onClick={() => router.push(`/workspaces/${p.workspace_id}`)}
                 className="hover:bg-accent flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors"
               >
                 <FolderOpen className="text-muted-foreground size-4 shrink-0" />
                 <span className="text-foreground flex-1 truncate text-sm font-medium">
-                  {p.project_name}
+                  {p.workspace_name}
                 </span>
                 <Badge variant="outline" size="sm" className="font-normal capitalize">
                   {p.role}
@@ -579,7 +579,7 @@ function MemberProjectAccessCard({
 // Read-only "what would this user see?" — answers the question without
 // requiring the admin to impersonate. Two sections:
 //
-//   1. Project access — reuses listMemberProjectAccess (already
+//   1. Workspace access — reuses listMemberWorkspaceAccess (already
 //      surfaced on the member card above, repeated here for one-screen
 //      answer + because the dialog should be self-contained).
 //   2. Capabilities — fans out usePermissionsFor against a curated set
@@ -592,17 +592,17 @@ function MemberProjectAccessCard({
 const SIMULATOR_PROBES: Array<{
   action: string;
   label: string;
-  group: 'Account' | 'Projects' | 'Audit';
+  group: 'Account' | 'Workspaces' | 'Audit';
 }> = [
   { action: 'account.write', label: 'Change account settings', group: 'Account' },
   { action: 'member.invite', label: 'Invite members', group: 'Account' },
   { action: 'member.remove', label: 'Remove members', group: 'Account' },
   { action: 'group.create', label: 'Create groups', group: 'Account' },
   { action: 'group.delete', label: 'Delete groups', group: 'Account' },
-  { action: 'project.create', label: 'Create projects', group: 'Projects' },
-  { action: 'project.write', label: 'Edit projects', group: 'Projects' },
-  { action: 'project.delete', label: 'Delete projects', group: 'Projects' },
-  { action: 'project.members.manage', label: 'Manage project members', group: 'Projects' },
+  { action: 'project.create', label: 'Create workspaces', group: 'Workspaces' },
+  { action: 'project.write', label: 'Edit workspaces', group: 'Workspaces' },
+  { action: 'project.delete', label: 'Delete workspaces', group: 'Workspaces' },
+  { action: 'project.members.manage', label: 'Manage workspace members', group: 'Workspaces' },
   { action: 'audit.read', label: 'View the audit log', group: 'Audit' },
   { action: 'audit.export', label: 'Export audit events', group: 'Audit' },
 ];
@@ -624,8 +624,8 @@ function ViewAsUserDialog({
   // admins who never click View as). Probes intentionally exclude
   // resource-scoped actions like project.write on project X — the
   // V2 engine answers "can they perform this action on the account"
-  // which is the question this dialog should answer; per-project
-  // breakdown is the job of the MemberProjectAccessCard above.
+  // which is the question this dialog should answer; per-workspace
+  // breakdown is the job of the MemberWorkspaceAccessCard above.
 
   const probes = useMemo(() => SIMULATOR_PROBES.map((p) => ({ action: p.action })), []);
   const results = usePermissionsFor(
@@ -665,7 +665,7 @@ function ViewAsUserDialog({
         </ModalHeader>
 
         <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-          {(['Account', 'Projects', 'Audit'] as const).map((sectionName) => (
+          {(['Account', 'Workspaces', 'Audit'] as const).map((sectionName) => (
             <section key={sectionName} className="space-y-1.5">
               <p className="text-muted-foreground text-xs font-medium">{sectionName}</p>
               <ul className="divide-border bg-popover divide-y rounded-md border">
@@ -693,7 +693,7 @@ function ViewAsUserDialog({
           ))}
 
           <p className="text-muted-foreground text-xs">
-            Project-by-project access is listed in the Projects section on the member page.
+            Workspace access is listed in the Workspaces section on the member page.
           </p>
         </ModalBody>
       </ModalContent>

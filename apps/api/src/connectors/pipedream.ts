@@ -29,19 +29,19 @@ const PD_BASE = 'https://api.pipedream.com';
  */
 
 export function pipedreamConfigured(): boolean {
-  return !!(config.PIPEDREAM_CLIENT_ID && config.PIPEDREAM_CLIENT_SECRET && config.PIPEDREAM_PROJECT_ID);
+  return !!(config.PIPEDREAM_CLIENT_ID && config.PIPEDREAM_CLIENT_SECRET && config.PIPEDREAM_WORKSPACE_ID);
 }
 
 /**
- * Stable external_user_id per connector — connector-wide (`projectId:slug`),
+ * Stable external_user_id per connector — connector-wide (`workspaceId:slug`),
  * since every connector resolves the one shared credential (`per_user`, which
  * scoped this per-member via a trailing `:userId`, was removed 2026-07-05).
  * `userId` stays an optional param for call-site/back-compat stability, but
  * every caller now passes `null`. The webhook still tolerates the legacy
- * 3-part `projectId:slug:userId` shape on parse.
+ * 3-part `workspaceId:slug:userId` shape on parse.
  */
-function externalUserId(projectId: string, slug: string, userId?: string | null): string {
-  return userId ? `${projectId}:${slug}:${userId}` : `${projectId}:${slug}`;
+function externalUserId(workspaceId: string, slug: string, userId?: string | null): string {
+  return userId ? `${workspaceId}:${slug}:${userId}` : `${workspaceId}:${slug}`;
 }
 
 class PipedreamProvider {
@@ -50,7 +50,7 @@ class PipedreamProvider {
   constructor(
     private clientId: string,
     private clientSecret: string,
-    private projectId: string,
+    private workspaceId: string,
     private environment: string,
   ) {}
 
@@ -95,7 +95,7 @@ class PipedreamProvider {
       body.webhook_uri = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/connectors/webhook/pipedream?sig=${sig}`;
     }
     const data = await this.api<{ token: string; expires_at: string; connect_link_url?: string }>(
-      'POST', `/v1/connect/${this.projectId}/tokens`, body,
+      'POST', `/v1/connect/${this.workspaceId}/tokens`, body,
     );
     // The hosted connect link must carry ?app=<slug> — without it Pipedream's
     // overlay errors "Please include the app in the Connect URL".
@@ -108,7 +108,7 @@ class PipedreamProvider {
 
   async listAccounts(extUserId: string): Promise<Array<{ id: string; app: string; appName: string }>> {
     const data = await this.api<{ data: Array<{ id: string; app: { name_slug: string; name: string } }> }>(
-      'GET', `/v1/connect/${this.projectId}/accounts?external_user_id=${encodeURIComponent(extUserId)}&include_credentials=0`,
+      'GET', `/v1/connect/${this.workspaceId}/accounts?external_user_id=${encodeURIComponent(extUserId)}&include_credentials=0`,
     );
     return (data.data || []).map((a) => ({ id: a.id, app: a.app.name_slug, appName: a.app.name }));
   }
@@ -122,7 +122,7 @@ class PipedreamProvider {
     const data = await this.api<{
       page_info: { total_count: number; count: number; end_cursor?: string };
       data: Array<{ name_slug: string; name: string; description?: string; img_src?: string; auth_type?: string; categories: string[] }>;
-    }>('GET', `/v1/connect/${this.projectId}/apps?${params.toString()}`);
+    }>('GET', `/v1/connect/${this.workspaceId}/apps?${params.toString()}`);
     const apps = (data.data || [])
       .map((a) => ({
         slug: a.name_slug, name: a.name, description: a.description ?? null, imgSrc: a.img_src ?? null,
@@ -148,7 +148,7 @@ class PipedreamProvider {
   async listActions(app: string, limit = 100): Promise<PipedreamActionLike[]> {
     const params = new URLSearchParams({ app, limit: String(limit) });
     const data = await this.api<{ data: Array<{ key: string; name: string; description?: string; configurable_props?: Array<{ name: string; type: string; optional?: boolean; description?: string }> }> }>(
-      'GET', `/v1/connect/${this.projectId}/actions?${params.toString()}`,
+      'GET', `/v1/connect/${this.workspaceId}/actions?${params.toString()}`,
     );
     return (data.data || []).map((a) => ({
       key: a.key,
@@ -181,7 +181,7 @@ class PipedreamProvider {
     let name = app; // last-resort fallback: the slug (correct for e.g. gmail)
     try {
       const res = await this.api<{ data?: { configurable_props?: Array<{ name?: string; type?: string }> } }>(
-        'GET', `/v1/connect/${this.projectId}/components/${encodeURIComponent(actionKey)}`,
+        'GET', `/v1/connect/${this.workspaceId}/components/${encodeURIComponent(actionKey)}`,
       );
       const props = res.data?.configurable_props ?? [];
       const appProp = props.find((p) => p?.type === 'app' && p.name);
@@ -193,7 +193,7 @@ class PipedreamProvider {
 
   async runAction(extUserId: string, app: string, actionKey: string, props: Record<string, unknown>, providerAccountId: string): Promise<unknown> {
     const appProp = await this.resolveAppPropName(actionKey, app);
-    const data = await this.api<Record<string, unknown>>('POST', `/v1/connect/${this.projectId}/actions/run`, {
+    const data = await this.api<Record<string, unknown>>('POST', `/v1/connect/${this.workspaceId}/actions/run`, {
       id: actionKey,
       external_user_id: extUserId,
       // Spread the agent's args FIRST so the account-selector binding (under the
@@ -245,7 +245,7 @@ class PipedreamProvider {
       body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
       headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
     }
-    const res = await fetch(`${PD_BASE}/v1/connect/${this.projectId}/proxy/${url64}?${qs.toString()}`, {
+    const res = await fetch(`${PD_BASE}/v1/connect/${this.workspaceId}/proxy/${url64}?${qs.toString()}`, {
       method: req.method.toUpperCase(),
       headers,
       ...(body !== undefined ? { body } : {}),
@@ -259,10 +259,10 @@ class PipedreamProvider {
 
 let provider: PipedreamProvider | null = null;
 function getProvider(): PipedreamProvider {
-  if (!pipedreamConfigured()) throw new Error('Pipedream is not configured (set PIPEDREAM_CLIENT_ID/SECRET/PROJECT_ID)');
+  if (!pipedreamConfigured()) throw new Error('Pipedream is not configured (set PIPEDREAM_CLIENT_ID/SECRET/WORKSPACE_ID)');
   if (!provider) {
     provider = new PipedreamProvider(
-      config.PIPEDREAM_CLIENT_ID, config.PIPEDREAM_CLIENT_SECRET, config.PIPEDREAM_PROJECT_ID,
+      config.PIPEDREAM_CLIENT_ID, config.PIPEDREAM_CLIENT_SECRET, config.PIPEDREAM_WORKSPACE_ID,
       config.PIPEDREAM_ENVIRONMENT || 'production',
     );
   }
@@ -273,13 +273,13 @@ function getProvider(): PipedreamProvider {
 
 /** Mint a connect token + link for a connector, scoped per-user when needed. */
 export async function pipedreamConnectUrl(
-  projectId: string,
+  workspaceId: string,
   slug: string,
   app: string,
   userId: string | null,
   redirects?: { success?: string; error?: string },
 ): Promise<{ connectUrl?: string; token: string; expiresAt: string }> {
-  return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app, redirects);
+  return getProvider().createConnectToken(externalUserId(workspaceId, slug, userId), app, redirects);
 }
 
 /**
@@ -287,23 +287,23 @@ export async function pipedreamConnectUrl(
  * credential on the connector — shared (userId null) or that member's own.
  */
 export async function finalizePipedreamConnection(opts: {
-  projectId: string;
+  workspaceId: string;
   slug: string;
   app: string;
   connectorId: string;
   userId: string | null;
 }): Promise<{ connected: boolean; accountId?: string }> {
-  const accounts = await getProvider().listAccounts(externalUserId(opts.projectId, opts.slug, opts.userId));
+  const accounts = await getProvider().listAccounts(externalUserId(opts.workspaceId, opts.slug, opts.userId));
   const match = accounts.find((a) => a.app === opts.app) ?? accounts[0];
   if (!match) return { connected: false };
-  await upsertCredential({ projectId: opts.projectId, connectorId: opts.connectorId, userId: opts.userId, value: match.id, kind: 'connection' });
+  await upsertCredential({ workspaceId: opts.workspaceId, connectorId: opts.connectorId, userId: opts.userId, value: match.id, kind: 'connection' });
   return { connected: true, accountId: match.id };
 }
 
 /** Finalize a session-selectable connection using the exact external-user
  * identity minted by the connection route. */
 export async function finalizePipedreamConnectionAuthorization(opts: {
-  projectId: string;
+  workspaceId: string;
   slug: string;
   app: string;
   connectorId: string;
@@ -311,12 +311,12 @@ export async function finalizePipedreamConnectionAuthorization(opts: {
   createdBy: string | null;
 }): Promise<{ connected: boolean; accountId?: string }> {
   const accounts = await getProvider().listAccounts(
-    externalUserId(opts.projectId, opts.slug, opts.connectionId),
+    externalUserId(opts.workspaceId, opts.slug, opts.connectionId),
   );
   const match = accounts.find((account) => account.app === opts.app) ?? accounts[0];
   if (!match) return { connected: false };
   await upsertConnectionCredential({
-    projectId: opts.projectId,
+    workspaceId: opts.workspaceId,
     connectorId: opts.connectorId,
     connectionId: opts.connectionId,
     value: match.id,
@@ -362,7 +362,7 @@ export async function browsePipedreamApps(query?: string, cursor?: string): Prom
 
 /** Execute a Pipedream action via the Connect API. `accountId` is the binding; `userId` scopes the external id. */
 export async function runPipedreamAction(
-  projectId: string,
+  workspaceId: string,
   slug: string,
   app: string,
   actionKey: string,
@@ -371,7 +371,7 @@ export async function runPipedreamAction(
   userId: string | null = null,
 ): Promise<ExecResult> {
   try {
-    const data = await getProvider().runAction(externalUserId(projectId, slug, userId), app, actionKey, args, accountId);
+    const data = await getProvider().runAction(externalUserId(workspaceId, slug, userId), app, actionKey, args, accountId);
     return { status: 200, ok: true, data };
   } catch (e) {
     return { status: 502, ok: false, data: (e as Error).message };
@@ -385,7 +385,7 @@ export async function runPipedreamAction(
  * 4xx/5xx, not a flattened 200.
  */
 export async function runPipedreamProxy(
-  projectId: string,
+  workspaceId: string,
   slug: string,
   args: Record<string, unknown>,
   accountId: string,
@@ -396,7 +396,7 @@ export async function runPipedreamProxy(
   if (!url) return { status: 400, ok: false, data: '`url` (full target API URL) is required' };
   if (!/^https?:\/\//i.test(url)) return { status: 400, ok: false, data: '`url` must be an absolute http(s) URL' };
   try {
-    const r = await getProvider().proxyRequest(externalUserId(projectId, slug, userId), accountId, {
+    const r = await getProvider().proxyRequest(externalUserId(workspaceId, slug, userId), accountId, {
       method,
       url,
       body: args.body,

@@ -59,27 +59,27 @@ export type RequestProjectAccessResult =
   | { status: 'pending'; request: ProjectAccessRequest }
   | { status: 'already_has_access'; project_id: string };
 
-export async function requestProjectAccess(projectId: string, message?: string) {
+export async function requestProjectAccess(workspaceId: string, message?: string) {
   return unwrap(
     await backendApi.post<RequestProjectAccessResult>(
-      `/projects/${projectId}/access-requests`,
+      `/projects/${workspaceId}/access-requests`,
       { message: message?.trim() || undefined },
       { showErrors: false },
     ),
   );
 }
 
-export async function listProjectAccessRequests(projectId: string, options?: ApiClientOptions) {
+export async function listProjectAccessRequests(workspaceId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<{ requests: ProjectAccessRequest[] }>(
-      `/projects/${projectId}/access-requests`,
+      `/projects/${workspaceId}/access-requests`,
       options,
     ),
   );
 }
 
 export async function approveProjectAccessRequest(
-  projectId: string,
+  workspaceId: string,
   requestId: string,
   role: ProjectRole = 'member',
 ) {
@@ -87,44 +87,44 @@ export async function approveProjectAccessRequest(
     await backendApi.post<{
       request: ProjectAccessRequest;
       member: ProjectAccessMember;
-    }>(`/projects/${projectId}/access-requests/${requestId}/approve`, { role }),
+    }>(`/projects/${workspaceId}/access-requests/${requestId}/approve`, { role }),
   );
 }
 
-export async function rejectProjectAccessRequest(projectId: string, requestId: string) {
+export async function rejectProjectAccessRequest(workspaceId: string, requestId: string) {
   return unwrap(
     await backendApi.post<{ request: ProjectAccessRequest }>(
-      `/projects/${projectId}/access-requests/${requestId}/reject`,
+      `/projects/${workspaceId}/access-requests/${requestId}/reject`,
       {},
     ),
   );
 }
 
-export async function listProjectAccess(projectId: string) {
+export async function listProjectAccess(workspaceId: string) {
   return unwrap(
     await backendApi.get<ProjectAccessResponse>(
-      `/projects/${projectId}/access`,
+      `/projects/${workspaceId}/access`,
     ),
   );
 }
 
 export async function updateProjectAccess(
-  projectId: string,
+  workspaceId: string,
   userId: string,
   role: ProjectRole,
 ) {
   return unwrap(
     await backendApi.put<ProjectAccessMember>(
-      `/projects/${projectId}/access/${userId}`,
+      `/projects/${workspaceId}/access/${userId}`,
       { role },
     ),
   );
 }
 
-export async function revokeProjectAccess(projectId: string, userId: string) {
+export async function revokeProjectAccess(workspaceId: string, userId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/access/${userId}`,
+      `/projects/${workspaceId}/access/${userId}`,
     ),
   );
 }
@@ -157,7 +157,7 @@ export function isInviteSent(
 }
 
 export async function inviteProjectMember(
-  projectId: string,
+  workspaceId: string,
   email: string,
   role: ProjectRole,
   /** Optional ISO-8601 time-bound: the granted role auto-revokes at this instant
@@ -166,7 +166,7 @@ export async function inviteProjectMember(
 ) {
   return unwrap(
     await backendApi.post<InviteProjectMemberResult>(
-      `/projects/${projectId}/access/invite`,
+      `/projects/${workspaceId}/access/invite`,
       { email, role, ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}) },
     ),
   );
@@ -191,18 +191,18 @@ export interface PendingProjectInvite {
   invite_expired: boolean;
 }
 
-export async function listPendingProjectInvites(projectId: string) {
+export async function listPendingProjectInvites(workspaceId: string) {
   return unwrap(
     await backendApi.get<{ pending: PendingProjectInvite[] }>(
-      `/projects/${projectId}/access/pending-invites`,
+      `/projects/${workspaceId}/access/pending-invites`,
     ),
   );
 }
 
-export async function revokePendingProjectInvite(projectId: string, inviteId: string) {
+export async function revokePendingProjectInvite(workspaceId: string, inviteId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean; invitation_cancelled: boolean }>(
-      `/projects/${projectId}/access/pending-invites/${inviteId}`,
+      `/projects/${workspaceId}/access/pending-invites/${inviteId}`,
     ),
   );
 }
@@ -215,10 +215,10 @@ export interface ResendProjectInviteResult {
   email_skip_reason: string | null;
 }
 
-export async function resendPendingProjectInvite(projectId: string, inviteId: string) {
+export async function resendPendingProjectInvite(workspaceId: string, inviteId: string) {
   return unwrap(
     await backendApi.post<ResendProjectInviteResult>(
-      `/projects/${projectId}/access/pending-invites/${inviteId}/resend`,
+      `/projects/${workspaceId}/access/pending-invites/${inviteId}/resend`,
     ),
   );
 }
@@ -240,23 +240,23 @@ export interface ProjectGroupGrant {
   override_count?: number;
 }
 
-export async function listProjectGroupGrants(projectId: string) {
+export async function listProjectGroupGrants(workspaceId: string) {
   return unwrap(
     await backendApi.get<{ grants: ProjectGroupGrant[] }>(
-      `/projects/${projectId}/group-grants`,
+      `/projects/${workspaceId}/group-grants`,
     ),
   );
 }
 
 export async function attachGroupToProject(
-  projectId: string,
+  workspaceId: string,
   groupId: string,
   role: ProjectRole,
   expiresAt?: string | null,
 ) {
   return unwrap(
     await backendApi.post<{ project_id: string; group_id: string; role: ProjectRole }>(
-      `/projects/${projectId}/group-grants`,
+      `/projects/${workspaceId}/group-grants`,
       // undefined = field omitted (don't touch); null = clear expiry.
       expiresAt === undefined
         ? { group_id: groupId, role }
@@ -266,23 +266,23 @@ export async function attachGroupToProject(
 }
 
 export async function updateProjectGroupGrant(
-  projectId: string,
+  workspaceId: string,
   groupId: string,
   role: ProjectRole,
   expiresAt?: string | null,
 ) {
   return unwrap(
     await backendApi.patch<{ project_id: string; group_id: string; role: ProjectRole }>(
-      `/projects/${projectId}/group-grants/${groupId}`,
+      `/projects/${workspaceId}/group-grants/${groupId}`,
       expiresAt === undefined ? { role } : { role, expires_at: expiresAt },
     ),
   );
 }
 
-export async function detachGroupFromProject(projectId: string, groupId: string) {
+export async function detachGroupFromProject(workspaceId: string, groupId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/group-grants/${groupId}`,
+      `/projects/${workspaceId}/group-grants/${groupId}`,
     ),
   );
 }
@@ -336,16 +336,16 @@ export interface ProjectResourceGrantsResponse {
   grants: ProjectResourceGrant[];
 }
 
-export async function listProjectResourceGrants(projectId: string) {
+export async function listProjectResourceGrants(workspaceId: string) {
   return unwrap(
     await backendApi.get<ProjectResourceGrantsResponse>(
-      `/projects/${projectId}/resource-grants`,
+      `/projects/${workspaceId}/resource-grants`,
     ),
   );
 }
 
 export async function createProjectResourceGrant(
-  projectId: string,
+  workspaceId: string,
   input: {
     resourceType: ResourceGrantType;
     resourceId: string;
@@ -355,7 +355,7 @@ export async function createProjectResourceGrant(
   },
 ) {
   return unwrap(
-    await backendApi.post<{ grant_id: string }>(`/projects/${projectId}/resource-grants`, {
+    await backendApi.post<{ grant_id: string }>(`/projects/${workspaceId}/resource-grants`, {
       resource_type: input.resourceType,
       resource_id: input.resourceId,
       principal_type: input.principalType,
@@ -365,10 +365,10 @@ export async function createProjectResourceGrant(
   );
 }
 
-export async function deleteProjectResourceGrant(projectId: string, grantId: string) {
+export async function deleteProjectResourceGrant(workspaceId: string, grantId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/resource-grants/${grantId}`,
+      `/projects/${workspaceId}/resource-grants/${grantId}`,
     ),
   );
 }
@@ -394,9 +394,9 @@ export interface PendingApprovalsResponse {
 }
 
 /** The manager inbox of gated actions awaiting approve/deny. */
-export async function listPendingApprovals(projectId: string, options?: { showErrors?: boolean }) {
+export async function listPendingApprovals(workspaceId: string, options?: { showErrors?: boolean }) {
   return unwrap(
-    await backendApi.get<PendingApprovalsResponse>(`/projects/${projectId}/approvals`, {
+    await backendApi.get<PendingApprovalsResponse>(`/projects/${workspaceId}/approvals`, {
       showErrors: options?.showErrors,
     }),
   );
@@ -411,12 +411,12 @@ export interface SessionsNeedingInputResponse {
 }
 
 export async function listSessionsNeedingInput(
-  projectId: string,
+  workspaceId: string,
   options?: { showErrors?: boolean },
 ) {
   return unwrap(
     await backendApi.get<SessionsNeedingInputResponse>(
-      `/projects/${projectId}/approvals/needs-input`,
+      `/projects/${workspaceId}/approvals/needs-input`,
       { showErrors: options?.showErrors },
     ),
   );
@@ -430,12 +430,12 @@ export async function listSessionsNeedingInput(
 // is precisely what an approval gate exists to prevent. To run a tool
 // unattended, author an `always_run` policy rule instead.
 export async function resolveApproval(
-  projectId: string,
+  workspaceId: string,
   executionId: string,
   decision: 'approve' | 'deny',
 ) {
   return unwrap(
-    await backendApi.post<{ ok: boolean }>(`/projects/${projectId}/approvals/${executionId}`, {
+    await backendApi.post<{ ok: boolean }>(`/projects/${workspaceId}/approvals/${executionId}`, {
       decision,
     }),
   );

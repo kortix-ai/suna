@@ -57,12 +57,12 @@ describe('buildExportFilename', () => {
     // `to` on the 1st means the export stops at the end of the previous
     // month. Day arithmetic that does not normalise would produce `-08-00`.
     expect(
-      buildExportFilename('projects', {
+      buildExportFilename('workspaces', {
         preset: 'custom',
         from: '2026-07-25T00:00:00.000Z',
         to: '2026-08-01T00:00:00.000Z',
       }),
-    ).toBe('kortix-projects-2026-07-25-to-2026-07-31.csv');
+    ).toBe('kortix-workspaces-2026-07-25-to-2026-07-31.csv');
   });
 
   test('steps back across a year boundary', () => {
@@ -95,18 +95,18 @@ describe('buildExportFilename', () => {
     // offset, 2026-07-08T00:00:00Z is still the 7th locally, so a
     // local-calendar-parts implementation would step back to the 6th here.
     expect(
-      buildExportFilename('projects', {
+      buildExportFilename('workspaces', {
         preset: 'custom',
         from: '2026-07-08T00:00:00.000Z',
         to: '2026-07-09T00:00:00.000Z',
       }),
-    ).toBe('kortix-projects-2026-07-08-to-2026-07-08.csv');
+    ).toBe('kortix-workspaces-2026-07-08-to-2026-07-08.csv');
   });
 
   test('uses the preset token when one is set', () => {
     expect(
-      buildExportFilename('projects', resolvePreset('30d', new Date('2026-08-01T00:00:00.000Z'))),
-    ).toBe('kortix-projects-last-30d.csv');
+      buildExportFilename('workspaces', resolvePreset('30d', new Date('2026-08-01T00:00:00.000Z'))),
+    ).toBe('kortix-workspaces-last-30d.csv');
   });
 
   test('carries every preset token, not just 30d', () => {
@@ -117,8 +117,8 @@ describe('buildExportFilename', () => {
     expect(buildExportFilename('sessions', resolvePreset('7d', now))).toBe(
       'kortix-sessions-last-7d.csv',
     );
-    expect(buildExportFilename('projects', resolvePreset('90d', now))).toBe(
-      'kortix-projects-last-90d.csv',
+    expect(buildExportFilename('workspaces', resolvePreset('90d', now))).toBe(
+      'kortix-workspaces-last-90d.csv',
     );
   });
 
@@ -142,8 +142,8 @@ describe('buildExportFilename', () => {
     // otherwise name the file `kortix-projects-NaN-NaN-NaN-to-…` for a URL
     // nobody can fix from the UI.
     expect(
-      buildExportFilename('projects', { preset: 'custom', from: 'not-a-date', to: 'also-bad' }),
-    ).toBe('kortix-projects-export.csv');
+      buildExportFilename('workspaces', { preset: 'custom', from: 'not-a-date', to: 'also-bad' }),
+    ).toBe('kortix-workspaces-export.csv');
   });
 });
 
@@ -156,9 +156,9 @@ describe('buildCostExportOptions', () => {
 
   test('carries the window, the account and the level filters', () => {
     expect(
-      buildCostExportOptions(range, 'acc_1', { projectId: 'p_1', sort: 'recent' as const }),
+      buildCostExportOptions(range, 'acc_1', { workspaceId: 'p_1', sort: 'recent' as const }),
     ).toEqual({
-      projectId: 'p_1',
+      workspaceId: 'p_1',
       sort: 'recent',
       accountId: 'acc_1',
       from: '2026-07-01T00:00:00.000Z',
@@ -211,8 +211,8 @@ describe('countCsvDataRows', () => {
 
   test('a CRLF inside a quoted field stays part of its own row', () => {
     // `encodeField` quotes any value containing CR, LF, comma or quote, and
-    // project_name / owner are free text the account's own users control — so
-    // a physical-line count over-reports every row whose project name has a
+    // workspace_name / owner are free text the account's own users control — so
+    // a physical-line count over-reports every row whose workspace name has a
     // newline in it. Two records here, across three physical lines.
     const body = csv('s0,"line one\r\nline two"', 's1,1.00');
     expect(body.split('\r\n').length).toBe(4);

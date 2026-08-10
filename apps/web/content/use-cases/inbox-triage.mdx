@@ -53,7 +53,7 @@ in Linear. Anything customer-facing waits for a person before it sends.
 <Steps>
 <Step title="Connect Gmail as the trigger">
 
-A signed webhook from Gmail points at the project. Every new inbound message
+A signed webhook from Gmail points at the workspace. Every new inbound message
 fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
 with the email. One message, one session, one disposable machine. Sessions don't
 share state, and a busy inbox means more sessions running in parallel.

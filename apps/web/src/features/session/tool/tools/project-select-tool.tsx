@@ -14,11 +14,11 @@ import { useMemo } from 'react';
 
 import { parseProjectSelectOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectSelectTool({ part }: ToolProps) {
+export function WorkspaceSelectTool({ part }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
-  const project = (input.project as string) || '';
+  const project = (input.workspace as string) || '';
   const data = useMemo(() => parseProjectSelectOutput(output || ''), [output]);
   const name = data?.name || project;
 
@@ -52,7 +52,7 @@ export function ProjectSelectTool({ part }: ToolProps) {
     />
   );
 }
-ToolRegistry.register('project_select', ProjectSelectTool);
-ToolRegistry.register('project-select', ProjectSelectTool);
-ToolRegistry.register('oc-project_select', ProjectSelectTool);
-ToolRegistry.register('oc-project-select', ProjectSelectTool);
+ToolRegistry.register('project_select', WorkspaceSelectTool);
+ToolRegistry.register('project-select', WorkspaceSelectTool);
+ToolRegistry.register('oc-project_select', WorkspaceSelectTool);
+ToolRegistry.register('oc-project-select', WorkspaceSelectTool);

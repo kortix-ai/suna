@@ -4,7 +4,7 @@ import { skipToken, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { sessionTabTitleFromSession } from './session-tab-title';
-import type { ProjectSession } from '@kortix/sdk';
+import type { WorkspaceSession } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
 /**
@@ -24,10 +24,10 @@ import { qk } from '@kortix/sdk/react';
  * subscriber and no re-render.
  */
 export function SessionTabTitleSync({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   // A pure READER of the session list the page already loads. `skipToken`
@@ -36,11 +36,11 @@ export function SessionTabTitleSync({
   // mutation (`applySessionRename`) reaches the tab immediately. `select`
   // narrows 64 sessions down to one string, so structural sharing re-renders
   // this component only when the title actually changes.
-  const { data: title } = useQuery<ProjectSession[], Error, string | null>({
-    queryKey: qk.project.sessions(projectId),
+  const { data: title } = useQuery<WorkspaceSession[], Error, string | null>({
+    queryKey: qk.workspace.sessions(workspaceId),
     queryFn: skipToken,
     notifyOnChangeProps: ['data'],
-    select: (sessions: ProjectSession[]) => {
+    select: (sessions: WorkspaceSession[]) => {
       const session = sessions.find((item) => item.session_id === sessionId);
       // No record cached yet: leave whatever the server resolved alone rather
       // than overwriting a correct title with "Untitled session".

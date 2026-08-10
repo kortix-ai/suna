@@ -120,11 +120,11 @@ flow(
 );
 
 // GW-5 — project-scoped LLM catalog surfaces read by the connect modal.
-//   GET /:projectId/llm-catalog           — model-level entries (Record<
+//   GET /:workspaceId/llm-catalog           — model-level entries (Record<
 //                                          "provider/model", GatewayModel>),
 //                                          gated by the project's llm_gateway
 //                                          flag.
-//   GET /:projectId/llm-catalog/providers  — provider-level rows (id, name,
+//   GET /:workspaceId/llm-catalog/providers  — provider-level rows (id, name,
 //                                          env, docs, models), NOT gated by
 //                                          llm_gateway (BYOK connect modal
 //                                          applies to native projects too).
@@ -136,17 +136,17 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
-      'GET /v1/projects/:projectId/llm-catalog',
-      'GET /v1/projects/:projectId/llm-catalog/providers',
+      'GET /v1/projects/:workspaceId/llm-catalog',
+      'GET /v1/projects/:workspaceId/llm-catalog/providers',
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
-    const params = { projectId: project.id };
+    const params = { workspaceId: project.id };
 
     for (const path of [
-      '/v1/projects/:projectId/llm-catalog',
-      '/v1/projects/:projectId/llm-catalog/providers',
+      '/v1/projects/:workspaceId/llm-catalog',
+      '/v1/projects/:workspaceId/llm-catalog/providers',
     ] as const) {
       await ctx.step(`ANON → 401 on ${path}`, async () => {
         const r = await ctx.client.as(ctx.P.ANON).get(path, { params });
@@ -160,7 +160,7 @@ flow(
 
       await ctx.step(`unknown project id → 404 (not 500) on ${path}`, async () => {
         const r = await ctx.client.as(ctx.P.OWNER).get(path, {
-          params: { projectId: '00000000-0000-0000-0000-000000000000' },
+          params: { workspaceId: '00000000-0000-0000-0000-000000000000' },
         });
         r.status(404);
       });
@@ -169,7 +169,7 @@ flow(
     await ctx.step('OWNER → 200 on the model-level catalog', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/llm-catalog', { params });
+        .get('/v1/projects/:workspaceId/llm-catalog', { params });
       // /llm-catalog is gated by the project's llm_gateway flag. On a fresh
       // fixture project the flag may be off → 404 (catalog disabled), or on
       // → 200 with a `{models:...}` body. Either is a valid boundary; a 500
@@ -180,7 +180,7 @@ flow(
     await ctx.step('OWNER → 200 with a provider catalog on /providers', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/llm-catalog/providers', { params });
+        .get('/v1/projects/:workspaceId/llm-catalog/providers', { params });
       r.status(200);
       // The runtime catalog snapshot is an object (provider-keyed); assert it
       // parsed to a non-null object so a future regression that returns
@@ -280,16 +280,16 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
-      'GET /v1/projects/:projectId/gateway/routing-policy',
-      'PUT /v1/projects/:projectId/gateway/routing-policy',
-      'DELETE /v1/projects/:projectId/gateway/routing-policy',
-      'POST /v1/projects/:projectId/gateway/routing-policy/preview',
-      'GET /v1/projects/:projectId/model-picker',
+      'GET /v1/projects/:workspaceId/gateway/routing-policy',
+      'PUT /v1/projects/:workspaceId/gateway/routing-policy',
+      'DELETE /v1/projects/:workspaceId/gateway/routing-policy',
+      'POST /v1/projects/:workspaceId/gateway/routing-policy/preview',
+      'GET /v1/projects/:workspaceId/model-picker',
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
-    const params = { projectId: project.id };
+    const params = { workspaceId: project.id };
     const policy = {
       defaultModel: 'codex/gpt-5.6-sol',
       visionModel: 'glm-5.2',
@@ -310,7 +310,7 @@ flow(
     await ctx.step('inherited routing policy is readable', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/projects/:workspaceId/gateway/routing-policy', { params });
       r.status(200)
         .body()
         .has('$.version', 1)
@@ -327,7 +327,7 @@ flow(
         const enabled = await ctx.client
           .as(ctx.P.OWNER)
           .patch(
-            '/v1/projects/:projectId/experimental',
+            '/v1/projects/:workspaceId/experimental',
             { feature: 'llm_gateway', enabled: true },
             { params },
           );
@@ -335,7 +335,7 @@ flow(
 
         const picker = await ctx.client
           .as(ctx.P.OWNER)
-          .get('/v1/projects/:projectId/model-picker', { params });
+          .get('/v1/projects/:workspaceId/model-picker', { params });
         picker.status(200).body().exists('$.models');
         const pickerModels = picker.json<{ models?: Record<string, unknown> }>().models ?? {};
         const pickerCount = Object.keys(pickerModels).length;
@@ -348,7 +348,7 @@ flow(
     await ctx.step('save and read back the complete project policy', async () => {
       const saved = await ctx.client
         .as(ctx.P.OWNER)
-        .put('/v1/projects/:projectId/gateway/routing-policy', policy, { params });
+        .put('/v1/projects/:workspaceId/gateway/routing-policy', policy, { params });
       saved
         .status(200)
         .body()
@@ -358,7 +358,7 @@ flow(
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/projects/:workspaceId/gateway/routing-policy', { params });
       read.status(200).body().has('$.project', savedProject);
     });
 
@@ -366,7 +366,7 @@ flow(
       const defaultRoute = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          '/v1/projects/:workspaceId/gateway/routing-policy/preview',
           { requestedModel: 'codex/gpt-5.6-sol', imageInput: false },
           { params },
         );
@@ -385,7 +385,7 @@ flow(
       const exact = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          '/v1/projects/:workspaceId/gateway/routing-policy/preview',
           { requestedModel: 'openai/gpt-5.5', imageInput: false },
           { params },
         );
@@ -400,7 +400,7 @@ flow(
 
     await ctx.step('invalid self-loop is rejected without replacing the saved policy', async () => {
       const invalid = await ctx.client.as(ctx.P.OWNER).put(
-        '/v1/projects/:projectId/gateway/routing-policy',
+        '/v1/projects/:workspaceId/gateway/routing-policy',
         {
           ...policy,
           defaultFallback: { models: ['codex/gpt-5.6-sol'], fallbackOn: 'any-error' },
@@ -411,29 +411,29 @@ flow(
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/projects/:workspaceId/gateway/routing-policy', { params });
       read.status(200).body().has('$.project', savedProject);
     });
 
     await ctx.step('project access boundaries are enforced', async () => {
       const nonmember = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/projects/:workspaceId/gateway/routing-policy', { params });
       nonmember.status([403, 404]);
       const anonymous = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/projects/:workspaceId/gateway/routing-policy', { params });
       anonymous.status(401);
       const anonymousPicker = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/model-picker', { params });
+        .get('/v1/projects/:workspaceId/model-picker', { params });
       anonymousPicker.status(401);
     });
 
     await ctx.step('reset removes every project override', async () => {
       const reset = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .del('/v1/projects/:workspaceId/gateway/routing-policy', { params });
       reset
         .status(200)
         .body()

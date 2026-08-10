@@ -48,8 +48,10 @@ describe('tryDisposeReload', () => {
   test('composes the config from the SAME env spawnChild uses', () => {
     // If the two diverged, a dispose and a respawn would apply different
     // configs and the difference would only show on the next reboot.
-    expect(disposeReloadBody()).toContain('mergeProjectEnv(process.env, currentProjectEnv)')
-    expect(OPENCODE_SRC).toContain('const baseEnv = currentProjectEnv')
+    expect(disposeReloadBody()).toContain(
+      'mergeWorkspaceSecretEnv(process.env, currentWorkspaceSecretEnv)',
+    )
+    expect(OPENCODE_SRC).toContain('const baseEnv = currentWorkspaceSecretEnv')
   })
 
   test('a 200 alone is NOT success — content-type AND body are checked', () => {

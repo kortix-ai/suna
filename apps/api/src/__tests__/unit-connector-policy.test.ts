@@ -149,7 +149,7 @@ describe('resolveEffectiveAction — layered (project → connector → default)
 
   test('project require_approval wins over connector always_run', () => {
     // stripe.charges.create — project rule says require_approval, even though
-    // connector rule says always_run. Project wins.
+    // connector rule says always_run. Workspace wins.
     expect(
       resolveEffectiveAction({
         fullPath: 'stripe.charges.create',
@@ -213,7 +213,7 @@ describe('resolveEffectiveAction — layered (project → connector → default)
   });
 
   test('project full-qualified match vs connector relative — patterns are different scopes', () => {
-    // Project pattern is `vercel.dns.*` — only fires for vercel.dns.* paths.
+    // Workspace pattern is `vercel.dns.*` — only fires for vercel.dns.* paths.
     const project: Policy[] = [{ match: 'vercel.dns.*', action: 'block', position: 0 }];
     const conn: Policy[] = []; // no connector rules
 

@@ -10,7 +10,7 @@ const source = [
 
 describe('Slack channel connector catalogue', () => {
   test('uses the built-in Slack install flow instead of creating the reserved slug', () => {
-    expect(source).toContain('<AddSlackConnectionCard projectId={projectId} onAdded={onAdded} />');
+    expect(source).toContain('<AddSlackConnectionCard workspaceId={workspaceId} onAdded={onAdded} />');
     expect(source).not.toMatch(/<ChannelConnectionCard[\s\S]*slug="kortix_slack"/);
   });
 
@@ -44,7 +44,9 @@ describe('Slack channel connector catalogue', () => {
 
 describe('Email channel connector catalogue', () => {
   test('keeps Email connections behind the experimental flag', () => {
-    expect(source).toContain('{emailChannelEnabled && <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />}');
+    expect(source).toMatch(
+      /\{emailChannelEnabled && \(\s*<AddEmailConnectionCard workspaceId=\{workspaceId\} onAdded=\{onAdded\} \/>\s*\)\}/,
+    );
   });
 
   test('supports managed inbox creation and attaching an existing AgentMail inbox', () => {

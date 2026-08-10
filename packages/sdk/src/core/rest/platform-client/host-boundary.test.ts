@@ -63,7 +63,19 @@ describe('host boundary transport', () => {
     expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
   });
 
-  test('audit export sends project and session reconstruction filters', async () => {
+  test('session start uses the canonical Workspace route', async () => {
+    await boundary.startSessionWithToken('workspace/one', 'session/two', {
+      backendUrl: 'https://api.example.test/v1',
+      accessToken: 'token-1',
+    });
+
+    expect(requests[0]?.url).toBe(
+      'https://api.example.test/v1/workspaces/workspace%2Fone/sessions/session%2Ftwo/start',
+    );
+    expect(requests[0]?.init?.method).toBe('POST');
+  });
+
+  test('audit export sends canonical workspace and session reconstruction filters', async () => {
     responseFactory = () =>
       new Response('', {
         status: 200,
@@ -78,7 +90,7 @@ describe('host boundary transport', () => {
       'account-1',
       {
         format: 'csv',
-        project_id: 'project-1',
+        workspace_id: 'workspace-1',
         session_id: 'session-1',
         actor_type: 'agent',
         source: 'connector',
@@ -93,7 +105,7 @@ describe('host boundary transport', () => {
     const url = new URL(requests[0]!.url);
     expect(Object.fromEntries(url.searchParams)).toEqual({
       format: 'csv',
-      project_id: 'project-1',
+      workspace_id: 'workspace-1',
       session_id: 'session-1',
       actor_type: 'agent',
       source: 'connector',
@@ -109,5 +121,14 @@ describe('host boundary transport', () => {
     );
     expect(result.complete).toBe(false);
     expect(result.nextCursor).toBe('2026-08-07T12:00:00.000Z|event-1');
+
+    await boundary.downloadAccountAudit(
+      'account-1',
+      { format: 'csv', project_id: 'legacy-project-1' },
+      { backendUrl: 'https://api.example.test/v1', accessToken: 'token-1' },
+    );
+    const legacyUrl = new URL(requests[2]!.url);
+    expect(legacyUrl.searchParams.get('project_id')).toBe('legacy-project-1');
+    expect(legacyUrl.searchParams.has('workspace_id')).toBe(false);
   });
 });

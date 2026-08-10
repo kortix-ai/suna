@@ -14,7 +14,7 @@
 // custom policy can only ADD actions, never remove — so built-in roles behave
 // exactly as before and the union is inert until an admin creates a custom role.
 //
-// The pure-function helpers (deriveEffectiveProjectRole, scopeForActionV2,
+// The pure-function helpers (deriveEffectiveWorkspaceRole, scopeForActionV2,
 // customPolicyAllows) are exported so they can be unit-tested without a DB.
 
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -39,7 +39,7 @@ import { registerPrincipalScopedMemo } from './cache-invalidation';
 import {
   filterAccessibleResourceIds,
   isResourceAccessible,
-  loadProjectResourceGrants,
+  loadWorkspaceResourceGrants,
 } from './resource-grants';
 import type {
   AuthorizeResult,
@@ -48,12 +48,12 @@ import type {
 } from './engine';
 import {
   accountRoleAllows,
-  implicitProjectRoleForAccount,
-  maxProjectRole,
-  normalizeProjectRole,
+  implicitWorkspaceRoleForAccount,
+  maxWorkspaceRole,
+  normalizeWorkspaceRole,
   projectRoleAllows,
   type AccountRole,
-  type ProjectRole,
+  type WorkspaceRole,
 } from './role-perms';
 
 // ─── Pure helpers (exported for unit tests) ────────────────────────────────
@@ -92,21 +92,21 @@ export function scopeForActionV2(action: string): ActionScopeV2 {
  *   directRole  = project_members.project_role (or null when no direct row)
  *   groupRoles  = [] of project_group_grants.role rows for groups the user is in
  */
-export function deriveEffectiveProjectRole(
+export function deriveEffectiveWorkspaceRole(
   accountRole: AccountRole,
-  directRole: ProjectRole | null,
-  groupRoles: readonly ProjectRole[],
-): ProjectRole | null {
+  directRole: WorkspaceRole | null,
+  groupRoles: readonly WorkspaceRole[],
+): WorkspaceRole | null {
   // Owner/admin: implicit Manager on every project in the account. Group
   // and direct rows can't elevate further; nothing can demote below this.
-  const implicit = implicitProjectRoleForAccount(accountRole);
-  let best: ProjectRole | null = implicit;
+  const implicit = implicitWorkspaceRoleForAccount(accountRole);
+  let best: WorkspaceRole | null = implicit;
 
   if (directRole) {
-    best = best ? maxProjectRole(best, directRole) : directRole;
+    best = best ? maxWorkspaceRole(best, directRole) : directRole;
   }
   for (const r of groupRoles) {
-    best = best ? maxProjectRole(best, r) : r;
+    best = best ? maxWorkspaceRole(best, r) : r;
   }
   return best;
 }
@@ -328,18 +328,18 @@ registerPrincipalScopedMemo(resolveActorV2);
 // to every authorize() call the moment the clock crosses the line —
 // no waiting on the sweeper. (The sweeper just emits the audit
 // event afterwards; correctness doesn't depend on it.)
-const loadProjectRoleRows = ttlMemo({
+const loadWorkspaceRoleRows = ttlMemo({
   ttlMs: IAM_CACHE_TTL_MS,
-  keyFn: (userId: string, projectId: string, groupIds: string[]) =>
-    `${userId}|${projectId}|${groupIds.join(',')}`,
-  loader: async (userId: string, projectId: string, groupIds: string[]) => {
+  keyFn: (userId: string, workspaceId: string, groupIds: string[]) =>
+    `${userId}|${workspaceId}|${groupIds.join(',')}`,
+  loader: async (userId: string, workspaceId: string, groupIds: string[]) => {
     const [directRows, grantRows] = await Promise.all([
       db
         .select({ role: projectMembers.projectRole })
         .from(projectMembers)
         .where(
           and(
-            eq(projectMembers.projectId, projectId),
+            eq(projectMembers.workspaceId, workspaceId),
             eq(projectMembers.userId, userId),
             or(
               isNull(projectMembers.expiresAt),
@@ -354,7 +354,7 @@ const loadProjectRoleRows = ttlMemo({
             .from(projectGroupGrants)
             .where(
               and(
-                eq(projectGroupGrants.projectId, projectId),
+                eq(projectGroupGrants.workspaceId, workspaceId),
                 inArray(projectGroupGrants.groupId, groupIds),
                 or(
                   isNull(projectGroupGrants.expiresAt),
@@ -367,9 +367,9 @@ const loadProjectRoleRows = ttlMemo({
     return {
       // Normalize at the DB-read boundary so a legacy `viewer` row resolves
       // to `user` (the tier it was folded into) rather than an unknown role.
-      directRole: normalizeProjectRole(directRows[0]?.role),
+      directRole: normalizeWorkspaceRole(directRows[0]?.role),
       groupRoles: grantRows.flatMap((r) => {
-        const role = normalizeProjectRole(r.role);
+        const role = normalizeWorkspaceRole(r.role);
         return role ? [role] : [];
       }),
     };
@@ -378,23 +378,23 @@ const loadProjectRoleRows = ttlMemo({
   // see access on their next request, not after a TTL window.
   shouldCache: (v) => v.directRole !== null || v.groupRoles.length > 0,
 });
-// Key is `${userId}|${projectId}|…` → bust per principal on project-member /
+// Key is `${userId}|${workspaceId}|…` → bust per principal on project-member /
 // project-group-grant changes.
-registerPrincipalScopedMemo(loadProjectRoleRows);
+registerPrincipalScopedMemo(loadWorkspaceRoleRows);
 
-async function loadEffectiveProjectRole(
+async function loadEffectiveWorkspaceRole(
   actor: ResolvedActorV2,
   userId: string,
-  projectId: string,
-): Promise<ProjectRole | null> {
+  workspaceId: string,
+): Promise<WorkspaceRole | null> {
   const accountRole = actor.accountRole ?? 'member';
 
   // Owner/admin carry implicit Manager — the per-project rows can only tie,
   // never exceed it (manager is the top rank), so skip the lookups entirely.
-  if (implicitProjectRoleForAccount(accountRole)) return 'manager';
+  if (implicitWorkspaceRoleForAccount(accountRole)) return 'manager';
 
-  const rows = await loadProjectRoleRows(userId, projectId, actor.groupIds);
-  return deriveEffectiveProjectRole(accountRole, rows.directRole, rows.groupRoles);
+  const rows = await loadWorkspaceRoleRows(userId, workspaceId, actor.groupIds);
+  return deriveEffectiveWorkspaceRole(accountRole, rows.directRole, rows.groupRoles);
 }
 
 /**
@@ -406,15 +406,15 @@ async function loadEffectiveProjectRole(
 // A token's project binding is immutable after mint, so caching it is safe;
 // "token row missing" is never cached (a just-minted token must work, and
 // revocation is enforced upstream by validateAccountToken at auth time).
-const loadTokenProjectBinding = ttlMemo({
+const loadTokenWorkspaceBinding = ttlMemo({
   ttlMs: IAM_CACHE_TTL_MS,
   keyFn: (tokenId: string) => tokenId,
   loader: async (
     tokenId: string,
-  ): Promise<{ projectId: string | null; agentGrant: AgentGrant | null; serviceAccountId: string | null } | null> => {
+  ): Promise<{ workspaceId: string | null; agentGrant: AgentGrant | null; serviceAccountId: string | null } | null> => {
     const [row] = await db
       .select({
-        projectId: accountTokens.projectId,
+        workspaceId: accountTokens.workspaceId,
         agentGrant: accountTokens.agentGrant,
         serviceAccountId: accountTokens.serviceAccountId,
       })
@@ -422,17 +422,17 @@ const loadTokenProjectBinding = ttlMemo({
       .where(eq(accountTokens.tokenId, tokenId))
       .limit(1);
     return row
-      ? { projectId: row.projectId, agentGrant: row.agentGrant ?? null, serviceAccountId: row.serviceAccountId ?? null }
+      ? { workspaceId: row.workspaceId, agentGrant: row.agentGrant ?? null, serviceAccountId: row.serviceAccountId ?? null }
       : null;
   },
   shouldCache: (row) => row !== null,
 });
 
-type TokenBinding = NonNullable<Awaited<ReturnType<typeof loadTokenProjectBinding>>>;
+type TokenBinding = NonNullable<Awaited<ReturnType<typeof loadTokenWorkspaceBinding>>>;
 
 /**
  * Token project-scope, computed from the already-loaded binding (no extra
- * query). A session/PAT token bound to a project (binding.projectId) is refused
+ * query). A session/PAT token bound to a project (binding.workspaceId) is refused
  * off that project and on account-level requests. A direct service-account
  * bearer has NO account_tokens row (binding null) and is scoped by its own
  * policies, not a token — so it's "in scope" here. A null binding for a
@@ -447,15 +447,15 @@ export function computeTokenScope(
 ): boolean {
   if (!actingTokenId) return true; // JWT/browser — no token-scope restriction
   if (!binding) return actorKind === 'service_account'; // direct SA bearer vs. revoked token
-  if (!binding.projectId) return true; // unscoped PAT → falls through to perms
+  if (!binding.workspaceId) return true; // unscoped PAT → falls through to perms
   if (scope === 'account') return false; // project-bound token can't do account actions
   if (target.type !== 'project') return false;
-  return target.id === binding.projectId; // only its bound project
+  return target.id === binding.workspaceId; // only its bound project
 }
 
 // A project action that an agent grant SHOULD gate. The coarse membership
-// actions (read/write, what loadProjectForUser maps onto) are exempt: a route
-// that does loadProjectForUser('write') is just checking membership tier, and a
+// actions (read/write, what loadWorkspaceForUser maps onto) are exempt: a route
+// that does loadWorkspaceForUser('write') is just checking membership tier, and a
 // leaf-scoped agent (e.g. kortixCli=['project.gitops.push']) must still pass it —
 // the route's own leaf assertAuthorized is what the grant gates. Every OTHER
 // project action (gitops.*, secret.*, trigger.*, deploy, members.manage, …) is a
@@ -529,7 +529,7 @@ export async function authorizeV2(
   // scope, the agent grant, AND the standing-identity service account. JWT/
   // browser requests have no actingTokenId, so they skip this entirely (the
   // common dashboard path resolves the actor directly, unchanged).
-  const binding = actingTokenId ? await loadTokenProjectBinding(actingTokenId) : null;
+  const binding = actingTokenId ? await loadTokenWorkspaceBinding(actingTokenId) : null;
 
   // STANDING IDENTITY (opt-in): an agent-session token bound to a service account
   // authorizes AS that SA — but ONLY once it has a role; otherwise it falls back
@@ -573,7 +573,7 @@ export async function authorizeV2(
     return { allowed: false, reason: 'account_role_insufficient' };
   }
 
-  // Project scope. The action requires a project target.
+  // Workspace scope. The action requires a project target.
   if (effectiveTarget.type !== 'project') {
     return { allowed: false, reason: 'project_target_required' };
   }
@@ -587,7 +587,7 @@ export async function authorizeV2(
   // member-role resolution entirely for it.
   const effective =
     actor.kind === 'member'
-      ? await loadEffectiveProjectRole(actor, userId, effectiveTarget.id)
+      ? await loadEffectiveWorkspaceRole(actor, userId, effectiveTarget.id)
       : null;
   let reason: string | null = null;
   if (effective && projectRoleAllows(effective, action)) reason = 'project_role';
@@ -610,9 +610,9 @@ export async function authorizeV2(
     effectiveTarget.type === 'project' &&
     effectiveTarget.resource &&
     actor.kind === 'member' &&
-    !implicitProjectRoleForAccount(actor.accountRole ?? 'member')
+    !implicitWorkspaceRoleForAccount(actor.accountRole ?? 'member')
   ) {
-    const grants = await loadProjectResourceGrants(effectiveTarget.id, effectiveTarget.resource.type);
+    const grants = await loadWorkspaceResourceGrants(effectiveTarget.id, effectiveTarget.resource.type);
     if (!isResourceAccessible(grants.get(effectiveTarget.resource.id), userId, actor.groupIds)) {
       return { allowed: false, reason: 'resource_scope_insufficient' };
     }
@@ -641,24 +641,24 @@ export async function authorizeV2(
  * memory. Owner/admins, super-admins, and service accounts see everything (they
  * bypass per-resource scoping, exactly like authorizeV2's fold).
  */
-export async function filterAccessibleProjectResources(
+export async function filterAccessibleWorkspaceResources(
   userId: string,
   accountId: string,
-  projectId: string,
+  workspaceId: string,
   resourceType: 'agent' | 'skill' | 'secret',
   resourceIds: string[],
   actingTokenId?: string,
 ): Promise<string[]> {
   if (resourceIds.length === 0) return [];
-  const binding = actingTokenId ? await loadTokenProjectBinding(actingTokenId) : null;
+  const binding = actingTokenId ? await loadTokenWorkspaceBinding(actingTokenId) : null;
   const { actor } = await resolveActingActor(binding, userId, accountId);
   if (!actor) return [];
   if (actor.isSuperAdmin) return resourceIds;
   // SAs are governed by their own policies/agentGrant, not the human fold; and
   // owner/admins keep implicit Manager — both see the full list.
   if (actor.kind !== 'member') return resourceIds;
-  if (implicitProjectRoleForAccount(actor.accountRole ?? 'member')) return resourceIds;
-  return filterAccessibleResourceIds(projectId, resourceType, resourceIds, userId, actor.groupIds);
+  if (implicitWorkspaceRoleForAccount(actor.accountRole ?? 'member')) return resourceIds;
+  return filterAccessibleResourceIds(workspaceId, resourceType, resourceIds, userId, actor.groupIds);
 }
 
 // ─── List accessible resources ─────────────────────────────────────────────
@@ -670,7 +670,7 @@ export async function filterAccessibleProjectResources(
  * V2 only supports projectresource type — sandboxes/triggers/channels
  * are listed via their owning project, not standalone.
  */
-export async function listAccessibleProjectsV2(
+export async function listAccessibleWorkspacesV2(
   userId: string,
   accountId: string,
   action: string,
@@ -684,7 +684,7 @@ export async function listAccessibleProjectsV2(
   // Standing identity (opt-in): an activated agent-session SA lists the SA's
   // accessible projects; a role-less agent SA falls back to the launching user.
   // (Mirror authorizeV2 via the shared resolver.)
-  const binding = actingTokenId ? await loadTokenProjectBinding(actingTokenId) : null;
+  const binding = actingTokenId ? await loadTokenWorkspaceBinding(actingTokenId) : null;
   const { actor, principalId } = await resolveActingActor(binding, userId, accountId);
   if (!actor) return { mode: 'none' };
 
@@ -695,16 +695,16 @@ export async function listAccessibleProjectsV2(
   if (actingTokenId) {
     if (!binding) {
       if (actor.kind !== 'service_account') return { mode: 'none' };
-    } else if (binding.projectId) {
+    } else if (binding.workspaceId) {
       // Confirm access to the bound project; reuse authorize (re-derives the SA).
       const v = await authorizeV2(
         userId,
         accountId,
         action,
-        { type: 'project', id: binding.projectId },
+        { type: 'project', id: binding.workspaceId },
         actingTokenId,
       );
-      return v.allowed ? { mode: 'allow_only', allowed: new Set([binding.projectId]) } : { mode: 'none' };
+      return v.allowed ? { mode: 'allow_only', allowed: new Set([binding.workspaceId]) } : { mode: 'none' };
     }
   }
 
@@ -722,7 +722,7 @@ export async function listAccessibleProjectsV2(
 
   // Owner/admin: implicit Manager on every project. Allowed unless the
   // action isn't in Manager's set.
-  if (implicitProjectRoleForAccount(accountRole)) {
+  if (implicitWorkspaceRoleForAccount(accountRole)) {
     return projectRoleAllows('manager', action)
       ? { mode: 'all' }
       : { mode: 'none' };
@@ -742,11 +742,11 @@ export async function listAccessibleProjectsV2(
 
   const directRows = await db
     .select({
-      projectId: projectMembers.projectId,
+      workspaceId: projectMembers.workspaceId,
       role: projectMembers.projectRole,
     })
     .from(projectMembers)
-    .innerJoin(projects, eq(projects.projectId, projectMembers.projectId))
+    .innerJoin(projects, eq(projects.workspaceId, projectMembers.workspaceId))
     .where(
       and(
         // principalId, not userId: an SA session lists the SA's memberships
@@ -757,11 +757,11 @@ export async function listAccessibleProjectsV2(
       ),
     );
 
-  let groupRows: Array<{ projectId: string; role: ProjectRole }> = [];
+  let groupRows: Array<{ workspaceId: string; role: WorkspaceRole }> = [];
   if (actor.groupIds.length > 0) {
     const rows = await db
       .select({
-        projectId: projectGroupGrants.projectId,
+        workspaceId: projectGroupGrants.workspaceId,
         role: projectGroupGrants.role,
       })
       .from(projectGroupGrants)
@@ -775,25 +775,25 @@ export async function listAccessibleProjectsV2(
     groupRows = rows.flatMap((r) => {
       // Normalize at the DB-read boundary: a legacy `viewer` grant folds into
       // `user`. Drop anything unrecognized rather than feed it to the rank map.
-      const role = normalizeProjectRole(r.role);
-      return role ? [{ projectId: r.projectId, role }] : [];
+      const role = normalizeWorkspaceRole(r.role);
+      return role ? [{ workspaceId: r.workspaceId, role }] : [];
     });
   }
 
   // Merge by max-role per project, then filter by action.
-  const byProject = new Map<string, ProjectRole>();
+  const byWorkspace = new Map<string, WorkspaceRole>();
   for (const r of directRows) {
-    const role = normalizeProjectRole(r.role);
-    if (role) byProject.set(r.projectId, role);
+    const role = normalizeWorkspaceRole(r.role);
+    if (role) byWorkspace.set(r.workspaceId, role);
   }
   for (const r of groupRows) {
-    const existing = byProject.get(r.projectId);
-    byProject.set(r.projectId, existing ? maxProjectRole(existing, r.role) : r.role);
+    const existing = byWorkspace.get(r.workspaceId);
+    byWorkspace.set(r.workspaceId, existing ? maxWorkspaceRole(existing, r.role) : r.role);
   }
 
   const allowed = new Set<string>();
-  for (const [projectId, role] of byProject) {
-    if (projectRoleAllows(role, action)) allowed.add(projectId);
+  for (const [workspaceId, role] of byWorkspace) {
+    if (projectRoleAllows(role, action)) allowed.add(workspaceId);
   }
   // Fold in DB custom roles (union): an account-scoped policy granting this
   // action covers every project; a project-scoped one adds just its project —

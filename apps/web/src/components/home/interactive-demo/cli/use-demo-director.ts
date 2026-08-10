@@ -4,7 +4,7 @@ import { useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDemoConversation, type DemoConversation } from '../chat/use-demo-conversation';
 import { defaultDemoPage, isDemoPageEnabled } from '../page-flags';
-import type { ActiveModel, PageId, ProjectCard, ProjectStatus } from '../types';
+import type { ActiveModel, PageId, WorkspaceCard, WorkspaceStatus } from '../types';
 import { CHAT_PROMPT, DEFAULT_MODEL, SCRIPT, SETTLED, type Beat, type DirectorApi } from './script';
 import { cmdLine, type Line } from './terminal';
 
@@ -14,7 +14,7 @@ export type Block = { cmd: Line; out: Line[]; note?: boolean };
 export type DemoDirector = {
   /* web-synced state — the pages render from these */
   activePage: PageId;
-  projects: ProjectCard[];
+  workspaces: WorkspaceCard[];
   activeModel: ActiveModel;
   connectedProviders: string[];
   connectors: string[];
@@ -61,7 +61,7 @@ export function useDemoDirector(): DemoDirector {
   const reduced = useReducedMotion();
 
   const [activePage, setActivePage] = useState<PageId>(defaultDemoPage);
-  const [projects, setProjects] = useState<ProjectCard[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceCard[]>([]);
   const [activeModel, setActiveModel] = useState<ActiveModel>(DEFAULT_MODEL);
   const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
   const [connectors, setConnectors] = useState<string[]>([]);
@@ -96,11 +96,11 @@ export function useDemoDirector(): DemoDirector {
       nav: (page) => {
         if (isDemoPageEnabled(page)) setActivePage(page);
       },
-      addProject: (project) => setProjects((prev) => [...prev, project]),
-      patchProject: (name, patch) =>
-        setProjects((prev) => prev.map((p) => (p.name === name ? { ...p, ...patch } : p))),
-      setProjectStatus: (name, status: ProjectStatus) =>
-        setProjects((prev) => prev.map((p) => (p.name === name ? { ...p, status } : p))),
+      addWorkspace: (workspace) => setWorkspaces((prev) => [...prev, workspace]),
+      patchWorkspace: (name, patch) =>
+        setWorkspaces((prev) => prev.map((p) => (p.name === name ? { ...p, ...patch } : p))),
+      setWorkspaceStatus: (name, status: WorkspaceStatus) =>
+        setWorkspaces((prev) => prev.map((p) => (p.name === name ? { ...p, status } : p))),
       connectConnector: (name) =>
         setConnectors((prev) => (prev.includes(name) ? prev : [...prev, name])),
       connectProvider: (domain) =>
@@ -117,7 +117,7 @@ export function useDemoDirector(): DemoDirector {
 
   const resetState = useCallback(() => {
     setScrollback([]);
-    setProjects([]);
+    setWorkspaces([]);
     setActiveModel(DEFAULT_MODEL);
     setConnectedProviders([]);
     setConnectors([]);
@@ -147,7 +147,7 @@ export function useDemoDirector(): DemoDirector {
   useEffect(() => {
     if (!reduced) return;
     setScrollback(STATIC_BLOCKS);
-    setProjects(SETTLED.projects);
+    setWorkspaces(SETTLED.workspaces);
     setActiveModel(SETTLED.model);
     setConnectedProviders(SETTLED.connectedProviders);
     setConnectors(SETTLED.connectors);
@@ -226,7 +226,7 @@ export function useDemoDirector(): DemoDirector {
         await sleep(SPEED.hold);
         if (cancelled) return;
         resetState();
-        api.nav('projects');
+        api.nav('workspaces');
         await sleep(SPEED.afterClear);
       }
     }
@@ -240,7 +240,7 @@ export function useDemoDirector(): DemoDirector {
 
   return {
     activePage,
-    projects,
+    workspaces,
     activeModel,
     connectedProviders,
     connectors,

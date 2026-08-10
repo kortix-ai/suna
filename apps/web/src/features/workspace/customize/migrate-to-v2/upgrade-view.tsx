@@ -23,8 +23,8 @@ import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import {
   ArrowCircleUpIcon as ArrowUpCircle,
   CheckCircleIcon as CircleCheckBig,
@@ -33,8 +33,8 @@ import { useState } from 'react';
 
 import CustomizeSectionWrapper from '../sections/component/section-wrapper';
 import type { ManifestVersion } from './manifest-version';
-import { useProjectManifestVersion } from './manifest-version';
-import { type ProjectUpgrade, applicableUpgrades, buildOneOffUpgradePrompt } from './upgrade-defs';
+import { useWorkspaceManifestVersion } from './manifest-version';
+import { type WorkspaceUpgrade, applicableUpgrades, buildOneOffUpgradePrompt } from './upgrade-defs';
 import { useRunUpgrade } from './use-run-upgrade';
 
 /** Presentational only — no data fetching, so every state renders under
@@ -75,11 +75,11 @@ export function UpgradesViewContent({
             icon={CircleCheckBig}
             size="sm"
             title="You're up to date"
-            description="No pending platform upgrades for this project."
+            description="No pending platform upgrades for this workspace."
           />
         ) : (
           <ul className="space-y-2">
-            {upgrades.map((upgrade: ProjectUpgrade) => (
+            {upgrades.map((upgrade: WorkspaceUpgrade) => (
               <li
                 key={upgrade.id}
                 className="border-kortix-base/30 bg-kortix-base/[0.06] shadow-kortix-base/20 hover:border-kortix-base/45 hover:bg-kortix-base/[0.09] flex items-center gap-3 rounded-md border px-4 py-3 shadow-md transition-colors"
@@ -121,7 +121,7 @@ export function UpgradesViewContent({
         <Label>One-off upgrade</Label>
         <div className="bg-popover space-y-3 rounded-md border px-4 py-5">
           <p className="text-muted-foreground text-xs text-pretty">
-            Describe a single change to this project. An agent session makes it, validates, and
+            Describe a single change to this workspace. An agent session makes it, validates, and
             opens a change request — it never merges on its own.
           </p>
           {canWrite ? (
@@ -151,10 +151,10 @@ export function UpgradesViewContent({
   );
 }
 
-export function UpgradesView({ projectId }: { projectId: string }) {
-  const { version } = useProjectManifestVersion(projectId);
-  const run = useRunUpgrade(projectId);
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+export function UpgradesView({ workspaceId }: { workspaceId: string }) {
+  const { version } = useWorkspaceManifestVersion(workspaceId);
+  const run = useRunUpgrade(workspaceId);
+  const canWrite = useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_WRITE).allowed === true;
   return (
     <UpgradesViewContent
       version={version}

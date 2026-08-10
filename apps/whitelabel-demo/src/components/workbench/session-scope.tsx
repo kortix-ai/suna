@@ -46,24 +46,24 @@ const ROW_CALL: Partial<Record<ScopeRowKey, CallSnippetId>> = {
 };
 
 export function SessionScope({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   const session = useQuery({
-    queryKey: qk.session(projectId, sessionId),
+    queryKey: qk.session(workspaceId, sessionId),
     queryFn: () =>
-      kortix.session(projectId, sessionId).get({ showErrors: false }),
+      kortix.session(workspaceId, sessionId).get({ showErrors: false }),
     retry: false,
   });
   const scope = useQuery({
-    queryKey: qk.sessionScope(projectId, sessionId),
-    queryFn: () => kortix.session(projectId, sessionId).scope(),
+    queryKey: qk.sessionScope(workspaceId, sessionId),
+    queryFn: () => kortix.session(workspaceId, sessionId).scope(),
     retry: false,
   });
-  const connectors = useConnectorBindingChoices(projectId);
+  const connectors = useConnectorBindingChoices(workspaceId);
 
   if (session.isLoading || scope.isLoading) {
     return (
@@ -137,7 +137,7 @@ export function SessionScope({
               </div>
               {row.control === 'model' && (
                 <div className="-ml-2 mt-0.5">
-                  <ModelSwitcher projectId={projectId} sessionId={sessionId} />
+                  <ModelSwitcher workspaceId={workspaceId} sessionId={sessionId} />
                 </div>
               )}
               {row.value !== null && (
@@ -152,7 +152,7 @@ export function SessionScope({
                 <div className="-ml-2 mt-1">
                   <CallSnippet
                     id={ROW_CALL[row.key]!}
-                    context={{ projectId, sessionId, agent: agentName }}
+                    context={{ workspaceId, sessionId, agent: agentName }}
                   />
                 </div>
               )}
@@ -170,7 +170,7 @@ export function SessionScope({
         <div className="-ml-2 mt-1">
           <CallSnippet
             id="session.rescope"
-            context={{ projectId, sessionId }}
+            context={{ workspaceId, sessionId }}
           />
         </div>
       </div>

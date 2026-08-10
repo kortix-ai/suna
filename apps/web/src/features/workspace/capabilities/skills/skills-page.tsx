@@ -16,10 +16,10 @@ import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
+import { getWorkspaceDetail } from '@kortix/sdk';
+import { contract, qk, useWorkspaceAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -39,15 +39,15 @@ type ScopeFilter = SkillScope | 'all';
 
 const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
   { value: 'all', label: 'All' },
-  { value: 'project', label: 'Project' },
+  { value: 'workspace', label: 'Workspace' },
   { value: 'kortix', label: 'Kortix' },
 ];
 
 /**
  * /projects/[id]/skills — the standalone Skills catalog. Reads
- * `config.skills` off the same `qk.project.detail(id)` query
+ * `config.skills` off the same `qk.workspace.detail(id)` query
  * `ConfigEntityView` (Customize) reads, so the two surfaces cannot disagree
- * about what a project's skills are.
+ * about what a workspace's skills are.
  *
  * Card click opens `EntityDetailModal` (file tree + rendered markdown) for
  * the clicked skill. `selectedPath` is looked up against the unfiltered
@@ -59,21 +59,21 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
  * editing the repo on a branch, not a form here. The empty state adds Docs as
  * its secondary, which is all a reader without write permission gets.
  */
-export function SkillsPage({ projectId }: { projectId: string }) {
-  // `accountId` skips useProjectCan's own getProject and lets the IAM probe
+export function SkillsPage({ workspaceId }: { workspaceId: string }) {
+  // `accountId` skips useWorkspaceCan's own getWorkspace and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
-  const accountId = useProjectAccountId(projectId);
+  const accountId = useWorkspaceAccountId(workspaceId);
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SKILL_WRITE, { accountId }).allowed === true;
-  const configure = useConfigureThread(projectId);
+    useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_SKILL_WRITE, { accountId }).allowed === true;
+  const configure = useConfigureThread(workspaceId);
 
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
     ...contract('config'),
   });
 
@@ -215,7 +215,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         ))}
       </CatalogGrid>
       <EntityDetailModal
-        projectId={projectId}
+        workspaceId={workspaceId}
         entity={detail.record}
         kind="skill"
         open={detail.open}

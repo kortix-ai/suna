@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveSessionAgentName } from '../projects/lib/sessions';
+import { resolveSessionAgentName } from '../workspaces/lib/sessions';
 
 describe('resolveSessionAgentName', () => {
   test('uses an explicit concrete agent before every default', () => {

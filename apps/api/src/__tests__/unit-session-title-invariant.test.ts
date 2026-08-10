@@ -4,9 +4,9 @@
  * prompt, at the first moment that prompt's text is known server-side.
  *
  * There are exactly two such moments, and therefore exactly one set of hooks:
- *   - create-with-prompt  → projects/lib/sessions.ts
+ *   - create-with-prompt  → workspaces/lib/sessions.ts
  *   - first HTTP prompt   → sandbox-proxy/routes/preview.ts,
- *                           projects/session-lifecycle/engine.ts (server-side
+ *                           workspaces/session-lifecycle/engine.ts (server-side
  *                           delivery, transport-independent)
  *
  * These tests fail the build when a new create path, a new prompt transport, or
@@ -49,11 +49,11 @@ function offenders(pattern: RegExp, allow: readonly string[]): string[] {
 describe('session-title invariant', () => {
   test('A — project_sessions is INSERTed only by the sanctioned create paths', () => {
     // A fourth INSERT is a new create path: it must run through
-    // createProjectSession (which titles) or justify itself here.
+    // createWorkspaceSession (which titles) or justify itself here.
     expect(
       offenders(/\.insert\(\s*projectSessions\b/, [
-        'projects/lib/sessions.ts',
-        'projects/suna-migration/suna-migration-phases.ts',
+        'workspaces/lib/sessions.ts',
+        'workspaces/suna-migration/suna-migration-phases.ts',
       ]),
     ).toEqual([]);
   });
@@ -63,28 +63,28 @@ describe('session-title invariant', () => {
     // catches; the hook set is documented here, in one enforced place.
     expect(
       offenders(/from '[^']*session-title-generate'/, [
-        'projects/lib/sessions.ts',
-        'projects/session-lifecycle/engine.ts',
+        'workspaces/lib/sessions.ts',
+        'workspaces/session-lifecycle/engine.ts',
         'sandbox-proxy/routes/preview.ts',
         // Turn-end second-chance retry: a session whose only prompt was baked
         // in-guest (KORTIX_INITIAL_PROMPT) never crosses another titling hook.
         // The generator stays the single writer (needsTitle + CAS), so this is
         // a retry of Hook 1, not a new title author.
-        'projects/routes/r4.ts',
+        'workspaces/routes/r4.ts',
       ]),
     ).toEqual([]);
   });
 
   test('C — metadata.name has a single writer', () => {
     const writesSessions = /\.(insert|update)\(\s*projectSessions\b/;
-    const writesName = /(?:projectSessionMetadataMerge\(\s*\{|metadata\s*:\s*\{)[^}]*\bname\s*:/s;
+    const writesName = /(?:workspaceSessionMetadataMerge\(\s*\{|metadata\s*:\s*\{)[^}]*\bname\s*:/s;
     const allow = [
       // THE writer.
-      'projects/session-title-generate.ts',
+      'workspaces/session-title-generate.ts',
       // body.name — the documented "I already know the title" escape hatch.
-      'projects/lib/sessions.ts',
+      'workspaces/lib/sessions.ts',
       // carries the legacy Suna thread title onto the migrated row.
-      'projects/suna-migration/suna-migration-phases.ts',
+      'workspaces/suna-migration/suna-migration-phases.ts',
     ];
     const hits = sourceFiles().filter((rel) => {
       if (allow.includes(rel)) return false;
@@ -101,13 +101,13 @@ describe('session-title invariant', () => {
     // file to this list.
     expect(
       offenders(/\binitial_prompt\s*:/, [
-        'projects/lib/triggers.ts',
+        'workspaces/lib/triggers.ts',
         'channels/slack/session.ts',
         'channels/teams/session.ts',
         'channels/telegram-webhook.ts',
-        'projects/routes/r2.ts',
-        'projects/routes/r10.ts',
-        'projects/lib/sessions.ts',
+        'workspaces/routes/r2.ts',
+        'workspaces/routes/r10.ts',
+        'workspaces/lib/sessions.ts',
       ]),
     ).toEqual([]);
   });
@@ -124,16 +124,16 @@ describe('session-title invariant', () => {
     expect(
       offenders(/\bdeleteGatewayKey\b/, [
         'llm-gateway/gateway-keys.ts',
-        'projects/session-title-generate.ts',
+        'workspaces/session-title-generate.ts',
       ]),
     ).toEqual([]);
   });
 
   test('E — the warm create that bypasses executeCreateSession stays prompt-free', () => {
-    // r7's warm coordinator calls createProjectSession directly. It carries no
+    // r7's warm coordinator calls createWorkspaceSession directly. It carries no
     // prompt today, so Hook 1 no-ops there — but it must never quietly acquire
     // one without the titling question being asked.
-    const src = readFileSync(join(SRC, 'projects/routes/r7.ts'), 'utf8');
+    const src = readFileSync(join(SRC, 'workspaces/routes/r7.ts'), 'utf8');
     const at = src.indexOf('create: async (metadata) => {');
     expect(at).toBeGreaterThan(-1);
     const open = src.indexOf('body: {', at);

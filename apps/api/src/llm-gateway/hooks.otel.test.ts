@@ -36,7 +36,7 @@ function baseTrace(overrides: Partial<GatewayTrace> = {}): GatewayTrace {
     startedAt: new Date().toISOString(),
     accountId: 'acc_1',
     actorUserId: 'user_1',
-    projectId: 'proj_1',
+    workspaceId: 'proj_1',
     sessionId: 'sess_1',
     requestedModel: 'claude-sonnet',
     resolvedModel: 'claude-sonnet-4-5',

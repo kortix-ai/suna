@@ -17,7 +17,7 @@ import {
   validateHostName,
 } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
-import { ensureDefaultProjectBinding } from '../project-bind.ts';
+import { ensureDefaultWorkspaceBinding } from '../workspace-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { webDashboardUrl } from '../web-url.ts';
@@ -41,11 +41,12 @@ Options:
                     with a token. Useful for CI or headless boxes.
   --account <slug>  Pick the active account non-interactively (skips the
                     post-login "Select your active account" prompt).
-  --no-project      Skip the default-project binding step at the end.
+  --no-workspace    Skip the default-workspace binding step at the end.
+  --no-project      Deprecated alias for --no-workspace.
   -h, --help        Show this help.
 
 A fresh login walks the hierarchy DOWN: host ✓ → account (auto when you
-belong to one, otherwise a prompt) → default project (prompt).
+belong to one, otherwise a prompt) → default workspace (prompt).
 
 Examples:
   kortix login
@@ -58,16 +59,16 @@ interface LoginFlags {
   api?: string;
   host?: string;
   account?: string;
-  noProject: boolean;
+  noWorkspace: boolean;
   help: boolean;
 }
 
 function parseFlags(argv: string[]): LoginFlags {
-  const f: LoginFlags = { help: false, noProject: false };
+  const f: LoginFlags = { help: false, noWorkspace: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '-h' || a === '--help') f.help = true;
-    else if (a === '--no-project') f.noProject = true;
+    else if (a === '--no-workspace' || a === '--no-project') f.noWorkspace = true;
     else if (a === '--token') {
       const next = argv[i + 1];
       if (!next) throw new Error('--token requires a value');
@@ -117,7 +118,7 @@ export async function runLogin(argv: string[]): Promise<number> {
     token: flags.token,
     api: flags.api,
     account: flags.account,
-    noProject: flags.noProject,
+    noWorkspace: flags.noWorkspace,
   });
 }
 
@@ -130,8 +131,8 @@ export interface PerformLoginOptions {
   api?: string;
   /** Pick the active account non-interactively (slug or id). */
   account?: string;
-  /** Skip the default-project binding step at the end. */
-  noProject: boolean;
+  /** Skip the default-workspace binding step at the end. */
+  noWorkspace: boolean;
 }
 
 /**
@@ -139,7 +140,7 @@ export interface PerformLoginOptions {
  * alias and the `kortix hosts login` subcommand. The caller resolves the
  * target host name; everything else — API base resolution, the already
  * logged-in short-circuit, the browser/PAT flow, token verification,
- * persistence, and the default-project binding — lives here so the two
+ * persistence, and the default-workspace binding — lives here so the two
  * entry points can never drift.
  */
 export async function performLogin(opts: PerformLoginOptions): Promise<number> {
@@ -193,7 +194,7 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   }
 
   // Persist the verified token immediately so the host is authenticated even
-  // if the account/project selection below is interrupted (Ctrl+C on the
+  // if the account/workspace selection below is interrupted (Ctrl+C on the
   // prompt still leaves you signed in).
   saveAuthForHost(
     hostName,
@@ -218,7 +219,7 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
 
   // The account step of the funnel: exactly one → auto-select; several →
   // prompt (or honor --account). Persist the active account's display fields
-  // (and reconcile any default project) so the context block + `accounts ls`
+  // (and reconcile any default workspace) so the context block + `accounts ls`
   // read correctly offline.
   const selected = await resolveLoginAccount(me.accounts, opts.account);
   if (selected) {
@@ -233,13 +234,13 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   process.stdout.write(`${C.dim}  Stored at ${authFileLocation()}${C.reset}\n`);
 
   // The always-bound invariant: a fresh login ends with a global default
-  // project so every later command Just Works from any directory.
-  if (!opts.noProject) {
+  // workspace so every later command works from any directory.
+  if (!opts.noWorkspace) {
     const saved = loadAuthForHost(hostName);
     if (saved?.token) {
       process.stdout.write('\n');
-      await ensureDefaultProjectBinding(saved, {
-        promptTitle: 'Pick your default project (used anywhere no directory is linked)',
+      await ensureDefaultWorkspaceBinding(saved, {
+        promptTitle: 'Pick your default workspace (used anywhere no directory is linked)',
       });
     }
   }

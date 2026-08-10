@@ -9,8 +9,7 @@
  * Connector maps it onto a CallResult.
  *
  * The computer helpers (`listAccountComputers`, `executeComputerCall`) sit here
- * too: they resolve a machine selector → tunnelId (scoped to the account) and
- * delegate to `executeTunnelRpc`. See docs/specs/computer-connector.md.
+ * too. A connector profile supplies an allowlist of account-owned tunnel ids.
  */
 import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
 import {
@@ -19,7 +18,7 @@ import {
   TunnelMethods,
   TunnelRelayError,
 } from 'agent-tunnel';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { notifyPermissionRequest } from '../routes/permission-requests';
 import { buildRequestSummary, finishAuditLog, startAuditLog } from './audit-logger';
@@ -31,10 +30,21 @@ import { isValidCapability, validateScope as validateScopeInput } from './scope-
 /** Outcome of a single relayed tunnel RPC. The route + the connector each map this. */
 export type TunnelRpcOutcome =
   | { ok: true; result: unknown }
-  | { ok: false; kind: 'permission_required'; requestId: string; message: string }
+  | {
+      ok: false;
+      kind: 'permission_required';
+      requestId: string;
+      message: string;
+    }
   | { ok: false; kind: 'rate_limited'; retryAfterMs?: number; message: string }
   | { ok: false; kind: 'bad_request'; message: string }
-  | { ok: false; kind: 'error'; code: number; httpStatus: 500 | 502 | 504; message: string };
+  | {
+      ok: false;
+      kind: 'error';
+      code: number;
+      httpStatus: 500 | 502 | 504;
+      message: string;
+    };
 
 /** Map a tunnel method to its capability (explicit table first, then prefix). */
 export function resolveCapability(method: string): TunnelCapability | null {
@@ -61,7 +71,7 @@ export function resolveCapability(method: string): TunnelCapability | null {
 export async function executeTunnelRpc(input: {
   tunnelId: string;
   accountId: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
   method: string;
@@ -85,10 +95,18 @@ export async function executeTunnelRpc(input: {
 
   const capability = resolveCapability(method);
   if (!capability) {
-    return { ok: false, kind: 'bad_request', message: `Unknown method: ${method}` };
+    return {
+      ok: false,
+      kind: 'bad_request',
+      message: `Unknown method: ${method}`,
+    };
   }
   if (!isValidCapability(capability)) {
-    return { ok: false, kind: 'bad_request', message: `Invalid capability: ${capability}` };
+    return {
+      ok: false,
+      kind: 'bad_request',
+      message: `Invalid capability: ${capability}`,
+    };
   }
 
   const capPrefix = method.indexOf('.');
@@ -134,7 +152,7 @@ export async function executeTunnelRpc(input: {
   const auditLogId = await startAuditLog({
     tunnelId,
     accountId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     sessionId: input.sessionId,
     actorUserId: input.actorUserId,
     actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
@@ -176,7 +194,13 @@ export async function executeTunnelRpc(input: {
           ? 504
           : 500;
 
-    return { ok: false, kind: 'error', code: errorCode, httpStatus, message: errorMessage };
+    return {
+      ok: false,
+      kind: 'error',
+      code: errorCode,
+      httpStatus,
+      message: errorMessage,
+    };
   }
 
   try {
@@ -206,7 +230,7 @@ function estimateBytes(result: unknown): number {
 
 // ─── Computer connector helpers ───────────────────────────────────────────────
 
-/** A machine as the connector surfaces it (`list_computers`). */
+/** Profile-scoped machine-list shape exposed by `list_computers`. */
 export interface ComputerMachine {
   id: string;
   name: string;
@@ -215,12 +239,24 @@ export interface ComputerMachine {
   platform: string | null;
 }
 
-/** Every machine connected to an account, with live online status from DB relay ownership. */
-export async function listAccountComputers(accountId: string): Promise<ComputerMachine[]> {
+/** List assigned account machines with DB-backed online status. Null is legacy all-account access. */
+export async function listAccountComputers(
+  accountId: string,
+  allowedTunnelIds: readonly string[] | null = null,
+): Promise<ComputerMachine[]> {
+  const allowed = allowedTunnelIds === null ? null : [...new Set(allowedTunnelIds)];
+  if (allowed?.length === 0) return [];
   const rows = await db
     .select()
     .from(tunnelConnections)
-    .where(eq(tunnelConnections.accountId, accountId));
+    .where(
+      allowed
+        ? and(
+            eq(tunnelConnections.accountId, accountId),
+            inArray(tunnelConnections.tunnelId, allowed),
+          )
+        : eq(tunnelConnections.accountId, accountId),
+    );
   return rows.map((r) => ({
     id: r.tunnelId,
     name: r.name,
@@ -233,17 +269,15 @@ export async function listAccountComputers(accountId: string): Promise<ComputerM
 
 type ResolveResult = { ok: true; tunnelId: string } | { ok: false; message: string };
 
-/** Resolve a machine selector (id or name) → tunnelId, scoped to the account. */
+/** Resolve a selector inside one connector profile's already-filtered machine set. */
 async function resolveComputerTunnel(
-  accountId: string,
+  machines: ComputerMachine[],
   selector: string | null,
 ): Promise<ResolveResult> {
-  const machines = await listAccountComputers(accountId);
   if (machines.length === 0) {
     return {
       ok: false,
-      message:
-        'No machines are connected to this account. Connect one in Computers (or run `kortix tunnel`).',
+      message: 'No machines are assigned to this Computers connector profile.',
     };
   }
   if (selector) {
@@ -259,7 +293,7 @@ async function resolveComputerTunnel(
     }
     return {
       ok: false,
-      message: `No machine matches "${selector}". Available: ${machines.map((m) => m.name).join(', ')}.`,
+      message: `Machine "${selector}" is not assigned to this connector profile. Available: ${machines.map((m) => m.name).join(', ')}.`,
     };
   }
   const online = machines.filter((m) => m.online);
@@ -279,36 +313,42 @@ async function resolveComputerTunnel(
 /** Outcome of a `computer` connector call, mapped onto a CallResult by the gateway. */
 export type ComputerCallOutcome =
   | { ok: true; data: unknown }
-  | { ok: false; kind: 'permission_required'; requestId: string; message: string }
+  | {
+      ok: false;
+      kind: 'permission_required';
+      requestId: string;
+      message: string;
+    }
   | { ok: false; kind: 'no_machine'; message: string }
   | { ok: false; kind: 'error'; message: string };
 
 /**
- * Execute a `computer` connector action: the meta `list_computers` server-side,
- * everything else resolved to a machine (selector, scoped to the account) and
- * relayed through `executeTunnelRpc`. The gateway calls this for provider
- * `computer`.
+ * Execute one Computers connector action. Listing and selection use the same
+ * server-side allowlist. The DB query also verifies account ownership, so a
+ * stale, deleted, unassigned, or cross-account tunnel fails closed.
  */
 export async function executeComputerCall(input: {
   accountId: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
+  /** Null is accepted only for legacy aggregate rows and means all account machines. */
+  allowedTunnelIds: string[] | null;
   selector: string | null;
   method: string;
   args: Record<string, unknown>;
 }): Promise<ComputerCallOutcome> {
+  const machines = await listAccountComputers(input.accountId, input.allowedTunnelIds);
   if (input.method === 'list_computers') {
-    return { ok: true, data: { computers: await listAccountComputers(input.accountId) } };
+    return { ok: true, data: { computers: machines } };
   }
-
-  const resolved = await resolveComputerTunnel(input.accountId, input.selector);
+  const resolved = await resolveComputerTunnel(machines, input.selector);
   if (!resolved.ok) return { ok: false, kind: 'no_machine', message: resolved.message };
 
   const outcome = await executeTunnelRpc({
     tunnelId: resolved.tunnelId,
     accountId: input.accountId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     sessionId: input.sessionId,
     actorUserId: input.actorUserId,
     method: input.method,

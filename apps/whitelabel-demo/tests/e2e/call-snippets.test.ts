@@ -59,7 +59,7 @@ describe('call snippets never render credentials', () => {
   test('a secret row from the API cannot leak into any snippet', () => {
     // Passed the way a careless caller would pass it — the whole API row.
     const text = renderedAll({
-      projectId: PROJECT_ID,
+      workspaceId: PROJECT_ID,
       secret: fromSecretsApi as SnippetContext['secret'],
     });
     expect(text).not.toContain(fromSecretsApi.value);
@@ -78,13 +78,13 @@ describe('call snippets never render credentials', () => {
   });
 
   test('the bearer is only ever the placeholder', () => {
-    const text = renderedAll({ projectId: PROJECT_ID });
+    const text = renderedAll({ workspaceId: PROJECT_ID });
     // Any `Bearer` that is not the placeholder is a real token in a snippet.
     expect(text.match(/Bearer (?!\$KORTIX_API_KEY)\S+/)).toBeNull();
   });
 
   test('every HTTP request carries the placeholder authorization line', () => {
-    for (const snippet of callSnippets({ projectId: PROJECT_ID })) {
+    for (const snippet of callSnippets({ workspaceId: PROJECT_ID })) {
       if (!isCopyableHttp(snippet.http)) continue;
       expect(renderHttp(snippet.http)).toContain(AUTHORIZATION_HEADER);
     }
@@ -93,7 +93,7 @@ describe('call snippets never render credentials', () => {
 
 describe('attribution data is absent', () => {
   test('no snippet contains an upstream customer attribution field', () => {
-    expect(renderedAll({ projectId: PROJECT_ID })).not.toMatch(
+    expect(renderedAll({ workspaceId: PROJECT_ID })).not.toMatch(
       REMOVED_ATTRIBUTION_PATTERN,
     );
   });
@@ -115,7 +115,7 @@ describe('the create snippet is the request the dialog would send', () => {
 
   test('the chosen overrides are the ones rendered', () => {
     const snippet = callSnippet('session.create', {
-      projectId: PROJECT_ID,
+      workspaceId: PROJECT_ID,
       sessionId: SESSION_ID,
       overrides: {
         agent: 'support',
@@ -140,7 +140,7 @@ describe('the create snippet is the request the dialog would send', () => {
   });
 
   test('the path is the project the screen is on', () => {
-    const snippet = callSnippet('session.create', { projectId: PROJECT_ID });
+    const snippet = callSnippet('session.create', { workspaceId: PROJECT_ID });
     expect(renderHttp(snippet.http)).toContain(
       `POST /v1/projects/${PROJECT_ID}/sessions`,
     );
@@ -161,7 +161,7 @@ describe('the other calls', () => {
 
   test('the model change shows both hops and neither spells the runtime field', () => {
     const snippet = callSnippet('session.model', {
-      projectId: PROJECT_ID,
+      workspaceId: PROJECT_ID,
       sessionId: SESSION_ID,
       model: 'anthropic/claude-sonnet-4-5',
     });
@@ -175,13 +175,13 @@ describe('the other calls', () => {
 
   test('session costs are read for the current project', () => {
     expect(
-      renderHttp(callSnippet('session.costs', { projectId: PROJECT_ID }).http),
+      renderHttp(callSnippet('session.costs', { workspaceId: PROJECT_ID }).http),
     ).toContain(`GET /v1/usage/session-costs?project_id=${PROJECT_ID}`);
   });
 
   test('an approval resolves by execution id, and carries no widening scope', () => {
     const snippet = callSnippet('approval.resolve', {
-      projectId: PROJECT_ID,
+      workspaceId: PROJECT_ID,
       executionId: 'exec_42',
     });
     const rendered = renderHttp(snippet.http);
@@ -194,7 +194,7 @@ describe('the other calls', () => {
 
   test('a secret is addressed by identifier', () => {
     const snippet = callSnippet('secret.upsert', {
-      projectId: PROJECT_ID,
+      workspaceId: PROJECT_ID,
       secret: { identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY' },
     });
     expect(snippet.sdk).toContain('"identifier": "GMAPS-backup"');
@@ -223,7 +223,7 @@ describe('every snippet is complete', () => {
 describe('the create snippet cannot drift from what the app sends', () => {
   test('a bound connection prints its connection id', () => {
     const snippet = callSnippet('session.create', {
-      projectId: 'p1',
+      workspaceId: 'p1',
       overrides: {
         ...NO_OVERRIDES,
         bindings: { slack: 'auth_9' },
@@ -244,7 +244,7 @@ describe('the create snippet cannot drift from what the app sends', () => {
       secrets: ['GMAIL'],
     };
     const snippet = callSnippet('session.create', {
-      projectId: 'p1',
+      workspaceId: 'p1',
       overrides,
     });
     const expected = buildSessionCreateInput(overrides, { sessionId: 'SID' });

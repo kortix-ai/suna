@@ -163,8 +163,8 @@ export function useMarketplaceItemFile(
  *  the session actually runs. */
 export function useInstallMarketplaceItemAsSession() {
   return useMutation({
-    mutationFn: ({ projectId, id }: { projectId: string; id: string }) =>
-      installMarketplaceItemAsSession(projectId, id),
+    mutationFn: ({ workspaceId, id }: { workspaceId: string; id: string }) =>
+      installMarketplaceItemAsSession(workspaceId, id),
   });
 }
 

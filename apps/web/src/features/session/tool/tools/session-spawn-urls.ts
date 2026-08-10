@@ -1,4 +1,4 @@
-export function projectChildSessionHref(
+export function workspaceChildSessionHref(
   pathname: string | null,
   childSessionId: string | undefined,
 ) {

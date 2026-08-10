@@ -1,15 +1,15 @@
 /**
- * SettingsNavPage — project settings (web parity: customize/sections/
+ * SettingsNavPage — workspace settings (web parity: customize/sections/
  * settings-view).
  *
  * Cards:
- *   • General — rename the project.
- *   • Repository — the git repo backing the project: open on GitHub, edit the
+ *   • General — rename the workspace.
+ *   • Repository — the git repo backing the workspace: open on GitHub, edit the
  *     default branch + manifest path, and (managed repos) invite GitHub
  *     collaborators.
- *   • Experimental / WIP Features — collapsible per-project toggles driven by the
- *     API catalog (project.experimental_features).
- *   • Danger zone (account owners/admins) — archive the project.
+ *   • Experimental / WIP Features — collapsible per-workspace toggles driven by the
+ *     API catalog (workspace.experimental_features).
+ *   • Danger zone (account owners/admins) — archive the workspace.
  *
  * Mobile branding: PageHeader + PageContent chrome, design tokens.
  */
@@ -33,13 +33,13 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import {
-  useProject,
-  useUpdateProject,
-  useUpdateExperimentalFeature,
-  useArchiveProject,
-} from '@/lib/projects/hooks';
-import { inviteRepoCollaborator, isManagedGithubProject } from '@/lib/projects/projects-client';
-import type { KortixProject, ExperimentalFeatureView } from '@/lib/projects/projects-client';
+  useWorkspace,
+  useUpdateWorkspace,
+  useUpdateFeatureFlag,
+  useArchiveWorkspace,
+} from '@/lib/workspaces/hooks';
+import { inviteRepoCollaborator, isManagedGithubWorkspace } from '@/lib/workspaces/workspaces-client';
+import type { KortixWorkspace, FeatureFlagView } from '@/lib/workspaces/workspaces-client';
 import { useMutation } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
 
@@ -57,7 +57,7 @@ interface PageTabLike {
 
 interface SettingsNavPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -117,13 +117,13 @@ function SaveButton({ onPress, disabled, pending }: { onPress: () => void; disab
 
 // ─── General ──────────────────────────────────────────────────────────────────
 
-function GeneralCard({ project, canManage, isDark }: { project: KortixProject; canManage: boolean; isDark: boolean }) {
+function GeneralCard({ workspace, canManage, isDark }: { workspace: KortixWorkspace; canManage: boolean; isDark: boolean }) {
   const c = useColors(isDark);
-  const update = useUpdateProject(project.project_id);
-  const [name, setName] = useState(project.name);
-  useEffect(() => { setName(project.name); }, [project.name]);
+  const update = useUpdateWorkspace(workspace.workspace_id);
+  const [name, setName] = useState(workspace.name);
+  useEffect(() => { setName(workspace.name); }, [workspace.name]);
 
-  const dirty = name.trim() !== project.name && name.trim().length > 0;
+  const dirty = name.trim() !== workspace.name && name.trim().length > 0;
   const save = () => {
     if (!dirty || !canManage) return;
     haptics.tap();
@@ -155,18 +155,18 @@ function GeneralCard({ project, canManage, isDark }: { project: KortixProject; c
 
 // ─── Repository ───────────────────────────────────────────────────────────────
 
-function RepositoryCard({ project, canManage, isDark }: { project: KortixProject; canManage: boolean; isDark: boolean }) {
+function RepositoryCard({ workspace, canManage, isDark }: { workspace: KortixWorkspace; canManage: boolean; isDark: boolean }) {
   const c = useColors(isDark);
-  const update = useUpdateProject(project.project_id);
-  const githubUrl = githubRepoWebUrl(project.repo_url);
-  const repoLabel = githubUrl?.replace('https://github.com/', '') || project.repo_url || '-';
-  const managed = isManagedGithubProject(project);
+  const update = useUpdateWorkspace(workspace.workspace_id);
+  const githubUrl = githubRepoWebUrl(workspace.repo_url);
+  const repoLabel = githubUrl?.replace('https://github.com/', '') || workspace.repo_url || '-';
+  const managed = isManagedGithubWorkspace(workspace);
 
-  const [branch, setBranch] = useState(project.default_branch);
-  const [manifest, setManifest] = useState(project.manifest_path);
-  useEffect(() => { setBranch(project.default_branch); setManifest(project.manifest_path); }, [project.default_branch, project.manifest_path]);
+  const [branch, setBranch] = useState(workspace.default_branch);
+  const [manifest, setManifest] = useState(workspace.manifest_path);
+  useEffect(() => { setBranch(workspace.default_branch); setManifest(workspace.manifest_path); }, [workspace.default_branch, workspace.manifest_path]);
 
-  const dirty = branch.trim() !== project.default_branch || manifest.trim() !== project.manifest_path;
+  const dirty = branch.trim() !== workspace.default_branch || manifest.trim() !== workspace.manifest_path;
   const save = () => {
     if (!dirty || !canManage) return;
     haptics.tap();
@@ -204,19 +204,19 @@ function RepositoryCard({ project, canManage, isDark }: { project: KortixProject
         <SaveButton onPress={save} disabled={!dirty || !canManage || update.isPending} pending={update.isPending} />
       </View>
 
-      {managed && canManage && <RepoCollaboratorInvite projectId={project.project_id} isDark={isDark} />}
+      {managed && canManage && <RepoCollaboratorInvite workspaceId={workspace.workspace_id} isDark={isDark} />}
     </Card>
   );
 }
 
-function RepoCollaboratorInvite({ projectId, isDark }: { projectId: string; isDark: boolean }) {
+function RepoCollaboratorInvite({ workspaceId, isDark }: { workspaceId: string; isDark: boolean }) {
   const c = useColors(isDark);
   const theme = useThemeColors();
   const [username, setUsername] = useState('');
   const [permission, setPermission] = useState<'read' | 'write'>('write');
 
   const invite = useMutation({
-    mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), permission),
+    mutationFn: () => inviteRepoCollaborator(workspaceId, username.trim(), permission),
     onSuccess: (res) => {
       haptics.success();
       setUsername('');
@@ -263,9 +263,9 @@ function RepoCollaboratorInvite({ projectId, isDark }: { projectId: string; isDa
 
 // ─── Experimental ─────────────────────────────────────────────────────────────
 
-function ExperimentalCard({ project, canManage, isDark }: { project: KortixProject; canManage: boolean; isDark: boolean }) {
+function ExperimentalCard({ workspace, canManage, isDark }: { workspace: KortixWorkspace; canManage: boolean; isDark: boolean }) {
   const c = useColors(isDark);
-  const features = (project.experimental_features ?? []).filter((f) => f.available);
+  const features = (workspace.experimental_features ?? []).filter((f) => f.available);
   const [expanded, setExpanded] = useState(false);
 
   if (features.length === 0) return null;
@@ -302,7 +302,7 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
           </Text>
           <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: c.border }}>
             {features.map((f) => (
-              <ExperimentalRow key={f.key} projectId={project.project_id} feature={f} canManage={canManage} isDark={isDark} />
+              <ExperimentalRow key={f.key} workspaceId={workspace.workspace_id} feature={f} canManage={canManage} isDark={isDark} />
             ))}
           </View>
         </View>
@@ -311,10 +311,10 @@ function ExperimentalCard({ project, canManage, isDark }: { project: KortixProje
   );
 }
 
-function ExperimentalRow({ projectId, feature, canManage, isDark }: { projectId: string; feature: ExperimentalFeatureView; canManage: boolean; isDark: boolean }) {
+function ExperimentalRow({ workspaceId, feature, canManage, isDark }: { workspaceId: string; feature: FeatureFlagView; canManage: boolean; isDark: boolean }) {
   const c = useColors(isDark);
   const { colorScheme } = useColorScheme();
-  const update = useUpdateExperimentalFeature(projectId);
+  const update = useUpdateFeatureFlag(workspaceId);
   const isBeta = feature.stability === 'beta';
 
   return (
@@ -347,16 +347,16 @@ function ExperimentalRow({ projectId, feature, canManage, isDark }: { projectId:
 
 // ─── Danger zone ──────────────────────────────────────────────────────────────
 
-function DangerCard({ project, isDark }: { project: KortixProject; isDark: boolean }) {
+function DangerCard({ workspace, isDark }: { workspace: KortixWorkspace; isDark: boolean }) {
   const c = useColors(isDark);
-  const archive = useArchiveProject();
+  const archive = useArchiveWorkspace();
 
   const confirm = () => {
-    Alert.alert('Archive workspace', `Archive ${project.name}? Current sessions remain recoverable.`, [
+    Alert.alert('Archive workspace', `Archive ${workspace.name}? Current sessions remain recoverable.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Archive', style: 'destructive', onPress: () => {
         haptics.medium();
-        archive.mutate(project.project_id, {
+        archive.mutate(workspace.workspace_id, {
           onSuccess: () => { haptics.success(); Alert.alert('Archived', 'Workspace archived.'); },
           onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to archive workspace.'),
         });
@@ -384,7 +384,7 @@ function DangerCard({ project, isDark }: { project: KortixProject; isDark: boole
 
 export function SettingsNavPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -395,8 +395,8 @@ export function SettingsNavPage({
   const insets = useSafeAreaInsets();
   const c = useColors(isDark);
 
-  const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
-  const canManage = project?.effective_project_role === 'editor';
+  const { data: workspace, isLoading, isError, error, refetch } = useWorkspace(workspaceId);
+  const canManage = workspace?.effective_workspace_role === 'editor';
   const bgColor = isDark ? '#090909' : '#FFFFFF';
 
   return (
@@ -419,12 +419,12 @@ export function SettingsNavPage({
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text>
               </TouchableOpacity>
             </Card>
-          ) : project ? (
+          ) : workspace ? (
             <>
-              <GeneralCard project={project} canManage={canManage} isDark={isDark} />
-              <RepositoryCard project={project} canManage={canManage} isDark={isDark} />
-              <ExperimentalCard project={project} canManage={canManage} isDark={isDark} />
-              {canManage && <DangerCard project={project} isDark={isDark} />}
+              <GeneralCard workspace={workspace} canManage={canManage} isDark={isDark} />
+              <RepositoryCard workspace={workspace} canManage={canManage} isDark={isDark} />
+              <ExperimentalCard workspace={workspace} canManage={canManage} isDark={isDark} />
+              {canManage && <DangerCard workspace={workspace} isDark={isDark} />}
             </>
           ) : null}
         </ScrollView>

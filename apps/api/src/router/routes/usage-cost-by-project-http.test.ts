@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import * as realAccess from '../../projects/lib/access';
+import * as realAccess from '../../workspaces/lib/access';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
-const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000000002';
 
 let authType = 'supabase';
 let sandboxId: string | null = null;
@@ -19,8 +19,8 @@ interface TestContext {
 }
 
 const project = {
-  project_id: PROJECT_ID,
-  project_name: 'Project One',
+  project_id: WORKSPACE_ID,
+  project_name: 'Workspace One',
   session_count: 3,
   llm_cost: 1.5,
   compute_cost: 0.5,
@@ -59,18 +59,18 @@ mock.module('../../shared/resolve-account', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../projects/lib/access', () => ({
+mock.module('../../workspaces/lib/access', () => ({
   ...realAccess,
-  loadProjectForUser: async () => {
-    throw new Error('loadProjectForUser should not be called from cost-by-project tests');
+  loadWorkspaceForUser: async () => {
+    throw new Error('loadWorkspaceForUser should not be called from cost-by-project tests');
   },
-  assertProjectCapability: async () => {
-    throw new Error('assertProjectCapability should not be called from cost-by-project tests');
+  assertWorkspaceCapability: async () => {
+    throw new Error('assertWorkspaceCapability should not be called from cost-by-project tests');
   },
 }));
 
 mock.module('../../shared/cost-rollups', () => ({
-  listCostByProject: async (input: Record<string, unknown>) => {
+  listCostByWorkspace: async (input: Record<string, unknown>) => {
     listInput = input;
     return {
       projects: projectsToReturn,
@@ -121,6 +121,51 @@ beforeEach(() => {
   listInput = null;
   resolveAccountDenied = false;
   projectsToReturn = [project];
+});
+
+describe('GET /v1/usage/cost-by-workspace', () => {
+  test('is the canonical rollup route and returns Workspace fields', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/cost-by-workspace?account_id=${ACCOUNT_ID}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(listInput).toMatchObject({
+      accountId: ACCOUNT_ID,
+      limit: 25,
+      offset: 0,
+      sort: 'total_desc',
+    });
+    expect(await response.json()).toEqual({
+      workspaces: [
+        {
+          workspace_id: WORKSPACE_ID,
+          workspace_name: 'Workspace One',
+          session_count: 3,
+          llm_cost: 1.5,
+          compute_cost: 0.5,
+          total_cost: 2,
+          last_activity_at: '2026-07-01T12:00:00.000Z',
+        },
+      ],
+      total: 1,
+      limit: 25,
+      offset: 0,
+      next_offset: null,
+    });
+  });
+
+  test('exports canonical Workspace CSV columns', async () => {
+    const response = await createTestApp().request('/v1/usage/cost-by-workspace?format=csv');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-disposition')).toBe(
+      'attachment; filename="kortix-cost-by-workspace.csv"',
+    );
+    expect((await response.text()).split(/\r?\n/)[0]).toBe(
+      'workspace_id,workspace_name,sessions,llm_cost_usd,compute_cost_usd,total_cost_usd,last_activity_at',
+    );
+  });
 });
 
 describe('GET /v1/usage/cost-by-project', () => {
@@ -266,7 +311,7 @@ describe('GET /v1/usage/cost-by-project?format=csv', () => {
     expect(await response.text()).toBe(
       'project_id,project_name,sessions,llm_cost_usd,compute_cost_usd,total_cost_usd,' +
         'last_activity_at\r\n' +
-        `${PROJECT_ID},Project One,3,1.5,0.5,2,2026-07-01T12:00:00.000Z`,
+        `${WORKSPACE_ID},Workspace One,3,1.5,0.5,2,2026-07-01T12:00:00.000Z`,
     );
   });
 

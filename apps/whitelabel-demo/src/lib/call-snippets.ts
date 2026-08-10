@@ -39,7 +39,7 @@ export const AUTHORIZATION_HEADER = 'Authorization: Bearer $KORTIX_API_KEY';
 /** Stand-ins for ids a screen may not have yet (the create dialog runs before
  *  any session exists). */
 const PLACEHOLDER = {
-  projectId: '{projectId}',
+  workspaceId: '{workspaceId}',
   sessionId: '{sessionId}',
   executionId: '{executionId}',
   identifier: '{identifier}',
@@ -77,7 +77,7 @@ export const CALL_SNIPPET_IDS = [
 export type CallSnippetId = (typeof CALL_SNIPPET_IDS)[number];
 
 export interface SnippetContext {
-  projectId?: string;
+  workspaceId?: string;
   sessionId?: string;
   /** The initial overrides currently chosen, so the create snippet shows
    *  what THIS dialog would send rather than a generic example. */
@@ -198,11 +198,11 @@ function connectionsList(ctx: SnippetContext): CallSnippet {
     title: 'List the connections a session may bind',
     summary:
       'What the picker is made of — and why some connectors have nothing to pick.',
-    sdk: 'await kortix.project(projectId).connectors.connections.list();',
+    sdk: 'await kortix.project(workspaceId).connectors.connections.list();',
     http: {
       kind: 'rest',
       method: 'GET',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/connections`,
+      path: `/v1/projects/${ctx.workspaceId ?? PLACEHOLDER.workspaceId}/connections`,
     },
     serverInjected: [],
     notes: [
@@ -234,12 +234,12 @@ function sessionCreate(ctx: SnippetContext): CallSnippet {
       "import { generateSessionId } from '@kortix/sdk';",
       '',
       'const sessionId = generateSessionId();',
-      `await kortix.project(projectId).sessions.create(${sdkBody});`,
+      `await kortix.project(workspaceId).sessions.create(${sdkBody});`,
     ].join('\n'),
     http: {
       kind: 'rest',
       method: 'POST',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/sessions`,
+      path: `/v1/projects/${ctx.workspaceId ?? PLACEHOLDER.workspaceId}/sessions`,
       body,
     },
     serverInjected: [],
@@ -261,13 +261,13 @@ function sessionPrompt(ctx: SnippetContext): CallSnippet {
       'Each message names the agent that runs it — the one override that moves mid-session.',
     sdk: [
       'await kortix',
-      '  .session(projectId, sessionId)',
+      '  .session(workspaceId, sessionId)',
       agent
         ? `  .send('Refund order 4182', { agent: '${agent}' });`
         : "  .send('Refund order 4182');",
       '',
       '// Or make the choice sticky for every following message:',
-      `kortix.session(projectId, sessionId).setAgent(${agent ? `'${agent}'` : "'support'"});`,
+      `kortix.session(workspaceId, sessionId).setAgent(${agent ? `'${agent}'` : "'support'"});`,
     ].join('\n'),
     http: {
       kind: 'runtime',
@@ -283,17 +283,17 @@ function sessionPrompt(ctx: SnippetContext): CallSnippet {
 }
 
 function sessionRescope(ctx: SnippetContext): CallSnippet {
-  const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
+  const workspaceId = ctx.workspaceId ?? PLACEHOLDER.workspaceId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
   return {
     id: 'session.rescope',
     title: 'Re-scope a running session',
     summary: 'Read the current scope, then send one complete replacement.',
     sdk: [
-      'const current = await kortix.session(projectId, sessionId).scope();',
+      'const current = await kortix.session(workspaceId, sessionId).scope();',
       '',
       '// Both axes are complete replacements. Preserve the unchanged axis.',
-      'await kortix.session(projectId, sessionId).rescope({',
+      'await kortix.session(workspaceId, sessionId).rescope({',
       "  secrets: ['TEST_KEY_2'],",
       '  connector_bindings: current.connector_bindings,',
       '});',
@@ -301,7 +301,7 @@ function sessionRescope(ctx: SnippetContext): CallSnippet {
     http: {
       kind: 'rest',
       method: 'PUT',
-      path: `/v1/projects/${projectId}/sessions/${sessionId}/scope`,
+      path: `/v1/projects/${workspaceId}/sessions/${sessionId}/scope`,
       body: {
         secrets: ['TEST_KEY_2'],
         connector_bindings: { gmail: { connection_id: 'auth_123' } },
@@ -320,7 +320,7 @@ function sessionRescope(ctx: SnippetContext): CallSnippet {
 
 function sessionModel(ctx: SnippetContext): CallSnippet {
   const model = ctx.model ?? PLACEHOLDER.model;
-  const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
+  const workspaceId = ctx.workspaceId ?? PLACEHOLDER.workspaceId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
 
   return {
@@ -330,11 +330,11 @@ function sessionModel(ctx: SnippetContext): CallSnippet {
       'The one create-time override that is still movable once a session is running.',
     sdk: [
       '// Server side (src/app/api/session-model/route.ts):',
-      `await kortix.session(projectId, sessionId).changeModel('${model}');`,
+      `await kortix.session(workspaceId, sessionId).changeModel('${model}');`,
       '',
       '// Browser side — this app goes through its own route, so the runtime-named',
       '// field stays server-side and client code says `model`:',
-      `await fetch('/api/session-model?projectId=${projectId}&sessionId=${sessionId}', {`,
+      `await fetch('/api/session-model?workspaceId=${workspaceId}&sessionId=${sessionId}', {`,
       "  method: 'PUT',",
       `  body: JSON.stringify({ model: '${model}' }),`,
       '});',
@@ -342,7 +342,7 @@ function sessionModel(ctx: SnippetContext): CallSnippet {
     http: {
       kind: 'rest',
       method: 'PUT',
-      path: `/v1/projects/${projectId}/sessions/${sessionId}/model`,
+      path: `/v1/projects/${workspaceId}/sessions/${sessionId}/model`,
       body: { '<runtime>_model': model },
     },
     serverInjected: [],
@@ -359,11 +359,11 @@ function sessionsList(ctx: SnippetContext): CallSnippet {
     id: 'sessions.list',
     title: "List a project's sessions",
     summary: 'The project-scoped session read used by the wrapper.',
-    sdk: 'await kortix.project(projectId).sessions.list();',
+    sdk: 'await kortix.project(workspaceId).sessions.list();',
     http: {
       kind: 'rest',
       method: 'GET',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/sessions`,
+      path: `/v1/projects/${ctx.workspaceId ?? PLACEHOLDER.workspaceId}/sessions`,
     },
     serverInjected: [],
     notes: [
@@ -374,7 +374,7 @@ function sessionsList(ctx: SnippetContext): CallSnippet {
 }
 
 function sessionDelete(ctx: SnippetContext): CallSnippet {
-  const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
+  const workspaceId = ctx.workspaceId ?? PLACEHOLDER.workspaceId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
 
   return {
@@ -384,19 +384,19 @@ function sessionDelete(ctx: SnippetContext): CallSnippet {
       'The two ways a session ends — one keeps the sandbox, one destroys it.',
     sdk: [
       '// Reboots the runtime, keeps the session and its sandbox identity.',
-      'await kortix.session(projectId, sessionId).restart();',
+      'await kortix.session(workspaceId, sessionId).restart();',
       '',
       '// Destroys the session and the sandbox behind it. Not recoverable.',
-      'await kortix.session(projectId, sessionId).delete();',
+      'await kortix.session(workspaceId, sessionId).delete();',
     ].join('\n'),
     http: {
       kind: 'rest',
       method: 'DELETE',
-      path: `/v1/projects/${projectId}/sessions/${sessionId}`,
+      path: `/v1/projects/${workspaceId}/sessions/${sessionId}`,
     },
     serverInjected: [],
     notes: [
-      `Restart is a separate call — \`POST /v1/projects/${projectId}/sessions/${sessionId}/restart\`. It keeps the sandbox, so a session that came up wrong recovers without losing its transcript, but it still ends whatever turn was in flight.`,
+      `Restart is a separate call — \`POST /v1/projects/${workspaceId}/sessions/${sessionId}/restart\`. It keeps the sandbox, so a session that came up wrong recovers without losing its transcript, but it still ends whatever turn was in flight.`,
       "Both calls clear the SDK's cached runtime for these ids first (`forgetReady()`), so no later handle can resolve a sandbox that has been replaced or destroyed.",
       "Ownership is the only thing standing between one end user and another's session here: the upstream key could delete any session in the account, and the proxy is what checks this caller provisioned this project (`src/server/policy.ts`).",
       'Deleting is not a refund. The session cost record remains available after the runtime is destroyed.',
@@ -408,12 +408,12 @@ function sessionCosts(ctx: SnippetContext): CallSnippet {
     id: 'session.costs',
     title: "Read a project's session costs",
     summary: 'Finalized LLM and compute cost, grouped by session.',
-    sdk: 'await kortix.billing.sessionCosts.list({ projectId });',
+    sdk: 'await kortix.billing.sessionCosts.list({ workspaceId });',
     http: {
       kind: 'rest',
       method: 'GET',
       path: `/v1/usage/session-costs?project_id=${encodeURIComponent(
-        ctx.projectId ?? PLACEHOLDER.projectId,
+        ctx.workspaceId ?? PLACEHOLDER.workspaceId,
       )}`,
     },
     serverInjected: [],
@@ -426,17 +426,17 @@ function sessionCosts(ctx: SnippetContext): CallSnippet {
 }
 
 function approvalResolve(ctx: SnippetContext): CallSnippet {
-  const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
+  const workspaceId = ctx.workspaceId ?? PLACEHOLDER.workspaceId;
   const executionId = ctx.executionId ?? PLACEHOLDER.executionId;
   return {
     id: 'approval.resolve',
     title: 'Resolve an approval',
     summary: 'A `require_approval` gate ends the agent’s turn until a person decides.',
-    sdk: `await kortix.project(projectId).approvals.resolve('${executionId}', 'approve');`,
+    sdk: `await kortix.project(workspaceId).approvals.resolve('${executionId}', 'approve');`,
     http: {
       kind: 'rest',
       method: 'POST',
-      path: `/v1/projects/${projectId}/approvals/${executionId}`,
+      path: `/v1/projects/${workspaceId}/approvals/${executionId}`,
       body: { decision: 'approve' },
     },
     serverInjected: [],
@@ -457,11 +457,11 @@ function secretUpsert(ctx: SnippetContext): CallSnippet {
     id: 'secret.upsert',
     title: 'Create or rotate a secret',
     summary: 'One call does both — the identifier is what decides which.',
-    sdk: `await kortix.project(projectId).secrets.upsert(${json(body)});`,
+    sdk: `await kortix.project(workspaceId).secrets.upsert(${json(body)});`,
     http: {
       kind: 'rest',
       method: 'POST',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/secrets`,
+      path: `/v1/projects/${ctx.workspaceId ?? PLACEHOLDER.workspaceId}/secrets`,
       body,
     },
     serverInjected: [],
@@ -482,11 +482,11 @@ function secretDelete(ctx: SnippetContext): CallSnippet {
     id: 'secret.delete',
     title: 'Delete a secret',
     summary: 'Removes the identifier, not the grants that name it.',
-    sdk: `await kortix.project(projectId).secrets.remove('${identifier}');`,
+    sdk: `await kortix.project(workspaceId).secrets.remove('${identifier}');`,
     http: {
       kind: 'rest',
       method: 'DELETE',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/secrets/${encodeURIComponent(
+      path: `/v1/projects/${ctx.workspaceId ?? PLACEHOLDER.workspaceId}/secrets/${encodeURIComponent(
         identifier,
       )}`,
     },
@@ -508,11 +508,11 @@ function connectorConnectLink(ctx: SnippetContext): CallSnippet {
     title: 'Mint a connect link for a required connector',
     summary:
       'The remedy behind a 409 CONNECTOR_CONNECTION_REQUIRED — for the shared connectors it can fix.',
-    sdk: `await kortix.project(projectId).setupLinks.requestConnector({ slug: '${slug}' });`,
+    sdk: `await kortix.project(workspaceId).setupLinks.requestConnector({ slug: '${slug}' });`,
     http: {
       kind: 'rest',
       method: 'POST',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/connect-requests`,
+      path: `/v1/projects/${ctx.workspaceId ?? PLACEHOLDER.workspaceId}/connect-requests`,
       body: { slug },
     },
     serverInjected: [],

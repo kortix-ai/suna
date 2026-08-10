@@ -151,7 +151,7 @@ flow(
     }
 
     // Sanity: the project-id-shaped path param is irrelevant to the authz
-    // boundary above (these routes have no :projectId), but we keep a
+    // boundary above (these routes have no :workspaceId), but we keep a
     // reference so a future refactor that adds one doesn't silently drop the
     // NOPE fixture.
     void NOPE;

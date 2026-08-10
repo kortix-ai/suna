@@ -86,8 +86,8 @@ export function AccessSection({
           value={draft.skills}
           onChange={(v: AgentGrantSetV2) => set('skills', v)}
           options={skillsOptions}
-          allLabel="Every skill in this project."
-          emptyLabel="No skills declared in this project yet."
+          allLabel="Every skill in this workspace."
+          emptyLabel="No skills declared in this workspace yet."
         />
       </SettingBlock>
 
@@ -102,8 +102,8 @@ export function AccessSection({
             }
           }}
           options={connectorOptions}
-          allLabel="Every connector in this project."
-          emptyLabel="No connectors in this project yet."
+          allLabel="Every connector in this workspace."
+          emptyLabel="No connectors in this workspace yet."
           rowAccessory={(id, isSelected) =>
             isSelected ? (
               <RequiredConnectorToggle
@@ -130,23 +130,23 @@ export function AccessSection({
 
       <SettingBlock
         label="Secrets"
-        help="Project secrets handed to this agent as environment variables."
+        help="Workspace secrets handed to this agent as environment variables."
       >
         <GrantSetField
           value={draft.secrets}
           onChange={(v: AgentGrantSetV2) => set('secrets', v)}
           options={secretOptions}
-          allLabel="Every secret in this project."
-          emptyLabel="No secrets in this project yet."
+          allLabel="Every secret in this workspace."
+          emptyLabel="No secrets in this workspace yet."
         />
       </SettingBlock>
 
       {/* Was "Kortix CLI" — the name of the tool, not of what it grants. What
-          the user is choosing is which project operations the agent may
+          the user is choosing is which workspace operations the agent may
           perform; the CLI is only how it performs them. */}
       <SettingBlock
-        label="Project actions"
-        help="What this agent may do to the project itself, through the Kortix CLI."
+        label="Workspace actions"
+        help="What this agent may do to the workspace itself, through the Kortix CLI."
       >
         <KortixCliField
           value={draft.kortix_cli}
@@ -177,7 +177,7 @@ export function WorkspaceSection({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={INHERIT}>Project default</SelectItem>
+            <SelectItem value={INHERIT}>Workspace default</SelectItem>
             {sandboxOptions.map((option) => (
               <SelectItem key={option.id} value={option.id}>
                 {option.label}
@@ -190,7 +190,7 @@ export function WorkspaceSection({
       <SettingRow
         label="File access"
         help={
-          draft.workspace ? WORKSPACE_MODE_HELP[draft.workspace] : 'Follows the project default.'
+          draft.workspace ? WORKSPACE_MODE_HELP[draft.workspace] : 'Follows the workspace default.'
         }
       >
         <Select
@@ -203,7 +203,7 @@ export function WorkspaceSection({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={INHERIT}>Project default</SelectItem>
+            <SelectItem value={INHERIT}>Workspace default</SelectItem>
             {WORKSPACE_MODES.map((mode) => (
               <SelectItem key={mode} value={mode}>
                 {WORKSPACE_MODE_LABEL[mode]}

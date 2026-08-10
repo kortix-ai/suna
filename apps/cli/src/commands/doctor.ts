@@ -1,27 +1,27 @@
-import type { ProjectSession } from '@kortix/sdk';
+import type { WorkspaceSession } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
-import type { MeResponse, ProjectSummary } from '../api/types.ts';
-import { resolveProjectContext, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { loadLink } from '../project-link.ts';
+import type { MeResponse, WorkspaceSummary } from '../api/types.ts';
+import { resolveWorkspaceContext, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { loadWorkspaceLink } from '../workspace-link.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix doctor [options]
 
-End-to-end smoke test: confirms login → project resolves → optionally
+End-to-end smoke test: confirms login → workspace resolves → optionally
 spins up a throwaway session, sends a message, and asserts the agent
 replies. Designed so coding agents can verify Kortix end-to-end before
 they start orchestrating real work.
 
 Options:
-  --no-session         Stop after auth + project checks. Don't create
+  --no-session         Stop after auth + workspace checks. Don't create
                        a sandbox. Fast and cheap.
   --keep-session       Don't delete the test session at the end.
   --prompt "<text>"    Test prompt (default: "ping").
   --timeout <seconds>  How long to wait for the reply (default: 180).
-  --project <id>       Operate on this project (default: linked).
+  --workspace <id>     Operate on this workspace (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 
@@ -35,7 +35,7 @@ interface DoctorFlags {
   keepSession: boolean;
   prompt: string;
   timeoutSec: number;
-  project?: string;
+  workspace?: string;
   host?: string;
   help: boolean;
 }
@@ -59,7 +59,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
 
   // ── 1. Auth ─────────────────────────────────────────────────────────────
   const hostFromLink =
-    !flags.host && !hasEnvTokenHost() ? (loadLink()?.host ?? undefined) : undefined;
+    !flags.host && !hasEnvTokenHost() ? (loadWorkspaceLink()?.host ?? undefined) : undefined;
   const hostName = flags.host ?? hostFromLink;
   const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth?.token) {
@@ -71,7 +71,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
   );
 
   // ── 2. /accounts/me ─────────────────────────────────────────────────────
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveWorkspaceContext({ workspaceArg: flags.workspace, hostArg: flags.host });
   if (!ctx) return 1;
   try {
     const me = await ctx.client.get<MeResponse>('/accounts/me');
@@ -82,14 +82,14 @@ export async function runDoctor(argv: string[]): Promise<number> {
   }
 
   // ── 3. Project ──────────────────────────────────────────────────────────
-  let project: ProjectSummary;
+  let workspace: WorkspaceSummary;
   try {
-    project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+    workspace = await ctx.client.get<WorkspaceSummary>(`/workspaces/${ctx.workspaceId}`);
     process.stdout.write(
-      `${status.ok(`project ${C.bold}${project.name}${C.reset} ${C.faded}(${project.project_id})${C.reset}`)}\n`,
+      `${status.ok(`workspace ${C.bold}${workspace.name}${C.reset} ${C.faded}(${workspace.workspace_id})${C.reset}`)}\n`,
     );
   } catch (err) {
-    process.stdout.write(`${status.err(`project lookup failed: ${describe(err)}`)}\n`);
+    process.stdout.write(`${status.err(`workspace lookup failed: ${describe(err)}`)}\n`);
     return 1;
   }
 
@@ -101,17 +101,17 @@ export async function runDoctor(argv: string[]): Promise<number> {
   // ── 4. Spin up a session ────────────────────────────────────────────────
   const t0 = Date.now();
   process.stdout.write(`  ${C.dim}creating session…${C.reset}\n`);
-  let session: ProjectSession;
+  let session: WorkspaceSession;
   try {
     session = await withKortixScope(auth, () =>
-      kortixFromAuth(auth).project(ctx.projectId).sessions.create(),
+      kortixFromAuth(auth).workspace(ctx.workspaceId).sessions.create(),
     );
   } catch (err) {
     process.stdout.write(`${status.err(`session create failed: ${describe(err)}`)}\n`);
     return 1;
   }
   const sessionId = session.session_id;
-  const handle = kortixFromAuth(auth).session(ctx.projectId, sessionId);
+  const handle = kortixFromAuth(auth).session(ctx.workspaceId, sessionId);
   process.stdout.write(
     `${status.ok(`session ${C.bold}${shortId(sessionId)}${C.reset} created`)}\n`,
   );
@@ -196,7 +196,7 @@ function parseFlags(argv: string[]): DoctorFlags {
   flags.help = takeFlagBool(rest, ['-h', '--help']);
   flags.noSession = takeFlagBool(rest, ['--no-session']);
   flags.keepSession = takeFlagBool(rest, ['--keep-session']);
-  flags.project = takeFlagValue(rest, ['--project']);
+  flags.workspace = takeFlagValue(rest, ['--workspace', '--project']);
   flags.host = takeFlagValue(rest, ['--host']);
   const p = takeFlagValue(rest, ['--prompt']);
   if (p) flags.prompt = p;

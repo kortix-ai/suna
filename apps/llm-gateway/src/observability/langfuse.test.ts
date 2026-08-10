@@ -9,7 +9,7 @@ function trace(over: Partial<GatewayTrace> = {}): GatewayTrace {
     startedAt: '2026-01-01T00:00:00.000Z',
     accountId: '11111111-1111-1111-1111-111111111111',
     actorUserId: '22222222-2222-2222-2222-222222222222',
-    projectId: 'p1',
+    workspaceId: 'p1',
     keyId: 'k1',
     requestedModel: 'kortix/x',
     resolvedModel: 'anthropic/x',
@@ -62,7 +62,7 @@ describe('traceToLangfuse', () => {
   });
 
   test('tags streaming requests and falls back to account session', () => {
-    const { trace: t } = traceToLangfuse(trace({ streaming: true, projectId: undefined }));
+    const { trace: t } = traceToLangfuse(trace({ streaming: true, workspaceId: undefined }));
     expect(t.tags).toContain('streaming');
     expect(t.sessionId).toBe('11111111-1111-1111-1111-111111111111');
   });

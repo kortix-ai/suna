@@ -11,7 +11,7 @@ import { describe, expect, test } from 'bun:test';
  * throws a bare `Error` when a user submits a non-https or non-public URL as a
  * connector source. The throw is a VALID security validation, NOT a server
  * defect — but the connector `POST /connectors` route handler called
- * `deps.discoverConnectorAuth(projectId, body)` (which invokes
+ * `deps.discoverConnectorAuth(workspaceId, body)` (which invokes
  * `discoverConnectorAuthFromSource` → `assertAllowedSourceAddress`) with NO
  * try/catch, so the throw propagated uncaught through the connector sync path
  * → `app.onError` → generic `captureException` → Sentry → Better Stack.
@@ -50,7 +50,7 @@ import {
   type ConnectorRouterDeps,
 } from '../connectors/router';
 
-const PROJECT = 'proj-1';
+const WORKSPACE = 'proj-1';
 const ALICE = 'user-alice';
 
 /** The exact prod failure shape: `assertAllowedSourceAddress` throws the typed
@@ -145,7 +145,7 @@ function buildRouter(throwFromCreate = false): {
       const u = c.req.header('x-test-user');
       return u ? ({ accountId: 'acct-1', userId: u } as ConnectorPrincipal) : null;
     },
-    resolveProjectPrincipal: async (_c, _projectId) => null,
+    resolveWorkspacePrincipal: async (_c, _projectId) => null,
     makeGatewayDeps: (() => ({} as unknown)) as ConnectorRouterDeps['makeGatewayDeps'],
     listCatalog: async () => [],
     resolveAdmin: async (c) => {
@@ -184,7 +184,7 @@ describe('connector router: assertAllowedSourceAddress throw → structured 400 
     const { app } = buildRouter();
     const req = (path: string, init: RequestInit = {}) =>
       app.fetch(new Request(`http://x${path}`, init));
-    const res = await req(`/projects/${PROJECT}/connectors/auth-discovery`, {
+    const res = await req(`/projects/${WORKSPACE}/connectors/auth-discovery`, {
       method: 'POST',
       headers: { ...admin, 'content-type': 'application/json' },
       body: JSON.stringify({ provider: 'mcp', url: 'http://example.com/sse' }),
@@ -202,7 +202,7 @@ describe('connector router: assertAllowedSourceAddress throw → structured 400 
     const { app, createConnectorCalls } = buildRouter();
     const req = (path: string, init: RequestInit = {}) =>
       app.fetch(new Request(`http://x${path}`, init));
-    const res = await req(`/projects/${PROJECT}/connectors`, {
+    const res = await req(`/projects/${WORKSPACE}/connectors`, {
       method: 'POST',
       headers: { ...admin, 'content-type': 'application/json' },
       // No explicit auth → the route calls discoverConnectorAuth first, which
@@ -230,7 +230,7 @@ describe('connector router: assertAllowedSourceAddress throw → structured 400 
     const { app } = buildRouter(true);
     const req = (path: string, init: RequestInit = {}) =>
       app.fetch(new Request(`http://x${path}`, init));
-    const res = await req(`/projects/${PROJECT}/connectors`, {
+    const res = await req(`/projects/${WORKSPACE}/connectors`, {
       method: 'POST',
       headers: { ...admin, 'content-type': 'application/json' },
       // Explicit auth → discoverConnectorAuth is skipped; createConnector
@@ -263,7 +263,7 @@ describe('connector router: assertAllowedSourceAddress throw → structured 400 
     const deps: ConnectorRouterDeps = {
       featureFlagEnabled: async () => true,
       resolvePrincipal: async () => null,
-      resolveProjectPrincipal: async () => null,
+      resolveWorkspacePrincipal: async () => null,
       makeGatewayDeps: (() => ({} as unknown)) as ConnectorRouterDeps['makeGatewayDeps'],
       listCatalog: async () => [],
       resolveAdmin: async (c) => {
@@ -280,7 +280,7 @@ describe('connector router: assertAllowedSourceAddress throw → structured 400 
     };
     const app = createConnectorRouter(deps);
     const res = await app.fetch(
-      new Request(`http://x/projects/${PROJECT}/connectors/auth-discovery`, {
+      new Request(`http://x/projects/${WORKSPACE}/connectors/auth-discovery`, {
         method: 'POST',
         headers: { ...admin, 'content-type': 'application/json' },
         body: JSON.stringify({ provider: 'mcp', url: 'http://x' }),

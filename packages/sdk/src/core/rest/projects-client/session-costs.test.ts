@@ -127,7 +127,7 @@ test('listSessionCosts serializes account, project, limit, and zero offset', asy
 
   const result = await listSessionCosts({
     accountId: 'account-1',
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     limit: 25,
     offset: 0,
   });
@@ -152,7 +152,7 @@ test('getSessionCostRecord encodes the session id and serializes scope filters',
 
   const result = await getSessionCostRecord('session/with space', {
     accountId: 'account-1',
-    projectId: 'project-1',
+    workspaceId: 'project-1',
   });
 
   expect(last()).toEqual({
@@ -276,7 +276,7 @@ test('getCostSummary forwards account, project, session scope and window', async
 
   const result = await getCostSummary({
     accountId: 'acct-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     sessionId: 'sess-1',
     from: '2026-07-01T00:00:00.000Z',
     to: '2026-08-01T00:00:00.000Z',
@@ -320,7 +320,7 @@ test('costExportUrl builds the projects CSV export URL with format=csv', () => {
 test('costExportUrl builds the sessions CSV export URL with project and owner scope', () => {
   const url = costExportUrl('sessions', {
     accountId: 'acct-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     ownerId: 'user-9',
     sort: 'recent',
   });
@@ -347,13 +347,13 @@ test('costExportUrl emits only format=csv when no options are supplied', () => {
 // every line below still fails to compile.
 test('costExportUrl and fetchCostExportCsv reject the wrong kind\'s fields at compile time', () => {
   // @ts-expect-error project_id has no meaning on the /cost-by-project route
-  costExportUrl('projects', { projectId: 'proj-1' });
+  costExportUrl('projects', { workspaceId: 'proj-1' });
   // @ts-expect-error owner_id has no meaning on the /cost-by-project route
   costExportUrl('projects', { ownerId: 'user-9' });
   // @ts-expect-error name_asc is valid only for the project rollup, not sessions
   costExportUrl('sessions', { sort: 'name_asc' });
   // @ts-expect-error project_id has no meaning on the /cost-by-project route
-  void fetchCostExportCsv('projects', { projectId: 'proj-1' });
+  void fetchCostExportCsv('projects', { workspaceId: 'proj-1' });
   // @ts-expect-error name_asc is valid only for the project rollup, not sessions
   void fetchCostExportCsv('sessions', { sort: 'name_asc' });
 

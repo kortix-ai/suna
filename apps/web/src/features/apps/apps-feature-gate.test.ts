@@ -6,7 +6,7 @@ const root = resolve(import.meta.dir, '../..');
 
 test('every Apps discovery surface hides until the apps feature flag is on', () => {
   const nav = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+    resolve(root, 'features/workspace/workspace-sidebar/footer/workspace-apps-nav.tsx'),
     'utf8',
   );
   const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
@@ -14,11 +14,11 @@ test('every Apps discovery surface hides until the apps feature flag is on', () 
 
   // ONE gating primitive everywhere — the SDK's `useFeatureFlag`, never a
   // per-feature hook and never a hand-rolled `experimental?.apps` read.
-  expect(nav).toContain("useFeatureFlag(projectId, 'apps')");
+  expect(nav).toContain("useFeatureFlag(workspaceId, 'apps')");
   expect(nav).toContain('if (!appsGate.enabled) return null;');
   expect(nav).toContain('Experimental');
   expect(menu).toContain("requiresFlag: 'apps'");
-  expect(view).toContain("useFeatureFlag(projectId, 'apps')");
+  expect(view).toContain("useFeatureFlag(workspaceId, 'apps')");
   expect(view).toContain('Experimental');
   expect(nav).not.toContain('useAppsFeatureEnabled');
   expect(view).not.toContain('useAppsFeatureEnabled');

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Review Center wired to live data: fetches the project's review items, maps the
+ * Review Center wired to live data: fetches the workspace's review items, maps the
  * API rows into the inbox view model, and routes the inbox's actions to the right
  * backend flow. Native items go through the `/act` and `/bulk` mutations; adapted
  * items act through THEIR OWN source flow — a Change Request ships via merge,
@@ -15,15 +15,15 @@
 
 import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
-import { useProjectContext } from '@/features/project-files/context';
-import { useChangeRequestRecovery } from '@/features/project-files/hooks/use-change-request-recovery';
+import { useWorkspaceContext } from '@/features/workspace-files/context';
+import { useChangeRequestRecovery } from '@/features/workspace-files/hooks/use-change-request-recovery';
 import {
   useCloseChangeRequest,
   useMergeChangeRequest,
   useRequestChangesOnChangeRequest,
-} from '@/features/project-files/hooks/use-change-requests';
+} from '@/features/workspace-files/hooks/use-change-requests';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk';
+import { type ReviewVerdict, listWorkspaceSessions } from '@kortix/sdk';
 import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -39,17 +39,17 @@ import { crChangeRequestId, connectorCallId, itemDeepLink, planBulkAction } from
 import { ReviewCenter } from './review-center';
 
 export function ReviewCenterConnected({
-  projectName,
+  workspaceName,
   canAct = true,
 }: {
-  projectName: string;
+  workspaceName: string;
   // When false (a review.read-only role), withhold the act handlers so the
   // ReviewCenter renders its inbox read-only — no mutation UI that would 403.
   // Defaults to true to preserve behavior for callers that don't gate.
   canAct?: boolean;
 }) {
-  const ctx = useProjectContext();
-  const projectId = ctx?.projectId ?? '';
+  const ctx = useWorkspaceContext();
+  const workspaceId = ctx?.workspaceId ?? '';
   const qc = useQueryClient();
   const router = useRouter();
   const closeCustomize = useCustomizeStore((s) => s.close);
@@ -65,9 +65,9 @@ export function ReviewCenterConnected({
   // Session names for the per-session filter + group headers (sessionId → label).
   // Also names the originating session in each approval's description.
   const { data: sessions } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
-    enabled: !!projectId,
+    queryKey: qk.workspace.sessions(workspaceId),
+    queryFn: () => listWorkspaceSessions(workspaceId),
+    enabled: !!workspaceId,
     ...contract('inventory'),
   });
   const sessionLabels = useMemo(() => {
@@ -80,11 +80,11 @@ export function ReviewCenterConnected({
 
   const items = useMemo(
     () =>
-      (data?.review_items ?? []).map((row) => mapApiReviewItem(row, projectName, sessionLabels)),
-    [data, projectName, sessionLabels],
+      (data?.review_items ?? []).map((row) => mapApiReviewItem(row, workspaceName, sessionLabels)),
+    [data, workspaceName, sessionLabels],
   );
 
-  const refreshInbox = () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
+  const refreshInbox = () => qc.invalidateQueries({ queryKey: ['review-center', workspaceId] });
 
   function recoverChange(
     item: Extract<(typeof items)[number], { kind: 'change' }>,
@@ -234,7 +234,7 @@ export function ReviewCenterConnected({
         // "See progress" only VIEWS the session — feedback delivery goes through
         // the backend now. Clear any stale queued prompt so navigating can't
         // auto-send a leftover message (e.g. from an earlier client-side attempt).
-        const href = itemDeepLink(projectId, sessionId);
+        const href = itemDeepLink(workspaceId, sessionId);
         if (!href) return;
         clearStartStash(sessionId);
         closeCustomize();

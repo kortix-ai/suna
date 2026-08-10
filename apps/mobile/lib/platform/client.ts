@@ -11,18 +11,14 @@
 import { API_URL, getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import {
-  listProjectsForAccount,
-  listProjectSessions as listProjectSessionsSdk,
-  startProjectSession,
-  createProjectSession,
-  restartProjectSession,
-  deleteProjectSession,
-} from '@/lib/projects/projects-client';
-// `stopProjectSession` was never re-exported by mobile's projects-client.ts
-// (mobile didn't have a "pause in place" caller before this file); pull it
-// straight from the SDK's public `projects-client` subpath instead of adding
-// an export mobile itself doesn't otherwise need.
-import { stopProjectSession } from '@kortix/sdk/projects-client';
+  listWorkspacesForAccount,
+  listWorkspaceSessions as listWorkspaceSessionsSdk,
+  startWorkspaceSession,
+  createWorkspaceSession,
+  restartWorkspaceSession,
+  stopWorkspaceSession,
+  deleteWorkspaceSession,
+} from '@/lib/workspaces/workspaces-client';
 // The SDK's kortix-master service wrappers are public via the
 // `@kortix/sdk/opencode-client` subpath (client.ts re-exports the module).
 // Mobile's service fns delegate transport to them but keep soft-fail
@@ -70,17 +66,17 @@ export interface SandboxInfo {
   updated_at: string;
 }
 
-interface ProjectSummary {
-  project_id: string;
+interface WorkspaceSummary {
+  workspace_id: string;
   account_id: string;
   name: string;
   updated_at: string;
 }
 
-interface ProjectSessionSummary {
+interface WorkspaceSessionSummary {
   session_id: string;
   account_id: string;
-  project_id: string;
+  workspace_id: string;
   sandbox_provider: SandboxProviderName | null;
   sandbox_id: string;
   sandbox_url: string | null;
@@ -92,10 +88,10 @@ interface ProjectSessionSummary {
   updated_at: string;
 }
 
-interface ProjectSessionSandbox {
+interface WorkspaceSessionSandbox {
   sandbox_id: string;
   session_id: string;
-  project_id: string;
+  workspace_id: string;
   account_id: string;
   provider: SandboxProviderName;
   external_id: string | null;
@@ -134,9 +130,9 @@ function normalizeSessionStatus(status: string | undefined): string {
 }
 
 function toSandboxInfo(
-  project: ProjectSummary,
-  session: ProjectSessionSummary,
-  runtime?: ProjectSessionSandbox | null
+  workspace: WorkspaceSummary,
+  session: WorkspaceSessionSummary,
+  runtime?: WorkspaceSessionSandbox | null
 ): SandboxInfo {
   const externalId =
     runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
@@ -144,7 +140,7 @@ function toSandboxInfo(
   return {
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,
-    name: session.name || `${project.name} session`,
+    name: session.name || `${workspace.name} session`,
     provider: runtime?.provider || session.sandbox_provider || 'daytona',
     base_url:
       runtime?.base_url ||
@@ -154,9 +150,9 @@ function toSandboxInfo(
     version: null,
     metadata: {
       ...(session.metadata || {}),
-      project_id: project.project_id,
+      project_id: workspace.workspace_id,
       session_id: session.session_id,
-      project_name: project.name,
+      project_name: workspace.name,
       error: session.error,
       runtime_status: runtime?.status,
     },
@@ -168,65 +164,65 @@ function toSandboxInfo(
 // The three helpers below used to hand-roll their own `fetch` + auth-header +
 // JSON-parse boilerplate (a private `apiFetch`, now removed) duplicating what
 // `@kortix/sdk`'s `backendApi` already does. They now go through
-// `lib/projects/projects-client.ts`, which itself re-exports
-// `@kortix/sdk/projects-client` — same endpoints, same responses, just no
+// `lib/workspaces/workspaces-client.ts`, which itself re-exports
+// `@kortix/sdk/workspaces-client` — same endpoints, same responses, just no
 // second hand-rolled REST client. Return values are narrowed to this file's
-// local `ProjectSummary`/`ProjectSessionSummary`/`ProjectSessionSandbox` view
-// types, which are structural subsets of the SDK's richer `KortixProject` /
-// `ProjectSession` / `ProjectSessionSandbox` shapes.
+// local `WorkspaceSummary`/`WorkspaceSessionSummary`/`WorkspaceSessionSandbox` view
+// types, which are structural subsets of the SDK's richer `KortixWorkspace` /
+// `WorkspaceSession` / `WorkspaceSessionSandbox` shapes.
 
-async function listProjects(): Promise<ProjectSummary[]> {
-  return listProjectsForAccount();
+async function listWorkspaces(): Promise<WorkspaceSummary[]> {
+  return listWorkspacesForAccount();
 }
 
-async function listProjectSessions(projectId: string): Promise<ProjectSessionSummary[]> {
-  return listProjectSessionsSdk(projectId) as unknown as Promise<ProjectSessionSummary[]>;
+async function listWorkspaceSessions(workspaceId: string): Promise<WorkspaceSessionSummary[]> {
+  return listWorkspaceSessionsSdk(workspaceId) as unknown as Promise<WorkspaceSessionSummary[]>;
 }
 
-async function getProjectSessionSandbox(
-  projectId: string,
+async function getWorkspaceSessionSandbox(
+  workspaceId: string,
   sessionId: string
-): Promise<ProjectSessionSandbox | null> {
+): Promise<WorkspaceSessionSandbox | null> {
   // Unified session-open endpoint: provisions/resumes + resolves the pin
-  // server-side, returning the sandbox row in its payload. `startProjectSession`
-  // (mobile-native — see projects-client.ts for why) already swallows non-
+  // server-side, returning the sandbox row in its payload. `startWorkspaceSession`
+  // (mobile-native — see workspaces-client.ts for why) already swallows non-
   // billing failures into `null`; billing-gate errors propagate, matching this
   // function's own prior try/catch-everything behavior from the caller's POV.
   try {
-    const result = await startProjectSession(projectId, sessionId);
-    return (result?.sandbox as ProjectSessionSandbox | null) ?? null;
+    const result = await startWorkspaceSession(workspaceId, sessionId);
+    return (result?.sandbox as WorkspaceSessionSandbox | null) ?? null;
   } catch {
     return null;
   }
 }
 
-async function listProjectSessionSandboxes(): Promise<
+async function listWorkspaceSessionSandboxes(): Promise<
   Array<{
-    project: ProjectSummary;
-    session: ProjectSessionSummary;
-    runtime: ProjectSessionSandbox | null;
+    workspace: WorkspaceSummary;
+    session: WorkspaceSessionSummary;
+    runtime: WorkspaceSessionSandbox | null;
     sandbox: SandboxInfo;
   }>
 > {
-  const projects = await listProjects();
+  const workspaces = await listWorkspaces();
   const results: Array<{
-    project: ProjectSummary;
-    session: ProjectSessionSummary;
-    runtime: ProjectSessionSandbox | null;
+    workspace: WorkspaceSummary;
+    session: WorkspaceSessionSummary;
+    runtime: WorkspaceSessionSandbox | null;
     sandbox: SandboxInfo;
   }> = [];
 
-  for (const project of projects) {
-    const sessions = await listProjectSessions(project.project_id).catch(() => []);
+  for (const workspace of workspaces) {
+    const sessions = await listWorkspaceSessions(workspace.workspace_id).catch(() => []);
     for (const session of sessions) {
       // Derive from the session row — do NOT call /start while listing, or every
-      // sandbox across every project would be woken. Single-session opens use it.
+      // sandbox across every workspace would be woken. Single-session opens use it.
       const runtime = null;
       results.push({
-        project,
+        workspace,
         session,
         runtime,
-        sandbox: toSandboxInfo(project, session, runtime),
+        sandbox: toSandboxInfo(workspace, session, runtime),
       });
     }
   }
@@ -239,13 +235,13 @@ async function listProjectSessionSandboxes(): Promise<
   });
 }
 
-export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
-  project: ProjectSummary;
-  session: ProjectSessionSummary;
-  runtime: ProjectSessionSandbox | null;
+export async function findWorkspaceSessionSandbox(sandboxId?: string): Promise<{
+  workspace: WorkspaceSummary;
+  session: WorkspaceSessionSummary;
+  runtime: WorkspaceSessionSandbox | null;
   sandbox: SandboxInfo;
 } | null> {
-  const rows = await listProjectSessionSandboxes();
+  const rows = await listWorkspaceSessionSandboxes();
   if (!sandboxId) return rows[0] ?? null;
   return (
     rows.find(
@@ -266,28 +262,28 @@ export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
  */
 export async function ensureSandbox(opts?: {
   provider?: SandboxProviderName;
-  projectId?: string;
+  workspaceId?: string;
 }): Promise<{ sandbox: SandboxInfo; created: boolean }> {
   log.log('📦 [Platform] Ensuring sandbox...');
 
   const existing = await getActiveSandbox();
   if (existing) return { sandbox: existing, created: false };
 
-  const projects = await listProjects();
-  const project = opts?.projectId
-    ? projects.find((item) => item.project_id === opts.projectId)
-    : projects[0];
-  if (!project) {
-    throw new Error('Create a project before starting a sandbox');
+  const workspaces = await listWorkspaces();
+  const workspace = opts?.workspaceId
+    ? workspaces.find((item) => item.workspace_id === opts.workspaceId)
+    : workspaces[0];
+  if (!workspace) {
+    throw new Error('Create a workspace before starting a sandbox');
   }
 
-  const session = (await createProjectSession(project.project_id, {
+  const session = (await createWorkspaceSession(workspace.workspace_id, {
     ...(opts?.provider ? { provider: opts.provider } : {}),
-  })) as unknown as ProjectSessionSummary;
-  const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
-  const sandbox = toSandboxInfo(project, session, runtime);
+  })) as unknown as WorkspaceSessionSummary;
+  const runtime = await getWorkspaceSessionSandbox(workspace.workspace_id, session.session_id);
+  const sandbox = toSandboxInfo(workspace, session, runtime);
 
-  log.log('✅ [Platform] Project session sandbox ensured:', sandbox.external_id);
+  log.log('✅ [Platform] Workspace session sandbox ensured:', sandbox.external_id);
   return { sandbox, created: true };
 }
 
@@ -297,7 +293,7 @@ export async function ensureSandbox(opts?: {
  */
 export async function getActiveSandbox(): Promise<SandboxInfo | null> {
   try {
-    const row = await findProjectSessionSandbox();
+    const row = await findWorkspaceSessionSandbox();
     return row?.sandbox ?? null;
   } catch {
     return null;
@@ -305,11 +301,11 @@ export async function getActiveSandbox(): Promise<SandboxInfo | null> {
 }
 
 /**
- * List all project-session sandboxes from the DB.
+ * List all workspace-session sandboxes from the DB.
  */
 export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
   try {
-    const rows = await listProjectSessionSandboxes();
+    const rows = await listWorkspaceSessionSandboxes();
     return rows
       .map((row) => row.sandbox)
       .filter(
@@ -326,19 +322,19 @@ export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> 
  * POST /platform/sandbox/restart
  */
 export async function restartSandbox(sandboxId?: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('No project session sandbox found');
-  await restartProjectSession(row.project.project_id, row.session.session_id);
+  const row = await findWorkspaceSessionSandbox(sandboxId);
+  if (!row) throw new Error('No workspace session sandbox found');
+  await restartWorkspaceSession(row.workspace.workspace_id, row.session.session_id);
 }
 
 /**
  * Stop the active sandbox in place (disk kept, resumable via restart/start).
- * POST /projects/:projectId/sessions/:sessionId/stop
+ * POST /workspaces/:workspaceId/sessions/:sessionId/stop
  */
 export async function stopSandbox(sandboxId?: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('No project session sandbox found');
-  await stopProjectSession(row.project.project_id, row.session.session_id);
+  const row = await findWorkspaceSessionSandbox(sandboxId);
+  if (!row) throw new Error('No workspace session sandbox found');
+  await stopWorkspaceSession(row.workspace.workspace_id, row.session.session_id);
 }
 
 /**
@@ -346,9 +342,9 @@ export async function stopSandbox(sandboxId?: string): Promise<void> {
  * DELETE /platform/sandbox/:sandboxId
  */
 export async function deleteSandbox(sandboxId: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('Project session sandbox not found');
-  await deleteProjectSession(row.project.project_id, row.session.session_id);
+  const row = await findWorkspaceSessionSandbox(sandboxId);
+  if (!row) throw new Error('Workspace session sandbox not found');
+  await deleteWorkspaceSession(row.workspace.workspace_id, row.session.session_id);
 }
 
 /**
@@ -496,7 +492,7 @@ export async function getFullChangelog(): Promise<ChangelogEntry[]> {
 
 export async function triggerSandboxUpdate(_version: string): Promise<void> {
   throw new Error(
-    'Sandbox image updates are managed by project-session provisioning in the current API'
+    'Sandbox image updates are managed by workspace-session provisioning in the current API'
   );
 }
 
@@ -504,7 +500,7 @@ export async function getSandboxUpdateStatus(): Promise<SandboxUpdateStatus> {
   return {
     phase: 'idle',
     progress: 0,
-    message: 'Project-session sandboxes do not expose legacy update status',
+    message: 'Workspace-session sandboxes do not expose legacy update status',
     targetVersion: null,
     previousVersion: null,
     currentVersion: null,
@@ -542,11 +538,11 @@ export interface SSHSetupResult extends SSHConnectionInfo {
 }
 
 export async function setupSSH(): Promise<SSHSetupResult> {
-  throw new Error('SSH setup is not exposed for project-session sandboxes');
+  throw new Error('SSH setup is not exposed for workspace-session sandboxes');
 }
 
 export async function getSSHConnection(): Promise<SSHConnectionInfo> {
-  throw new Error('SSH connection details are not exposed for project-session sandboxes');
+  throw new Error('SSH connection details are not exposed for workspace-session sandboxes');
 }
 
 // ─── Running Services API ───────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
 import { billedComputeSecondsExpression } from './session-costs';
 
-export interface ProjectCostRow {
+export interface WorkspaceCostRow {
   project_id: string;
   project_name: string;
   session_count: number;
@@ -15,23 +15,23 @@ export interface ProjectCostRow {
   last_activity_at: string | null;
 }
 
-export interface ProjectCostPage {
-  projects: ProjectCostRow[];
+export interface WorkspaceCostPage {
+  projects: WorkspaceCostRow[];
   total: number;
   limit: number;
   offset: number;
   next_offset: number | null;
 }
 
-interface LlmProjectAggregateRow {
-  projectId: string | null;
+interface LlmWorkspaceAggregateRow {
+  workspaceId: string | null;
   llmCost: number | string;
   sessionCount: number | string;
   lastAt: Date | string | null;
 }
 
-interface ComputeProjectAggregateRow {
-  projectId: string | null;
+interface ComputeWorkspaceAggregateRow {
+  workspaceId: string | null;
   computeCost: number | string;
   sessionCount: number | string;
   lastAt: Date | string | null;
@@ -58,61 +58,61 @@ function laterIso(left: string | null, right: string | null): string | null {
 // project. Both inputs already carry numeric-ish values straight out of a
 // `coalesce(sum(...), 0)::float8` — this never re-sums money itself, it only
 // combines the two already-summed totals.
-export function mergeProjectCostRows(
-  llmRows: LlmProjectAggregateRow[],
-  computeRows: ComputeProjectAggregateRow[],
+export function mergeWorkspaceCostRows(
+  llmRows: LlmWorkspaceAggregateRow[],
+  computeRows: ComputeWorkspaceAggregateRow[],
   projectNames: Map<string, string>,
-): ProjectCostRow[] {
-  const byProject = new Map<string, ProjectCostRow>();
+): WorkspaceCostRow[] {
+  const byWorkspace = new Map<string, WorkspaceCostRow>();
 
-  const ensure = (projectId: string): ProjectCostRow => {
-    const existing = byProject.get(projectId);
+  const ensure = (workspaceId: string): WorkspaceCostRow => {
+    const existing = byWorkspace.get(workspaceId);
     if (existing) return existing;
-    const created: ProjectCostRow = {
-      project_id: projectId,
-      project_name: projectNames.get(projectId) ?? projectId,
+    const created: WorkspaceCostRow = {
+      project_id: workspaceId,
+      project_name: projectNames.get(workspaceId) ?? workspaceId,
       session_count: 0,
       llm_cost: 0,
       compute_cost: 0,
       total_cost: 0,
       last_activity_at: null,
     };
-    byProject.set(projectId, created);
+    byWorkspace.set(workspaceId, created);
     return created;
   };
 
   for (const row of llmRows) {
-    if (!row.projectId) continue;
-    const target = ensure(row.projectId);
+    if (!row.workspaceId) continue;
+    const target = ensure(row.workspaceId);
     target.llm_cost = numberValue(row.llmCost);
     target.session_count = Math.max(target.session_count, numberValue(row.sessionCount));
     target.last_activity_at = laterIso(target.last_activity_at, isoValue(row.lastAt));
   }
 
   for (const row of computeRows) {
-    if (!row.projectId) continue;
-    const target = ensure(row.projectId);
+    if (!row.workspaceId) continue;
+    const target = ensure(row.workspaceId);
     target.compute_cost = numberValue(row.computeCost);
     target.session_count = Math.max(target.session_count, numberValue(row.sessionCount));
     target.last_activity_at = laterIso(target.last_activity_at, isoValue(row.lastAt));
   }
 
-  for (const row of byProject.values()) {
+  for (const row of byWorkspace.values()) {
     row.total_cost = Number((row.llm_cost + row.compute_cost).toFixed(10));
   }
 
-  return [...byProject.values()];
+  return [...byWorkspace.values()];
 }
 
 // The JS mirror of the project rollup's order. This IS the sort, not a
-// redundant re-statement of one Postgres already did: listCostByProject pages
+// redundant re-statement of one Postgres already did: listCostByWorkspace pages
 // entirely in memory (see the comment there), so nothing upstream orders
 // these rows before this runs. Ties always break on project_id so the
 // slice() below is a total order — without it a row could land on two pages
 // or on none, the same hazard the SQL ORDER BY guards against in
 // session-costs.ts.
-export function sortProjectRows(rows: ProjectCostRow[], sort: CostSort): ProjectCostRow[] {
-  const compare = (left: ProjectCostRow, right: ProjectCostRow): number => {
+export function sortWorkspaceRows(rows: WorkspaceCostRow[], sort: CostSort): WorkspaceCostRow[] {
+  const compare = (left: WorkspaceCostRow, right: WorkspaceCostRow): number => {
     let delta: number;
     switch (sort) {
       case 'name_asc':
@@ -140,19 +140,19 @@ export function sortProjectRows(rows: ProjectCostRow[], sort: CostSort): Project
 // LLM rows carry project_id directly (idx_gateway_logs_project_time). Compute
 // rows do not: they reach project_id by joining project_sessions, whose
 // session_id is the primary key — a PK join, not a scan.
-export async function listCostByProject(input: {
+export async function listCostByWorkspace(input: {
   accountId: string;
   window: CostWindow;
   sort: CostSort;
   limit: number;
   offset: number;
-}): Promise<ProjectCostPage> {
+}): Promise<WorkspaceCostPage> {
   const { accountId, window } = input;
 
   const [llmRows, computeRows, projectRows] = await Promise.all([
     db
       .select({
-        projectId: gatewayRequestLogs.projectId,
+        workspaceId: gatewayRequestLogs.workspaceId,
         llmCost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
         sessionCount: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
         lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,
@@ -164,13 +164,13 @@ export async function listCostByProject(input: {
           // createdAt is a Date-mode timestamp, so the bounds are Date objects.
           gte(gatewayRequestLogs.createdAt, window.from),
           lt(gatewayRequestLogs.createdAt, window.to),
-          sql`${gatewayRequestLogs.projectId} is not null`,
+          sql`${gatewayRequestLogs.workspaceId} is not null`,
         ),
       )
-      .groupBy(gatewayRequestLogs.projectId),
+      .groupBy(gatewayRequestLogs.workspaceId),
     db
       .select({
-        projectId: projectSessions.projectId,
+        workspaceId: projectSessions.workspaceId,
         computeCost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
         sessionCount: sql<number>`count(distinct ${sandboxComputeSessions.sessionId})::int`,
         lastAt: sql<string | null>`max(${sandboxComputeSessions.lastBilledAt})`,
@@ -187,16 +187,16 @@ export async function listCostByProject(input: {
           lt(sandboxComputeSessions.startedAt, window.to.toISOString()),
         ),
       )
-      .groupBy(projectSessions.projectId),
+      .groupBy(projectSessions.workspaceId),
     db
-      .select({ projectId: projects.projectId, name: projects.name })
+      .select({ workspaceId: projects.workspaceId, name: projects.name })
       .from(projects)
       .where(eq(projects.accountId, accountId)),
   ]);
 
-  const projectNames = new Map(projectRows.map((row) => [row.projectId, row.name]));
-  const merged = sortProjectRows(
-    mergeProjectCostRows(llmRows, computeRows, projectNames),
+  const projectNames = new Map(projectRows.map((row) => [row.workspaceId, row.name]));
+  const merged = sortWorkspaceRows(
+    mergeWorkspaceCostRows(llmRows, computeRows, projectNames),
     input.sort,
   );
 
@@ -320,15 +320,15 @@ interface ComputePriorRow {
 // Scoped, windowed spend totals, a gap-filled daily series, the top 10
 // models by spend, and the prior equal-length window's total for a period
 // delta. One function serves all three cost explorer levels: account-wide
-// when neither projectId nor sessionId is supplied, one project when
-// projectId is supplied, one session when sessionId is supplied.
+// when neither workspaceId nor sessionId is supplied, one project when
+// workspaceId is supplied, one session when sessionId is supplied.
 export async function getCostSummary(input: {
   accountId: string;
-  projectId?: string;
+  workspaceId?: string;
   sessionId?: string;
   window: CostWindow;
 }): Promise<CostSummary> {
-  const { accountId, projectId, sessionId, window } = input;
+  const { accountId, workspaceId, sessionId, window } = input;
 
   const llmScope = (w: CostWindow) => {
     const conditions = [
@@ -337,14 +337,14 @@ export async function getCostSummary(input: {
       gte(gatewayRequestLogs.createdAt, w.from),
       lt(gatewayRequestLogs.createdAt, w.to),
     ];
-    if (projectId) conditions.push(eq(gatewayRequestLogs.projectId, projectId));
+    if (workspaceId) conditions.push(eq(gatewayRequestLogs.workspaceId, workspaceId));
     if (sessionId) conditions.push(eq(gatewayRequestLogs.sessionId, sessionId));
     return and(...conditions);
   };
 
   // Compute rows carry no project_id of their own — reaching it means
   // joining project_sessions (session_id is its primary key, as in
-  // listCostByProject above). The join is added only when scoping to one
+  // listCostByWorkspace above). The join is added only when scoping to one
   // project: joining unconditionally would inner-join away compute cost from
   // sessions with no project_sessions row, silently undercounting the
   // account-wide total. This endpoint's totals.total_cost must cover ALL
@@ -360,7 +360,7 @@ export async function getCostSummary(input: {
       lt(sandboxComputeSessions.startedAt, w.to.toISOString()),
     ];
     if (sessionId) conditions.push(eq(sandboxComputeSessions.sessionId, sessionId));
-    if (projectId) conditions.push(eq(projectSessions.projectId, projectId));
+    if (workspaceId) conditions.push(eq(projectSessions.workspaceId, workspaceId));
     return and(...conditions);
   };
 
@@ -384,7 +384,7 @@ export async function getCostSummary(input: {
   // (instead of at the already-resolved Promise) is exactly the kind of
   // ambiguity the brief's Step 5 pseudocode (`computeBase`) glossed over.
   function loadComputeTotals(w: CostWindow): Promise<ComputeTotalsRow[]> {
-    if (projectId) {
+    if (workspaceId) {
       return db
         .select(computeTotalsFields)
         .from(sandboxComputeSessions)
@@ -395,7 +395,7 @@ export async function getCostSummary(input: {
   }
 
   function loadComputeDaily(w: CostWindow): Promise<ComputeDailyRow[]> {
-    if (projectId) {
+    if (workspaceId) {
       return db
         .select(computeDailyFields)
         .from(sandboxComputeSessions)
@@ -411,7 +411,7 @@ export async function getCostSummary(input: {
   }
 
   function loadComputePrior(w: CostWindow): Promise<ComputePriorRow[]> {
-    if (projectId) {
+    if (workspaceId) {
       return db
         .select(computePriorFields)
         .from(sandboxComputeSessions)
@@ -431,29 +431,29 @@ export async function getCostSummary(input: {
   // this query carries no money, so there is no completeness constraint to
   // protect: a compute row with no project_sessions match has no project to
   // attribute to a distinct-project count in the first place.
-  const llmProjectIdsQuery = db
-    .select({ projectId: gatewayRequestLogs.projectId })
+  const llmWorkspaceIdsQuery = db
+    .select({ workspaceId: gatewayRequestLogs.workspaceId })
     .from(gatewayRequestLogs)
-    .where(and(llmScope(window), sql`${gatewayRequestLogs.projectId} is not null`))
-    .groupBy(gatewayRequestLogs.projectId);
+    .where(and(llmScope(window), sql`${gatewayRequestLogs.workspaceId} is not null`))
+    .groupBy(gatewayRequestLogs.workspaceId);
 
-  const computeProjectIdsQuery = db
-    .select({ projectId: projectSessions.projectId })
+  const computeWorkspaceIdsQuery = db
+    .select({ workspaceId: projectSessions.workspaceId })
     .from(sandboxComputeSessions)
     .innerJoin(projectSessions, eq(projectSessions.sessionId, sandboxComputeSessions.sessionId))
     .where(computeScope(window))
-    .groupBy(projectSessions.projectId);
+    .groupBy(projectSessions.workspaceId);
 
   const [
     llmTotalsRows,
     llmDailyRows,
     modelRows,
     llmPriorRows,
-    llmProjectIdRows,
+    llmWorkspaceIdRows,
     computeTotalsRows,
     computeDailyRows,
     computePriorRows,
-    computeProjectIdRows,
+    computeWorkspaceIdRows,
   ] = await Promise.all([
     db
       .select({
@@ -494,16 +494,16 @@ export async function getCostSummary(input: {
       .select({ cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8` })
       .from(gatewayRequestLogs)
       .where(llmScope(previous)),
-    llmProjectIdsQuery,
+    llmWorkspaceIdsQuery,
     loadComputeTotals(window),
     loadComputeDaily(window),
     loadComputePrior(previous),
-    computeProjectIdsQuery,
+    computeWorkspaceIdsQuery,
   ]);
 
   const projectIds = new Set<string>();
-  for (const row of llmProjectIdRows) if (row.projectId) projectIds.add(row.projectId);
-  for (const row of computeProjectIdRows) if (row.projectId) projectIds.add(row.projectId);
+  for (const row of llmWorkspaceIdRows) if (row.workspaceId) projectIds.add(row.workspaceId);
+  for (const row of computeWorkspaceIdRows) if (row.workspaceId) projectIds.add(row.workspaceId);
 
   const llmTotals = llmTotalsRows[0];
   const computeTotals = computeTotalsRows[0];
@@ -520,7 +520,7 @@ export async function getCostSummary(input: {
     // union: a session with LLM-only spend and a different session with
     // compute-only spend both go uncounted by Math.max the same way they
     // would under- or over-count with either side alone. This follows
-    // mergeProjectCostRows's established convention above (same
+    // mergeWorkspaceCostRows's established convention above (same
     // approximation, same tradeoff) rather than diverging with a more
     // accurate but novel calculation.
     session_count: Math.max(
@@ -531,9 +531,9 @@ export async function getCostSummary(input: {
     // the LLM side's count: a project can have compute spend and zero
     // gateway_request_logs rows in the window (a session whose compute
     // started inside the window but whose LLM calls fell outside it, or a
-    // project on BYO keys with no gateway rows at all), and listCostByProject
-    // above already treats such a project as real (mergeProjectCostRows's
-    // compute loop calls ensure(row.projectId) same as the LLM loop). This is
+    // project on BYO keys with no gateway rows at all), and listCostByWorkspace
+    // above already treats such a project as real (mergeWorkspaceCostRows's
+    // compute loop calls ensure(row.workspaceId) same as the LLM loop). This is
     // a separate, non-money query (projectIds), so it does not touch the
     // total_cost completeness constraint documented on computeScope above —
     // that constraint binds the money queries, not a distinct-id count.

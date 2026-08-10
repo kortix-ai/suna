@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { validateRef, validateSha } from '../projects/git-ref';
+import { validateRef, validateSha } from '../workspaces/git-ref';
 
 describe('validateRef', () => {
   test('accepts ordinary branch names, tags, HEAD and SHAs', () => {

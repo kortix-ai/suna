@@ -7,13 +7,13 @@ import { toArray } from '@/features/workspace/customize/shared/utils';
 // Regression test for the Better Stack error pattern
 //   `f9603a4344ea892980086cc75a9f15d6457da1e8bfa88ffbcfa7b08f1c2dcb0b` —
 //   `TypeError: (intermediate value)(intermediate value)(intermediate value).filter is not a function`
-// thrown from the project layout chunk
-// (`app/(app)/projects/[id]/layout-b5947ecaa233b0d6.js`) at `Object.useMemo`.
+// thrown from the workspace layout chunk
+// (`app/(app)/workspaces/[id]/layout-b5947ecaa233b0d6.js`) at `Object.useMemo`.
 //
-// Root cause: the `ProjectGroupGrantsCard` component in members-view.tsx
+// Root cause: the `WorkspaceGroupGrantsCard` component in members-view.tsx
 // derived `groupsWithCustomRole` inside a `useMemo` as
 //   `(policiesQuery.data ?? []).filter(...).map(...)`.
-// The IAM `listPolicies(accountId, { scopeId: projectId })` SDK call is typed
+// The IAM `listPolicies(accountId, { scopeId: workspaceId })` SDK call is typed
 // to return `IamPolicy[]`, but a 200 whose body yields a non-array `policies`
 // value (a backend shape gap, a partial response, an empty object) is a valid
 // HTTP outcome. `?? []` only absorbs `null`/`undefined`; a defined non-array
@@ -37,23 +37,23 @@ const membersViewSource = readFileSync(
 /**
  * The exact derivation that threw in prod, lifted out of the useMemo so it can
  * be exercised without a react-query harness. Mirrors the
- * `ProjectGroupGrantsCard` `groupsWithCustomRole` derivation: filter the
+ * `WorkspaceGroupGrantsCard` `groupsWithCustomRole` derivation: filter the
  * project-scoped group policies and collect their principal ids.
  */
-function groupsWithCustomRoleFrom(policiesData: unknown, projectId: string): Set<string> {
+function groupsWithCustomRoleFrom(policiesData: unknown, workspaceId: string): Set<string> {
   return new Set(
     toArray(policiesData)
       .filter(
         (p: any) =>
           p.principal_type === 'group' &&
-          p.scope_type === 'project' &&
-          p.scope_id === projectId,
+          p.scope_type === 'workspace' &&
+          p.scope_id === workspaceId,
       )
       .map((p: any) => p.principal_id),
   );
 }
 
-describe('members-view non-array guard — ProjectGroupGrantsCard derivation', () => {
+describe('members-view non-array guard — WorkspaceGroupGrantsCard derivation', () => {
   test('does NOT throw on the exact prod failure shape: a defined non-array policies value', () => {
     // The shape that fired in prod: `policiesQuery.data` is a defined non-array
     // (e.g. an empty object or an error envelope). The old `(data ?? []).filter`
@@ -74,9 +74,9 @@ describe('members-view non-array guard — ProjectGroupGrantsCard derivation', (
 
   test('happy path: filters project-scoped group policies and collects principal ids', () => {
     const policies = [
-      { principal_type: 'group', scope_type: 'project', scope_id: 'p1', principal_id: 'g1' },
-      { principal_type: 'group', scope_type: 'project', scope_id: 'p2', principal_id: 'g2' },
-      { principal_type: 'member', scope_type: 'project', scope_id: 'p1', principal_id: 'u1' },
+      { principal_type: 'group', scope_type: 'workspace', scope_id: 'p1', principal_id: 'g1' },
+      { principal_type: 'group', scope_type: 'workspace', scope_id: 'p2', principal_id: 'g2' },
+      { principal_type: 'member', scope_type: 'workspace', scope_id: 'p1', principal_id: 'u1' },
     ];
     expect(groupsWithCustomRoleFrom(policies, 'p1')).toEqual(new Set(['g1']));
   });
@@ -91,7 +91,7 @@ describe('members-view source guard — no unguarded (query.data ?? []).filter/.
     expect(membersViewSource).toContain('toArray(');
   });
 
-  test('ProjectGroupGrantsCard groupsWithCustomRole routes through toArray, not (data ?? []).filter', () => {
+  test('WorkspaceGroupGrantsCard groupsWithCustomRole routes through toArray, not (data ?? []).filter', () => {
     // The exact line that threw in prod.
     expect(membersViewSource).not.toContain('(policiesQuery.data ?? []).filter(');
     expect(membersViewSource).toContain('toArray(policiesQuery.data)');

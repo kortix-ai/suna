@@ -1,5 +1,5 @@
 /**
- * SandboxPage — the project's runtime image (web parity: customize/sections/
+ * SandboxPage — the workspace's runtime image (web parity: customize/sections/
  * sandbox-view = SandboxSnapshotCard).
  *
  * Sessions boot from a sandbox template. This surface owns:
@@ -50,21 +50,21 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import {
-  useProject,
-  useProjectSnapshots,
+  useWorkspace,
+  useWorkspaceSnapshots,
   useCreateSandboxTemplate,
   useUpdateSandboxTemplate,
   useBuildSandboxTemplate,
   useDeleteSandboxTemplate,
   useRebuildSnapshot,
   useFixSandboxWithAgent,
-} from '@/lib/projects/hooks';
+} from '@/lib/workspaces/hooks';
 import type {
   SandboxTemplate,
-  ProjectSnapshotBuild,
-  ProjectSnapshotStatus,
+  WorkspaceSnapshotBuild,
+  WorkspaceSnapshotStatus,
   SnapshotErrorCategory,
-} from '@/lib/projects/projects-client';
+} from '@/lib/workspaces/workspaces-client';
 import { haptics } from '@/lib/haptics';
 
 const MONO = 'Menlo';
@@ -78,7 +78,7 @@ interface PageTabLike {
 
 interface SandboxPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -89,7 +89,7 @@ interface SandboxPageProps {
 
 // ─── labels / helpers (web parity) ────────────────────────────────────────────
 
-const STATUS_STYLE: Record<ProjectSnapshotStatus, { label: string; color: string; bg: string; icon: LucideIcon; spin?: boolean }> = {
+const STATUS_STYLE: Record<WorkspaceSnapshotStatus, { label: string; color: string; bg: string; icon: LucideIcon; spin?: boolean }> = {
   ready: { label: 'Ready', color: '#16a34a', bg: 'rgba(34,197,94,0.12)', icon: CircleCheck },
   building: { label: 'Building', color: '#2563eb', bg: 'rgba(59,130,246,0.12)', icon: Loader, spin: true },
   failed: { label: 'Failed', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', icon: CircleX },
@@ -101,6 +101,7 @@ const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   git: 'Repository access failed',
   tunnel: 'Sandbox callback unreachable',
   provider: 'Sandbox provider error',
+  quota: 'Sandbox quota exceeded',
   timeout: 'Build timed out',
   runtime: 'Runtime artifact missing',
   unknown: 'Build failed',
@@ -140,7 +141,7 @@ function slugify(name: string): string {
 
 // ─── small UI pieces ──────────────────────────────────────────────────────────
 
-function StatusPill({ status }: { status: ProjectSnapshotStatus }) {
+function StatusPill({ status }: { status: WorkspaceSnapshotStatus }) {
   const s = STATUS_STYLE[status];
   const Icon = s.icon;
   return (
@@ -202,7 +203,7 @@ function TemplateRow({
 
   const Icon = template.is_default ? Container : template.has_image ? Package : FileCode;
   const source = template.is_default
-    ? 'Platform default · shared by every project'
+    ? 'Platform default · shared by every workspace'
     : template.has_image
       ? `Image: ${template.image}`
       : `Dockerfile: ${template.dockerfile_path}`;
@@ -273,12 +274,12 @@ function NumField({ label, value, onChange, isDark }: { label: string; value: st
 }
 
 function SandboxTemplateSheet({
-  projectId,
+  workspaceId,
   template,
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   template: SandboxTemplate | null;
   onClose: () => void;
   isDark: boolean;
@@ -286,8 +287,8 @@ function SandboxTemplateSheet({
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const isEdit = !!template;
-  const create = useCreateSandboxTemplate(projectId);
-  const update = useUpdateSandboxTemplate(projectId);
+  const create = useCreateSandboxTemplate(workspaceId);
+  const update = useUpdateSandboxTemplate(workspaceId);
 
   const [name, setName] = useState(template?.name ?? '');
   const [slug, setSlug] = useState(template?.slug ?? '');
@@ -489,7 +490,7 @@ function SandboxTemplateSheet({
 
 export function SandboxPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -501,14 +502,14 @@ export function SandboxPage({
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
 
-  const projectQuery = useProject(projectId);
-  const canManage = projectQuery.data?.effective_project_role === 'editor';
-  const { data, isLoading, isError, error, refetch } = useProjectSnapshots(projectId);
+  const workspaceQuery = useWorkspace(workspaceId);
+  const canManage = workspaceQuery.data?.effective_workspace_role === 'editor';
+  const { data, isLoading, isError, error, refetch } = useWorkspaceSnapshots(workspaceId);
 
-  const buildMut = useBuildSandboxTemplate(projectId);
-  const deleteMut = useDeleteSandboxTemplate(projectId);
-  const rebuildMut = useRebuildSnapshot(projectId);
-  const fixMut = useFixSandboxWithAgent(projectId);
+  const buildMut = useBuildSandboxTemplate(workspaceId);
+  const deleteMut = useDeleteSandboxTemplate(workspaceId);
+  const rebuildMut = useRebuildSnapshot(workspaceId);
+  const fixMut = useFixSandboxWithAgent(workspaceId);
 
   const [editing, setEditing] = useState<SandboxTemplate | null>(null);
   const [busyTemplate, setBusyTemplate] = useState<string | null>(null);
@@ -598,7 +599,7 @@ export function SandboxPage({
             )}
           </View>
           <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, marginBottom: 18 }}>
-            Sessions boot from a sandbox template. The platform default is shared by every project and clones your repo into /workspace at boot. Add your own here or in kortix.yaml.
+            Sessions boot from a sandbox template. The platform default is shared by every workspace and clones your repo into /workspace at boot. Add your own here or in kortix.yaml.
           </Text>
 
           {isLoading ? (
@@ -616,7 +617,7 @@ export function SandboxPage({
                 <View style={{ marginBottom: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(217,119,6,0.08)' }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <TriangleAlert size={14} color="#d97706" />
-                    <Text style={{ fontSize: 12.5, color: '#d97706', flex: 1 }}>Couldn't read project sandbox config: {data.templates_error}</Text>
+                    <Text style={{ fontSize: 12.5, color: '#d97706', flex: 1 }}>Couldn't read workspace sandbox config: {data.templates_error}</Text>
                   </View>
                 </View>
               )}
@@ -694,7 +695,7 @@ export function SandboxPage({
                   </View>
                 ) : (
                   <View style={{ borderRadius: 14, borderWidth: 1, borderColor: border, backgroundColor: cardBg, overflow: 'hidden' }}>
-                    {builds.slice(0, 10).map((b: ProjectSnapshotBuild, i) => (
+                    {builds.slice(0, 10).map((b: WorkspaceSnapshotBuild, i) => (
                       <View key={b.build_id} style={{ paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: i === Math.min(builds.length, 10) - 1 ? 0 : 1, borderBottomColor: border }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <View style={{ paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 5, backgroundColor: codeBg }}>
@@ -731,7 +732,7 @@ export function SandboxPage({
         keyboardBlurBehavior="restore"
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
-        <SandboxTemplateSheet projectId={projectId} template={editing} onClose={() => formSheetRef.current?.dismiss()} isDark={isDark} />
+        <SandboxTemplateSheet workspaceId={workspaceId} template={editing} onClose={() => formSheetRef.current?.dismiss()} isDark={isDark} />
       </BottomSheetModal>
     </View>
   );

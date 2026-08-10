@@ -10,7 +10,7 @@ import { useMemo } from 'react';
 
 // ---------------------------------------------------------------------------
 // Shared `DiffView` — single replacement for every custom diff renderer in
-// the app. Wraps @pierre/diffs' React `PatchDiff` with project-wide defaults:
+// the app. Wraps @pierre/diffs' React `PatchDiff` with workspace-wide defaults:
 //   • the app palette from @/lib/code-theme (light/dark driven by next-themes)
 //   • Split layout by default with caller-overridable layout/indicator props
 //   • Word-level inline highlighting so character-level edits read clearly

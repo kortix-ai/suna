@@ -51,7 +51,7 @@ async function sweepOnce(): Promise<void> {
   }
 
   try {
-    const { reapGitCacheOverBudget } = await import('../projects/git/mirror');
+    const { reapGitCacheOverBudget } = await import('../workspaces/git/mirror');
     const { totalBytes, deleted, freedBytes } = await reapGitCacheOverBudget();
     if (deleted > 0) {
       logger.info('[tmp-reaper] evicted LRU git mirrors over cache budget', {

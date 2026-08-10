@@ -1,0 +1,483 @@
+// Gateway observability — LLM request logs, cost/latency rollups, per-workspace
+// budgets, and gateway API keys.
+
+import { backendApi } from '../../http/api-client';
+import { unwrap } from './shared';
+
+export interface GatewayLogRow {
+  log_id: string;
+  request_id: string;
+  created_at: string;
+  requested_model: string;
+  resolved_model: string;
+  provider: string;
+  status: number;
+  ok: boolean;
+  error_code: string | null;
+  error_message: string | null;
+  latency_ms: number;
+  attempts: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+  upstream_cost: number;
+  final_cost: number;
+  streaming: boolean;
+  billing_mode: string | null;
+  actor_user_id: string | null;
+  key_id: string | null;
+}
+
+export interface GatewayLogDetail extends GatewayLogRow {
+  candidates_tried: string[];
+  request: unknown;
+  response: unknown;
+  metadata: Record<string, unknown>;
+}
+
+export interface GatewayLogsResponse {
+  logs: GatewayLogRow[];
+  next_offset: number | null;
+}
+
+export interface GatewayOverview {
+  window_days: number;
+  requests: number;
+  errors: number;
+  total_cost: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface GatewaySeriesPoint {
+  day: string;
+  requests: number;
+  errors: number;
+  cost: number;
+  input_tokens: number;
+  output_tokens: number;
+  p50: number;
+  p95: number;
+  p99: number;
+}
+
+export interface GatewayErrorStat {
+  code: string;
+  count: number;
+}
+
+export interface GatewayErrorsResponse {
+  window_days: number;
+  errors: GatewayErrorStat[];
+}
+
+export interface GatewaySeries {
+  window_days: number;
+  series: GatewaySeriesPoint[];
+}
+
+export interface GatewayModelStat {
+  model: string;
+  provider: string;
+  requests: number;
+  errors: number;
+  cost: number;
+  tokens: number;
+}
+
+export interface GatewayBreakdown {
+  window_days: number;
+  models: GatewayModelStat[];
+}
+
+export interface GatewaySessionStat {
+  session_id: string;
+  llm_cost: number;
+  compute_cost: number;
+  total_cost: number;
+  requests: number;
+  errors: number;
+  tokens: number;
+  models: number;
+  compute_seconds: number;
+  last_at: string | null;
+}
+
+export interface GatewaySessions {
+  window_days: number;
+  sessions: GatewaySessionStat[];
+}
+
+export interface GatewayBudgetRow {
+  budget_id: string;
+  scope: 'workspace' | 'member';
+  subject_user_id: string | null;
+  limit_usd: number;
+  period: 'day' | 'week' | 'month';
+  action: 'block' | 'warn';
+}
+
+export interface GatewayMemberSpend {
+  user_id: string | null;
+  email: string | null;
+  requests: number;
+  cost: number;
+  tokens: number;
+}
+
+export interface GatewayBudgetsResponse {
+  workspace_spend: { requests: number; cost: number };
+  budgets: GatewayBudgetRow[];
+  members: GatewayMemberSpend[];
+}
+
+export interface SetGatewayBudgetInput {
+  scope: 'workspace' | 'member';
+  subject_user_id?: string | null;
+  limit_usd: number;
+  period?: 'day' | 'week' | 'month';
+  action?: 'block' | 'warn';
+}
+
+export interface GatewayKeyRow {
+  key_id: string;
+  name: string;
+  key_prefix: string;
+  status: 'active' | 'revoked' | 'expired';
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface CreatedGatewayKey {
+  key_id: string;
+  name: string;
+  key_prefix: string;
+  secret_key: string;
+}
+
+export type GatewayFallbackCondition = 'transient' | 'any-error';
+
+export interface GatewayFallbackChain {
+  models: string[];
+  fallbackOn: GatewayFallbackCondition;
+}
+
+export interface GatewayRoutingRule {
+  model: string;
+  fallbackModels: string[];
+  fallbackOn: GatewayFallbackCondition;
+}
+
+/** Per-model generation-parameter defaults (reasoning effort, temperature,
+ *  top_p, max output tokens) — a generic blob, extensible without a schema
+ *  change. Every field is capability-gated per model on the server; see
+ *  `@kortix/llm-catalog`'s `generationControlCapabilities`/
+ *  `clampGenerationConfig`, the single source of truth the generation-
+ *  controls panel derives its show/hide + valid-range rules from. */
+export interface GatewayModelGenerationConfig {
+  reasoningEffort?: string;
+  temperature?: number;
+  topP?: number;
+  maxOutputTokens?: number;
+}
+
+export interface GatewayWorkspaceRoutingPolicy {
+  defaultModel: string | null;
+  visionModel: string | null;
+  defaultFallback: GatewayFallbackChain | null;
+  rules: GatewayRoutingRule[];
+  /** Optional for back-compat with callers built before this field existed —
+   *  the server defaults it to `{}` when omitted. */
+  modelGenerationConfig?: Record<string, GatewayModelGenerationConfig>;
+}
+
+export interface GatewayRoutingPolicyDocument {
+  version: 1;
+  workspace: GatewayWorkspaceRoutingPolicy;
+  effective: {
+    defaultModel: string;
+    defaultModelSource: 'workspace' | 'account' | 'platform';
+    visionModel: string;
+    defaultFallback: GatewayFallbackChain;
+  };
+  platform: {
+    defaultModel: string;
+    visionModel: string;
+    defaultFallback: GatewayFallbackChain;
+  };
+  capabilities?: { write: boolean };
+}
+
+export interface GatewayRoutePreviewInput {
+  requestedModel: string;
+  imageInput: boolean;
+}
+
+export interface GatewayRoutePreview {
+  version: 1;
+  route: {
+    policyId: string;
+    primaryModel: string;
+    fallbackModels: string[];
+    fallbackOn: GatewayFallbackCondition;
+  };
+  models: Array<{ model: string; available: boolean }>;
+}
+
+export async function getGatewayRoutingPolicy(
+  workspaceId: string,
+): Promise<GatewayRoutingPolicyDocument> {
+  return unwrap(
+    await backendApi.get<GatewayRoutingPolicyDocument>(
+      `/workspaces/${workspaceId}/gateway/routing-policy`,
+    ),
+    'Gateway routing policy request failed',
+  );
+}
+
+export async function setGatewayRoutingPolicy(
+  workspaceId: string,
+  policy: GatewayWorkspaceRoutingPolicy,
+): Promise<GatewayRoutingPolicyDocument> {
+  return unwrap(
+    await backendApi.put<GatewayRoutingPolicyDocument>(
+      `/workspaces/${workspaceId}/gateway/routing-policy`,
+      policy,
+    ),
+    'Gateway routing policy request failed',
+  );
+}
+
+export async function resetGatewayRoutingPolicy(
+  workspaceId: string,
+): Promise<GatewayRoutingPolicyDocument> {
+  return unwrap(
+    await backendApi.delete<GatewayRoutingPolicyDocument>(
+      `/workspaces/${workspaceId}/gateway/routing-policy`,
+    ),
+    'Gateway routing policy request failed',
+  );
+}
+
+export async function previewGatewayRoute(
+  workspaceId: string,
+  input: GatewayRoutePreviewInput,
+): Promise<GatewayRoutePreview> {
+  return unwrap(
+    await backendApi.post<GatewayRoutePreview>(
+      `/workspaces/${workspaceId}/gateway/routing-policy/preview`,
+      input,
+    ),
+    'Gateway route preview failed',
+  );
+}
+
+export async function listGatewayLogs(
+  workspaceId: string,
+  opts?: { limit?: number; offset?: number; ok?: boolean },
+): Promise<GatewayLogsResponse> {
+  const q = new URLSearchParams();
+  if (opts?.limit) q.set('limit', String(opts.limit));
+  if (opts?.offset) q.set('offset', String(opts.offset));
+  if (opts?.ok !== undefined) q.set('ok', String(opts.ok));
+  const qs = q.toString();
+  return unwrap(
+    await backendApi.get<GatewayLogsResponse>(
+      `/workspaces/${workspaceId}/gateway/logs${qs ? `?${qs}` : ''}`,
+    ),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewayLog(workspaceId: string, logId: string): Promise<GatewayLogDetail> {
+  return unwrap(
+    await backendApi.get<GatewayLogDetail>(`/workspaces/${workspaceId}/gateway/logs/${logId}`),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewayOverview(
+  workspaceId: string,
+  days?: number,
+): Promise<GatewayOverview> {
+  return unwrap(
+    await backendApi.get<GatewayOverview>(
+      `/workspaces/${workspaceId}/gateway/overview${days ? `?days=${days}` : ''}`,
+    ),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewaySeries(workspaceId: string, days?: number): Promise<GatewaySeries> {
+  return unwrap(
+    await backendApi.get<GatewaySeries>(
+      `/workspaces/${workspaceId}/gateway/series${days ? `?days=${days}` : ''}`,
+    ),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewayBreakdown(
+  workspaceId: string,
+  days?: number,
+): Promise<GatewayBreakdown> {
+  return unwrap(
+    await backendApi.get<GatewayBreakdown>(
+      `/workspaces/${workspaceId}/gateway/breakdown${days ? `?days=${days}` : ''}`,
+    ),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewaySessions(
+  workspaceId: string,
+  days?: number,
+): Promise<GatewaySessions> {
+  return unwrap(
+    await backendApi.get<GatewaySessions>(
+      `/workspaces/${workspaceId}/gateway/sessions${days ? `?days=${days}` : ''}`,
+    ),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewayErrors(
+  workspaceId: string,
+  days?: number,
+): Promise<GatewayErrorsResponse> {
+  return unwrap(
+    await backendApi.get<GatewayErrorsResponse>(
+      `/workspaces/${workspaceId}/gateway/errors${days ? `?days=${days}` : ''}`,
+    ),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewayBudgets(workspaceId: string): Promise<GatewayBudgetsResponse> {
+  return unwrap(
+    await backendApi.get<GatewayBudgetsResponse>(`/workspaces/${workspaceId}/gateway/budgets`),
+    'Gateway request failed',
+  );
+}
+
+export async function setGatewayBudget(
+  workspaceId: string,
+  input: SetGatewayBudgetInput,
+): Promise<{ ok: boolean }> {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(`/workspaces/${workspaceId}/gateway/budgets`, input),
+    'Gateway request failed',
+  );
+}
+
+export async function deleteGatewayBudget(
+  workspaceId: string,
+  budgetId: string,
+): Promise<{ ok: boolean }> {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${workspaceId}/gateway/budgets/${budgetId}`),
+    'Gateway request failed',
+  );
+}
+
+export async function getGatewayKeys(
+  workspaceId: string,
+): Promise<{ keys: GatewayKeyRow[]; gateway_url?: string | null }> {
+  return unwrap(
+    await backendApi.get<{ keys: GatewayKeyRow[]; gateway_url?: string | null }>(
+      `/workspaces/${workspaceId}/gateway/keys`,
+    ),
+    'Gateway request failed',
+  );
+}
+
+export async function createGatewayKey(
+  workspaceId: string,
+  name: string,
+): Promise<CreatedGatewayKey> {
+  return unwrap(
+    await backendApi.post<CreatedGatewayKey>(`/workspaces/${workspaceId}/gateway/keys`, { name }),
+    'Gateway request failed',
+  );
+}
+
+export async function revokeGatewayKey(workspaceId: string, keyId: string): Promise<{ ok: boolean }> {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${workspaceId}/gateway/keys/${keyId}`),
+    'Gateway request failed',
+  );
+}
+
+export interface GatewayPlaygroundResult {
+  model: string;
+  ok: boolean;
+  latency_ms?: number;
+  output?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  /** Final (post-markup) cost in USD, present only when the request succeeded. */
+  cost?: number;
+  /** The concrete upstream model the requested id resolved to. */
+  resolved_model?: string;
+  provider?: string;
+  error?: string;
+}
+
+export interface GatewayPlaygroundResponse {
+  results: GatewayPlaygroundResult[];
+}
+
+/** Run one prompt against up to 6 models side by side (a model-comparison playground).
+ *  `generationConfig`, when given, is a per-model map of generation-parameter
+ *  overrides (reasoning effort, temperature, top_p, max output tokens) applied
+ *  ONLY to that model's call — capability-gated + clamped server-side against
+ *  the model's live catalog entry, same as the persisted routing-policy config. */
+export async function runGatewayPlayground(
+  workspaceId: string,
+  prompt: string,
+  models: string[],
+  system?: string,
+  generationConfig?: Record<string, GatewayModelGenerationConfig>,
+): Promise<GatewayPlaygroundResponse> {
+  return unwrap(
+    await backendApi.post<GatewayPlaygroundResponse>(`/workspaces/${workspaceId}/gateway/playground`, {
+      prompt,
+      models,
+      ...(system ? { system } : {}),
+      ...(generationConfig && Object.keys(generationConfig).length ? { generationConfig } : {}),
+    }),
+    'Gateway request failed',
+  );
+}
+
+/**
+ * Whether a connected provider's credential actually works — "Connected"
+ * only means a secret row exists (see api-key-connect-form.tsx); this makes
+ * one cheap live check through the gateway and classifies the result.
+ * `not_connected` means no key is configured at all; `unknown` covers every
+ * inconclusive outcome (timeout, rate limit, unrelated resolution failure) —
+ * never collapsed into `invalid`, which is reserved for a confirmed
+ * provider-side credential rejection.
+ */
+export type GatewayProviderVerifyStatus = 'verified' | 'invalid' | 'unknown' | 'not_connected';
+
+export interface GatewayProviderVerifyResult {
+  status: GatewayProviderVerifyStatus;
+  message: string;
+  checked_at: string;
+}
+
+/** Verify a connected provider's credential with one cheap live completion. */
+export async function verifyGatewayProvider(
+  workspaceId: string,
+  providerId: string,
+): Promise<GatewayProviderVerifyResult> {
+  return unwrap(
+    await backendApi.post<GatewayProviderVerifyResult>(
+      `/workspaces/${workspaceId}/gateway/providers/${encodeURIComponent(providerId)}/verify`,
+      {},
+    ),
+    'Gateway provider verification failed',
+  );
+}

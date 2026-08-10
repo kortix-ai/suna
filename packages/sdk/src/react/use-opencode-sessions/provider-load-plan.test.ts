@@ -6,7 +6,7 @@ describe("shouldLoadProjectModelPicker", () => {
   test("starts the model-picker request while project detail is unresolved", () => {
     expect(
       shouldLoadProjectModelPicker({
-        projectId: "project-1",
+        workspaceId: "project-1",
         projectModeKnown: false,
         projectGatewayEnabled: false,
       }),
@@ -16,7 +16,7 @@ describe("shouldLoadProjectModelPicker", () => {
   test("keeps the model-picker request enabled for a gateway project", () => {
     expect(
       shouldLoadProjectModelPicker({
-        projectId: "project-1",
+        workspaceId: "project-1",
         projectModeKnown: true,
         projectGatewayEnabled: true,
       }),
@@ -26,7 +26,7 @@ describe("shouldLoadProjectModelPicker", () => {
   test("does not request the gateway model-picker for a known native project", () => {
     expect(
       shouldLoadProjectModelPicker({
-        projectId: "project-1",
+        workspaceId: "project-1",
         projectModeKnown: true,
         projectGatewayEnabled: false,
       }),
@@ -36,7 +36,7 @@ describe("shouldLoadProjectModelPicker", () => {
   test("does not request a project model-picker outside a project route", () => {
     expect(
       shouldLoadProjectModelPicker({
-        projectId: null,
+        workspaceId: null,
         projectModeKnown: true,
         projectGatewayEnabled: false,
       }),

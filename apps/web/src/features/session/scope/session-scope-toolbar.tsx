@@ -22,7 +22,7 @@ const unavailableCatalog: SessionScopeSelectionCatalog = {
 };
 
 export interface SessionScopeToolbarProps {
-  projectId: string;
+  workspaceId: string;
   sessionId?: string;
   agentName?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
@@ -76,6 +76,23 @@ function canonicalDraftFromReplacement(replacement: SessionScopeInput): SessionS
   return draft;
 }
 
+function canonicalCommittedDraft(
+  replacement: SessionScopeInput,
+  source: SessionScopeDraft,
+): SessionScopeDraft {
+  const draft = canonicalDraftFromReplacement(replacement);
+  if (source.connector_bindings_inherited && source.connector_bindings !== undefined) {
+    draft.connector_bindings = Object.fromEntries(
+      Object.entries(source.connector_bindings).map(([alias, binding]) => [
+        alias,
+        { connection_id: binding.connection_id },
+      ]),
+    );
+    draft.connector_bindings_inherited = true;
+  }
+  return draft;
+}
+
 export function createNewSessionScopeInitialization(catalog: SessionScopeSelectionCatalog): {
   draft: SessionScopeDraft;
   commit: SessionScopeCommit | undefined;
@@ -89,7 +106,7 @@ export function createNewSessionScopeInitialization(catalog: SessionScopeSelecti
   return {
     draft,
     commit: {
-      draft: canonicalDraftFromReplacement(replacement),
+      draft: canonicalCommittedDraft(replacement, draft),
       availability,
     },
   };
@@ -109,7 +126,7 @@ export async function commitSessionScopeDraft({
   const replacement = buildSessionScopeReplacement(draft, previousScope, availability);
   if (!sessionId) {
     onCommittedDraft?.({
-      draft: canonicalDraftFromReplacement(replacement),
+      draft: canonicalCommittedDraft(replacement, draft),
       availability,
     });
     return undefined;
@@ -134,13 +151,13 @@ function newScopeCatalogSignature(catalog: SessionScopeSelectionCatalog): string
 }
 
 export function SessionScopeToolbar({
-  projectId,
+  workspaceId,
   sessionId,
   agentName,
   onCommittedDraft,
 }: SessionScopeToolbarProps) {
   const { scope, catalog, saveScope, isLoading, isScopeLoading } = useSessionScope({
-    projectId,
+    workspaceId,
     sessionId,
     agentName,
   });
@@ -149,13 +166,13 @@ export function SessionScopeToolbar({
 
   const initializationKey = useMemo(() => {
     if (!catalog) return null;
-    const identity = `${projectId}:${sessionId ?? 'new'}:${agentName ?? ''}`;
+    const identity = `${workspaceId}:${sessionId ?? 'new'}:${agentName ?? ''}`;
     if (sessionId) {
       if (!scope) return null;
       return `${identity}:${catalog.secrets.status}:${catalog.connector_connections.status}:${activeScopeSignature(scope)}`;
     }
     return `${identity}:${newScopeCatalogSignature(catalog)}`;
-  }, [agentName, catalog, projectId, scope, sessionId]);
+  }, [agentName, catalog, workspaceId, scope, sessionId]);
 
   const [draftState, setDraftState] = useState<{
     key: string | null;

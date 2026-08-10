@@ -78,7 +78,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
  * Deep links and bookmarks into `/customize/<section>` land on the new page
  * instead of opening the overlay.
  */
-const GRADUATED: Record<string, (projectId: string) => string> = {
+const GRADUATED: Record<string, (workspaceId: string) => string> = {
   files: (p) => `/workspaces/${p}/files`,
   changes: (p) => `/workspaces/${p}/files?panel=proposed-changes`,
   // The overlay section was `agents`; the route segment is `agent`. Both
@@ -91,12 +91,12 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
 };
 
 export function legacyCustomizeRedirect(
-  projectId: string,
+  workspaceId: string,
   rawSection: string | null | undefined,
 ): string | null {
   if (!rawSection) return null;
   const build = GRADUATED[rawSection];
-  return build ? build(projectId) : null;
+  return build ? build(workspaceId) : null;
 }
 
 export function parseCustomizeSection(raw: string | null | undefined): CustomizeSection | null {

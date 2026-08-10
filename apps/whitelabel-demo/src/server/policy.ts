@@ -50,7 +50,7 @@ function deny(status: number, reason: string): PolicyResult {
  *                                   unknown). Required to allow sandbox-proxy traffic —
  *                                   see the `p/` rule below. The caller (the proxy
  *                                   route) is expected to back this with an
- *                                   authoritative sandboxId → projectId lookup; until
+ *                                   authoritative sandboxId → workspaceId lookup; until
  *                                   it supplies one, sandbox-proxy traffic is denied by
  *                                   default rather than left open to every authenticated
  *                                   session (see the HIGH IDOR this closes).
@@ -58,7 +58,7 @@ function deny(status: number, reason: string): PolicyResult {
 export function evaluatePolicy(
   method: string,
   path: string,
-  isOwner: (projectId: string) => boolean,
+  isOwner: (workspaceId: string) => boolean,
   resolveProjectIdForSandbox?: (sandboxId: string) => string | null | undefined,
 ): PolicyResult {
   const p = path.replace(/^\/+/, '').replace(/\/+$/, '');
@@ -76,7 +76,7 @@ export function evaluatePolicy(
   // another tenant's live sandbox by guessing or observing its id). Sandbox
   // ids are opaque (Daytona's own external id, unrelated to the project id —
   // see `packages/sdk/src/session/url.ts`), so this now requires the caller
-  // to resolve sandboxId → projectId via `resolveProjectIdForSandbox` and
+  // to resolve sandboxId → workspaceId via `resolveProjectIdForSandbox` and
   // checks that resolved project against `isOwner`, mirroring the
   // `projects/{id}/...` / `connectors/projects/{id}/...` ownership checks
   // below. `resolveProjectIdForSandbox` is not wired up here (this module
@@ -86,8 +86,8 @@ export function evaluatePolicy(
   const sandboxProxyMatch = p.match(/^p\/([^/]+)\/(\d+)(?:\/.*)?$/);
   if (sandboxProxyMatch) {
     const [, sandboxId] = sandboxProxyMatch;
-    const projectId = resolveProjectIdForSandbox?.(sandboxId);
-    if (!projectId || !isOwner(projectId)) {
+    const workspaceId = resolveProjectIdForSandbox?.(sandboxId);
+    if (!workspaceId || !isOwner(workspaceId)) {
       return deny(403, "You don't have access to this sandbox.");
     }
     return allow();
@@ -124,9 +124,9 @@ export function evaluatePolicy(
     /^projects\/([^/]+)\/sessions\/[^/]+\/start$/,
   );
   if (sessionStartMatch && m === 'POST') {
-    const projectId = sessionStartMatch[1];
-    return isOwner(projectId)
-      ? allow({ recordRuntimeProjectId: projectId })
+    const workspaceId = sessionStartMatch[1];
+    return isOwner(workspaceId)
+      ? allow({ recordRuntimeProjectId: workspaceId })
       : deny(403, "You don't have access to this project.");
   }
 

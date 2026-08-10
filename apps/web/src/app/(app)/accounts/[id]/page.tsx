@@ -35,7 +35,7 @@ import { IdentityIntro } from '@/components/iam/identity-intro';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
+import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/workspace-role-descriptors';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
@@ -101,9 +101,9 @@ import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
-  type AccountDetail,
+  type WorkspaceAccountDetail,
   type AccountInvitation,
-  type AccountMember,
+  type WorkspaceAccountMember,
   type AccountRole,
   cancelAccountInvite,
   deleteGitHubInstallation,
@@ -239,7 +239,7 @@ function formatDate(input: string | null | undefined) {
   });
 }
 
-function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
+function memberLabel(member: Pick<WorkspaceAccountMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
 }
 
@@ -262,7 +262,7 @@ function rememberGitHubSetupReturn(path: string) {
   try {
     window.localStorage.setItem('kortix:github_setup_return', path);
   } catch {
-    // Non-critical: the setup page falls back to the project import flow.
+    // Non-critical: the setup page falls back to the workspace import flow.
   }
 }
 
@@ -430,7 +430,7 @@ export default function AccountSettingsPage() {
                   <div key={group.label ?? gi} className="contents lg:block lg:space-y-0.5">
                     {gi > 0 ? <div className="hidden lg:block lg:h-4" aria-hidden /> : null}
                     {group.label ? (
-                      // Same label dialect as the project sidebar's group
+                      // Same label dialect as the workspace sidebar's group
                       // headings. Hidden on the mobile horizontal strip —
                       // there the items flow as one row of chips.
                       <p className="text-muted-foreground/60 hidden px-2.5 pb-1 text-xs font-medium tracking-wider uppercase lg:block">
@@ -698,7 +698,7 @@ function GitHubConnectionCard({
   account,
   canManage,
 }: {
-  account: AccountDetail;
+  account: WorkspaceAccountDetail;
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -867,7 +867,7 @@ function GitHubConnectionCard({
         open={Boolean(disconnectTarget)}
         onOpenChange={(open) => !open && setDisconnectTarget(null)}
         title="Disconnect GitHub"
-        description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working until it is connected again. Existing projects keep their repository link.`}
+        description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working until it is connected again. Existing workspaces keep their repository link.`}
         confirmLabel="Disconnect"
         onConfirm={() => {
           if (disconnectTarget) {
@@ -917,7 +917,7 @@ function GeneralCard({
   queryClient,
   canWrite,
 }: {
-  account: AccountDetail;
+  account: WorkspaceAccountDetail;
   queryClient: ReturnType<typeof useQueryClient>;
   canWrite: boolean;
 }) {
@@ -989,7 +989,7 @@ function DangerZoneCard() {
         <div className="min-w-0">
           <p className="text-foreground text-sm font-medium">Delete account</p>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Permanently deletes this account and all its projects.
+            Permanently deletes this account and all its workspaces.
           </p>
         </div>
         <Button variant="outline" size="sm" disabled title="Coming soon" className="shrink-0">
@@ -1015,8 +1015,8 @@ function MembersCard({
   canRemove,
   canUpdateRole,
 }: {
-  account: AccountDetail;
-  members: AccountMember[];
+  account: WorkspaceAccountDetail;
+  members: WorkspaceAccountMember[];
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -1040,7 +1040,7 @@ function MembersCard({
       next.delete(userId);
       return next;
     });
-  const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<WorkspaceAccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   // Staged like removeTarget/leaveConfirmOpen above — role changes (including
   // the hard-to-undo promote-to-Owner) go through a confirmation instead of
@@ -1413,11 +1413,11 @@ function MembersCard({
                   const metaParts: string[] = [`Joined ${formatDate(member.joined_at)}`];
                   if (
                     member.account_role === 'member' &&
-                    typeof member.explicit_project_count === 'number' &&
-                    member.explicit_project_count > 0
+                    typeof member.explicit_workspace_count === 'number' &&
+                    member.explicit_workspace_count > 0
                   ) {
                     metaParts.push(
-                      `${member.explicit_project_count} project${member.explicit_project_count === 1 ? '' : 's'}`,
+                      `${member.explicit_workspace_count} workspace${member.explicit_workspace_count === 1 ? '' : 's'}`,
                     );
                   }
                   if (member.groups && member.groups.length > 0) {
@@ -1670,7 +1670,7 @@ function MembersCard({
         description={
           <span>
             You&apos;ll lose access to{' '}
-            <span className="text-foreground font-medium">{account.name}</span> and its projects.
+            <span className="text-foreground font-medium">{account.name}</span> and its workspaces.
           </span>
         }
         confirmLabel="Leave"

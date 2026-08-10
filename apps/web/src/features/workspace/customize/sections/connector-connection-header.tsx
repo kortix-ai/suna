@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * The icon tile for a connector that does not exist yet. `ConnectorAppIcon`
- * (`connectors-view.tsx:729`) needs an `AdminConnector`; the add flow has a
+ * (`connectors-view.tsx:729`) needs an `WorkspaceAdminConnector`; the add flow has a
  * catalogue app — an image URL and a name, nothing more. Same 40px bordered
  * tile, same `object-contain` treatment, so the two are indistinguishable on
  * screen.

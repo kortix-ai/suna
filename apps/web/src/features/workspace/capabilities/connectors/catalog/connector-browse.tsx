@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeftIcon, GlobeIcon, PlusIcon } from '@phosphor-icons/react';
+import { ArrowLeftIcon, GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
 import Image from 'next/image';
 import { useCallback, useMemo, useState, type CSSProperties } from 'react';
 
@@ -20,11 +20,7 @@ import { GRID_CLASSNAME } from '@/features/workspace/capabilities/shared/catalog
 import { cn } from '@/lib/utils';
 import { catalogSections, isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
 import { catalogFootSummary } from './catalog-foot';
-import {
-  CATALOG_INITIAL_REVEAL,
-  canRevealMore,
-  nextRevealCount,
-} from './catalog-paging';
+import { CATALOG_INITIAL_REVEAL, canRevealMore, nextRevealCount } from './catalog-paging';
 import { CategoryIcon } from './category-icon';
 import {
   ALL_CATEGORIES,
@@ -67,11 +63,11 @@ function CatalogAffordance({ connected }: { connected: boolean }) {
  * 10% in light, pure white at 10% in dark. A tinted neutral would pick up the
  * surface colour behind it and read as dirt on the logo's edge.
  */
-function ConnectorIcon({ icon }: { icon: string | null }) {
+function ConnectorIcon({ icon, computer = false }: { icon: string | null; computer?: boolean }) {
   if (!icon) {
     return (
       <span className="bg-card flex size-9 shrink-0 items-center justify-center rounded-sm">
-        <GlobeIcon className="size-5" />
+        {computer ? <MonitorIcon className="size-5" /> : <GlobeIcon className="size-5" />}
       </span>
     );
   }
@@ -111,7 +107,7 @@ function CatalogEntryCard({
 }) {
   return (
     <CatalogCard
-      leading={<ConnectorIcon icon={entry.icon} />}
+      leading={<ConnectorIcon icon={entry.icon} computer={entry.source === 'computer'} />}
       title={entry.name}
       description={entry.description}
       trailing={<CatalogAffordance connected={isCatalogEntryConnected(entry, connectedKeys)} />}
@@ -555,10 +551,7 @@ export function ConnectorBrowse({
           above the catalogue — the page is the catalogue, and a category is a
           place you go rather than a switch you leave flipped. */}
       {!searching && activeCategory !== ALL_CATEGORIES ? (
-        <CategoryViewHeader
-          category={activeCategory}
-          onBack={() => openCategory(ALL_CATEGORIES)}
-        />
+        <CategoryViewHeader category={activeCategory} onBack={() => openCategory(ALL_CATEGORIES)} />
       ) : null}
 
       {showSections ? (

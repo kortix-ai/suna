@@ -151,7 +151,7 @@ describe('pageCatalogItems', () => {
         name: 'pdf',
         type: 'registry:skill',
         registry: 'kortix-starter',
-        partOfProject: { id: 'kortix-projects:starter', title: 'Kortix Starter' },
+        partOfWorkspace: { id: 'kortix-projects:starter', title: 'Kortix Starter' },
       }),
       item({ id: 'kortix-projects:starter', name: 'starter', type: 'registry:project', registry: 'kortix-projects' }),
     ];
@@ -159,7 +159,7 @@ describe('pageCatalogItems', () => {
     expect(result.items.map((it) => it.name).sort()).toEqual(['pdf', 'starter']);
     expect(result.total).toBe(2);
     const pdf = result.items.find((it) => it.name === 'pdf')!;
-    expect(pdf.partOfProject).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
+    expect(pdf.partOfWorkspace).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
   });
 
   test('surfaces skills and projects as browseable; hides agents/commands/bundles/support types', () => {

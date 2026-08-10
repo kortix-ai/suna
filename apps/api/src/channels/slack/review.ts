@@ -29,7 +29,7 @@ export async function postReviewCard(
   await finalizeTurn(handle, {});
   await deleteTurn(sessionId);
 
-  const webUrl = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
+  const webUrl = sessionWebUrl(config.FRONTEND_URL, handle.workspaceId, handle.sessionId);
   const blocks = buildReviewCardBlocks(item, { webUrl });
   const fallback = item.title?.slice(0, 200) || 'A review item needs you';
   const messageTs = await postBlocks(

@@ -1,7 +1,7 @@
 /**
  * The seed prompt for "Migrate to v2" — a normal agent session does the
  * conversion because it's just files + git (Marko's framing). We start a
- * fresh session with this as the first message; the project's default agent
+ * fresh session with this as the first message; the workspace's default agent
  * reads the repo, rewrites the manifest, and opens a change request for a
  * human to review. Nothing here merges anything — that's the whole point of
  * routing config changes through the same CR path as any other edit.
@@ -23,18 +23,18 @@
  * independently testable and diffable — this is the load-bearing artifact of
  * the feature, not the wiring around it.
  */
-export const MIGRATE_TO_V2_PROMPT = `Migrate this project's manifest from kortix_version 1 (kortix.toml) to kortix_version 2 (kortix.yaml). Read everything first, then make the change, then land it as a change request — do not merge it yourself.
+export const MIGRATE_TO_V2_PROMPT = `Migrate this workspace's manifest from kortix_version 1 (kortix.toml) to kortix_version 2 (kortix.yaml). Read everything first, then make the change, then land it as a change request — do not merge it yourself.
 
 ## 1. Read before you write
 
-- The current manifest: \`kortix.toml\` (or \`kortix.yaml\` if this project already partially moved — check \`kortix_version\` at the top either way).
+- The current manifest: \`kortix.toml\` (or \`kortix.yaml\` if this workspace already partially moved — check \`kortix_version\` at the top either way).
 - Any \`[[agents]]\` entries in the v1 manifest — these carry \`connectors\`, \`kortix_cli\`, and \`env\` grants per agent name. An agent name with NO \`[[agents]]\` entry at all is today unrestricted (v1's back-compat default is "all" when a grant key is omitted).
-- \`.kortix/opencode/opencode.jsonc\` — if it sets a top-level \`default_agent\`, that is the project's existing default; use it. If it doesn't, pick the agent whose \`.kortix/opencode/agents/*.md\` frontmatter has \`mode: primary\` and reads as the general/primary one (usually the first-created or the one with the broadest permissions). Record which you picked and why in the change request description — a human reviews this before it merges, so a defensible choice beats blocking on it.
+- \`.kortix/opencode/opencode.jsonc\` — if it sets a top-level \`default_agent\`, that is the workspace's existing default; use it. If it doesn't, pick the agent whose \`.kortix/opencode/agents/*.md\` frontmatter has \`mode: primary\` and reads as the general/primary one (usually the first-created or the one with the broadest permissions). Record which you picked and why in the change request description — a human reviews this before it merges, so a defensible choice beats blocking on it.
 - **You do NOT need to read each agent's \`.md\` frontmatter to migrate it.** v1's frontmatter (mode/model/temperature/permission/prompt/…) is ALREADY valid v2 OpenCode behavior — it stays exactly where it is, unchanged. This migration is governance-only.
 
 ## 2. Bring the platform baseline up to date first
 
-A project still on a v1 manifest is usually also running stale platform skills. Refresh them BEFORE touching the manifest so the migration lands on a current baseline:
+A workspace still on a v1 manifest is usually also running stale platform skills. Refresh them BEFORE touching the manifest so the migration lands on a current baseline:
 
 1. \`kortix marketplace updates\` — a hash-diff report of every marketplace-tracked item (the kortix-managed skills like \`kortix-system\`/\`kortix-memory\`, plus any marketplace skills the user installed).
 2. If updates are listed, apply them: \`kortix marketplace update --all\`. **This commits directly to \`main\` through the platform's own hash-safe update path — it is intentionally NOT part of your change request.** It only rewrites files whose installed hash no longer matches the catalog, so untouched user files are never clobbered.
@@ -178,7 +178,7 @@ connectors:
     # access now lives in the agents map above.
 \`\`\`
 
-Note what happened: the \`[[channels]]\` block is gone (dashboard-owned now), \`env\` became \`secrets\`, the retired CLI action and connector keys were dropped, every omitted-in-v1 grant was written out explicitly, and the old \`agent_scope\` was honored by adjusting the AGENTS' \`connectors\` grants rather than copied over. Your project will differ — apply the rules, not this output verbatim.
+Note what happened: the \`[[channels]]\` block is gone (dashboard-owned now), \`env\` became \`secrets\`, the retired CLI action and connector keys were dropped, every omitted-in-v1 grant was written out explicitly, and the old \`agent_scope\` was honored by adjusting the AGENTS' \`connectors\` grants rather than copied over. Your workspace will differ — apply the rules, not this output verbatim.
 
 ## 7. Leave every agent's \`.md\` alone
 

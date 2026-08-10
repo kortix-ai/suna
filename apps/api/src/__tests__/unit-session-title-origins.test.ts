@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { titleSourceForCreate } from '../projects/session-title-generate';
+import { titleSourceForCreate } from '../workspaces/session-title-generate';
 
 const SRC = join(import.meta.dir, '..');
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
@@ -52,7 +52,7 @@ describe('session-title origins — create-time title source', () => {
       'Triage the new Sentry issue and open a change request',
     );
 
-    const source = createBody('projects/lib/triggers.ts', 'enforceAccountCap: false');
+    const source = createBody('workspaces/lib/triggers.ts', 'enforceAccountCap: false');
     expect(source).toContain('initial_prompt: renderedPrompt');
     expect(source).not.toContain('title_source');
   });
@@ -143,10 +143,10 @@ describe('session-title origins — create-time title source', () => {
     // queued initial prompt drains through continueSession, whose only text
     // IS the rendered envelope — and `needsTitle` is still true. Storing the
     // clean source at create is what keeps that retry honest.
-    const create = read('projects/lib/sessions.ts');
+    const create = read('workspaces/lib/sessions.ts');
     expect(create).toContain('const explicitTitleSource = normalizeString(body.title_source');
     expect(create).toContain('title_source: explicitTitleSource.slice(0, TITLE_SOURCE_MAX_CHARS)');
-    expect(read('projects/session-title-generate.ts')).toContain(
+    expect(read('workspaces/session-title-generate.ts')).toContain(
       'storedTitleSource(row) ?? suppliedText',
     );
   });
@@ -168,8 +168,8 @@ describe('session-title origins — create-time title source', () => {
     // sessions.ts writes it to metadata.name, so needsTitle() is false and
     // generation never overwrites it.
     for (const [rel, marker, name] of [
-      ['projects/routes/r2.ts', "source: 'system:sandbox-build-fix'", "name: 'Fix sandbox build'"],
-      ['projects/routes/r10.ts', 'const result = await createSession({', 'name: `Add ${'],
+      ['workspaces/routes/r2.ts', "source: 'system:sandbox-build-fix'", "name: 'Fix sandbox build'"],
+      ['workspaces/routes/r10.ts', 'const result = await createSession({', 'name: `Add ${'],
     ] as const) {
       const source = createBody(rel, marker);
       expect(source).toContain(name);

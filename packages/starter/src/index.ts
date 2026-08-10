@@ -225,11 +225,14 @@ export function getMarketplaceFiles(): StarterFile[] {
  * `{{var}}` placeholders are resolved by the installer at clone time using
  * the real destination project's name, not this fixture's.
  */
-export function getProjectTemplateFiles(): StarterFile[] {
+export function getWorkspaceTemplateFiles(): StarterFile[] {
   return rawFilesForRoot('marketplace-projects', MARKETPLACE_PROJECTS_TEMPLATE_DIR).sort((a, b) =>
     a.path.localeCompare(b.path),
   );
 }
+
+/** @deprecated Use getWorkspaceTemplateFiles. */
+export const getProjectTemplateFiles = getWorkspaceTemplateFiles;
 
 /**
  * Map of every bundled-catalog file path → its real repo-relative source path

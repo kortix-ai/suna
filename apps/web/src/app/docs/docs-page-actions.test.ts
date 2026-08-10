@@ -8,7 +8,7 @@ import { resolve } from 'node:path';
  * from `@/features/icon/icons/*`) instead of the RSC-safe set in
  * `@/lib/icons/ssr` — see the RSC-boundary comments in `page.tsx` and
  * `layout.tsx`. This is a source-text contract (same approach as
- * `project-loading-contract.test.ts`) rather than a render test, since
+ * `workspace-loading-contract.test.ts`) rather than a render test, since
  * rendering would need a full fumadocs + next/navigation harness for no
  * extra signal: what matters is which module boundary each icon crosses.
  */
@@ -46,7 +46,7 @@ describe('docs page actions', () => {
     expect(source).toContain('https://chatgpt.com/?q=');
     expect(source).toContain('https://claude.ai/new?q=');
     expect(source).toContain('cursor://anysphere.cursor-deeplink/prompt?text=');
-    expect(source).toContain('/projects/start?q=');
+    expect(source).toContain('/workspaces/start?q=');
     expect(source).toContain('encodeURIComponent');
   });
 

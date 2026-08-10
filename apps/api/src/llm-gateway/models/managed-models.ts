@@ -63,9 +63,9 @@ export function parseManagedModels(
  * so cloud users can spend their KORTIX CREDITS for a zero-config experience —
  * it routes to Kortix's own shared upstream credentials, billed as credits.
  * It is not the mechanism by which Bedrock or OpenRouter is available.
- * Bedrock is a standalone provider that a project uses by connecting
+ * Bedrock is a standalone provider that a workspace uses by connecting
  * its OWN credentials (BYOK). To give a self-host Bedrock you connect Bedrock
- * as a standalone BYOK provider (project secret AWS_BEARER_TOKEN_BEDROCK →
+ * as a standalone BYOK provider (workspace secret AWS_BEARER_TOKEN_BEDROCK →
  * resolveCatalogUpstream('amazon-bedrock') builds a kind:'bedrock' descriptor
  * via the normal BYOK path); you do NOT turn this flag on. This managed overlay
  * stays purely the cloud credits convenience.
@@ -131,8 +131,8 @@ function bareManagedId(ref: string): string {
  * managed model instead — flagship first, then catalog order.
  *
  * A BYOK ref (`provider/model`) is returned untouched: it resolves from a
- * PROJECT key, so a managed transport says nothing about whether it works, and
- * `degradeUnservableDefault` already probes that case per-project.
+ * WORKSPACE key, so a managed transport says nothing about whether it works, and
+ * `degradeUnservableDefault` already probes that case per-Workspace.
  */
 export function resolvePlatformDefaultModelId(
   configured: string,

@@ -1,9 +1,9 @@
 import { chatChannelBindings, chatInstalls, projectSecrets } from '@kortix/db';
 import { and, eq, isNull, like } from 'drizzle-orm';
 import {
-  encryptProjectSecret,
-  getProjectSecretValueForConsumer,
-} from '../projects/secrets';
+  encryptWorkspaceSecret,
+  getWorkspaceSecretValueForConsumer,
+} from '../workspaces/secrets';
 import { db } from '../shared/db';
 
 export const SLACK_BOT_TOKEN = 'SLACK_BOT_TOKEN';
@@ -15,10 +15,10 @@ export const SLACK_TEAM_NAME = 'SLACK_TEAM_NAME';
 export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
 
-export async function loadTelegramWebhookSecretForProject(
-  projectId: string,
+export async function loadTelegramWebhookSecretForWorkspace(
+  workspaceId: string,
 ): Promise<string | null> {
-  return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
+  return readSecret(workspaceId, TELEGRAM_WEBHOOK_SECRET);
 }
 
 export const AGENTMAIL_API_KEY = 'AGENTMAIL_API_KEY';
@@ -62,14 +62,14 @@ export const DEFAULT_AGENTMAIL_SENDER_POLICY: AgentMailSenderPolicy = {
 };
 
 export interface SlackInstallSummary {
-  workspaceId: string;
+  platformWorkspaceId: string;
   workspaceName: string | null;
   botUserId: string | null;
   installedAt: string;
 }
 
 export interface SlackInstallInput {
-  projectId: string;
+  workspaceId: string;
   botToken: string;
   signingSecret: string;
   teamId: string;
@@ -88,7 +88,7 @@ export interface AgentMailInstallSummary {
 }
 
 export interface AgentMailInstallInput {
-  projectId: string;
+  workspaceId: string;
   connectionSlug?: string | null;
   apiKey?: string | null;
   inboxId: string;
@@ -97,7 +97,7 @@ export interface AgentMailInstallInput {
   webhookId?: string | null;
   webhookSecret?: string | null;
   senderPolicy?: AgentMailSenderPolicy | null;
-  /** Concrete agent for inbound messages. Null inherits the project default. */
+  /** Concrete agent for inbound messages. Null inherits the workspace default. */
   agentName?: string | null;
 }
 
@@ -165,58 +165,58 @@ function parseSenderPolicy(raw: string | null): AgentMailSenderPolicy {
 }
 
 export async function saveSlackInstall(input: SlackInstallInput): Promise<SlackInstallSummary> {
-  const { projectId } = input;
+  const { workspaceId } = input;
   await db
     .insert(chatInstalls)
     .values({
       platform: 'slack',
-      workspaceId: input.teamId,
-      projectId,
+      platformWorkspaceId: input.teamId,
+      workspaceId,
     })
     .onConflictDoNothing();
-  await upsertSecret(projectId, SLACK_BOT_TOKEN, input.botToken);
-  await upsertSecret(projectId, SLACK_SIGNING_SECRET, input.signingSecret);
-  await upsertSecret(projectId, SLACK_TEAM_ID, input.teamId);
-  await upsertSecret(projectId, SLACK_BOT_USER_ID, input.botUserId);
-  await upsertSecret(projectId, SLACK_TEAM_NAME, input.teamName ?? '');
+  await upsertSecret(workspaceId, SLACK_BOT_TOKEN, input.botToken);
+  await upsertSecret(workspaceId, SLACK_SIGNING_SECRET, input.signingSecret);
+  await upsertSecret(workspaceId, SLACK_TEAM_ID, input.teamId);
+  await upsertSecret(workspaceId, SLACK_BOT_USER_ID, input.botUserId);
+  await upsertSecret(workspaceId, SLACK_TEAM_NAME, input.teamName ?? '');
   return {
-    workspaceId: input.teamId,
+    platformWorkspaceId: input.teamId,
     workspaceName: input.teamName,
     botUserId: input.botUserId,
     installedAt: new Date().toISOString(),
   };
 }
 
-export async function deleteSlackInstall(projectId: string): Promise<void> {
+export async function deleteSlackInstall(workspaceId: string): Promise<void> {
   for (const name of SLACK_KEYS) {
     await db
       .delete(projectSecrets)
-      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
+      .where(and(eq(projectSecrets.workspaceId, workspaceId), eq(projectSecrets.name, name)));
   }
   await db
     .delete(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.projectId, projectId)));
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, workspaceId)));
 }
 
 export async function saveAgentMailInstall(
   input: AgentMailInstallInput,
 ): Promise<AgentMailInstallSummary> {
-  const { projectId } = input;
+  const { workspaceId } = input;
   const connectionSlug = input.connectionSlug || 'kortix_email';
   const keys = agentMailKeys(connectionSlug);
-  const previous = await loadAgentMailInstall(projectId, connectionSlug);
-  if (input.apiKey) await upsertSecret(projectId, keys.apiKey, input.apiKey);
-  await upsertSecret(projectId, keys.inboxId, input.inboxId);
-  await upsertSecret(projectId, keys.email, input.email);
-  await upsertSecret(projectId, keys.displayName, input.displayName ?? '');
-  await upsertSecret(projectId, keys.webhookId, input.webhookId ?? '');
+  const previous = await loadAgentMailInstall(workspaceId, connectionSlug);
+  if (input.apiKey) await upsertSecret(workspaceId, keys.apiKey, input.apiKey);
+  await upsertSecret(workspaceId, keys.inboxId, input.inboxId);
+  await upsertSecret(workspaceId, keys.email, input.email);
+  await upsertSecret(workspaceId, keys.displayName, input.displayName ?? '');
+  await upsertSecret(workspaceId, keys.webhookId, input.webhookId ?? '');
   await upsertSecret(
-    projectId,
+    workspaceId,
     keys.senderPolicy,
     JSON.stringify(normalizeSenderPolicy(input.senderPolicy)),
   );
   if (input.webhookSecret) {
-    await upsertSecret(projectId, keys.webhookSecret, input.webhookSecret);
+    await upsertSecret(workspaceId, keys.webhookSecret, input.webhookSecret);
   }
   if (previous?.inboxId) {
     await db
@@ -224,8 +224,8 @@ export async function saveAgentMailInstall(
       .where(
         and(
           eq(chatChannelBindings.platform, 'email'),
-          eq(chatChannelBindings.projectId, projectId),
-          eq(chatChannelBindings.workspaceId, previous.inboxId),
+          eq(chatChannelBindings.workspaceId, workspaceId),
+          eq(chatChannelBindings.platformWorkspaceId, previous.inboxId),
           eq(chatChannelBindings.channelId, connectionSlug),
         ),
       );
@@ -234,38 +234,38 @@ export async function saveAgentMailInstall(
       .where(
         and(
           eq(chatInstalls.platform, 'email'),
-          eq(chatInstalls.projectId, projectId),
-          eq(chatInstalls.workspaceId, previous.inboxId),
+          eq(chatInstalls.workspaceId, workspaceId),
+          eq(chatInstalls.platformWorkspaceId, previous.inboxId),
         ),
       );
   }
   // Scope the inbox takeover delete to THIS project. An unscoped delete
-  // (platform + workspaceId only) would wipe another project's install row for
+  // (platform + platformWorkspaceId only) would wipe another project's install row for
   // the same inbox — a cross-tenant data-integrity bug that enabled the
   // AgentMail inbox hijack (pentest 2026-07-27). The first delete above already
-  // filters by projectId; this one must too.
+  // filters by workspaceId; this one must too.
   await db
     .delete(chatInstalls)
     .where(
       and(
         eq(chatInstalls.platform, 'email'),
-        eq(chatInstalls.projectId, projectId),
-        eq(chatInstalls.workspaceId, input.inboxId),
+        eq(chatInstalls.workspaceId, workspaceId),
+        eq(chatInstalls.platformWorkspaceId, input.inboxId),
       ),
     );
   await db
     .insert(chatInstalls)
-    .values({ platform: 'email', workspaceId: input.inboxId, projectId })
+    .values({ platform: 'email', platformWorkspaceId: input.inboxId, workspaceId })
     .onConflictDoNothing({
-      target: [chatInstalls.platform, chatInstalls.workspaceId, chatInstalls.projectId],
+      target: [chatInstalls.platform, chatInstalls.platformWorkspaceId, chatInstalls.workspaceId],
     });
   await db
     .insert(chatChannelBindings)
     .values({
       platform: 'email',
-      workspaceId: input.inboxId,
+      platformWorkspaceId: input.inboxId,
       channelId: connectionSlug,
-      projectId,
+      workspaceId,
       channelName: input.email,
       channelType: 'inbox',
       agentName: input.agentName ?? null,
@@ -273,7 +273,7 @@ export async function saveAgentMailInstall(
     .onConflictDoNothing({
       target: [
         chatChannelBindings.platform,
-        chatChannelBindings.workspaceId,
+        chatChannelBindings.platformWorkspaceId,
         chatChannelBindings.channelId,
       ],
     });
@@ -289,15 +289,15 @@ export async function saveAgentMailInstall(
 }
 
 export async function deleteAgentMailInstall(
-  projectId: string,
+  workspaceId: string,
   connectionSlug?: string | null,
 ): Promise<void> {
   const keys = agentMailKeys(connectionSlug);
-  const install = await loadAgentMailInstall(projectId, connectionSlug);
+  const install = await loadAgentMailInstall(workspaceId, connectionSlug);
   for (const name of Object.values(keys)) {
     await db
       .delete(projectSecrets)
-      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
+      .where(and(eq(projectSecrets.workspaceId, workspaceId), eq(projectSecrets.name, name)));
   }
   if (install?.inboxId) {
     await db
@@ -305,8 +305,8 @@ export async function deleteAgentMailInstall(
       .where(
         and(
           eq(chatChannelBindings.platform, 'email'),
-          eq(chatChannelBindings.projectId, projectId),
-          eq(chatChannelBindings.workspaceId, install.inboxId),
+          eq(chatChannelBindings.workspaceId, workspaceId),
+          eq(chatChannelBindings.platformWorkspaceId, install.inboxId),
           eq(
             chatChannelBindings.channelId,
             (connectionSlug || 'kortix_email').trim() || 'kortix_email',
@@ -318,8 +318,8 @@ export async function deleteAgentMailInstall(
       .where(
         and(
           eq(chatInstalls.platform, 'email'),
-          eq(chatInstalls.projectId, projectId),
-          eq(chatInstalls.workspaceId, install.inboxId),
+          eq(chatInstalls.workspaceId, workspaceId),
+          eq(chatInstalls.platformWorkspaceId, install.inboxId),
         ),
       );
   } else if (!connectionSlug || connectionSlug === 'kortix_email') {
@@ -328,12 +328,12 @@ export async function deleteAgentMailInstall(
       .where(
         and(
           eq(chatChannelBindings.platform, 'email'),
-          eq(chatChannelBindings.projectId, projectId),
+          eq(chatChannelBindings.workspaceId, workspaceId),
         ),
       );
     await db
       .delete(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.projectId, projectId)));
+      .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, workspaceId)));
   }
 }
 
@@ -344,13 +344,13 @@ function agentMailConnectionSlugFromInboxSecret(name: string): string | null {
   return suffix.replace(/^_+/, '').toLowerCase() || null;
 }
 
-export async function listAgentMailInstalls(projectId: string): Promise<AgentMailInstallSummary[]> {
+export async function listAgentMailInstalls(workspaceId: string): Promise<AgentMailInstallSummary[]> {
   const rows = await db
     .select({ name: projectSecrets.name })
     .from(projectSecrets)
     .where(
       and(
-        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.workspaceId, workspaceId),
         like(projectSecrets.name, `${AGENTMAIL_INBOX_ID}%`),
         isNull(projectSecrets.ownerUserId),
       ),
@@ -362,8 +362,8 @@ export async function listAgentMailInstalls(projectId: string): Promise<AgentMai
     if (!connectionSlug) continue;
     try {
       // Skip malformed or stale secret envelopes without poisoning the whole list.
-      if (!(await readSecret(projectId, row.name))) continue;
-      const install = await loadAgentMailInstall(projectId, connectionSlug);
+      if (!(await readSecret(workspaceId, row.name))) continue;
+      const install = await loadAgentMailInstall(workspaceId, connectionSlug);
       if (install) installs.push(install);
     } catch {}
   }
@@ -371,31 +371,31 @@ export async function listAgentMailInstalls(projectId: string): Promise<AgentMai
 }
 
 export async function updateAgentMailSenderPolicy(
-  projectId: string,
+  workspaceId: string,
   connectionSlug: string | null | undefined,
   senderPolicy: AgentMailSenderPolicy,
 ): Promise<AgentMailInstallSummary | null> {
-  const install = await loadAgentMailInstall(projectId, connectionSlug);
+  const install = await loadAgentMailInstall(workspaceId, connectionSlug);
   if (!install) return null;
   await upsertSecret(
-    projectId,
+    workspaceId,
     agentMailKeys(connectionSlug).senderPolicy,
     JSON.stringify(normalizeSenderPolicy(senderPolicy)),
   );
-  return loadAgentMailInstall(projectId, connectionSlug);
+  return loadAgentMailInstall(workspaceId, connectionSlug);
 }
 
 export async function loadAgentMailInstall(
-  projectId: string,
+  workspaceId: string,
   connectionSlug?: string | null,
 ): Promise<AgentMailInstallSummary | null> {
   const keys = agentMailKeys(connectionSlug);
   const [inboxId, email, displayName, webhookId, senderPolicyRaw] = await Promise.all([
-      readSecret(projectId, keys.inboxId),
-      readSecret(projectId, keys.email),
-      readSecret(projectId, keys.displayName),
-      readSecret(projectId, keys.webhookId),
-      readSecret(projectId, keys.senderPolicy),
+      readSecret(workspaceId, keys.inboxId),
+      readSecret(workspaceId, keys.email),
+      readSecret(workspaceId, keys.displayName),
+      readSecret(workspaceId, keys.webhookId),
+      readSecret(workspaceId, keys.senderPolicy),
     ]);
   if (!inboxId || !email) return null;
   const [row] = await db
@@ -403,7 +403,7 @@ export async function loadAgentMailInstall(
     .from(projectSecrets)
     .where(
       and(
-        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.workspaceId, workspaceId),
         eq(projectSecrets.name, keys.inboxId),
         isNull(projectSecrets.ownerUserId),
       ),
@@ -420,15 +420,15 @@ export async function loadAgentMailInstall(
   };
 }
 
-export async function loadAgentMailApiKeyForProject(
-  projectId: string,
+export async function loadAgentMailApiKeyForWorkspace(
+  workspaceId: string,
   connectionSlug?: string | null,
 ): Promise<string | null> {
-  return readSecret(projectId, agentMailKeys(connectionSlug).apiKey);
+  return readSecret(workspaceId, agentMailKeys(connectionSlug).apiKey);
 }
 
 export async function loadAgentMailApiKeyForInbox(
-  projectId: string,
+  workspaceId: string,
   inboxId: string,
 ): Promise<string | null> {
   const rows = await db
@@ -436,29 +436,29 @@ export async function loadAgentMailApiKeyForInbox(
     .from(projectSecrets)
     .where(
       and(
-        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.workspaceId, workspaceId),
         like(projectSecrets.name, `${AGENTMAIL_INBOX_ID}%`),
         isNull(projectSecrets.ownerUserId),
       ),
     );
 
   for (const row of rows) {
-    const value = await readSecret(projectId, row.name);
+    const value = await readSecret(workspaceId, row.name);
     if (value !== inboxId) continue;
     const suffix = row.name.slice(AGENTMAIL_INBOX_ID.length);
-    return readSecret(projectId, `${AGENTMAIL_API_KEY}${suffix}`);
+    return readSecret(workspaceId, `${AGENTMAIL_API_KEY}${suffix}`);
   }
   return null;
 }
 
-export async function loadAgentMailWebhookSecretForProject(
-  projectId: string,
+export async function loadAgentMailWebhookSecretForWorkspace(
+  workspaceId: string,
 ): Promise<string | null> {
-  return readSecret(projectId, AGENTMAIL_WEBHOOK_SECRET);
+  return readSecret(workspaceId, AGENTMAIL_WEBHOOK_SECRET);
 }
 
 export async function loadAgentMailWebhookSecretForInbox(
-  projectId: string,
+  workspaceId: string,
   inboxId: string,
 ): Promise<string | null> {
   const rows = await db
@@ -466,23 +466,23 @@ export async function loadAgentMailWebhookSecretForInbox(
     .from(projectSecrets)
     .where(
       and(
-        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.workspaceId, workspaceId),
         like(projectSecrets.name, `${AGENTMAIL_INBOX_ID}%`),
         isNull(projectSecrets.ownerUserId),
       ),
     );
 
   for (const row of rows) {
-    const value = await readSecret(projectId, row.name);
+    const value = await readSecret(workspaceId, row.name);
     if (value !== inboxId) continue;
     const suffix = row.name.slice(AGENTMAIL_INBOX_ID.length);
-    return readSecret(projectId, `${AGENTMAIL_WEBHOOK_SECRET}${suffix}`);
+    return readSecret(workspaceId, `${AGENTMAIL_WEBHOOK_SECRET}${suffix}`);
   }
   return null;
 }
 
 export async function loadAgentMailSenderPolicyForInbox(
-  projectId: string,
+  workspaceId: string,
   inboxId: string,
 ): Promise<AgentMailSenderPolicy> {
   const rows = await db
@@ -490,33 +490,33 @@ export async function loadAgentMailSenderPolicyForInbox(
     .from(projectSecrets)
     .where(
       and(
-        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.workspaceId, workspaceId),
         like(projectSecrets.name, `${AGENTMAIL_INBOX_ID}%`),
         isNull(projectSecrets.ownerUserId),
       ),
     );
 
   for (const row of rows) {
-    const value = await readSecret(projectId, row.name);
+    const value = await readSecret(workspaceId, row.name);
     if (value !== inboxId) continue;
     const suffix = row.name.slice(AGENTMAIL_INBOX_ID.length);
-    return parseSenderPolicy(await readSecret(projectId, `${AGENTMAIL_SENDER_POLICY}${suffix}`));
+    return parseSenderPolicy(await readSecret(workspaceId, `${AGENTMAIL_SENDER_POLICY}${suffix}`));
   }
   return DEFAULT_AGENTMAIL_SENDER_POLICY;
 }
 
 export interface SlackOauthInstallInput {
-  projectId: string;
   workspaceId: string;
+  platformWorkspaceId: string;
   botToken: string;
   botUserId: string;
   teamName: string | null;
 }
 
-// Universal Kortix Slack App install. Records this project's membership of the
-// workspace, then fans the bot token + workspace metadata out to every project
-// on the workspace — Slack issues one token per (app, workspace) and a re-auth
-// rotates it, so all sharing projects must be kept current. The signing secret
+// Universal Kortix Slack App install. Records this workspace's membership of the
+// Slack workspace, then fans the bot token and platform metadata out to every
+// Kortix workspace. Slack issues one token per app and Slack workspace. A re-auth
+// rotates it, so all sharing workspaces must be kept current. The signing secret
 // is the master Kortix one and stays server-side; it is never persisted here.
 export async function saveSlackOauthInstall(
   input: SlackOauthInstallInput,
@@ -525,72 +525,72 @@ export async function saveSlackOauthInstall(
     .insert(chatInstalls)
     .values({
       platform: 'slack',
+      platformWorkspaceId: input.platformWorkspaceId,
       workspaceId: input.workspaceId,
-      projectId: input.projectId,
     })
     .onConflictDoNothing();
 
-  const projectIds = await listProjectsForWorkspace('slack', input.workspaceId);
-  if (!projectIds.includes(input.projectId)) projectIds.push(input.projectId);
-  for (const projectId of projectIds) {
-    await upsertSecret(projectId, SLACK_BOT_TOKEN, input.botToken);
-    await upsertSecret(projectId, SLACK_TEAM_ID, input.workspaceId);
-    await upsertSecret(projectId, SLACK_BOT_USER_ID, input.botUserId);
-    await upsertSecret(projectId, SLACK_TEAM_NAME, input.teamName ?? '');
+  const workspaceIds = await listWorkspacesForWorkspace('slack', input.platformWorkspaceId);
+  if (!workspaceIds.includes(input.workspaceId)) workspaceIds.push(input.workspaceId);
+  for (const workspaceId of workspaceIds) {
+    await upsertSecret(workspaceId, SLACK_BOT_TOKEN, input.botToken);
+    await upsertSecret(workspaceId, SLACK_TEAM_ID, input.platformWorkspaceId);
+    await upsertSecret(workspaceId, SLACK_BOT_USER_ID, input.botUserId);
+    await upsertSecret(workspaceId, SLACK_TEAM_NAME, input.teamName ?? '');
   }
 
   return {
-    workspaceId: input.workspaceId,
+    platformWorkspaceId: input.platformWorkspaceId,
     workspaceName: input.teamName,
     botUserId: input.botUserId,
     installedAt: new Date().toISOString(),
   };
 }
 
-export async function listProjectsForWorkspace(
+export async function listWorkspacesForWorkspace(
   platform: string,
-  workspaceId: string,
+  platformWorkspaceId: string,
 ): Promise<string[]> {
   const rows = await db
-    .select({ projectId: chatInstalls.projectId })
+    .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.workspaceId, workspaceId)));
-  return rows.map((r) => r.projectId);
+    .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.platformWorkspaceId, platformWorkspaceId)));
+  return rows.map((r) => r.workspaceId);
 }
 
-export async function loadSlackInstall(projectId: string): Promise<SlackInstallSummary | null> {
+export async function loadSlackInstall(workspaceId: string): Promise<SlackInstallSummary | null> {
   // Read scope-agnostically: Slack credentials are stored with scope='connector'
-  // (kept out of the sandbox env), which listProjectSecrets deliberately drops —
+  // (kept out of the sandbox env), which listWorkspaceSecrets deliberately drops —
   // so status must go through readSecret, matching the Teams install read path.
-  const teamId = await readSecret(projectId, SLACK_TEAM_ID);
+  const teamId = await readSecret(workspaceId, SLACK_TEAM_ID);
   if (!teamId) return null;
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
     .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, SLACK_TEAM_ID)))
+    .where(and(eq(projectSecrets.workspaceId, workspaceId), eq(projectSecrets.name, SLACK_TEAM_ID)))
     .limit(1);
   return {
-    workspaceId: teamId,
-    workspaceName: (await readSecret(projectId, SLACK_TEAM_NAME)) || null,
-    botUserId: (await readSecret(projectId, SLACK_BOT_USER_ID)) || null,
+    platformWorkspaceId: teamId,
+    workspaceName: (await readSecret(workspaceId, SLACK_TEAM_NAME)) || null,
+    botUserId: (await readSecret(workspaceId, SLACK_BOT_USER_ID)) || null,
     installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
   };
 }
 
-export async function loadSlackTokenForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, SLACK_BOT_TOKEN);
+export async function loadSlackTokenForWorkspace(workspaceId: string): Promise<string | null> {
+  return readSecret(workspaceId, SLACK_BOT_TOKEN);
 }
 
-export async function loadSlackSigningSecretForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, SLACK_SIGNING_SECRET);
+export async function loadSlackSigningSecretForWorkspace(workspaceId: string): Promise<string | null> {
+  return readSecret(workspaceId, SLACK_SIGNING_SECRET);
 }
 
-export async function loadSlackBotUserIdForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, SLACK_BOT_USER_ID);
+export async function loadSlackBotUserIdForWorkspace(workspaceId: string): Promise<string | null> {
+  return readSecret(workspaceId, SLACK_BOT_USER_ID);
 }
 
-export async function loadSlackTeamNameForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, SLACK_TEAM_NAME);
+export async function loadSlackTeamNameForWorkspace(workspaceId: string): Promise<string | null> {
+  return readSecret(workspaceId, SLACK_TEAM_NAME);
 }
 
 // ─── Microsoft Teams ──────────────────────────────────────────────────────
@@ -630,7 +630,7 @@ export interface TeamsInstallSummary {
 }
 
 export interface TeamsInstallInput {
-  projectId: string;
+  workspaceId: string;
   tenantId: string;
   teamId?: string | null;
   teamName?: string | null;
@@ -646,19 +646,19 @@ export interface TeamsBotCredentials {
 }
 
 export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsInstallSummary> {
-  const { projectId, tenantId } = input;
+  const { workspaceId, tenantId } = input;
   await db
     .insert(chatInstalls)
-    .values({ platform: 'teams', workspaceId: tenantId, projectId })
+    .values({ platform: 'teams', platformWorkspaceId: tenantId, workspaceId })
     .onConflictDoNothing();
 
-  await upsertSecret(projectId, MS_TEAMS_TENANT_ID, tenantId);
-  if (input.teamId != null) await upsertSecret(projectId, MS_TEAMS_TEAM_ID, input.teamId);
-  if (input.teamName != null) await upsertSecret(projectId, MS_TEAMS_TEAM_NAME, input.teamName);
-  if (input.botId != null) await upsertSecret(projectId, MS_TEAMS_BOT_ID, input.botId);
-  if (input.serviceUrl != null) await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, input.serviceUrl);
-  if (input.appId != null) await upsertSecret(projectId, MS_TEAMS_APP_ID, input.appId);
-  if (input.appPassword != null) await upsertSecret(projectId, MS_TEAMS_APP_PASSWORD, input.appPassword);
+  await upsertSecret(workspaceId, MS_TEAMS_TENANT_ID, tenantId);
+  if (input.teamId != null) await upsertSecret(workspaceId, MS_TEAMS_TEAM_ID, input.teamId);
+  if (input.teamName != null) await upsertSecret(workspaceId, MS_TEAMS_TEAM_NAME, input.teamName);
+  if (input.botId != null) await upsertSecret(workspaceId, MS_TEAMS_BOT_ID, input.botId);
+  if (input.serviceUrl != null) await upsertSecret(workspaceId, MS_TEAMS_SERVICE_URL, input.serviceUrl);
+  if (input.appId != null) await upsertSecret(workspaceId, MS_TEAMS_APP_ID, input.appId);
+  if (input.appPassword != null) await upsertSecret(workspaceId, MS_TEAMS_APP_PASSWORD, input.appPassword);
 
   return {
     tenantId,
@@ -673,40 +673,40 @@ export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsI
   };
 }
 
-export async function setTeamsOrgInstalled(projectId: string, installed: boolean): Promise<void> {
-  await upsertSecret(projectId, MS_TEAMS_ORG_INSTALLED, installed ? '1' : '');
+export async function setTeamsOrgInstalled(workspaceId: string, installed: boolean): Promise<void> {
+  await upsertSecret(workspaceId, MS_TEAMS_ORG_INSTALLED, installed ? '1' : '');
 }
 
-export async function setTeamsCatalogAppId(projectId: string, catalogAppId: string): Promise<void> {
-  await upsertSecret(projectId, MS_TEAMS_CATALOG_APP_ID, catalogAppId);
+export async function setTeamsCatalogAppId(workspaceId: string, catalogAppId: string): Promise<void> {
+  await upsertSecret(workspaceId, MS_TEAMS_CATALOG_APP_ID, catalogAppId);
 }
 
-export async function loadTeamsBotCredentials(projectId: string): Promise<TeamsBotCredentials | null> {
-  const secrets = await readTeamsSecrets(projectId);
+export async function loadTeamsBotCredentials(workspaceId: string): Promise<TeamsBotCredentials | null> {
+  const secrets = await readTeamsSecrets(workspaceId);
   const appId = secrets[MS_TEAMS_APP_ID];
   const appPassword = secrets[MS_TEAMS_APP_PASSWORD];
   if (!appId || !appPassword) return null;
   return { appId, appPassword };
 }
 
-export async function loadTeamsAppIdForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, MS_TEAMS_APP_ID);
+export async function loadTeamsAppIdForWorkspace(workspaceId: string): Promise<string | null> {
+  return readSecret(workspaceId, MS_TEAMS_APP_ID);
 }
 
 /** Update just the conversation serviceUrl — refreshed from each inbound activity. */
-export async function saveTeamsServiceUrl(projectId: string, serviceUrl: string): Promise<void> {
+export async function saveTeamsServiceUrl(workspaceId: string, serviceUrl: string): Promise<void> {
   if (!serviceUrl) return;
-  await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, serviceUrl);
+  await upsertSecret(workspaceId, MS_TEAMS_SERVICE_URL, serviceUrl);
 }
 
-export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallSummary | null> {
-  const secrets = await readTeamsSecrets(projectId);
+export async function loadTeamsInstall(workspaceId: string): Promise<TeamsInstallSummary | null> {
+  const secrets = await readTeamsSecrets(workspaceId);
   const tenantId = secrets[MS_TEAMS_TENANT_ID];
   if (!tenantId) return null;
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
     .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, MS_TEAMS_TENANT_ID)))
+    .where(and(eq(projectSecrets.workspaceId, workspaceId), eq(projectSecrets.name, MS_TEAMS_TENANT_ID)))
     .limit(1);
   return {
     tenantId,
@@ -721,33 +721,33 @@ export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallS
   };
 }
 
-export async function loadTeamsTenantForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, MS_TEAMS_TENANT_ID);
+export async function loadTeamsTenantForWorkspace(workspaceId: string): Promise<string | null> {
+  return readSecret(workspaceId, MS_TEAMS_TENANT_ID);
 }
 
-export async function loadTeamsServiceUrlForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, MS_TEAMS_SERVICE_URL);
+export async function loadTeamsServiceUrlForWorkspace(workspaceId: string): Promise<string | null> {
+  return readSecret(workspaceId, MS_TEAMS_SERVICE_URL);
 }
 
-export async function deleteTeamsInstall(projectId: string): Promise<void> {
+export async function deleteTeamsInstall(workspaceId: string): Promise<void> {
   for (const name of TEAMS_KEYS) {
     await db
       .delete(projectSecrets)
-      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
+      .where(and(eq(projectSecrets.workspaceId, workspaceId), eq(projectSecrets.name, name)));
   }
   await db
     .delete(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'teams'), eq(chatInstalls.projectId, projectId)));
+    .where(and(eq(chatInstalls.platform, 'teams'), eq(chatInstalls.workspaceId, workspaceId)));
 }
 
-async function upsertSecret(projectId: string, name: string, value: string): Promise<void> {
-  const valueEnc = encryptProjectSecret(projectId, value);
-  const updated = await updateSharedSecret(projectId, name, valueEnc);
+async function upsertSecret(workspaceId: string, name: string, value: string): Promise<void> {
+  const valueEnc = encryptWorkspaceSecret(workspaceId, value);
+  const updated = await updateSharedSecret(workspaceId, name, valueEnc);
   if (updated) return;
 
   try {
     await db.insert(projectSecrets).values({
-      projectId,
+      workspaceId,
       identifier: name,
       name,
       valueEnc,
@@ -758,13 +758,13 @@ async function upsertSecret(projectId: string, name: string, value: string): Pro
     });
   } catch (err) {
     if (!isUniqueConflict(err)) throw err;
-    const retryUpdated = await updateSharedSecret(projectId, name, valueEnc);
+    const retryUpdated = await updateSharedSecret(workspaceId, name, valueEnc);
     if (!retryUpdated) throw err;
   }
 }
 
 async function updateSharedSecret(
-  projectId: string,
+  workspaceId: string,
   name: string,
   valueEnc: string,
 ): Promise<boolean> {
@@ -783,7 +783,7 @@ async function updateSharedSecret(
     })
     .where(
       and(
-        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.workspaceId, workspaceId),
         eq(projectSecrets.name, name),
         isNull(projectSecrets.ownerUserId),
       ),
@@ -804,18 +804,18 @@ function isUniqueConflict(err: unknown): boolean {
   );
 }
 
-async function readTeamsSecrets(projectId: string): Promise<Record<string, string>> {
+async function readTeamsSecrets(workspaceId: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const name of TEAMS_KEYS) {
-    const value = await readSecret(projectId, name);
+    const value = await readSecret(workspaceId, name);
     if (value !== null) out[name] = value;
   }
   return out;
 }
 
-async function readSecret(projectId: string, name: string): Promise<string | null> {
-  return getProjectSecretValueForConsumer({
-    projectId,
+async function readSecret(workspaceId: string, name: string): Promise<string | null> {
+  return getWorkspaceSecretValueForConsumer({
+    workspaceId,
     name,
     consumer: 'connector',
   });

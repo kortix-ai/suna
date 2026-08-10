@@ -19,27 +19,27 @@ export default function SessionWorkbenchPage() {
 
 function Workbench() {
   const params = useParams();
-  const projectId = String(params.id);
+  const workspaceId = String(params.id);
   const sessionId = String(params.sessionId);
 
   // One hook owns readiness, transport selection, streaming, transcript
   // projection, interactive requests, and message synchronization.
   // The host reads the provider-neutral session state and renders it.
-  const session = useSession(projectId, sessionId);
+  const session = useSession(workspaceId, sessionId);
 
   return (
     <>
-      <SessionHeader projectId={projectId} sessionId={sessionId} />
+      <SessionHeader workspaceId={workspaceId} sessionId={sessionId} />
       {/* Who this browser is acting as, above the conversation rather than in a
           settings page: in wrapper mode it is the ONLY thing separating this
           session from another signed-in person's. */}
-      <ApplicationUserBadge projectId={projectId} />
+      <ApplicationUserBadge workspaceId={workspaceId} />
       {/* A `require_approval` gate ends the agent's turn and nothing says so in
           the transcript — the session just goes quiet. Poll for it here, where
           the person who can decide is already looking. Rendered before the boot
           check on purpose: a gate raised earlier is still pending while the
           runtime is coming back up. */}
-      <SessionApprovals projectId={projectId} sessionId={sessionId} />
+      <SessionApprovals workspaceId={workspaceId} sessionId={sessionId} />
       {session.phase !== 'ready' ? (
         <BootScreen
           stage={session.stage ?? undefined}
@@ -50,7 +50,7 @@ function Workbench() {
       ) : (
         <WorkbenchTabs
           session={session}
-          projectId={projectId}
+          workspaceId={workspaceId}
           sessionId={sessionId}
         />
       )}

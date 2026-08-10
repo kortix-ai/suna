@@ -100,7 +100,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   const adminClient = new Client(env.apiUrl).as(owner as Identity);
   const canCreateDatabaseProject = env.capabilities.database && env.target !== 'prod';
   const deleteDatabaseProjectFixture = canCreateDatabaseProject
-    ? (projectId: string) => deleteDatabaseProject(env, projectId)
+    ? (workspaceId: string) => deleteDatabaseProject(env, workspaceId)
     : undefined;
   // Users synthesized mid-run (team members) — deleted in teardownAll.
   const extraUserIds: string[] = [];
@@ -218,11 +218,11 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           );
           return u.principal;
         },
-        async grantProjectRole(projectId, userId, role) {
+        async grantProjectRole(workspaceId, userId, role) {
           await adminClient.put(
-            '/v1/projects/:projectId/access/:userId',
+            '/v1/projects/:workspaceId/access/:userId',
             { role },
-            { params: { projectId, userId } },
+            { params: { workspaceId, userId } },
           );
         },
         async project(o) {
@@ -265,28 +265,28 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     async session(project, opts) {
       if (databaseProjectIds.has(project.id)) {
         const id = await createDatabaseSession(env, {
-          projectId: project.id,
+          workspaceId: project.id,
           accountId: owner.accountId!,
           userId: owner.userId!,
         });
         // No stack entry: deleting the database-only project cascades to its
         // sessions (project_sessions.project_id ON DELETE CASCADE).
-        return { id, projectId: project.id } as CreatedSession;
+        return { id, workspaceId: project.id } as CreatedSession;
       }
       // `prompt` was never consumed by the session API; use the documented
       // field now that the HTTP boundary rejects unknown create properties.
       const res = await adminClient.post(
-        '/v1/projects/:projectId/sessions',
+        '/v1/projects/:workspaceId/sessions',
         { initial_prompt: opts?.prompt ?? 'noop' },
         {
-          params: { projectId: project.id },
+          params: { workspaceId: project.id },
         },
       );
       const body = res.json<any>();
       const id = body?.session_id ?? body?.sessionId ?? body?.id;
       if (!id) throw new Error(`session create returned no id: ${res.text()}`);
-      stack.push('session', id, { projectId: project.id });
-      return { id, projectId: project.id } as CreatedSession;
+      stack.push('session', id, { workspaceId: project.id });
+      return { id, workspaceId: project.id } as CreatedSession;
     },
     async pat(opts) {
       const res = await adminClient.post('/v1/accounts/tokens', {

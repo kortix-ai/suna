@@ -57,7 +57,7 @@ function fmtDate(value: unknown): string {
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
 }
 
-export function FilesPanel({ projectId }: { projectId: string }) {
+export function FilesPanel({ workspaceId }: { workspaceId: string }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query.trim());
@@ -65,32 +65,32 @@ export function FilesPanel({ projectId }: { projectId: string }) {
 
   // .files.list — the workspace tree (shown when not searching).
   const list = useQuery({
-    queryKey: ['project-files', projectId, 'list'],
-    queryFn: () => kortix.project(projectId).files.list(),
+    queryKey: ['project-files', workspaceId, 'list'],
+    queryFn: () => kortix.project(workspaceId).files.list(),
   });
 
   // .files.search — filename search, live as you type.
   const search = useQuery({
-    queryKey: ['project-files', projectId, 'search', deferredQuery],
-    queryFn: () => kortix.project(projectId).files.search(deferredQuery, { limit: 50 }),
+    queryKey: ['project-files', workspaceId, 'search', deferredQuery],
+    queryFn: () => kortix.project(workspaceId).files.search(deferredQuery, { limit: 50 }),
     enabled: searching,
   });
 
   // .files.read — content for the selected file (right pane).
   const content = useQuery({
-    queryKey: ['project-files', projectId, 'content', selected],
-    queryFn: () => kortix.project(projectId).files.read(selected as string),
+    queryKey: ['project-files', workspaceId, 'content', selected],
+    queryFn: () => kortix.project(workspaceId).files.read(selected as string),
     enabled: !!selected,
   });
 
   // .files.archive — download a zip of the whole repo at HEAD.
   const download = useMutation({
-    mutationFn: () => kortix.project(projectId).files.archive(DEFAULT_REF),
+    mutationFn: () => kortix.project(workspaceId).files.archive(DEFAULT_REF),
     onSuccess: (blob) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `project-${projectId}.zip`;
+      a.download = `project-${workspaceId}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -203,7 +203,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
                         )}
                       </span>
                     </Button>
-                    <FileHistory projectId={projectId} path={path} />
+                    <FileHistory workspaceId={workspaceId} path={path} />
                   </div>
                 );
               })}
@@ -263,12 +263,12 @@ export function FilesPanel({ projectId }: { projectId: string }) {
 }
 
 /** Per-file git history, lazily loaded via `.files.history` when opened. */
-function FileHistory({ projectId, path }: { projectId: string; path: string }) {
+function FileHistory({ workspaceId, path }: { workspaceId: string; path: string }) {
   const [open, setOpen] = useState(false);
 
   const history = useQuery({
-    queryKey: ['project-files', projectId, 'history', path],
-    queryFn: () => kortix.project(projectId).files.history(path, { limit: 20 }),
+    queryKey: ['project-files', workspaceId, 'history', path],
+    queryFn: () => kortix.project(workspaceId).files.history(path, { limit: 20 }),
     enabled: open,
   });
 

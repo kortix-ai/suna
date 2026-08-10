@@ -128,16 +128,16 @@ test('project(id).secrets.broker binds the project and encoded identifier', asyn
   });
 });
 
-test('session(projectId, sessionId) binds both ids', async () => {
+test('session(workspaceId, sessionId) binds both ids', async () => {
   await kortix.session('PID123', 'SID456').previews();
-  expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
+  expect(last().url).toContain('/workspaces/PID123/sessions/SID456/previews');
 });
 
-test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
+test('session(workspaceId, sessionId).cost binds workspace scope without starting the runtime', async () => {
   await kortix.session('PID123', 'SID456').cost();
 
   expect(calls).toHaveLength(1);
-  expect(last().url).toBe('http://test.local/usage/session-costs/SID456?project_id=PID123');
+  expect(last().url).toBe('http://test.local/usage/session-costs/SID456?workspace_id=PID123');
   expect(last().method).toBe('GET');
 });
 
@@ -148,7 +148,7 @@ test('project(id).session(sid) is the same session handle', async () => {
 
 test('session(...).scope reads the authoritative session scope', async () => {
   await kortix.session('PID123', 'SID456').scope();
-  expect(last().url).toBe('http://test.local/projects/PID123/sessions/SID456/scope');
+  expect(last().url).toBe('http://test.local/workspaces/PID123/sessions/SID456/scope');
   expect(last().method).toBe('GET');
 });
 
@@ -158,7 +158,7 @@ test('session(...).rescope writes canonical connection bindings', async () => {
       gmail: { connection_id: 'AUTH-1' },
     },
   });
-  expect(last().url).toBe('http://test.local/projects/PID123/sessions/SID456/scope');
+  expect(last().url).toBe('http://test.local/workspaces/PID123/sessions/SID456/scope');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({
     connector_bindings: {
@@ -210,7 +210,7 @@ test('top-level projects.list hits /projects', async () => {
 
 test('session(...).audit hits the audit endpoint with the given limit', async () => {
   await kortix.session('PID123', 'SID456').audit(10);
-  expect(last().url).toContain('/projects/PID123/sessions/SID456/audit?limit=10');
+  expect(last().url).toContain('/workspaces/PID123/sessions/SID456/audit?limit=10');
 });
 
 test('project(id).access.invite forwards a time-bound expiry to the backend', async () => {
@@ -372,10 +372,10 @@ test('project(id).setAgentScope binds the project id + agent name', async () => 
 
 test('kortix.github covers install/list/link/repo endpoints (account-scoped, not project-scoped)', async () => {
   await kortix.github.getInstallation('ACC1');
-  expect(last().url).toContain('/projects/github/installation?account_id=ACC1');
+  expect(last().url).toContain('/workspaces/github/installation?account_id=ACC1');
 
   await kortix.github.listRepositories('ACC1');
-  expect(last().url).toContain('/projects/github/repositories?account_id=ACC1');
+  expect(last().url).toContain('/workspaces/github/repositories?account_id=ACC1');
 });
 
 test('kortix.sandboxShares hits /p/share (sandbox-scoped, not project-scoped)', async () => {
@@ -579,7 +579,7 @@ test('kortix.accounts.tokens covers list/create/revoke (account-scoped CLI PATs)
   expect(last().url).toContain('/accounts/tokens?account_id=ACC1');
   expect(last().method).toBe('GET');
 
-  await kortix.accounts.tokens.create({ name: 'ci-key', accountId: 'ACC1', projectId: 'PID1' });
+  await kortix.accounts.tokens.create({ name: 'ci-key', accountId: 'ACC1', workspaceId: 'PID1' });
   expect(last().url).toContain('/accounts/tokens');
   expect(last().method).toBe('POST');
 
@@ -627,7 +627,7 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
 
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {
   await kortix.session('PID123', 'SID456').transcript({ limit: 10, chars: 200 });
-  expect(last().url).toContain('/projects/PID123/sessions/SID456/transcript?limit=10&chars=200');
+  expect(last().url).toContain('/workspaces/PID123/sessions/SID456/transcript?limit=10&chars=200');
   expect(last().method).toBe('GET');
 });
 
@@ -670,7 +670,7 @@ test('project(id).audit and session(id).audit expose canonical cursor pagination
   expect(last().url).toContain('/projects/PID123/audit?phase=completed&cursor=CUR1');
 
   await kortix.session('PID123', 'SID456').audit(50, { cursor: '42|EVENT' });
-  expect(last().url).toContain('/projects/PID123/sessions/SID456/audit?limit=50&cursor=42%7CEVENT');
+  expect(last().url).toContain('/workspaces/PID123/sessions/SID456/audit?limit=50&cursor=42%7CEVENT');
 });
 
 // ── setup links / manifest validate / git token / slack files / meet speak /
@@ -772,21 +772,21 @@ test('kortix.billing.credits covers purchase + auto-topup get/configure', async 
 test('kortix.billing.sessionCosts covers paginated list and detail reads', async () => {
   await kortix.billing.sessionCosts.list({
     accountId: 'ACC1',
-    projectId: 'PID1',
+    workspaceId: 'PID1',
     limit: 20,
     offset: 0,
   });
   expect(last().url).toBe(
-    'http://test.local/usage/session-costs?account_id=ACC1&project_id=PID1&limit=20&offset=0',
+    'http://test.local/usage/session-costs?account_id=ACC1&workspace_id=PID1&limit=20&offset=0',
   );
   expect(last().method).toBe('GET');
 
   await kortix.billing.sessionCosts.get('SID/1', {
     accountId: 'ACC1',
-    projectId: 'PID1',
+    workspaceId: 'PID1',
   });
   expect(last().url).toBe(
-    'http://test.local/usage/session-costs/SID%2F1?account_id=ACC1&project_id=PID1',
+    'http://test.local/usage/session-costs/SID%2F1?account_id=ACC1&workspace_id=PID1',
   );
   expect(last().method).toBe('GET');
 });
@@ -908,7 +908,7 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
     if (url.includes('/sessions/SESS-INHERITED/start')) {
       return jsonResponse(sessionStartPayload('sb-inherited', 'shared-snapshot-pin'));
     }
-    if (url.endsWith('/projects/PROJ/sessions/SESS-INHERITED')) {
+    if (url.endsWith('/workspaces/PROJ/sessions/SESS-INHERITED')) {
       return jsonResponse({
         session_id: 'SESS-INHERITED',
         agent_name: 'kortix',
@@ -951,14 +951,14 @@ test('changeModel invalidates the persisted default before the next send', async
     if (url.includes('/sessions/SESS-MODEL-CHANGE/start')) {
       return jsonResponse(sessionStartPayload('sb-model-change', 'shared-snapshot-pin'));
     }
-    if (url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE/model')) {
+    if (url.endsWith('/workspaces/PROJ/sessions/SESS-MODEL-CHANGE/model')) {
       persistedModel = body.opencode_model;
       return jsonResponse({
         opencode_model: persistedModel,
         applied_live: true,
       });
     }
-    if (url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE')) {
+    if (url.endsWith('/workspaces/PROJ/sessions/SESS-MODEL-CHANGE')) {
       return jsonResponse({
         session_id: 'SESS-MODEL-CHANGE',
         agent_name: 'kortix',
@@ -995,7 +995,7 @@ test('changeModel invalidates the persisted default before the next send', async
 test('changeModel surfaces push_failed so a half-applied change is not read as saved', async () => {
   globalThis.fetch = mock(async (input: unknown) => {
     const url = requestUrl(input);
-    if (url.endsWith('/projects/PROJ/sessions/SESS-HALF/model')) {
+    if (url.endsWith('/workspaces/PROJ/sessions/SESS-HALF/model')) {
       return jsonResponse({
         opencode_model: 'kortix/deepseek-v4-flash',
         applied_live: false,
@@ -1027,7 +1027,7 @@ test('per-call and handle prompt choices override persisted session defaults', a
     if (url.includes('/sessions/SESS-OVERRIDES/start')) {
       return jsonResponse(sessionStartPayload('sb-overrides', 'shared-snapshot-pin'));
     }
-    if (url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES')) {
+    if (url.endsWith('/workspaces/PROJ/sessions/SESS-OVERRIDES')) {
       return jsonResponse({
         session_id: 'SESS-OVERRIDES',
         agent_name: 'persisted-agent',
@@ -1073,7 +1073,7 @@ test('per-call and handle prompt choices override persisted session defaults', a
   expect(
     calls.filter(
       (call) =>
-        call.url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES') && call.method === 'GET',
+        call.url.endsWith('/workspaces/PROJ/sessions/SESS-OVERRIDES') && call.method === 'GET',
     ),
   ).toHaveLength(1);
 });
@@ -1092,7 +1092,7 @@ test('a failed persisted-default read is retried by the next send', async () => 
     if (url.includes('/sessions/SESS-DEFAULT-RETRY/start')) {
       return jsonResponse(sessionStartPayload('sb-default-retry', 'shared-snapshot-pin'));
     }
-    if (url.endsWith('/projects/PROJ/sessions/SESS-DEFAULT-RETRY')) {
+    if (url.endsWith('/workspaces/PROJ/sessions/SESS-DEFAULT-RETRY')) {
       sessionReads += 1;
       if (sessionReads <= 3) throw new TypeError('transient session read failure');
       return jsonResponse({
@@ -1196,7 +1196,7 @@ test('a second fresh handle for the same session adopts the registry entry — n
   const first = k.session('PROJ', 'SESS-REG-1');
   await first.ensureReady();
 
-  // Brand-new handle for the SAME (projectId, sessionId) — never called ensureReady.
+  // Brand-new handle for the SAME (workspaceId, sessionId) — never called ensureReady.
   const second = k.session('PROJ', 'SESS-REG-1');
   expect(second.previewUrl(4000, '/y')).toBe('http://test.local/p/sb-reg1/4000/y');
 
@@ -1276,7 +1276,7 @@ test('session rewind and restore stay bound to the same canonical OpenCode sessi
 });
 
 // ── ensureReady() in-flight dedup (P0 robustness fix: two concurrent
-// ensureReady() calls for the SAME (projectId, sessionId) used to both drive
+// ensureReady() calls for the SAME (workspaceId, sessionId) used to both drive
 // their own `/start` long-poll — a real hazard for a "Kortix as a Backend"
 // server handling concurrent requests against one session) ─────────────────
 

@@ -9,7 +9,7 @@ const discoverSource = existsSync(discoverPath) ? readFileSync(discoverPath, 'ut
 describe('feature-flagged Discover connector marketplace', () => {
   test('keeps Easy Connect and adds Discover only for explicit project opt-in', () => {
     expect(connectorsSource).toContain(
-      "const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;",
+      "const discoverEnabled = useFeatureFlag(workspaceId, 'connectors_api_discover').enabled;",
     );
     expect(connectorsSource).toContain(
       '<TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>',
@@ -42,7 +42,7 @@ describe('feature-flagged Discover connector marketplace', () => {
   });
 
   test('opens direct records as source variants instead of routing through Pipedream', () => {
-    expect(discoverSource).toContain('getDiscoverConnector(projectId, selectedConnector.id)');
+    expect(discoverSource).toContain('getDiscoverConnector(workspaceId, selectedConnector.id)');
     expect(discoverSource).toContain('variant.connector');
     expect(discoverSource).toContain('Configure manually');
   });

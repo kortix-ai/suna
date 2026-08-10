@@ -13,29 +13,29 @@ const privateConnection: ConnectorGateConnection = {
   authorization_strategy: 'user',
 };
 
-const projectConnection: ConnectorGateConnection = {
-  id: 'connection-project',
-  slug: 'project-crm',
-  name: 'Project CRM',
-  authorization_strategy: 'project',
+const workspaceConnection: ConnectorGateConnection = {
+  id: 'connection-workspace',
+  slug: 'workspace-crm',
+  name: 'Workspace CRM',
+  authorization_strategy: 'workspace',
 };
 
 function renderGate({
   connectedIds = new Set<string>(),
   pendingId = null,
-  canManageProjectConnections = true,
+  canManageWorkspaceConnections = true,
 }: {
   connectedIds?: ReadonlySet<string>;
   pendingId?: string | null;
-  canManageProjectConnections?: boolean;
+  canManageWorkspaceConnections?: boolean;
 } = {}) {
   return renderToStaticMarkup(
     <Modal open>
       <ConnectorConnectionGateContent
-        connections={[privateConnection, projectConnection]}
+        connections={[privateConnection, workspaceConnection]}
         connectedIds={connectedIds}
         pendingId={pendingId}
-        canManageProjectConnections={canManageProjectConnections}
+        canManageWorkspaceConnections={canManageWorkspaceConnections}
         onConnect={() => {}}
         onCancel={() => {}}
       />
@@ -49,27 +49,27 @@ describe('ConnectorConnectionGateContent', () => {
 
     expect(html).toContain('This session needs 2 connections.');
     expect(html).toContain('Private calendar');
-    expect(html).toContain('Project CRM');
+    expect(html).toContain('Workspace CRM');
     expect(html).toContain('Private');
-    expect(html).toContain('Project');
+    expect(html).toContain('Workspace');
     expect(html).toContain('Only your private sessions can use this connection.');
-    expect(html).toContain('Eligible project members can use this connection.');
+    expect(html).toContain('Eligible workspace members can use this connection.');
     expect(html).toContain('aria-label="Connect Private calendar"');
-    expect(html).toContain('aria-label="Connect Project CRM"');
+    expect(html).toContain('aria-label="Connect Workspace CRM"');
   });
 
-  test('requires a project manager for a project connection without management access', () => {
-    const html = renderGate({ canManageProjectConnections: false });
+  test('requires a workspace manager for a workspace connection without management access', () => {
+    const html = renderGate({ canManageWorkspaceConnections: false });
 
-    expect(html).toContain('A project manager must create this connection.');
+    expect(html).toContain('A workspace manager must create this connection.');
     expect(html).toContain('Manager required');
     expect(html).toContain('aria-label="Connect Private calendar"');
-    expect(html).not.toContain('aria-label="Connect Project CRM"');
+    expect(html).not.toContain('aria-label="Connect Workspace CRM"');
   });
 
   test('renders connected and pending connections without enabling another connect action', () => {
     const html = renderGate({
-      connectedIds: new Set([projectConnection.id]),
+      connectedIds: new Set([workspaceConnection.id]),
       pendingId: privateConnection.id,
     });
 
@@ -77,6 +77,6 @@ describe('ConnectorConnectionGateContent', () => {
     expect(html).toContain('aria-label="Connect Private calendar"');
     expect(html).toContain('disabled=""');
     expect(html).toContain('animate-spinner-orbit');
-    expect(html).not.toContain('aria-label="Connect Project CRM"');
+    expect(html).not.toContain('aria-label="Connect Workspace CRM"');
   });
 });

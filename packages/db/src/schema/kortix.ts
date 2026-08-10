@@ -317,7 +317,7 @@ export const accountGithubInstallationStates = kortixSchema.table(
 export const projects = kortixSchema.table(
   'projects',
   {
-    projectId: uuid('project_id').defaultRandom().primaryKey(),
+    workspaceId: uuid('project_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
@@ -377,9 +377,9 @@ export const projectGitConnections = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     provider: varchar('provider', { length: 32 }).notNull(),
     repoUrl: text('repo_url').notNull(),
     /**
@@ -411,7 +411,7 @@ export const projectGitConnections = kortixSchema.table(
   },
   (table) => [
     index('idx_project_git_connections_account').on(table.accountId),
-    uniqueIndex('idx_project_git_connections_project').on(table.projectId),
+    uniqueIndex('idx_project_git_connections_project').on(table.workspaceId),
     index('idx_project_git_connections_provider_repo').on(table.provider, table.externalRepoId),
     index('idx_project_git_connections_status').on(table.status),
   ],
@@ -424,9 +424,9 @@ export const projectGitCredentials = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     provider: varchar('provider', { length: 32 }).notNull(),
     authMethod: varchar('auth_method', { length: 64 }).default('token').notNull(),
     valueEnc: text('value_enc').notNull(),
@@ -436,7 +436,7 @@ export const projectGitCredentials = kortixSchema.table(
   },
   (table) => [
     index('idx_project_git_credentials_account').on(table.accountId),
-    uniqueIndex('idx_project_git_credentials_project_provider').on(table.projectId, table.provider),
+    uniqueIndex('idx_project_git_credentials_project_provider').on(table.workspaceId, table.provider),
   ],
 );
 
@@ -446,9 +446,9 @@ export const projectMembers = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
     projectRole: projectRoleEnum('project_role').default('member').notNull(),
     grantedBy: uuid('granted_by'),
@@ -463,8 +463,8 @@ export const projectMembers = kortixSchema.table(
   },
   (table) => [
     index('idx_project_members_account_user').on(table.accountId, table.userId),
-    index('idx_project_members_project').on(table.projectId),
-    uniqueIndex('idx_project_members_project_user').on(table.projectId, table.userId),
+    index('idx_project_members_project').on(table.workspaceId),
+    uniqueIndex('idx_project_members_project_user').on(table.workspaceId, table.userId),
   ],
 );
 
@@ -475,9 +475,9 @@ export const projectAccessRequests = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     requesterUserId: uuid('requester_user_id').notNull(),
     requesterEmail: varchar('requester_email', { length: 255 }).notNull(),
     message: text('message'),
@@ -488,12 +488,12 @@ export const projectAccessRequests = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_project_access_requests_project').on(table.projectId),
+    index('idx_project_access_requests_project').on(table.workspaceId),
     index('idx_project_access_requests_account').on(table.accountId),
     index('idx_project_access_requests_requester').on(table.requesterUserId),
     index('idx_project_access_requests_status').on(table.status),
     uniqueIndex('idx_project_access_requests_pending_unique')
-      .on(table.projectId, table.requesterUserId)
+      .on(table.workspaceId, table.requesterUserId)
       .where(sql`${table.status} = 'pending'`),
   ],
 );
@@ -596,9 +596,9 @@ export const projectSecrets = kortixSchema.table(
   'project_secrets',
   {
     secretId: uuid('secret_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     /** Unique per (project, identifier) among SHARED rows. Existing/legacy
      *  rows have identifier === name (backfilled at migration time). */
     identifier: varchar('identifier', { length: 128 }).notNull(),
@@ -646,17 +646,17 @@ export const projectSecrets = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_project_secrets_project').on(table.projectId),
+    index('idx_project_secrets_project').on(table.workspaceId),
     // Non-unique lookup index for by-KEY reads (getProjectSecretValue and friends).
-    index('idx_project_secrets_project_name').on(table.projectId, table.name),
+    index('idx_project_secrets_project_name').on(table.workspaceId, table.name),
     // At most one SHARED row per (project, identifier)…
     uniqueIndex('idx_project_secrets_project_identifier_shared')
-      .on(table.projectId, table.identifier)
+      .on(table.workspaceId, table.identifier)
       .where(sql`${table.ownerUserId} is null`),
     // …and at most one PERSONAL override per (project, name, member) — the
     // CODEX_AUTH_JSON per-user row; unchanged by the identifier model.
     uniqueIndex('idx_project_secrets_project_name_owner')
-      .on(table.projectId, table.name, table.ownerUserId)
+      .on(table.workspaceId, table.name, table.ownerUserId)
       .where(sql`${table.ownerUserId} is not null`),
     // NOTE: a partial index `idx_project_secrets_project_strategy`
     // ((project_id, strategy) WHERE strategy <> 'runtime') ALSO exists, created
@@ -698,9 +698,9 @@ export const projectSessions = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     branchName: text('branch_name').notNull(),
     baseRef: text('base_ref').default('main').notNull(),
     sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
@@ -763,7 +763,7 @@ export const projectSessions = kortixSchema.table(
   },
   (table) => [
     index('idx_project_sessions_account').on(table.accountId),
-    index('idx_project_sessions_project').on(table.projectId),
+    index('idx_project_sessions_project').on(table.workspaceId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
     // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
@@ -775,21 +775,21 @@ export const projectSessions = kortixSchema.table(
     // Supports the KaaB "list this end-user's sessions" filter, which spans ALL
     // statuses — the partial active-only index below cannot serve it.
     index('idx_project_sessions_project_origin')
-      .on(table.projectId, table.originRef)
+      .on(table.workspaceId, table.originRef)
       .where(sql`${table.originRef} is not null`),
     index('idx_project_sessions_account_origin_active')
       .on(table.accountId, table.originRef)
       .where(
         sql`${table.originRef} is not null and ${table.status} in ('queued','branching','provisioning','running')`,
       ),
-    uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
+    uniqueIndex('idx_project_sessions_project_branch').on(table.workspaceId, table.branchName),
     uniqueIndex('idx_project_sessions_tenant_identity').on(
       table.accountId,
-      table.projectId,
+      table.workspaceId,
       table.sessionId,
     ),
     uniqueIndex('idx_project_sessions_one_available_warm')
-      .on(table.projectId, table.createdBy)
+      .on(table.workspaceId, table.createdBy)
       .where(
         sql`${table.createdBy} is not null
           and ${table.metadata}->'warm_session'->>'state' = 'available'
@@ -875,9 +875,9 @@ export const projectSecretHandleStatusEnum = kortixSchema.enum('project_secret_h
  */
 export const projectSessionSecretHandles = kortixSchema.table('project_session_secret_handles', {
   handleId: uuid('handle_id').defaultRandom().primaryKey(),
-  projectId: uuid('project_id')
+  workspaceId: uuid('project_id')
     .notNull()
-    .references(() => projects.projectId, { onDelete: 'cascade' }),
+    .references(() => projects.workspaceId, { onDelete: 'cascade' }),
   sessionId: text('session_id')
     .notNull()
     .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
@@ -938,7 +938,7 @@ export const accountModelPreferences = kortixSchema.table(
     scope: text('scope').notNull(),
     scopeKey: text('scope_key').default('').notNull(),
     // Only ever set for scope='agent' — see doc comment above.
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    workspaceId: uuid('project_id').references(() => projects.workspaceId, { onDelete: 'cascade' }),
     model: varchar('model', { length: 128 }).notNull(),
     updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -948,20 +948,23 @@ export const accountModelPreferences = kortixSchema.table(
     index('idx_account_model_preferences_account').on(table.accountId),
     uniqueIndex('idx_account_model_preferences_scope_global')
       .on(table.accountId, table.scope, table.scopeKey)
-      .where(sql`${table.projectId} is null`),
+      .where(sql`${table.workspaceId} is null`),
     uniqueIndex('idx_account_model_preferences_scope_project')
-      .on(table.accountId, table.scope, table.scopeKey, table.projectId)
-      .where(sql`${table.projectId} is not null`),
+      .on(table.accountId, table.scope, table.scopeKey, table.workspaceId)
+      .where(sql`${table.workspaceId} is not null`),
   ],
 );
 
-export interface ProjectLlmRoutingRule {
+export interface WorkspaceLlmRoutingRule {
   model: string;
   fallbackModels: string[];
   fallbackOn: 'transient' | 'any-error';
 }
 
-// Per-model generation-parameter defaults a project configures (reasoning
+/** @deprecated Use {@link WorkspaceLlmRoutingRule}. */
+export type ProjectLlmRoutingRule = WorkspaceLlmRoutingRule;
+
+// Per-model generation-parameter defaults a workspace configures (reasoning
 // effort, temperature, top_p, max output tokens, ...). Deliberately a single
 // generic blob keyed by wire model id rather than one column per param —
 // adding a new control later (e.g. a penalty knob) needs zero migration,
@@ -971,7 +974,7 @@ export interface ProjectLlmRoutingRule {
 // layer injection path (routing/resolve-route.ts) — this column stores
 // whatever was clamped at write time, but is re-clamped on every read since
 // a model's capabilities (or the catalog itself) can change after the fact.
-export type ProjectModelGenerationConfig = Record<
+export type WorkspaceModelGenerationConfig = Record<
   string,
   {
     reasoningEffort?: string;
@@ -981,23 +984,26 @@ export type ProjectModelGenerationConfig = Record<
   }
 >;
 
-// Project-owned gateway composition. A NULL default_fallback_models inherits
+/** @deprecated Use {@link WorkspaceModelGenerationConfig}. */
+export type ProjectModelGenerationConfig = WorkspaceModelGenerationConfig;
+
+// Workspace-owned gateway composition. A NULL default_fallback_models inherits
 // the operator policy while [] deliberately disables fallback for `auto`.
-// The project default model remains in account_model_preferences so every
+// The workspace default model remains in account_model_preferences so every
 // existing default-model consumer continues to share one source of truth.
 export const projectLlmRoutingPolicies = kortixSchema.table(
   'project_llm_routing_policies',
   {
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .primaryKey()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     visionModel: varchar('vision_model', { length: 128 }),
     defaultFallbackModels: jsonb('default_fallback_models').$type<string[] | null>(),
     defaultFallbackOn: text('default_fallback_on'),
-    rules: jsonb('rules').default([]).$type<ProjectLlmRoutingRule[]>().notNull(),
+    rules: jsonb('rules').default([]).$type<WorkspaceLlmRoutingRule[]>().notNull(),
     modelGenerationConfig: jsonb('model_generation_config')
       .default({})
-      .$type<ProjectModelGenerationConfig>()
+      .$type<WorkspaceModelGenerationConfig>()
       .notNull(),
     /**
      * EXCEPTIONS to the catalog default, as `wireModelId -> enabled`. Effective
@@ -1083,9 +1089,9 @@ export const projectSessionPublicShares = kortixSchema.table(
     sessionId: text('session_id')
       .notNull()
       .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
@@ -1106,7 +1112,7 @@ export const projectSessionPublicShares = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_project_session_public_shares_token_hash').on(table.tokenHash),
     index('idx_project_session_public_shares_session').on(table.sessionId),
-    index('idx_project_session_public_shares_project').on(table.projectId),
+    index('idx_project_session_public_shares_project').on(table.workspaceId),
   ],
 );
 
@@ -1119,9 +1125,9 @@ export const projectSessionPublicShares = kortixSchema.table(
 export const projectTriggerRuntime = kortixSchema.table(
   'project_trigger_runtime',
   {
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     slug: varchar('slug', { length: 128 }).notNull(),
     lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
     // Observability for "why isn't my trigger running": outcome of the most
@@ -1163,7 +1169,7 @@ export const projectTriggerRuntime = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.projectId, table.slug] }),
+    primaryKey({ columns: [table.workspaceId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
   ],
@@ -1180,7 +1186,7 @@ export const projectTriggerExecutions = kortixSchema.table(
   'project_trigger_executions',
   {
     executionId: uuid('execution_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     slug: varchar('slug', { length: 128 }).notNull(),
     scheduleRevision: varchar('schedule_revision', { length: 64 }).notNull(),
     scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
@@ -1202,8 +1208,8 @@ export const projectTriggerExecutions = kortixSchema.table(
   },
   (table) => [
     foreignKey({
-      columns: [table.projectId],
-      foreignColumns: [projects.projectId],
+      columns: [table.workspaceId],
+      foreignColumns: [projects.workspaceId],
       name: 'project_trigger_exec_project_fk',
     }).onDelete('cascade'),
     foreignKey({
@@ -1212,7 +1218,7 @@ export const projectTriggerExecutions = kortixSchema.table(
       name: 'project_trigger_exec_session_fk',
     }).onDelete('set null'),
     uniqueIndex('idx_project_trigger_executions_slot').on(
-      table.projectId,
+      table.workspaceId,
       table.slug,
       table.scheduleRevision,
       table.scheduledFor,
@@ -1222,7 +1228,7 @@ export const projectTriggerExecutions = kortixSchema.table(
       table.availableAt,
       table.lockedUntil,
     ),
-    index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
+    index('idx_project_trigger_executions_project').on(table.workspaceId, table.createdAt),
   ],
 );
 
@@ -1233,9 +1239,9 @@ export const sessionLifecycleCommands = kortixSchema.table(
     commandType: varchar('command_type', { length: 64 }).notNull(),
     source: varchar('source', { length: 64 }).notNull(),
     status: sessionLifecycleCommandStatusEnum('status').default('queued').notNull(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
@@ -1257,7 +1263,7 @@ export const sessionLifecycleCommands = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_session_lifecycle_commands_idempotency').on(table.idempotencyKey),
     index('idx_session_lifecycle_commands_due').on(table.status, table.availableAt),
-    index('idx_session_lifecycle_commands_project').on(table.projectId),
+    index('idx_session_lifecycle_commands_project').on(table.workspaceId),
     index('idx_session_lifecycle_commands_session').on(table.sessionId),
     index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
   ],
@@ -1271,35 +1277,35 @@ export const chatInstalls = kortixSchema.table(
   {
     installId: uuid('install_id').defaultRandom().primaryKey(),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    projectId: uuid('project_id')
+    platformWorkspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex('idx_chat_installs_workspace_project').on(
       table.platform,
+      table.platformWorkspaceId,
       table.workspaceId,
-      table.projectId,
     ),
-    index('idx_chat_installs_workspace').on(table.platform, table.workspaceId),
-    index('idx_chat_installs_project').on(table.projectId),
+    index('idx_chat_installs_workspace').on(table.platform, table.platformWorkspaceId),
+    index('idx_chat_installs_project').on(table.workspaceId),
   ],
 );
 
 // Per-channel routing: which project owns a specific channel. Bound lazily on
-// first use. A NULL projectId means a project picker is posted in that channel
+// first use. A NULL workspaceId means a project picker is posted in that channel
 // and awaiting a click.
 export const chatChannelBindings = kortixSchema.table(
   'chat_channel_bindings',
   {
     bindingId: uuid('binding_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id').references(() => projects.projectId, {
+    workspaceId: uuid('project_id').references(() => projects.workspaceId, {
       onDelete: 'cascade',
     }),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformWorkspaceId: varchar('workspace_id', { length: 128 }).notNull(),
     channelId: text('channel_id').notNull(),
     channelName: varchar('channel_name', { length: 256 }),
     channelType: varchar('channel_type', { length: 32 }),
@@ -1320,10 +1326,10 @@ export const chatChannelBindings = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_chat_channel_bindings_channel').on(
       table.platform,
-      table.workspaceId,
+      table.platformWorkspaceId,
       table.channelId,
     ),
-    index('idx_chat_channel_bindings_project').on(table.projectId),
+    index('idx_chat_channel_bindings_project').on(table.workspaceId),
   ],
 );
 
@@ -1335,11 +1341,11 @@ export const chatThreads = kortixSchema.table(
   'chat_threads',
   {
     threadRowId: uuid('thread_row_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformWorkspaceId: varchar('workspace_id', { length: 128 }).notNull(),
     threadId: text('thread_id').notNull(),
     sessionId: text('session_id')
       .notNull()
@@ -1348,8 +1354,8 @@ export const chatThreads = kortixSchema.table(
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('idx_chat_threads_thread').on(table.platform, table.workspaceId, table.threadId),
-    index('idx_chat_threads_project').on(table.projectId),
+    uniqueIndex('idx_chat_threads_thread').on(table.platform, table.platformWorkspaceId, table.threadId),
+    index('idx_chat_threads_project').on(table.workspaceId),
     index('idx_chat_threads_session').on(table.sessionId),
   ],
 );
@@ -1361,11 +1367,11 @@ export const chatPendingAuthMessages = kortixSchema.table(
   'chat_pending_auth_messages',
   {
     pendingId: uuid('pending_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).default('slack').notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformWorkspaceId: varchar('workspace_id', { length: 128 }).notNull(),
     platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
     envelope: jsonb('envelope').notNull().$type<Record<string, unknown>>(),
     event: jsonb('event').notNull().$type<Record<string, unknown>>(),
@@ -1375,7 +1381,7 @@ export const chatPendingAuthMessages = kortixSchema.table(
   },
   (table) => [
     index('idx_chat_pending_auth_messages_lookup').on(
-      table.workspaceId,
+      table.platformWorkspaceId,
       table.platformUserId,
       table.expiresAt,
     ),
@@ -1388,7 +1394,7 @@ export const chatThreadParticipants = kortixSchema.table(
   {
     participantId: uuid('participant_id').defaultRandom().primaryKey(),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformWorkspaceId: varchar('workspace_id', { length: 128 }).notNull(),
     threadId: text('thread_id').notNull(),
     sessionId: text('session_id')
       .notNull()
@@ -1404,7 +1410,7 @@ export const chatThreadParticipants = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_chat_thread_participants_thread_user').on(
       table.platform,
-      table.workspaceId,
+      table.platformWorkspaceId,
       table.threadId,
       table.platformUserId,
     ),
@@ -1426,7 +1432,7 @@ export const chatUserIdentities = kortixSchema.table(
   {
     identityId: uuid('identity_id').defaultRandom().primaryKey(),
     platform: varchar('platform', { length: 32 }).notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformWorkspaceId: varchar('workspace_id', { length: 128 }).notNull(),
     platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
     userId: uuid('user_id').notNull(),
     linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1435,7 +1441,7 @@ export const chatUserIdentities = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_chat_user_identities_platform_user').on(
       table.platform,
-      table.workspaceId,
+      table.platformWorkspaceId,
       table.platformUserId,
     ),
     index('idx_chat_user_identities_user').on(table.userId),
@@ -1453,7 +1459,7 @@ export const chatTurnStreams = kortixSchema.table(
   'chat_turn_streams',
   {
     sessionId: text('session_id').primaryKey(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     teamId: varchar('team_id', { length: 128 }).notNull(),
     channel: text('channel').notNull(),
     triggerTs: varchar('trigger_ts', { length: 64 }).notNull(),
@@ -1488,7 +1494,7 @@ export const voiceCallTurns = kortixSchema.table(
   {
     cursor: bigint('cursor', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
     callId: text('call_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     sessionId: text('session_id').notNull(),
     /** 'user' (a human in the call) | 'agent' (the voice agent speaking) |
      *  'tool' (an ask_kortix/run_command call the worker made through the
@@ -1523,7 +1529,7 @@ export const voiceCallTurns = kortixSchema.table(
 export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors', {
   /** The call — which is also the session id. */
   callId: text('call_id').primaryKey(),
-  projectId: uuid('project_id').notNull(),
+  workspaceId: uuid('project_id').notNull(),
   cursor: bigint('cursor', { mode: 'number' }).notNull().default(0),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -1551,7 +1557,7 @@ export const voiceJoinLinks = kortixSchema.table(
   {
     tokenHash: text('token_hash').primaryKey(),
     callId: text('call_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1563,7 +1569,7 @@ export const teamsPendingUploads = kortixSchema.table(
   'teams_pending_uploads',
   {
     uploadId: text('upload_id').primaryKey(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     serviceUrl: text('service_url').notNull(),
     conversationId: text('conversation_id').notNull(),
     botId: varchar('bot_id', { length: 128 }),
@@ -1620,7 +1626,7 @@ export const sessionSandboxes = kortixSchema.table(
     sandboxId: uuid('sandbox_id').primaryKey(),
     sessionId: text('session_id').notNull().unique(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     provider: sandboxProviderEnum('provider').default('daytona').notNull(),
     externalId: text('external_id'),
     baseUrl: text('base_url'),
@@ -1645,7 +1651,7 @@ export const sessionSandboxes = kortixSchema.table(
   },
   (table) => [
     index('idx_session_sandboxes_session').on(table.sessionId),
-    index('idx_session_sandboxes_project').on(table.projectId),
+    index('idx_session_sandboxes_project').on(table.workspaceId),
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
@@ -1718,7 +1724,7 @@ export const sandboxTemplates = kortixSchema.table(
      * Owning project. NULL for the platform-shared default(s), which any
      * project may boot a session from.
      */
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    workspaceId: uuid('project_id').references(() => projects.workspaceId, { onDelete: 'cascade' }),
     accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
     /** Unique per project (or globally for shared templates). User-visible. */
     slug: text('slug').notNull(),
@@ -1776,9 +1782,9 @@ export const sandboxTemplates = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_sandbox_templates_project').on(table.projectId),
+    index('idx_sandbox_templates_project').on(table.workspaceId),
     index('idx_sandbox_templates_shared').on(table.isShared),
-    uniqueIndex('idx_sandbox_templates_project_slug').on(table.projectId, table.slug),
+    uniqueIndex('idx_sandbox_templates_project_slug').on(table.workspaceId, table.slug),
   ],
 );
 
@@ -1799,9 +1805,9 @@ export const projectSnapshotBuilds = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     commitSha: text('commit_sha').notNull(),
     branch: text('branch').default('').notNull(),
     snapshotName: text('snapshot_name').notNull(),
@@ -1814,9 +1820,9 @@ export const projectSnapshotBuilds = kortixSchema.table(
     finishedAt: timestamp('finished_at', { withTimezone: true }),
   },
   (table) => [
-    index('idx_project_snapshot_builds_project_recent').on(table.projectId, table.startedAt.desc()),
+    index('idx_project_snapshot_builds_project_recent').on(table.workspaceId, table.startedAt.desc()),
     index('idx_project_snapshot_builds_status').on(
-      table.projectId,
+      table.workspaceId,
       table.status,
       table.startedAt.desc(),
     ),
@@ -1838,9 +1844,9 @@ export const providerTransitions = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     // Provider the project was on when the switch was requested (audit; the
     // rollback target on a failed prep).
     sourceProvider: sandboxProviderEnum('source_provider').notNull(),
@@ -1892,19 +1898,19 @@ export const providerTransitions = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_provider_transitions_project_recent').on(table.projectId, table.requestedAt.desc()),
+    index('idx_provider_transitions_project_recent').on(table.workspaceId, table.requestedAt.desc()),
     index('idx_provider_transitions_status').on(table.status),
     index('idx_provider_transitions_resume').on(table.status, table.nextRetryAt, table.heartbeatAt),
     // Atomic generation allocation guard: one transition per (project,
     // generation). The request path reserves the generation on the project row
     // under a row lock; this unique index is the backstop that makes a
     // double-allocation a hard error rather than silent CAS corruption.
-    unique('uq_provider_transitions_project_generation').on(table.projectId, table.generation),
+    unique('uq_provider_transitions_project_generation').on(table.workspaceId, table.generation),
     // Dedup key: at most one LIVE transition per exact prep identity, so repeated
     // switch calls collapse onto one build. Covers live statuses ONLY —
     // failed/superseded/cancelled rows must never block a fresh switch.
     uniqueIndex('uq_provider_transitions_live_identity')
-      .on(table.projectId, table.targetProvider, table.commitSha, table.baseRuntimeIdentity)
+      .on(table.workspaceId, table.targetProvider, table.commitSha, table.baseRuntimeIdentity)
       .where(sql`status in ('pending','building','ready','activating')`),
   ],
 );
@@ -2008,7 +2014,7 @@ export const legacySandboxMigrations = kortixSchema.table(
     runId: text('run_id').notNull(),
     sandboxId: uuid('sandbox_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id'),
+    workspaceId: uuid('project_id'),
     sessionId: text('session_id'),
     status: varchar('status', { length: 32 }).default('planned').notNull(),
     mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
@@ -2054,7 +2060,7 @@ export const sunaAccountMigrations = kortixSchema.table(
     migrationId: uuid('migration_id').defaultRandom().primaryKey(),
     runId: text('run_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id'),
+    workspaceId: uuid('project_id'),
     status: varchar('status', { length: 32 }).default('planned').notNull(),
     mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
     plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
@@ -2141,7 +2147,7 @@ export const accountTokens = kortixSchema.table(
      *  can only call `/v1/projects/<project_id>/*` routes and is
      *  rejected by account-level handlers. Session connector tokens also set
      *  sessionId + agentGrant. */
-    projectId: uuid('project_id').references(() => projects.projectId, {
+    workspaceId: uuid('project_id').references(() => projects.workspaceId, {
       onDelete: 'cascade',
     }),
     name: varchar('name', { length: 255 }).notNull(),
@@ -2184,7 +2190,7 @@ export const accountTokens = kortixSchema.table(
     index('idx_account_tokens_secret_hash').on(table.secretKeyHash),
     index('idx_account_tokens_account').on(table.accountId),
     index('idx_account_tokens_user').on(table.userId),
-    index('idx_account_tokens_project').on(table.projectId),
+    index('idx_account_tokens_project').on(table.workspaceId),
   ],
 );
 
@@ -2297,8 +2303,8 @@ export const projectGitConnectionsRelations = relations(projectGitConnections, (
     references: [accounts.accountId],
   }),
   project: one(projects, {
-    fields: [projectGitConnections.projectId],
-    references: [projects.projectId],
+    fields: [projectGitConnections.workspaceId],
+    references: [projects.workspaceId],
   }),
 }));
 
@@ -2308,8 +2314,8 @@ export const projectGitCredentialsRelations = relations(projectGitCredentials, (
     references: [accounts.accountId],
   }),
   project: one(projects, {
-    fields: [projectGitCredentials.projectId],
-    references: [projects.projectId],
+    fields: [projectGitCredentials.workspaceId],
+    references: [projects.workspaceId],
   }),
 }));
 
@@ -2319,15 +2325,15 @@ export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
     references: [accounts.accountId],
   }),
   project: one(projects, {
-    fields: [projectMembers.projectId],
-    references: [projects.projectId],
+    fields: [projectMembers.workspaceId],
+    references: [projects.workspaceId],
   }),
 }));
 
 export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
   project: one(projects, {
-    fields: [projectSecrets.projectId],
-    references: [projects.projectId],
+    fields: [projectSecrets.workspaceId],
+    references: [projects.workspaceId],
   }),
 }));
 
@@ -2337,8 +2343,8 @@ export const projectSessionsRelations = relations(projectSessions, ({ one }) => 
     references: [accounts.accountId],
   }),
   project: one(projects, {
-    fields: [projectSessions.projectId],
-    references: [projects.projectId],
+    fields: [projectSessions.workspaceId],
+    references: [projects.workspaceId],
   }),
   runtimeContext: one(projectSessionRuntimeContexts, {
     fields: [projectSessions.sessionId],
@@ -2412,7 +2418,7 @@ export const auditEvents = kortixSchema.table(
     eventId: uuid('event_id').defaultRandom().primaryKey(),
     // Deliberately no FK. Account deletion must not rewrite or delete forensic history.
     accountId: uuid('account_id'),
-    projectId: uuid('project_id'),
+    workspaceId: uuid('project_id'),
     sessionId: text('session_id'),
     opencodeSessionId: text('opencode_session_id'),
     turnId: text('turn_id'),
@@ -2466,7 +2472,7 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
     index('idx_audit_events_account_project_time').on(
       table.accountId,
-      table.projectId,
+      table.workspaceId,
       table.occurredAt,
     ),
     index('idx_audit_events_account_session_time').on(
@@ -2476,7 +2482,7 @@ export const auditEvents = kortixSchema.table(
     ),
     index('idx_audit_events_account_project_sequence').on(
       table.accountId,
-      table.projectId,
+      table.workspaceId,
       table.sessionSequence,
     ),
     index('idx_audit_events_account_session_sequence').on(
@@ -2530,7 +2536,7 @@ export const usageEvents = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
+    workspaceId: uuid('project_id').references(() => projects.workspaceId, { onDelete: 'set null' }),
     sessionId: text('session_id'),
     /**
      * Kortix-as-a-Backend attribution: which of the wrapper's END-USERS this
@@ -2563,7 +2569,7 @@ export const usageEvents = kortixSchema.table(
   },
   (table) => [
     index('idx_usage_events_account_time').on(table.accountId, table.createdAt),
-    index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
+    index('idx_usage_events_project_time').on(table.workspaceId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
     index('idx_usage_events_model').on(table.provider, table.model),
     // Per-end-user metering: "spend for origin_ref X in a window", and the
@@ -2585,7 +2591,7 @@ export const gatewayRequestLogs = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
+    workspaceId: uuid('project_id').references(() => projects.workspaceId, { onDelete: 'set null' }),
     actorUserId: uuid('actor_user_id'),
     sessionId: text('session_id'),
     keyId: uuid('key_id'),
@@ -2621,10 +2627,10 @@ export const gatewayRequestLogs = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_gateway_logs_request_id').on(table.requestId),
     index('idx_gateway_logs_account_time').on(table.accountId, table.createdAt),
-    index('idx_gateway_logs_project_time').on(table.projectId, table.createdAt),
+    index('idx_gateway_logs_project_time').on(table.workspaceId, table.createdAt),
     index('idx_gateway_logs_model').on(table.provider, table.resolvedModel),
     index('idx_gateway_logs_account_ok').on(table.accountId, table.ok),
-    index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
+    index('idx_gateway_logs_session').on(table.workspaceId, table.sessionId),
   ],
 );
 
@@ -2635,9 +2641,9 @@ export const gatewayApiKeys = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     name: varchar('name', { length: 255 }).notNull(),
     keyPrefix: varchar('key_prefix', { length: 24 }).notNull(),
     secretKeyHash: varchar('secret_key_hash', { length: 128 }).notNull(),
@@ -2650,7 +2656,7 @@ export const gatewayApiKeys = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_gateway_keys_secret_hash').on(table.secretKeyHash),
-    index('idx_gateway_keys_project').on(table.projectId),
+    index('idx_gateway_keys_project').on(table.workspaceId),
     index('idx_gateway_keys_account').on(table.accountId),
   ],
 );
@@ -2673,9 +2679,9 @@ export const gatewayBudgets = kortixSchema.table(
   'gateway_budgets',
   {
     budgetId: uuid('budget_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     scope: gatewayBudgetScopeEnum('scope').notNull(),
     subjectUserId: uuid('subject_user_id'),
     limitUsd: numeric('limit_usd', { precision: 12, scale: 4 }).notNull(),
@@ -2686,8 +2692,8 @@ export const gatewayBudgets = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_gateway_budgets_project').on(table.projectId),
-    index('idx_gateway_budgets_lookup').on(table.projectId, table.scope),
+    index('idx_gateway_budgets_project').on(table.workspaceId),
+    index('idx_gateway_budgets_lookup').on(table.workspaceId, table.scope),
   ],
 );
 
@@ -2893,7 +2899,7 @@ export const sessionPendingQuestions = kortixSchema.table(
   {
     id: uuid().defaultRandom().primaryKey().notNull(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     /** `project_sessions.session_id`. Text, matching that table's PK. */
     sessionId: text('session_id').notNull(),
     /** opencode's `question.asked` request id — the dedupe key with sessionId. */
@@ -2990,9 +2996,9 @@ export const apps = kortixSchema.table(
   {
     appId: uuid('app_id').defaultRandom().primaryKey().notNull(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     slug: varchar('slug', { length: 63 }).notNull(),
     name: text('name').notNull(),
     routeKey: varchar('route_key', { length: 20 }).notNull().unique(),
@@ -3027,7 +3033,7 @@ export const apps = kortixSchema.table(
     check('apps_idle_timeout_check', sql`${table.idleTimeoutSeconds} BETWEEN 120 AND 86400`),
     check('apps_budget_check', sql`${table.monthlyBudgetUsd} >= 0`),
     uniqueIndex('apps_project_slug_live_unique')
-      .on(table.projectId, table.slug)
+      .on(table.workspaceId, table.slug)
       .where(sql`${table.deletedAt} IS NULL`),
     index('apps_account_idx').on(table.accountId),
     index('apps_route_key_idx').on(table.routeKey),
@@ -3062,9 +3068,9 @@ export const appArtifacts = kortixSchema.table(
   {
     artifactId: uuid('artifact_id').defaultRandom().primaryKey().notNull(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     kind: varchar('kind', { length: 16 }).notNull(),
     status: varchar('status', { length: 16 }).default('uploading').notNull(),
     objectPath: text('object_path').unique(),
@@ -3085,7 +3091,7 @@ export const appArtifacts = kortixSchema.table(
       sql`${table.status} IN ('uploading', 'uploaded', 'ready', 'rejected', 'deleted')`,
     ),
     check('app_artifacts_size_check', sql`${table.sizeBytes} IS NULL OR ${table.sizeBytes} > 0`),
-    index('app_artifacts_project_idx').on(table.projectId, table.createdAt),
+    index('app_artifacts_project_idx').on(table.workspaceId, table.createdAt),
     index('app_artifacts_sha_idx').on(table.accountId, table.sha256),
   ],
 );
@@ -3513,7 +3519,7 @@ export const tunnelAuditLogs = kortixSchema.table(
       .notNull()
       .references(() => tunnelConnections.tunnelId, { onDelete: 'cascade' }),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id'),
+    workspaceId: uuid('project_id'),
     sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
     actorType: text('actor_type'),
@@ -3692,9 +3698,9 @@ export const changeRequests = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     /** Short, monotonically-increasing per-project display number (CR #1, #2, …). */
     number: integer('number').notNull(),
     title: text('title').notNull(),
@@ -3721,16 +3727,16 @@ export const changeRequests = kortixSchema.table(
   },
   (table) => [
     index('idx_change_requests_account').on(table.accountId),
-    index('idx_change_requests_project').on(table.projectId),
-    index('idx_change_requests_project_status').on(table.projectId, table.status),
-    uniqueIndex('idx_change_requests_project_number').on(table.projectId, table.number),
+    index('idx_change_requests_project').on(table.workspaceId),
+    index('idx_change_requests_project_status').on(table.workspaceId, table.status),
+    uniqueIndex('idx_change_requests_project_number').on(table.workspaceId, table.number),
   ],
 );
 
 export const changeRequestsRelations = relations(changeRequests, ({ one }) => ({
   project: one(projects, {
-    fields: [changeRequests.projectId],
-    references: [projects.projectId],
+    fields: [changeRequests.workspaceId],
+    references: [projects.workspaceId],
   }),
   account: one(accounts, {
     fields: [changeRequests.accountId],
@@ -3787,9 +3793,9 @@ export const reviewItems = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     /** Originating session/agent run, if submitted from inside a sandbox. */
     originSessionId: text('origin_session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
@@ -3815,17 +3821,17 @@ export const reviewItems = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_review_items_project').on(table.projectId),
-    index('idx_review_items_project_status').on(table.projectId, table.status),
-    index('idx_review_items_project_kind').on(table.projectId, table.kind),
+    index('idx_review_items_project').on(table.workspaceId),
+    index('idx_review_items_project_status').on(table.workspaceId, table.status),
+    index('idx_review_items_project_kind').on(table.workspaceId, table.kind),
     index('idx_review_items_created').on(table.createdAt),
   ],
 );
 
 export const reviewItemsRelations = relations(reviewItems, ({ one }) => ({
   project: one(projects, {
-    fields: [reviewItems.projectId],
-    references: [projects.projectId],
+    fields: [reviewItems.workspaceId],
+    references: [projects.workspaceId],
   }),
   account: one(accounts, {
     fields: [reviewItems.accountId],
@@ -3894,9 +3900,9 @@ export const accountGroupMembers = kortixSchema.table(
 export const projectGroupGrants = kortixSchema.table(
   'project_group_grants',
   {
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     groupId: uuid('group_id')
       .notNull()
       .references(() => accountGroups.groupId, { onDelete: 'cascade' }),
@@ -3912,8 +3918,8 @@ export const projectGroupGrants = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.projectId, table.groupId] }),
-    index('idx_project_group_grants_project').on(table.projectId),
+    primaryKey({ columns: [table.workspaceId, table.groupId] }),
+    index('idx_project_group_grants_project').on(table.workspaceId),
     index('idx_project_group_grants_group').on(table.groupId),
     index('idx_project_group_grants_account').on(table.accountId),
   ],
@@ -4059,9 +4065,9 @@ export const iamResourceGrants = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     /** 'agent' | 'skill' — validated app-side; extensible to command/etc. */
     resourceType: varchar('resource_type', { length: 32 }).notNull(),
     /** Agent name / skill slug — the file-based manifest key (NOT a uuid). */
@@ -4081,16 +4087,16 @@ export const iamResourceGrants = kortixSchema.table(
   (table) => [
     // One grant per (resource, principal) — upsert target.
     uniqueIndex('uq_iam_resource_grants').on(
-      table.projectId,
+      table.workspaceId,
       table.resourceType,
       table.resourceId,
       table.principalType,
       table.principalId,
     ),
     // "Is anything of this type scoped in this project?" + per-resource lookup.
-    index('idx_iam_resource_grants_project_type').on(table.projectId, table.resourceType),
+    index('idx_iam_resource_grants_project_type').on(table.workspaceId, table.resourceType),
     index('idx_iam_resource_grants_resource').on(
-      table.projectId,
+      table.workspaceId,
       table.resourceType,
       table.resourceId,
     ),
@@ -4293,7 +4299,7 @@ export const serviceAccounts = kortixSchema.table(
     status: varchar('status', { length: 16 }).default('active').notNull(),
     /** Set for an auto-provisioned AGENT identity: the project the agent lives
      *  in. NULL for a manually-created (human-managed) service account. */
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    workspaceId: uuid('project_id').references(() => projects.workspaceId, { onDelete: 'cascade' }),
     /** The kortix.yaml `agents` entry name this SA is the standing identity for.
      *  NULL for a manual service account. (account_id, project_id, agent_name)
      *  is unique so get-or-create is idempotent per agent. */
@@ -4315,7 +4321,7 @@ export const serviceAccounts = kortixSchema.table(
       .on(table.accountId, table.name)
       .where(sql`agent_name IS NULL`),
     uniqueIndex('idx_service_accounts_agent')
-      .on(table.accountId, table.projectId, table.agentName)
+      .on(table.accountId, table.workspaceId, table.agentName)
       .where(sql`agent_name IS NOT NULL`),
   ],
 );
@@ -4411,11 +4417,11 @@ export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   // catalog is a fixed per-platform action set; the credential is the platform's
   // existing install token (resolved server-side, no connector_credential row).
   'channel',
-  // Connected machines reached over the Agent Computer Tunnel. ONE auto-
-  // materialized connector fronts all the account's machines (machine = a call
-  // arg); its catalog is the tunnel RPC method set, and it has no credential —
-  // the live WS relay IS the credential, with per-machine auth/scope enforced by
-  // the tunnel permission layer. See docs/specs/computer-connector.md.
+  // Connected machines reached over the Agent Computer Tunnel. Each machine is
+  // one auto-materialized connector bound to its tunnel id. Its catalog is the
+  // tunnel RPC method set, and it has no credential — the live WS relay IS the
+  // credential, with per-machine auth/scope enforced by the tunnel permission
+  // layer. See docs/specs/computer-connector.md.
   'computer',
 ]);
 
@@ -4483,9 +4489,9 @@ export const connectors = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     slug: varchar('slug', { length: 128 }).notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     providerType: connectorProviderEnum('provider_type').notNull(),
@@ -4525,17 +4531,17 @@ export const connectors = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_connectors_project').on(table.projectId),
+    index('idx_connectors_project').on(table.workspaceId),
     index('idx_connectors_account').on(table.accountId),
-    uniqueIndex('idx_connectors_project_slug').on(table.projectId, table.slug),
+    uniqueIndex('idx_connectors_project_slug').on(table.workspaceId, table.slug),
     uniqueIndex('idx_connectors_tenant_identity').on(
       table.accountId,
-      table.projectId,
+      table.workspaceId,
       table.connectorId,
     ),
     uniqueIndex('idx_connectors_tenant_alias').on(
       table.accountId,
-      table.projectId,
+      table.workspaceId,
       table.connectorId,
       table.slug,
     ),
@@ -4559,7 +4565,7 @@ export const connectorConnections = kortixSchema.table(
   {
     connectionId: uuid('connection_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     connectorId: uuid('connector_id').notNull(),
     ownerType: connectorConnectionOwnerTypeEnum('owner_type').default('project').notNull(),
     ownerId: text('owner_id'),
@@ -4573,13 +4579,13 @@ export const connectorConnections = kortixSchema.table(
   },
   (table) => [
     foreignKey({
-      columns: [table.accountId, table.projectId, table.connectorId],
-      foreignColumns: [connectors.accountId, connectors.projectId, connectors.connectorId],
+      columns: [table.accountId, table.workspaceId, table.connectorId],
+      foreignColumns: [connectors.accountId, connectors.workspaceId, connectors.connectorId],
       name: 'connector_connections_connector_tenant_fk',
     }).onDelete('cascade'),
     uniqueIndex('idx_connector_connections_tenant_identity').on(
       table.accountId,
-      table.projectId,
+      table.workspaceId,
       table.connectorId,
       table.connectionId,
     ),
@@ -4612,7 +4618,7 @@ export const connectorConnections = kortixSchema.table(
     uniqueIndex('idx_connector_connections_project_label')
       .on(table.connectorId, table.label)
       .where(sql`${table.ownerId} is null`),
-    index('idx_connector_connections_project').on(table.projectId),
+    index('idx_connector_connections_project').on(table.workspaceId),
     index('idx_connector_connections_connector').on(table.connectorId),
     check(
       'connector_connections_owner_check',
@@ -4636,7 +4642,7 @@ export const projectSessionConnectorBindings = kortixSchema.table(
   {
     sessionId: text('session_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     connectorAlias: varchar('connector_alias', { length: 128 }).notNull(),
     connectorId: uuid('connector_id').notNull(),
     connectionId: uuid('connection_id').notNull(),
@@ -4648,36 +4654,36 @@ export const projectSessionConnectorBindings = kortixSchema.table(
   (table) => [
     primaryKey({ columns: [table.sessionId, table.connectorAlias] }),
     foreignKey({
-      columns: [table.accountId, table.projectId, table.sessionId],
+      columns: [table.accountId, table.workspaceId, table.sessionId],
       foreignColumns: [
         projectSessions.accountId,
-        projectSessions.projectId,
+        projectSessions.workspaceId,
         projectSessions.sessionId,
       ],
       name: 'project_session_connector_bindings_session_tenant_fk',
     }).onDelete('cascade'),
     foreignKey({
-      columns: [table.accountId, table.projectId, table.connectorId, table.connectorAlias],
+      columns: [table.accountId, table.workspaceId, table.connectorId, table.connectorAlias],
       foreignColumns: [
         connectors.accountId,
-        connectors.projectId,
+        connectors.workspaceId,
         connectors.connectorId,
         connectors.slug,
       ],
       name: 'project_session_connector_bindings_alias_tenant_fk',
     }).onDelete('restrict'),
     foreignKey({
-      columns: [table.accountId, table.projectId, table.connectorId, table.connectionId],
+      columns: [table.accountId, table.workspaceId, table.connectorId, table.connectionId],
       foreignColumns: [
         connectorConnections.accountId,
-        connectorConnections.projectId,
+        connectorConnections.workspaceId,
         connectorConnections.connectorId,
         connectorConnections.connectionId,
       ],
       name: 'project_session_connector_bindings_connection_tenant_fk',
     }).onDelete('restrict'),
     index('idx_project_session_connector_bindings_connection').on(table.connectionId),
-    index('idx_project_session_connector_bindings_project').on(table.projectId),
+    index('idx_project_session_connector_bindings_project').on(table.workspaceId),
   ],
 );
 
@@ -4757,7 +4763,7 @@ export const connectionOAuthApplications = kortixSchema.table(
   {
     applicationId: uuid('application_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     connectorId: uuid('connector_id').notNull(),
     connectionId: uuid('connection_id').notNull(),
     configEnc: text('config_enc').notNull(),
@@ -4767,17 +4773,17 @@ export const connectionOAuthApplications = kortixSchema.table(
   },
   (table) => [
     foreignKey({
-      columns: [table.accountId, table.projectId, table.connectorId, table.connectionId],
+      columns: [table.accountId, table.workspaceId, table.connectorId, table.connectionId],
       foreignColumns: [
         connectorConnections.accountId,
-        connectorConnections.projectId,
+        connectorConnections.workspaceId,
         connectorConnections.connectorId,
         connectorConnections.connectionId,
       ],
       name: 'connection_oauth_applications_connection_tenant_fk',
     }).onDelete('cascade'),
     uniqueIndex('idx_connection_oauth_applications_connection').on(table.connectionId),
-    index('idx_connection_oauth_applications_project').on(table.projectId),
+    index('idx_connection_oauth_applications_project').on(table.workspaceId),
   ],
 );
 
@@ -4791,7 +4797,7 @@ export const connectionOAuthSessions = kortixSchema.table(
     sessionId: uuid('session_id').defaultRandom().primaryKey(),
     applicationId: uuid('application_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     connectionId: uuid('connection_id').notNull(),
     initiatedBy: uuid('initiated_by').notNull(),
     flow: varchar('flow', { length: 32 }).notNull(),
@@ -4945,9 +4951,9 @@ export const connectorProjectPolicies = kortixSchema.table(
   'connector_project_policies',
   {
     policyId: uuid('policy_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     /** Glob over fully-qualified tool paths (e.g. `stripe.charges.create`). */
     match: varchar('match', { length: 512 }).notNull(),
     action: connectorPolicyActionEnum('action').notNull(),
@@ -4957,7 +4963,7 @@ export const connectorProjectPolicies = kortixSchema.table(
     conditions: jsonb('conditions').$type<ConnectorPolicyCondition[] | null>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('idx_connector_project_policies_project').on(table.projectId)],
+  (table) => [index('idx_connector_project_policies_project').on(table.workspaceId)],
 );
 
 export const connectorDefaultModeEnum = kortixSchema.enum('connector_default_mode', [
@@ -4971,9 +4977,9 @@ export const connectorDefaultModeEnum = kortixSchema.enum('connector_default_mod
  * for back-compat with existing projects.
  */
 export const connectorProjectSettings = kortixSchema.table('connector_project_settings', {
-  projectId: uuid('project_id')
+  workspaceId: uuid('project_id')
     .primaryKey()
-    .references(() => projects.projectId, { onDelete: 'cascade' }),
+    .references(() => projects.workspaceId, { onDelete: 'cascade' }),
   defaultMode: connectorDefaultModeEnum('default_mode').default('allow_all').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -4986,9 +4992,9 @@ export const connectorCalls = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     connectorId: uuid('connector_id').references(() => connectors.connectorId, {
       onDelete: 'set null',
     }),
@@ -5010,9 +5016,9 @@ export const connectorCalls = kortixSchema.table(
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   },
   (table) => [
-    index('idx_connector_calls_project').on(table.projectId),
+    index('idx_connector_calls_project').on(table.workspaceId),
     index('idx_connector_calls_project_session_created').on(
-      table.projectId,
+      table.workspaceId,
       table.sessionId,
       table.createdAt.desc(),
     ),
@@ -5040,7 +5046,7 @@ export const connectorAttachments = kortixSchema.table(
   {
     attachmentId: uuid('attachment_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
+    workspaceId: uuid('project_id').notNull(),
     sessionId: text('session_id'),
     userId: uuid('user_id').notNull(),
     objectPath: text('object_path').notNull().unique(),
@@ -5068,7 +5074,7 @@ export const connectorAttachments = kortixSchema.table(
       sql`${table.status} IN ('uploaded', 'claimed', 'consumed')`,
     ),
     check('connector_attachments_size_check', sql`${table.sizeBytes} > 0`),
-    index('idx_connector_attachments_scope').on(table.projectId, table.sessionId, table.userId),
+    index('idx_connector_attachments_scope').on(table.workspaceId, table.sessionId, table.userId),
     index('idx_connector_attachments_expiry').on(table.expiresAt),
   ],
 );
@@ -5087,9 +5093,9 @@ export const sessionToolApprovals = kortixSchema.table(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     sessionId: uuid('session_id').notNull(),
-    projectId: uuid('project_id')
+    workspaceId: uuid('project_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+      .references(() => projects.workspaceId, { onDelete: 'cascade' }),
     connectorId: uuid('connector_id')
       .notNull()
       .references(() => connectors.connectorId, { onDelete: 'cascade' }),
@@ -5109,8 +5115,8 @@ export const sessionToolApprovals = kortixSchema.table(
 
 export const connectorsRelations = relations(connectors, ({ one, many }) => ({
   project: one(projects, {
-    fields: [connectors.projectId],
-    references: [projects.projectId],
+    fields: [connectors.workspaceId],
+    references: [projects.workspaceId],
   }),
   actions: many(connectorActions),
   policies: many(connectorPolicies),
@@ -5132,14 +5138,20 @@ export const connectorPoliciesRelations = relations(connectorPolicies, ({ one })
 
 export const connectorProjectPoliciesRelations = relations(connectorProjectPolicies, ({ one }) => ({
   project: one(projects, {
-    fields: [connectorProjectPolicies.projectId],
-    references: [projects.projectId],
+    fields: [connectorProjectPolicies.workspaceId],
+    references: [projects.workspaceId],
   }),
 }));
 
 export const connectorProjectSettingsRelations = relations(connectorProjectSettings, ({ one }) => ({
   project: one(projects, {
-    fields: [connectorProjectSettings.projectId],
-    references: [projects.projectId],
+    fields: [connectorProjectSettings.workspaceId],
+    references: [projects.workspaceId],
   }),
 }));
+
+/** Canonical Workspace names. Physical SQL table names remain unchanged. */
+export const connectorWorkspacePolicies = connectorProjectPolicies;
+export const connectorWorkspaceSettings = connectorProjectSettings;
+export const connectorWorkspacePoliciesRelations = connectorProjectPoliciesRelations;
+export const connectorWorkspaceSettingsRelations = connectorProjectSettingsRelations;

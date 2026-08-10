@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// Importing src/projects/git/* into the test process trips the apps/api env
+// Importing src/workspaces/git/* into the test process trips the apps/api env
 // validation under `bun test` — same constraint as the other git-transport
 // e2e files, so this follows their harness: all src work happens in a
 // `bun --eval` subprocess run from the repo root (see
@@ -36,11 +36,11 @@ function bunEval(script: string): string {
 }
 
 function mergeModuleUrl(): string {
-  return pathToFileURL(join(import.meta.dir, '..', 'projects', 'git', 'merge.ts')).href;
+  return pathToFileURL(join(import.meta.dir, '..', 'workspaces', 'git', 'merge.ts')).href;
 }
 
 function commitsModuleUrl(): string {
-  return pathToFileURL(join(import.meta.dir, '..', 'projects', 'git', 'commits.ts')).href;
+  return pathToFileURL(join(import.meta.dir, '..', 'workspaces', 'git', 'commits.ts')).href;
 }
 
 function makeFixture() {
@@ -61,7 +61,7 @@ function makeFixture() {
   // reproduce that: the branch EXISTS remotely, pointing at main's tip.
   git(['push', '--quiet', 'origin', 'main:session-branch'], source);
   const project = {
-    projectId: `00000000-0000-4000-a000-${String(projectCounter).padStart(12, '0')}`,
+    workspaceId: `00000000-0000-4000-a000-${String(projectCounter).padStart(12, '0')}`,
     repoUrl: origin,
     defaultBranch: 'main',
     manifestPath: 'kortix.yaml',

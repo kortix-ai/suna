@@ -67,7 +67,7 @@ describe('connector slug proposal', () => {
     expect(normalizeConnectorConnectionSlug('a'.repeat(129))).toHaveLength(128);
   });
 
-  test('rejects an existing project slug', () => {
+  test('rejects an existing workspace slug', () => {
     expect(isConnectorConnectionSlugAvailable('sales-primary', ['sales-primary'])).toBe(false);
     expect(isConnectorConnectionSlugAvailable('sales-secondary', ['sales-primary'])).toBe(true);
   });
@@ -109,7 +109,7 @@ describe('connector creation contract', () => {
       slug: 'inbox',
       provider: 'channel',
       platform: 'email',
-      authorization_strategy: 'project',
+      authorization_strategy: 'workspace',
       create_only: true,
     });
   });
@@ -144,10 +144,10 @@ describe('connector setup status', () => {
     status: 'active' as const,
     authSecret: 'TOKEN',
     secretSet: false,
-    authorizationStrategy: 'project' as const,
+    authorizationStrategy: 'workspace' as const,
   };
 
-  test('uses the shared secret state only for project authorization', () => {
+  test('uses the shared secret state only for workspace authorization', () => {
     expect(connectorSetupStatus(connector)).toBe('needs_setup');
     expect(connectorSetupStatus({ ...connector, secretSet: true })).toBe('connected');
   });
@@ -173,13 +173,13 @@ describe('connector setup status', () => {
 
 describe('connector authorization strategy controls', () => {
   test('maps each strategy to its only valid connection owner', () => {
-    expect(connectionOwnerTypeForStrategy('project')).toBe('project');
+    expect(connectionOwnerTypeForStrategy('workspace')).toBe('workspace');
     expect(connectionOwnerTypeForStrategy('user')).toBe('member');
   });
 
-  test('forces managed providers to project authorization', () => {
-    expect(connectorAuthorizationStrategyForProvider('channel', 'user')).toBe('project');
-    expect(connectorAuthorizationStrategyForProvider('computer', 'user')).toBe('project');
+  test('forces managed providers to workspace authorization', () => {
+    expect(connectorAuthorizationStrategyForProvider('channel', 'user')).toBe('workspace');
+    expect(connectorAuthorizationStrategyForProvider('computer', 'user')).toBe('workspace');
     expect(connectorAuthorizationStrategyForProvider('pipedream', 'user')).toBe('user');
     expect(connectorAuthorizationStrategyForProvider('openapi', 'user')).toBe('user');
   });
@@ -192,18 +192,18 @@ describe('connector authorization strategy controls', () => {
   });
 
   test('keeps controls locked until the refreshed strategy matches the submission', () => {
-    expect(connectorAuthorizationUpdateIsPending('project', 'user', false)).toBe(true);
+    expect(connectorAuthorizationUpdateIsPending('workspace', 'user', false)).toBe(true);
     expect(connectorAuthorizationUpdateIsPending('user', 'user', false)).toBe(false);
     expect(connectorAuthorizationUpdateIsPending('user', null, true)).toBe(true);
     expect(connectorAuthorizationUpdateIsPending('user', null, false)).toBe(false);
   });
 
   test('returns every cache affected by connection changes', () => {
-    expect(connectorConnectionQueryKeys('project-1')).toEqual([
-      qk.project.connectors('project-1'),
-      ['connections', 'project-1'],
-      ['connections-all', 'project-1'],
-      ['session-scope-catalog', 'project-1'],
+    expect(connectorConnectionQueryKeys('workspace-1')).toEqual([
+      qk.workspace.connectors('workspace-1'),
+      ['connections', 'workspace-1'],
+      ['connections-all', 'workspace-1'],
+      ['session-scope-catalog', 'workspace-1'],
     ]);
   });
 });

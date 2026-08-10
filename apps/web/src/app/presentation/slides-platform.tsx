@@ -461,7 +461,7 @@ export function useSlides(): SlideDef[] {
           />
           <div className="mt-12 flex flex-wrap items-stretch gap-3">
             {[
-              ['project', 'git repo', 'kortix.yaml + config'],
+              ['workspace', 'git repo', 'kortix.yaml + config'],
               ['session', 'isolated sandbox', 'its own branch'],
               ['agent', 'OpenCode', 'works · commits · pushes'],
               ['change request', 'you review', 'approve to merge'],
@@ -632,7 +632,7 @@ export function useSlides(): SlideDef[] {
                     [Bot, 'Agents', 'Markdown personas with a scoped reach into tools.'],
                     [Sparkles, 'Skills', 'Reusable know-how that rides into every session.'],
                     [Plug, 'Connectors', '3,000+ apps through one scoped token.'],
-                    [KeyRound, 'Secrets', 'Encrypted, scoped per project and per agent grant.'],
+                    [KeyRound, 'Secrets', 'Encrypted, scoped per workspace and per agent grant.'],
                     [MessagesSquare, 'Channels', 'Slack & chat surfaces, one click.'],
                     [Clock, 'Triggers', 'Cron and signed webhooks spawn sessions.'],
                     [Brain, 'Memory', 'A living company brain that compounds.'],

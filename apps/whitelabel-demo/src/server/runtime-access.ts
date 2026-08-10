@@ -12,7 +12,7 @@ import path from 'node:path';
 import { isValidProjectId } from './users';
 
 interface RuntimeEntry {
-  projectId: string;
+  workspaceId: string;
   recordedAt: number;
 }
 
@@ -42,11 +42,11 @@ function isValidRuntimeId(runtimeId: string): boolean {
   return RUNTIME_ID_RE.test(runtimeId);
 }
 
-export function recordRuntimeProject(runtimeId: string, projectId: string): void {
-  if (!isValidRuntimeId(runtimeId) || !isValidProjectId(projectId)) return;
+export function recordRuntimeProject(runtimeId: string, workspaceId: string): void {
+  if (!isValidRuntimeId(runtimeId) || !isValidProjectId(workspaceId)) return;
 
   const data = readData();
-  data[runtimeId] = { projectId, recordedAt: Date.now() };
+  data[runtimeId] = { workspaceId, recordedAt: Date.now() };
 
   const entries = Object.entries(data);
   if (entries.length > MAX_RUNTIME_ENTRIES) {
@@ -62,5 +62,5 @@ export function recordRuntimeProject(runtimeId: string, projectId: string): void
 export function resolveRuntimeProject(runtimeId: string): string | null {
   if (!isValidRuntimeId(runtimeId)) return null;
   const entry = readData()[runtimeId];
-  return entry && isValidProjectId(entry.projectId) ? entry.projectId : null;
+  return entry && isValidProjectId(entry.workspaceId) ? entry.workspaceId : null;
 }

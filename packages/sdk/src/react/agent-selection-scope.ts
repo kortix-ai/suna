@@ -1,13 +1,13 @@
 interface AgentSelectionScopeInput {
   sessionId?: string;
   boundAgentName?: string | null;
-  projectId?: string | null;
+  workspaceId?: string | null;
 }
 
 export function createAgentSelectionScope({
   sessionId,
   boundAgentName,
-  projectId,
+  workspaceId,
 }: AgentSelectionScopeInput): string {
-  return `${sessionId ?? ''}\u0000${boundAgentName ?? ''}\u0000${projectId ?? ''}`;
+  return `${sessionId ?? ''}\u0000${boundAgentName ?? ''}\u0000${workspaceId ?? ''}`;
 }

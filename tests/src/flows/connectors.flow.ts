@@ -35,19 +35,19 @@ flow(
 
 flow(
   'CONN-2',
-  { domain: 'connectors', routes: ['GET /v1/connectors/projects/:projectId/connectors'] },
+  { domain: 'connectors', routes: ['GET /v1/connectors/projects/:workspaceId/connectors'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('project admin lists connectors', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors', { params: { projectId: p.id } });
+        .get('/v1/connectors/projects/:workspaceId/connectors', { params: { workspaceId: p.id } });
       r.status(200);
     });
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/connectors/projects/:projectId/connectors', { params: { projectId: p.id } });
+        .get('/v1/connectors/projects/:workspaceId/connectors', { params: { workspaceId: p.id } });
       r.status(403);
     });
   },
@@ -57,7 +57,7 @@ flow(
   'CONN-19',
   {
     domain: 'connectors',
-    routes: ['PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding'],
+    routes: ['PUT /v1/connectors/projects/:workspaceId/connectors/:slug/secret-binding'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -65,9 +65,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/secret-binding',
           { secret_identifier: 'contains whitespace' },
-          { params: { projectId: p.id, slug: 'missing' } },
+          { params: { workspaceId: p.id, slug: 'missing' } },
         );
       r.status(400);
     });
@@ -75,9 +75,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/secret-binding',
           { secret_identifier: 'API_KEY' },
-          { params: { projectId: p.id, slug: 'missing' } },
+          { params: { workspaceId: p.id, slug: 'missing' } },
         );
       r.status(404);
     });
@@ -85,9 +85,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/secret-binding',
           { secret_identifier: null },
-          { params: { projectId: p.id, slug: 'missing' } },
+          { params: { workspaceId: p.id, slug: 'missing' } },
         );
       r.status(403);
     });
@@ -111,16 +111,16 @@ flow('CONN-3', { domain: 'connectors', routes: ['POST /v1/connectors/call'] }, a
 
 flow(
   'CONN-4',
-  { domain: 'connectors', routes: ['POST /v1/connectors/projects/:projectId/connectors/sync'] },
+  { domain: 'connectors', routes: ['POST /v1/connectors/projects/:workspaceId/connectors/sync'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('sync re-materializes from kortix.yaml → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/connectors/projects/:projectId/connectors/sync',
+          '/v1/connectors/projects/:workspaceId/connectors/sync',
           {},
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200);
     });
@@ -135,8 +135,8 @@ flow(
     // reuse the shared managed repository without racing read-only flows.
     global: true,
     routes: [
-      'GET /v1/connectors/projects/:projectId/policies',
-      'PUT /v1/connectors/projects/:projectId/policies',
+      'GET /v1/connectors/projects/:workspaceId/policies',
+      'PUT /v1/connectors/projects/:workspaceId/policies',
     ],
   },
   async (ctx) => {
@@ -144,16 +144,16 @@ flow(
     await ctx.step('read policies → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/policies', { params: { projectId: p.id } });
+        .get('/v1/connectors/projects/:workspaceId/policies', { params: { workspaceId: p.id } });
       r.status([200, 501]);
     });
     await ctx.step('replace policies → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/policies',
+          '/v1/connectors/projects/:workspaceId/policies',
           { policies: [] },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status([200, 501]);
     });
@@ -164,7 +164,7 @@ flow(
   'CONN-7',
   {
     domain: 'connectors',
-    routes: ['PUT /v1/connectors/projects/:projectId/connectors/:slug/credential'],
+    routes: ['PUT /v1/connectors/projects/:workspaceId/connectors/:slug/credential'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -172,15 +172,15 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/credential',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/credential',
           {},
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(400);
     });
     await ctx.step('unsafe OAuth2 token URL → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).put(
-        '/v1/connectors/projects/:projectId/connectors/:slug/credential',
+        '/v1/connectors/projects/:workspaceId/connectors/:slug/credential',
         {
           oauth2: {
             type: 'oauth2_client_credentials',
@@ -190,7 +190,7 @@ flow(
             client_secret: 'client-secret',
           },
         },
-        { params: { projectId: p.id, slug: 'nope' } },
+        { params: { workspaceId: p.id, slug: 'nope' } },
       );
       r.status(400);
     });
@@ -203,9 +203,9 @@ flow(
     domain: 'connectors',
     requires: ['managedGit'],
     routes: [
-      'POST /v1/connectors/projects/:projectId/connectors',
-      'DELETE /v1/connectors/projects/:projectId/connectors/:slug',
-      'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
+      'POST /v1/connectors/projects/:workspaceId/connectors',
+      'DELETE /v1/connectors/projects/:workspaceId/connectors/:slug',
+      'GET /v1/connectors/projects/:workspaceId/connectors/:slug/config',
     ],
   },
   async (ctx) => {
@@ -214,8 +214,8 @@ flow(
     await ctx.step('invalid json add → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/connectors/projects/:projectId/connectors', 'not json', {
-          params: { projectId: p.id },
+        .post('/v1/connectors/projects/:workspaceId/connectors', 'not json', {
+          params: { workspaceId: p.id },
           raw: true,
           headers: { 'content-type': 'application/json' },
         });
@@ -223,7 +223,7 @@ flow(
     });
     await ctx.step('non-boolean create-only flag → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/connectors/projects/:projectId/connectors',
+        '/v1/connectors/projects/:workspaceId/connectors',
         {
           slug,
           provider: 'mcp',
@@ -231,13 +231,13 @@ flow(
           auth: { type: 'none' },
           create_only: 'true',
         },
-        { params: { projectId: p.id } },
+        { params: { workspaceId: p.id } },
       );
       r.status(400).body().has('$.error', 'create_only must be a boolean');
     });
     await ctx.step('first create-only connector succeeds', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/connectors/projects/:projectId/connectors',
+        '/v1/connectors/projects/:workspaceId/connectors',
         {
           slug,
           name: 'Original connector',
@@ -246,13 +246,13 @@ flow(
           auth: { type: 'none' },
           create_only: true,
         },
-        { params: { projectId: p.id } },
+        { params: { workspaceId: p.id } },
       );
       r.status(200).body().has('$.ok', true);
     });
     await ctx.step('duplicate create-only connector → 409', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/connectors/projects/:projectId/connectors',
+        '/v1/connectors/projects/:workspaceId/connectors',
         {
           slug,
           name: 'Replacement connector',
@@ -261,23 +261,23 @@ flow(
           auth: { type: 'none' },
           create_only: true,
         },
-        { params: { projectId: p.id } },
+        { params: { workspaceId: p.id } },
       );
       r.status(409);
     });
     await ctx.step('duplicate request leaves the original manifest entry unchanged', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
-          params: { projectId: p.id, slug },
+        .get('/v1/connectors/projects/:workspaceId/connectors/:slug/config', {
+          params: { workspaceId: p.id, slug },
         });
       r.status(200).body().has('$.name', 'Original connector');
     });
     await ctx.step('delete the created connector → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/connectors/projects/:projectId/connectors/:slug', {
-          params: { projectId: p.id, slug },
+        .del('/v1/connectors/projects/:workspaceId/connectors/:slug', {
+          params: { workspaceId: p.id, slug },
         });
       r.status(200);
     });
@@ -286,13 +286,13 @@ flow(
 
 flow(
   'CONN-9',
-  { domain: 'connectors', routes: ['GET /v1/connectors/projects/:projectId/pipedream/apps'] },
+  { domain: 'connectors', routes: ['GET /v1/connectors/projects/:workspaceId/pipedream/apps'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('pipedream catalog → 200 or 501', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/pipedream/apps', { params: { projectId: p.id } });
+        .get('/v1/connectors/projects/:workspaceId/pipedream/apps', { params: { workspaceId: p.id } });
       r.status([200, 501]);
     });
   },
@@ -303,8 +303,8 @@ flow(
   {
     domain: 'connectors',
     routes: [
-      'GET /v1/connectors/projects/:projectId/discover/connectors',
-      'GET /v1/connectors/projects/:projectId/discover/connectors/detail',
+      'GET /v1/connectors/projects/:workspaceId/discover/connectors',
+      'GET /v1/connectors/projects/:workspaceId/discover/connectors/detail',
     ],
   },
   async (ctx) => {
@@ -312,8 +312,8 @@ flow(
     await ctx.step('project admin browses the direct catalogue', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/discover/connectors', {
-          params: { projectId: p.id },
+        .get('/v1/connectors/projects/:workspaceId/discover/connectors', {
+          params: { workspaceId: p.id },
           query: { q: 'HubSpot' },
         });
       r.status([200, 502]);
@@ -323,8 +323,8 @@ flow(
       if (!firstId) return;
       const detail = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/discover/connectors/detail', {
-          params: { projectId: p.id },
+        .get('/v1/connectors/projects/:workspaceId/discover/connectors/detail', {
+          params: { workspaceId: p.id },
           query: { id: firstId },
         });
       detail.status(200).body().exists('$.item').exists('$.variants');
@@ -332,14 +332,14 @@ flow(
     await ctx.step('NONMEMBER cannot browse or resolve catalogue records', async () => {
       const list = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/connectors/projects/:projectId/discover/connectors', {
-          params: { projectId: p.id },
+        .get('/v1/connectors/projects/:workspaceId/discover/connectors', {
+          params: { workspaceId: p.id },
         });
       list.status(403);
       const detail = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/connectors/projects/:projectId/discover/connectors/detail', {
-          params: { projectId: p.id },
+        .get('/v1/connectors/projects/:workspaceId/discover/connectors/detail', {
+          params: { workspaceId: p.id },
           query: { id: 'openapi/example' },
         });
       detail.status(403);
@@ -351,23 +351,23 @@ flow(
   'CONN-12',
   {
     domain: 'connectors',
-    routes: ['GET /v1/connectors/projects/:projectId/connectors/:slug/config'],
+    routes: ['GET /v1/connectors/projects/:workspaceId/connectors/:slug/config'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('unknown connector → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
-          params: { projectId: p.id, slug: 'nope' },
+        .get('/v1/connectors/projects/:workspaceId/connectors/:slug/config', {
+          params: { workspaceId: p.id, slug: 'nope' },
         });
       r.status([404, 501]);
     });
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
-          params: { projectId: p.id, slug: 'nope' },
+        .get('/v1/connectors/projects/:workspaceId/connectors/:slug/config', {
+          params: { workspaceId: p.id, slug: 'nope' },
         });
       r.status(403);
     });
@@ -384,10 +384,10 @@ flow(
   {
     domain: 'connectors',
     routes: [
-      'PUT /v1/connectors/projects/:projectId/connectors/:slug/credential-mode',
-      'PUT /v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy',
-      'PUT /v1/connectors/projects/:projectId/connectors/:slug/name',
-      'PUT /v1/connectors/projects/:projectId/connectors/:slug/policies',
+      'PUT /v1/connectors/projects/:workspaceId/connectors/:slug/credential-mode',
+      'PUT /v1/connectors/projects/:workspaceId/connectors/:slug/authorization-strategy',
+      'PUT /v1/connectors/projects/:workspaceId/connectors/:slug/name',
+      'PUT /v1/connectors/projects/:workspaceId/connectors/:slug/policies',
     ],
   },
   async (ctx) => {
@@ -397,9 +397,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/credential-mode',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/credential-mode',
           { mode: 'nope' },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(400);
     });
@@ -407,9 +407,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/credential-mode',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/credential-mode',
           { mode: 'shared' },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(404);
     });
@@ -418,9 +418,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/authorization-strategy',
           { authorization_strategy: 'both' },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(400);
     });
@@ -428,9 +428,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/authorization-strategy',
           { authorization_strategy: 'user' },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(404);
     });
@@ -439,9 +439,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/name',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/name',
           { name: '' },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(400);
     });
@@ -449,9 +449,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/name',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/name',
           { name: 'Renamed' },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(404);
     });
@@ -460,9 +460,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/policies',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/policies',
           { policies: 'nope' },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(400);
     });
@@ -472,9 +472,9 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .put(
-            '/v1/connectors/projects/:projectId/connectors/:slug/policies',
+            '/v1/connectors/projects/:workspaceId/connectors/:slug/policies',
             { policies: [{ match: 'foo', action: 'nope' }] },
-            { params: { projectId: p.id, slug: 'nope' } },
+            { params: { workspaceId: p.id, slug: 'nope' } },
           );
         r.status(400);
       },
@@ -483,9 +483,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/policies',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/policies',
           { policies: [] },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(404);
     });
@@ -494,9 +494,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/credential-mode',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/credential-mode',
           { mode: 'shared' },
-          { params: { projectId: p.id, slug: 'nope' } },
+          { params: { workspaceId: p.id, slug: 'nope' } },
         );
       r.status(403);
     });
@@ -507,7 +507,7 @@ flow(
   'CONN-14',
   {
     domain: 'connectors',
-    routes: ['POST /v1/connectors/projects/:projectId/connectors/auth-discovery'],
+    routes: ['POST /v1/connectors/projects/:workspaceId/connectors/auth-discovery'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -516,9 +516,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/connectors/projects/:projectId/connectors/auth-discovery',
+          '/v1/connectors/projects/:workspaceId/connectors/auth-discovery',
           { provider: 'openapi' },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200)
         .body()
@@ -531,9 +531,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/connectors/projects/:projectId/connectors/auth-discovery',
+          '/v1/connectors/projects/:workspaceId/connectors/auth-discovery',
           { provider: 'openapi' },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(403);
     });
@@ -547,23 +547,23 @@ flow(
   'CONN-16',
   {
     domain: 'connectors',
-    routes: ['DELETE /v1/connectors/projects/:projectId/connectors/:slug/credential'],
+    routes: ['DELETE /v1/connectors/projects/:workspaceId/connectors/:slug/credential'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('delete credential for an unknown connector → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/connectors/projects/:projectId/connectors/:slug/credential', {
-          params: { projectId: p.id, slug: 'nope' },
+        .del('/v1/connectors/projects/:workspaceId/connectors/:slug/credential', {
+          params: { workspaceId: p.id, slug: 'nope' },
         });
       r.status(404);
     });
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .del('/v1/connectors/projects/:projectId/connectors/:slug/credential', {
-          params: { projectId: p.id, slug: 'nope' },
+        .del('/v1/connectors/projects/:workspaceId/connectors/:slug/credential', {
+          params: { workspaceId: p.id, slug: 'nope' },
         });
       r.status(403);
     });
@@ -576,23 +576,23 @@ flow(
   'CONN-17',
   {
     domain: 'connectors',
-    routes: ['GET /v1/connectors/projects/:projectId/connectors/:slug/policies'],
+    routes: ['GET /v1/connectors/projects/:workspaceId/connectors/:slug/policies'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('read policies for an unknown connector → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/policies', {
-          params: { projectId: p.id, slug: 'nope' },
+        .get('/v1/connectors/projects/:workspaceId/connectors/:slug/policies', {
+          params: { workspaceId: p.id, slug: 'nope' },
         });
       r.status(404);
     });
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/policies', {
-          params: { projectId: p.id, slug: 'nope' },
+        .get('/v1/connectors/projects/:workspaceId/connectors/:slug/policies', {
+          params: { workspaceId: p.id, slug: 'nope' },
         });
       r.status(403);
     });
@@ -603,21 +603,21 @@ flow(
 // needs an existing connector to reference by
 // connector_alias, so this first declares a lightweight `mcp` connector (only
 // requires a `url`, no live reachability check during manifest sync) via the
-// already-covered POST /v1/connectors/projects/:projectId/connectors, then drives
+// already-covered POST /v1/connectors/projects/:workspaceId/connectors, then drives
 // the full connections surface against it.
 flow(
   'COVD-1',
   {
     domain: 'connectors',
     routes: [
-      'GET /v1/projects/:projectId/connections',
-      'POST /v1/projects/:projectId/connections',
-      'PUT /v1/projects/:projectId/connections/:connectionId/activate',
-      'POST /v1/projects/:projectId/connections/:connectionId/connect',
-      'POST /v1/projects/:projectId/connections/:connectionId/connect/finalize',
-      'PUT /v1/projects/:projectId/connections/:connectionId/credential',
-      'PUT /v1/projects/:projectId/connections/:connectionId/revoke',
-      'POST /v1/projects/:projectId/connections/me',
+      'GET /v1/projects/:workspaceId/connections',
+      'POST /v1/projects/:workspaceId/connections',
+      'PUT /v1/projects/:workspaceId/connections/:connectionId/activate',
+      'POST /v1/projects/:workspaceId/connections/:connectionId/connect',
+      'POST /v1/projects/:workspaceId/connections/:connectionId/connect/finalize',
+      'PUT /v1/projects/:workspaceId/connections/:connectionId/credential',
+      'PUT /v1/projects/:workspaceId/connections/:connectionId/revoke',
+      'POST /v1/projects/:workspaceId/connections/me',
     ],
   },
   async (ctx) => {
@@ -631,9 +631,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/connectors/projects/:projectId/connectors',
+          '/v1/connectors/projects/:workspaceId/connectors',
           { slug, provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200).body().has('$.ok', true);
     });
@@ -641,21 +641,21 @@ flow(
     await ctx.step('list connections → 200, empty before any connection exists', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/connections', { params: { projectId: p.id } });
+        .get('/v1/projects/:workspaceId/connections', { params: { workspaceId: p.id } });
       r.status(200).body().exists('$.connections');
     });
 
     await ctx.step('NONMEMBER cannot list → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/connections', { params: { projectId: p.id } });
+        .get('/v1/projects/:workspaceId/connections', { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
 
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/connections', { params: { projectId: p.id } });
+        .get('/v1/projects/:workspaceId/connections', { params: { workspaceId: p.id } });
       r.status(401);
     });
 
@@ -667,13 +667,13 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/connections',
+          '/v1/projects/:workspaceId/connections',
           {
             connector_alias: slug,
             owner_type: 'project',
             label: 'KE2E connection',
           },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(201)
         .body()
@@ -688,9 +688,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/connections',
+          '/v1/projects/:workspaceId/connections',
           { connector_alias: slug },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(400);
     });
@@ -704,9 +704,9 @@ flow(
       const seeded = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/connectors/projects/:projectId/connectors',
+          '/v1/connectors/projects/:workspaceId/connectors',
           { slug: userSlug, provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       seeded.status(200).body().has('$.ok', true);
       // The strategy route re-reads the manifest from the repo; the connector
@@ -715,27 +715,27 @@ flow(
       let flipped = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy',
+          '/v1/connectors/projects/:workspaceId/connectors/:slug/authorization-strategy',
           { authorization_strategy: 'user' },
-          { params: { projectId: p.id, slug: userSlug } },
+          { params: { workspaceId: p.id, slug: userSlug } },
         );
       for (let attempt = 0; attempt < 5 && flipped.statusCode === 404; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 3_000));
         flipped = await ctx.client
           .as(ctx.P.OWNER)
           .put(
-            '/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy',
+            '/v1/connectors/projects/:workspaceId/connectors/:slug/authorization-strategy',
             { authorization_strategy: 'user' },
-            { params: { projectId: p.id, slug: userSlug } },
+            { params: { workspaceId: p.id, slug: userSlug } },
           );
       }
       flipped.status(200).body().has('$.ok', true);
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/connections/me',
+          '/v1/projects/:workspaceId/connections/me',
           { connector_alias: userSlug, label: 'KE2E member connection' },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(201)
         .body()
@@ -751,18 +751,18 @@ flow(
       const connect = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/connections/:connectionId/connect',
+          '/v1/projects/:workspaceId/connections/:connectionId/connect',
           {},
-          { params: { projectId: p.id, connectionId: memberConnectionId } },
+          { params: { workspaceId: p.id, connectionId: memberConnectionId } },
         );
       connect.status([404, 501]);
 
       const finalize = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/connections/:connectionId/connect/finalize',
+          '/v1/projects/:workspaceId/connections/:connectionId/connect/finalize',
           {},
-          { params: { projectId: p.id, connectionId: memberConnectionId } },
+          { params: { workspaceId: p.id, connectionId: memberConnectionId } },
         );
       finalize.status([404, 501]);
     });
@@ -771,9 +771,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/connections/:connectionId/activate',
+          '/v1/projects/:workspaceId/connections/:connectionId/activate',
           {},
-          { params: { projectId: p.id, connectionId } },
+          { params: { workspaceId: p.id, connectionId } },
         );
       r.status(200).body().has('$.ok', true);
     });
@@ -782,9 +782,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/connections/:connectionId/credential',
+          '/v1/projects/:workspaceId/connections/:connectionId/credential',
           { value: 'ke2e-secret-value' },
-          { params: { projectId: p.id, connectionId } },
+          { params: { workspaceId: p.id, connectionId } },
         );
       r.status(200).body().has('$.ok', true);
     });
@@ -793,9 +793,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/connections/:connectionId/credential',
+          '/v1/projects/:workspaceId/connections/:connectionId/credential',
           {},
-          { params: { projectId: p.id, connectionId } },
+          { params: { workspaceId: p.id, connectionId } },
         );
       r.status(400);
     });
@@ -806,9 +806,9 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .put(
-            '/v1/projects/:projectId/connections/:connectionId/revoke',
+            '/v1/projects/:workspaceId/connections/:connectionId/revoke',
             {},
-            { params: { projectId: p.id, connectionId } },
+            { params: { workspaceId: p.id, connectionId } },
           );
         r.status(200).body().has('$.ok', true);
       },
@@ -820,8 +820,8 @@ flow(
         const body = op === 'credential' ? { value: 'x' } : {};
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .put(`/v1/projects/:projectId/connections/:connectionId/${op}`, body, {
-            params: { projectId: p.id, connectionId: unknown },
+          .put(`/v1/projects/:workspaceId/connections/:connectionId/${op}`, body, {
+            params: { workspaceId: p.id, connectionId: unknown },
           });
         r.status(404);
       }
@@ -834,14 +834,14 @@ flow(
   {
     domain: 'connectors',
     routes: [
-      'POST /v1/projects/:projectId/connectors/:slug/oauth2/connection',
-      'PUT /v1/projects/:projectId/connections/:connectionId/oauth2/application',
-      'GET /v1/projects/:projectId/connections/:connectionId/oauth2/application',
-      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover',
-      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/authorize',
-      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/device',
-      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/device/:sessionId',
-      'GET /v1/projects/:projectId/connections/:connectionId/oauth2/status',
+      'POST /v1/projects/:workspaceId/connectors/:slug/oauth2/connection',
+      'PUT /v1/projects/:workspaceId/connections/:connectionId/oauth2/application',
+      'GET /v1/projects/:workspaceId/connections/:connectionId/oauth2/application',
+      'POST /v1/projects/:workspaceId/connections/:connectionId/oauth2/discover',
+      'POST /v1/projects/:workspaceId/connections/:connectionId/oauth2/authorize',
+      'POST /v1/projects/:workspaceId/connections/:connectionId/oauth2/device',
+      'POST /v1/projects/:workspaceId/connections/:connectionId/oauth2/device/:sessionId',
+      'GET /v1/projects/:workspaceId/connections/:connectionId/oauth2/status',
       'GET /v1/connectors/oauth2/callback',
     ],
   },
@@ -849,39 +849,39 @@ flow(
     const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-oauth2-${Date.now().toString(36)}`;
     const connector = await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/connectors/projects/:projectId/connectors',
+      '/v1/connectors/projects/:workspaceId/connectors',
       {
         slug,
         provider: 'mcp',
         url: 'https://ke2e.kortix.test/mcp',
         auth: { type: 'none' },
       },
-      { params: { projectId: p.id } },
+      { params: { workspaceId: p.id } },
     );
     connector.status(200);
     const defaultConnection = await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/projects/:projectId/connectors/:slug/oauth2/connection',
+      '/v1/projects/:workspaceId/connectors/:slug/oauth2/connection',
       {},
-      { params: { projectId: p.id, slug } },
+      { params: { workspaceId: p.id, slug } },
     );
     defaultConnection.status(200).body().exists('$.connection_id');
     // 'project' owner_type: connectors default to the project authorization
     // strategy, and any other owner_type now 409s on this route (#74a804d14).
     const created = await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/projects/:projectId/connections',
+      '/v1/projects/:workspaceId/connections',
       {
         connector_alias: slug,
         owner_type: 'project',
         label: 'KE2E OAuth2',
       },
-      { params: { projectId: p.id } },
+      { params: { workspaceId: p.id } },
     );
     created.status(201);
     const connectionId = created.json<any>().connection_id;
 
     await ctx.step('save and read a redacted generic OAuth2 application', async () => {
       const saved = await ctx.client.as(ctx.P.OWNER).put(
-        '/v1/projects/:projectId/connections/:connectionId/oauth2/application',
+        '/v1/projects/:workspaceId/connections/:connectionId/oauth2/application',
         {
           authorization_url: 'https://identity.example.com/authorize',
           token_url: 'https://identity.example.com/token',
@@ -889,12 +889,12 @@ flow(
           token_endpoint_auth_method: 'none',
           scopes: ['read'],
         },
-        { params: { projectId: p.id, connectionId } },
+        { params: { workspaceId: p.id, connectionId } },
       );
       saved.status(200).body().has('$.ok', true);
       const read = await ctx.client.as(ctx.P.OWNER).get(
-        '/v1/projects/:projectId/connections/:connectionId/oauth2/application',
-        { params: { projectId: p.id, connectionId } },
+        '/v1/projects/:workspaceId/connections/:connectionId/oauth2/application',
+        { params: { workspaceId: p.id, connectionId } },
       );
       read
         .status(200)
@@ -905,9 +905,9 @@ flow(
 
     await ctx.step('start Authorization Code with PKCE and read ready status', async () => {
       const started = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connections/:connectionId/oauth2/authorize',
+        '/v1/projects/:workspaceId/connections/:connectionId/oauth2/authorize',
         {},
-        { params: { projectId: p.id, connectionId } },
+        { params: { workspaceId: p.id, connectionId } },
       );
       started
         .status(200)
@@ -915,31 +915,31 @@ flow(
         .exists('$.authorization_url')
         .exists('$.expires_at');
       const status = await ctx.client.as(ctx.P.OWNER).get(
-        '/v1/projects/:projectId/connections/:connectionId/oauth2/status',
-        { params: { projectId: p.id, connectionId } },
+        '/v1/projects/:workspaceId/connections/:connectionId/oauth2/status',
+        { params: { workspaceId: p.id, connectionId } },
       );
       status.status(200).body().has('$.status', 'ready');
     });
 
     await ctx.step('reject SSRF discovery and unavailable device endpoints', async () => {
       const discovery = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connections/:connectionId/oauth2/discover',
+        '/v1/projects/:workspaceId/connections/:connectionId/oauth2/discover',
         { discovery_url: 'https://127.0.0.1/.well-known/oauth-authorization-server' },
-        { params: { projectId: p.id, connectionId } },
+        { params: { workspaceId: p.id, connectionId } },
       );
       discovery.status(400);
       const device = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connections/:connectionId/oauth2/device',
+        '/v1/projects/:workspaceId/connections/:connectionId/oauth2/device',
         {},
-        { params: { projectId: p.id, connectionId } },
+        { params: { workspaceId: p.id, connectionId } },
       );
       device.status(400);
       const poll = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/connections/:connectionId/oauth2/device/:sessionId',
+        '/v1/projects/:workspaceId/connections/:connectionId/oauth2/device/:sessionId',
         {},
         {
           params: {
-            projectId: p.id,
+            workspaceId: p.id,
             connectionId,
             sessionId: '00000000-0000-4000-8000-000000000000',
           },
@@ -958,7 +958,7 @@ flow(
 );
 
 // Setup-links (connector half) — public, token-gated read + start. The minting
-// side (POST /v1/projects/:projectId/connect-requests) belongs to a different
+// side (POST /v1/projects/:workspaceId/connect-requests) belongs to a different
 // coverage group; this covers the two public consume-side routes independently
 // via the boundary case (a bogus token can never resolve, regardless of who
 // eventually mints real ones), which is legitimate coverage on its own.
@@ -1001,22 +1001,22 @@ flow(
 // belong to a different coverage group.
 flow(
   'CONN-18',
-  { domain: 'connectors', routes: ['POST /v1/projects/:projectId/connect-requests'] },
+  { domain: 'connectors', routes: ['POST /v1/projects/:workspaceId/connect-requests'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('missing slug → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/connect-requests', {}, { params: { projectId: p.id } });
+        .post('/v1/projects/:workspaceId/connect-requests', {}, { params: { workspaceId: p.id } });
       r.status(400);
     });
     await ctx.step("unconnected slug → 404 (or 501 if Pipedream isn't configured)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/connect-requests',
+          '/v1/projects/:workspaceId/connect-requests',
           { slug: 'not-a-connected-app' },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status([404, 501]);
     });
@@ -1024,9 +1024,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/projects/:projectId/connect-requests',
+          '/v1/projects/:workspaceId/connect-requests',
           { slug: 'not-a-connected-app' },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status([403, 404]);
     });

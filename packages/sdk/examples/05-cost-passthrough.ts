@@ -26,7 +26,7 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-async function listAllSessionCosts(kortix: Kortix, projectId: string) {
+async function listAllSessionCosts(kortix: Kortix, workspaceId: string) {
   const sessions: SessionCostSummary[] = [];
   let reconciliation: SessionCostReconciliation | null = null;
   let total = 0;
@@ -34,7 +34,7 @@ async function listAllSessionCosts(kortix: Kortix, projectId: string) {
 
   while (offset !== null) {
     const page = await kortix.billing.sessionCosts.list({
-      projectId,
+      workspaceId,
       limit: 100,
       offset,
     });
@@ -63,10 +63,10 @@ async function listAllSessionCosts(kortix: Kortix, projectId: string) {
 async function main() {
   const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
   const apiKey = process.env.KORTIX_API_KEY;
-  const projectId = process.env.KORTIX_PROJECT_ID;
+  const workspaceId = process.env.KORTIX_PROJECT_ID;
   const markup = Number(process.env.COST_MARKUP ?? 1.2);
 
-  if (!apiKey || !projectId) {
+  if (!apiKey || !workspaceId) {
     console.error('Set KORTIX_API_KEY and KORTIX_PROJECT_ID and re-run.');
     process.exit(1);
   }
@@ -74,7 +74,7 @@ async function main() {
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
 
   const [costs, credits] = await Promise.all([
-    listAllSessionCosts(kortix, projectId),
+    listAllSessionCosts(kortix, workspaceId),
     kortix.billing.creditBreakdown(),
   ]);
 

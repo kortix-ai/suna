@@ -24,7 +24,10 @@ let nextError: { message: string } | null = null;
 
 mock.module('../core/http/api-client', () => ({
   backendApi: {
-    get: async (path: string) => ({ data: { ok: true }, error: nextError }),
+    get: async (path: string) => {
+      calls.push({ method: 'GET', path });
+      return { data: { ok: true }, error: nextError };
+    },
     post: async (path: string, body?: unknown) => {
       calls.push({ method: 'POST', path, body });
       return { data: { ok: true }, error: nextError };
@@ -42,6 +45,8 @@ const {
   useAdminSetManagedModels,
   useAdminSetEnterpriseDemo,
   useAdminSetEnterpriseEntitled,
+  useAdminAccountWorkspaces,
+  useAdminAccountProjects,
 } = await import('./use-admin-accounts');
 
 beforeEach(() => {
@@ -51,6 +56,26 @@ beforeEach(() => {
 });
 
 const ACCOUNT = 'acct-1';
+
+describe('admin account Workspace inventory compatibility', () => {
+  test('canonical hook calls the Workspace route and uses a Workspace query key', async () => {
+    const hook = useAdminAccountWorkspaces(ACCOUNT) as any;
+    expect(hook.queryKey).toEqual(['admin', 'accounts', ACCOUNT, 'workspaces']);
+    await hook.queryFn();
+    expect(calls).toEqual([
+      { method: 'GET', path: `/admin/api/accounts/${ACCOUNT}/workspaces` },
+    ]);
+  });
+
+  test('deprecated Project hook retains its exact route and query key', async () => {
+    const hook = useAdminAccountProjects(ACCOUNT) as any;
+    expect(hook.queryKey).toEqual(['admin', 'accounts', ACCOUNT, 'projects']);
+    await hook.queryFn();
+    expect(calls).toEqual([
+      { method: 'GET', path: `/admin/api/accounts/${ACCOUNT}/projects` },
+    ]);
+  });
+});
 
 describe('useAdminGrantTrial', () => {
   test('POSTs the snake_case trial body the admin route validates', async () => {

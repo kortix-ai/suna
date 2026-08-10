@@ -53,7 +53,7 @@ describe('no-managed-models message', () => {
  * to managed tokens its plan forbids, and skip the wallet admission gate on the
  * way, because that gate is bypassed for precisely these tiers.
  *
- * Asserted on source. The branch sits mid-function behind project-secret
+ * Asserted on source. The branch sits mid-function behind workspace-secret
  * resolution and a provider catalog; the property worth protecting is which
  * predicate decides it, and that is exactly what regressed.
  */

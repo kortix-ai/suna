@@ -15,7 +15,7 @@ export function executionAuditEvent(
 ): AuditEventInput {
   return {
     accountId: execution.accountId,
-    projectId: execution.projectId,
+    workspaceId: execution.workspaceId,
     sessionId: execution.sessionId,
     actorUserId: execution.actingUserId,
     actorType: execution.sessionId ? 'agent' : 'human',
@@ -37,7 +37,7 @@ export function executionAuditEvent(
 
 interface ApprovalResolvedAuditInput {
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string | null;
   executionId: string;
   actorUserId: string;
@@ -53,7 +53,7 @@ export function approvalResolvedAuditEvent(
   const approved = input.decision === 'approve';
   return {
     accountId: input.accountId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     sessionId: input.sessionId,
     actorUserId: input.actorUserId,
     actorType: 'human',

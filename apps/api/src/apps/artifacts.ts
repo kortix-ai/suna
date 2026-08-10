@@ -71,12 +71,12 @@ function safeObjectSegment(value: string, name: string): string {
 
 export function appArtifactObjectPath(
   accountId: string,
-  projectId: string,
+  workspaceId: string,
   artifactId: string,
 ): string {
   return [
     safeObjectSegment(accountId, 'accountId'),
-    safeObjectSegment(projectId, 'projectId'),
+    safeObjectSegment(workspaceId, 'workspaceId'),
     safeObjectSegment(artifactId, 'artifactId'),
     'source.tar.gz',
   ].join('/');
@@ -106,13 +106,13 @@ export async function ensureAppArtifactBucket(): Promise<void> {
 
 export async function createAppArtifactUploadUrl(
   accountId: string,
-  projectId: string,
+  workspaceId: string,
   artifactId: string,
 ): Promise<{ uploadUrl: string; objectPath: string; maxBytes: number }> {
   try {
     return await retryAppArtifactStorage(async () => {
       await ensureAppArtifactBucket();
-      const objectPath = appArtifactObjectPath(accountId, projectId, artifactId);
+      const objectPath = appArtifactObjectPath(accountId, workspaceId, artifactId);
       const { data, error } = await getSupabase().storage
         .from(APP_ARTIFACT_BUCKET)
         .createSignedUploadUrl(objectPath, { upsert: false });

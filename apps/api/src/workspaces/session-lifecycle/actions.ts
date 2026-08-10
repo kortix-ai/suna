@@ -1,0 +1,488 @@
+import { pauseComputeSession } from '../../billing/services/compute-metering';
+import { config, type SandboxProviderName } from '../../config';
+import { logger } from '../../lib/logger';
+import { getProvider } from '../../platform/providers';
+import { db } from '../../shared/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { isMetaAgentName } from '@kortix/shared';
+import { and, eq } from 'drizzle-orm';
+import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
+import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
+import { withWorkspaceGitAuth } from '../lib/git';
+import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
+import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import {
+  sandboxSlugFromSessionMetadata,
+  workspaceModeFromSessionMetadata,
+} from '../lib/session-sandbox-metadata';
+import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import { workspaceLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { isMissingRuntimeError } from '../routes/shared';
+import { invalidateProviderCache } from '../../sandbox-proxy';
+import {
+  claimInPlaceRuntimeRecovery,
+  markInPlaceRuntimeRecoveryAccepted,
+  preserveEstablishedRuntime,
+  retireUnmaterializedRuntime,
+  RUNTIME_IDENTITY_ERROR,
+  RUNTIME_IDENTITY_UNAVAILABLE,
+} from '../runtime-identity';
+import { inspectSandboxRuntime } from '../runtime-inspection';
+import { prepareInPlaceRestartMetadata } from './readiness-clocks';
+
+export async function deleteSession(input: {
+  workspaceId: string;
+  sessionId: string;
+  accountId: string;
+  userId: string;
+  metadata?: Record<string, unknown> | null;
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const { workspaceId, sessionId, accountId, userId } = input;
+  const [sandbox] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(
+      and(
+        eq(sessionSandboxes.sessionId, sessionId),
+        eq(sessionSandboxes.workspaceId, workspaceId),
+        eq(sessionSandboxes.accountId, accountId),
+      ),
+    )
+    .limit(1);
+
+  const deletedAt = new Date();
+  const [row] = await db
+    .update(projectSessions)
+    .set({
+      status: 'stopped',
+      metadata: {
+        ...(input.metadata ?? {}),
+        deletedAt: deletedAt.toISOString(),
+        deletedBy: userId,
+      },
+      updatedAt: deletedAt,
+    })
+    .where(
+      and(
+        eq(projectSessions.sessionId, sessionId),
+        eq(projectSessions.workspaceId, workspaceId),
+        eq(projectSessions.accountId, accountId),
+      ),
+    )
+    .returning();
+
+  if (!row) return { error: 'Not found', status: 404 };
+
+  if (sandbox) {
+    await db
+      .update(sessionSandboxes)
+      .set({
+        status: 'archived',
+        metadata: {
+          ...(sandbox.metadata ?? {}),
+          stoppedAt: deletedAt.toISOString(),
+          initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
+          ...(sandbox.status === 'active'
+            ? {}
+            : {
+                lastInitError: 'Session was stopped before sandbox initialization completed',
+              }),
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
+      .catch((err) => {
+        console.warn(`[workspaces] failed to mark session sandbox archived for ${sessionId}:`, err);
+      });
+
+    if (
+      sandbox.externalId &&
+      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider)
+    ) {
+      const provider = getProvider(sandbox.provider as SandboxProviderName);
+      void provider.remove(sandbox.externalId).catch((err) => {
+        console.warn(
+          `[workspaces] failed to remove provider sandbox ${sandbox.externalId} for deleted session ${sessionId}:`,
+          err,
+        );
+      });
+    }
+  }
+
+  // Keyed by SANDBOX id — `getOpenComputeSession` matches on
+  // sandbox_compute_sessions.sandbox_id, so the sessionId this used to pass
+  // matched nothing and the delete silently left the meter open, accruing
+  // wall-clock on a box we had just asked the provider to remove. The
+  // billing-invariant sweep (sandbox-reaper.ts reconcileOrphanComputeSessions)
+  // is the backstop for this whole class; this is the fast path.
+  if (sandbox) {
+    void pauseComputeSession(sandbox.sandboxId).catch((err) =>
+      console.warn(`[workspaces] compute pause failed for sandbox ${sandbox.sandboxId}:`, err),
+    );
+  }
+
+  // The provider sandbox is being removed above, so this session's connector
+  // token can never be used legitimately again — but nothing expired it, so it
+  // stayed a valid bearer forever. Awaited (not fire-and-forget) so the
+  // credential is dead before we report the session gone; a failure is logged at
+  // error level rather than failing the delete, since the box is already going.
+  await revokeSessionConnectorTokens(sessionId, accountId).catch((err) => {
+    console.error(
+      `[workspaces] FAILED to revoke connector tokens for deleted session ${sessionId} — a valid token may outlive its sandbox:`,
+      err,
+    );
+  });
+
+  return { ok: true };
+}
+
+export async function restartSession(input: {
+  loaded: {
+    row: {
+      accountId: string;
+      workspaceId: string;
+      repoUrl: string;
+      defaultBranch: string;
+      manifestPath: string;
+      metadata?: Record<string, unknown> | null;
+    };
+    userId: string;
+  };
+  session: {
+    sandboxProvider: string;
+    baseRef: string | null;
+    agentName: string | null;
+    opencodeSessionId: string | null;
+    metadata?: Record<string, unknown> | null;
+  };
+  workspaceId: string;
+  sessionId: string;
+}): Promise<{ status: number; body: Record<string, unknown> }> {
+  const { loaded, session, workspaceId, sessionId } = input;
+  const providerName = session.sandboxProvider as SandboxProviderName;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
+    return {
+      status: 400,
+      body: { error: `Restart is not supported for provider ${providerName}` },
+    };
+  }
+
+  const restartUnreachable = sandboxCallbackUnreachableReason();
+  if (restartUnreachable) {
+    return {
+      status: 503,
+      body: { error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' },
+    };
+  }
+
+  const [existingSandbox] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sandboxId, sessionId))
+    .limit(1);
+
+  const provisionReplacementRuntime = async () => {
+    const initialPrompt = session.opencodeSessionId
+      ? null
+      : typeof session.metadata?.initial_prompt === 'string'
+        ? (session.metadata.initial_prompt as string)
+        : null;
+    const opencodeModel =
+      typeof session.metadata?.opencode_model === 'string'
+        ? (session.metadata.opencode_model as string)
+        : null;
+
+    await db
+      .update(projectSessions)
+      .set({
+        status: 'provisioning',
+        error: null,
+        sandboxUrl: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectSessions.sessionId, sessionId));
+
+    const runtimeMetadata = { restarted_at: new Date().toISOString() };
+    const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata);
+    allocateSessionRuntime({
+      sessionId,
+      accountId: loaded.row.accountId,
+      workspaceId,
+      userId: loaded.userId,
+      workspace: loaded.row as any,
+      providerName,
+      baseRef: session.baseRef ?? loaded.row.defaultBranch,
+      agentName: session.agentName ?? 'default',
+      sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
+      runtimeMetadata,
+      sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
+      buildEnvVars: () =>
+        buildSessionSandboxEnvVars({
+          accountId: loaded.row.accountId,
+          workspaceId,
+          sessionId,
+          userId: loaded.userId,
+          repoUrl: loaded.row.repoUrl,
+          baseRef: session.baseRef ?? loaded.row.defaultBranch,
+          agentName: session.agentName ?? 'default',
+          initialPrompt,
+          opencodeModel,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          llmGatewayEnabled: workspaceLlmGatewayEnabled(loaded.row.metadata),
+          // A restarted meta coordinator must keep its meta runtime: without
+          // this the rebuilt env loses KORTIX_WORKSPACE_AUTO_CLONE=0 and the
+          // meta agent config, so the daemon clones the workspace over the meta
+          // workspace and wipes /workspace/AGENTS.md.
+          platformMetaAgent: isMetaAgentName(session.agentName ?? ''),
+          workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
+        }),
+      resolveGitWorkspace: async () => withWorkspaceGitAuth(loaded.row as any),
+      beforeActive: rehydrate
+        ? (externalId) =>
+            rehydrateSessionChat({ sessionId, externalId, provider: providerName, spec: rehydrate })
+        : undefined,
+    });
+  };
+
+  if (
+    existingSandbox?.externalId &&
+    (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(existingSandbox.provider)
+  ) {
+    const externalId = existingSandbox.externalId;
+    const provider = getProvider(existingSandbox.provider as SandboxProviderName);
+    const providerStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+    if (providerStatus === 'removed') {
+      const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+      if (!claim) {
+        return {
+          status: 202,
+          body: {
+            ok: true,
+            session_id: sessionId,
+            status: 'provisioning',
+            reason: 'runtime_recovery_in_progress',
+          },
+        };
+      }
+      const recovery = await provider
+        .recoverInPlace?.(externalId)
+        .catch(() => 'unavailable' as const);
+      if (recovery === 'running' || recovery === 'recovering') {
+        const accepted = await markInPlaceRuntimeRecoveryAccepted(claim, recovery);
+        if (!accepted) {
+          return {
+            status: 409,
+            body: {
+              error: RUNTIME_IDENTITY_ERROR,
+              code: 'SESSION_RUNTIME_RECOVERY_CANCELLED',
+              session_id: sessionId,
+              external_id: externalId,
+              reason: 'runtime_recovery_cancelled',
+            },
+          };
+        }
+      return {
+        status: 202,
+        body: {
+          ok: true,
+          session_id: sessionId,
+          status: 'provisioning',
+            reason:
+              recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
+          },
+        };
+      }
+      await preserveEstablishedRuntime(claim.row, 'restart_removed_runtime', 'restart_failed');
+      return {
+        status: 409,
+        body: {
+          error: RUNTIME_IDENTITY_ERROR,
+          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+          session_id: sessionId,
+          external_id: externalId,
+          reason: RUNTIME_IDENTITY_UNAVAILABLE,
+        },
+      };
+    }
+
+    const restartStartedAt = new Date();
+    await db
+      .update(sessionSandboxes)
+      .set({
+        status: 'provisioning',
+        metadata: prepareInPlaceRestartMetadata(existingSandbox.metadata, restartStartedAt),
+        updatedAt: restartStartedAt,
+      })
+      .where(eq(sessionSandboxes.sandboxId, sessionId));
+    await db
+      .update(projectSessions)
+      .set({
+        status: 'provisioning',
+        error: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectSessions.sessionId, sessionId));
+
+    void (async () => {
+      try {
+        await provider.stop(externalId).catch(() => {});
+        invalidateProviderCache(externalId);
+        await provider.start(externalId);
+        // Provider ingress credentials can change on every stop/start cycle.
+        // Remove any link resolved while the sandbox was stopped.
+        invalidateProviderCache(externalId);
+        // A provider may acknowledge start before discovering that the backing
+        // runtime is gone. A confirmed `removed` status starts recovery.
+        // `unknown` remains non-terminal because it does not prove runtime loss.
+        let verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        if (
+          verifiedStatus === 'unknown' &&
+          (await inspectSandboxRuntime(externalId, loaded.userId))
+        ) {
+          verifiedStatus = 'running';
+        }
+        for (
+          let attempt = 1;
+          verifiedStatus !== 'running' && verifiedStatus !== 'removed' && attempt < 15;
+          attempt += 1
+        ) {
+          await Bun.sleep(1_000);
+          verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+          if (
+            verifiedStatus === 'unknown' &&
+            (await inspectSandboxRuntime(externalId, loaded.userId))
+          ) {
+            verifiedStatus = 'running';
+          }
+        }
+        if (verifiedStatus === 'removed') {
+          const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+          if (!claim) return;
+          const recovery = await provider
+            .recoverInPlace?.(externalId)
+            .catch(() => 'unavailable' as const);
+          if (recovery === 'running' || recovery === 'recovering') {
+            await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(() => null);
+          } else {
+            await preserveEstablishedRuntime(
+              claim.row,
+              'restart_post_start_removed',
+              'restart_failed',
+            ).catch(() => null);
+          }
+          return;
+        }
+        if (verifiedStatus !== 'running' && verifiedStatus !== 'unknown') {
+          throw new Error(
+            `Sandbox ${externalId} did not reach running after restart (provider status: ${verifiedStatus})`,
+          );
+        }
+        if (verifiedStatus === 'unknown') {
+          logger.warn('[workspaces] restart provider status stayed unknown; runtime polling continues', {
+            session_id: sessionId,
+            workspace_id: workspaceId,
+            external_id: externalId,
+          });
+        }
+        await db
+          .update(sessionSandboxes)
+          .set({ status: 'active', updatedAt: new Date() })
+          .where(eq(sessionSandboxes.sandboxId, sessionId));
+        await db
+          .update(projectSessions)
+          .set({ status: 'running', updatedAt: new Date() })
+          .where(eq(projectSessions.sessionId, sessionId));
+        // A restart is a stop/start of the SAME box: the provider hands back the
+        // env it was created with, so this used to cost a full boot and return
+        // byte-identical stale config. People restarted precisely to pick up a
+        // merged agent change and got the old agents back, which is most of why
+        // "there is no way to reload" felt true.
+        //
+        // Recompile from the session's ref and push. Best-effort and after the
+        // session is already marked running: a box that is up with old config
+        // beats one parked because a git read failed.
+        void pushSessionAgentConfigToSandbox({
+          workspaceId,
+          sessionId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        }).then((result) => {
+          if (!result.applied) {
+            logger.info('[workspaces] restart kept the existing agent config', {
+              session_id: sessionId,
+              reason: result.reason,
+            });
+          }
+        });
+      } catch (err) {
+        // Detached from the request (the 202 already went out) — a structured
+        // error is the only trace the reboot died and the session was parked.
+        logger.error('[workspaces] restart-in-place failed — session parked stopped', {
+          session_id: sessionId,
+          workspace_id: workspaceId,
+          external_id: externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        if (isMissingRuntimeError(err)) {
+          const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+          if (!claim) return;
+          const recovery = await provider
+            .recoverInPlace?.(externalId)
+            .catch(() => 'unavailable' as const);
+          if (recovery === 'running' || recovery === 'recovering') {
+            await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(() => null);
+          } else {
+            await preserveEstablishedRuntime(
+              claim.row,
+              'restart_missing_runtime',
+              'restart_failed',
+            ).catch(() => null);
+          }
+          return;
+        }
+        await db
+          .update(sessionSandboxes)
+          .set({ status: 'stopped', updatedAt: new Date() })
+          .where(
+            and(
+              eq(sessionSandboxes.sandboxId, sessionId),
+              eq(sessionSandboxes.externalId, externalId),
+            ),
+          )
+          .catch(() => {});
+        await db
+          .update(projectSessions)
+          .set({ status: 'stopped', updatedAt: new Date() })
+          .where(eq(projectSessions.sessionId, sessionId))
+          .catch(() => {});
+      }
+    })();
+
+    return {
+      status: 202,
+      body: { ok: true, session_id: sessionId, status: 'provisioning' },
+    };
+  }
+
+  if (existingSandbox) {
+    // Row exists but never reached a real provider sandbox (e.g. the original
+    // provision failed before an externalId was assigned) — there's nothing to
+    // stop/start, and leaving it in place would collide with the fresh insert
+    // provisionReplacementRuntime() is about to do on the same sandboxId PK.
+    await retireUnmaterializedRuntime(existingSandbox, 'restart_never_provisioned').catch((err) =>
+      console.warn(
+        `[workspaces] failed to retire never-provisioned sandbox row for session ${sessionId}:`,
+        err,
+      ),
+    );
+  }
+
+  await provisionReplacementRuntime();
+  return {
+    status: 202,
+    body: { ok: true, session_id: sessionId, status: 'provisioning' },
+  };
+}

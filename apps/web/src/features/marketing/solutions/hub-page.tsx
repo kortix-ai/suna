@@ -37,7 +37,7 @@ export function SolutionsHubPage(): ReactNode {
             One platform. Eight teams with completely different work.
           </h1>
           <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-            The same project, the same connectors, the same memory — and eight different jobs
+            The same workspace, the same connectors, the same memory — and eight different jobs
             underneath. Each team writes the skills for its own work, and nobody stands up a second
             system to do it.
           </p>
@@ -129,7 +129,7 @@ export function SolutionsHubPage(): ReactNode {
                 },
                 {
                   k: 'Connector credentials never enter the machine',
-                  v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. The real credential is decrypted server-side and attached to the outbound call. A runtime secret you deliberately grant is different: it is a real environment value the agent can read.',
+                  v: 'The sandbox carries one workspace-scoped Kortix token and no third-party keys. The real credential is decrypted server-side and attached to the outbound call. A runtime secret you deliberately grant is different: it is a real environment value the agent can read.',
                 },
                 {
                   k: 'Everything is a file you own',
@@ -163,7 +163,7 @@ export function SolutionsHubPage(): ReactNode {
               Get started
             </Badge>
             <h2 className="text-foreground max-w-2xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-              Start with one team. The rest of the company is the same project.
+              Start with one team. The rest of the company uses the same workspace.
             </h2>
             <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
               Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or

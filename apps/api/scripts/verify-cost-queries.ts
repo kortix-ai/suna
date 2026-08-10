@@ -41,7 +41,7 @@ import {
 
 interface Anchor {
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   ownerId: string;
   real: boolean;
@@ -51,7 +51,7 @@ interface Anchor {
 // runs every statement — it just returns nothing.
 const PLACEHOLDER: Anchor = {
   accountId: '00000000-0000-0000-0000-000000000001',
-  projectId: '00000000-0000-0000-0000-0000000000ff',
+  workspaceId: '00000000-0000-0000-0000-0000000000ff',
   sessionId: '00000000-0000-0000-0000-0000000000fd',
   ownerId: '00000000-0000-0000-0000-0000000000fe',
   real: false,
@@ -63,7 +63,7 @@ async function resolveAnchor(): Promise<Anchor> {
   const [busiest] = await db
     .select({
       accountId: projectSessions.accountId,
-      projectId: projectSessions.projectId,
+      workspaceId: projectSessions.workspaceId,
       sessionId: projectSessions.sessionId,
       ownerId: projectSessions.createdBy,
     })
@@ -71,7 +71,7 @@ async function resolveAnchor(): Promise<Anchor> {
     .leftJoin(gatewayRequestLogs, eq(gatewayRequestLogs.sessionId, projectSessions.sessionId))
     .groupBy(
       projectSessions.accountId,
-      projectSessions.projectId,
+      projectSessions.workspaceId,
       projectSessions.sessionId,
       projectSessions.createdBy,
     )
@@ -81,7 +81,7 @@ async function resolveAnchor(): Promise<Anchor> {
   if (!busiest) return PLACEHOLDER;
   return {
     accountId: busiest.accountId,
-    projectId: busiest.projectId,
+    workspaceId: busiest.workspaceId,
     sessionId: busiest.sessionId,
     ownerId: busiest.ownerId ?? PLACEHOLDER.ownerId,
     real: true,
@@ -118,7 +118,7 @@ function describeRejection(error: unknown): string {
 const EXPECTED_CASE_COUNT = 12;
 
 function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
-  const { accountId, projectId, sessionId, ownerId } = anchor;
+  const { accountId, workspaceId, sessionId, ownerId } = anchor;
   const window = costWindow();
   const page = { window, limit: 25, offset: 0 };
 
@@ -136,8 +136,8 @@ function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
       () => listSessionCosts({ accountId, sort: 'recent', ...page }),
     ],
     [
-      'listSessionCosts + projectId + ownerId',
-      () => listSessionCosts({ accountId, projectId, ownerId, sort: 'total_desc', ...page }),
+      'listSessionCosts + workspaceId + ownerId',
+      () => listSessionCosts({ accountId, workspaceId, ownerId, sort: 'total_desc', ...page }),
     ],
     [
       'listCostByProject sort=total_desc',
@@ -148,7 +148,7 @@ function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
       () => listCostByProject({ accountId, sort: 'name_asc', ...page }),
     ],
     ['getCostSummary account-wide', () => getCostSummary({ accountId, window })],
-    ['getCostSummary project-scoped', () => getCostSummary({ accountId, projectId, window })],
+    ['getCostSummary project-scoped', () => getCostSummary({ accountId, workspaceId, window })],
     // GET /usage/cost-summary passes session_id through, and it adds a predicate to
     // both aggregates, so it is a distinct statement from the two above.
     ['getCostSummary session-scoped', () => getCostSummary({ accountId, sessionId, window })],
@@ -157,11 +157,11 @@ function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
     // predicate the unscoped case above never exercises.
     [
       'getSessionCostRecord project-scoped',
-      () => getSessionCostRecord({ accountId, projectId, sessionId }),
+      () => getSessionCostRecord({ accountId, workspaceId, sessionId }),
     ],
     [
       'listProjectGatewaySessionSpend',
-      () => listProjectGatewaySessionSpend({ accountId, projectId, days: 30 }),
+      () => listProjectGatewaySessionSpend({ accountId, workspaceId, days: 30 }),
     ],
   ];
 }
@@ -169,7 +169,7 @@ function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
 const anchor = await resolveAnchor();
 console.log(
   anchor.real
-    ? `anchor: real session ${anchor.sessionId} (project ${anchor.projectId})`
+    ? `anchor: real session ${anchor.sessionId} (project ${anchor.workspaceId})`
     : 'anchor: placeholder ids — database has no sessions, detail queries will short-circuit',
 );
 

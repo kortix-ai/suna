@@ -11,7 +11,7 @@ import React, { useMemo } from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { FilePlus, FileMinus, FilePen, type LucideIcon } from 'lucide-react-native';
-import type { ProjectCommitFile } from '@/lib/projects/projects-client';
+import type { WorkspaceCommitFile } from '@/lib/workspaces/workspaces-client';
 
 const MONO = 'Menlo';
 const MAX_DIFF_ROWS = 2000;
@@ -22,7 +22,7 @@ export interface DiffRow {
   text: string;
 }
 
-export function fileStatusMeta(status: ProjectCommitFile['status']): { icon: LucideIcon; color: string } {
+export function fileStatusMeta(status: WorkspaceCommitFile['status']): { icon: LucideIcon; color: string } {
   if (status === 'added') return { icon: FilePlus, color: '#22c55e' };
   if (status === 'deleted') return { icon: FileMinus, color: '#ef4444' };
   return { icon: FilePen, color: '#3b82f6' };
@@ -109,7 +109,7 @@ export function DiffFile({
   parsed,
   isDark,
 }: {
-  file: ProjectCommitFile;
+  file: WorkspaceCommitFile;
   parsed: { binary: boolean; rows: DiffRow[] } | undefined;
   isDark: boolean;
 }) {
@@ -175,9 +175,9 @@ export function PatchDiffView({ patch, isDark }: { patch: string; isDark: boolea
       {[...byPath.entries()].map(([path, parsed]) => {
         const additions = parsed.rows.filter((r) => r.kind === 'add').length;
         const deletions = parsed.rows.filter((r) => r.kind === 'del').length;
-        const status: ProjectCommitFile['status'] =
+        const status: WorkspaceCommitFile['status'] =
           deletions === 0 && additions > 0 ? 'added' : additions === 0 && deletions > 0 ? 'deleted' : 'modified';
-        const file: ProjectCommitFile = { path, old_path: null, status, additions, deletions };
+        const file: WorkspaceCommitFile = { path, old_path: null, status, additions, deletions };
         return <DiffFile key={path} file={file} parsed={parsed} isDark={isDark} />;
       })}
       {truncated && (

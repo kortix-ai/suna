@@ -14,10 +14,10 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { projectSessions, serviceAccounts } from '@kortix/db';
 import { db } from '../shared/db';
-import { attributeFiredTriggerSession } from '../projects/lib/triggers';
-import type { ProjectRow } from '../projects/lib/serializers';
+import { attributeFiredTriggerSession } from '../workspaces/lib/triggers';
+import type { WorkspaceRow } from '../workspaces/lib/serializers';
 
-let ctx: { projectId: string; accountId: string } | null = null;
+let ctx: { workspaceId: string; accountId: string } | null = null;
 const SESSION_ID = `e2e-trigger-attr-${crypto.randomUUID()}`;
 const HUMAN_STAND_IN = crypto.randomUUID();
 const AGENT_NAME = `trigger-attr-agent-${crypto.randomUUID().slice(0, 8)}`;
@@ -27,14 +27,14 @@ beforeAll(async () => {
     sql`select project_id, account_id from kortix.projects limit 1`,
   )) as unknown as Array<{ project_id: string; account_id: string }>;
   if (!rows[0]) return;
-  ctx = { projectId: rows[0].project_id, accountId: rows[0].account_id };
+  ctx = { workspaceId: rows[0].project_id, accountId: rows[0].account_id };
 
-  // Seed a session as `createProjectSession` would leave it right after insert:
+  // Seed a session as `createWorkspaceSession` would leave it right after insert:
   // created_by = the human stand-in `resolveTriggerActor` resolves to today.
   await db.insert(projectSessions).values({
     sessionId: SESSION_ID,
     accountId: ctx.accountId,
-    projectId: ctx.projectId,
+    workspaceId: ctx.workspaceId,
     branchName: SESSION_ID,
     agentName: AGENT_NAME,
     status: 'provisioning',
@@ -52,7 +52,7 @@ afterAll(async () => {
     .where(
       and(
         eq(serviceAccounts.accountId, ctx.accountId),
-        eq(serviceAccounts.projectId, ctx.projectId),
+        eq(serviceAccounts.workspaceId, ctx.workspaceId),
         eq(serviceAccounts.agentName, AGENT_NAME),
       ),
     );
@@ -65,7 +65,7 @@ describe('attributeFiredTriggerSession — trigger runs attributed to the agent 
       return;
     }
     await attributeFiredTriggerSession({
-      project: { projectId: ctx.projectId, accountId: ctx.accountId } as ProjectRow,
+      workspace: { workspaceId: ctx.workspaceId, accountId: ctx.accountId } as WorkspaceRow,
       sessionId: SESSION_ID,
       agentName: AGENT_NAME,
     });
@@ -88,7 +88,7 @@ describe('attributeFiredTriggerSession — trigger runs attributed to the agent 
       .where(
         and(
           eq(serviceAccounts.accountId, ctx.accountId),
-          eq(serviceAccounts.projectId, ctx.projectId),
+          eq(serviceAccounts.workspaceId, ctx.workspaceId),
           eq(serviceAccounts.agentName, AGENT_NAME),
         ),
       )
@@ -106,7 +106,7 @@ describe('attributeFiredTriggerSession — trigger runs attributed to the agent 
       .limit(1);
 
     await attributeFiredTriggerSession({
-      project: { projectId: ctx.projectId, accountId: ctx.accountId } as ProjectRow,
+      workspace: { workspaceId: ctx.workspaceId, accountId: ctx.accountId } as WorkspaceRow,
       sessionId: SESSION_ID,
       agentName: AGENT_NAME,
     });

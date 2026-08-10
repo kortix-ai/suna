@@ -5,14 +5,14 @@
  * prints) — export SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET and re-run to
  * actually call `connect()`. Without them this is a safe read-only check.
  *
- * Run (from packages/sdk):  bun run playground/channels/13-slack-status.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/channels/13-slack-status.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("slack-status", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
-  const slack = kortix.project(projectId).channels.slack;
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
+  const slack = kortix.project(workspaceId).channels.slack;
 
   const installation = await slack.installation();
   if (installation) {

@@ -82,7 +82,7 @@ function useFullscreenSnapshot(): boolean {
 }
 
 /**
- * The shell's floating sidebar toggle (project-shell.tsx / session-layout.tsx)
+ * The shell's floating sidebar toggle (workspace-shell.tsx / session-layout.tsx)
  * gets painted over while the detail view is fullscreen — the panel subtree
  * elevates to z-[35] to sit above it (see session-layout.tsx). So fullscreen
  * needs its OWN reopen control, living inside the detail instead — this is

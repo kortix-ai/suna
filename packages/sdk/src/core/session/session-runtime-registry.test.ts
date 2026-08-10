@@ -16,7 +16,7 @@ test('getSessionRuntime returns undefined for a session no handle has resolved y
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
 
-test('setSessionRuntime records an entry retrievable by the same (projectId, sessionId)', () => {
+test('setSessionRuntime records an entry retrievable by the same (workspaceId, sessionId)', () => {
   setSessionRuntime(PROJECT, SESSION, {
     opencodeSessionId: 'ocs-1',
     runtimeUrl: 'http://backend.test/p/sb-1/8000',
@@ -96,15 +96,15 @@ function fillEntry(i: number) {
   };
 }
 
-function fillRegistry(projectId: string, count: number, offset = 0) {
+function fillRegistry(workspaceId: string, count: number, offset = 0) {
   for (let i = offset; i < offset + count; i++) {
-    setSessionRuntime(projectId, `sess-lru-${i}`, fillEntry(i));
+    setSessionRuntime(workspaceId, `sess-lru-${i}`, fillEntry(i));
   }
 }
 
-function clearRegistry(projectId: string, count: number, offset = 0) {
+function clearRegistry(workspaceId: string, count: number, offset = 0) {
   for (let i = offset; i < offset + count; i++) {
-    clearSessionRuntime(projectId, `sess-lru-${i}`);
+    clearSessionRuntime(workspaceId, `sess-lru-${i}`);
   }
 }
 

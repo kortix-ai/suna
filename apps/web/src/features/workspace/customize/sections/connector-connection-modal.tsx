@@ -1,6 +1,6 @@
 'use client';
 
-import type { ConnectorAuthorizationStrategy } from '@kortix/sdk';
+import type { WorkspaceConnectorAuthorizationStrategy } from '@kortix/sdk';
 import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -46,8 +46,8 @@ export function AuthorizationStrategyField({
   hideLabel = false,
 }: {
   idPrefix: string;
-  value: ConnectorAuthorizationStrategy;
-  onChange: (value: ConnectorAuthorizationStrategy) => void;
+  value: WorkspaceConnectorAuthorizationStrategy;
+  onChange: (value: WorkspaceConnectorAuthorizationStrategy) => void;
   disabled?: boolean;
   pending?: boolean;
   /**
@@ -87,7 +87,7 @@ export function AuthorizationStrategyField({
   // so it invites a click that does nothing. Reading the value out plainly is
   // both calmer and more honest about the fact that there is no decision left.
   if (lockedReason) {
-    const isProject = value === 'project';
+    const isWorkspace = value === 'workspace';
     return (
       <Field>
         {hideLabel ? null : <FieldLabel>Authorization owner</FieldLabel>}
@@ -95,10 +95,10 @@ export function AuthorizationStrategyField({
           <span
             className={cn(
               'flex size-9 shrink-0 items-center justify-center rounded-sm',
-              isProject ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
+              isWorkspace ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
             )}
           >
-            {isProject ? (
+            {isWorkspace ? (
               <UsersThree className="text-kortix-blue size-5" weight="duotone" />
             ) : (
               <User className="text-kortix-purple size-5" weight="duotone" />
@@ -106,14 +106,14 @@ export function AuthorizationStrategyField({
           </span>
           <div className="min-w-0 flex-1 space-y-0.5">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{isProject ? 'Project' : 'User'}</span>
+              <span className="text-sm font-medium">{isWorkspace ? 'Workspace' : 'User'}</span>
               <Badge variant="outline" size="xs">
                 Fixed
               </Badge>
             </div>
             <p className="text-muted-foreground text-xs text-pretty">
-              {isProject
-                ? 'Everyone in this project shares one connection.'
+              {isWorkspace
+                ? 'Everyone in this workspace shares one connection.'
                 : 'Everyone connects their own account.'}
             </p>
           </div>
@@ -131,19 +131,19 @@ export function AuthorizationStrategyField({
       <Select
         value={value}
         disabled={disabled || pending}
-        onValueChange={(next) => onChange(next as ConnectorAuthorizationStrategy)}
+        onValueChange={(next) => onChange(next as WorkspaceConnectorAuthorizationStrategy)}
       >
         <SelectTrigger id={id} aria-label={suppressedLabel}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="project">Project</SelectItem>
+          <SelectItem value="workspace">Workspace</SelectItem>
           <SelectItem value="user">User</SelectItem>
         </SelectContent>
       </Select>
       <FieldDescription className="text-pretty">
-        {value === 'project'
-          ? 'Everyone in this project shares one connection.'
+        {value === 'workspace'
+          ? 'Everyone in this workspace shares one connection.'
           : 'Everyone connects their own account.'}
       </FieldDescription>
     </Field>
@@ -153,7 +153,7 @@ export function AuthorizationStrategyField({
 /**
  * The "Add connector" dialog: connection header + one primary button.
  *
- * Defaults (app name, proposed slug, project authorization) are always valid,
+ * Defaults (app name, proposed slug, workspace authorization) are always valid,
  * so a non-technical user reads the header and presses "+ Add connector"
  * without meeting "slug" or "authorization owner". Those fields stay behind a
  * collapsed disclosure for the rare rename / ownership case. The disclosure
@@ -201,7 +201,7 @@ export function ConnectorConnectionModal({
   const [slugEdited, setSlugEdited] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [authorizationStrategy, setAuthorizationStrategy] =
-    useState<ConnectorAuthorizationStrategy>('project');
+    useState<WorkspaceConnectorAuthorizationStrategy>('workspace');
 
   useEffect(() => {
     if (!open) return;
@@ -209,7 +209,7 @@ export function ConnectorConnectionModal({
     setSlug(initialSlug);
     setSlugEdited(false);
     setOptionsOpen(false);
-    setAuthorizationStrategy('project');
+    setAuthorizationStrategy('workspace');
   }, [initialName, initialSlug, open]);
 
   const slugAvailable = isConnectorConnectionSlugAvailable(slug, existingSlugs);
@@ -240,7 +240,7 @@ export function ConnectorConnectionModal({
         >
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <p className="text-muted-foreground text-sm text-pretty">
-              Adds {displayName} to this project. You connect an account right after.
+              Adds {displayName} to this workspace. You connect an account right after.
             </p>
             <Disclosure
               variant="outline"
@@ -311,8 +311,8 @@ export function ConnectorConnectionModal({
                         className={cn(slug.length > 0 && !slugAvailable && 'text-destructive')}
                       >
                         {slug.length > 0 && !slugAvailable
-                          ? 'This slug already exists in this project.'
-                          : 'Unique within this project. You can change the proposed value.'}
+                          ? 'This slug already exists in this workspace.'
+                          : 'Unique within this workspace. You can change the proposed value.'}
                       </FieldDescription>
                     </Field>
                     <AuthorizationStrategyField

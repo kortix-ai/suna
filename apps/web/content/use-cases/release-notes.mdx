@@ -53,7 +53,7 @@ human reviews and merges.
 <Steps>
 <Step title="Connect the release as the trigger">
 
-A signed GitHub webhook points at the project. A pushed tag or published release
+A signed GitHub webhook points at the workspace. A pushed tag or published release
 fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
 with the new tag. One release maps to one session on one disposable machine, so
 nothing carries over between releases.

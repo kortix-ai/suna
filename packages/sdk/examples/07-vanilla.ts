@@ -31,11 +31,11 @@ import type { MessageWithParts } from '../src/index';
 async function main() {
   const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
   const apiKey = process.env.KORTIX_API_KEY;
-  const projectId = process.env.KORTIX_PROJECT_ID;
+  const workspaceId = process.env.KORTIX_PROJECT_ID;
   const sessionId = process.env.KORTIX_SESSION_ID;
   const prompt = process.argv[2] ?? 'Say hello in one sentence.';
 
-  if (!apiKey || !projectId || !sessionId) {
+  if (!apiKey || !workspaceId || !sessionId) {
     console.error('Set KORTIX_API_KEY, KORTIX_PROJECT_ID and KORTIX_SESSION_ID.');
     process.exit(1);
   }
@@ -43,9 +43,9 @@ async function main() {
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
 
   const projects = await kortix.projects.list();
-  console.log(`${projects.length} project(s); using ${projectId}`);
+  console.log(`${projects.length} project(s); using ${workspaceId}`);
 
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
 
   // Connect BEFORE sending so no early events are missed. `ensureReady()`
   // also hands back this handle's own resolved opencode session id, which

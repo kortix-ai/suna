@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let flagshipRef: string | null = 'anthropic/claude-opus-4.8';
 mock.module('./picker-catalog', () => ({ flagshipRefForEnvVar: () => flagshipRef }));
 
-let defaults: any = { account: null, agents: {}, projects: {} };
+let defaults: any = { account: null, agents: {}, workspaces: {} };
 const upsert = mock(async () => {});
 mock.module('../../repositories/model-preferences', () => ({
   getAccountModelDefaults: async () => defaults,
@@ -21,21 +21,21 @@ mock.module('../resolution/default-model', () => ({
   invalidateAccountModelDefaults: invalidate,
 }));
 
-const { seedProjectDefaultModelOnConnect } = await import('./seed-default');
+const { seedWorkspaceDefaultModelOnConnect } = await import('./seed-default');
 
-const params = { projectId: 'p1', accountId: 'a1', userId: 'u1', secretName: 'ANTHROPIC_API_KEY' };
+const params = { workspaceId: 'p1', accountId: 'a1', userId: 'u1', secretName: 'ANTHROPIC_API_KEY' };
 
 beforeEach(() => {
   flagshipRef = 'anthropic/claude-opus-4.8';
-  defaults = { account: null, agents: {}, projects: {} };
+  defaults = { account: null, agents: {}, workspaces: {} };
   servable = true;
   upsert.mockClear();
   invalidate.mockClear();
 });
 
-describe('seedProjectDefaultModelOnConnect', () => {
-  test('seeds the provider flagship as the project default when nothing is set', async () => {
-    await seedProjectDefaultModelOnConnect(params);
+describe('seedWorkspaceDefaultModelOnConnect', () => {
+  test('seeds the provider flagship as the workspace default when nothing is set', async () => {
+    await seedWorkspaceDefaultModelOnConnect(params);
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -51,25 +51,25 @@ describe('seedProjectDefaultModelOnConnect', () => {
 
   test('skips a non-provider credential (flagship ref null)', async () => {
     flagshipRef = null;
-    await seedProjectDefaultModelOnConnect({ ...params, secretName: 'CODEX_AUTH_JSON' });
+    await seedWorkspaceDefaultModelOnConnect({ ...params, secretName: 'CODEX_AUTH_JSON' });
     expect(upsert).not.toHaveBeenCalled();
   });
 
   test('never clobbers an existing account default', async () => {
-    defaults = { account: 'glm-5.2', agents: {}, projects: {} };
-    await seedProjectDefaultModelOnConnect(params);
+    defaults = { account: 'glm-5.2', agents: {}, workspaces: {} };
+    await seedWorkspaceDefaultModelOnConnect(params);
     expect(upsert).not.toHaveBeenCalled();
   });
 
-  test('never clobbers an existing project default', async () => {
-    defaults = { account: null, agents: {}, projects: { p1: 'glm-5.2' } };
-    await seedProjectDefaultModelOnConnect(params);
+  test('never clobbers an existing workspace default', async () => {
+    defaults = { account: null, agents: {}, workspaces: { p1: 'glm-5.2' } };
+    await seedWorkspaceDefaultModelOnConnect(params);
     expect(upsert).not.toHaveBeenCalled();
   });
 
   test('skips when the flagship is not servable', async () => {
     servable = false;
-    await seedProjectDefaultModelOnConnect(params);
+    await seedWorkspaceDefaultModelOnConnect(params);
     expect(upsert).not.toHaveBeenCalled();
   });
 });

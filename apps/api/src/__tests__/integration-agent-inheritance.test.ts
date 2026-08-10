@@ -12,10 +12,10 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { db } from '../shared/db';
 import { sql } from 'drizzle-orm';
-import { isProjectResourceExplicitlyGranted, upsertResourceGrant } from '../iam';
-import { resolveAssignedAgentNames, unionDeclaredResources } from '../projects/lib/agent-inheritance';
+import { isWorkspaceResourceExplicitlyGranted, upsertResourceGrant } from '../iam';
+import { resolveAssignedAgentNames, unionDeclaredResources } from '../workspaces/lib/agent-inheritance';
 
-let ctx: { projectId: string; accountId: string } | null = null;
+let ctx: { workspaceId: string; accountId: string } | null = null;
 const grantCleanup: string[] = [];
 const ASSIGNED = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
@@ -29,12 +29,12 @@ beforeAll(async () => {
     sql`select project_id, account_id from kortix.projects limit 1`,
   )) as unknown as Array<{ project_id: string; account_id: string }>;
   if (!rows[0]) return;
-  ctx = { projectId: rows[0].project_id, accountId: rows[0].account_id };
+  ctx = { workspaceId: rows[0].project_id, accountId: rows[0].account_id };
 
   // Assign the agent to ASSIGNED (member) — the "assign human → agent" grant.
   const g = await upsertResourceGrant({
     accountId: ctx.accountId,
-    projectId: ctx.projectId,
+    workspaceId: ctx.workspaceId,
     resourceType: 'agent',
     resourceId: AGENT,
     principalType: 'member',
@@ -52,21 +52,21 @@ afterAll(async () => {
 });
 
 describe('agent-inheritance primitives', () => {
-  test('isProjectResourceExplicitlyGranted: assigned member yes, others no, unscoped agent no', async () => {
+  test('isWorkspaceResourceExplicitlyGranted: assigned member yes, others no, unscoped agent no', async () => {
     if (!ctx) { console.warn('[integration] no project in local DB — skipping'); return; }
     // ASSIGNED is named on the agent grant → assigned.
-    expect(await isProjectResourceExplicitlyGranted(ctx.projectId, 'agent', AGENT, ASSIGNED, [])).toBe(true);
+    expect(await isWorkspaceResourceExplicitlyGranted(ctx.workspaceId, 'agent', AGENT, ASSIGNED, [])).toBe(true);
     // OTHER is not named → not assigned.
-    expect(await isProjectResourceExplicitlyGranted(ctx.projectId, 'agent', AGENT, OTHER, [])).toBe(false);
+    expect(await isWorkspaceResourceExplicitlyGranted(ctx.workspaceId, 'agent', AGENT, OTHER, [])).toBe(false);
     // A different, UNSCOPED agent → nobody is assigned (even though it's usable).
-    expect(await isProjectResourceExplicitlyGranted(ctx.projectId, 'agent', FREE_AGENT, ASSIGNED, [DEPT])).toBe(false);
+    expect(await isWorkspaceResourceExplicitlyGranted(ctx.workspaceId, 'agent', FREE_AGENT, ASSIGNED, [DEPT])).toBe(false);
   });
 
   test('department assignment counts: a member of an assigned dept is assigned', async () => {
     if (!ctx) return;
     const g = await upsertResourceGrant({
       accountId: ctx.accountId,
-      projectId: ctx.projectId,
+      workspaceId: ctx.workspaceId,
       resourceType: 'agent',
       resourceId: FREE_AGENT,
       principalType: 'group',
@@ -75,23 +75,23 @@ describe('agent-inheritance primitives', () => {
     });
     grantCleanup.push(g.grantId);
     // OTHER is in DEPT → assigned to FREE_AGENT via the department.
-    expect(await isProjectResourceExplicitlyGranted(ctx.projectId, 'agent', FREE_AGENT, OTHER, [DEPT])).toBe(true);
+    expect(await isWorkspaceResourceExplicitlyGranted(ctx.workspaceId, 'agent', FREE_AGENT, OTHER, [DEPT])).toBe(true);
     // ASSIGNED is not in DEPT and not named → still not assigned to FREE_AGENT.
-    expect(await isProjectResourceExplicitlyGranted(ctx.projectId, 'agent', FREE_AGENT, ASSIGNED, [])).toBe(false);
+    expect(await isWorkspaceResourceExplicitlyGranted(ctx.workspaceId, 'agent', FREE_AGENT, ASSIGNED, [])).toBe(false);
   });
 
   test('resolveAssignedAgentNames returns every agent the subject is assigned to (global set)', async () => {
     if (!ctx) return;
     // ASSIGNED is named on AGENT only.
-    const forAssigned = await resolveAssignedAgentNames(ctx.projectId, ASSIGNED, []);
+    const forAssigned = await resolveAssignedAgentNames(ctx.workspaceId, ASSIGNED, []);
     expect(forAssigned.has(AGENT)).toBe(true);
     expect(forAssigned.has(FREE_AGENT)).toBe(false);
     // OTHER is in DEPT, which is assigned to FREE_AGENT (from the prior test).
-    const forOther = await resolveAssignedAgentNames(ctx.projectId, OTHER, [DEPT]);
+    const forOther = await resolveAssignedAgentNames(ctx.workspaceId, OTHER, [DEPT]);
     expect(forOther.has(FREE_AGENT)).toBe(true);
     expect(forOther.has(AGENT)).toBe(false);
     // A stranger with no grants and no depts is assigned to nothing.
-    expect((await resolveAssignedAgentNames(ctx.projectId, crypto.randomUUID(), [])).size).toBe(0);
+    expect((await resolveAssignedAgentNames(ctx.workspaceId, crypto.randomUUID(), [])).size).toBe(0);
   });
 });
 

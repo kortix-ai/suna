@@ -2,7 +2,7 @@
  * When may an account-state query run?
  *
  * Account state is cached per accountId, so a surface that learns its account
- * late (the project shell, which reads it off `project-detail`) walks two
+ * late (the workspace shell, which reads it off `project-detail`) walks two
  * different cache slots: first the provisional "primary account" slot, then
  * the real one. Each slot starts empty, so every consumer that renders on
  * presence of data — the sidebar's Upgrade Plan button, the balance warning —

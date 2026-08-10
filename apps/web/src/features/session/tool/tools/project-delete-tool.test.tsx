@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ToolPart } from '@/ui';
 
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
-import { ProjectDeleteTool } from './project-delete-tool';
+import { WorkspaceDeleteTool } from './project-delete-tool';
 
 // Task 7: project-delete-tool.tsx bypassed BasicTool entirely (a hand-rolled
 // `<div>` row, discovered on arrival per the Tasks 6-8 grading protocol —
@@ -45,10 +45,10 @@ function makePart(input: Record<string, unknown>): ToolPart {
   } as unknown as ToolPart;
 }
 
-describe('ProjectDeleteTool joins the shared BasicTool shell', () => {
+describe('WorkspaceDeleteTool joins the shared BasicTool shell', () => {
   test('inline surface: renders through the standard row, no bespoke div chrome, message preserved', () => {
     const html = renderToStaticMarkup(
-      withProviders(<ProjectDeleteTool part={makePart({ project: 'kortix-web' })} />),
+      withProviders(<WorkspaceDeleteTool part={makePart({ workspace: 'kortix-web' })} />),
     );
 
     expect(html).toContain('Workspace delete disabled');
@@ -60,7 +60,7 @@ describe('ProjectDeleteTool joins the shared BasicTool shell', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <ProjectDeleteTool part={makePart({})} />
+          <WorkspaceDeleteTool part={makePart({})} />
         </ToolSurfaceContext.Provider>,
       ),
     );

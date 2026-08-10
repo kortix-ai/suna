@@ -1,6 +1,6 @@
 'use client';
 
-import { ScheduleView } from '@/components/projects/schedule-view';
+import { ScheduleView } from '@/components/workspaces/schedule-view';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
@@ -20,12 +20,12 @@ import { SettingsView } from '@/features/workspace/customize/sections/view/setti
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
-import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib/project-actions';
-import { useProjectCans } from '@/lib/use-project-can';
+import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib/workspace-actions';
+import { useWorkspaceCans } from '@/lib/use-workspace-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { getProjectDetail } from '@kortix/sdk';
+import { getWorkspaceDetail } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
@@ -33,12 +33,12 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
-import { RelatedProjectsSwitcher } from './related-projects-switcher';
+import { RelatedWorkspacesSwitcher } from './related-workspaces-switcher';
 import { LlmManagementView } from './sections/gateway-view';
 import { ReviewView } from './sections/view/review-view';
 import type { RailItem } from './type';
 
-export function CustomizPanel({ projectId }: { projectId: string }) {
+export function CustomizPanel({ workspaceId }: { workspaceId: string }) {
   const open = useCustomizeStore((s) => s.open);
   const section = useCustomizeStore((s) => s.section);
   const setSection = useCustomizeStore((s) => s.setSection);
@@ -46,21 +46,21 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
 
   const detail = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    enabled: open && !!projectId,
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
+    enabled: open && !!workspaceId,
     ...contract('config'),
   });
-  const projectName = detail.data?.project?.name ?? '';
+  const workspaceName = detail.data?.workspace?.name ?? '';
 
   // IAM visibility gating. One batched probe over every section's read leaf — a
-  // custom role that OMITS a leaf (e.g. project.gitops.read) makes that section
+  // custom role that OMITS a leaf (e.g. workspace.gitops.read) makes that section
   // disappear from the rail and blocks its content. NOT a security boundary (the
   // API re-checks every mutation); this only decides what to show. Feed the
-  // accountId we ALREADY hold from the project-detail query so the probe runs on
-  // first render rather than being disabled while a separate getProject resolves.
-  const caps = useProjectCans(open ? projectId : undefined, CUSTOMIZE_SECTION_GATE_ACTIONS, {
-    accountId: detail.data?.project?.account_id,
+  // accountId we ALREADY hold from the workspace-detail query so the probe runs on
+  // first render rather than being disabled while a separate getWorkspace resolves.
+  const caps = useWorkspaceCans(open ? workspaceId : undefined, CUSTOMIZE_SECTION_GATE_ACTIONS, {
+    accountId: detail.data?.workspace?.account_id,
   });
   // Treat BOTH "loading" and "errored" as not-yet-resolved — this is a VISIBILITY
   // layer, not a security boundary, so we fail OPEN (render the full rail) rather
@@ -76,7 +76,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // that can read a section SEES it (read-only unless it also holds the write
   // leaf; edit controls inside each view gate on can_manage separately). A role
   // that omits a read leaf hides just that section. (Files lives on its own
-  // /projects/[id]/files page, not in here.) Until the probe resolves (or if it
+  // /workspaces/[id]/files page, not in here.) Until the probe resolves (or if it
   // errored) we permit everything (optimistic) — visibility, not security.
   const isSectionAllowed = useCallback(
     (s: CustomizeSection) => {
@@ -87,15 +87,15 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   );
 
   // One gating primitive for every flag-gated rail item: `useFeatureFlag` reads
-  // the SAME `qk.project.detail(projectId)` entry the `detail` query above
+  // the SAME `qk.workspace.detail(workspaceId)` entry the `detail` query above
   // already holds, so this adds no fetch. Fail-closed while it resolves.
-  const tunnelEnabled = useFeatureFlag(projectId, 'agent_tunnel').enabled;
-  const marketplaceEnabled = useFeatureFlag(projectId, 'marketplace').enabled;
-  const llmGatewayEnabled = useFeatureFlag(projectId, 'llm_gateway').enabled;
-  const voiceEnabled = useFeatureFlag(projectId, 'voice').enabled;
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
+  const tunnelEnabled = useFeatureFlag(workspaceId, 'agent_tunnel').enabled;
+  const marketplaceEnabled = useFeatureFlag(workspaceId, 'marketplace').enabled;
+  const llmGatewayEnabled = useFeatureFlag(workspaceId, 'llm_gateway').enabled;
+  const voiceEnabled = useFeatureFlag(workspaceId, 'voice').enabled;
+  const reviewEnabled = useFeatureFlag(workspaceId, 'review_center').enabled;
   // Pin Upgrades to the top only once the manifest read resolved to v1 —
-  // while the detail query is in flight (or on v2 projects) the item sits in
+  // while the detail query is in flight (or on v2 workspaces) the item sits in
   // its calm Manage slot instead. Same detection the section rows use.
   const upgradeAttention = detail.data
     ? detectManifestVersion(detail.data.config.manifest_raw) === 1
@@ -104,7 +104,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // "Needs you" count for the Review rail badge — the SAME shared inbox summary the
   // sidebar "Review" pill and the per-session row dots read (one query key, one
   // derivation), so the badge, the pill, and the dots can never drift apart.
-  const reviewNeedsYou = useReviewSessionSummary(projectId, {
+  const reviewNeedsYou = useReviewSessionSummary(workspaceId, {
     enabled: open && reviewEnabled,
   }).totalNeedsYou;
 
@@ -176,7 +176,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
           'inset-0 top-0 left-0 h-dvh min-h-dvh w-screen max-w-none translate-x-0 translate-y-0 space-y-0 rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none md:rounded-none lg:top-0 lg:left-0 lg:h-dvh lg:min-h-dvh lg:max-w-none lg:translate-x-0 lg:translate-y-0 lg:rounded-none',
         )}
       >
-        <ModalTitle className="sr-only">Customize {projectName || 'project'}</ModalTitle>
+        <ModalTitle className="sr-only">Customize {workspaceName || 'workspace'}</ModalTitle>
 
         {/* Desktop shell: this modal is `inset-0`, so its first row starts at
             the window's top-left — under the macOS traffic lights, and under
@@ -250,8 +250,8 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                 </ModalClose>
               </div>
 
-              {detail.data?.project ? (
-                <RelatedProjectsSwitcher project={detail.data.project} />
+              {detail.data?.workspace ? (
+                <RelatedWorkspacesSwitcher workspace={detail.data.workspace} />
               ) : null}
 
               <nav
@@ -302,7 +302,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
               <div className="flex min-h-0 flex-1 flex-col">
                 <SectionContent
                   section={section}
-                  projectId={projectId}
+                  workspaceId={workspaceId}
                   llmGatewayEnabled={llmGatewayEnabled}
                 />
               </div>
@@ -373,59 +373,59 @@ function RailButton({
 
 function SectionContent({
   section,
-  projectId,
+  workspaceId,
   llmGatewayEnabled,
 }: {
   section: CustomizeSection;
-  projectId: string;
+  workspaceId: string;
   llmGatewayEnabled: boolean;
 }) {
   // Deep-link guard only. The rail item itself now requires the flag to be
   // ENABLED (see `RailFlags.llmGatewayEnabled`), so the rail can no longer
   // offer an entry that lands here — this only catches a bookmarked
-  // `/customize/llm-*` URL on a project that has the gateway switched off.
+  // `/customize/llm-*` URL on a workspace that has the gateway switched off.
   if (section.startsWith('llm-') && !llmGatewayEnabled) {
     return null;
   }
 
   if (section.startsWith('llm-')) {
-    return <LlmManagementView projectId={projectId} />;
+    return <LlmManagementView workspaceId={workspaceId} />;
   }
 
   switch (section) {
-    // No `agents` case: Agents graduated to /projects/<id>/agent. A stale
+    // No `agents` case: Agents graduated to /workspaces/<id>/agent. A stale
     // `/customize/agents` deep link redirects there (see
     // `legacyCustomizeRedirect`) rather than opening the overlay.
     case 'commands':
-      return <CommandsView projectId={projectId} />;
+      return <CommandsView workspaceId={workspaceId} />;
     case 'marketplace':
-      return <MarketplaceView projectId={projectId} />;
+      return <MarketplaceView workspaceId={workspaceId} />;
     case 'secrets':
-      return <SecretsView projectId={projectId} />;
+      return <SecretsView workspaceId={workspaceId} />;
     case 'channels':
-      return <ChannelsView projectId={projectId} />;
+      return <ChannelsView workspaceId={workspaceId} />;
     case 'voice':
-      return <VoiceView projectId={projectId} />;
+      return <VoiceView workspaceId={workspaceId} />;
     case 'computers':
-      return <ComputersView projectId={projectId} />;
+      return <ComputersView workspaceId={workspaceId} />;
     case 'schedules':
-      return <ScheduleView projectId={projectId} type="cron" />;
+      return <ScheduleView workspaceId={workspaceId} type="cron" />;
     case 'webhooks':
-      return <ScheduleView projectId={projectId} type="webhook" />;
+      return <ScheduleView workspaceId={workspaceId} type="webhook" />;
     case 'git':
-      return <GitView projectId={projectId} />;
+      return <GitView workspaceId={workspaceId} />;
     case 'review':
-      return <ReviewView projectId={projectId} />;
+      return <ReviewView workspaceId={workspaceId} />;
     case 'sandbox':
-      return <SandboxView projectId={projectId} />;
+      return <SandboxView workspaceId={workspaceId} />;
     case 'members':
-      return <MembersView projectId={projectId} />;
+      return <MembersView workspaceId={workspaceId} />;
     case 'settings':
-      return <SettingsView projectId={projectId} />;
+      return <SettingsView workspaceId={workspaceId} />;
     case 'feature-flags':
-      return <FeatureFlagsView projectId={projectId} />;
+      return <FeatureFlagsView workspaceId={workspaceId} />;
     case 'upgrade':
-      return <UpgradesView projectId={projectId} />;
+      return <UpgradesView workspaceId={workspaceId} />;
     default:
       return null;
   }

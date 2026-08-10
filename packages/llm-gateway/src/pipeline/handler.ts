@@ -153,7 +153,7 @@ function idOf(principal: AuthedPrincipal) {
   return {
     accountId: principal.accountId,
     actorUserId: principal.userId,
-    projectId: principal.projectId,
+    workspaceId: principal.workspaceId,
     sessionId: principal.sessionId,
     keyId: principal.keyId,
   };
@@ -272,7 +272,7 @@ export async function handleChatCompletions(
       cacheWriteTokens: 0,
       accountId: target.accountId,
       actorUserId: target.userId,
-      projectId: target.projectId,
+      workspaceId: target.workspaceId,
       sessionId: target.sessionId,
       provider: '',
       model: 'unknown',
@@ -331,7 +331,7 @@ export async function handleChatCompletions(
   step('authenticated', {
     ms: lap(),
     accountId: principal.accountId,
-    projectId: principal.projectId,
+    workspaceId: principal.workspaceId,
     userId: principal.userId,
     keyId: principal.keyId,
   });
@@ -944,7 +944,7 @@ export async function handleChatCompletions(
         ...counts,
         accountId: principal.accountId,
         actorUserId: principal.userId,
-        projectId: principal.projectId,
+        workspaceId: principal.workspaceId,
         sessionId: principal.sessionId,
         provider: finalDescriptor.provider,
         model: usedModel,

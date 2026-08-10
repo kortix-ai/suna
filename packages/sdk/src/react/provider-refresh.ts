@@ -2,13 +2,15 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 
-import { listProjectSecrets } from '../core/rest/projects-client';
+import { listWorkspaceSecrets } from '../core/rest/workspaces-client';
 import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
 import { configKeys } from './use-opencode-config';
-import { clearProjectProviderCache, opencodeKeys } from './use-opencode-sessions';
+import { clearWorkspaceProviderCache, opencodeKeys } from './use-opencode-sessions';
 import { qk } from './query-keys';
 
-type RefreshProjectProviderStateOptions = {
+type RefreshWorkspaceProviderStateOptions = {
+  removeWorkspaceScopedCache?: boolean;
+  /** @deprecated Use `removeWorkspaceScopedCache`. */
   removeProjectScopedCache?: boolean;
   /**
    * Provider id (e.g. 'anthropic', 'codex') whose credential was just saved.
@@ -44,27 +46,27 @@ export function providerConnectedInSecrets(
   return connectedGatewayProviderIdsFromSecretNames(names).has(expectedProviderId);
 }
 
-function invalidateProviderQueries(queryClient: QueryClient, projectId: string): void {
-  const projectProviderKey = ['project-providers', projectId];
-  clearProjectProviderCache(projectId);
-  void queryClient.invalidateQueries({ queryKey: projectProviderKey });
-  void queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-  void queryClient.refetchQueries({ queryKey: qk.project.secrets(projectId), type: 'all' });
-  void queryClient.refetchQueries({ queryKey: projectProviderKey, type: 'all' });
+function invalidateProviderQueries(queryClient: QueryClient, workspaceId: string): void {
+  const workspaceProviderKey = ['workspace-providers', workspaceId];
+  clearWorkspaceProviderCache(workspaceId);
+  void queryClient.invalidateQueries({ queryKey: workspaceProviderKey });
+  void queryClient.invalidateQueries({ queryKey: qk.workspace.secrets(workspaceId) });
+  void queryClient.refetchQueries({ queryKey: qk.workspace.secrets(workspaceId), type: 'all' });
+  void queryClient.refetchQueries({ queryKey: workspaceProviderKey, type: 'all' });
   void queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
   void queryClient.invalidateQueries({ queryKey: configKeys.all });
 }
 
-export function refreshProjectProviderState(
+export function refreshWorkspaceProviderState(
   queryClient: QueryClient,
-  projectId: string,
-  opts: RefreshProjectProviderStateOptions = {},
+  workspaceId: string,
+  opts: RefreshWorkspaceProviderStateOptions = {},
 ): void {
-  const projectProviderKey = ['project-providers', projectId];
-  if (opts.removeProjectScopedCache) {
-    queryClient.removeQueries({ queryKey: projectProviderKey });
+  const workspaceProviderKey = ['workspace-providers', workspaceId];
+  if (opts.removeWorkspaceScopedCache ?? opts.removeProjectScopedCache) {
+    queryClient.removeQueries({ queryKey: workspaceProviderKey });
   }
-  invalidateProviderQueries(queryClient, projectId);
+  invalidateProviderQueries(queryClient, workspaceId);
 
   if (typeof window === 'undefined') return;
 
@@ -79,7 +81,7 @@ export function refreshProjectProviderState(
   const expected = opts.expectProviderId;
   if (!expected) {
     for (const delay of [500, 1500, 3000, 6000]) {
-      window.setTimeout(() => invalidateProviderQueries(queryClient, projectId), delay);
+      window.setTimeout(() => invalidateProviderQueries(queryClient, workspaceId), delay);
     }
     return;
   }
@@ -92,13 +94,13 @@ export function refreshProjectProviderState(
       // pre-migration this was a standalone flat `project-secrets` array
       // literal, so every poll's `fetchQuery` populated a cache entry no
       // `useQuery` observer ever read: a real network request whose result
-      // no UI ever saw. Sharing `qk.project.secrets(id)` means the poll's
+      // no UI ever saw. Sharing `qk.workspace.secrets(id)` means the poll's
       // fresh (`staleTime: 0`) fetch is the SAME entry the secrets UI
       // renders from, so the picker/secrets list update from this poll
       // too, not only from the `refetchQueries` burst below.
       const secrets = await queryClient.fetchQuery({
-        queryKey: qk.project.secrets(projectId),
-        queryFn: () => listProjectSecrets(projectId),
+        queryKey: qk.workspace.secrets(workspaceId),
+        queryFn: () => listWorkspaceSecrets(workspaceId),
         staleTime: 0,
       });
       connected = providerConnectedInSecrets(secrets, expected);
@@ -106,7 +108,7 @@ export function refreshProjectProviderState(
       // transient fetch failure — keep polling until the deadline
     }
     if (connected) {
-      invalidateProviderQueries(queryClient, projectId);
+      invalidateProviderQueries(queryClient, workspaceId);
       return;
     }
     if (Date.now() - startedAt >= CONVERGE_DEADLINE_MS) return;
@@ -114,3 +116,6 @@ export function refreshProjectProviderState(
   };
   window.setTimeout(() => void poll(), CONVERGE_POLL_MS);
 }
+
+/** @deprecated Use `refreshWorkspaceProviderState`. */
+export const refreshProjectProviderState = refreshWorkspaceProviderState;

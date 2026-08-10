@@ -48,7 +48,7 @@ function write(repo: string, rel: string, body: string) {
 }
 
 function cfg(): Config {
-  // Only the fields this function reads. `apiUrl`/`projectId`/`sandboxToken` are
+  // Only the fields this function reads. `apiUrl`/`workspaceId`/`sandboxToken` are
   // deliberately absent so `resolveCloneCredential` short-circuits and no
   // control-plane call is attempted.
   return { projectTarget: work, defaultBranch: 'main', repoUrl: origin } as unknown as Config

@@ -21,7 +21,7 @@
  *     own policies + agentGrant).
  *
  * Cache: a project+type keyed memo (~15s TTL) holds the grant map; mutations
- * bust it synchronously on the writing replica (invalidateIamCacheForProject-
+ * bust it synchronously on the writing replica (invalidateIamCacheForWorkspace-
  * Resources), with the same <=TTL cross-replica lag the rest of the IAM cache
  * already accepts. The empty (unscoped) map IS cached — that's the common,
  * hot-path case — and every mutation busts it.
@@ -46,8 +46,8 @@ import { iamResourceGrants } from '@kortix/db';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import {
-  invalidateIamCacheForProjectResources,
-  registerProjectScopedMemo,
+  invalidateIamCacheForWorkspaceResources,
+  registerWorkspaceScopedMemo,
 } from './cache-invalidation';
 
 /** The resource kinds that support per-resource scoping today. `skill` and
@@ -128,14 +128,14 @@ export function isResourceExplicitlyGranted(
   return false;
 }
 
-export async function isProjectResourceExplicitlyGranted(
-  projectId: string,
+export async function isWorkspaceResourceExplicitlyGranted(
+  workspaceId: string,
   resourceType: ResourceType,
   resourceId: string,
   userId: string,
   groupIds: readonly string[],
 ): Promise<boolean> {
-  const map = await loadProjectResourceGrants(projectId, resourceType);
+  const map = await loadWorkspaceResourceGrants(workspaceId, resourceType);
   return isResourceExplicitlyGranted(map.get(resourceId), userId, groupIds);
 }
 
@@ -144,10 +144,10 @@ export async function isProjectResourceExplicitlyGranted(
  * Memoized; the empty map is cached too (the common unscoped case) and busted on
  * mutation. Registered as a project-scoped memo so a grant change drops it.
  */
-const loadProjectResourceGrants = ttlMemo({
+const loadWorkspaceResourceGrants = ttlMemo({
   ttlMs: TTL_MS,
-  keyFn: (projectId: string, resourceType: string) => `${projectId}|${resourceType}`,
-  loader: async (projectId: string, resourceType: string) => {
+  keyFn: (workspaceId: string, resourceType: string) => `${workspaceId}|${resourceType}`,
+  loader: async (workspaceId: string, resourceType: string) => {
     const rows = await db
       .select({
         resourceId: iamResourceGrants.resourceId,
@@ -157,7 +157,7 @@ const loadProjectResourceGrants = ttlMemo({
       .from(iamResourceGrants)
       .where(
         and(
-          eq(iamResourceGrants.projectId, projectId),
+          eq(iamResourceGrants.workspaceId, workspaceId),
           eq(iamResourceGrants.resourceType, resourceType),
           eq(iamResourceGrants.effect, 'allow'),
           or(isNull(iamResourceGrants.expiresAt), gt(iamResourceGrants.expiresAt, sql`now()`)),
@@ -177,9 +177,9 @@ const loadProjectResourceGrants = ttlMemo({
   },
   shouldCache: () => true,
 });
-registerProjectScopedMemo(loadProjectResourceGrants);
+registerWorkspaceScopedMemo(loadWorkspaceResourceGrants);
 
-export { loadProjectResourceGrants };
+export { loadWorkspaceResourceGrants };
 
 /**
  * Cheap memoized gate: does this project scope ANY agent or skill? Lets read
@@ -187,10 +187,10 @@ export { loadProjectResourceGrants };
  * config load it needs — in the common case where nothing is scoped. Two memo
  * hits, no DB round-trip on the hot path once warm.
  */
-export async function hasAnyResourceGrants(projectId: string): Promise<boolean> {
+export async function hasAnyResourceGrants(workspaceId: string): Promise<boolean> {
   const [agents, skills] = await Promise.all([
-    loadProjectResourceGrants(projectId, 'agent'),
-    loadProjectResourceGrants(projectId, 'skill'),
+    loadWorkspaceResourceGrants(workspaceId, 'agent'),
+    loadWorkspaceResourceGrants(workspaceId, 'skill'),
   ]);
   return agents.size > 0 || skills.size > 0;
 }
@@ -201,23 +201,23 @@ export async function hasAnyResourceGrants(projectId: string): Promise<boolean> 
  * project-wide agents/skills, never a scoped one's name.
  */
 export async function unscopedResourceIds(
-  projectId: string,
+  workspaceId: string,
   resourceType: ResourceType,
   resourceIds: readonly string[],
 ): Promise<string[]> {
-  const map = await loadProjectResourceGrants(projectId, resourceType);
+  const map = await loadWorkspaceResourceGrants(workspaceId, resourceType);
   return resourceIds.filter((id) => !map.has(id));
 }
 
 /** Engine entry point: is (project, type, resourceId) accessible to this member? */
-export async function isProjectResourceAccessible(
-  projectId: string,
+export async function isWorkspaceResourceAccessible(
+  workspaceId: string,
   resourceType: ResourceType,
   resourceId: string,
   userId: string,
   groupIds: readonly string[],
 ): Promise<boolean> {
-  const map = await loadProjectResourceGrants(projectId, resourceType);
+  const map = await loadWorkspaceResourceGrants(workspaceId, resourceType);
   return isResourceAccessible(map.get(resourceId), userId, groupIds);
 }
 
@@ -227,13 +227,13 @@ export async function isProjectResourceAccessible(
  * the input order. One memo hit for the whole list.
  */
 export async function filterAccessibleResourceIds(
-  projectId: string,
+  workspaceId: string,
   resourceType: ResourceType,
   resourceIds: readonly string[],
   userId: string,
   groupIds: readonly string[],
 ): Promise<string[]> {
-  const map = await loadProjectResourceGrants(projectId, resourceType);
+  const map = await loadWorkspaceResourceGrants(workspaceId, resourceType);
   return resourceIds.filter((id) => isResourceAccessible(map.get(id), userId, groupIds));
 }
 
@@ -251,7 +251,7 @@ interface ResourceGrantRow {
 }
 
 /** Every grant for a project (for the Members UI). */
-export async function listResourceGrants(projectId: string): Promise<ResourceGrantRow[]> {
+export async function listResourceGrants(workspaceId: string): Promise<ResourceGrantRow[]> {
   return db
     .select({
       grantId: iamResourceGrants.grantId,
@@ -264,13 +264,13 @@ export async function listResourceGrants(projectId: string): Promise<ResourceGra
       createdAt: iamResourceGrants.createdAt,
     })
     .from(iamResourceGrants)
-    .where(eq(iamResourceGrants.projectId, projectId));
+    .where(eq(iamResourceGrants.workspaceId, workspaceId));
 }
 
 /** Create or update a grant (idempotent on the unique principal+resource key). */
 export async function upsertResourceGrant(input: {
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   resourceType: ResourceType;
   resourceId: string;
   principalType: PrincipalType;
@@ -284,7 +284,7 @@ export async function upsertResourceGrant(input: {
     .insert(iamResourceGrants)
     .values({
       accountId: input.accountId,
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       resourceType: input.resourceType,
       resourceId: input.resourceId,
       principalType: input.principalType,
@@ -296,7 +296,7 @@ export async function upsertResourceGrant(input: {
     })
     .onConflictDoUpdate({
       target: [
-        iamResourceGrants.projectId,
+        iamResourceGrants.workspaceId,
         iamResourceGrants.resourceType,
         iamResourceGrants.resourceId,
         iamResourceGrants.principalType,
@@ -309,16 +309,16 @@ export async function upsertResourceGrant(input: {
       },
     })
     .returning({ grantId: iamResourceGrants.grantId });
-  invalidateIamCacheForProjectResources(input.projectId);
+  invalidateIamCacheForWorkspaceResources(input.workspaceId);
   return { grantId: row.grantId };
 }
 
 /** Delete a grant by id (scoped to the project so a stray id can't cross over). */
-export async function deleteResourceGrant(grantId: string, projectId: string): Promise<boolean> {
+export async function deleteResourceGrant(grantId: string, workspaceId: string): Promise<boolean> {
   const deleted = await db
     .delete(iamResourceGrants)
-    .where(and(eq(iamResourceGrants.grantId, grantId), eq(iamResourceGrants.projectId, projectId)))
+    .where(and(eq(iamResourceGrants.grantId, grantId), eq(iamResourceGrants.workspaceId, workspaceId)))
     .returning({ grantId: iamResourceGrants.grantId });
-  invalidateIamCacheForProjectResources(projectId);
+  invalidateIamCacheForWorkspaceResources(workspaceId);
   return deleted.length > 0;
 }

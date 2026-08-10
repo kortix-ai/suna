@@ -1,13 +1,13 @@
 'use client';
 
 import { useAuth } from '@/features/providers/auth-provider';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { latestWorkspacePath } from '@/lib/onboarding/last-workspace-cookie';
 
 /**
  * "Take me into the app" — the latest project this user had open, else the
  * landing door that resolves one.
  *
- * Use this from components instead of calling `latestProjectPath` directly.
+ * Use this from components instead of calling `latestWorkspacePath` directly.
  * The raw function takes a user id because the remembered project is scoped to
  * its owner, and threading that through by hand meant call sites without a
  * convenient `user` passed `null` — technically safe (it degrades to the door)
@@ -16,9 +16,9 @@ import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
  * choice: every component gets the correct answer with no argument to get
  * wrong.
  *
- * Not for post-account-switch navigation — see `latestProjectPath`.
+ * Not for post-account-switch navigation — see `latestWorkspacePath`.
  */
 export function useAppHome(): string {
   const { user } = useAuth();
-  return latestProjectPath(user?.id);
+  return latestWorkspacePath(user?.id);
 }

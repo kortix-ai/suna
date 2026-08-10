@@ -37,7 +37,7 @@ describe('starting a session with overrides', () => {
   let mock: MockUpstream;
   let app: AppInstance;
   let token: string;
-  let projectId: string;
+  let workspaceId: string;
 
   beforeAll(async () => {
     resetUsersStore();
@@ -47,8 +47,8 @@ describe('starting a session with overrides', () => {
     const project = await createTestKortix(app, token).projects.provision({
       name: 'Overrides',
     });
-    projectId = project.project_id;
-    mock.seedConnections(projectId, [
+    workspaceId = project.project_id;
+    mock.seedConnections(workspaceId, [
       connection({
         connection_id: 'slack_team',
         connector_alias: 'slack',
@@ -73,7 +73,7 @@ describe('starting a session with overrides', () => {
 
   async function connectorChoices(): Promise<ConnectorBindingChoice[]> {
     const res = await fetch(
-      `${app.baseUrl}/api/connections?projectId=${encodeURIComponent(projectId)}`,
+      `${app.baseUrl}/api/connections?workspaceId=${encodeURIComponent(workspaceId)}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(res.status).toBe(200);
@@ -84,7 +84,7 @@ describe('starting a session with overrides', () => {
   async function lastSessionCreate() {
     const create = mock.requests.filter(
       (r) =>
-        r.method === 'POST' && r.path === `/v1/projects/${projectId}/sessions`,
+        r.method === 'POST' && r.path === `/v1/projects/${workspaceId}/sessions`,
     );
     expect(create.length).toBe(1);
     return create[0]!.body as Record<string, unknown>;
@@ -94,7 +94,7 @@ describe('starting a session with overrides', () => {
     mock.reset();
     const kortix = createTestKortix(app, token);
     await kortix
-      .project(projectId)
+      .project(workspaceId)
       .sessions.create(
         buildSessionCreateInput(
           { ...NO_OVERRIDES, secrets: ['STRIPE_KEY'] },
@@ -111,7 +111,7 @@ describe('starting a session with overrides', () => {
     mock.reset();
     const kortix = createTestKortix(app, token);
     await kortix
-      .project(projectId)
+      .project(workspaceId)
       .sessions.create(
         buildSessionCreateInput(
           { ...NO_OVERRIDES, bindings: { slack: 'slack_team' } },
@@ -129,7 +129,7 @@ describe('starting a session with overrides', () => {
   test('an untouched dialog adds nothing to the create the wrapper already sent', async () => {
     mock.reset();
     const kortix = createTestKortix(app, token);
-    await kortix.project(projectId).sessions.create(
+    await kortix.project(workspaceId).sessions.create(
       buildSessionCreateInput(NO_OVERRIDES, {
         sessionId: '00000000-0000-4000-8000-00000000a003',
       }),
@@ -142,7 +142,7 @@ describe('starting a session with overrides', () => {
 
   test('the mock returns the session collection shape used by the project page', async () => {
     const sessions = await createTestKortix(app, token)
-      .project(projectId)
+      .project(workspaceId)
       .sessions.list();
 
     expect(sessions).toEqual([]);

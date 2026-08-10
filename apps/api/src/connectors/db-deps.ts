@@ -4,13 +4,15 @@ import {
   connectorPolicies,
   connectors,
   connectorCalls,
-  connectorProjectPolicies,
-  connectorProjectSettings,
+  connectorWorkspacePolicies,
+  connectorWorkspaceSettings,
   projectSecrets,
+  projectSessionConnectorBindings,
   projectSessions,
   projects,
+  tunnelConnections,
 } from '@kortix/db';
-import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
+import { sanitizeConnectorHeaders, SLUG_RE } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 /**
  * Production wiring for the connector router — DB-backed ConnectorRouterDeps +
@@ -23,15 +25,15 @@ import { HTTPException } from 'hono/http-exception';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
 import {
   loadAgentMailApiKeyForInbox,
-  loadAgentMailApiKeyForProject,
+  loadAgentMailApiKeyForWorkspace,
   loadAgentMailInstall,
   loadSlackInstall,
-  loadSlackTokenForProject,
+  loadSlackTokenForWorkspace,
   loadTeamsBotCredentials,
   loadTeamsInstall,
-  loadTeamsTenantForProject,
+  loadTeamsTenantForWorkspace,
 } from '../channels/install-store';
-import { resolveProjectBotName } from '../channels/voice-identity';
+import { resolveWorkspaceBotName } from '../channels/voice-identity';
 import { joinPageUrl } from '../channels/voice/livekit';
 import { mintJoinLink } from '../channels/voice/join-links';
 import { approvalPageUrl } from '../setup-links/token';
@@ -39,24 +41,26 @@ import { endCall, isCallLive, promptVoiceAgent, startCall } from '../channels/vo
 import { readTranscriptForAgent } from '../channels/voice/transcript-read';
 import { kortixSay } from '../channels/voice/utterance';
 import { config } from '../config';
-import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
-import { authorize, PROJECT_ACTIONS } from '../iam';
+import { workspaceFeatureFlagEnabled } from '../feature-flags/for-workspace';
+import { authorize, WORKSPACE_ACTIONS } from '../iam';
 import { agentMayUseConnector } from '../iam/agent-scope';
-import type { ChannelPlatform } from '../projects/connectors';
-import { invalidateProjectMirror } from '../projects/git';
-import { loadProjectForUser } from '../projects/lib/access';
-import { connectorAuthorizationMatchesStrategy } from '../projects/lib/connector-authorization-strategy';
-import { reconcileStoredSessionAgentGrant } from '../projects/lib/session-token-grant';
-import { getProjectSecretValueForConsumer } from '../projects/secrets';
+import type { ChannelPlatform } from '../workspaces/connectors';
+import { invalidateWorkspaceMirror } from '../workspaces/git';
+import { loadWorkspaceForUser } from '../workspaces/lib/access';
+import { connectorAuthorizationMatchesStrategy } from '../workspaces/lib/connector-authorization-strategy';
+import { reconcileStoredSessionAgentGrant } from '../workspaces/lib/session-token-grant';
+import { getWorkspaceSecretValueForConsumer } from '../workspaces/secrets';
 import {
   canonicalConnectorAlias,
   publicConnectorAlias,
   resolveSessionConnectorConnection,
-} from '../projects/lib/session-connector-bindings';
+} from '../workspaces/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { connectorAttachmentStore } from './attachments';
+import { computerProfileSpec } from './computer-materialize';
+import { COMPUTER_SLUG, computerLabel } from './computers';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
 import { validateConnectorSecretBinding } from './connector-secret-binding';
@@ -75,14 +79,14 @@ import {
   deleteConnectorFromManifest,
   getConnectorConfigFromManifest,
   getConnectorPoliciesFromManifest,
-  getProjectPoliciesFromManifest,
+  getWorkspacePoliciesFromManifest,
   setConnectorCredentialModeInManifest,
   setConnectorAuthorizationStrategyInManifest,
   setConnectorCredentialShared,
   setConnectorNameInManifest,
   setConnectorPoliciesInManifest,
   setConnectorSensitiveInManifest,
-  setProjectPoliciesInManifest,
+  setWorkspacePoliciesInManifest,
   upsertConnectorInManifest,
 } from './manifest-crud';
 import { graphToken } from '../channels/teams-auth';
@@ -101,6 +105,7 @@ import {
   type EffectiveResolveResult,
   type Policy,
   type PolicyAction,
+  isValidMatcher,
   parseStoredConditions,
   resolveEffectiveAction,
   selectPoliciesForRead,
@@ -113,17 +118,70 @@ import type {
 } from './router';
 import { resolveShareSubject } from './share';
 import { getConnectorCatalogDetail, listConnectorCatalog } from './connector-catalog';
-import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
+import {
+  discoverDraftConnectorAuth,
+  materializeComputerConnectorProfile,
+  setMaterializedComputerConnectorPolicies,
+  syncWorkspaceConnectors,
+} from './sync';
 import type { ActionBinding, Risk } from './types';
 
 /** Which policy scope decided an action — surfaced so the editor can say so. */
 type EffectiveSource = EffectiveResolveResult['source'];
 
-const DEFAULT_AUTH: ConnectorAuth = { type: 'none', in: 'header', name: null, prefix: null };
+const DEFAULT_AUTH: ConnectorAuth = {
+  type: 'none',
+  in: 'header',
+  name: null,
+  prefix: null,
+};
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isUuid(value: string): boolean {
   return UUID_REGEX.test(value);
+}
+
+function computerTunnelIds(configValue: unknown, slug: string): string[] | null {
+  const config = (configValue ?? {}) as Record<string, unknown>;
+  if (Array.isArray(config.tunnel_ids)) {
+    return [
+      ...new Set(config.tunnel_ids.filter((value): value is string => typeof value === 'string')),
+    ];
+  }
+  if (typeof config.tunnel_id === 'string') return [config.tunnel_id];
+  // Compatibility for durable sessions bound to the original aggregate row.
+  return slug === COMPUTER_SLUG ? null : [];
+}
+
+function isLegacyComputerAggregate(row: {
+  providerType: string;
+  slug: string;
+  config: unknown;
+}): boolean {
+  if (row.providerType !== 'computer' || row.slug !== COMPUTER_SLUG) return false;
+  const config = (row.config ?? {}) as Record<string, unknown>;
+  return !Array.isArray(config.tunnel_ids) && typeof config.tunnel_id !== 'string';
+}
+
+async function principalHasLegacyComputerBinding(
+  principal: ConnectorPrincipal,
+  connectorId: string,
+): Promise<boolean> {
+  if (!principal.sessionId) return false;
+  const [binding] = await db
+    .select({ connectorId: projectSessionConnectorBindings.connectorId })
+    .from(projectSessionConnectorBindings)
+    .where(
+      and(
+        eq(projectSessionConnectorBindings.accountId, principal.accountId),
+        eq(projectSessionConnectorBindings.workspaceId, principal.workspaceId),
+        eq(projectSessionConnectorBindings.sessionId, principal.sessionId),
+        eq(projectSessionConnectorBindings.connectorAlias, COMPUTER_SLUG),
+        eq(projectSessionConnectorBindings.connectorId, connectorId),
+      ),
+    )
+    .limit(1);
+  return binding !== undefined;
 }
 
 /** How long an unconsumed human approve stays claimable by a fresh call. Long
@@ -197,7 +255,7 @@ export async function consumeApprovedExecution(input: {
 /** Bind a legacy retry identifier to the exact unresolved request it names. */
 export async function isPendingApprovalExecution(input: {
   executionId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string | null;
   actingUserId: string;
   connectorId: string;
@@ -210,7 +268,7 @@ export async function isPendingApprovalExecution(input: {
     .where(
       and(
         eq(connectorCalls.executionId, input.executionId),
-        eq(connectorCalls.projectId, input.projectId),
+        eq(connectorCalls.workspaceId, input.workspaceId),
         input.sessionId
           ? eq(connectorCalls.sessionId, input.sessionId)
           : isNull(connectorCalls.sessionId),
@@ -284,32 +342,32 @@ function channelPlatform(config: ConnectorRow['config'] | null): string | null {
 }
 
 async function channelToken(
-  projectId: string,
+  workspaceId: string,
   platform: string | null,
   slug?: string | null,
 ): Promise<string | null> {
-  if (platform === 'slack') return loadSlackTokenForProject(projectId);
+  if (platform === 'slack') return loadSlackTokenForWorkspace(workspaceId);
   if (platform === 'teams') {
-    const tenant = await loadTeamsTenantForProject(projectId);
+    const tenant = await loadTeamsTenantForWorkspace(workspaceId);
     if (!tenant) return null;
-    const creds = await loadTeamsBotCredentials(projectId);
+    const creds = await loadTeamsBotCredentials(workspaceId);
     return graphToken(tenant, creds).catch(() => null);
   }
   if (platform === 'email')
-    return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+    return resolveAgentMailApiKey(await loadAgentMailApiKeyForWorkspace(workspaceId, slug));
   return null;
 }
 
 /** Cheap "is it connected?" — the install exists (no decrypt). */
 async function channelInstalled(
-  projectId: string,
+  workspaceId: string,
   platform: string | null,
   slug?: string | null,
 ): Promise<boolean> {
-  if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
-  if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
+  if (platform === 'slack') return (await loadSlackInstall(workspaceId).catch(() => null)) != null;
+  if (platform === 'teams') return (await loadTeamsInstall(workspaceId).catch(() => null)) != null;
   if (platform === 'email')
-    return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
+    return (await loadAgentMailInstall(workspaceId, slug).catch(() => null)) != null;
   return false;
 }
 
@@ -332,11 +390,14 @@ async function connectorConnected(
       typeof connection?.metadata.connector_slug === 'string'
         ? connection.metadata.connector_slug
         : row.slug;
-    if (!(await channelInstalled(row.projectId, channelPlatform(row.config), connectionSlug))) {
+    if (!(await channelInstalled(row.workspaceId, channelPlatform(row.config), connectionSlug))) {
       return false;
     }
-    if (channelPlatform(row.config) === 'email' && typeof connection?.metadata.inbox_id === 'string') {
-      const install = await loadAgentMailInstall(row.projectId, connectionSlug).catch(() => null);
+    if (
+      channelPlatform(row.config) === 'email' &&
+      typeof connection?.metadata.inbox_id === 'string'
+    ) {
+      const install = await loadAgentMailInstall(row.workspaceId, connectionSlug).catch(() => null);
       return install?.inboxId === connection.metadata.inbox_id;
     }
     return true;
@@ -359,6 +420,7 @@ function toGatewayConnector(
   } | null,
 ): GatewayConnector {
   const { auth, hasAuth } = authOf(row);
+  const config = (row.config ?? {}) as Record<string, unknown>;
   return {
     connectorId: row.connectorId,
     authSecret: row.authSecret,
@@ -368,6 +430,8 @@ function toGatewayConnector(
     slug: row.slug,
     provider: row.providerType,
     platform: channelPlatform(row.config),
+    tunnelIds:
+      row.providerType === 'computer' ? computerTunnelIds(row.config, row.slug) : undefined,
     baseUrl: baseUrlOf(row),
     auth,
     headers: headersOf(row),
@@ -390,7 +454,7 @@ function toGatewayConnector(
 async function resolveActiveConnectorConnection(principal: ConnectorPrincipal, row: ConnectorRow) {
   const connection = await resolveSessionConnectorConnection({
     accountId: principal.accountId,
-    projectId: row.projectId,
+    workspaceId: row.workspaceId,
     sessionId: principal.sessionId,
     alias: row.slug,
     actingUserId: principal.userId,
@@ -411,13 +475,19 @@ const nodeFetch: FetchImpl = async (url, init) => {
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
   return {
     attachmentStore: connectorAttachmentStore,
-    loadConnectorBySlug: async (projectId, slug) => {
+    loadConnectorBySlug: async (workspaceId, slug) => {
       const [row] = await db
         .select()
         .from(connectors)
-        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+        .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
         .limit(1);
       if (!row) return null;
+      if (
+        isLegacyComputerAggregate(row) &&
+        !(await principalHasLegacyComputerBinding(principal, row.connectorId))
+      ) {
+        return null;
+      }
       const connection = await resolveActiveConnectorConnection(principal, row);
       if (!connection) return null;
       return toGatewayConnector(row, connection);
@@ -427,10 +497,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         .select()
         .from(connectorActions)
         .where(
-          and(
-            eq(connectorActions.connectorId, connectorId),
-            eq(connectorActions.path, relPath),
-          ),
+          and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
         )
         .limit(1);
       if (!a) return null;
@@ -449,7 +516,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       if (connector.provider === 'channel') {
         const [row] = await db
           .select({
-            projectId: connectors.projectId,
+            workspaceId: connectors.workspaceId,
             slug: connectors.slug,
             config: connectors.config,
           })
@@ -460,7 +527,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           typeof connector.connectionMetadata?.connector_slug === 'string'
             ? connector.connectionMetadata.connector_slug
             : row?.slug;
-        return row ? channelToken(row.projectId, channelPlatform(row.config), connectionSlug) : null;
+        return row
+          ? channelToken(row.workspaceId, channelPlatform(row.config), connectionSlug)
+          : null;
       }
       if (connector.connectionId) {
         const credential = await resolveConnectionCredentialValue({
@@ -476,8 +545,8 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           : null;
       if (storedCredential !== null) return storedCredential;
       if (!connector.authSecret) return null;
-      return getProjectSecretValueForConsumer({
-        projectId: principal.projectId,
+      return getWorkspaceSecretValueForConsumer({
+        workspaceId: principal.workspaceId,
         accountId: principal.accountId,
         sessionId: principal.sessionId,
         actorUserId: principal.userId,
@@ -489,23 +558,23 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // for inbox, thread, or message identifiers. A future channel-owned binding
     // may provide this context; until then callers must pass explicit action args.
     loadEmailSessionContext: async () => null,
-    loadEmailConnectorContext: async (projectId, connectorSlug) => {
-      const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
+    loadEmailConnectorContext: async (workspaceId, connectorSlug) => {
+      const install = await loadAgentMailInstall(workspaceId, connectorSlug).catch(() => null);
       return install?.inboxId ? { inboxId: install.inboxId } : null;
     },
-    resolveEmailCredentialForInbox: async (projectId, inboxId) =>
-      resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
+    resolveEmailCredentialForInbox: async (workspaceId, inboxId) =>
+      resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(workspaceId, inboxId)),
     loadPolicies: loadConnectorPoliciesFor,
-    loadProjectPolicies: loadProjectPoliciesFor,
+    loadWorkspacePolicies: loadWorkspacePoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
-    mintApprovalLink: ({ projectId, executionId, sessionId }) =>
-      approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    mintApprovalLink: ({ workspaceId, executionId, sessionId }) =>
+      approvalPageUrl(workspaceId, executionId, sessionId, config.FRONTEND_URL),
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(connectorCalls)
         .values({
           accountId: rec.accountId,
-          projectId: rec.projectId,
+          workspaceId: rec.workspaceId,
           connectorId: rec.connectorId,
           connectionId: rec.connectionId,
           actionPath: rec.actionPath,
@@ -527,27 +596,28 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     },
     consumeApprovedExecution: consumeApprovedExecution,
     isPendingApprovalExecution: isPendingApprovalExecution,
-    executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
-      runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
-    executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
-      runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
-    // Computer connectors relay through the shared tunnel RPC core (permission
-    // check → relay → audit). The machine is resolved from the `computer`
-    // selector, scoped to this account.
+    executePipedream: ({ workspaceId, connectorSlug, app, actionKey, args, accountId, userId }) =>
+      runPipedreamAction(workspaceId, connectorSlug, app, actionKey, args, accountId, userId),
+    executePipedreamProxy: ({ workspaceId, connectorSlug, args, accountId, userId }) =>
+      runPipedreamProxy(workspaceId, connectorSlug, args, accountId, userId),
+    // Computers connectors relay through the shared tunnel RPC core (profile
+    // allowlist → account ownership → permission check → relay → audit).
     executeComputerCall: ({
       accountId,
-      projectId,
+      workspaceId,
       sessionId,
       actorUserId,
+      allowedTunnelIds,
       selector,
       method,
       args,
     }) =>
       executeComputerCall({
         accountId,
-        projectId,
+        workspaceId,
         sessionId,
         actorUserId,
+        allowedTunnelIds,
         selector,
         method,
         args,
@@ -556,7 +626,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // (the same logic voice/routes.ts used to inline before it went through
     // the gateway); `join_gmeet`/`join_zoom` are declared but not implemented
     // yet, so they fail loud with what to do instead rather than pretending.
-    executeVoiceCall: async ({ projectId, sessionId, op, args }) => {
+    executeVoiceCall: async ({ workspaceId, sessionId, op, args }) => {
       if (op === 'join_gmeet' || op === 'join_zoom') {
         const platform = op === 'join_gmeet' ? 'Google Meet' : 'Zoom';
         return {
@@ -569,69 +639,106 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       // session's call" without the agent having to carry a call id around.
       if (op === 'read_transcript') {
         if (!sessionId) {
-          return { ok: false, kind: 'error', message: 'read_transcript requires a session' };
+          return {
+            ok: false,
+            kind: 'error',
+            message: 'read_transcript requires a session',
+          };
         }
         // Mode resolution, the per-call read position, the page shape and the
         // unread count all live in channels/voice/transcript-read.ts — read its
         // header for why a bare call is the cheap one, and for what happens to
         // "unread" turns when a turn dies mid-read. Everything except liveness,
         // which is a LiveKit question, not a transcript one.
-        const read = await readTranscriptForAgent({ callId: sessionId, projectId, args });
-        return { ok: true, data: { ...read, live: await isCallLive(sessionId) } };
+        const read = await readTranscriptForAgent({
+          callId: sessionId,
+          workspaceId,
+          args,
+        });
+        return {
+          ok: true,
+          data: { ...read, live: await isCallLive(sessionId) },
+        };
       }
 
       if (op === 'send_prompt') {
         if (!sessionId) {
-          return { ok: false, kind: 'error', message: 'send_prompt requires a session' };
+          return {
+            ok: false,
+            kind: 'error',
+            message: 'send_prompt requires a session',
+          };
         }
         const text = typeof args.text === 'string' ? args.text.trim() : '';
         if (!text) {
-          return { ok: false, kind: 'error', message: 'send_prompt requires `text`' };
+          return {
+            ok: false,
+            kind: 'error',
+            message: 'send_prompt requires `text`',
+          };
         }
         // `kortixSay` carries both halves of this utterance: the framing the
         // voice model needs (it is handed the text as INSTRUCTIONS, so raw text
         // reads as an unattributed order — that is what made the call answer
         // statements as questions) AND the plain line that gets written to
         // voice_call_turns, so what this agent says into the call is actually in
-        // the call's record. `projectId` is passed because we have it here; the
+        // the call's record. `workspaceId` is passed because we have it here; the
         // in-call paths (turn.ts, answer-watch.ts) look it up instead.
-        const result = await promptVoiceAgent(sessionId, kortixSay(text), { projectId });
+        const result = await promptVoiceAgent(sessionId, kortixSay(text), {
+          workspaceId,
+        });
         if (!result.delivered) {
           // Deliberately an error, not a silent success: an agent that believes
           // it spoke and did not will carry on as though the room heard it.
-          return { ok: false, kind: 'error', message: result.reason ?? 'could not reach the call' };
+          return {
+            ok: false,
+            kind: 'error',
+            message: result.reason ?? 'could not reach the call',
+          };
         }
         return { ok: true, data: { spoken: true } };
       }
 
       if (op === 'end_call') {
         if (!sessionId) {
-          return { ok: false, kind: 'error', message: 'end_call requires a session' };
+          return {
+            ok: false,
+            kind: 'error',
+            message: 'end_call requires a session',
+          };
         }
         await endCall(sessionId);
         return { ok: true, data: { ended: true } };
       }
 
       if (op !== 'spawn_room') {
-        return { ok: false, kind: 'error', message: `unknown voice action "${op}"` };
+        return {
+          ok: false,
+          kind: 'error',
+          message: `unknown voice action "${op}"`,
+        };
       }
       if (!sessionId) {
-        return { ok: false, kind: 'error', message: 'spawn_room requires a session' };
+        return {
+          ok: false,
+          kind: 'error',
+          message: 'spawn_room requires a session',
+        };
       }
       const voice = typeof args.voice === 'string' ? args.voice : null;
-      const botName = await resolveProjectBotName(projectId);
+      const botName = await resolveWorkspaceBotName(workspaceId);
       // The call id IS the session id — one live call per session.
       const callId = sessionId;
       // Start the room BEFORE minting the human's join link. If a person opens
       // the page first it would try to join a room that does not exist yet,
       // and that join is rejected with nothing to retry against.
-      await startCall({ callId, projectId, sessionId, botName, voice });
+      await startCall({ callId, workspaceId, sessionId, botName, voice });
       // Hand out a short, ungessable link that resolves to a freshly-minted
       // LiveKit access token server-side (public-join-routes.ts), rather than
       // embedding the ~300-char signed JWT itself in the URL — see
       // join-links.ts's header for why (a single corrupted character in
       // transit used to break the signature with no way to retry).
-      const { token: joinToken } = await mintJoinLink({ callId, projectId });
+      const { token: joinToken } = await mintJoinLink({ callId, workspaceId });
       const joinUrl = joinPageUrl(config.FRONTEND_URL, joinToken);
       return { ok: true, data: { call_id: callId, join_url: joinUrl } };
     },
@@ -654,11 +761,11 @@ async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> 
   }));
 }
 
-async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
+async function loadWorkspacePoliciesFor(workspaceId: string): Promise<Policy[]> {
   const rows = await db
     .select()
-    .from(connectorProjectPolicies)
-    .where(eq(connectorProjectPolicies.projectId, projectId));
+    .from(connectorWorkspacePolicies)
+    .where(eq(connectorWorkspacePolicies.workspaceId, workspaceId));
   return rows.map((r) => ({
     match: r.match,
     action: r.action,
@@ -667,17 +774,17 @@ async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
   }));
 }
 
-async function loadDefaultModeFor(projectId: string): Promise<DefaultMode> {
+async function loadDefaultModeFor(workspaceId: string): Promise<DefaultMode> {
   const [row] = await db
-    .select({ defaultMode: connectorProjectSettings.defaultMode })
-    .from(connectorProjectSettings)
-    .where(eq(connectorProjectSettings.projectId, projectId))
+    .select({ defaultMode: connectorWorkspaceSettings.defaultMode })
+    .from(connectorWorkspaceSettings)
+    .where(eq(connectorWorkspaceSettings.workspaceId, workspaceId))
     .limit(1);
   return (row?.defaultMode as DefaultMode) ?? 'allow_all';
 }
 
 /** Load a pipedream connector's app slug + id (verifies provider). */
-export async function loadPipedreamConnector(projectId: string, slug: string) {
+export async function loadPipedreamConnector(workspaceId: string, slug: string) {
   const [row] = await db
     .select({
       connectorId: connectors.connectorId,
@@ -686,7 +793,7 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
       authorizationStrategy: connectors.authorizationStrategy,
     })
     .from(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
     .limit(1);
   if (!row || row.providerType !== 'pipedream') return null;
   const app = (row.config as any)?.app;
@@ -699,7 +806,12 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
 }
 
 export type ConnectLinkEligibility =
-  | { ok: true; connectorId: string; app: string; authorizationStrategy: string }
+  | {
+      ok: true;
+      connectorId: string;
+      app: string;
+      authorizationStrategy: string;
+    }
   /** No connector with this slug on the project. The manifest really is missing it. */
   | { ok: false; reason: 'no_such_connector' }
   /** It exists, but a setup link is a Pipedream Quick Connect and this is not one. */
@@ -718,7 +830,7 @@ export type ConnectLinkEligibility =
  * this one cannot offer.
  */
 export async function connectLinkEligibility(
-  projectId: string,
+  workspaceId: string,
   slug: string,
 ): Promise<ConnectLinkEligibility> {
   const [row] = await db
@@ -729,11 +841,15 @@ export async function connectLinkEligibility(
       authorizationStrategy: connectors.authorizationStrategy,
     })
     .from(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
     .limit(1);
   if (!row) return { ok: false, reason: 'no_such_connector' };
   if (row.providerType !== 'pipedream') {
-    return { ok: false, reason: 'not_pipedream', providerType: row.providerType };
+    return {
+      ok: false,
+      reason: 'not_pipedream',
+      providerType: row.providerType,
+    };
   }
   const app = (row.config as any)?.app;
   if (typeof app !== 'string' || !app) return { ok: false, reason: 'no_app' };
@@ -760,11 +876,11 @@ export function resolveTokenBoundSessionId(
  * Supabase JWTs also set `sessionId`, but that value identifies the Supabase
  * authentication session. It must not enter connection resolution.
  */
-export function projectSessionIdForProjectPrincipal(
-  tokenProjectId: string | undefined,
+export function projectSessionIdForWorkspacePrincipal(
+  tokenWorkspaceId: string | undefined,
   contextualSessionId: string | undefined,
 ): string | null {
-  return tokenProjectId ? (contextualSessionId ?? null) : null;
+  return tokenWorkspaceId ? (contextualSessionId ?? null) : null;
 }
 
 async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> {
@@ -772,7 +888,7 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return null;
   const result = await validateAccountToken(token);
-  if (!result.isValid || !result.userId || !result.accountId || !result.projectId) return null;
+  if (!result.isValid || !result.userId || !result.accountId || !result.workspaceId) return null;
   const sessionIdentity = resolveTokenBoundSessionId(
     result.sessionId ?? null,
     c.req.header('X-Kortix-Session-Id') ?? null,
@@ -780,14 +896,14 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
   if (!sessionIdentity.ok) return null;
   const agentGrant = sessionIdentity.sessionId
     ? await reconcileStoredSessionAgentGrant({
-        projectId: result.projectId,
+        workspaceId: result.workspaceId,
         sessionId: sessionIdentity.sessionId,
       })
     : (result.agentGrant ?? null);
   return {
     userId: result.userId,
     accountId: result.accountId,
-    projectId: result.projectId,
+    workspaceId: result.workspaceId,
     sessionId: sessionIdentity.sessionId,
     subject: await resolveShareSubject(result.userId),
     agentGrant,
@@ -798,31 +914,31 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
  * Principal for the project-EXPLICIT gateway routes (/connectors/projects/:id/*).
  * These run under combinedAuth, so identity is already validated and sits in the
  * context; the project comes from the PATH. Works for BOTH a project-scoped
- * session token (enforceTokenProjectScope already pinned it to this project) AND
+ * session token (enforceTokenWorkspaceScope already pinned it to this project) AND
  * a logged-in user token (verified to be a project member here). This is the
  * unlock for using the Connector locally: same gateway, same authz, any principal.
  */
-async function resolveProjectPrincipal(
+async function resolveWorkspacePrincipal(
   c: Context,
-  projectId: string,
+  workspaceId: string,
 ): Promise<ConnectorPrincipal | null> {
-  if (!isUuid(projectId)) return null;
+  if (!isUuid(workspaceId)) return null;
   const userId = c.get('userId') as string | undefined;
   if (!userId) return null;
-  const tokenProjectId = c.get('tokenProjectId') as string | undefined;
+  const tokenWorkspaceId = c.get('tokenWorkspaceId') as string | undefined;
   let accountId = c.get('accountId') as string | undefined;
 
-  if (tokenProjectId) {
-    // Project-scoped (session) token: enforceTokenProjectScope already guaranteed
-    // tokenProjectId === the URL project at the auth layer. Re-check defensively,
+  if (tokenWorkspaceId) {
+    // Workspace-scoped (session) token: enforceTokenWorkspaceScope already guaranteed
+    // tokenWorkspaceId === the URL project at the auth layer. Re-check defensively,
     // then bind the token account to the actual project account. This prevents a
     // PAT row from one account from being labeled with another account's project
     // id and then used on the project-explicit Connector gateway.
-    if (tokenProjectId !== projectId) return null;
+    if (tokenWorkspaceId !== workspaceId) return null;
     const [project] = await db
       .select({ accountId: projects.accountId })
       .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .where(eq(projects.workspaceId, workspaceId))
       .limit(1);
     if (!project || !accountId || project.accountId !== accountId) return null;
     accountId = project.accountId;
@@ -830,9 +946,9 @@ async function resolveProjectPrincipal(
     // User token (PAT/JWT, no pinned project): verify project access. Throws 403
     // if the user isn't a member — treat that as an unauthorized principal.
     try {
-      const access = await loadProjectForUser(c, projectId, 'read');
+      const access = await loadWorkspaceForUser(c, workspaceId, 'read');
       if (!access?.row) return null;
-      accountId = access.row.accountId; // the PROJECT's account owns its connectors
+      accountId = access.row.accountId; // the WORKSPACE's account owns its connectors
     } catch (err) {
       if (err instanceof HTTPException && err.status === 403) return null;
       throw err;
@@ -840,7 +956,7 @@ async function resolveProjectPrincipal(
   }
   if (!accountId) return null;
   const sessionIdentity = resolveTokenBoundSessionId(
-    projectSessionIdForProjectPrincipal(tokenProjectId, c.get('sessionId') as string | undefined),
+    projectSessionIdForWorkspacePrincipal(tokenWorkspaceId, c.get('sessionId') as string | undefined),
     c.req.header('X-Kortix-Session-Id') ?? null,
   );
   if (!sessionIdentity.ok) return null;
@@ -848,7 +964,7 @@ async function resolveProjectPrincipal(
   const storedAgentGrant = (c.get('agentGrant') as ConnectorPrincipal['agentGrant']) ?? null;
   const agentGrant = sessionIdentity.sessionId
     ? await reconcileStoredSessionAgentGrant({
-        projectId,
+        workspaceId,
         sessionId: sessionIdentity.sessionId,
       })
     : storedAgentGrant;
@@ -856,7 +972,7 @@ async function resolveProjectPrincipal(
   return {
     userId,
     accountId,
-    projectId,
+    workspaceId,
     sessionId: sessionIdentity.sessionId,
     subject: await resolveShareSubject(userId),
     agentGrant,
@@ -869,19 +985,23 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
     await db
       .select()
       .from(connectors)
-      .where(
-        and(eq(connectors.projectId, p.projectId), eq(connectors.enabled, true)),
-      ),
+      .where(and(eq(connectors.workspaceId, p.workspaceId), eq(connectors.enabled, true))),
   );
 
-  // Project-scoped layer is the same for every connector in this list — load once.
+  // Workspace-scoped layer is the same for every connector in this list — load once.
   const [projectPolicies, defaultMode] = await Promise.all([
-    loadProjectPoliciesFor(p.projectId),
-    loadDefaultModeFor(p.projectId),
+    loadWorkspacePoliciesFor(p.workspaceId),
+    loadDefaultModeFor(p.workspaceId),
   ]);
 
   const out: CatalogConnector[] = [];
   for (const row of conns) {
+    if (
+      isLegacyComputerAggregate(row) &&
+      !(await principalHasLegacyComputerBinding(p, row.connectorId))
+    ) {
+      continue;
+    }
     // Per-agent assignment: an agent only sees connectors its grant lists —
     // consistent with the call gate, so it never lists a tool it can't invoke.
     // This is the ONLY access gate — connectors are project-wide visible to
@@ -930,22 +1050,22 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
   return out;
 }
 
-async function resolveProjectUserWith(
+async function resolveWorkspaceUserWith(
   c: Context,
-  projectId: string,
+  workspaceId: string,
   action:
-    | typeof PROJECT_ACTIONS.PROJECT_CONNECTOR_READ
-    | typeof PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE
-    | typeof PROJECT_ACTIONS.PROJECT_SECRET_READ
-    | typeof PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+    | typeof WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_READ
+    | typeof WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE
+    | typeof WORKSPACE_ACTIONS.WORKSPACE_SECRET_READ
+    | typeof WORKSPACE_ACTIONS.WORKSPACE_SECRET_WRITE,
 ): Promise<{ accountId: string; userId: string } | null> {
-  if (!isUuid(projectId)) return null;
+  if (!isUuid(workspaceId)) return null;
   const userId = c.get('userId') as string | undefined;
   if (!userId) return null;
   const [proj] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
   if (!proj) return null;
   // Thread the acting token (iamTokenId) so the agent-grant fold fires: a
@@ -956,7 +1076,7 @@ async function resolveProjectUserWith(
     userId,
     proj.accountId,
     action,
-    { type: 'project', id: projectId },
+    { type: 'project', id: workspaceId },
     actingTokenId,
   );
   if (!decision.allowed) return null;
@@ -968,25 +1088,25 @@ async function resolveProjectUserWith(
 // project.write.
 async function resolveAdmin(
   c: Context,
-  projectId: string,
+  workspaceId: string,
 ): Promise<{ accountId: string; userId: string } | null> {
-  return resolveProjectUserWith(c, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+  return resolveWorkspaceUserWith(c, workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE);
 }
 
 async function resolveSecretBindingAdmin(
   c: Context,
-  projectId: string,
+  workspaceId: string,
 ): Promise<{ accountId: string; userId: string } | null> {
-  const connectorAdmin = await resolveProjectUserWith(
+  const connectorAdmin = await resolveWorkspaceUserWith(
     c,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    workspaceId,
+    WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE,
   );
   if (!connectorAdmin) return null;
-  const secretAdmin = await resolveProjectUserWith(
+  const secretAdmin = await resolveWorkspaceUserWith(
     c,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+    workspaceId,
+    WORKSPACE_ACTIONS.WORKSPACE_SECRET_WRITE,
   );
   return secretAdmin ? connectorAdmin : null;
 }
@@ -997,23 +1117,23 @@ async function resolveSecretBindingAdmin(
 // carries credential values — only whether one is set.
 async function resolveReader(
   c: Context,
-  projectId: string,
+  workspaceId: string,
 ): Promise<{ accountId: string; userId: string } | null> {
-  return resolveProjectUserWith(c, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
+  return resolveWorkspaceUserWith(c, workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_READ);
 }
 
 async function resolveSecretReader(
   c: Context,
-  projectId: string,
+  workspaceId: string,
 ): Promise<{ accountId: string; userId: string } | null> {
-  return resolveProjectUserWith(c, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
+  return resolveWorkspaceUserWith(c, workspaceId, WORKSPACE_ACTIONS.WORKSPACE_SECRET_READ);
 }
 
 /** Admin list — sharing + credential mode + whether the shared credential is set. */
-async function listConnectors(projectId: string): Promise<AdminConnectorView[]> {
+async function listConnectors(workspaceId: string): Promise<AdminConnectorView[]> {
   const conns = hideSupersededSlack(
-    await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
-  );
+    await db.select().from(connectors).where(eq(connectors.workspaceId, workspaceId)),
+  ).filter((row) => !isLegacyComputerAggregate(row));
   if (conns.length === 0) return [];
 
   const credentialRows = conns.filter((row) => {
@@ -1055,7 +1175,7 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
             .from(projectSecrets)
             .where(
               and(
-                eq(projectSecrets.projectId, projectId),
+                eq(projectSecrets.workspaceId, workspaceId),
                 inArray(projectSecrets.identifier, boundSecretIdentifiers),
                 isNull(projectSecrets.ownerUserId),
                 eq(projectSecrets.active, true),
@@ -1087,7 +1207,10 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
   }
   const candidates = conns.map((row) => {
     const { auth, hasAuth } = authOf(row);
-    const config = row.config as { icon_url?: unknown; sensitive?: unknown } | null;
+    const config = row.config as {
+      icon_url?: unknown;
+      sensitive?: unknown;
+    } | null;
     return {
       slug: row.slug,
       name: row.name,
@@ -1122,14 +1245,14 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
 }
 
 async function setConnectorSecretBinding(
-  projectId: string,
+  workspaceId: string,
   slug: string,
   secretIdentifier: string | null,
 ) {
   const [connector] = await db
     .select()
     .from(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
     .limit(1);
   if (!connector) return { ok: false as const, error: 'connector not found', status: 404 };
 
@@ -1146,7 +1269,7 @@ async function setConnectorSecretBinding(
     .from(projectSecrets)
     .where(
       and(
-        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.workspaceId, workspaceId),
         eq(projectSecrets.identifier, secretIdentifier),
         isNull(projectSecrets.ownerUserId),
         eq(projectSecrets.active, true),
@@ -1183,20 +1306,27 @@ async function setConnectorSecretBinding(
  * Use the manifest only when a declared connector has not materialized yet.
  */
 async function getConnectorPolicies(
-  projectId: string,
+  workspaceId: string,
   slug: string,
 ): Promise<{
   policies: Array<{ match: string; action: string }>;
-  effective: Array<{ path: string; action: PolicyAction; source: EffectiveSource }>;
+  effective: Array<{
+    path: string;
+    action: PolicyAction;
+    source: EffectiveSource;
+  }>;
   project_policies: Array<{ match: string; action: string }>;
   default_mode: DefaultMode;
 } | null> {
   const [fromManifest, [row]] = await Promise.all([
-    getConnectorPoliciesFromManifest(projectId, slug),
+    getConnectorPoliciesFromManifest(workspaceId, slug),
     db
-      .select({ connectorId: connectors.connectorId, config: connectors.config })
+      .select({
+        connectorId: connectors.connectorId,
+        config: connectors.config,
+      })
       .from(connectors)
-      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
       .limit(1),
   ]);
   if (!fromManifest && !row) return null;
@@ -1214,15 +1344,17 @@ async function getConnectorPolicies(
   // without this the panel would happily show a connector rule the runtime is
   // ignoring. Resolve every action through the same function the call gate uses.
   if (!row) {
-    return { policies, effective: [], project_policies: [], default_mode: 'allow_all' };
+    return {
+      policies,
+      effective: [],
+      project_policies: [],
+      default_mode: 'allow_all',
+    };
   }
   const [projectPolicies, defaultMode, actions] = await Promise.all([
-    loadProjectPoliciesFor(projectId),
-    loadDefaultModeFor(projectId),
-    db
-      .select()
-      .from(connectorActions)
-      .where(eq(connectorActions.connectorId, row.connectorId)),
+    loadWorkspacePoliciesFor(workspaceId),
+    loadDefaultModeFor(workspaceId),
+    db.select().from(connectorActions).where(eq(connectorActions.connectorId, row.connectorId)),
   ]);
   const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
   const connectorPolicies: Policy[] = policies.map((p) => ({
@@ -1244,7 +1376,10 @@ async function getConnectorPolicies(
   return {
     policies,
     effective,
-    project_policies: projectPolicies.map((p) => ({ match: p.match, action: p.action })),
+    project_policies: projectPolicies.map((p) => ({
+      match: p.match,
+      action: p.action,
+    })),
     default_mode: defaultMode,
   };
 }
@@ -1255,15 +1390,15 @@ async function getConnectorPolicies(
  * kortix.yaml, so reconstruct the view from the materialized row instead of 404ing.
  */
 async function getConnectorConfig(
-  projectId: string,
+  workspaceId: string,
   slug: string,
 ): Promise<Awaited<ReturnType<typeof getConnectorConfigFromManifest>>> {
-  const fromManifest = await getConnectorConfigFromManifest(projectId, slug);
+  const fromManifest = await getConnectorConfigFromManifest(workspaceId, slug);
   if (fromManifest) return fromManifest;
   const [row] = await db
     .select()
     .from(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
     .limit(1);
   if (!row) return null;
   const cfg = (row.config ?? {}) as Record<string, any>;
@@ -1282,43 +1417,274 @@ async function getConnectorConfig(
     endpoint: cfg.endpoint ?? null,
     baseUrl: baseUrlOf(row),
     spec: cfg.spec ?? null,
-    auth: { type: auth.type, in: auth.in, name: auth.name, prefix: auth.prefix },
+    tunnelIds:
+      row.providerType === 'computer' ? (computerTunnelIds(row.config, row.slug) ?? []) : undefined,
+    auth: {
+      type: auth.type,
+      in: auth.in,
+      name: auth.name,
+      prefix: auth.prefix,
+    },
     headers: headersOf(row),
   };
+}
+
+type ConnectorCrudResult = Awaited<ReturnType<typeof setConnectorPoliciesInManifest>>;
+
+async function computerConnectorId(
+  workspaceId: string,
+  accountId: string,
+  slug: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ connectorId: connectors.connectorId })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.workspaceId, workspaceId),
+        eq(connectors.accountId, accountId),
+        eq(connectors.slug, slug),
+        eq(connectors.providerType, 'computer'),
+      ),
+    )
+    .limit(1);
+  return row?.connectorId ?? null;
+}
+
+async function setComputerConnectorPolicies(
+  workspaceId: string,
+  accountId: string,
+  slug: string,
+  policies: Array<{ match: string; action: string }>,
+): Promise<ConnectorCrudResult | null> {
+  const connectorId = await computerConnectorId(workspaceId, accountId, slug);
+  if (!connectorId) return null;
+
+  const allowedActions = new Set<PolicyAction>(['always_run', 'require_approval', 'block']);
+  for (const [index, policy] of policies.entries()) {
+    if (typeof policy?.match !== 'string' || !policy.match.trim()) {
+      return {
+        ok: false,
+        error: `rule #${index + 1}: \`match\` is required`,
+        status: 400,
+      };
+    }
+    if (!isValidMatcher(policy.match.trim())) {
+      return {
+        ok: false,
+        error: `rule #${index + 1}: invalid regex pattern`,
+        status: 400,
+      };
+    }
+    if (!allowedActions.has(policy.action as PolicyAction)) {
+      return {
+        ok: false,
+        error: `rule #${index + 1}: \`action\` must be always_run | require_approval | block`,
+        status: 400,
+      };
+    }
+  }
+
+  await setMaterializedComputerConnectorPolicies(
+    connectorId,
+    policies.map((policy) => ({
+      match: policy.match.trim(),
+      action: policy.action as PolicyAction,
+    })),
+  );
+  return { ok: true };
+}
+
+async function setComputerConnectorSensitive(
+  workspaceId: string,
+  accountId: string,
+  slug: string,
+  sensitive: boolean,
+): Promise<ConnectorCrudResult | null> {
+  const connectorId = await computerConnectorId(workspaceId, accountId, slug);
+  if (!connectorId) return null;
+  const configPatch = sensitive
+    ? sql`coalesce(${connectors.config}, '{}'::jsonb) || '{"sensitive": true}'::jsonb`
+    : sql`coalesce(${connectors.config}, '{}'::jsonb) - 'sensitive'`;
+  await db
+    .update(connectors)
+    .set({ config: configPatch, updatedAt: new Date() })
+    .where(eq(connectors.connectorId, connectorId));
+  return { ok: true };
+}
+
+const MAX_COMPUTERS_PER_PROFILE = 100;
+
+async function upsertComputerConnectorProfile(
+  workspaceId: string,
+  accountId: string,
+  draft: Record<string, unknown>,
+): Promise<ConnectorCrudResult | null> {
+  if (draft.provider !== 'computer') return null;
+  const slug = typeof draft.slug === 'string' ? draft.slug.trim() : '';
+  if (!SLUG_RE.test(slug)) {
+    return { ok: false, error: 'invalid connector slug', status: 400 };
+  }
+  const rawTunnelIds = draft.tunnel_ids;
+  if (!Array.isArray(rawTunnelIds)) {
+    return { ok: false, error: 'tunnel_ids must be an array', status: 400 };
+  }
+  const tunnelIds = [
+    ...new Set(rawTunnelIds.filter((value): value is string => typeof value === 'string')),
+  ];
+  if (tunnelIds.length === 0) {
+    return { ok: false, error: 'select at least one computer', status: 400 };
+  }
+  if (tunnelIds.length !== rawTunnelIds.length || tunnelIds.some((value) => !isUuid(value))) {
+    return {
+      ok: false,
+      error: 'tunnel_ids must contain unique UUIDs',
+      status: 400,
+    };
+  }
+  if (tunnelIds.length > MAX_COMPUTERS_PER_PROFILE) {
+    return {
+      ok: false,
+      error: `a Computers profile can contain at most ${MAX_COMPUTERS_PER_PROFILE} machines`,
+      status: 400,
+    };
+  }
+  const owned = await db
+    .select({ tunnelId: tunnelConnections.tunnelId })
+    .from(tunnelConnections)
+    .where(
+      and(
+        eq(tunnelConnections.accountId, accountId),
+        inArray(tunnelConnections.tunnelId, tunnelIds),
+        isNotNull(tunnelConnections.lastHeartbeatAt),
+      ),
+    );
+  if (owned.length !== tunnelIds.length) {
+    return {
+      ok: false,
+      error: 'every selected computer must belong to this account and have connected before',
+      status: 400,
+    };
+  }
+
+  const [existing] = await db
+    .select({
+      connectorId: connectors.connectorId,
+      providerType: connectors.providerType,
+      name: connectors.name,
+      config: connectors.config,
+    })
+    .from(connectors)
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
+    .limit(1);
+  if (existing && existing.providerType !== 'computer') {
+    return {
+      ok: false,
+      error: `Connector slug "${slug}" already exists`,
+      status: 409,
+    };
+  }
+  if (existing && draft.create_only === true) {
+    return {
+      ok: false,
+      error: `Connector slug "${slug}" already exists`,
+      status: 409,
+    };
+  }
+  const requestedName = typeof draft.name === 'string' ? draft.name.trim() : '';
+  const name = requestedName || existing?.name || computerLabel();
+  if (name.length > 255) return { ok: false, error: 'name is too long (max 255)', status: 400 };
+  await materializeComputerConnectorProfile({
+    workspaceId,
+    accountId,
+    existingId: existing?.connectorId ?? null,
+    spec: computerProfileSpec({
+      slug,
+      name,
+      tunnelIds,
+      sensitive: (existing?.config as { sensitive?: unknown } | null)?.sensitive === true,
+    }),
+  });
+  return { ok: true, sync: { synced: 1, errors: [] } };
+}
+
+async function deleteComputerConnectorProfile(
+  workspaceId: string,
+  slug: string,
+): Promise<ConnectorCrudResult | null> {
+  const [row] = await db
+    .select({
+      connectorId: connectors.connectorId,
+      providerType: connectors.providerType,
+    })
+    .from(connectors)
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
+    .limit(1);
+  if (!row || row.providerType !== 'computer') return null;
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(projectSessionConnectorBindings)
+      .where(eq(projectSessionConnectorBindings.connectorId, row.connectorId));
+    await tx.delete(connectors).where(eq(connectors.connectorId, row.connectorId));
+  });
+  return { ok: true };
+}
+
+async function setComputerConnectorName(
+  workspaceId: string,
+  accountId: string,
+  slug: string,
+  name: string,
+): Promise<ConnectorCrudResult | null> {
+  const connectorId = await computerConnectorId(workspaceId, accountId, slug);
+  if (!connectorId) return null;
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: 'name is required', status: 400 };
+  if (trimmed.length > 255) {
+    return { ok: false, error: 'name is too long (max 255)', status: 400 };
+  }
+  await db
+    .update(connectors)
+    .set({ name: trimmed, updatedAt: new Date() })
+    .where(eq(connectors.connectorId, connectorId));
+  return { ok: true };
 }
 
 export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   attachmentStore: connectorAttachmentStore,
   resolvePrincipal,
-  resolveProjectPrincipal,
+  resolveWorkspacePrincipal,
   makeGatewayDeps: (principal) => makeDbGatewayDeps(principal),
   listCatalog,
-  featureFlagEnabled: projectFeatureFlagEnabled,
+  featureFlagEnabled: workspaceFeatureFlagEnabled,
   resolveAdmin,
   resolveReader,
   resolveSecretReader,
   listConnectors,
   // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
   // user is explicitly asking to refresh, e.g. an MCP server gained new tools.
-  syncConnectors: (projectId, accountId) => {
-    invalidateProjectMirror(projectId);
-    return syncProjectConnectors(projectId, accountId, { force: true });
+  syncConnectors: (workspaceId, accountId) => {
+    invalidateWorkspaceMirror(workspaceId);
+    return syncWorkspaceConnectors(workspaceId, accountId, { force: true });
   },
-  createConnector: (projectId, accountId, draft) =>
-    upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
-  deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
-  setConnectorCredential: (projectId, slug, input) =>
-    setConnectorCredentialShared(projectId, slug, input),
+  createConnector: async (workspaceId, accountId, draft) =>
+    (await upsertComputerConnectorProfile(workspaceId, accountId, draft)) ??
+    upsertConnectorInManifest(workspaceId, accountId, draft as unknown as ConnectorDraft),
+  deleteConnector: async (workspaceId, slug) =>
+    (await deleteComputerConnectorProfile(workspaceId, slug)) ??
+    deleteConnectorFromManifest(workspaceId, slug),
+  setConnectorCredential: (workspaceId, slug, input) =>
+    setConnectorCredentialShared(workspaceId, slug, input),
   setConnectorSecretBinding,
   resolveSecretBindingAdmin,
-  deleteConnectorCredential: async (projectId, slug) => {
+  deleteConnectorCredential: async (workspaceId, slug) => {
     const [row] = await db
       .select({
         connectorId: connectors.connectorId,
         authorizationStrategy: connectors.authorizationStrategy,
       })
       .from(connectors)
-      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, slug)))
       .limit(1);
     if (!row) return { ok: false as const, error: 'connector not found', status: 404 };
     if (row.authorizationStrategy !== 'project') {
@@ -1331,29 +1697,32 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     await deleteCredential(row.connectorId, null);
     return { ok: true as const };
   },
-  setCredentialMode: (projectId, accountId, slug, mode) =>
-    setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
-  setAuthorizationStrategy: (projectId, accountId, slug, authorizationStrategy) =>
-    setConnectorAuthorizationStrategyInManifest(projectId, accountId, slug, authorizationStrategy),
-  setSensitive: (projectId, accountId, slug, sensitive) =>
-    setConnectorSensitiveInManifest(projectId, accountId, slug, sensitive),
-  setConnectorName: (projectId, accountId, slug, name) =>
-    setConnectorNameInManifest(projectId, accountId, slug, name),
+  setCredentialMode: (workspaceId, accountId, slug, mode) =>
+    setConnectorCredentialModeInManifest(workspaceId, accountId, slug, mode),
+  setAuthorizationStrategy: (workspaceId, accountId, slug, authorizationStrategy) =>
+    setConnectorAuthorizationStrategyInManifest(workspaceId, accountId, slug, authorizationStrategy),
+  setSensitive: async (workspaceId, accountId, slug, sensitive) =>
+    (await setComputerConnectorSensitive(workspaceId, accountId, slug, sensitive)) ??
+    setConnectorSensitiveInManifest(workspaceId, accountId, slug, sensitive),
+  setConnectorName: async (workspaceId, accountId, slug, name) =>
+    (await setComputerConnectorName(workspaceId, accountId, slug, name)) ??
+    setConnectorNameInManifest(workspaceId, accountId, slug, name),
   getConnectorPolicies,
   getConnectorConfig,
-  setConnectorPolicies: (projectId, accountId, slug, policies) =>
+  setConnectorPolicies: async (workspaceId, accountId, slug, policies) =>
+    (await setComputerConnectorPolicies(workspaceId, accountId, slug, policies)) ??
     setConnectorPoliciesInManifest(
-      projectId,
+      workspaceId,
       accountId,
       slug,
       policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
     ),
   pipedreamConnect: pipedreamConfigured()
-    ? async (projectId, slug, _userId, redirects) => {
-        const conn = await loadPipedreamConnector(projectId, slug);
+    ? async (workspaceId, slug, _userId, redirects) => {
+        const conn = await loadPipedreamConnector(workspaceId, slug);
         if (!conn || conn.authorizationStrategy !== 'project') return null;
         const { connectUrl, token } = await pipedreamConnectUrl(
-          projectId,
+          workspaceId,
           slug,
           conn.app,
           null,
@@ -1363,11 +1732,11 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       }
     : undefined,
   pipedreamFinalize: pipedreamConfigured()
-    ? async (projectId, slug, _userId) => {
-        const conn = await loadPipedreamConnector(projectId, slug);
+    ? async (workspaceId, slug, _userId) => {
+        const conn = await loadPipedreamConnector(workspaceId, slug);
         if (!conn || conn.authorizationStrategy !== 'project') return null;
         const r = await finalizePipedreamConnection({
-          projectId,
+          workspaceId,
           slug,
           app: conn.app,
           connectorId: conn.connectorId,
@@ -1379,9 +1748,9 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
         if (!verifyWebhookSig(extUserId, sig)) return false;
-        const [projectId, slug, identityId] = extUserId.split(':');
-        if (!projectId || !slug) return false;
-        const conn = await loadPipedreamConnector(projectId, slug);
+        const [workspaceId, slug, identityId] = extUserId.split(':');
+        if (!workspaceId || !slug) return false;
+        const conn = await loadPipedreamConnector(workspaceId, slug);
         if (!conn) return false;
         if (identityId) {
           const [connection] = await db
@@ -1394,7 +1763,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             .where(
               and(
                 eq(connectorConnections.connectionId, identityId),
-                eq(connectorConnections.projectId, projectId),
+                eq(connectorConnections.workspaceId, workspaceId),
                 eq(connectorConnections.connectorId, conn.connectorId),
               ),
             )
@@ -1410,7 +1779,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
             })
           ) {
             await finalizePipedreamConnectionAuthorization({
-              projectId,
+              workspaceId,
               slug,
               app: conn.app,
               connectorId: conn.connectorId,
@@ -1423,7 +1792,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         }
         if (conn.authorizationStrategy !== 'project') return false;
         await finalizePipedreamConnection({
-          projectId,
+          workspaceId,
           slug,
           app: conn.app,
           connectorId: conn.connectorId,
@@ -1438,7 +1807,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
   getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
-  getProjectPolicies: getProjectPoliciesFromManifest,
-  setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
-    setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),
+  getWorkspacePolicies: getWorkspacePoliciesFromManifest,
+  setWorkspacePolicies: (workspaceId, accountId, policies, defaultMode) =>
+    setWorkspacePoliciesInManifest(workspaceId, accountId, policies, defaultMode),
 };

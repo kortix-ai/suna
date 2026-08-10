@@ -21,7 +21,7 @@ mock.module('../shared/daytona', () => ({
   isDaytonaDiskQuotaError: () => false,
   listStoppedDaytonaSandboxesOldestFirst: async function* () {},
 }));
-mock.module('../projects/disk-quota-guard', () => ({
+mock.module('../workspaces/disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
 }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -33,7 +33,7 @@ mock.module('../shared/preview-ownership', () => ({
     mockPayload ? { ...mockPayload, sandboxId, userId } : null,
   // Not exercised by this suite — stub so the real module's shape stays
   // satisfied for anything else that imports it in the same test run.
-  resolveSandboxProjectId: async () => null,
+  resolveSandboxWorkspaceId: async () => null,
 }));
 mock.module('../shared/kortix-user-context', () => ({
   KORTIX_USER_CONTEXT_HEADER: 'X-Kortix-User-Context',

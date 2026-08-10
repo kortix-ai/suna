@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const pageSource = readFileSync(
-  resolve(import.meta.dir, 'app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+  resolve(import.meta.dir, 'app/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx'),
   'utf8',
 );
 const chatSource = readFileSync(
@@ -11,7 +11,7 @@ const chatSource = readFileSync(
   'utf8',
 );
 
-describe('project session engine boundary', () => {
+describe('workspace session engine boundary', () => {
   test('the page mounts the complete SDK session engine', () => {
     expect(pageSource).not.toContain('chatEngine: false');
     expect(pageSource).toContain('sessionState={session}');

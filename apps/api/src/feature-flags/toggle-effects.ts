@@ -13,12 +13,12 @@
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors, reconcileComputerConnectors } from '../connectors/sync';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { workspaceLlmGatewayEnabled } from '../llm-gateway/enablement';
+import { propagateLlmGatewayModeToActiveSandboxes } from '../workspaces/lib/sandbox-env-sync';
 
 export interface FeatureFlagToggleContext {
   key: FeatureFlagKey;
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   /** The project's metadata AFTER the write. */
   metadata: unknown;
@@ -26,8 +26,8 @@ export interface FeatureFlagToggleContext {
 
 type ToggleEffect = (ctx: FeatureFlagToggleContext) => Promise<void>;
 
-const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
-  await reconcileChannelConnectors(projectId);
+const reconcileWorkspaceChannels: ToggleEffect = async ({ workspaceId }) => {
+  await reconcileChannelConnectors(workspaceId);
 };
 
 /**
@@ -42,11 +42,11 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   agent_tunnel: async ({ accountId }) => {
     await reconcileComputerConnectors(accountId);
   },
-  voice: reconcileProjectChannels,
-  teams: reconcileProjectChannels,
-  agentmail_email: reconcileProjectChannels,
-  llm_gateway: async ({ projectId, metadata }) => {
-    await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
+  voice: reconcileWorkspaceChannels,
+  teams: reconcileWorkspaceChannels,
+  agentmail_email: reconcileWorkspaceChannels,
+  llm_gateway: async ({ workspaceId, metadata }) => {
+    await propagateLlmGatewayModeToActiveSandboxes(workspaceId, workspaceLlmGatewayEnabled(metadata));
   },
 };
 
@@ -67,7 +67,7 @@ export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext)
       return;
     } catch (second) {
       console.error(
-        `[feature-flags] toggle effect failed twice for '${ctx.key}' on project ${ctx.projectId}; ` +
+        `[feature-flags] toggle effect failed twice for '${ctx.key}' on project ${ctx.workspaceId}; ` +
           'state converges on the next periodic reconcile',
         second instanceof Error ? second.message : second,
         first instanceof Error ? `(first attempt: ${first.message})` : '',

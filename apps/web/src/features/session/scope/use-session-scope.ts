@@ -1,17 +1,17 @@
 'use client';
 
 import {
-  getProjectSessionScope,
+  getWorkspaceSessionScope,
   listConnections,
   listConnectors,
-  listProjectSecrets,
-  setProjectSessionScope,
-  type AdminConnector,
+  listWorkspaceSecrets,
+  setWorkspaceSessionScope,
+  type WorkspaceAdminConnector,
   type Connection,
-  type ProjectSecret,
+  type WorkspaceSecret,
   type SessionScopeInput,
 } from '@kortix/sdk';
-import { qk, useProjectConfig } from '@kortix/sdk/react';
+import { qk, useWorkspaceConfig } from '@kortix/sdk/react';
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -23,9 +23,9 @@ import {
 } from './session-scope-model';
 
 interface SessionScopeCatalogSources {
-  listSecrets(projectId: string): Promise<readonly ProjectSecret[]>;
-  listConnectors(projectId: string): Promise<readonly AdminConnector[]>;
-  listConnections(projectId: string): Promise<readonly Connection[]>;
+  listSecrets(workspaceId: string): Promise<readonly WorkspaceSecret[]>;
+  listConnectors(workspaceId: string): Promise<readonly WorkspaceAdminConnector[]>;
+  listConnections(workspaceId: string): Promise<readonly Connection[]>;
 }
 
 export interface SessionScopeCatalogErrors {
@@ -40,15 +40,15 @@ export interface LoadedSessionScopeCatalog {
 }
 
 export interface UseSessionScopeInput {
-  projectId: string | null | undefined;
+  workspaceId: string | null | undefined;
   sessionId?: string | null;
   agentName?: string | null;
 }
 
 const sdkCatalogSources: SessionScopeCatalogSources = {
-  listSecrets: async (projectId) => (await listProjectSecrets(projectId)).items,
-  listConnectors: async (projectId) => (await listConnectors(projectId)).connectors,
-  listConnections: async (projectId) => (await listConnections(projectId)).connections,
+  listSecrets: async (workspaceId) => (await listWorkspaceSecrets(workspaceId)).items,
+  listConnectors: async (workspaceId) => (await listConnectors(workspaceId)).connectors,
+  listConnections: async (workspaceId) => (await listConnections(workspaceId)).connections,
 };
 
 function rejectedCatalogError(axis: string, reason: unknown): Error {
@@ -73,24 +73,24 @@ function settledCatalogState<T>(
 }
 
 export function sessionScopeQueryKey(
-  projectId: string | null | undefined,
+  workspaceId: string | null | undefined,
   sessionId: string | null | undefined,
 ) {
-  return ['project-session-scope', projectId, sessionId] as const;
+  return ['workspace-session-scope', workspaceId, sessionId] as const;
 }
 
-export function sessionScopeCatalogQueryKey(projectId: string | null | undefined) {
-  return ['session-scope-catalog', projectId] as const;
+export function sessionScopeCatalogQueryKey(workspaceId: string | null | undefined) {
+  return ['session-scope-catalog', workspaceId] as const;
 }
 
 export async function loadSessionScopeCatalog(
-  projectId: string,
+  workspaceId: string,
   sources: SessionScopeCatalogSources = sdkCatalogSources,
 ): Promise<LoadedSessionScopeCatalog> {
   const [secretsResult, connectorsResult, connectionsResult] = await Promise.allSettled([
-    sources.listSecrets(projectId),
-    sources.listConnectors(projectId),
-    sources.listConnections(projectId),
+    sources.listSecrets(workspaceId),
+    sources.listConnectors(workspaceId),
+    sources.listConnections(workspaceId),
   ]);
   const secrets = settledCatalogState('secret', secretsResult);
   const connectors = settledCatalogState('connector', connectorsResult);
@@ -120,56 +120,56 @@ const unavailableCatalog = (): SessionScopeSelectionCatalog => ({
   connector_connections: { status: 'unavailable' },
 });
 
-export function useSessionScope({ projectId, sessionId, agentName }: UseSessionScopeInput) {
+export function useSessionScope({ workspaceId, sessionId, agentName }: UseSessionScopeInput) {
   const queryClient = useQueryClient();
-  const projectConfig = useProjectConfig(projectId);
-  // useProjectConfig now rides the shared qk.project.detail(id) entry (a
+  const workspaceConfig = useWorkspaceConfig(workspaceId);
+  // useWorkspaceConfig now rides the shared qk.workspace.detail(id) entry (a
   // `select` projection, not its own key) — track fetch/error state on THAT
-  // key, not the retired standalone ['project-config', id] slot.
-  const projectConfigKey = qk.project.detail(projectId ?? '');
-  const projectConfigFetches = useIsFetching({
-    queryKey: projectConfigKey,
+  // key, not the retired standalone ['workspace-config', id] slot.
+  const workspaceConfigKey = qk.workspace.detail(workspaceId ?? '');
+  const workspaceConfigFetches = useIsFetching({
+    queryKey: workspaceConfigKey,
     exact: true,
   });
-  const projectConfigState = queryClient.getQueryState(projectConfigKey);
-  const needsProjectConfig = Boolean(projectId && agentName);
-  const projectConfigStateError =
-    projectConfigState?.status === 'error' ? projectConfigState.error : null;
-  const projectConfigError = useMemo(() => {
-    if (!needsProjectConfig || projectConfigState?.status !== 'error') return null;
-    return projectConfigStateError instanceof Error
-      ? projectConfigStateError
-      : new Error('The project configuration request failed.');
-  }, [needsProjectConfig, projectConfigState?.status, projectConfigStateError]);
-  const projectConfigLoading =
-    needsProjectConfig &&
-    !projectConfig &&
-    !projectConfigError &&
-    (projectConfigFetches > 0 ||
-      projectConfigState === undefined ||
-      projectConfigState.status === 'pending');
+  const workspaceConfigState = queryClient.getQueryState(workspaceConfigKey);
+  const needsWorkspaceConfig = Boolean(workspaceId && agentName);
+  const workspaceConfigStateError =
+    workspaceConfigState?.status === 'error' ? workspaceConfigState.error : null;
+  const workspaceConfigError = useMemo(() => {
+    if (!needsWorkspaceConfig || workspaceConfigState?.status !== 'error') return null;
+    return workspaceConfigStateError instanceof Error
+      ? workspaceConfigStateError
+      : new Error('The workspace configuration request failed.');
+  }, [needsWorkspaceConfig, workspaceConfigState?.status, workspaceConfigStateError]);
+  const workspaceConfigLoading =
+    needsWorkspaceConfig &&
+    !workspaceConfig &&
+    !workspaceConfigError &&
+    (workspaceConfigFetches > 0 ||
+      workspaceConfigState === undefined ||
+      workspaceConfigState.status === 'pending');
 
   const scopeQuery = useQuery({
-    queryKey: sessionScopeQueryKey(projectId, sessionId),
-    queryFn: () => getProjectSessionScope(projectId as string, sessionId as string),
-    enabled: Boolean(projectId && sessionId),
+    queryKey: sessionScopeQueryKey(workspaceId, sessionId),
+    queryFn: () => getWorkspaceSessionScope(workspaceId as string, sessionId as string),
+    enabled: Boolean(workspaceId && sessionId),
     retry: false,
     staleTime: 0,
   });
   const catalogQuery = useQuery({
-    queryKey: sessionScopeCatalogQueryKey(projectId),
-    queryFn: () => loadSessionScopeCatalog(projectId as string),
-    enabled: Boolean(projectId),
+    queryKey: sessionScopeCatalogQueryKey(workspaceId),
+    queryFn: () => loadSessionScopeCatalog(workspaceId as string),
+    enabled: Boolean(workspaceId),
     retry: false,
     staleTime: 30_000,
   });
 
   const catalog = useMemo(() => {
     if (!catalogQuery.data) return undefined;
-    if (projectConfigError) return unavailableCatalog();
-    if (projectConfigLoading) return undefined;
+    if (workspaceConfigError) return unavailableCatalog();
+    if (workspaceConfigLoading) return undefined;
 
-    const agentScope = projectConfig?.agents.find((agent) => agent.name === agentName)?.scope;
+    const agentScope = workspaceConfig?.agents.find((agent) => agent.name === agentName)?.scope;
     return buildSessionScopeSelectionCatalog({
       ...catalogQuery.data.raw,
       grants: {
@@ -177,23 +177,23 @@ export function useSessionScope({ projectId, sessionId, agentName }: UseSessionS
         connectors: agentScope?.connectors,
       },
     });
-  }, [agentName, catalogQuery.data, projectConfig, projectConfigError, projectConfigLoading]);
+  }, [agentName, catalogQuery.data, workspaceConfig, workspaceConfigError, workspaceConfigLoading]);
 
   const saveScope = useMutation({
     mutationFn: (replacement: SessionScopeInput) => {
-      if (!projectId || !sessionId) {
-        throw new Error('A project and session are required to save session scope.');
+      if (!workspaceId || !sessionId) {
+        throw new Error('A workspace and session are required to save session scope.');
       }
-      return setProjectSessionScope(projectId, sessionId, replacement);
+      return setWorkspaceSessionScope(workspaceId, sessionId, replacement);
     },
     onSuccess: (scope) => {
-      queryClient.setQueryData(sessionScopeQueryKey(projectId, sessionId), scope);
+      queryClient.setQueryData(sessionScopeQueryKey(workspaceId, sessionId), scope);
     },
   });
 
   const scopeError = scopeQuery.error instanceof Error ? scopeQuery.error : null;
   const catalogError =
-    projectConfigError ??
+    workspaceConfigError ??
     (catalogQuery.error instanceof Error ? catalogQuery.error : null) ??
     firstCatalogError(catalogQuery.data?.errors);
   const saveError = saveScope.error instanceof Error ? saveScope.error : null;
@@ -203,8 +203,8 @@ export function useSessionScope({ projectId, sessionId, agentName }: UseSessionS
     catalog,
     saveScope,
     isScopeLoading: scopeQuery.isLoading,
-    isCatalogLoading: catalogQuery.isLoading || projectConfigLoading,
-    isLoading: scopeQuery.isLoading || catalogQuery.isLoading || projectConfigLoading,
+    isCatalogLoading: catalogQuery.isLoading || workspaceConfigLoading,
+    isLoading: scopeQuery.isLoading || catalogQuery.isLoading || workspaceConfigLoading,
     scopeError,
     catalogError,
     catalogErrors: catalogQuery.data?.errors,

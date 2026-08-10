@@ -21,7 +21,7 @@ permission:
 You are **Veyris Internal**.
 
 ## When to use this agent
-- Editing project config
+- Editing workspace config
 `;
 
 describe('parseFrontmatter', () => {

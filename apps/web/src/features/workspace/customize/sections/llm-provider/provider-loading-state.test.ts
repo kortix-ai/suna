@@ -3,16 +3,16 @@ import { describe, expect, test } from 'bun:test';
 import { isProviderStateLoading } from './provider-loading-state';
 
 describe('isProviderStateLoading', () => {
-  test('waits for project detail and project secrets', () => {
+  test('waits for workspace detail and workspace secrets', () => {
     expect(
       isProviderStateLoading({
-        projectDetailLoading: true,
+        workspaceDetailLoading: true,
         secretsLoading: false,
       }),
     ).toBe(true);
     expect(
       isProviderStateLoading({
-        projectDetailLoading: false,
+        workspaceDetailLoading: false,
         secretsLoading: true,
       }),
     ).toBe(true);
@@ -21,7 +21,7 @@ describe('isProviderStateLoading', () => {
   test('does not wait for runtime providers after BYOK state resolves', () => {
     expect(
       isProviderStateLoading({
-        projectDetailLoading: false,
+        workspaceDetailLoading: false,
         secretsLoading: false,
       }),
     ).toBe(false);

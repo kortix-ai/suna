@@ -57,9 +57,9 @@ function resolveGlyph(glyph?: { name: string; color: string } | null) {
 export interface EntityAvatarProps {
   label?: string;
   /**
-   * A named glyph + colour — a project's alternative to `emoji`. Takes
+   * A named glyph + colour — a workspace's alternative to `emoji`. Takes
    * precedence over `emoji`, `icon`, and the label's initial: the field that
-   * produces this value is a union (a project has an emoji XOR a glyph,
+   * produces this value is a union (a workspace has an emoji XOR a glyph,
    * never both), so whichever was chosen last is what should paint.
    *
    * An unknown `name` resolves through `glyphComponent()` to `null` and
@@ -70,11 +70,11 @@ export interface EntityAvatarProps {
    */
   glyph?: { name: string; color: string } | null;
   /**
-   * A single emoji grapheme standing in for the entity — today, a project's
+   * A single emoji grapheme standing in for the entity — today, a workspace's
    * own icon. Beaten by `glyph`; takes precedence over `icon` and over the
    * label's initial.
    *
-   * Typed `| null` so it takes `KortixProject.icon` (server-validated to one
+   * Typed `| null` so it takes `KortixWorkspace.icon` (server-validated to one
    * emoji, or null) with no coercion at the call site. Anything falsy — null,
    * undefined, '' — is "no emoji" and falls through to the existing behaviour,
    * which is what keeps all ~30 emoji-less call sites byte-identical.
@@ -141,7 +141,7 @@ export function EntityAvatar({
         //
         // STILL LAST-WINS: a caller className that sets a background silently
         // beats `bg-emoji-fill-*` / `bg-glyph-fill-*` and leaves the tile
-        // ringed but untinted. That is why the project card no longer passes
+        // ringed but untinted. That is why the workspace card no longer passes
         // `bg-background`.
         resolvedGlyph ? glyphTint(resolvedGlyph.color) : emoji && [emojiTint(emoji), sizes.emoji],
         className,
@@ -160,7 +160,7 @@ export function EntityAvatar({
         // The tile always sits beside the name it belongs to, so the glyph is
         // decorative: announced, it reads the emoji's CLDR name immediately
         // before the label that says the same thing. Same treatment as the
-        // picker trigger in features/projects/modal/project-icon-field.tsx.
+        // picker trigger in features/workspaces/modal/workspace-icon-field.tsx.
         <span aria-hidden className="leading-none">
           {emoji}
         </span>

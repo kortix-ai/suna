@@ -2,7 +2,7 @@
 
 /**
  * Agent picker — controlled, over a server-side agent list (`useVisibleAgents({
- * projectId })`). Same component on the new-session screen and the chat composer.
+ * workspaceId })`). Same component on the new-session screen and the chat composer.
  * `value` is the agent name (or null = the project's default agent); `onChange`
  * sets it. The chosen name is passed to send as `options.agent`.
  */

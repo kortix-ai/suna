@@ -2,11 +2,11 @@
  * May the `/start` poll run for this session?
  *
  * The billing check is a PRE-flight condition that was being evaluated as a
- * running one — and it flips. `projectAccountId` arrives with `project-detail`,
+ * running one — and it flips. `workspaceAccountId` arrives with `project-detail`,
  * a full round-trip before the account state it scopes, so the old gate read
  * open → shut → open on every session open:
  *
- *   mount          projectAccountId undefined  → gate open  → /start fires
+ *   mount          workspaceAccountId undefined  → gate open  → /start fires
  *   detail lands   accountId known, state not  → gate SHUT  → /start disabled
  *   state lands    account known good          → gate open  → /start resumes
  *

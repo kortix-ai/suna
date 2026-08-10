@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { PROJECT_GLYPH_GROUPS } from '@kortix/shared';
+import { WORKSPACE_GLYPH_GROUPS } from '@kortix/shared';
 import { GlyphPicker, matchesSearch } from './glyph-picker';
 
 /**
@@ -61,8 +61,8 @@ describe('GlyphPicker', () => {
     // `Shapes`, ... `Symbols`) with a `grid-cols-9` sub-grid under each.
     // Review feedback dropped the grouping; this pins both halves of that:
     // none of the category labels render as a heading, and there is exactly
-    // one `grid-cols-9` grid, not eight. `PROJECT_GLYPH_GROUPS` still exists
-    // (it is the ordering source `PROJECT_GLYPH_NAMES` flattens from) so this
+    // one `grid-cols-9` grid, not eight. `WORKSPACE_GLYPH_GROUPS` still exists
+    // (it is the ordering source `WORKSPACE_GLYPH_NAMES` flattens from) so this
     // reads its labels directly off the shared catalogue rather than
     // hardcoding them, and would fail if grouping ever came back.
     const html = renderToStaticMarkup(
@@ -77,7 +77,7 @@ describe('GlyphPicker', () => {
     // `data-glyph="Files"` and `aria-label="Files"`. A reintroduced sticky
     // header would add a THIRD occurrence, so that group is checked for an
     // exact count instead of zero, rather than skipped outright.
-    for (const group of PROJECT_GLYPH_GROUPS) {
+    for (const group of WORKSPACE_GLYPH_GROUPS) {
       const matches = html.match(new RegExp(`\\b${group.label}\\b`, 'g')) ?? [];
       if ((group.names as readonly string[]).includes(group.label)) {
         expect(matches).toHaveLength(2);
@@ -181,7 +181,7 @@ describe('GlyphPicker click commits the resolved colour, not the raw prop', () =
     // writes nothing, and the picker still closes as if it had succeeded.
     //
     // apps/web has no DOM harness (no jsdom, no testing-library — see the note at
-    // the top of project-icon-field.test.tsx's "remove control" describe block),
+    // the top of workspace-icon-field.test.tsx's "remove control" describe block),
     // so a real click can't be simulated here. This reads the handler off source
     // the same way that file's `emojiHandler` / `glyphHandler` slices do.
     const code = stripComments(readFileSync(new URL('./glyph-picker.tsx', import.meta.url), 'utf8'));

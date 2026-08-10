@@ -284,7 +284,7 @@ describe('selectSnapshotsToReap — FIX-K-lite pinned-image guard', () => {
     snap(`kortix-ppwarm-${proj}-${hash}`, { lastUsedAt: ago(days), createdAt: ago(days), ...extra });
 
   it("never reaps a project's LIVE pinned tip even when a proj8 collision makes it look superseded", () => {
-    // Projects A and B collide on proj8 (both `c0111ab e`). A's superseded-tip
+    // Workspaces A and B collide on proj8 (both `c0111ab e`). A's superseded-tip
     // selection sweeps up B's LIVE pinned tip over the org-wide list — the bug.
     const current = ppw('c0111abe', 'aaaaaaaaaaaa', 1); // A's freshest tip (kept)
     const aSuperseded = ppw('c0111abe', 'bbbbbbbbbbbb', 3); // A's genuinely stale tip

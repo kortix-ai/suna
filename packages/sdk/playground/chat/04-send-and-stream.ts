@@ -20,15 +20,15 @@ import {
 
 run("send-and-stream", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix);
+  const workspaceId = await pickProjectId(kortix);
   const sessionId = await pickOrCreateSessionId(
     kortix,
-    projectId,
+    workspaceId,
     "sdk chat test",
   );
   const prompt = process.argv[2] ?? "Say hello in one sentence.";
 
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
   const turn = await sendAndWait(session, prompt, { model: modelOverride() });
   reportTurn("send-and-stream", turn);
 });

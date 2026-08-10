@@ -22,20 +22,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type { EmailInstallation, EmailMode, EmailSenderPolicy, SlackInstallation, SlackMode };
 
-const key = (projectId: string | null) =>
-  ['channels', 'slack-install', projectId ?? 'none'] as const;
+const key = (workspaceId: string | null) =>
+  ['channels', 'slack-install', workspaceId ?? 'none'] as const;
 
-export function useSlackInstall(projectId: string | null) {
+export function useSlackInstall(workspaceId: string | null) {
   return useQuery({
-    queryKey: key(projectId),
-    enabled: !!projectId,
+    queryKey: key(workspaceId),
+    enabled: !!workspaceId,
     staleTime: 30_000,
-    queryFn: () => (projectId ? getSlackInstallation(projectId) : null),
+    queryFn: () => (workspaceId ? getSlackInstallation(workspaceId) : null),
   });
 }
 
 interface ConnectInput {
-  projectId: string;
+  workspaceId: string;
   bot_token: string;
   signing_secret: string;
 }
@@ -43,38 +43,38 @@ interface ConnectInput {
 export function useConnectSlack() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, ...body }: ConnectInput) => connectSlack(projectId, body),
-    onSuccess: (_data, { projectId }) => {
-      qc.invalidateQueries({ queryKey: key(projectId) });
-      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
+    mutationFn: ({ workspaceId, ...body }: ConnectInput) => connectSlack(workspaceId, body),
+    onSuccess: (_data, { workspaceId }) => {
+      qc.invalidateQueries({ queryKey: key(workspaceId) });
+      qc.invalidateQueries({ queryKey: qk.workspace.connectors(workspaceId) });
     },
   });
 }
 
-const modeKey = (projectId: string | null) =>
-  ['channels', 'slack-mode', projectId ?? 'none'] as const;
+const modeKey = (workspaceId: string | null) =>
+  ['channels', 'slack-mode', workspaceId ?? 'none'] as const;
 
-export function useSlackMode(projectId: string | null) {
+export function useSlackMode(workspaceId: string | null) {
   return useQuery({
-    queryKey: modeKey(projectId),
-    enabled: !!projectId,
+    queryKey: modeKey(workspaceId),
+    enabled: !!workspaceId,
     staleTime: 60_000,
     queryFn: () =>
-      projectId ? getSlackMode(projectId) : ({ oauth_available: false, install_url: null } satisfies SlackMode),
+      workspaceId ? getSlackMode(workspaceId) : ({ oauth_available: false, install_url: null } satisfies SlackMode),
   });
 }
 
-const manifestKey = (projectId: string | null) =>
-  ['channels', 'slack-manifest', projectId ?? 'none'] as const;
+const manifestKey = (workspaceId: string | null) =>
+  ['channels', 'slack-manifest', workspaceId ?? 'none'] as const;
 
-export function useSlackManifest(projectId: string | null) {
+export function useSlackManifest(workspaceId: string | null) {
   return useQuery({
-    queryKey: manifestKey(projectId),
-    enabled: !!projectId,
+    queryKey: manifestKey(workspaceId),
+    enabled: !!workspaceId,
     staleTime: 60_000,
     queryFn: async () => {
-      if (!projectId) return null;
-      const manifest = await getSlackManifest(projectId);
+      if (!workspaceId) return null;
+      const manifest = await getSlackManifest(workspaceId);
       return JSON.stringify(manifest, null, 2);
     },
   });
@@ -83,42 +83,42 @@ export function useSlackManifest(projectId: string | null) {
 export function useDisconnectSlack() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (projectId: string) => disconnectSlack(projectId),
-    onSuccess: (_data, projectId) => {
-      qc.invalidateQueries({ queryKey: key(projectId) });
-      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
+    mutationFn: (workspaceId: string) => disconnectSlack(workspaceId),
+    onSuccess: (_data, workspaceId) => {
+      qc.invalidateQueries({ queryKey: key(workspaceId) });
+      qc.invalidateQueries({ queryKey: qk.workspace.connectors(workspaceId) });
     },
   });
 }
 
-const emailKey = (projectId: string | null, connectorSlug?: string | null) =>
-  ['channels', 'email-install', projectId ?? 'none', connectorSlug ?? 'kortix_email'] as const;
-const emailModeKey = (projectId: string | null) =>
-  ['channels', 'email-mode', projectId ?? 'none'] as const;
+const emailKey = (workspaceId: string | null, connectorSlug?: string | null) =>
+  ['channels', 'email-install', workspaceId ?? 'none', connectorSlug ?? 'kortix_email'] as const;
+const emailModeKey = (workspaceId: string | null) =>
+  ['channels', 'email-mode', workspaceId ?? 'none'] as const;
 
-export function useEmailInstall(projectId: string | null, connectorSlug?: string | null) {
+export function useEmailInstall(workspaceId: string | null, connectorSlug?: string | null) {
   return useQuery({
-    queryKey: emailKey(projectId, connectorSlug),
-    enabled: !!projectId,
+    queryKey: emailKey(workspaceId, connectorSlug),
+    enabled: !!workspaceId,
     staleTime: 30_000,
-    queryFn: () => (projectId ? getEmailInstallation(projectId, connectorSlug) : null),
+    queryFn: () => (workspaceId ? getEmailInstallation(workspaceId, connectorSlug) : null),
   });
 }
 
-export function useEmailMode(projectId: string | null) {
+export function useEmailMode(workspaceId: string | null) {
   return useQuery({
-    queryKey: emailModeKey(projectId),
-    enabled: !!projectId,
+    queryKey: emailModeKey(workspaceId),
+    enabled: !!workspaceId,
     staleTime: 60_000,
     queryFn: () =>
-      projectId
-        ? getEmailMode(projectId)
+      workspaceId
+        ? getEmailMode(workspaceId)
         : ({ provider: 'agentmail', managed_available: false } satisfies EmailMode),
   });
 }
 
 interface ConnectEmailInput {
-  projectId: string;
+  workspaceId: string;
   connector_slug?: string;
   api_key?: string;
   display_name?: string;
@@ -132,11 +132,11 @@ interface ConnectEmailInput {
 export function useConnectEmail() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, ...body }: ConnectEmailInput) => connectEmail(projectId, body),
-    onSuccess: (_data, { projectId, connector_slug }) => {
-      qc.invalidateQueries({ queryKey: emailKey(projectId) });
-      qc.invalidateQueries({ queryKey: emailKey(projectId, connector_slug) });
-      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
+    mutationFn: ({ workspaceId, ...body }: ConnectEmailInput) => connectEmail(workspaceId, body),
+    onSuccess: (_data, { workspaceId, connector_slug }) => {
+      qc.invalidateQueries({ queryKey: emailKey(workspaceId) });
+      qc.invalidateQueries({ queryKey: emailKey(workspaceId, connector_slug) });
+      qc.invalidateQueries({ queryKey: qk.workspace.connectors(workspaceId) });
     },
   });
 }
@@ -144,15 +144,15 @@ export function useConnectEmail() {
 export function useDisconnectEmail() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: string | { projectId: string; connectorSlug?: string | null }) => {
-      const projectId = typeof input === 'string' ? input : input.projectId;
+    mutationFn: async (input: string | { workspaceId: string; connectorSlug?: string | null }) => {
+      const workspaceId = typeof input === 'string' ? input : input.workspaceId;
       const connectorSlug = typeof input === 'string' ? null : input.connectorSlug;
-      await disconnectEmail(projectId, connectorSlug);
-      return { projectId, connectorSlug };
+      await disconnectEmail(workspaceId, connectorSlug);
+      return { workspaceId, connectorSlug };
     },
-    onSuccess: ({ projectId, connectorSlug }) => {
-      qc.invalidateQueries({ queryKey: emailKey(projectId, connectorSlug) });
-      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
+    onSuccess: ({ workspaceId, connectorSlug }) => {
+      qc.invalidateQueries({ queryKey: emailKey(workspaceId, connectorSlug) });
+      qc.invalidateQueries({ queryKey: qk.workspace.connectors(workspaceId) });
     },
   });
 }
@@ -161,17 +161,17 @@ export function useUpdateEmailPolicy() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      projectId,
+      workspaceId,
       connectorSlug,
       sender_policy,
     }: {
-      projectId: string;
+      workspaceId: string;
       connectorSlug?: string | null;
       sender_policy: EmailSenderPolicy;
-    }) => updateEmailPolicy(projectId, connectorSlug, sender_policy),
-    onSuccess: (_data, { projectId, connectorSlug }) => {
-      qc.invalidateQueries({ queryKey: emailKey(projectId, connectorSlug) });
-      qc.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
+    }) => updateEmailPolicy(workspaceId, connectorSlug, sender_policy),
+    onSuccess: (_data, { workspaceId, connectorSlug }) => {
+      qc.invalidateQueries({ queryKey: emailKey(workspaceId, connectorSlug) });
+      qc.invalidateQueries({ queryKey: qk.workspace.connectors(workspaceId) });
     },
   });
 }

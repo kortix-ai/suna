@@ -1,21 +1,21 @@
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-type ProjectRole = 'manager' | 'editor' | 'member';
-const ROLES: readonly ProjectRole[] = ['manager', 'editor', 'member'];
+type WorkspaceRole = 'manager' | 'editor' | 'member';
+const ROLES: readonly WorkspaceRole[] = ['manager', 'editor', 'member'];
 
 interface AccessMember {
   user_id: string;
   email: string | null;
   account_role: string;
-  project_role: ProjectRole | null;
-  effective_project_role: ProjectRole | null;
+  workspace_role: WorkspaceRole | null;
+  effective_workspace_role: WorkspaceRole | null;
   has_implicit_access: boolean;
   effective_source: string | null;
   joined_at: string;
@@ -25,28 +25,28 @@ interface AccessMember {
 interface PendingInvite {
   invite_id: string;
   email: string;
-  project_role: ProjectRole;
+  workspace_role: WorkspaceRole;
   invited_by_email: string | null;
   invite_expired: boolean;
 }
 
 const HELP = help`Usage: kortix access <subcommand> [options]
 
-Manage who can use the linked project — mirrors the dashboard's project
+Manage who can use the linked workspace — mirrors the dashboard's workspace
 sharing/access panel. Roles: ${ROLES.join(', ')}.
 
 Subcommands:
-  ls [--json]                       List members + effective project roles.
-  invite <email> --role <r>         Invite someone to the project.
-  grant <user-id> --role <r>        Set/grant a member's project role.
-  revoke <user-id>                  Remove a member's project access.
-  pending [--json]                  List pending project invitations.
+  ls [--json]                       List members + effective workspace roles.
+  invite <email> --role <r>         Invite someone to the workspace.
+  grant <user-id> --role <r>        Set/grant a member's workspace role.
+  revoke <user-id>                  Remove a member's workspace access.
+  pending [--json]                  List pending workspace invitations.
   cancel <invite-id>                Cancel a pending invitation.
 
 Options:
   --role <r>         ${ROLES.join('|')}.
   --expires <iso>    Optional auto-revoke timestamp for a grant.
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 `;
@@ -61,7 +61,7 @@ export async function runAccess(argv: string[]): Promise<number> {
   const f: Record<string, string | undefined> = {};
   let json = false;
   try {
-    f.project = takeFlagValue(rest, ['--project']);
+    f.workspace = takeFlagValue(rest, ['--workspace', '--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.role = takeFlagValue(rest, ['--role']);
     f.expires = takeFlagValue(rest, ['--expires']);
@@ -71,10 +71,10 @@ export async function runAccess(argv: string[]): Promise<number> {
     return 2;
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveWorkspaceContext({ workspaceArg: f.workspace, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
-  const role = f.role as ProjectRole | undefined;
+  const base = `/workspaces/${ctx.workspaceId}`;
+  const role = f.role as WorkspaceRole | undefined;
   const checkRole = (): boolean => {
     if (!role || !ROLES.includes(role)) {
       process.stderr.write(`${status.err(`--role must be one of ${ROLES.join(', ')}`)}\n`);
@@ -94,9 +94,9 @@ export async function runAccess(argv: string[]): Promise<number> {
         }
         const emailW = Math.max(...resp.members.map((m) => (m.email ?? m.user_id).length), 6);
         process.stdout.write('\n');
-        process.stdout.write(`  ${C.dim}${pad('MEMBER', emailW)}   ACCOUNT   PROJECT ROLE   SOURCE${C.reset}\n`);
+        process.stdout.write(`  ${C.dim}${pad('MEMBER', emailW)}   ACCOUNT   WORKSPACE ROLE   SOURCE${C.reset}\n`);
         for (const m of resp.members) {
-          const eff = m.effective_project_role ?? '—';
+          const eff = m.effective_workspace_role ?? '—';
           const src = m.effective_source ?? (m.has_implicit_access ? 'implicit' : '—');
           process.stdout.write(
             `  ${pad(m.email ?? m.user_id, emailW)}   ${pad(m.account_role, 7)}   ${pad(eff, 12)}   ${C.faded}${src}${C.reset}\n`,
@@ -181,7 +181,7 @@ export async function runAccess(argv: string[]): Promise<number> {
         process.stdout.write('\n');
         for (const p of resp.pending) {
           process.stdout.write(
-            `  ${p.email}  ${C.faded}${p.project_role}${C.reset}  ${C.dim}${p.invite_id}${p.invite_expired ? ` ${C.red}(expired)${C.reset}` : ''}${C.reset}\n`,
+            `  ${p.email}  ${C.faded}${p.workspace_role}${C.reset}  ${C.dim}${p.invite_id}${p.invite_expired ? ` ${C.red}(expired)${C.reset}` : ''}${C.reset}\n`,
           );
         }
         process.stdout.write(`\n  ${C.dim}${resp.pending.length} pending${C.reset}\n\n`);

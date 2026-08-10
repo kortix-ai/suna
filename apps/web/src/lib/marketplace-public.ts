@@ -161,17 +161,17 @@ export async function loadMarketplaceExploreData(): Promise<{
    *  initial HTML for crawlers/SEO and must never depend on a client-side
    *  fetch. Unlike the general catalog this stays small for a long time
    *  (hand-authored), so an unbounded fetch is safe and simpler than paging. */
-  projectItems: MarketplaceItem[];
+  workspaceItems: MarketplaceItem[];
 }> {
   try {
-    const [itemsPage, marketplacesPage, projectItemsPage] = await Promise.all([
+    const [itemsPage, marketplacesPage, workspaceItemsPage] = await Promise.all([
       listPublicMarketplaceItems({ limit: MARKETPLACE_EXPLORE_LANDING_LIMIT }),
       listPublicMarketplaces(),
-      listPublicMarketplaceItems({ type: 'project' }),
+      listPublicMarketplaceItems({ type: 'workspace' }),
     ]);
-    return { itemsPage, marketplacesPage, projectItems: projectItemsPage.items };
+    return { itemsPage, marketplacesPage, workspaceItems: workspaceItemsPage.items };
   } catch {
-    return { itemsPage: emptyItemsPage(), marketplacesPage: emptyMarketplacesPage(), projectItems: [] };
+    return { itemsPage: emptyItemsPage(), marketplacesPage: emptyMarketplacesPage(), workspaceItems: [] };
   }
 }
 

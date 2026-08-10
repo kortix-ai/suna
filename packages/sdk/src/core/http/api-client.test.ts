@@ -651,7 +651,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
 // Regression for Better Stack frontend pattern `ed07f6c5…`
 // (`ApiError: Model "nvidia/minimaxai/minimax-m3" is not available for this
 // account`, HTTP 409, `onunhandledrejection` `handled:false`) on the
-// co-worker session page: `PUT /v1/projects/:projectId/model-defaults`
+// co-worker session page: `PUT /v1/projects/:workspaceId/model-defaults`
 // returns a TYPED 409 with `code: 'model_not_servable'` (from
 // `isModelServableForAccount` in `apps/api/src/projects/routes/r4.ts` and
 // `channel-bindings.ts`) when a user picks a model their account can't use

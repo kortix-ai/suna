@@ -4,7 +4,7 @@
  *   - db-deps.ts      → hide a superseded user `slack` connector from listings
  *   - channel-manifest.ts → declare/undeclare the channel connector in kortix.yaml
  */
-import { SLACK_RESERVED_SLUG, type ChannelPlatform } from '../projects/connectors';
+import { SLACK_RESERVED_SLUG, type ChannelPlatform } from '../workspaces/connectors';
 
 type Entry = Record<string, unknown>;
 

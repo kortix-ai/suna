@@ -13,7 +13,7 @@ export interface SessionCost {
 }
 
 export interface SessionCostProject {
-  projectId: string;
+  workspaceId: string;
   sessions: SessionCost[];
   error?: string;
 }

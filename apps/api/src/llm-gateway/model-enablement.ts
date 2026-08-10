@@ -2,8 +2,8 @@ import { defaultEnabledModelIds } from '@kortix/llm-catalog';
 
 import { isKnownManagedModelId } from './models/managed-models';
 
-// Per-project model enablement. The newest model of each family is offered by
-// default; a project stores only the EXCEPTIONS it made to that. Enablement is
+// Per-Workspace model enablement. The newest model of each family is offered by
+// default; a workspace stores only the EXCEPTIONS it made to that. Enablement is
 // a DISPLAY contract: the picker hides a disabled model, but the gateway still
 // serves it if a caller names it outright. The gateway must never refuse a
 // request over enablement — that 400'd every turn on deployments whose in-use
@@ -30,7 +30,7 @@ type ServedModel = {
   provider?: string;
 };
 
-/** Per-project exceptions to the default: `wireModelId -> enabled`. */
+/** Per-Workspace exceptions to the default: `wireModelId -> enabled`. */
 export type ModelOverrides = Record<string, boolean>;
 
 /**
@@ -41,9 +41,9 @@ export type ModelOverrides = Record<string, boolean>;
  * exactly the models it is answering about — the picker route narrows by
  * connected providers and plan.
  *
- * `alwaysOn` is the models this project is CONFIGURED to use (its effective
+ * `alwaysOn` is the models this workspace is CONFIGURED to use (its effective
  * default, vision model, fallbacks, routing-rule targets). Hiding one of those
- * would hide the model the project's own settings resolve to.
+ * would hide the model the workspace's own settings resolve to.
  */
 export function defaultEnabledFromCatalog(
   catalog: Record<string, ServedModel>,
@@ -85,8 +85,8 @@ export function resolveEnablement(
 }
 
 /**
- * Models a routing policy points at, which the project is therefore configured
- * to route to. Hiding one of these would hide a model the project's own
+ * Models a routing policy points at, which the workspace is therefore configured
+ * to route to. Hiding one of these would hide a model the workspace's own
  * routing rules produce.
  */
 export function routingReferencedModels(

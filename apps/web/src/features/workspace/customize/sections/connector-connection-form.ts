@@ -1,7 +1,7 @@
 import type {
-  AdminConnector,
-  ConnectorAuthorizationStrategy,
-  ConnectorDraftInput,
+  WorkspaceAdminConnector,
+  WorkspaceConnectorAuthorizationStrategy,
+  WorkspaceConnectorDraftInput,
   ConnectorSyncResult,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
@@ -21,54 +21,54 @@ export interface EasyConnectApp {
 export interface EasyConnectConnectionInput {
   name: string;
   slug: string;
-  authorizationStrategy: ConnectorAuthorizationStrategy;
+  authorizationStrategy: WorkspaceConnectorAuthorizationStrategy;
 }
 
 export type ConnectorSetupStatus =
   'connected' | 'error' | 'needs_setup' | 'no_auth' | 'user_managed';
 
-export function connectorConnectionQueryKeys(projectId: string) {
+export function connectorConnectionQueryKeys(workspaceId: string) {
   return [
-    qk.project.connectors(projectId),
-    ['connections', projectId],
-    ['connections-all', projectId],
-    ['session-scope-catalog', projectId],
+    qk.workspace.connectors(workspaceId),
+    ['connections', workspaceId],
+    ['connections-all', workspaceId],
+    ['session-scope-catalog', workspaceId],
   ] as const;
 }
 
 export function connectionOwnerTypeForStrategy(
-  strategy: ConnectorAuthorizationStrategy,
-): 'project' | 'member' {
-  return strategy === 'project' ? 'project' : 'member';
+  strategy: WorkspaceConnectorAuthorizationStrategy,
+): 'workspace' | 'member' {
+  return strategy === 'workspace' ? 'workspace' : 'member';
 }
 
 export function connectorAuthorizationStrategyForProvider(
-  provider: ConnectorDraftInput['provider'],
-  strategy: ConnectorAuthorizationStrategy,
-): ConnectorAuthorizationStrategy {
-  return provider === 'channel' || provider === 'computer' ? 'project' : strategy;
+  provider: WorkspaceConnectorDraftInput['provider'],
+  strategy: WorkspaceConnectorAuthorizationStrategy,
+): WorkspaceConnectorAuthorizationStrategy {
+  return provider === 'channel' || provider === 'computer' ? 'workspace' : strategy;
 }
 
 export function connectorAuthorizationStrategyIsEditable(
-  provider: ConnectorDraftInput['provider'],
+  provider: WorkspaceConnectorDraftInput['provider'],
 ): boolean {
   return provider !== 'channel' && provider !== 'computer';
 }
 
 export function connectorAuthorizationUpdateIsPending(
-  current: ConnectorAuthorizationStrategy,
-  submitted: ConnectorAuthorizationStrategy | null,
+  current: WorkspaceConnectorAuthorizationStrategy,
+  submitted: WorkspaceConnectorAuthorizationStrategy | null,
   mutationPending: boolean,
 ): boolean {
   return mutationPending || (submitted !== null && submitted !== current);
 }
 
-export function createOnlyConnectorDraft(draft: ConnectorDraftInput): ConnectorDraftInput {
+export function createOnlyConnectorDraft(draft: WorkspaceConnectorDraftInput): WorkspaceConnectorDraftInput {
   return {
     ...draft,
     authorization_strategy: connectorAuthorizationStrategyForProvider(
       draft.provider,
-      draft.authorization_strategy ?? 'project',
+      draft.authorization_strategy ?? 'workspace',
     ),
     create_only: true,
   };
@@ -82,7 +82,7 @@ export function connectorSyncErrorForSlug(
 }
 
 export function connectorSetupStatus(
-  connector: Pick<AdminConnector, 'authorizationStrategy' | 'authSecret' | 'secretSet' | 'status'>,
+  connector: Pick<WorkspaceAdminConnector, 'authorizationStrategy' | 'authSecret' | 'secretSet' | 'status'>,
 ): ConnectorSetupStatus {
   if (connector.status === 'error') return 'error';
   if (!connector.authSecret) return 'no_auth';
@@ -155,7 +155,7 @@ export function buildEmailConnectorConnectionSlug(baseInput: string, uniqueId: s
 export function buildEasyConnectConnectorDraft(
   app: EasyConnectApp,
   connection: EasyConnectConnectionInput,
-): ConnectorDraftInput {
+): WorkspaceConnectorDraftInput {
   return createOnlyConnectorDraft({
     slug: connection.slug,
     name: connection.name.trim(),

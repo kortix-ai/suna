@@ -6,7 +6,7 @@ import {
   hasEnvTokenHost,
   type Host,
 } from './api/config.ts';
-import { loadLink } from './project-link.ts';
+import { loadWorkspaceLink } from './workspace-link.ts';
 import { C, pad, visibleWidth } from './style.ts';
 
 export interface HostNotice {
@@ -57,7 +57,7 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   const command = commandArgv[0];
   if (!command || ['help', '--help', '-h', 'version'].includes(command)) return null;
   const hostArg = findHostArg(commandArgv.slice(1));
-  const directoryLink = loadLink();
+  const directoryLink = loadWorkspaceLink();
   const linkedHost = !hostArg ? directoryLink?.host : undefined;
   const notice = resolveHostNotice(hostArg ?? linkedHost);
   let line = `${C.dim}host ${C.reset}${C.bold}${notice.name}${C.reset}${C.dim} (${notice.url}, ${notice.authState})${C.reset}`;
@@ -100,7 +100,7 @@ function activeAccountLabel(): string | null {
 
 /** Active workspace: the cwd's directory link wins over the global default. */
 function activeWorkspaceLabel(): { label: string; source: 'linked' | 'default' } | null {
-  const link = loadLink();
+  const link = loadWorkspaceLink();
   if (link?.workspace_id) {
     return { label: shortId(link.workspace_id), source: 'linked' };
   }
@@ -132,9 +132,9 @@ function shortId(id: string): string {
  * have an account without a host) and the host row points at `hosts login`.
  */
 export function renderContext(): string {
-  // A cwd directory link (`loadLink`) can pin the host — and, with it, the
+  // A cwd directory link (`loadWorkspaceLink`) can pin the host — and, with it, the
   // account — for this directory, overriding the globally-active host.
-  const directoryLink = loadLink();
+  const directoryLink = loadWorkspaceLink();
   const linkedHost = directoryLink?.host ? getHost(directoryLink.host) : null;
   const active = activeHostEntry();
   const name = linkedHost ? directoryLink!.host! : active.name;

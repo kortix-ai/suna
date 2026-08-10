@@ -176,7 +176,7 @@ flow(
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/git-token',
+      'POST /v1/projects/:workspaceId/git-token',
     ],
   },
   async (ctx) => {
@@ -344,7 +344,7 @@ flow(
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/git-token',
+      'POST /v1/projects/:workspaceId/git-token',
     ],
   },
   async (ctx) => {
@@ -453,8 +453,8 @@ flow(
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
-      'GET /v1/projects/:projectId',
-      'POST /v1/projects/:projectId/git-token',
+      'GET /v1/projects/:workspaceId',
+      'POST /v1/projects/:workspaceId/git-token',
     ],
   },
   async (ctx) => {
@@ -515,8 +515,8 @@ flow(
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
-      'GET /v1/projects/:projectId',
-      'POST /v1/projects/:projectId/git-token',
+      'GET /v1/projects/:workspaceId',
+      'POST /v1/projects/:workspaceId/git-token',
     ],
   },
   async (ctx) => {
@@ -590,16 +590,16 @@ flow(
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
-      'POST /v1/projects/:projectId/change-requests',
-      'GET /v1/projects/:projectId/change-requests',
-      'GET /v1/projects/:projectId/change-requests/:crId',
-      'GET /v1/projects/:projectId/change-requests/:crId/merge-preview',
-      'POST /v1/projects/:projectId/change-requests/:crId/merge',
-      'POST /v1/projects/:projectId/change-requests/:crId/close',
-      'POST /v1/projects/:projectId/change-requests/:crId/reopen',
+      'POST /v1/projects/:workspaceId/sessions',
+      'POST /v1/projects/:workspaceId/sessions/:sessionId/start',
+      'POST /v1/projects/:workspaceId/sessions/:sessionId/commit-push',
+      'POST /v1/projects/:workspaceId/change-requests',
+      'GET /v1/projects/:workspaceId/change-requests',
+      'GET /v1/projects/:workspaceId/change-requests/:crId',
+      'GET /v1/projects/:workspaceId/change-requests/:crId/merge-preview',
+      'POST /v1/projects/:workspaceId/change-requests/:crId/merge',
+      'POST /v1/projects/:workspaceId/change-requests/:crId/close',
+      'POST /v1/projects/:workspaceId/change-requests/:crId/reopen',
     ],
   },
   async (ctx) => {
@@ -620,10 +620,10 @@ flow(
     const started = await waitFor(
       async () => {
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/sessions/:sessionId/start',
+          '/v1/projects/:workspaceId/sessions/:sessionId/start',
           {},
           {
-            params: { projectId: project.id, sessionId: session.id },
+            params: { workspaceId: project.id, sessionId: session.id },
             query: { wait_ms: '8000' },
             timeoutMs: 25_000,
           },
@@ -661,9 +661,9 @@ flow(
     const committed = await ctx.client
       .as(ctx.P.OWNER)
       .post(
-        '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+        '/v1/projects/:workspaceId/sessions/:sessionId/commit-push',
         { message: 'Add change request fixture' },
-        { params: { projectId: project.id, sessionId: session.id } },
+        { params: { workspaceId: project.id, sessionId: session.id } },
       );
     committed.status(200).body().has('$.committed', true).has('$.pushed', true);
 

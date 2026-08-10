@@ -1,5 +1,5 @@
 /**
- * The tint a project's emoji wears.
+ * The tint a workspace's emoji wears.
  *
  * In the picker (emoji-picker.tsx) a cell takes a pale fill and a stronger 1px
  * inset ring while it is hovered or keyboard-active. That treatment is what a
@@ -23,7 +23,7 @@
  *     colour. Most emoji are the second kind, which is why the table stays this
  *     small and why growing it is rarely the right fix.
  *
- *  2. A hash for everything else. Deterministic, so a project's colour survives
+ *  2. A hash for everything else. Deterministic, so a workspace's colour survives
  *     a reload and matches across surfaces, and spread across all six hues so
  *     the grid does not settle on one.
  *

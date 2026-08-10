@@ -4,17 +4,17 @@
  * `delete()` it, and verify it is gone. Cleans up completely — this script
  * REDUCES session clutter rather than adding to it.
  *
- * Run (from packages/sdk):  bun run playground/sessions/30-session-crud.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/sessions/30-session-crud.ts [workspaceId]
  */
 import { ApiError, generateSessionId } from "../../src/index";
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("session-crud", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
 
   const clientId = generateSessionId();
-  const created = await kortix.projects.createSession(projectId, {
+  const created = await kortix.projects.createSession(workspaceId, {
     name: "sdk crud test",
     session_id: clientId,
   });
@@ -28,7 +28,7 @@ run("session-crud", async () => {
     `✓ created with client-generated id ${clientId} — server honored it`,
   );
 
-  const session = kortix.session(projectId, clientId);
+  const session = kortix.session(workspaceId, clientId);
 
   const row = await session.get();
   console.log(`✓ get(): status=${(row as { status?: string } | null)?.status}`);
@@ -62,7 +62,7 @@ run("session-crud", async () => {
   }
 
   await session.delete();
-  const sessions = await kortix.projects.sessions(projectId);
+  const sessions = await kortix.projects.sessions(workspaceId);
   if (sessions.some((s) => s.session_id === clientId)) {
     console.error("✗ session still listed after delete()");
     process.exit(1);

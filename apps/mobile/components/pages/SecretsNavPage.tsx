@@ -1,6 +1,6 @@
 /**
- * SecretsNavPage — the project's secrets (web parity:
- * customize/sections/secrets-view). Each KEY has a shared (project-wide) value
+ * SecretsNavPage — the workspace's secrets (web parity:
+ * customize/sections/secrets-view). Each KEY has a shared workspace value
  * that managers control and an optional per-member personal override. Values
  * are write-only — never returned by the API; "is set" is conveyed via text.
  *
@@ -27,15 +27,10 @@ import {
 import {
   Key,
   User,
-  Lock,
-  Users,
-  Globe,
-  Check,
   ChevronRight,
   Trash2,
   X,
   ShieldAlert,
-  type LucideIcon,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
@@ -43,14 +38,13 @@ import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import {
-  useProjectSecrets,
-  useUpsertProjectSecret,
-  useDeleteProjectSecret,
-  useSetPersonalProjectSecret,
-  useDeletePersonalProjectSecret,
-  useProjectAccess,
-} from '@/lib/projects/hooks';
-import type { ProjectSecret, ConnectorSharing } from '@/lib/projects/projects-client';
+  useWorkspaceSecrets,
+  useUpsertWorkspaceSecret,
+  useDeleteWorkspaceSecret,
+  useSetPersonalWorkspaceSecret,
+  useDeletePersonalWorkspaceSecret,
+} from '@/lib/workspaces/hooks';
+import type { WorkspaceSecret } from '@/lib/workspaces/workspaces-client';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -61,7 +55,7 @@ interface PageTabLike {
 
 interface SecretsNavPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -74,13 +68,13 @@ const sanitizeName = (t: string) => t.toUpperCase().replace(/[^A-Z0-9_]/g, '');
 
 interface Row {
   name: string;
-  secret: ProjectSecret | null;
+  secret: WorkspaceSecret | null;
   required: boolean;
   optional: boolean;
 }
 
 function buildRows(
-  items: ProjectSecret[],
+  items: WorkspaceSecret[],
   required: string[],
   optional: string[],
 ): Row[] {
@@ -103,142 +97,37 @@ function buildRows(
   return rows;
 }
 
-function statusText(s: ProjectSecret | null): string {
+function statusText(s: WorkspaceSecret | null): string {
   if (!s) return 'Not set';
   if (s.effective_source === 'mine') return 'Using your own value';
   if (s.effective_source === 'shared') return 'Using the shared value';
-  if (s.configured && !s.usable_by_me) return "Shared exists, not shared with you";
+  if (s.configured) return 'Shared value is set';
   return 'Not set';
-}
-
-function sharingScopeLabel(sharing: ConnectorSharing | null | undefined): string | null {
-  if (!sharing || sharing.mode === 'project') return null;
-  if (sharing.mode === 'private') return 'Owner only';
-  return 'Select members';
-}
-
-// ─── Sharing field (project / private / members) ──────────────────────────────
-
-const SHARE_OPTIONS: { mode: 'project' | 'private' | 'members'; label: string; icon: LucideIcon }[] = [
-  { mode: 'project', label: 'Everyone', icon: Globe },
-  { mode: 'private', label: 'Only me', icon: Lock },
-  { mode: 'members', label: 'Members', icon: Users },
-];
-
-function SharingField({
-  projectId,
-  value,
-  onChange,
-  isDark,
-}: {
-  projectId: string;
-  value: ConnectorSharing;
-  onChange: (v: ConnectorSharing) => void;
-  isDark: boolean;
-}) {
-  const theme = useThemeColors();
-  const access = useProjectAccess(value.mode === 'members' ? projectId : null);
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
-
-  const memberIds = value.mode === 'members' ? (value.memberIds ?? []) : [];
-  const selectedSet = useMemo(() => new Set(memberIds), [memberIds]);
-  const members = access.data?.members ?? [];
-
-  const toggleMember = (id: string) => {
-    const next = selectedSet.has(id) ? memberIds.filter((x) => x !== id) : [...memberIds, id];
-    onChange({ mode: 'members', memberIds: next });
-  };
-
-  return (
-    <View>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        {SHARE_OPTIONS.map((opt) => {
-          const on = value.mode === opt.mode;
-          const Icon = opt.icon;
-          return (
-            <TouchableOpacity
-              key={opt.mode}
-              onPress={() => {
-                haptics.selection();
-                if (opt.mode === 'project') onChange({ mode: 'project' });
-                else if (opt.mode === 'private') onChange({ mode: 'private', ownerId: '' });
-                else onChange({ mode: 'members', memberIds });
-              }}
-              activeOpacity={0.7}
-              style={{
-                flex: 1, alignItems: 'center', gap: 5, paddingVertical: 11, borderRadius: 12,
-                borderWidth: 1.5, borderColor: on ? theme.primary : border,
-                backgroundColor: on ? theme.primaryLight : 'transparent',
-              }}
-            >
-              <Icon size={17} color={on ? theme.primary : muted} />
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: on ? theme.primary : muted }}>{opt.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {value.mode === 'members' && (
-        <View style={{ marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
-          {access.isLoading ? (
-            <View style={{ padding: 18, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
-          ) : members.length === 0 ? (
-            <View style={{ padding: 18, alignItems: 'center' }}><Text style={{ fontSize: 13, color: muted }}>No members.</Text></View>
-          ) : (
-            members.map((m, i) => {
-              const on = selectedSet.has(m.user_id);
-              return (
-                <TouchableOpacity
-                  key={m.user_id}
-                  onPress={() => { haptics.selection(); toggleMember(m.user_id); }}
-                  activeOpacity={0.6}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}
-                >
-                  <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: theme.primaryLight, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: theme.primary }}>{(m.email ?? m.user_id).charAt(0).toUpperCase()}</Text>
-                  </View>
-                  <Text style={{ flex: 1, fontSize: 13.5, color: fg }} numberOfLines={1}>{m.email ?? m.user_id}</Text>
-                  <View style={{ width: 20, height: 20, borderRadius: 6, borderWidth: on ? 0 : 1.5, borderColor: border, backgroundColor: on ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                    {on && <Check size={13} color="#fff" strokeWidth={3} />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
-      )}
-    </View>
-  );
 }
 
 // ─── Shared value form ────────────────────────────────────────────────────────
 
 function SharedSecretForm({
-  projectId,
+  workspaceId,
   initialName,
   nameEditable,
   configured,
-  initialSharing,
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   initialName: string;
   nameEditable: boolean;
   configured: boolean;
-  initialSharing: ConnectorSharing;
   onClose: () => void;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const upsert = useUpsertProjectSecret(projectId);
+  const upsert = useUpsertWorkspaceSecret(workspaceId);
 
   const [name, setName] = useState(initialName);
   const [value, setValue] = useState('');
-  const [sharing, setSharing] = useState<ConnectorSharing>(initialSharing);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
@@ -254,7 +143,7 @@ function SharedSecretForm({
     if (!canSave) return;
     haptics.tap();
     upsert.mutate(
-      { name, ...(value.trim() ? { value } : {}), sharing },
+      { name, ...(value.trim() ? { value } : {}) },
       {
         onSuccess: onClose,
         onError: (err: any) => Alert.alert('Save failed', err?.message || 'Could not save secret.'),
@@ -306,8 +195,6 @@ function SharedSecretForm({
         />
         <Text style={{ fontSize: 12.5, color: muted, marginTop: 6 }}>Encrypted at rest and never shown again.</Text>
 
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 18, marginBottom: 8 }}>Who can use it</Text>
-        <SharingField projectId={projectId} value={sharing} onChange={setSharing} isDark={isDark} />
       </BottomSheetScrollView>
 
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
@@ -328,13 +215,13 @@ function SharedSecretForm({
 // ─── Personal value form ──────────────────────────────────────────────────────
 
 function PersonalSecretForm({
-  projectId,
+  workspaceId,
   initialName,
   nameEditable,
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   initialName: string;
   nameEditable: boolean;
   onClose: () => void;
@@ -342,7 +229,7 @@ function PersonalSecretForm({
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const setPersonal = useSetPersonalProjectSecret(projectId);
+  const setPersonal = useSetPersonalWorkspaceSecret(workspaceId);
 
   const [name, setName] = useState(initialName);
   const [value, setValue] = useState('');
@@ -455,13 +342,13 @@ function ActionRow({
 }
 
 function SecretDetailSheet({
-  projectId,
+  workspaceId,
   row,
   canManage,
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   row: Row;
   canManage: boolean;
   onClose: () => void;
@@ -470,9 +357,9 @@ function SecretDetailSheet({
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<'detail' | 'shared' | 'personal'>('detail');
-  const setPersonal = useSetPersonalProjectSecret(projectId);
-  const deletePersonal = useDeletePersonalProjectSecret(projectId);
-  const deleteShared = useDeleteProjectSecret(projectId);
+  const setPersonal = useSetPersonalWorkspaceSecret(workspaceId);
+  const deletePersonal = useDeletePersonalWorkspaceSecret(workspaceId);
+  const deleteShared = useDeleteWorkspaceSecret(workspaceId);
 
   const s = row.secret;
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -484,11 +371,10 @@ function SecretDetailSheet({
   if (view === 'shared') {
     return (
       <SharedSecretForm
-        projectId={projectId}
+        workspaceId={workspaceId}
         initialName={row.name}
         nameEditable={false}
         configured={!!s?.configured}
-        initialSharing={s?.sharing ?? { mode: 'project' }}
         onClose={() => setView('detail')}
         isDark={isDark}
       />
@@ -497,7 +383,7 @@ function SecretDetailSheet({
   if (view === 'personal') {
     return (
       <PersonalSecretForm
-        projectId={projectId}
+        workspaceId={workspaceId}
         initialName={row.name}
         nameEditable={false}
         onClose={() => setView('detail')}
@@ -507,9 +393,8 @@ function SecretDetailSheet({
   }
 
   const canManageShared = canManage || !!s?.can_manage_shared;
-  const sharedSelectable = !!s?.configured && !!s?.usable_by_me;
+  const sharedSelectable = !!s?.configured;
   const mineActive = s?.effective_source === 'mine';
-  const scope = sharingScopeLabel(s?.sharing);
 
   const chooseShared = () => {
     if (!sharedSelectable) return;
@@ -605,7 +490,6 @@ function SecretDetailSheet({
           <>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginBottom: 2 }}>
               <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Shared value</Text>
-              {scope && <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: theme.primary }}>· {scope}</Text>}
             </View>
             <ActionRow label={s?.configured ? 'Edit shared value' : 'Set shared value'} onPress={() => { haptics.tap(); setView('shared'); }} isDark={isDark} />
             {s?.configured && (
@@ -640,7 +524,7 @@ function ManifestBanner({ status, path, error, isDark }: { status?: string; path
 
 export function SecretsNavPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -654,7 +538,7 @@ export function SecretsNavPage({
   const addSheetRef = React.useRef<BottomSheetModal>(null);
   const detailSheetRef = React.useRef<BottomSheetModal>(null);
 
-  const { data, isLoading, isError, error, refetch } = useProjectSecrets(projectId);
+  const { data, isLoading, isError, error, refetch } = useWorkspaceSecrets(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -745,7 +629,6 @@ export function SecretsNavPage({
               const s = row.secret;
               const Icon = s?.effective_source === 'mine' ? User : Key;
               const amber = row.required && (s?.effective_source ?? 'none') === 'none';
-              const scope = sharingScopeLabel(s?.sharing);
               return (
                 <View key={row.name}>
                   <TouchableOpacity
@@ -763,7 +646,7 @@ export function SecretsNavPage({
                         {row.optional && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>OPTIONAL</Text>}
                       </View>
                       <Text style={{ fontSize: 12.5, color: muted, marginTop: 2 }} numberOfLines={1}>
-                        {statusText(s)}{scope ? ` · ${scope}` : ''}
+                        {statusText(s)}
                       </Text>
                     </View>
                     <ChevronRight size={18} color={muted} />
@@ -789,17 +672,16 @@ export function SecretsNavPage({
       >
         {canManage ? (
           <SharedSecretForm
-            projectId={projectId}
+            workspaceId={workspaceId}
             initialName=""
             nameEditable
             configured={false}
-            initialSharing={{ mode: 'project' }}
             onClose={() => addSheetRef.current?.dismiss()}
             isDark={isDark}
           />
         ) : (
           <PersonalSecretForm
-            projectId={projectId}
+            workspaceId={workspaceId}
             initialName=""
             nameEditable
             onClose={() => addSheetRef.current?.dismiss()}
@@ -822,7 +704,7 @@ export function SecretsNavPage({
       >
         {selectedRow ? (
           <SecretDetailSheet
-            projectId={projectId}
+            workspaceId={workspaceId}
             row={selectedRow}
             canManage={canManage}
             onClose={() => detailSheetRef.current?.dismiss()}

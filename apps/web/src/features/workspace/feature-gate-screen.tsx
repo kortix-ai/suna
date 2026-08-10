@@ -22,7 +22,7 @@ export function FeatureGateScreen({
 }: {
   /** The feature's name, exactly as the Feature flags section lists it. */
   featureName: string;
-  /** One sentence: what turning it on would give this project. */
+  /** One sentence: what turning it on would give this workspace. */
   description: string;
 }) {
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
@@ -36,7 +36,7 @@ export function FeatureGateScreen({
           </span>
           <div className="min-w-0 space-y-1">
             <p className="text-foreground text-sm font-medium">
-              {featureName} is off for this project
+              {featureName} is off for this workspace
             </p>
             <p className="text-muted-foreground max-w-xl text-xs text-pretty">{description}</p>
           </div>

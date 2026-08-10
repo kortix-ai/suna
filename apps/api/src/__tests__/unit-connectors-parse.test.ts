@@ -9,19 +9,19 @@ import {
   extractConnectors,
   manifestHashForConnector,
   type ConnectorSpec,
-} from '../projects/connectors';
+} from '../workspaces/connectors';
 import {
   KNOWN_SCHEMA_VERSION,
   parseManifestString,
   serializeManifest,
-} from '../projects/triggers';
+} from '../workspaces/triggers';
 
-const MIN_PROJECT = `project:
+const MIN_WORKSPACE = `project:
   name: test
 `;
 
 function manifestWith(body: string): string {
-  return [`kortix_version: ${KNOWN_SCHEMA_VERSION}`, MIN_PROJECT, body].join('\n');
+  return [`kortix_version: ${KNOWN_SCHEMA_VERSION}`, MIN_WORKSPACE, body].join('\n');
 }
 
 function parseAndExtract(body: string) {

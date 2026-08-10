@@ -3,11 +3,11 @@ import { projectSessions, projects } from '@kortix/db';
 
 mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
-const realSecrets = await import('../projects/secrets');
+const realSecrets = await import('../workspaces/secrets');
 const writes: Array<Record<string, unknown>> = [];
-mock.module('../projects/secrets', () => ({
+mock.module('../workspaces/secrets', () => ({
   ...realSecrets,
-  writeSharedProjectSecret: async (input: Record<string, unknown>) => {
+  writeSharedWorkspaceSecret: async (input: Record<string, unknown>) => {
     writes.push(input);
   },
 }));
@@ -33,14 +33,14 @@ mock.module('../shared/rate-limit', () => ({
 }));
 
 const propagated: string[] = [];
-mock.module('../projects/lib/sandbox-env-sync', () => ({
-  propagateProjectSecretsToActiveSandboxes: async (projectId: string) => {
-    propagated.push(projectId);
+mock.module('../workspaces/lib/sandbox-env-sync', () => ({
+  propagateWorkspaceSecretsToActiveSandboxes: async (workspaceId: string) => {
+    propagated.push(workspaceId);
   },
 }));
 
 const enqueued: Array<Record<string, unknown>> = [];
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../workspaces/session-lifecycle', () => ({
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     enqueued.push(input);
   },
@@ -55,13 +55,13 @@ mock.module('../connectors/pipedream', () => ({
 const { mintSetupLink } = await import('./token');
 const { setupLinksPublicApp, secretSubmittedPrompt } = await import('./public-app');
 
-const PROJECT_ID = '11111111-2222-3333-4444-555555555555';
+const WORKSPACE_ID = '11111111-2222-3333-4444-555555555555';
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const T0 = new Date('2026-08-07T12:00:00.000Z');
 
 function mintToken(opts?: { expiresInMinutes?: number; sid?: string | null }) {
   return mintSetupLink(
-    PROJECT_ID,
+    WORKSPACE_ID,
     {
       kind: 'secret',
       fields: [{ name: 'DRATA_API_KEY' }],
@@ -129,12 +129,12 @@ describe('POST /secret/:token', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, saved: ['DRATA_API_KEY'] });
     expect(writes).toHaveLength(1);
-    expect(propagated).toEqual([PROJECT_ID]);
+    expect(propagated).toEqual([WORKSPACE_ID]);
     await flushNotification();
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0]).toMatchObject({
       source: 'system:secret-submitted',
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: SESSION_ID,
       accountId: 'acct-1',
       actorUserId: 'user-1',

@@ -10,7 +10,7 @@ import {
   changeRequestToReviewItem,
   connectorCallToReviewItem,
   isAdaptedId,
-} from '../projects/review-adapters';
+} from '../workspaces/review-adapters';
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 type ConnectorCallRow = typeof connectorCalls.$inferSelect;
@@ -18,7 +18,7 @@ type ConnectorCallRow = typeof connectorCalls.$inferSelect;
 const baseCr: ChangeRequestRow = {
   crId: 'cr-1',
   accountId: 'acc-1',
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   number: 7,
   title: 'Refresh the pricing page',
   description: 'Updated copy',
@@ -53,7 +53,7 @@ describe('adapterSourceForId / isAdaptedId', () => {
 const baseCall: ConnectorCallRow = {
   executionId: 'ex-1',
   accountId: 'acc-1',
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   connectorId: 'conn-1',
   connectionId: null,
   actionPath: 'gmail.messages.send',

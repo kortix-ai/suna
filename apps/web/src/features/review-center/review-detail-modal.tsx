@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/modal';
 import { StatusBadge } from '@/components/ui/status';
 import { infoToast, successToast } from '@/components/ui/toast';
-import { useChangeRequestMergePreview } from '@/features/project-files/hooks/use-change-requests';
+import { useChangeRequestMergePreview } from '@/features/workspace-files/hooks/use-change-requests';
 import { cn } from '@/lib/utils';
 import {
   ArrowUpRightIcon as ArrowUpRight,
@@ -456,7 +456,7 @@ function ApprovalBody({
         request={{
           action: adaptedAction.actionPath ?? adaptedAction.title,
           risk: adaptedAction.connectorRisk ?? adaptedAction.risk,
-          projectName: item.project,
+          workspaceName: item.workspace,
           requestedAt: item.createdAt,
           argsPreview: adaptedAction.rawArgsPreview ?? null,
           reviewComplete: adaptedAction.reviewComplete === true,
@@ -929,7 +929,7 @@ export function ReviewDetailModal({
                   {Source.label}
                 </span>
                 <span className="text-muted-foreground/40">&bull;</span>
-                <span className="text-muted-foreground/70 truncate text-xs">{item.project}</span>
+                <span className="text-muted-foreground/70 truncate text-xs">{item.workspace}</span>
               </div>
             </div>
           </div>

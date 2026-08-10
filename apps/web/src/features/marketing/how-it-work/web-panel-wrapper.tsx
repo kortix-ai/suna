@@ -22,7 +22,7 @@ type MarketingPanelTab = PageId | 'review' | 'memory' | 'sandbox';
 
 const DEMO_PANEL_TABS: Record<MarketingPanelTab, { label: string; icon: ReactNode }> = {
   home: { label: 'Home', icon: null },
-  projects: { label: 'Projects', icon: <RiFolder3Fill weight="fill" className="size-4" /> },
+  workspaces: { label: 'Workspaces', icon: <RiFolder3Fill weight="fill" className="size-4" /> },
   chat: { label: 'Chat', icon: <PiChatCircleDotsFill weight="fill" className="size-4" /> },
   agents: { label: 'Agents', icon: <RiRobot3Fill weight="fill" className="size-4" /> },
   skills: { label: 'Skills', icon: <HiMiniSparkles weight="fill" className="size-4" /> },
@@ -89,7 +89,7 @@ export function WebPanelWrapper({
         <div
           className={cn(
             'bg-background dark:bg-primary/7 flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-b-xl sm:rounded-b-[calc(var(--radius-xl)-4px)]',
-            // activeTab === 'projects'
+            // activeTab === 'workspaces'
             'rounded-tr-xl sm:rounded-tr-[calc(var(--radius-xl)-4px)]',
             // : 'rounded-t-xl sm:rounded-t-[calc(var(--radius-xl)-4px)]',
           )}

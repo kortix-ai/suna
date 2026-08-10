@@ -8,10 +8,10 @@ const GENERIC_DATA_PATHS = [
   'sandbox-proxy/routes/preview.ts',
   'sandbox-proxy/routes/public-share.ts',
   'platform/sandbox-env.ts',
-  'projects/lib/sandbox-daemon-ready.ts',
-  'projects/lib/sandbox-env-sync.ts',
-  'projects/opencode-mapping.ts',
-  'projects/routes/shared.ts',
+  'workspaces/lib/sandbox-daemon-ready.ts',
+  'workspaces/lib/sandbox-env-sync.ts',
+  'workspaces/opencode-mapping.ts',
+  'workspaces/routes/shared.ts',
 ];
 
 describe('sandbox provider architecture boundary', () => {

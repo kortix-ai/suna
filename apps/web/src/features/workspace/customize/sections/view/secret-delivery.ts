@@ -1,5 +1,5 @@
 import type {
-  AdminConnector,
+  WorkspaceAdminConnector,
   SecretConsumer,
   SecretDeliveryStatus,
   SecretDeliveryStrategy,
@@ -23,7 +23,7 @@ export function brokerConsumerForSecret(consumer?: SecretConsumer | null): Broke
 }
 
 export function connectorBindingOptions(
-  connectors: readonly AdminConnector[],
+  connectors: readonly WorkspaceAdminConnector[],
   secretIdentifier: string,
 ): ConnectorBindingOption[] {
   return connectors.map((connector) => {
@@ -33,12 +33,13 @@ export function connectorBindingOptions(
     if (!connector.authSecret || connector.provider === 'channel') {
       disabled = true;
       description = 'This connector manages authentication through its platform connection.';
-    } else if (connector.authorizationStrategy !== 'project') {
+    } else if (connector.authorizationStrategy !== 'workspace') {
       disabled = true;
-      description = 'Change authorization ownership to Project before binding a project secret.';
+      description =
+        'Change authorization ownership to Workspace before binding a workspace secret.';
     } else if (connector.credentialSource === 'stored') {
       disabled = true;
-      description = 'Disconnect the stored connector credential before using a project secret.';
+      description = 'Disconnect the stored connector credential before using a workspace secret.';
     } else if (connector.secretIdentifier && !selected) {
       disabled = true;
       description = `Already uses ${connector.secretIdentifier}. Unbind it there first.`;
@@ -48,7 +49,7 @@ export function connectorBindingOptions(
 }
 
 export function connectorBindingChanges(
-  connectors: readonly AdminConnector[],
+  connectors: readonly WorkspaceAdminConnector[],
   secretIdentifier: string,
   selectedSlugs: readonly string[],
 ): { bind: string[]; unbind: string[] } {
@@ -136,12 +137,13 @@ export type SecretDeliveryOption = SecretDeliveryPresentation & {
 export function secretDeliveryOptions(
   selected: SecretDeliveryStrategy,
   status: SecretDeliveryStatus,
+  networkBoundaryAvailable: boolean,
 ): SecretDeliveryOption[] {
   return (Object.keys(PRESENTATIONS) as SecretDeliveryStrategy[]).map((strategy) => ({
     strategy,
     ...PRESENTATIONS[strategy],
     disabled:
-      strategy === 'egress' ||
+      (strategy === 'egress' && !networkBoundaryAvailable) ||
       (strategy === 'broker' && strategy === selected && status !== 'available'),
   }));
 }
@@ -198,6 +200,40 @@ export function buildBrokerPolicy(form: BrokerPolicyForm): SecretEgressPolicy | 
   };
 }
 
+export type NetworkBoundaryPolicyForm = {
+  hosts: string;
+  injectionTarget: string;
+  template: string;
+};
+
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const EXACT_HOST =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+export function buildNetworkBoundaryPolicy(
+  form: NetworkBoundaryPolicyForm,
+): SecretEgressPolicy | null {
+  const hosts = form.hosts
+    .split(/[\s,]+/)
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+  const target = form.injectionTarget.trim();
+  const template = form.template.trim();
+  if (hosts.length === 0 || hosts.some((host) => !EXACT_HOST.test(host))) return null;
+  if (!HEADER_NAME.test(target)) return null;
+  if (template && !template.includes('{{secret}}')) return null;
+  return {
+    rules: [...new Set(hosts)].map((host) => ({ host })),
+    inject: {
+      kind: 'header',
+      name: target,
+      ...(template ? { template } : {}),
+    },
+    on_no_match: 'deny',
+    tls: 'terminate',
+  };
+}
+
 export function canSaveSecretDelivery(input: {
   isEdit: boolean;
   key: string;
@@ -208,6 +244,7 @@ export function canSaveSecretDelivery(input: {
   nextStrategy: SecretDeliveryStrategy;
   nextConsumer: SecretConsumer | null;
   brokerPolicyValid: boolean;
+  networkBoundaryPolicyValid?: boolean;
   selectedConnectorCount?: number;
 }): boolean {
   const hasValue = Boolean(input.value.trim());
@@ -221,6 +258,7 @@ export function canSaveSecretDelivery(input: {
   ) {
     return false;
   }
+  if (input.nextStrategy === 'egress' && !input.networkBoundaryPolicyValid) return false;
   if (
     input.nextStrategy === 'broker' &&
     input.nextConsumer === 'connector' &&

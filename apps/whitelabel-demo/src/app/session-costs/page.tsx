@@ -125,7 +125,7 @@ function SessionCostsDashboard() {
             <div className="mt-8">
               <CallSnippet
                 id="session.costs"
-                context={{ projectId: data.projects[0]?.projectId }}
+                context={{ workspaceId: data.projects[0]?.workspaceId }}
               />
             </div>
 
@@ -138,12 +138,12 @@ function SessionCostsDashboard() {
 
             {data.projects.map((project) => (
               <Card
-                key={project.projectId}
+                key={project.workspaceId}
                 className="mt-4 overflow-hidden p-0"
               >
                 <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
                   <span className="truncate font-mono text-xs text-muted-foreground">
-                    {project.projectId}
+                    {project.workspaceId}
                   </span>
                   <Badge variant="secondary" className="shrink-0">
                     {project.sessions.length} session

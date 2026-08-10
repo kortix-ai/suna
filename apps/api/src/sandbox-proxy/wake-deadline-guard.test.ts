@@ -56,7 +56,7 @@ mock.module('../shared/db', () => ({
               externalId: 'ext-1',
               sessionId: 'sess-1',
               agentName: null,
-              projectId: 'proj-1',
+              workspaceId: 'proj-1',
               accountId: 'acct-1',
               provider: 'daytona',
               status: 'stopped',

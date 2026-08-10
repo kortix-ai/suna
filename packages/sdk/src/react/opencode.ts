@@ -16,8 +16,8 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FINAL PUBLIC SURFACE (Phase 7). A new host should reach a session through ONE
-// hook — `useSession(projectId, sessionId)` — plus the pre-runtime capability
-// hooks (`useProjectModels` / `useVisibleAgents` / `useProjectConfig`) and the
+// hook — `useSession(workspaceId, sessionId)` — plus the pre-runtime capability
+// hooks (`useWorkspaceModels` / `useVisibleAgents` / `useWorkspaceConfig`) and the
 // primitives (`useSessionPicks` / `useRuntimePhase` / start-stash). The golden
 // reference (apps/whitelabel-demo) imports ONLY that surface — no `server-store`,
 // no `OpenCodeEventStreamProvider`, no `useCanonicalOpenCodeSession`, no raw
@@ -31,10 +31,15 @@
 // migration lands they come out of the public surface. New hosts: do not import
 // them — use `useSession`.
 // ─────────────────────────────────────────────────────────────────────────────
-// Router-agnostic route scope: the host injects "the project the user is
-// looking at" here (Next hosts derive it from useParams once, near the root);
+// Router-agnostic route scope: the host injects the active workspace here
+// (Next hosts derive it from useParams once, near the root);
 // `useOpenCodeProviders`/`useOpenCodeLocal` resolve it via this context.
-export { KortixProjectProvider, useKortixRouteProjectId } from './route-project';
+export {
+  KortixWorkspaceProvider,
+  useKortixRouteWorkspaceId,
+  KortixProjectProvider,
+  useKortixRouteProjectId,
+} from './route-project';
 export * from './use-opencode-sessions';
 export * from './use-opencode-events';
 export * from './use-opencode-local';
@@ -139,19 +144,24 @@ export {
   filterToGatewayProviders,
   applyEnablementToProviderList,
   filterToNativeProviders,
+  mergeWorkspaceSecretConnectedProviders,
   mergeProjectSecretConnectedProviders,
   mergeProviderLists,
   normalizeProviderList,
+  workspaceLlmCatalogToProviderList,
   projectLlmCatalogToProviderList,
   providerListHasGateway,
   providerListHasModels,
 } from './provider-selection';
-export { useProjectModels } from './use-project-models';
-export { useProjectConfig } from './use-project-config';
-export type { ProjectConfigSummary } from '../core/rest/projects-client';
+export { useWorkspaceModels, useProjectModels } from './use-project-models';
+export { useWorkspaceConfig, useProjectConfig } from './use-project-config';
+export type {
+  WorkspaceConfigSummary,
+  WorkspaceConfigSummary as ProjectConfigSummary,
+} from '../core/rest/workspaces-client';
 
 // ── The one-hook session surface ─────────────────────────────────────────────
-// `useSession(projectId, sessionId)` collapses the entire runtime dance (start →
+// `useSession(workspaceId, sessionId)` collapses the entire runtime dance (start →
 // switch → health → SSE → id-resolution → message sync) into a single hook so a
 // host never touches the sandbox. The primitives below are what it composes —
 // also exported standalone for hosts that want the pieces (a model picker, a boot

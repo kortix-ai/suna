@@ -45,7 +45,7 @@ describe("init in an existing cloned project", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      `Configured this Kortix project in ${realpathSync(repo)}`,
+      `Configured this Kortix workspace in ${realpathSync(repo)}`,
     );
     expect(lstatSync(resolve(repo, ".agents")).isSymbolicLink()).toBe(true);
     expect(lstatSync(resolve(repo, ".opencode")).isSymbolicLink()).toBe(true);

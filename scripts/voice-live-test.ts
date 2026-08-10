@@ -63,11 +63,11 @@ async function main() {
   // A stable, obviously-fake project id keeps things self-consistent without
   // needing a real project row; the LiveKit room and its metadata are only
   // ever checked against themselves and the live call registry.
-  const projectId = args.project ?? '00000000-0000-4000-8000-000000000000';
+  const workspaceId = args.project ?? '00000000-0000-4000-8000-000000000000';
   const sessionId = args.session ?? `livetest-${Date.now()}`;
   const callId = sessionId;
 
-  console.log(`project: ${projectId}`);
+  console.log(`project: ${workspaceId}`);
   console.log(`session: ${sessionId}${args.session ? '' : '  (synthetic — send_prompt will report no-session)'}`);
   console.log('');
   console.log('NOTE: this only opens the room. For the call to actually talk back,');
@@ -78,14 +78,14 @@ async function main() {
   console.log('1/3  creating the LiveKit room…');
   const call = await startCall({
     callId,
-    projectId,
+    workspaceId,
     sessionId,
     botName: 'Kortix',
     voice: args.voice ?? null,
   });
   console.log(`     up. room=${call.room} voice=${call.voice}`);
 
-  const { token } = await mintJoinLink({ callId, projectId });
+  const { token } = await mintJoinLink({ callId, workspaceId });
   const joinUrl = joinPageUrl(args.web, token);
   console.log('');
   console.log('2/3  open this in your browser (headphones on):');

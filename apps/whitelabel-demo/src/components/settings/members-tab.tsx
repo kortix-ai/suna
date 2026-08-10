@@ -31,9 +31,9 @@ import { toast } from 'sonner';
 type Role = 'editor' | 'member';
 const ROLES: Role[] = ['editor', 'member'];
 
-export function MembersTab({ projectId }: { projectId: string }) {
+export function MembersTab({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
-  const base = ['project-access', projectId] as const;
+  const base = ['project-access', workspaceId] as const;
   const membersKey = base;
   const requestsKey = [...base, 'requests'] as const;
   const pendingKey = [...base, 'pending'] as const;
@@ -41,26 +41,26 @@ export function MembersTab({ projectId }: { projectId: string }) {
 
   const access = useQuery({
     queryKey: membersKey,
-    queryFn: () => kortix.project(projectId).access.list(),
+    queryFn: () => kortix.project(workspaceId).access.list(),
   });
   const requests = useQuery({
     queryKey: requestsKey,
-    queryFn: () => kortix.project(projectId).access.requests(),
+    queryFn: () => kortix.project(workspaceId).access.requests(),
   });
   const pending = useQuery({
     queryKey: pendingKey,
-    queryFn: () => kortix.project(projectId).access.pendingInvites(),
+    queryFn: () => kortix.project(workspaceId).access.pendingInvites(),
   });
   const grants = useQuery({
     queryKey: grantsKey,
-    queryFn: () => kortix.project(projectId).access.groupGrants(),
+    queryFn: () => kortix.project(workspaceId).access.groupGrants(),
   });
 
   const [email, setEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<Role>('member');
 
   const invite = useMutation({
-    mutationFn: () => kortix.project(projectId).access.invite(email.trim(), inviteRole),
+    mutationFn: () => kortix.project(workspaceId).access.invite(email.trim(), inviteRole),
     onSuccess: () => {
       setEmail('');
       qc.invalidateQueries({ queryKey: membersKey });
@@ -72,7 +72,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
 
   const updateRole = useMutation({
     mutationFn: (v: { userId: string; role: Role }) =>
-      kortix.project(projectId).access.update(v.userId, v.role),
+      kortix.project(workspaceId).access.update(v.userId, v.role),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: membersKey });
       toast.success('Role updated');
@@ -81,7 +81,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const revoke = useMutation({
-    mutationFn: (userId: string) => kortix.project(projectId).access.revoke(userId),
+    mutationFn: (userId: string) => kortix.project(workspaceId).access.revoke(userId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: membersKey });
       toast.success('Access revoked');
@@ -91,7 +91,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
 
   const approve = useMutation({
     mutationFn: (requestId: string) =>
-      kortix.project(projectId).access.approveRequest(requestId, 'member'),
+      kortix.project(workspaceId).access.approveRequest(requestId, 'member'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: requestsKey });
       qc.invalidateQueries({ queryKey: membersKey });
@@ -101,7 +101,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const reject = useMutation({
-    mutationFn: (requestId: string) => kortix.project(projectId).access.rejectRequest(requestId),
+    mutationFn: (requestId: string) => kortix.project(workspaceId).access.rejectRequest(requestId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: requestsKey });
       toast.success('Request rejected');
@@ -110,7 +110,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const resendInvite = useMutation({
-    mutationFn: (inviteId: string) => kortix.project(projectId).access.resendInvite(inviteId),
+    mutationFn: (inviteId: string) => kortix.project(workspaceId).access.resendInvite(inviteId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pendingKey });
       toast.success('Invite resent');
@@ -119,7 +119,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const revokeInvite = useMutation({
-    mutationFn: (inviteId: string) => kortix.project(projectId).access.revokeInvite(inviteId),
+    mutationFn: (inviteId: string) => kortix.project(workspaceId).access.revokeInvite(inviteId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pendingKey });
       toast.success('Invite revoked');

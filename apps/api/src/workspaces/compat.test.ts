@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 
 import { toWorkspacePayload, workspaceResponseCompatibility } from './compat';
 
-test('toWorkspacePayload maps Project wire keys recursively without changing values', () => {
+test('toWorkspacePayload maps Workspace wire keys recursively without changing values', () => {
   expect(
     toWorkspacePayload({
       project_id: 'workspace-1',
@@ -12,6 +12,18 @@ test('toWorkspacePayload maps Project wire keys recursively without changing val
       project: { project_id: 'workspace-1' },
       projects: [{ project_id: 'workspace-1' }],
       dashboard_url: 'https://dev.kortix.com/projects/workspace-1',
+      error: 'Failed to delete managed project repository',
+      defaultModelSource: 'project',
+      kind: 'project',
+      source: 'project',
+      projectDefault: 'anthropic/claude-sonnet-4.6',
+      project_spend: { requests: 2, cost: 1.5 },
+      connection: {
+        owner_type: 'project',
+        authorization_strategy: 'project',
+        visibility: 'project',
+        sharing: { mode: 'project' },
+      },
       untouched: { account_id: 'account-1' },
     }),
   ).toEqual({
@@ -21,6 +33,18 @@ test('toWorkspacePayload maps Project wire keys recursively without changing val
     workspace: { workspace_id: 'workspace-1' },
     workspaces: [{ workspace_id: 'workspace-1' }],
     dashboard_url: 'https://dev.kortix.com/workspaces/workspace-1',
+    error: 'Failed to delete managed workspace repository',
+    defaultModelSource: 'workspace',
+    kind: 'workspace',
+    source: 'workspace',
+    workspaceDefault: 'anthropic/claude-sonnet-4.6',
+    workspace_spend: { requests: 2, cost: 1.5 },
+    connection: {
+      owner_type: 'workspace',
+      authorization_strategy: 'workspace',
+      visibility: 'workspace',
+      sharing: { mode: 'workspace' },
+    },
     untouched: { account_id: 'account-1' },
   });
 });

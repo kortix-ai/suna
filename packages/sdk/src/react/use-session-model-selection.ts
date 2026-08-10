@@ -9,7 +9,7 @@ import {
   useModelDefaults,
   type UseModelDefaults,
 } from './use-model-defaults';
-import { useKortixRouteProjectId } from './route-project';
+import { useKortixRouteWorkspaceId } from './route-project';
 
 export interface SessionModelSelection extends OpenCodeLocal {
   model: OpenCodeLocal['model'] & {
@@ -26,8 +26,8 @@ export interface SessionModelSelection extends OpenCodeLocal {
 export function useSessionModelSelection(
   options: UseOpenCodeLocalOptions,
 ): SessionModelSelection {
-  const projectId = useKortixRouteProjectId();
-  const defaults = useModelDefaults(projectId);
+  const workspaceId = useKortixRouteWorkspaceId();
+  const defaults = useModelDefaults(workspaceId);
   const base = useOpenCodeLocal({
     ...options,
     freeTier: options.freeTier ?? defaults.freeTier,

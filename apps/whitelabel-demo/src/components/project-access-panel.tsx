@@ -21,7 +21,7 @@ function useApplicationUser() {
   });
 }
 
-export function ApplicationUserBadge({ projectId }: { projectId: string }) {
+export function ApplicationUserBadge({ workspaceId }: { workspaceId: string }) {
   const user = useApplicationUser();
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-1.5 text-xs text-muted-foreground">
@@ -32,17 +32,17 @@ export function ApplicationUserBadge({ projectId }: { projectId: string }) {
         project ownership controls access.
       </span>
       <Button asChild size="xs" variant="ghost">
-        <Link href={`/projects/${projectId}/sessions`}>Access</Link>
+        <Link href={`/projects/${workspaceId}/sessions`}>Access</Link>
       </Button>
     </div>
   );
 }
 
-export function ProjectAccessPanel({ projectId }: { projectId: string }) {
+export function ProjectAccessPanel({ workspaceId }: { workspaceId: string }) {
   const user = useApplicationUser();
   const sessions = useQuery({
-    queryKey: qk.sessions(projectId),
-    queryFn: () => kortix.project(projectId).sessions.list(),
+    queryKey: qk.sessions(workspaceId),
+    queryFn: () => kortix.project(workspaceId).sessions.list(),
     retry: false,
   });
 
@@ -85,7 +85,7 @@ export function ProjectAccessPanel({ projectId }: { projectId: string }) {
           customer filter.
         </p>
         <div className="mt-1.5">
-          <CallSnippet id="sessions.list" context={{ projectId }} />
+          <CallSnippet id="sessions.list" context={{ workspaceId }} />
         </div>
       </div>
     </div>

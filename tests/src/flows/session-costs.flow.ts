@@ -82,7 +82,11 @@ flow(
     domain: 'billing',
     requires: ['funded', 'daytona'],
     timeoutMs: 300_000,
-    routes: ['GET /v1/usage/cost-by-project', 'GET /v1/usage/cost-summary'],
+    routes: [
+      'GET /v1/usage/cost-by-workspace',
+      'GET /v1/usage/cost-by-project',
+      'GET /v1/usage/cost-summary',
+    ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.sharedSeededProject();
@@ -95,8 +99,20 @@ flow(
 
     await ctx.step('anonymous caller cannot read either rollup', async () => {
       const anon = ctx.client.as(ctx.P.ANON);
+      (await anon.get('/v1/usage/cost-by-workspace')).status(401);
       (await anon.get('/v1/usage/cost-by-project')).status(401);
       (await anon.get('/v1/usage/cost-summary')).status(401);
+    });
+
+    await ctx.step('canonical Workspace rollup includes the seeded workspace', async () => {
+      const response = await owner.get('/v1/usage/cost-by-workspace', {
+        query: { ...window, sort: 'total_desc', limit: '100', offset: '0' },
+      });
+      response
+        .status(200)
+        .body()
+        .exists('$.workspaces')
+        .exists('$.workspaces[0].workspace_id');
     });
 
     await ctx.step('project rollup pages and includes the seeded project', async () => {

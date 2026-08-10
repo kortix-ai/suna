@@ -5,8 +5,8 @@ import { config } from '../../config';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
-  resolveProjectAutomationActor as resolveLifecycleAutomationActor,
-} from '../../projects/session-lifecycle';
+  resolveWorkspaceAutomationActor as resolveLifecycleAutomationActor,
+} from '../../workspaces/session-lifecycle';
 import { currentChannelSelection } from '../slack/selection';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
@@ -17,7 +17,7 @@ import { extractTeamsAttachments, type TeamsActivity } from './types';
 const defaultTeamsSessionLifecycle = {
   continueSession: continueLifecycleSession,
   createSession: createLifecycleSession,
-  resolveProjectAutomationActor: resolveLifecycleAutomationActor,
+  resolveWorkspaceAutomationActor: resolveLifecycleAutomationActor,
 };
 
 let teamsSessionLifecycle = defaultTeamsSessionLifecycle;
@@ -32,21 +32,21 @@ export function resetTeamsSessionLifecycleForTest() {
 
 async function resolveTeamsTurnActor(
   accountId: string,
-  projectId: string,
+  workspaceId: string,
   tenantId: string,
   activity: TeamsActivity,
 ): Promise<string | null> {
   if (!config.TEAMS_REQUIRE_USER_IDENTITY) {
-    const userId = await teamsSessionLifecycle.resolveProjectAutomationActor(accountId);
-    if (!userId) console.warn('[teams-webhook] no actor for project', projectId);
+    const userId = await teamsSessionLifecycle.resolveWorkspaceAutomationActor(accountId);
+    if (!userId) console.warn('[teams-webhook] no actor for workspace', workspaceId);
     return userId;
   }
 
   const senderId = teamsUserId(activity);
-  const actor = await resolveTeamsActor(tenantId, senderId ?? '', accountId, projectId);
+  const actor = await resolveTeamsActor(tenantId, senderId ?? '', accountId, workspaceId);
   if ('userId' in actor) return actor.userId;
 
-  await postTeamsIdentityPrompt({ projectId, tenantId, activity, reason: actor.reason }).catch((err) =>
+  await postTeamsIdentityPrompt({ workspaceId, tenantId, activity, reason: actor.reason }).catch((err) =>
     console.warn('[teams-webhook] failed to post identity prompt', err),
   );
   return null;
@@ -66,42 +66,42 @@ export async function deliverTeamsFollowUpToSession(input: {
 }
 
 async function openFollowUpTurn(
-  projectId: string,
+  workspaceId: string,
   tenantId: string,
   sessionId: string,
   activity: TeamsActivity,
 ): Promise<void> {
-  const handle = await startTurn(projectId, tenantId, activity);
+  const handle = await startTurn(workspaceId, tenantId, activity);
   if (!handle) return;
   handle.sessionId = sessionId;
   await saveTurn(handle);
 }
 
 export async function createOrJoinTeamsConversationSession(input: {
-  projectId: string;
+  workspaceId: string;
   tenantId: string;
   conversationId: string;
   activity: TeamsActivity;
 }): Promise<void> {
-  const { projectId, tenantId, conversationId, activity } = input;
+  const { workspaceId, tenantId, conversationId, activity } = input;
 
-  const [project] = await db
+  const [workspace] = await db
     .select()
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
-  if (!project) return;
+  if (!workspace) return;
 
-  await persistServiceUrl(projectId, activity.serviceUrl);
+  await persistServiceUrl(workspaceId, activity.serviceUrl);
 
-  const userId = await resolveTeamsTurnActor(project.accountId, projectId, tenantId, activity);
+  const userId = await resolveTeamsTurnActor(workspace.accountId, workspaceId, tenantId, activity);
   if (!userId) return;
 
   const claimKey = tenantId && conversationId ? `teams:threadcreate:${tenantId}:${conversationId}` : null;
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForConversationSession(tenantId, conversationId);
     if (sessionId) {
-      await openFollowUpTurn(projectId, tenantId, sessionId, activity);
+      await openFollowUpTurn(workspaceId, tenantId, sessionId, activity);
       await deliverTeamsFollowUpToSession({ sessionId, text: renderFollowUpPrompt(activity), userId });
     } else {
       console.warn('[teams-webhook] lost thread-create claim but winner never published a session', {
@@ -119,13 +119,13 @@ export async function createOrJoinTeamsConversationSession(input: {
       .where(
         and(
           eq(chatThreads.platform, 'teams'),
-          eq(chatThreads.workspaceId, tenantId),
+          eq(chatThreads.platformWorkspaceId, tenantId),
           eq(chatThreads.threadId, conversationId),
         ),
       )
       .limit(1);
     if (existing) {
-      await openFollowUpTurn(projectId, tenantId, existing.sessionId, activity);
+      await openFollowUpTurn(workspaceId, tenantId, existing.sessionId, activity);
       await deliverTeamsFollowUpToSession({
         sessionId: existing.sessionId,
         text: renderFollowUpPrompt(activity),
@@ -135,18 +135,18 @@ export async function createOrJoinTeamsConversationSession(input: {
     }
   }
 
-  await ensureTeamsConversationBinding({ projectId, tenantId, conversationId });
+  await ensureTeamsConversationBinding({ workspaceId, tenantId, conversationId });
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
 
-  const handle = await startTurn(projectId, tenantId, activity);
+  const handle = await startTurn(workspaceId, tenantId, activity);
 
   const result = await teamsSessionLifecycle.createSession({
     source: 'teams',
-    project,
+    workspace,
     userId,
     requestingPrincipalType: 'human',
     body: {
-      base_ref: project.defaultBranch,
+      base_ref: workspace.defaultBranch,
       agent_name: selection?.agentName || 'default',
       ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(activity),
@@ -158,7 +158,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     idempotencyKey: claimKey,
     postCreate:
       tenantId && conversationId
-        ? [{ type: 'bind_chat_thread', platform: 'teams', workspaceId: tenantId, threadId: conversationId }]
+        ? [{ type: 'bind_chat_thread', platform: 'teams', platformWorkspaceId: tenantId, threadId: conversationId }]
         : undefined,
     visibility: 'project',
     metadata: {
@@ -174,7 +174,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   });
 
   if (result.error) {
-    console.error('[teams-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
+    console.error('[teams-webhook] createWorkspaceSession failed', { status: result.error.status, body: result.error.body });
     if (handle) await finalizeTurn(handle, { error: startErrorMessage(result.error.status) });
     return;
   }
@@ -198,7 +198,7 @@ function startErrorMessage(status: number | undefined): string {
     return 'This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.';
   }
   if (status === 404) {
-    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this team and try again.";
+    return "I couldn't find this workspace to start a session — it may have been moved or deleted. Reconnect Kortix to this team and try again.";
   }
   return "I couldn't start a session just now. Give it a moment and send your message again — I'll reply right here.";
 }
@@ -207,7 +207,7 @@ function queuedMessage(reason?: string): string {
   if (reason === 'account session cap') {
     return "This workspace is at its concurrent-session limit, so I've queued your task. I'll start it and reply right here as soon as a slot frees up.";
   }
-  return "I've queued your task behind the sessions already starting in this project, and I'll reply right here the moment it begins.";
+  return "I've queued your task behind the sessions already starting in this workspace, and I'll reply right here the moment it begins.";
 }
 
 async function claimThreadCreate(key: string): Promise<boolean> {
@@ -233,7 +233,7 @@ async function waitForConversationSession(tenantId: string, conversationId: stri
       .where(
         and(
           eq(chatThreads.platform, 'teams'),
-          eq(chatThreads.workspaceId, tenantId),
+          eq(chatThreads.platformWorkspaceId, tenantId),
           eq(chatThreads.threadId, conversationId),
         ),
       )

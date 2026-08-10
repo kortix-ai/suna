@@ -15,7 +15,7 @@ import type { AuthedPrincipal } from '@kortix/llm-gateway';
  * faked here.
  */
 
-// One FIFO queue per (projectId, subjectUserId, period) key, in the exact
+// One FIFO queue per (workspaceId, subjectUserId, period) key, in the exact
 // call order spendForPeriod issues them in checkBudget's budget loop — avoids
 // needing to introspect drizzle's `where` condition object, since the mock
 // below never inspects it.
@@ -51,7 +51,7 @@ function principal(overrides: Partial<AuthedPrincipal> = {}): AuthedPrincipal {
   return {
     userId: 'user-1',
     accountId: 'acct-1',
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     ...overrides,
   };
 }
@@ -64,7 +64,7 @@ describe('checkBudget', () => {
   });
 
   test('no project on the principal → never queries, never exceeded', async () => {
-    const result = await checkBudget(principal({ projectId: undefined }));
+    const result = await checkBudget(principal({ workspaceId: undefined }));
     expect(result).toEqual({ exceeded: false });
   });
 
@@ -93,7 +93,7 @@ describe('checkBudget', () => {
       const result = await checkBudget(principal());
       expect(result.exceeded).toBe(true);
       expect(result.message).toContain('$50/day');
-      expect(result.message).toContain("project's");
+      expect(result.message).toContain("workspace's");
     });
 
     test('member-scope budget only applies to the matching member', async () => {
@@ -240,11 +240,11 @@ describe('checkBudget', () => {
         { scope: 'project', subjectUserId: null, limitUsd: '1', period: 'day', action: 'block' },
       ];
       spendQueue = [0.9]; // admitted, reserves 0.5 for project-1
-      const first = await checkBudget(principal({ projectId: 'project-1' }));
+      const first = await checkBudget(principal({ workspaceId: 'project-1' }));
       expect(first.exceeded).toBe(false);
 
       spendQueue = [0.9]; // a totally different project's spend — must not see project-1's reservation
-      const other = await checkBudget(principal({ projectId: 'project-2' }));
+      const other = await checkBudget(principal({ workspaceId: 'project-2' }));
       expect(other.exceeded).toBe(false);
     });
 

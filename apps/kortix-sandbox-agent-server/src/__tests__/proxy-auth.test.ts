@@ -38,7 +38,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     branchFetchDelaySec: 0.25,
     defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
-    projectId: undefined,
+    workspaceId: undefined,
     apiUrl: undefined,
     repoUrl: undefined,
     branchName: undefined,
@@ -219,7 +219,7 @@ describe('daemon proxy auth gate', () => {
 
       await materializeRepo(baseConfig({
         autoClone: true,
-        projectId: 'project-123',
+        workspaceId: 'project-123',
         apiUrl: 'http://api.local/v1/router',
         projectTarget: target,
         repoUrl: remote,
@@ -351,7 +351,7 @@ describe('daemon proxy auth gate', () => {
 
       await materializeRepo(baseConfig({
         autoClone: true,
-        projectId: 'project-123',
+        workspaceId: 'project-123',
         apiUrl: 'http://api.local/v1/router',
         projectTarget: target,
         repoUrl: remote,

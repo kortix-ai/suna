@@ -107,7 +107,7 @@ async function main() {
   const token = (await createAccountToken({ accountId: owner!.accountId, userId: owner!.userId, name: PAT_NAME })).secretKey;
   ok('minted e2e PAT');
 
-  let projectId = '';
+  let workspaceId = '';
   let sessionId = '';
 
   try {
@@ -122,7 +122,7 @@ async function main() {
     assert(prov.json.metadata?.git?.managed === true, 'metadata.git.managed = true');
     assert(typeof prov.json.metadata?.git?.provider === 'string', 'metadata.git.provider is set');
     assert(typeof prov.json.dashboard_url === 'string' && !prov.json.dashboard_url.includes('/v1'), 'dashboard_url is the web URL');
-    projectId = prov.json.project_id;
+    workspaceId = prov.json.project_id;
 
     // ── 3. seeded starter actually landed in the repo ─────────────────────
     // Resolved the way a client resolves it — NOT by always minting a token.
@@ -152,7 +152,7 @@ async function main() {
     await rm(dir, { recursive: true, force: true });
 
     // ── 5. create a session (the path that 403'd on managed git) ──────────
-    const sess = await api('POST', `/projects/${projectId}/sessions`, token, {});
+    const sess = await api('POST', `/projects/${workspaceId}/sessions`, token, {});
     assert(
       sess.status >= 200 && sess.status < 300,
       'session create succeeds (managed git auth resolves — no 403/502)',
@@ -162,11 +162,11 @@ async function main() {
     ok(`session created${sessionId ? ` (${sessionId})` : ''}`);
   } finally {
     // ── 6. cleanup ────────────────────────────────────────────────────────
-    if (sessionId && projectId) {
-      await api('DELETE', `/projects/${projectId}/sessions/${sessionId}`, token).catch(() => undefined);
+    if (sessionId && workspaceId) {
+      await api('DELETE', `/projects/${workspaceId}/sessions/${sessionId}`, token).catch(() => undefined);
     }
-    if (projectId) {
-      const del = await api('DELETE', `/projects/${projectId}?purge=true`, token);
+    if (workspaceId) {
+      const del = await api('DELETE', `/projects/${workspaceId}?purge=true`, token);
       assert(del.status === 200, 'rm --purge → 200', `${del.status} ${JSON.stringify(del.json)}`);
       assert(del.json?.repo_deleted === true, 'managed repo deleted on purge');
     }

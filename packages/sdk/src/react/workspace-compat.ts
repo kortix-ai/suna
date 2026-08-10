@@ -1,29 +1,22 @@
-/** Canonical Workspace aliases over the current Project-backed React layer. */
+/** Canonical Workspace exports for React modules that retain legacy filenames. */
+export { KortixWorkspaceProvider, useKortixRouteWorkspaceId } from './route-project';
+export { clearWorkspaceProviderCache } from './use-opencode-sessions';
 export {
-  KortixProjectProvider as KortixWorkspaceProvider,
-  useKortixRouteProjectId as useKortixRouteWorkspaceId,
-} from './route-project';
-export { clearProjectProviderCache as clearWorkspaceProviderCache } from './use-opencode-sessions';
-export {
-  mergeProjectSecretConnectedProviders as mergeWorkspaceSecretConnectedProviders,
-  projectLlmCatalogToProviderList as workspaceLlmCatalogToProviderList,
+  mergeWorkspaceSecretConnectedProviders,
+  workspaceLlmCatalogToProviderList,
 } from './provider-selection';
-export { refreshProjectProviderState as refreshWorkspaceProviderState } from './provider-refresh';
+export { refreshWorkspaceProviderState } from './provider-refresh';
+export { useWorkspaceConfig } from './use-project-config';
+export { useWorkspaceModels } from './use-project-models';
 export {
-  useAdminAccountProjects as useAdminAccountWorkspaces,
-  type AdminAccountProject as AdminAccountWorkspace,
-} from './use-admin-accounts';
-export { useProjectConfig as useWorkspaceConfig } from './use-project-config';
-export { useProjectModels as useWorkspaceModels } from './use-project-models';
-export {
-  useProjectSecrets as useWorkspaceSecrets,
-  projectSecretsKey as workspaceSecretsKey,
+  useWorkspaceSecrets,
+  workspaceSecretsKey,
 } from './use-project-secrets';
 export {
-  useProjectTriggers as useWorkspaceTriggers,
-  projectTriggersKey as workspaceTriggersKey,
+  useWorkspaceTriggers,
+  workspaceTriggersKey,
 } from './use-project-triggers';
 export {
   projectConfigAgentsToOpenCodeAgents as workspaceConfigAgentsToOpenCodeAgents,
 } from './use-opencode-sessions/agents';
-export type { ProjectConfigSummary as WorkspaceConfigSummary } from '../core/rest/projects-client';
+export type { WorkspaceConfigSummary } from '../core/rest/workspaces-client';

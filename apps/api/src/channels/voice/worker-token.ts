@@ -3,7 +3,7 @@
  * carries for one call, private dispatch metadata carrying it into `ctx.job.metadata`
  * at dispatch time (see that app's `call-context.ts`). It authenticates the
  * worker's `Authorization: Bearer` header on its single way in, the MCP at
- * `POST /v1/projects/:projectId/sessions/:sessionId/mcp/voice` (routes.ts).
+ * `POST /v1/workspaces/:workspaceId/sessions/:sessionId/mcp/voice` (routes.ts).
  * (It used to guard three separate `/voice/{prompt,run-command,turns}` routes;
  * those are gone — the worker speaks JSON-RPC to the one route now.)
  *

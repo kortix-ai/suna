@@ -3,16 +3,16 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const boundarySource = readFileSync(join(import.meta.dir, 'sandbox-loading-boundary.tsx'), 'utf8');
-const projectLayoutSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/projects/[id]/layout.tsx'),
+const workspaceLayoutSource = readFileSync(
+  join(import.meta.dir, '../../app/(app)/workspaces/[id]/layout.tsx'),
   'utf8',
 );
-const projectAccessSource = readFileSync(
-  join(import.meta.dir, '../../components/projects/project-access-boundary.tsx'),
+const workspaceAccessSource = readFileSync(
+  join(import.meta.dir, '../../components/workspaces/workspace-access-boundary.tsx'),
   'utf8',
 );
-const projectHomeSource = readFileSync(
-  join(import.meta.dir, '../workspace/project-layout/project-home.tsx'),
+const workspaceHomeSource = readFileSync(
+  join(import.meta.dir, '../workspace/workspace-layout/workspace-home.tsx'),
   'utf8',
 );
 
@@ -23,44 +23,44 @@ describe('session navigation loading boundaries', () => {
     expect(boundarySource).not.toContain('min-h-[50vh]');
   });
 
-  test('the project shell cannot be replaced by a route-wide sandbox fallback', () => {
-    expect(projectLayoutSource).not.toContain('SandboxLoadingBoundary');
-    expect(projectLayoutSource).toContain('<ProjectAccessBoundary projectId={projectId}>');
-    expect(projectLayoutSource).not.toContain('SessionCacheWarmer');
-    expect(projectLayoutSource).toContain('<ProjectShell projectId={projectId}>');
+  test('the workspace shell cannot be replaced by a route-wide sandbox fallback', () => {
+    expect(workspaceLayoutSource).not.toContain('SandboxLoadingBoundary');
+    expect(workspaceLayoutSource).toContain('<WorkspaceAccessBoundary workspaceId={workspaceId}>');
+    expect(workspaceLayoutSource).not.toContain('SessionCacheWarmer');
+    expect(workspaceLayoutSource).toContain('<WorkspaceShell workspaceId={workspaceId}>');
   });
 
-  test('first project access still keeps its intentional full-page loader', () => {
+  test('first workspace access still keeps its intentional full-page loader', () => {
     // The mirror of the `return null` rule above: a runtime-not-ready RETRY
     // must stay invisible, but the very FIRST project fetch owns the whole
     // viewport, so it has to show something rather than a blank screen.
-    expect(projectAccessSource).toContain('if (query.isLoading)');
-    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
-    expect(projectAccessSource).not.toMatch(/query\.isLoading\)\s*return null/);
+    expect(workspaceAccessSource).toContain('if (query.isLoading)');
+    expect(workspaceAccessSource).toContain('<AuthPendingScreen footer={false} />');
+    expect(workspaceAccessSource).not.toMatch(/query\.isLoading\)\s*return null/);
   });
 
   test('the first-fetch loader carries no legal footer', () => {
-    // It resolves into the project shell, which has no footer of its own, so a
+    // It resolves into the workspace shell, which has no footer of its own, so a
     // pinned Terms/Privacy line would flash once per project open and vanish.
     // The gate screens below it keep theirs — they are terminal pages.
-    expect(projectAccessSource).toContain('<AuthPendingScreen footer={false} />');
-    expect(projectAccessSource).toContain('<AuthFrame>');
+    expect(workspaceAccessSource).toContain('<AuthPendingScreen footer={false} />');
+    expect(workspaceAccessSource).toContain('<AuthFrame>');
   });
 
   test('the access boundary uses the lightweight project route', () => {
-    expect(projectAccessSource).toContain('getProject(projectId');
-    expect(projectAccessSource).not.toContain('getProjectDetail(projectId');
+    expect(workspaceAccessSource).toContain('getWorkspace(workspaceId');
+    expect(workspaceAccessSource).not.toContain('getWorkspaceDetail(workspaceId');
   });
 
-  test('project home does not start the members query before Customize opens', () => {
+  test('workspace home does not start the members query before Customize opens', () => {
     // The boundary reads the lightweight project route under its own key. The
     // key is a constant now because three call sites share it, so assert the
     // constant's value and its use rather than one inlined literal.
-    expect(projectAccessSource).toContain("const QUERY_KEY = 'project-access-boundary'");
-    expect(projectAccessSource).toContain('queryKey: [QUERY_KEY, projectId]');
-    expect(projectAccessSource).not.toContain('queryKey: qk.project.access(projectId)');
-    expect(projectHomeSource).not.toContain('queryKey: qk.project.access(projectId)');
-    expect(projectHomeSource).not.toContain('listProjectAccess(projectId');
-    expect(projectHomeSource).toContain('const PROJECT_SETUP_TILES');
+    expect(workspaceAccessSource).toContain("const QUERY_KEY = 'workspace-access-boundary'");
+    expect(workspaceAccessSource).toContain('queryKey: [QUERY_KEY, workspaceId]');
+    expect(workspaceAccessSource).not.toContain('queryKey: qk.workspace.access(workspaceId)');
+    expect(workspaceHomeSource).not.toContain('queryKey: qk.workspace.access(workspaceId)');
+    expect(workspaceHomeSource).not.toContain('listWorkspaceAccess(workspaceId');
+    expect(workspaceHomeSource).toContain('const WORKSPACE_SETUP_TILES');
   });
 });

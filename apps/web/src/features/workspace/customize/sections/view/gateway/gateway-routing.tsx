@@ -33,10 +33,10 @@ import { useModelDefaults } from '@kortix/sdk/react';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import type {
   GatewayFallbackChain,
-  GatewayProjectRoutingPolicy,
+  GatewayWorkspaceRoutingPolicy,
   GatewayRoutingRule,
 } from '@kortix/sdk';
-import { qk, useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
+import { qk, useGatewayRoutingPolicy, useWorkspaceModels } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { GenerationControlsPanel } from './generation-controls';
@@ -47,14 +47,14 @@ const MAX_RULES = 20;
 export type FallbackMode = 'inherit' | 'custom' | 'disabled';
 
 type ValidationDraft = Pick<
-  GatewayProjectRoutingPolicy,
+  GatewayWorkspaceRoutingPolicy,
   'defaultModel' | 'defaultFallback' | 'rules'
 >;
 
-type RoutingModel = ReturnType<typeof useProjectModels>[number];
+type RoutingModel = ReturnType<typeof useWorkspaceModels>[number];
 
 export function fallbackModeForPolicy(
-  fallback: GatewayProjectRoutingPolicy['defaultFallback'],
+  fallback: GatewayWorkspaceRoutingPolicy['defaultFallback'],
 ): FallbackMode {
   if (fallback === null) return 'inherit';
   return fallback.models.length === 0 ? 'disabled' : 'custom';
@@ -93,7 +93,7 @@ export function validateRoutingDraft(
     if (issue) return issue;
   }
   if (draft.rules.length > MAX_RULES)
-    return `A project can contain at most ${MAX_RULES} overrides.`;
+    return `A workspace can contain at most ${MAX_RULES} overrides.`;
   const primaries = new Set<string>();
   for (const rule of draft.rules) {
     if (!rule.model) return 'Every override needs a primary model.';
@@ -113,7 +113,7 @@ export function validateRoutingDraft(
  * can't unknowingly save a chain that routes to a disconnected provider.
  */
 export function collectPreviewTargets(
-  policy: Pick<GatewayProjectRoutingPolicy, 'visionModel' | 'defaultFallback' | 'rules'>,
+  policy: Pick<GatewayWorkspaceRoutingPolicy, 'visionModel' | 'defaultFallback' | 'rules'>,
   primaryModel: string | null,
 ): string[] {
   const targets = new Set<string>();
@@ -130,7 +130,7 @@ export function collectPreviewTargets(
   return [...targets];
 }
 
-function clonePolicy(policy: GatewayProjectRoutingPolicy): GatewayProjectRoutingPolicy {
+function clonePolicy(policy: GatewayWorkspaceRoutingPolicy): GatewayWorkspaceRoutingPolicy {
   return {
     ...policy,
     defaultFallback: policy.defaultFallback
@@ -141,7 +141,7 @@ function clonePolicy(policy: GatewayProjectRoutingPolicy): GatewayProjectRouting
   };
 }
 
-export function editablePolicySignature(policy: GatewayProjectRoutingPolicy): string {
+export function editablePolicySignature(policy: GatewayWorkspaceRoutingPolicy): string {
   // The shared header owns defaultModel. A successful header change refetches
   // this document, but must not replace unsaved fallback (or vision) edits
   // made on this screen.
@@ -195,7 +195,7 @@ function RoutingModelSelector({
 function AvailabilityBadge({ available }: { available: boolean | undefined }) {
   if (available !== false) return null;
   return (
-    <Hint label="This model's provider isn't connected for this project — requests routed here fail over immediately">
+    <Hint label="This model's provider isn't connected for this workspace — requests routed here fail over immediately">
       <Badge variant="warning" size="xs" className="shrink-0 gap-1">
         <AlertTriangle className="size-3" />
         Not connected
@@ -368,19 +368,19 @@ function ChainEditor({
 }
 
 export function GatewayRouting({
-  projectId,
+  workspaceId,
   canWrite,
-  projectDefaultPending,
+  workspaceDefaultPending,
 }: {
-  projectId: string;
+  workspaceId: string;
   canWrite: boolean;
-  projectDefaultPending: boolean;
+  workspaceDefaultPending: boolean;
 }) {
   const queryClient = useQueryClient();
-  const routing = useGatewayRoutingPolicy(projectId);
-  const modelDefaults = useModelDefaults(projectId);
-  const catalogModels = useProjectModels(projectId);
-  const [draft, setDraft] = useState<GatewayProjectRoutingPolicy | null>(null);
+  const routing = useGatewayRoutingPolicy(workspaceId);
+  const modelDefaults = useModelDefaults(workspaceId);
+  const catalogModels = useWorkspaceModels(workspaceId);
+  const [draft, setDraft] = useState<GatewayWorkspaceRoutingPolicy | null>(null);
   const [fallbackMode, setFallbackMode] = useState<FallbackMode>('inherit');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -389,15 +389,15 @@ export function GatewayRouting({
   const previewRequestId = useRef(0);
 
   useEffect(() => {
-    if (!routing.data?.project) return;
-    const signature = editablePolicySignature(routing.data.project);
-    // Effective routing also changes when the header's project default changes.
-    // Keep an in-progress fallback draft intact unless the persisted project
+    if (!routing.data?.workspace) return;
+    const signature = editablePolicySignature(routing.data.workspace);
+    // Effective routing also changes when the header's workspace default changes.
+    // Keep an in-progress fallback draft intact unless the persisted workspace
     // policy itself changed (save, reset, or an external editor update).
     if (hydratedPolicySignature.current === signature) return;
     hydratedPolicySignature.current = signature;
-    setDraft(clonePolicy(routing.data.project));
-    setFallbackMode(fallbackModeForPolicy(routing.data.project.defaultFallback));
+    setDraft(clonePolicy(routing.data.workspace));
+    setFallbackMode(fallbackModeForPolicy(routing.data.workspace.defaultFallback));
   }, [routing.data]);
 
   // Debounced availability preview: whenever the draft's referenced models
@@ -409,10 +409,10 @@ export function GatewayRouting({
       setAvailability({});
       return;
     }
-    const projectDefaultWire = modelDefaults.projectDefault
-      ? modelKeyToWire(modelDefaults.projectDefault)
+    const workspaceDefaultWire = modelDefaults.workspaceDefault
+      ? modelKeyToWire(modelDefaults.workspaceDefault)
       : null;
-    const primary = projectDefaultWire ?? routing.data.effective.defaultModel;
+    const primary = workspaceDefaultWire ?? routing.data.effective.defaultModel;
     const targets = collectPreviewTargets(draft, primary);
     if (targets.length === 0) {
       setAvailability({});
@@ -442,7 +442,7 @@ export function GatewayRouting({
       });
     }, 400);
     return () => clearTimeout(timer);
-  }, [draft, routing.data, modelDefaults.projectDefault]);
+  }, [draft, routing.data, modelDefaults.workspaceDefault]);
 
   const models = useMemo(() => {
     const byWire = new Map<string, RoutingModel>();
@@ -473,7 +473,7 @@ export function GatewayRouting({
     return (
       <CustomizeSectionWrapper
         title="Routing"
-        description="Configure what happens when the project default model fails."
+        description="Configure what happens when the workspace default model fails."
       >
         <div className="bg-popover rounded-md border px-4 py-3">
           <p className="text-destructive text-sm">Could not load the routing policy.</p>
@@ -489,7 +489,7 @@ export function GatewayRouting({
     return (
       <CustomizeSectionWrapper
         title="Routing"
-        description="Configure what happens when the project default model fails."
+        description="Configure what happens when the workspace default model fails."
       >
         <div className="space-y-3">
           <Skeleton className="h-40 rounded-md" />
@@ -504,20 +504,20 @@ export function GatewayRouting({
     !writable ||
     routing.set.isPending ||
     routing.reset.isPending ||
-    projectDefaultPending ||
+    workspaceDefaultPending ||
     modelDefaults.isLoading;
-  const editableState = (policy: GatewayProjectRoutingPolicy) => ({
+  const editableState = (policy: GatewayWorkspaceRoutingPolicy) => ({
     visionModel: policy.visionModel,
     defaultFallback: policy.defaultFallback,
     rules: policy.rules,
     modelGenerationConfig: policy.modelGenerationConfig ?? {},
   });
   const dirty =
-    JSON.stringify(editableState(draft)) !== JSON.stringify(editableState(routing.data.project));
-  const projectDefaultWire = modelDefaults.projectDefault
-    ? modelKeyToWire(modelDefaults.projectDefault)
+    JSON.stringify(editableState(draft)) !== JSON.stringify(editableState(routing.data.workspace));
+  const workspaceDefaultWire = modelDefaults.workspaceDefault
+    ? modelKeyToWire(modelDefaults.workspaceDefault)
     : null;
-  const primaryModel = projectDefaultWire ?? routing.data.effective.defaultModel;
+  const primaryModel = workspaceDefaultWire ?? routing.data.effective.defaultModel;
   const validation = validateRoutingDraft({ ...draft, defaultModel: primaryModel }, fallbackMode);
   const usedRuleModels = draft.rules.map((rule) => rule.model);
   const newRuleModel = models.find((model) => !usedRuleModels.includes(modelKeyToWire(model)));
@@ -563,7 +563,7 @@ export function GatewayRouting({
   return (
     <CustomizeSectionWrapper
       title="Routing"
-      description="Choose a bounded fallback path for the project default model."
+      description="Choose a bounded fallback path for the workspace default model."
       action={
         writable ? (
           <Button
@@ -589,7 +589,7 @@ export function GatewayRouting({
           <div className="bg-popover overflow-hidden rounded-md border">
             <div className="flex flex-col gap-3 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-medium">When the project default fails</p>
+                <p className="text-sm font-medium">When the workspace default fails</p>
                 <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
                   Inherit the platform route, choose an ordered chain, or return the original error.
                 </p>
@@ -632,7 +632,7 @@ export function GatewayRouting({
             ) : (
               <div className="border-t px-4 py-4">
                 <p className="text-muted-foreground text-sm">
-                  The project default error is returned immediately.
+                  The workspace default error is returned immediately.
                 </p>
               </div>
             )}
@@ -821,15 +821,15 @@ export function GatewayRouting({
             type="button"
             disabled={!dirty || !!validation || controlsDisabled}
             onClick={() => {
-              const defaultModel = modelDefaults.data ? projectDefaultWire : draft.defaultModel;
+              const defaultModel = modelDefaults.data ? workspaceDefaultWire : draft.defaultModel;
               routing.set.mutate(
                 { ...draft, defaultModel },
                 {
                   onSuccess: async () => {
                     await Promise.all([
-                      queryClient.invalidateQueries({ queryKey: ['model-defaults', projectId] }),
+                      queryClient.invalidateQueries({ queryKey: ['model-defaults', workspaceId] }),
                       queryClient.invalidateQueries({
-                        queryKey: qk.project.modelPicker(projectId),
+                        queryKey: qk.workspace.modelPicker(workspaceId),
                       }),
                     ]);
                     successToast('Routing policy saved');
@@ -851,8 +851,8 @@ export function GatewayRouting({
       <ConfirmDialog
         open={resetOpen}
         onOpenChange={setResetOpen}
-        title="Reset project routing?"
-        description="This removes the project default, fallback chain, and advanced per-model fallbacks. The project will inherit account and platform routing."
+        title="Reset workspace routing?"
+        description="This removes the workspace default, fallback chain, and advanced per-model fallbacks. The workspace will inherit account and platform routing."
         confirmLabel="Reset routing"
         confirmVariant="destructive"
         isPending={routing.reset.isPending}
@@ -860,8 +860,8 @@ export function GatewayRouting({
           routing.reset.mutate(undefined, {
             onSuccess: () => {
               setResetOpen(false);
-              void queryClient.invalidateQueries({ queryKey: ['model-defaults', projectId] });
-              successToast('Project routing reset');
+              void queryClient.invalidateQueries({ queryKey: ['model-defaults', workspaceId] });
+              successToast('Workspace routing reset');
             },
             onError: (error) =>
               errorToast(error instanceof Error ? error.message : 'Could not reset routing'),

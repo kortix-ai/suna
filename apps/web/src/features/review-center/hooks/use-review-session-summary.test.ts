@@ -8,7 +8,7 @@ function makeItem(overrides: Partial<ApiReviewItem> = {}): ApiReviewItem {
   return {
     review_item_id: 'ri1',
     account_id: 'a1',
-    project_id: 'p1',
+    workspace_id: 'p1',
     origin_session_id: 's1',
     kind: 'output',
     status: 'needs_you',

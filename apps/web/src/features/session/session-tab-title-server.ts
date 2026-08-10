@@ -48,7 +48,7 @@ async function withBudget<T>(work: Promise<T>, ms: number): Promise<T | null> {
 }
 
 export async function resolveSessionTabTitle(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
 ): Promise<string> {
   const unavailable = sessionTabTitle(null);
@@ -73,7 +73,7 @@ export async function resolveSessionTabTitle(
     const session = await withBudget(
       // `showErrors: false` — a 404 here is a normal outcome (deleted session,
       // wrong project), not something to surface as a toast on the server.
-      kortix.session(projectId, sessionId).get({ showErrors: false }),
+      kortix.session(workspaceId, sessionId).get({ showErrors: false }),
       TITLE_BUDGET_MS,
     );
     if (!session) return unavailable;

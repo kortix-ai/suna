@@ -35,13 +35,13 @@ You are ${AGENT_NAME}. Whatever the user says, reply with the single word: pong.
 
 run("create-agent", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix);
+  const workspaceId = await pickProjectId(kortix);
   const sessionId = await pickOrCreateSessionId(
     kortix,
-    projectId,
+    workspaceId,
     "sdk agent test",
   );
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
 
   console.log("readying session…");
   await retryUntilReady(() => session.ensureReady());

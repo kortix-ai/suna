@@ -26,8 +26,8 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { db } from './db';
-import { isPlaceholderOpencodeTitle } from '../projects/lib/opencode-title';
-import { sandboxOpencodeEndpoint, listSandboxOpencodeSessions, resolveRootSessionId } from '../projects/opencode-mapping';
+import { isPlaceholderOpencodeTitle } from '../workspaces/lib/opencode-title';
+import { sandboxOpencodeEndpoint, listSandboxOpencodeSessions, resolveRootSessionId } from '../workspaces/opencode-mapping';
 import type { PublicShareRow } from './session-public-shares';
 
 const WORKSPACE_DIRECTORY = '/workspace';

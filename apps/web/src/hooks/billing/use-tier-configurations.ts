@@ -2,21 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { accountStateKeys } from './use-account-state';
 import { getBillingTierConfigurations } from '@kortix/sdk';
 
-export interface TierConfiguration {
-  tier_key: string;
-  name: string;
-  display_name: string;
-  monthly_credits: number;
-  can_purchase_credits: boolean;
-  project_limit: number;
-  price_ids: string[];  // Backend-only: kept for API response compatibility, frontend should use tier_key
-}
-
-export interface TierConfigurationsResponse {
-  success: boolean;
-  tiers: TierConfiguration[];
-  timestamp: string;
-}
+export type TierConfigurationsResponse = Awaited<
+  ReturnType<typeof getBillingTierConfigurations>
+>;
+export type TierConfiguration = TierConfigurationsResponse['tiers'][number];
 
 /**
  * Fetch tier configurations from the backend API
@@ -24,7 +13,7 @@ export interface TierConfigurationsResponse {
  */
 async function fetchTierConfigurations(): Promise<TierConfigurationsResponse> {
   const response = await getBillingTierConfigurations();
-  return response as TierConfigurationsResponse;
+  return response;
 }
 
 export function useTierConfigurations() {

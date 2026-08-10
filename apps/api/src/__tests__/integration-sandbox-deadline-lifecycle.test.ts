@@ -29,15 +29,15 @@ mock.module('../platform/providers', () => ({
 
 const { db } = await import('../shared/db');
 const { extendSandboxDeadline, shortenSandboxDeadline } = await import(
-  '../projects/sandbox-deadline'
+  '../workspaces/sandbox-deadline'
 );
-const { reapAndReconcileSandboxes } = await import('../projects/sandbox-reaper');
+const { reapAndReconcileSandboxes } = await import('../workspaces/sandbox-reaper');
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = `deadline-lifecycle-${SANDBOX_ID}`;
 const EXTERNAL_ID = `ext-${SANDBOX_ID}`;
 const ACCOUNT_ID = crypto.randomUUID();
-const PROJECT_ID = crypto.randomUUID();
+const WORKSPACE_ID = crypto.randomUUID();
 
 /** drizzle's execute() is untyped; both drivers surface rows the same way. */
 type Rows = { rows?: Array<Record<string, unknown>> } & Array<Record<string, unknown>>;
@@ -65,14 +65,14 @@ beforeAll(async () => {
     INSERT INTO kortix.accounts (account_id, name) VALUES (${ACCOUNT_ID}::uuid, 'deadline-it')`);
   await db.execute(sql`
     INSERT INTO kortix.projects (project_id, account_id, name, repo_url)
-    VALUES (${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid, 'deadline-it', 'https://example.invalid/r.git')`);
+    VALUES (${WORKSPACE_ID}::uuid, ${ACCOUNT_ID}::uuid, 'deadline-it', 'https://example.invalid/r.git')`);
   await db.execute(sql`
     INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, status)
-    VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${`br-${SANDBOX_ID}`}, 'running')`);
+    VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${WORKSPACE_ID}::uuid, ${`br-${SANDBOX_ID}`}, 'running')`);
   await db.execute(sql`
     INSERT INTO kortix.session_sandboxes
       (sandbox_id, session_id, account_id, project_id, status, external_id)
-    VALUES (${SANDBOX_ID}::uuid, ${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid,
+    VALUES (${SANDBOX_ID}::uuid, ${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${WORKSPACE_ID}::uuid,
             'active', ${EXTERNAL_ID})`);
   // The reaper is a PLATFORM sweep: it judges every active row, including any
   // left lying around by local dev. Park those for the duration (a live
@@ -110,7 +110,7 @@ afterAll(async () => {
     .execute(sql`DELETE FROM kortix.project_sessions WHERE session_id = ${SESSION_ID}`)
     .catch(() => undefined);
   await db
-    .execute(sql`DELETE FROM kortix.projects WHERE project_id = ${PROJECT_ID}::uuid`)
+    .execute(sql`DELETE FROM kortix.projects WHERE project_id = ${WORKSPACE_ID}::uuid`)
     .catch(() => undefined);
   await db
     .execute(sql`DELETE FROM kortix.accounts WHERE account_id = ${ACCOUNT_ID}::uuid`)

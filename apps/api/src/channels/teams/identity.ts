@@ -2,9 +2,9 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { authorize } from '../../iam';
-import { PROJECT_ACTIONS } from '../../iam/actions';
-import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
-import { lookupEmailsByUserIds } from '../../projects/lib/access';
+import { WORKSPACE_ACTIONS } from '../../iam/actions';
+import { notifyWorkspaceAccessRequestManagers } from '../../workspaces/lib/access-requests';
+import { lookupEmailsByUserIds } from '../../workspaces/lib/access';
 import { sendCard } from '../teams-api';
 import { buildConnectAccountCard, buildRequestAccessCard } from './cards';
 import { buildTeamsLoginUrl } from './login';
@@ -19,7 +19,7 @@ export function teamsUserId(activity: TeamsActivity): string | null {
   return activity.from?.aadObjectId ?? activity.from?.id ?? null;
 }
 
-function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConversationRef | null {
+function conversationRef(activity: TeamsActivity, workspaceId?: string): TeamsConversationRef | null {
   if (!activity.serviceUrl || !activity.conversation?.id) return null;
   return {
     serviceUrl: activity.serviceUrl,
@@ -27,7 +27,7 @@ function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConv
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     tenantId: activity.conversation.tenantId ?? activity.channelData?.tenant?.id,
-    projectId,
+    workspaceId,
   };
 }
 
@@ -35,7 +35,7 @@ export async function resolveTeamsActor(
   tenantId: string,
   userId: string,
   accountId: string,
-  projectId: string,
+  workspaceId: string,
 ): Promise<TeamsActor> {
   if (!tenantId || !userId) return { reason: 'unlinked' };
 
@@ -45,7 +45,7 @@ export async function resolveTeamsActor(
     .where(
       and(
         eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, tenantId),
+        eq(chatUserIdentities.platformWorkspaceId, tenantId),
         eq(chatUserIdentities.platformUserId, userId),
         isNull(chatUserIdentities.revokedAt),
       ),
@@ -54,9 +54,9 @@ export async function resolveTeamsActor(
   if (!link) return { reason: 'unlinked' };
 
   if (!(await isAccountMember(link.userId, accountId))) return { reason: 'not_member' };
-  const verdict = await authorize(link.userId, accountId, PROJECT_ACTIONS.PROJECT_WRITE, {
+  const verdict = await authorize(link.userId, accountId, WORKSPACE_ACTIONS.WORKSPACE_WRITE, {
     type: 'project',
-    id: projectId,
+    id: workspaceId,
   });
   if (!verdict.allowed) return { reason: 'not_member' };
   return { userId: link.userId };
@@ -81,7 +81,7 @@ export async function lookupTeamsIdentity(
     .where(
       and(
         eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, tenantId),
+        eq(chatUserIdentities.platformWorkspaceId, tenantId),
         eq(chatUserIdentities.platformUserId, userId),
         isNull(chatUserIdentities.revokedAt),
       ),
@@ -99,14 +99,14 @@ export async function linkTeamsIdentity(input: {
     .insert(chatUserIdentities)
     .values({
       platform: PLATFORM,
-      workspaceId: input.tenantId,
+      platformWorkspaceId: input.tenantId,
       platformUserId: input.teamsUserId,
       userId: input.userId,
     })
     .onConflictDoUpdate({
       target: [
         chatUserIdentities.platform,
-        chatUserIdentities.workspaceId,
+        chatUserIdentities.platformWorkspaceId,
         chatUserIdentities.platformUserId,
       ],
       set: { userId: input.userId, linkedAt: new Date(), revokedAt: null },
@@ -120,7 +120,7 @@ export async function revokeTeamsIdentity(tenantId: string, userId: string): Pro
     .where(
       and(
         eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, tenantId),
+        eq(chatUserIdentities.platformWorkspaceId, tenantId),
         eq(chatUserIdentities.platformUserId, userId),
         isNull(chatUserIdentities.revokedAt),
       ),
@@ -130,19 +130,19 @@ export async function revokeTeamsIdentity(tenantId: string, userId: string): Pro
 }
 
 export async function postTeamsIdentityPrompt(input: {
-  projectId: string;
+  workspaceId: string;
   tenantId: string;
   activity: TeamsActivity;
   reason: 'unlinked' | 'not_member';
 }): Promise<void> {
-  const ref = conversationRef(input.activity, input.projectId);
+  const ref = conversationRef(input.activity, input.workspaceId);
   if (!ref) return;
   const userId = teamsUserId(input.activity);
   if (!userId) return;
 
   if (input.reason === 'unlinked') {
     const pendingId = await createPendingTeamsAuthMessage({
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       tenantId: input.tenantId,
       teamsUserId: userId,
       activity: input.activity,
@@ -155,33 +155,33 @@ export async function postTeamsIdentityPrompt(input: {
     await sendCard(ref, buildConnectAccountCard(loginUrl));
     return;
   }
-  await sendCard(ref, buildRequestAccessCard(input.projectId));
+  await sendCard(ref, buildRequestAccessCard(input.workspaceId));
 }
 
 export type TeamsAccessRequestOutcome =
   | { status: 'created' | 'pending' | 'already-member'; requesterUserId: string; accountId: string }
-  | { status: 'no-identity' | 'no-project' };
+  | { status: 'no-identity' | 'no-workspace' };
 
 export async function createTeamsAccessRequest(input: {
   tenantId: string;
   teamsUserId: string;
-  projectId: string;
+  workspaceId: string;
 }): Promise<TeamsAccessRequestOutcome> {
   const identity = await lookupTeamsIdentity(input.tenantId, input.teamsUserId);
   if (!identity) return { status: 'no-identity' };
 
-  const [project] = await db
+  const [workspace] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
-    .where(eq(projects.projectId, input.projectId))
+    .where(eq(projects.workspaceId, input.workspaceId))
     .limit(1);
-  if (!project) return { status: 'no-project' };
+  if (!workspace) return { status: 'no-workspace' };
 
-  const base = { requesterUserId: identity.userId, accountId: project.accountId };
-  if (await isAccountMember(identity.userId, project.accountId)) {
-    const verdict = await authorize(identity.userId, project.accountId, PROJECT_ACTIONS.PROJECT_WRITE, {
+  const base = { requesterUserId: identity.userId, accountId: workspace.accountId };
+  if (await isAccountMember(identity.userId, workspace.accountId)) {
+    const verdict = await authorize(identity.userId, workspace.accountId, WORKSPACE_ACTIONS.WORKSPACE_WRITE, {
       type: 'project',
-      id: input.projectId,
+      id: input.workspaceId,
     });
     if (verdict.allowed) return { status: 'already-member', ...base };
   }
@@ -191,7 +191,7 @@ export async function createTeamsAccessRequest(input: {
     .from(projectAccessRequests)
     .where(
       and(
-        eq(projectAccessRequests.projectId, input.projectId),
+        eq(projectAccessRequests.workspaceId, input.workspaceId),
         eq(projectAccessRequests.requesterUserId, identity.userId),
         eq(projectAccessRequests.status, 'pending'),
       ),
@@ -201,8 +201,8 @@ export async function createTeamsAccessRequest(input: {
 
   const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
   await db.insert(projectAccessRequests).values({
-    accountId: project.accountId,
-    projectId: input.projectId,
+    accountId: workspace.accountId,
+    workspaceId: input.workspaceId,
     requesterUserId: identity.userId,
     requesterEmail: email || identity.userId,
     message: 'Requested from Microsoft Teams. Approve as Editor so they can run Kortix from Teams.',
@@ -211,13 +211,13 @@ export async function createTeamsAccessRequest(input: {
 }
 
 export async function notifyAdminsOfTeamsAccessRequest(input: {
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   requesterUserId: string;
 }): Promise<void> {
-  await notifyProjectAccessRequestManagers({
+  await notifyWorkspaceAccessRequestManagers({
     accountId: input.accountId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     requesterUserId: input.requesterUserId,
   }).catch((err) => console.warn('[teams-auth] notify managers failed', err));
 }

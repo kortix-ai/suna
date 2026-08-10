@@ -19,21 +19,21 @@ replacement for that category.
 
 Options:
   --secret <identifier>          Replace the secret allowlist (repeatable).
-  --no-secrets                   Allow no project secrets.
+  --no-secrets                   Allow no workspace secrets.
   --inherit-secrets              Remove session narrowing; use the agent grant.
   --connector <alias>=<connection-id>  Replace connector bindings (repeatable).
   --no-connectors                Replace explicit connector bindings with none.
   --require-connector <alias>    Replace required connector aliases (repeatable).
   --no-required-connectors       Require no connector aliases.
   --json                         Print the authoritative scope as JSON.
-  --project <id>                 Operate on this project id.
+  --workspace <id>               Operate on this workspace id.
   --host <name>                  Operate on this logged-in host.
   -h, --help                     Show this help.
 `;
 
 interface ScopeCommand {
   sessionId: string;
-  project?: string;
+  workspace?: string;
   host?: string;
   json: boolean;
   input: SessionScopeInput;
@@ -66,7 +66,7 @@ function parseScopeCommand(argv: string[]): ScopeCommand | "help" {
   const rest = [...argv];
   if (takeFlagBool(rest, ["-h", "--help"])) return "help";
 
-  const project = takeFlagValue(rest, ["--project"]);
+  const workspace = takeFlagValue(rest, ["--workspace", "--project"]);
   const host = takeFlagValue(rest, ["--host"]);
   const json = takeFlagBool(rest, ["--json"]);
   const secrets = takeFlagValues(rest, ["--secret"]);
@@ -110,7 +110,7 @@ function parseScopeCommand(argv: string[]): ScopeCommand | "help" {
 
   return {
     sessionId,
-    project,
+    workspace,
     host,
     json,
     input,
@@ -192,12 +192,12 @@ export async function runSessionsScope(argv: string[]): Promise<number> {
 
   const located = await locateSessionAnywhere(
     command.sessionId,
-    { projectArg: command.project, hostArg: command.host },
+    { workspaceArg: command.workspace, hostArg: command.host },
     (host) => `kortix sessions scope ${command.sessionId} --host ${host}`,
   );
   if (!located) return 1;
-  const { auth, projectId, session: sessionRow } = located.located;
-  const session = kortixFromAuth(auth).session(projectId, sessionRow.session_id);
+  const { auth, workspaceId, session: sessionRow } = located.located;
+  const session = kortixFromAuth(auth).session(workspaceId, sessionRow.session_id);
 
   let scope: SessionScope;
   try {

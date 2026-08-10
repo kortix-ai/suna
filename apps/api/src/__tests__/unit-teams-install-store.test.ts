@@ -24,11 +24,11 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-mock.module('../projects/secrets', () => ({
-  listProjectSecrets: async () => ({}),
-  decryptProjectSecret: (_projectId: string, value: string) => value.replace(/^enc:/, ''),
-  encryptProjectSecret: (_projectId: string, value: string) => `enc:${value}`,
-  getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) =>
+mock.module('../workspaces/secrets', () => ({
+  listWorkspaceSecrets: async () => ({}),
+  decryptWorkspaceSecret: (_projectId: string, value: string) => value.replace(/^enc:/, ''),
+  encryptWorkspaceSecret: (_projectId: string, value: string) => `enc:${value}`,
+  getWorkspaceSecretValueForConsumer: async (input: { name: string; consumer: string }) =>
     input.name === 'MS_TEAMS_TENANT_ID' && input.consumer === 'connector'
       ? '435431f6-fc5c-4d3e-8d99-9ff939fec417'
       : null,

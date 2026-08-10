@@ -2,7 +2,7 @@
 
 /**
  * "Ask for changes" (W12) — a deliverable hands the composer a starter line.
- * Session-scoped sibling of `composer-prefill-store.ts` (which is project-home
+ * Session-scoped sibling of `composer-prefill-store.ts` (which is workspace-home
  * only). Not one-shot: `SessionChatInput`'s prefill effect keys on `id`, so a
  * held value re-applies only when a new set bumps it.
  */

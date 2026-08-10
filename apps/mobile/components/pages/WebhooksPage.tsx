@@ -1,7 +1,7 @@
 /**
  * WebhooksPage — webhook triggers (web parity: triggers-view, type='webhook').
  * An external POST (HMAC-signed) fires an agent with a rendered prompt. Create
- * stores a signing secret as a project secret, then registers the trigger. List
+ * stores a signing secret as a workspace secret, then registers the trigger. List
  * + create sheet + detail sheet (copy URL, sample curl, fire, pause, delete,
  * edit prompt).
  *
@@ -46,15 +46,15 @@ import { SearchListHeader } from '@/components/ui/search-list-header';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { AgentPickerField, ModelPickerField } from './TriggerAgentModelFields';
 import {
-  useProjectTriggers,
-  useCreateProjectTrigger,
-  useUpdateProjectTrigger,
-  useDeleteProjectTrigger,
-  useFireProjectTrigger,
-  useUpsertProjectSecret,
-} from '@/lib/projects/hooks';
-import type { ProjectTrigger } from '@/lib/projects/projects-client';
-import { slugify, relativeTime } from '@/lib/projects/triggers-format';
+  useWorkspaceTriggers,
+  useCreateWorkspaceTrigger,
+  useUpdateWorkspaceTrigger,
+  useDeleteWorkspaceTrigger,
+  useFireWorkspaceTrigger,
+  useUpsertWorkspaceSecret,
+} from '@/lib/workspaces/hooks';
+import type { WorkspaceTrigger } from '@/lib/workspaces/workspaces-client';
+import { slugify, relativeTime } from '@/lib/workspaces/triggers-format';
 import { API_URL } from '@/api/config';
 import { haptics } from '@/lib/haptics';
 
@@ -66,7 +66,7 @@ interface PageTabLike {
 
 interface WebhooksPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -84,8 +84,8 @@ function secretEnvFor(slug: string): string {
   return `WEBHOOK_${slug.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
 }
 
-function webhookUrlFor(projectId: string, slug: string): string {
-  return `${API_ROOT}/v1/webhooks/projects/${projectId}/${slug}`;
+function webhookUrlFor(workspaceId: string, slug: string): string {
+  return `${API_ROOT}/v1/webhooks/workspaces/${workspaceId}/${slug}`;
 }
 
 function curlSample(url: string): string {
@@ -95,18 +95,18 @@ function curlSample(url: string): string {
 // ─── Create webhook ───────────────────────────────────────────────────────────
 
 function WebhookCreateSheet({
-  projectId,
+  workspaceId,
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   onClose: () => void;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const upsertSecret = useUpsertProjectSecret(projectId);
-  const create = useCreateProjectTrigger(projectId);
+  const upsertSecret = useUpsertWorkspaceSecret(workspaceId);
+  const create = useCreateWorkspaceTrigger(workspaceId);
 
   const [name, setName] = useState('');
   const [secret, setSecret] = useState(genSecret);
@@ -125,7 +125,7 @@ function WebhookCreateSheet({
   const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: fg, fontFamily: 'Roobert' as const };
 
   const slug = slugify(name);
-  const previewUrl = webhookUrlFor(projectId, slug || 'your-webhook');
+  const previewUrl = webhookUrlFor(workspaceId, slug || 'your-webhook');
   const canSave = name.trim().length > 0 && prompt.trim().length > 0 && secret.trim().length > 0 && !saving;
 
   const copySecret = async () => {
@@ -192,8 +192,8 @@ function WebhookCreateSheet({
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 16, marginBottom: 6 }}>Prompt</Text>
         <BottomSheetTextInput value={prompt} onChangeText={setPrompt} placeholder="What should the agent do when a request arrives?" placeholderTextColor={muted} multiline style={[input, { height: 96, paddingTop: 10, textAlignVertical: 'top' }]} />
 
-        <AgentPickerField projectId={projectId} value={agent} onChange={setAgent} isDark={isDark} />
-        <ModelPickerField projectId={projectId} value={model} onChange={setModel} isDark={isDark} />
+        <AgentPickerField workspaceId={workspaceId} value={agent} onChange={setAgent} isDark={isDark} />
+        <ModelPickerField workspaceId={workspaceId} value={model} onChange={setModel} isDark={isDark} />
 
         {err && (
           <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
@@ -243,21 +243,21 @@ function CopyRow({
 }
 
 function WebhookDetailSheet({
-  projectId,
+  workspaceId,
   trigger,
   onClose,
   isDark,
 }: {
-  projectId: string;
-  trigger: ProjectTrigger;
+  workspaceId: string;
+  trigger: WorkspaceTrigger;
   onClose: () => void;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const fire = useFireProjectTrigger(projectId);
-  const update = useUpdateProjectTrigger(projectId);
-  const del = useDeleteProjectTrigger(projectId);
+  const fire = useFireWorkspaceTrigger(workspaceId);
+  const update = useUpdateWorkspaceTrigger(workspaceId);
+  const del = useDeleteWorkspaceTrigger(workspaceId);
   const [prompt, setPrompt] = useState(trigger.prompt_template);
   const [copied, setCopied] = useState<'url' | 'curl' | null>(null);
 
@@ -268,7 +268,7 @@ function WebhookDetailSheet({
   const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
   const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
 
-  const url = trigger.webhook_url ?? webhookUrlFor(projectId, trigger.slug);
+  const url = trigger.webhook_url ?? webhookUrlFor(workspaceId, trigger.slug);
   const signed = !!trigger.secret_env;
   const promptChanged = prompt !== trigger.prompt_template && prompt.trim().length > 0;
 
@@ -391,8 +391,8 @@ function WebhookDetailSheet({
           </TouchableOpacity>
         )}
 
-        <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} isDark={isDark} />
-        <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} isDark={isDark} />
+        <AgentPickerField workspaceId={workspaceId} value={trigger.agent} onChange={handleAgentChange} isDark={isDark} />
+        <ModelPickerField workspaceId={workspaceId} value={trigger.model} onChange={handleModelChange} isDark={isDark} />
 
         {/* Metadata */}
         <View style={{ marginTop: 22, borderRadius: 12, borderWidth: 1, borderColor: border, paddingHorizontal: 14 }}>
@@ -415,7 +415,7 @@ function WebhookDetailSheet({
 
 export function WebhooksPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -429,7 +429,7 @@ export function WebhooksPage({
   const addSheetRef = React.useRef<BottomSheetModal>(null);
   const detailSheetRef = React.useRef<BottomSheetModal>(null);
 
-  const { data, isLoading, isError, error, refetch } = useProjectTriggers(projectId);
+  const { data, isLoading, isError, error, refetch } = useWorkspaceTriggers(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -487,7 +487,7 @@ export function WebhooksPage({
           {isLoading ? (
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
           ) : forbidden ? (
-            <View style={{ padding: 40, alignItems: 'center' }}><Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>You don't have access to this project's webhooks.</Text></View>
+            <View style={{ padding: 40, alignItems: 'center' }}><Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>You don't have access to this workspace's webhooks.</Text></View>
           ) : isError ? (
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(error as Error)?.message ?? 'Failed to load webhooks'}</Text>
@@ -541,7 +541,7 @@ export function WebhooksPage({
         keyboardBlurBehavior="restore"
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
-        <WebhookCreateSheet projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} isDark={isDark} />
+        <WebhookCreateSheet workspaceId={workspaceId} onClose={() => addSheetRef.current?.dismiss()} isDark={isDark} />
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -556,7 +556,7 @@ export function WebhooksPage({
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
         {selected ? (
-          <WebhookDetailSheet projectId={projectId} trigger={selected} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
+          <WebhookDetailSheet workspaceId={workspaceId} trigger={selected} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
         ) : (
           <View style={{ height: 1 }} />
         )}

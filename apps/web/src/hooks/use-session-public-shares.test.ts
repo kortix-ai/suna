@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import type { SessionPublicShare } from '@kortix/sdk';
+import type { WorkspaceSessionPublicShare } from '@kortix/sdk';
 import { isShareLive, publicSharesQueryKey, shareListState } from './use-session-public-shares';
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
 
-function share(overrides: Partial<SessionPublicShare> = {}): SessionPublicShare {
+function share(overrides: Partial<WorkspaceSessionPublicShare> = {}): WorkspaceSessionPublicShare {
   return {
     share_id: 'sh1',
     session_id: 's1',
-    project_id: 'p1',
+    workspace_id: 'p1',
     resource_type: 'file',
     label: 'report.md',
     port: null,
@@ -51,7 +51,7 @@ describe('isShareLive', () => {
 });
 
 describe('publicSharesQueryKey', () => {
-  test('is scoped to both project and session so two sessions never share a cache', () => {
+  test('is scoped to both workspace and session so two sessions never share a cache', () => {
     expect(publicSharesQueryKey('p1', 's1')).not.toEqual(publicSharesQueryKey('p1', 's2'));
     expect(publicSharesQueryKey('p1', 's1')).toEqual(publicSharesQueryKey('p1', 's1'));
   });

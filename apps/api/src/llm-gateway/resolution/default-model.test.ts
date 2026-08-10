@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 import * as resolveCandidatesModule from './resolve-candidates';
 import * as modelPreferencesModule from '../../repositories/model-preferences';
-import * as secretsModule from '../../projects/secrets';
+import * as secretsModule from '../../workspaces/secrets';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
@@ -23,7 +23,7 @@ import {
 // This spies on the individual named exports (spyOn + mock.restore()) rather
 // than replacing the whole modules with mock.module() — `./resolve-candidates`
 // is itself the system-under-test of resolve-candidates.test.ts, and
-// `../../repositories/model-preferences` / `../../projects/secrets` are each
+// `../../repositories/model-preferences` / `../../workspaces/secrets` are each
 // mocked wholesale by OTHER sibling test files (seed-default.test.ts,
 // resolve-candidates.test.ts) with different shapes; mock.module() replaces a
 // module for the whole bun test PROCESS (every *.test.ts file runs together —
@@ -31,16 +31,16 @@ import {
 // is scoped to this file's own test lifecycle instead.
 
 let resolveCandidatesImpl: (model: string) => Promise<Array<{ provider: string }>> = async () => [];
-let accountDefaults: { account: string | null; agents: Record<string, string>; projects: Record<string, string> } = {
+let accountDefaults: { account: string | null; agents: Record<string, string>; workspaces: Record<string, string> } = {
   account: null,
   agents: {},
-  projects: {},
+  workspaces: {},
 };
 let connectedSecretNames: string[] = [];
 
 beforeEach(() => {
   resolveCandidatesImpl = async () => [];
-  accountDefaults = { account: null, agents: {}, projects: {} };
+  accountDefaults = { account: null, agents: {}, workspaces: {} };
   connectedSecretNames = [];
   // resolveDefaultModelForPrincipal reads through a module-level 30s-TTL cache
   // (cachedAccountDefaults) keyed by accountId — every test below reuses the
@@ -59,7 +59,7 @@ beforeEach(() => {
   );
   spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async () => accountDefaults);
   spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => null);
-  spyOn(secretsModule, 'listProjectSecretNamesForConsumer').mockImplementation(
+  spyOn(secretsModule, 'listWorkspaceSecretNamesForConsumer').mockImplementation(
     async () => connectedSecretNames,
   );
 });
@@ -68,15 +68,15 @@ afterEach(() => {
   mock.restore();
 });
 
-const PRINCIPAL_BASE = { userId: 'u1', accountId: 'a1', projectId: 'p1' };
+const PRINCIPAL_BASE = { userId: 'u1', accountId: 'a1', workspaceId: 'p1' };
 
 describe('isModelServableForAccount — never 500s a passive servability check', () => {
   test('resolveCandidates throwing a typed GatewayResolutionError → false, not a throw', async () => {
     resolveCandidatesImpl = async () => {
       throw new GatewayResolutionError(
         'provider_not_connected',
-        'No openrouter API key is connected for this project.',
-        'Add an openrouter API key in project settings, then retry.',
+        'No openrouter API key is connected for this workspace.',
+        'Add an openrouter API key in workspace settings, then retry.',
       );
     };
     await expect(
@@ -120,30 +120,30 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     });
     expect(result).toEqual({ model: null, source: 'platform' });
     expect(resolveCandidatesModule.resolveCandidates).not.toHaveBeenCalled();
-    expect(secretsModule.listProjectSecretNamesForConsumer).not.toHaveBeenCalled();
+    expect(secretsModule.listWorkspaceSecretNamesForConsumer).not.toHaveBeenCalled();
   });
 
-  test('a servable configured project default is returned as-is (real source, no degrade)', async () => {
-    accountDefaults = { account: null, agents: {}, projects: { p1: 'openai/gpt-5.5' } };
+  test('a servable configured Workspace default is returned as-is (real source, no degrade)', async () => {
+    accountDefaults = { account: null, agents: {}, workspaces: { p1: 'openai/gpt-5.5' } };
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];
     const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
-    expect(result).toEqual({ model: 'openai/gpt-5.5', source: 'project' });
+    expect(result).toEqual({ model: 'openai/gpt-5.5', source: 'workspace' });
   });
 
-  test('THE ESSENTIA BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the project HAS connected', async () => {
-    accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
+  test('THE ESSENTIA BUG: a stale/unservable configured default (e.g. disconnected openrouter) never 500s, and degrades to a provider the workspace HAS connected', async () => {
+    accountDefaults = { account: null, agents: {}, workspaces: { p1: 'openrouter/some-model' } };
     // The configured openrouter default is no longer servable — no key connected.
     resolveCandidatesImpl = async (model) => {
       if (model === 'openrouter/some-model') {
         throw new GatewayResolutionError(
           'provider_not_connected',
-          'No openrouter API key is connected for this project.',
-          'Add an openrouter API key in project settings, then retry.',
+          'No openrouter API key is connected for this workspace.',
+          'Add an openrouter API key in workspace settings, then retry.',
         );
       }
       return [{ provider: 'x' }];
     };
-    // But the project HAS OpenAI (and Bedrock) BYOK connected.
+    // But the workspace HAS OpenAI (and Bedrock) BYOK connected.
     connectedSecretNames = ['OPENAI_API_KEY', 'AWS_BEARER_TOKEN_BEDROCK'];
 
     const result = await resolveEffectiveModel({ ...PRINCIPAL_BASE, freeModelsOnly: false });
@@ -152,13 +152,13 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
     expect(result.model).not.toBeNull();
     expect(result.model).not.toBe('openrouter/some-model');
     expect(result.model?.startsWith('openrouter/')).toBe(false);
-    // Resolves to a model on a provider the project actually has a key for.
+    // Resolves to a model on a provider the workspace actually has a key for.
     expect(result.model?.startsWith('openai/') || result.model?.startsWith('amazon-bedrock/')).toBe(true);
     expect(result.source).toBe('platform');
   });
 
   test('stale configured default AND nothing connected → degrades to plain platform default (unchanged pre-existing behavior), still no throw', async () => {
-    accountDefaults = { account: null, agents: {}, projects: { p1: 'openrouter/some-model' } };
+    accountDefaults = { account: null, agents: {}, workspaces: { p1: 'openrouter/some-model' } };
     resolveCandidatesImpl = async () => {
       throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
     };
@@ -169,7 +169,7 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
   });
 
   test('an explicit pin that is unservable degrades through the same chain (never throws)', async () => {
-    accountDefaults = { account: null, agents: {}, projects: {} };
+    accountDefaults = { account: null, agents: {}, workspaces: {} };
     resolveCandidatesImpl = async () => {
       throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
     };
@@ -182,43 +182,43 @@ describe('resolveEffectiveModel — the /model-defaults GET + picker resolution 
   });
 });
 
-// Regression coverage for the agent-model-pin project-scoping fix: agent
-// defaults are now project-scoped (repositories/model-preferences.ts), so
+// Regression coverage for the agent-model-pin workspace-scoping fix: agent
+// defaults are now Workspace-scoped (repositories/model-preferences.ts), so
 // the 30s prefs cache here (keyed by accountId alone, pre-fix) must be keyed
-// by (accountId, projectId) too — otherwise the FIRST project to resolve
-// `auto` on an account would poison the cache for every OTHER project on
+// by (accountId, workspaceId) too. Otherwise the first workspace to resolve
+// `auto` on an account would poison the cache for every other workspace on
 // that same account for up to 30s.
-describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account, project)', () => {
-  test('the principal\'s projectId is threaded through to getAccountModelDefaults', async () => {
-    await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account, workspace)', () => {
+  test('the principal\'s workspaceId is threaded through to getAccountModelDefaults', async () => {
+    await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, workspaceId: 'proj-a', freeModelsOnly: false });
     expect(modelPreferencesModule.getAccountModelDefaults).toHaveBeenCalledWith(
       PRINCIPAL_BASE.accountId,
       'proj-a',
     );
   });
 
-  test('two projects on the SAME account never share a cached agent default', async () => {
-    const byProject: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };
-    spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, projectId) => {
-      const agents: Record<string, string> = projectId && byProject[projectId] ? { kortix: byProject[projectId] } : {};
-      return { account: null, agents, projects: {} };
+  test('two workspaces on the SAME account never share a cached agent default', async () => {
+    const byWorkspace: Record<string, string> = { 'proj-a': 'anthropic/claude-opus-4.8', 'proj-b': 'openai/gpt-5.5' };
+    spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async (_accountId, workspaceId) => {
+      const agents: Record<string, string> = workspaceId && byWorkspace[workspaceId] ? { kortix: byWorkspace[workspaceId] } : {};
+      return { account: null, agents, workspaces: {} };
     });
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'kortix',
       opencodeModel: null,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     }));
     resolveCandidatesImpl = async () => [{ provider: 'x' }];
 
     const resultA = await resolveDefaultModelForPrincipal({
       ...PRINCIPAL_BASE,
-      projectId: 'proj-a',
+      workspaceId: 'proj-a',
       sessionId: 'sess-a',
       freeModelsOnly: false,
     });
     const resultB = await resolveDefaultModelForPrincipal({
       ...PRINCIPAL_BASE,
-      projectId: 'proj-b',
+      workspaceId: 'proj-b',
       sessionId: 'sess-b',
       freeModelsOnly: false,
     });
@@ -227,23 +227,23 @@ describe('resolveDefaultModelForPrincipal — prefs cache is scoped per (account
     expect(resultB).toBe('openai/gpt-5.5');
   });
 
-  test('invalidateAccountModelDefaults(accountId) clears every project-keyed cache entry for that account', async () => {
+  test('invalidateAccountModelDefaults(accountId) clears every workspace-keyed cache entry for that account', async () => {
     let call = 0;
     spyOn(modelPreferencesModule, 'getAccountModelDefaults').mockImplementation(async () => {
       call += 1;
-      return { account: call === 1 ? 'before/model' : 'after/model', agents: {}, projects: {} };
+      return { account: call === 1 ? 'before/model' : 'after/model', agents: {}, workspaces: {} };
     });
     resolveCandidatesImpl = async () => [{ provider: 'x' }];
 
-    const first = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    const first = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, workspaceId: 'proj-a', freeModelsOnly: false });
     expect(first).toBe('before/model');
     // Still cached — a second call within the TTL must NOT hit getAccountModelDefaults again.
-    const cached = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    const cached = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, workspaceId: 'proj-a', freeModelsOnly: false });
     expect(cached).toBe('before/model');
     expect(call).toBe(1);
 
     invalidateAccountModelDefaults(PRINCIPAL_BASE.accountId);
-    const afterInvalidate = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, projectId: 'proj-a', freeModelsOnly: false });
+    const afterInvalidate = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, workspaceId: 'proj-a', freeModelsOnly: false });
     expect(afterInvalidate).toBe('after/model');
     expect(call).toBe(2);
   });
@@ -257,7 +257,7 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
   });
 
   test('a stale/unservable configured default degrades to a CONNECTED provider, not an unconnected platform default, for a real chat/generation request', async () => {
-    accountDefaults = { account: 'openrouter/some-model', agents: {}, projects: {} };
+    accountDefaults = { account: 'openrouter/some-model', agents: {}, workspaces: {} };
     resolveCandidatesImpl = async (model) => {
       if (model === 'openrouter/some-model') {
         throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
@@ -273,7 +273,7 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
   });
 
   test('a stale configured default with nothing connected degrades to undefined (platform default applies), never throws', async () => {
-    accountDefaults = { account: 'openrouter/some-model', agents: {}, projects: {} };
+    accountDefaults = { account: 'openrouter/some-model', agents: {}, workspaces: {} };
     resolveCandidatesImpl = async () => {
       throw new GatewayResolutionError('provider_not_connected', 'nope', 'connect it');
     };
@@ -286,28 +286,28 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
 
 // Regression coverage for the "agent-scope model pins silently never apply"
 // bug: session creation stores the non-binding 'default' sentinel in
-// project_sessions.agent_name whenever project.metadata.default_agent wasn't
-// populated at the time (common — e.g. a brand-new project whose kortix.yaml
+// project_sessions.agent_name whenever workspace.metadata.default_agent was not
+// populated at the time. This is common for a new workspace whose kortix.yaml
 // declares `default_agent: kortix` but whose DB metadata mirror never learned
 // it). Before this fix, resolveDefaultModelForPrincipal looked up
 // `agentDefaults['default']` — which never matches a pin set on the real
-// agent name ('kortix') — and silently fell through to the project/account/
+// agent name ('kortix') — and silently fell through to the workspace/account/
 // platform default instead of the pinned (possibly pricier / provider-
 // mismatched) model, with no error anywhere. cachedSessionAgent now resolves
-// the sentinel to the project's declared default agent (getSessionAgentContext's
-// projectDefaultAgent, mirroring kortix.yaml/PUT-default-agent) before doing
+// the sentinel to the workspace's declared default agent (getSessionAgentContext's
+// workspaceDefaultAgent, mirroring kortix.yaml/PUT-default-agent) before doing
 // the agentDefaults lookup.
 describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a session stuck on the "default" sentinel', () => {
-  test('THE BUG: session.agent_name is the sentinel, but the project declares "kortix" as its default agent and "kortix" has a pin → the pin applies', async () => {
+  test('THE BUG: session.agent_name is the sentinel, but the workspace declares "kortix" as its default agent and "kortix" has a pin → the pin applies', async () => {
     accountDefaults = {
       account: null,
       agents: { kortix: 'anthropic/claude-opus-4.8' },
-      projects: {},
+      workspaces: {},
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'default',
       opencodeModel: null,
-      projectDefaultAgent: 'kortix',
+      workspaceDefaultAgent: 'kortix',
     }));
     resolveCandidatesImpl = async () => [{ provider: 'anthropic' }];
 
@@ -320,16 +320,16 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     expect(result).toBe('anthropic/claude-opus-4.8');
   });
 
-  test('an explicit (non-sentinel) session agent still wins over the project default, even when both have pins', async () => {
+  test('an explicit (non-sentinel) session agent still wins over the workspace default, even when both have pins', async () => {
     accountDefaults = {
       account: null,
       agents: { kortix: 'anthropic/claude-opus-4.8', 'release-bot': 'openai/gpt-5.5' },
-      projects: {},
+      workspaces: {},
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'release-bot',
       opencodeModel: null,
-      projectDefaultAgent: 'kortix',
+      workspaceDefaultAgent: 'kortix',
     }));
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];
 
@@ -342,22 +342,22 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     expect(result).toBe('openai/gpt-5.5');
   });
 
-  test('sentinel with no project default configured falls through to project/account/platform (unchanged pre-existing behavior)', async () => {
+  test('sentinel with no workspace default configured falls through to workspace/account/platform (unchanged pre-existing behavior)', async () => {
     accountDefaults = {
       account: 'openai/gpt-5.5',
       agents: { kortix: 'anthropic/claude-opus-4.8' },
-      projects: {},
+      workspaces: {},
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'default',
       opencodeModel: null,
-      projectDefaultAgent: null,
+      workspaceDefaultAgent: null,
     }));
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];
 
     const result = await resolveDefaultModelForPrincipal({
       ...PRINCIPAL_BASE,
-      sessionId: 'sess-no-project-default',
+      sessionId: 'sess-no-workspace-default',
       freeModelsOnly: false,
     });
 
@@ -366,22 +366,22 @@ describe('resolveDefaultModelForPrincipal — agent-scope pin applies to a sessi
     expect(result).toBe('openai/gpt-5.5');
   });
 
-  test('sentinel resolves to a project default that has NO pin of its own → still falls through to account default', async () => {
+  test('sentinel resolves to a workspace default that has NO pin of its own → still falls through to account default', async () => {
     accountDefaults = {
       account: 'openai/gpt-5.5',
       agents: { 'some-other-agent': 'anthropic/claude-opus-4.8' },
-      projects: {},
+      workspaces: {},
     };
     spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
       agentName: 'default',
       opencodeModel: null,
-      projectDefaultAgent: 'kortix',
+      workspaceDefaultAgent: 'kortix',
     }));
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];
 
     const result = await resolveDefaultModelForPrincipal({
       ...PRINCIPAL_BASE,
-      sessionId: 'sess-project-default-no-pin',
+      sessionId: 'sess-workspace-default-no-pin',
       freeModelsOnly: false,
     });
 

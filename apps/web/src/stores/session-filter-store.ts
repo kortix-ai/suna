@@ -3,31 +3,31 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { SessionSourceFilter, SessionStatusFilter } from '@/components/projects/session-label';
+import type { SessionSourceFilter, SessionStatusFilter } from '@/components/workspaces/session-label';
 import {
   DEFAULT_SESSION_GROUP_MODE,
   type SessionGroupMode,
   type SessionOrderMode,
-} from '@/features/workspace/project-sidebar/session-grouping';
+} from '@/features/workspace/workspace-sidebar/session-grouping';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 /**
- * Per-project session-list VIEW state — grouping, ordering, the two filter
+ * Per-workspace session-list VIEW state — grouping, ordering, the two filter
  * facets, and section visibility/collapse.
  *
  * Held in a module-level, persisted store so the chosen view survives the
- * project shell remounting on navigation — opening a session, ⌘J, switching
+ * workspace shell remounting on navigation — opening a session, ⌘J, switching
  * sessions. Local component state used to reset back to defaults on every
  * such remount.
  */
 
-const STORAGE_KEY = 'kortix.project-session-view';
+const STORAGE_KEY = 'kortix.workspace-session-view';
 
 /**
  * The fallback every list-valued selector must use — never a bare `[]`.
  *
  * zustand v5 reads through `useSyncExternalStore`, which compares snapshots
- * with `Object.is`. A selector written `s.statusFiltersByProject[id] ?? []`
+ * with `Object.is`. A selector written `s.statusFiltersByWorkspace[id] ?? []`
  * allocates a NEW array on every read, so the snapshot never equals the
  * previous one and React re-renders forever ("Maximum update depth exceeded").
  * One frozen module-level reference makes the comparison stable.
@@ -37,13 +37,13 @@ const STORAGE_KEY = 'kortix.project-session-view';
  */
 export const EMPTY_LIST: readonly never[] = Object.freeze([]);
 
-/** Soft cap so the per-project map can't grow unbounded; keeps the last N. */
-const MAX_TRACKED_PROJECTS = 24;
+/** Soft cap so the per-workspace map cannot grow unbounded; keeps the last N. */
+const MAX_TRACKED_WORKSPACES = 24;
 
-function pruneProjects<V>(map: Record<string, V>): Record<string, V> {
+function pruneWorkspaces<V>(map: Record<string, V>): Record<string, V> {
   const keys = Object.keys(map);
-  if (keys.length <= MAX_TRACKED_PROJECTS) return map;
-  return Object.fromEntries(keys.slice(-MAX_TRACKED_PROJECTS).map((k) => [k, map[k]]));
+  if (keys.length <= MAX_TRACKED_WORKSPACES) return map;
+  return Object.fromEntries(keys.slice(-MAX_TRACKED_WORKSPACES).map((k) => [k, map[k]]));
 }
 
 function toggleValue<V>(list: readonly V[], value: V): V[] {
@@ -51,95 +51,95 @@ function toggleValue<V>(list: readonly V[], value: V): V[] {
 }
 
 interface State {
-  groupByProject: Record<string, SessionGroupMode>;
-  orderByProject: Record<string, SessionOrderMode>;
-  statusFiltersByProject: Record<string, SessionStatusFilter[]>;
-  sourceFiltersByProject: Record<string, SessionSourceFilter[]>;
-  hiddenSectionsByProject: Record<string, string[]>;
-  collapsedSectionsByProject: Record<string, string[]>;
+  groupByWorkspace: Record<string, SessionGroupMode>;
+  orderByWorkspace: Record<string, SessionOrderMode>;
+  statusFiltersByWorkspace: Record<string, SessionStatusFilter[]>;
+  sourceFiltersByWorkspace: Record<string, SessionSourceFilter[]>;
+  hiddenSectionsByWorkspace: Record<string, string[]>;
+  collapsedSectionsByWorkspace: Record<string, string[]>;
 }
 
 interface Actions {
-  setGroupMode: (projectId: string, mode: SessionGroupMode) => void;
-  setOrderMode: (projectId: string, order: SessionOrderMode) => void;
-  toggleStatusFilter: (projectId: string, value: SessionStatusFilter) => void;
-  toggleSourceFilter: (projectId: string, value: SessionSourceFilter) => void;
-  resetFilters: (projectId: string) => void;
-  toggleSectionHidden: (projectId: string, sectionId: string) => void;
-  toggleSectionCollapsed: (projectId: string, sectionId: string) => void;
-  collapseAllSections: (projectId: string, sectionIds: readonly string[]) => void;
+  setGroupMode: (workspaceId: string, mode: SessionGroupMode) => void;
+  setOrderMode: (workspaceId: string, order: SessionOrderMode) => void;
+  toggleStatusFilter: (workspaceId: string, value: SessionStatusFilter) => void;
+  toggleSourceFilter: (workspaceId: string, value: SessionSourceFilter) => void;
+  resetFilters: (workspaceId: string) => void;
+  toggleSectionHidden: (workspaceId: string, sectionId: string) => void;
+  toggleSectionCollapsed: (workspaceId: string, sectionId: string) => void;
+  collapseAllSections: (workspaceId: string, sectionIds: readonly string[]) => void;
 }
 
 export const useSessionFilterStore = create<State & Actions>()(
   persist(
     (set, get) => ({
-      groupByProject: {},
-      setGroupMode: (projectId, mode) => {
-        if ((get().groupByProject[projectId] ?? DEFAULT_SESSION_GROUP_MODE) === mode) return;
-        set({ groupByProject: { ...get().groupByProject, [projectId]: mode } });
+      groupByWorkspace: {},
+      setGroupMode: (workspaceId, mode) => {
+        if ((get().groupByWorkspace[workspaceId] ?? DEFAULT_SESSION_GROUP_MODE) === mode) return;
+        set({ groupByWorkspace: { ...get().groupByWorkspace, [workspaceId]: mode } });
       },
 
-      orderByProject: {},
-      setOrderMode: (projectId, order) => {
-        if ((get().orderByProject[projectId] ?? 'activity') === order) return;
-        set({ orderByProject: { ...get().orderByProject, [projectId]: order } });
+      orderByWorkspace: {},
+      setOrderMode: (workspaceId, order) => {
+        if ((get().orderByWorkspace[workspaceId] ?? 'activity') === order) return;
+        set({ orderByWorkspace: { ...get().orderByWorkspace, [workspaceId]: order } });
       },
 
-      statusFiltersByProject: {},
-      toggleStatusFilter: (projectId, value) => {
-        const current = get().statusFiltersByProject[projectId] ?? [];
+      statusFiltersByWorkspace: {},
+      toggleStatusFilter: (workspaceId, value) => {
+        const current = get().statusFiltersByWorkspace[workspaceId] ?? [];
         set({
-          statusFiltersByProject: {
-            ...get().statusFiltersByProject,
-            [projectId]: toggleValue(current, value),
+          statusFiltersByWorkspace: {
+            ...get().statusFiltersByWorkspace,
+            [workspaceId]: toggleValue(current, value),
           },
         });
       },
 
-      sourceFiltersByProject: {},
-      toggleSourceFilter: (projectId, value) => {
-        const current = get().sourceFiltersByProject[projectId] ?? [];
+      sourceFiltersByWorkspace: {},
+      toggleSourceFilter: (workspaceId, value) => {
+        const current = get().sourceFiltersByWorkspace[workspaceId] ?? [];
         set({
-          sourceFiltersByProject: {
-            ...get().sourceFiltersByProject,
-            [projectId]: toggleValue(current, value),
+          sourceFiltersByWorkspace: {
+            ...get().sourceFiltersByWorkspace,
+            [workspaceId]: toggleValue(current, value),
           },
         });
       },
 
-      resetFilters: (projectId) => {
+      resetFilters: (workspaceId) => {
         set({
-          statusFiltersByProject: { ...get().statusFiltersByProject, [projectId]: [] },
-          sourceFiltersByProject: { ...get().sourceFiltersByProject, [projectId]: [] },
+          statusFiltersByWorkspace: { ...get().statusFiltersByWorkspace, [workspaceId]: [] },
+          sourceFiltersByWorkspace: { ...get().sourceFiltersByWorkspace, [workspaceId]: [] },
         });
       },
 
-      hiddenSectionsByProject: {},
-      toggleSectionHidden: (projectId, sectionId) => {
-        const current = get().hiddenSectionsByProject[projectId] ?? [];
+      hiddenSectionsByWorkspace: {},
+      toggleSectionHidden: (workspaceId, sectionId) => {
+        const current = get().hiddenSectionsByWorkspace[workspaceId] ?? [];
         set({
-          hiddenSectionsByProject: {
-            ...get().hiddenSectionsByProject,
-            [projectId]: toggleValue(current, sectionId),
+          hiddenSectionsByWorkspace: {
+            ...get().hiddenSectionsByWorkspace,
+            [workspaceId]: toggleValue(current, sectionId),
           },
         });
       },
 
-      collapsedSectionsByProject: {},
-      toggleSectionCollapsed: (projectId, sectionId) => {
-        const current = get().collapsedSectionsByProject[projectId] ?? [];
+      collapsedSectionsByWorkspace: {},
+      toggleSectionCollapsed: (workspaceId, sectionId) => {
+        const current = get().collapsedSectionsByWorkspace[workspaceId] ?? [];
         set({
-          collapsedSectionsByProject: {
-            ...get().collapsedSectionsByProject,
-            [projectId]: toggleValue(current, sectionId),
+          collapsedSectionsByWorkspace: {
+            ...get().collapsedSectionsByWorkspace,
+            [workspaceId]: toggleValue(current, sectionId),
           },
         });
       },
-      collapseAllSections: (projectId, sectionIds) => {
+      collapseAllSections: (workspaceId, sectionIds) => {
         set({
-          collapsedSectionsByProject: {
-            ...get().collapsedSectionsByProject,
-            [projectId]: [...sectionIds],
+          collapsedSectionsByWorkspace: {
+            ...get().collapsedSectionsByWorkspace,
+            [workspaceId]: [...sectionIds],
           },
         });
       },
@@ -147,13 +147,37 @@ export const useSessionFilterStore = create<State & Actions>()(
     {
       name: STORAGE_KEY,
       storage: createSafeJSONStorage(),
+      version: 1,
+      migrate: (persisted) => {
+        const legacy = persisted as Partial<State> & {
+          groupByProject?: Record<string, SessionGroupMode>;
+          orderByProject?: Record<string, SessionOrderMode>;
+          statusFiltersByProject?: Record<string, SessionStatusFilter[]>;
+          sourceFiltersByProject?: Record<string, SessionSourceFilter[]>;
+          hiddenSectionsByProject?: Record<string, string[]>;
+          collapsedSectionsByProject?: Record<string, string[]>;
+        };
+        return {
+          ...legacy,
+          groupByWorkspace: legacy.groupByWorkspace ?? legacy.groupByProject ?? {},
+          orderByWorkspace: legacy.orderByWorkspace ?? legacy.orderByProject ?? {},
+          statusFiltersByWorkspace:
+            legacy.statusFiltersByWorkspace ?? legacy.statusFiltersByProject ?? {},
+          sourceFiltersByWorkspace:
+            legacy.sourceFiltersByWorkspace ?? legacy.sourceFiltersByProject ?? {},
+          hiddenSectionsByWorkspace:
+            legacy.hiddenSectionsByWorkspace ?? legacy.hiddenSectionsByProject ?? {},
+          collapsedSectionsByWorkspace:
+            legacy.collapsedSectionsByWorkspace ?? legacy.collapsedSectionsByProject ?? {},
+        } as State & Actions;
+      },
       partialize: (state) => ({
-        groupByProject: pruneProjects(state.groupByProject),
-        orderByProject: pruneProjects(state.orderByProject),
-        statusFiltersByProject: pruneProjects(state.statusFiltersByProject),
-        sourceFiltersByProject: pruneProjects(state.sourceFiltersByProject),
-        hiddenSectionsByProject: pruneProjects(state.hiddenSectionsByProject),
-        collapsedSectionsByProject: pruneProjects(state.collapsedSectionsByProject),
+        groupByWorkspace: pruneWorkspaces(state.groupByWorkspace),
+        orderByWorkspace: pruneWorkspaces(state.orderByWorkspace),
+        statusFiltersByWorkspace: pruneWorkspaces(state.statusFiltersByWorkspace),
+        sourceFiltersByWorkspace: pruneWorkspaces(state.sourceFiltersByWorkspace),
+        hiddenSectionsByWorkspace: pruneWorkspaces(state.hiddenSectionsByWorkspace),
+        collapsedSectionsByWorkspace: pruneWorkspaces(state.collapsedSectionsByWorkspace),
       }),
     },
   ),

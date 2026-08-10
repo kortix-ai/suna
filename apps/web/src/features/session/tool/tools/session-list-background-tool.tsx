@@ -22,20 +22,20 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
-  const project = (input.project as string) || '';
+  const project = (input.workspace as string) || '';
 
   const workers = useMemo(() => {
     if (!output) return [];
     const entries: Array<{
       id: string;
       status: string;
-      project: string;
+      workspace: string;
       prompt: string;
     }> = [];
     const re = /\*\*(ses_\S+)\*\*.*?status:\s*(\w+).*?project:\s*(\S+)/gi;
     let m;
     while ((m = re.exec(output)) !== null) {
-      entries.push({ id: m[1], status: m[2], project: m[3], prompt: '' });
+      entries.push({ id: m[1], status: m[2], workspace: m[3], prompt: '' });
     }
     return entries;
   }, [output]);
@@ -47,7 +47,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
       icon={<Layers className="size-3.5 flex-shrink-0" />}
       trigger={{
         title: 'Background Sessions',
-        subtitle: project || 'all projects',
+        subtitle: project || 'all workspaces',
         args: workers.length > 0 ? [`${workers.length} workers`] : noWorkers ? ['none'] : [],
       }}
       defaultOpen={defaultOpen}
@@ -67,7 +67,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
               <span className="text-foreground/70 truncate font-mono text-xs">
                 {w.id.slice(-12)}
               </span>
-              <span className="text-muted-foreground/50 flex-1 truncate text-xs">{w.project}</span>
+              <span className="text-muted-foreground/50 flex-1 truncate text-xs">{w.workspace}</span>
               <span className="text-muted-foreground/40 text-xs">{w.status}</span>
             </div>
           ))}

@@ -84,22 +84,22 @@ export const usePushNotifications = (): PushNotificationState => {
           return undefined;
         }
 
-        const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+        const workspaceId = Constants?.expoConfig?.extra?.eas?.workspaceId ?? Constants?.easConfig?.workspaceId;
         
         log.log('[PUSH] Project ID check:', {
-          projectId: projectId || 'NOT FOUND',
-          fromExpoConfig: !!Constants?.expoConfig?.extra?.eas?.projectId,
-          fromEasConfig: !!Constants?.easConfig?.projectId,
+          workspaceId: workspaceId || 'NOT FOUND',
+          fromExpoConfig: !!Constants?.expoConfig?.extra?.eas?.workspaceId,
+          fromEasConfig: !!Constants?.easConfig?.workspaceId,
         });
         
-        if (!projectId) {
+        if (!workspaceId) {
           log.log('[PUSH] ❌ Project ID not found - cannot get push token');
           return undefined;
         }
 
         if (Notifications.getExpoPushTokenAsync) {
           try {
-            token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+            token = (await Notifications.getExpoPushTokenAsync({ workspaceId })).data;
             log.log('[PUSH] ✅ Expo Push Token retrieved');
           } catch (e) {
             log.log('[PUSH] ❌ Error getting push token:', e);

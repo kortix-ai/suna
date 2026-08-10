@@ -37,7 +37,7 @@ describe('marketplace HTTP contract', () => {
       headers: { Authorization: 'Bearer test-token' },
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as { items: Array<{ id: string; name: string; type: string; managedBy?: string; partOfProject?: { id: string; title: string } }> };
+    const body = await res.json() as { items: Array<{ id: string; name: string; type: string; managedBy?: string; partOfWorkspace?: { id: string; title: string } }> };
 
     // Kortix-managed system skills (kortix-computer/connectors/memory/slack/system/
     // marketplace/meet/onboarding) are server-injected platform floor now — they
@@ -49,11 +49,11 @@ describe('marketplace HTTP contract', () => {
 
     // Browse leads with the "Kortix Starter" project AND lists the individual
     // kortix-starter skills (agent-browser, pdf, …) as their own top-level
-    // tiles again — each one carries a `partOfProject` badge back to the project.
+    // tiles again — each one carries a `partOfWorkspace` badge back to the project.
     expect(body.items.find((item) => item.id === 'kortix-projects:starter')).toBeTruthy();
     const agentBrowser = body.items.find((item) => item.name === 'agent-browser');
     expect(agentBrowser).toBeTruthy();
-    expect(agentBrowser?.partOfProject).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
+    expect(agentBrowser?.partOfWorkspace).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
     expect(body.items.find((item) => item.name === 'pdf')).toBeTruthy();
     expect(body.items.find((item) => item.name === 'pty')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'web_search')).toBeUndefined();
@@ -108,11 +108,11 @@ describe('marketplace HTTP contract', () => {
     const skillBody = await skillDetail.json() as {
       name: string;
       type: string;
-      partOfProject?: { id: string; title: string };
+      partOfWorkspace?: { id: string; title: string };
     };
     expect(skillBody.name).toBe('agent-browser');
     expect(skillBody.type).toBe('registry:skill');
-    expect(skillBody.partOfProject).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
+    expect(skillBody.partOfWorkspace).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
 
     // Kortix-managed system skills are server-injected platform truth — never a
     // browse-and-detail card, even by a hand-built id.

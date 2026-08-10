@@ -1,9 +1,9 @@
 /**
  * Feature flags — the unified per-project flag surface. Maps to spec §EXP-*.
  *
- * `PATCH /v1/projects/:projectId/features {feature, enabled}` is the canonical
+ * `PATCH /v1/projects/:workspaceId/features {feature, enabled}` is the canonical
  * write path for opting a project into a flag (agent_tunnel, review_center, …);
- * `PATCH /v1/projects/:projectId/experimental` is the deprecated alias published
+ * `PATCH /v1/projects/:workspaceId/experimental` is the deprecated alias published
  * SDKs still call, registered on the SAME handler. State is DB-only
  * (projects.metadata.experimental — a stable storage detail). The response is
  * the serialized project, which carries `experimental` (effective map) and
@@ -21,8 +21,8 @@ flow(
     domain: "projects",
     tags: ["experimental", "feature-flags"],
     routes: [
-      "PATCH /v1/projects/:projectId/features",
-      "PATCH /v1/projects/:projectId/experimental",
+      "PATCH /v1/projects/:workspaceId/features",
+      "PATCH /v1/projects/:workspaceId/experimental",
     ],
   },
   async (ctx) => {
@@ -32,9 +32,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/features",
+          "/v1/projects/:workspaceId/features",
           { feature: "agent_tunnel", enabled: true },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200).body().exists("$.experimental_features").exists("$.experimental");
     });
@@ -43,9 +43,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/experimental",
+          "/v1/projects/:workspaceId/experimental",
           { feature: "agent_tunnel", enabled: false },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200).body().exists("$.experimental_features").exists("$.experimental");
     });
@@ -54,9 +54,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/features",
+          "/v1/projects/:workspaceId/features",
           { feature: "agent_tunnel", enabled: null },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200);
     });
@@ -68,9 +68,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/experimental",
+          "/v1/projects/:workspaceId/experimental",
           { feature: "voice", enabled: true },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200).body().exists("$.experimental_features").exists("$.experimental");
     });
@@ -79,9 +79,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/experimental",
+          "/v1/projects/:workspaceId/experimental",
           { feature: "voice", enabled: null },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200);
     });
@@ -90,9 +90,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/experimental",
+          "/v1/projects/:workspaceId/experimental",
           { feature: "not_a_feature", enabled: true },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(400);
     });
@@ -101,9 +101,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/experimental",
+          "/v1/projects/:workspaceId/experimental",
           { feature: "apps", enabled: "yes" },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(400);
     });
@@ -112,9 +112,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .patch(
-          "/v1/projects/:projectId/experimental",
+          "/v1/projects/:workspaceId/experimental",
           { feature: "apps", enabled: true },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status([403, 404]);
     });
@@ -123,9 +123,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .patch(
-          "/v1/projects/:projectId/experimental",
+          "/v1/projects/:workspaceId/experimental",
           { feature: "apps", enabled: true },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(401);
     });

@@ -16,6 +16,8 @@ describe('parseTeamsCommand', () => {
       arg: 'anthropic/claude-sonnet-4.6',
     });
     expect(parseTeamsCommand('/use Acme Corp')).toEqual({ verb: 'use', arg: 'Acme Corp' });
+    expect(parseTeamsCommand('/workspaces')).toEqual({ verb: 'workspaces', arg: '' });
+    expect(parseTeamsCommand('/projects')).toEqual({ verb: 'projects', arg: '' });
   });
 
   test('ignores non-command messages', () => {

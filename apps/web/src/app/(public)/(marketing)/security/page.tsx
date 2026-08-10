@@ -187,7 +187,7 @@ export default function SecurityPage(): ReactNode {
                 {(
                   [
                     ['account', identity.presets.account],
-                    ['project', identity.presets.project],
+                    ['workspace', identity.presets.workspace],
                   ] as const
                 ).map(([scope, roles]) => (
                   <div key={scope}>

@@ -61,14 +61,14 @@ const ALLOWLIST_IS_CREATE_ONLY =
 const ROTATION_REACHES_RUNNING_SESSIONS_LATE =
   'Sessions already running keep the old value until they restart — their agent was started with the old environment and it cannot be replaced in place.';
 
-export function SecretsTab({ projectId }: { projectId: string }) {
+export function SecretsTab({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
-  const key = qk.secrets(projectId);
+  const key = qk.secrets(workspaceId);
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   const secrets = useQuery({
     queryKey: key,
-    queryFn: () => kortix.project(projectId).secrets.list(),
+    queryFn: () => kortix.project(workspaceId).secrets.list(),
   });
 
   const [name, setName] = useState('');
@@ -91,7 +91,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
   const collidesWith = pendingKeyCollision(items, draft);
 
   const upsert = useMutation({
-    mutationFn: () => kortix.project(projectId).secrets.upsert(buildSecretUpsertInput(draft)),
+    mutationFn: () => kortix.project(workspaceId).secrets.upsert(buildSecretUpsertInput(draft)),
     onSuccess: () => {
       setName('');
       setIdentifier('');
@@ -106,7 +106,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
   const remove = useMutation({
     // By IDENTIFIER, not by env KEY — several identifiers can share one KEY, and
     // the delete route addresses the unique handle.
-    mutationFn: (id: string) => kortix.project(projectId).secrets.remove(id),
+    mutationFn: (id: string) => kortix.project(workspaceId).secrets.remove(id),
     onSuccess: () => {
       refresh();
       toast.success('Secret removed');
@@ -116,7 +116,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
 
   const setGitCredential = useMutation({
     mutationFn: () =>
-      kortix.project(projectId).secrets.setGitCredential({ token: gitToken.trim() }),
+      kortix.project(workspaceId).secrets.setGitCredential({ token: gitToken.trim() }),
     onSuccess: () => {
       setGitToken('');
       toast.success('Git credential saved');
@@ -228,7 +228,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
           <CallSnippet
             id="secret.upsert"
             context={{
-              projectId,
+              workspaceId,
               // normalizeSecretKey, not raw trim — the upsert uppercases the KEY
               // before sending, and KEY collisions are adjudicated on the
               // uppercased value. A snippet whose whole job is teaching the
@@ -254,7 +254,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
         {items.map((s, i) => (
           <SecretRow
             key={String(s.identifier ?? i)}
-            projectId={projectId}
+            workspaceId={workspaceId}
             secret={s}
             collidesWith={collidingIdentifiers(items, s.identifier)}
             onChanged={refresh}
@@ -313,14 +313,14 @@ function Notice({
 }
 
 function SecretRow({
-  projectId,
+  workspaceId,
   secret,
   collidesWith,
   onChanged,
   onRemove,
   removing,
 }: {
-  projectId: string;
+  workspaceId: string;
   secret: ProjectSecret;
   collidesWith: string[];
   onChanged: () => void;
@@ -337,7 +337,7 @@ function SecretRow({
 
   const rotate = useMutation({
     mutationFn: () =>
-      kortix.project(projectId).secrets.upsert(buildSecretRotateInput(secret, rotated)),
+      kortix.project(workspaceId).secrets.upsert(buildSecretRotateInput(secret, rotated)),
     onSuccess: () => {
       setRotated('');
       onChanged();
@@ -349,7 +349,7 @@ function SecretRow({
   const setPersonalMut = useMutation({
     mutationFn: (input: { value?: string; active?: boolean }) =>
       // The personal-override route addresses the env KEY, not the identifier.
-      kortix.project(projectId).secrets.setPersonal(name, input),
+      kortix.project(workspaceId).secrets.setPersonal(name, input),
     onSuccess: () => {
       setPersonal('');
       onChanged();
@@ -359,7 +359,7 @@ function SecretRow({
   });
 
   const removePersonalMut = useMutation({
-    mutationFn: () => kortix.project(projectId).secrets.removePersonal(name),
+    mutationFn: () => kortix.project(workspaceId).secrets.removePersonal(name),
     onSuccess: () => {
       onChanged();
       toast.success('Override removed');
@@ -398,7 +398,7 @@ function SecretRow({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <DeleteSecretDialog
-            projectId={projectId}
+            workspaceId={workspaceId}
             identifier={secret.identifier}
             name={name}
             scope={scope}
@@ -510,14 +510,14 @@ function SecretRow({
 }
 
 function DeleteSecretDialog({
-  projectId,
+  workspaceId,
   identifier,
   name,
   scope,
   pending,
   onConfirm,
 }: {
-  projectId: string;
+  workspaceId: string;
   identifier: string;
   name: string;
   scope: ReturnType<typeof secretScope>;
@@ -554,7 +554,7 @@ function DeleteSecretDialog({
         {/* The delete addresses the identifier, and the identifier is exactly
             what the confirmation is about — so the call belongs on the confirm
             step, where it can be read before anything is irreversible. */}
-        <CallSnippet id="secret.delete" context={{ projectId, secret: { identifier, name } }} />
+        <CallSnippet id="secret.delete" context={{ workspaceId, secret: { identifier, name } }} />
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>
             Cancel

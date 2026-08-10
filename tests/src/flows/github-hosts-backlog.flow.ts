@@ -15,7 +15,7 @@
  *
  *  - GH-5  git transport resolution (`resolveProjectGitAuth`). This is an
  *    INTERNAL function, not a route. Its observable boundary is
- *    POST /v1/projects/:projectId/git-token (the "mint scoped push token"
+ *    POST /v1/projects/:workspaceId/git-token (the "mint scoped push token"
  *    branch): a generic (non-managed / BYO) project → 409 "Project is not a
  *    managed repo" (the spec's `project_secret` / `none` path); a managed
  *    project whose backend resolves no credential → 503; resolved → 200
@@ -23,7 +23,7 @@
  *    (loadProjectForUser returns null ⇒ 404, never 403). Same route as GH-7;
  *    GH-5 pins the resolution OUTCOMES rather than the auth matrix.
  *
- *  - GH-8  GET/POST/DELETE /v1/projects/:projectId/cli-token[/:tokenId] —
+ *  - GH-8  GET/POST/DELETE /v1/projects/:workspaceId/cli-token[/:tokenId] —
  *    project-scoped CLI tokens. GET = loadProjectForUser('read'); POST/DELETE =
  *    loadProjectForUser('manage'). POST → 201 with a one-time `secret_key` +
  *    `token_id`; GET lists `items` (no secret); DELETE → 200 {ok:true}, unknown
@@ -129,13 +129,13 @@ flow(
 
 flow(
   "GH-5",
-  { domain: "git", routes: ["POST /v1/projects/:projectId/git-token"] },
+  { domain: "git", routes: ["POST /v1/projects/:workspaceId/git-token"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git-token", {}, { params: { workspaceId: p.id } });
       r.status(401);
     });
     await ctx.step("generic (non-managed / BYO) project → 409 'not a managed repo'", async () => {
@@ -145,19 +145,19 @@ flow(
       // or, if the backend can't mint one, 503.
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git-token", {}, { params: { workspaceId: p.id } });
       r.status([200, 409, 503]);
     });
     await ctx.step("unknown project → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: UNKNOWN } });
+        .post("/v1/projects/:workspaceId/git-token", {}, { params: { workspaceId: UNKNOWN } });
       r.status(404);
     });
     await ctx.step("NONMEMBER cannot resolve transport → 404 (project not loadable)", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git-token", {}, { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -170,9 +170,9 @@ flow(
   {
     domain: "git",
     routes: [
-      "GET /v1/projects/:projectId/cli-token",
-      "POST /v1/projects/:projectId/cli-token",
-      "DELETE /v1/projects/:projectId/cli-token/:tokenId",
+      "GET /v1/projects/:workspaceId/cli-token",
+      "POST /v1/projects/:workspaceId/cli-token",
+      "DELETE /v1/projects/:workspaceId/cli-token/:tokenId",
     ],
   },
   async (ctx) => {
@@ -183,22 +183,22 @@ flow(
     await ctx.step("ANON cannot list → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/cli-token", { params: { projectId: p.id } });
+        .get("/v1/projects/:workspaceId/cli-token", { params: { workspaceId: p.id } });
       r.status(401);
     });
     await ctx.step("ANON cannot mint → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/cli-token", { name: "x" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/cli-token", { name: "x" }, { params: { workspaceId: p.id } });
       r.status(401);
     });
     await ctx.step("OWNER mints a project-scoped CLI token → 201 with one-time secret", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/cli-token",
+          "/v1/projects/:workspaceId/cli-token",
           { name: ctx.fixtures.name("cli-tok") },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(201).body().exists("$.token_id").exists("$.secret_key").has("$.project_id", p.id);
       tokenId = r.json<any>().token_id;
@@ -206,7 +206,7 @@ flow(
     await ctx.step("GET lists the token (secret absent from the list) → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/cli-token", { params: { projectId: p.id } });
+        .get("/v1/projects/:workspaceId/cli-token", { params: { workspaceId: p.id } });
       r.status(200).body().exists("$.items");
       const items = r.json<any>().items as any[];
       const mine = items.find((t) => t.token_id === tokenId);
@@ -219,20 +219,20 @@ flow(
     await ctx.step("NONMEMBER cannot mint → 404 (project not loadable)", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/cli-token", { name: "x" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/cli-token", { name: "x" }, { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("NONMEMBER cannot list → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/cli-token", { params: { projectId: p.id } });
+        .get("/v1/projects/:workspaceId/cli-token", { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("OWNER revokes the token → 200 {ok:true}", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/cli-token/:tokenId", {
-          params: { projectId: p.id, tokenId: tokenId || UNKNOWN },
+        .del("/v1/projects/:workspaceId/cli-token/:tokenId", {
+          params: { workspaceId: p.id, tokenId: tokenId || UNKNOWN },
         });
       r.status([200, 404]);
       if (r.statusCode === 200) r.body().has("$.ok", true);
@@ -240,16 +240,16 @@ flow(
     await ctx.step("revoking an unknown token → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/cli-token/:tokenId", {
-          params: { projectId: p.id, tokenId: UNKNOWN },
+        .del("/v1/projects/:workspaceId/cli-token/:tokenId", {
+          params: { workspaceId: p.id, tokenId: UNKNOWN },
         });
       r.status(404);
     });
     await ctx.step("ANON cannot revoke → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .del("/v1/projects/:projectId/cli-token/:tokenId", {
-          params: { projectId: p.id, tokenId: UNKNOWN },
+        .del("/v1/projects/:workspaceId/cli-token/:tokenId", {
+          params: { workspaceId: p.id, tokenId: UNKNOWN },
         });
       r.status(401);
     });

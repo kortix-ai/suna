@@ -20,11 +20,11 @@ export default function ProjectAccessPage() {
 
 function ProjectAccess() {
   const params = useParams();
-  const projectId = String(params.id);
+  const workspaceId = String(params.id);
 
   const sessions = useQuery({
-    queryKey: qk.sessions(projectId),
-    queryFn: () => kortix.project(projectId).sessions.list(),
+    queryKey: qk.sessions(workspaceId),
+    queryFn: () => kortix.project(workspaceId).sessions.list(),
     retry: false,
   });
 
@@ -37,7 +37,7 @@ function ProjectAccess() {
           ownership.
         </p>
 
-        <ProjectAccessPanel projectId={projectId} />
+        <ProjectAccessPanel workspaceId={workspaceId} />
 
         <h2 className="mt-6 text-sm font-medium">Sessions in this project</h2>
         <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
@@ -61,7 +61,7 @@ function ProjectAccess() {
           {(sessions.data ?? []).map((s) => (
             <Link
               key={s.session_id}
-              href={`/projects/${projectId}/sessions/${s.session_id}`}
+              href={`/projects/${workspaceId}/sessions/${s.session_id}`}
               className="block rounded-md border border-border bg-card px-3 py-2.5 transition-colors hover:bg-accent/40"
             >
               <div className="truncate text-sm">

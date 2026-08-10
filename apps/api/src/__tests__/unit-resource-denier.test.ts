@@ -7,8 +7,8 @@
  * collision bug).
  */
 import { describe, expect, test } from 'bun:test';
-import { buildResourceDenier } from '../projects/lib/project-resources';
-import type { ProjectConfigSummary } from '../projects/git/types';
+import { buildResourceDenier } from '../workspaces/lib/workspace-resources';
+import type { WorkspaceConfigSummary } from '../workspaces/git/types';
 
 const CONFIG = {
   is_kortix_repo: true,
@@ -30,7 +30,7 @@ const CONFIG = {
     { name: 'open-skill', path: '.opencode/skills/open-skill/SKILL.md', description: null },
   ],
   commands: [],
-} as unknown as ProjectConfigSummary;
+} as unknown as WorkspaceConfigSummary;
 
 describe('buildResourceDenier — nothing denied → null', () => {
   test('member can access everything → null (caller skips filtering)', () => {

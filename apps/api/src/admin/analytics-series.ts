@@ -70,7 +70,7 @@ export interface ActivityDay {
   activeAccounts: number;
   activeUsers: number;
   newAccounts: number;
-  activeProjects: number;
+  activeWorkspaces: number;
 }
 
 /** One `GROUP BY day` row from kortix.project_sessions. */
@@ -79,7 +79,7 @@ export interface SessionDayRow {
   sessionsCreated: number;
   activeAccounts: number;
   activeUsers: number;
-  activeProjects: number;
+  activeWorkspaces: number;
 }
 
 /** One `GROUP BY day` row from kortix.accounts. */
@@ -111,7 +111,7 @@ export function buildActivityDays(
       activeAccounts: s?.activeAccounts ?? 0,
       activeUsers: s?.activeUsers ?? 0,
       newAccounts: signups.get(date) ?? 0,
-      activeProjects: s?.activeProjects ?? 0,
+      activeWorkspaces: s?.activeWorkspaces ?? 0,
     };
   });
 }

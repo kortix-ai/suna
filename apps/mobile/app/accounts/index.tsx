@@ -15,7 +15,7 @@ import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { useAuthContext } from '@/contexts';
-import { useAccounts } from '@/lib/projects/hooks';
+import { useAccounts } from '@/lib/workspaces/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { NewAccountSheet } from '@/components/accounts/NewAccountSheet';
 

@@ -16,7 +16,7 @@ import type { User } from '@supabase/supabase-js';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { lazy, Suspense, useState } from 'react';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
@@ -30,7 +30,7 @@ export function AppHeader({
   breadcrumb,
   actions,
   variant = 'default',
-  logoHref = PROJECT_LANDING_PATH,
+  logoHref = WORKSPACE_LANDING_PATH,
 }: {
   user: User;
   leading?: React.ReactNode;
@@ -82,7 +82,7 @@ export function AppHeader({
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbItem className="min-w-0 shrink">
-                <AccountSwitcher variant="header" />
+                <AccountSwitcher />
               </BreadcrumbItem>
               {breadcrumb != null && (
                 <div className="hidden lg:block">

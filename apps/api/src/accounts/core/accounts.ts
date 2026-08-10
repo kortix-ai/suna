@@ -235,11 +235,14 @@ export function registerAccountRoutes(): void {
         { userId, email: c.get('userEmail') as string },
       );
 
+      const workspaceCount = Number(projectCountRow?.n ?? 0);
       return c.json({
         account_id: row.accountId,
         name: displayNames.get(row.accountId) ?? row.name,
         member_count: memberCount,
-        project_count: Number(projectCountRow?.n ?? 0),
+        workspace_count: workspaceCount,
+        // Deprecated wire alias for clients that predate Workspace terminology.
+        project_count: workspaceCount,
         role: membership.accountRole,
         mfa_required: row.mfaRequired ?? false,
         created_at: row.createdAt.toISOString(),

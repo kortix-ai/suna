@@ -226,16 +226,16 @@ export function __clearCloneTokenCacheForTests(): void {
 }
 
 async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
-  if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
+  if (!cfg.apiUrl || !cfg.workspaceId || !cfg.sandboxToken) return undefined
   // Universal proxy origin: when the repo is served by the Kortix git proxy
-  // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
+  // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<workspaceId>.git`), the git
   // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
   // the real upstream + host credential server-side. No clone-credential round
   // trip, and a real GitHub token never enters the sandbox.
   if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
     return { username: 'x-access-token', token: cfg.sandboxToken }
   }
-  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
+  const cacheKey = `${cfg.apiUrl}\0${cfg.workspaceId}\0${cfg.sandboxToken}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
 
   const rawBase = cfg.apiUrl.replace(/\/+$/, '')
@@ -244,7 +244,7 @@ async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | un
     : rawBase.endsWith('/v1')
       ? rawBase
       : `${rawBase}/v1`
-  const url = `${base}/projects/${encodeURIComponent(cfg.projectId)}/git/clone-credential`
+  const url = `${base}/projects/${encodeURIComponent(cfg.workspaceId)}/git/clone-credential`
 
   // The control plane is reached over the public internet (KORTIX_API_URL).
   // A bare fetch with no timeout/retry turns one transient blip — or a
@@ -344,7 +344,7 @@ export async function configureGitCredentialHelper(
   cfg: Config,
   home: string,
 ): Promise<void> {
-  if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
+  if (!cfg.repoUrl || !cfg.workspaceId || !cfg.sandboxToken) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
   const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
@@ -383,7 +383,7 @@ export async function configureGitCredentialHelper(
  * after the repo is materialized.
  */
 export async function configureRepoCredentialHelper(cfg: Config, target: string): Promise<void> {
-  if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
+  if (!cfg.repoUrl || !cfg.workspaceId || !cfg.sandboxToken) return
   if (!(await pathExists(`${target}/.git`))) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return

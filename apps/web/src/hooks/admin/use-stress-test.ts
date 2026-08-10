@@ -14,7 +14,7 @@ export interface StressTestResult {
   request_id: number;
   status: 'pending' | 'running' | 'done' | 'error';
   thread_id?: string;
-  project_id?: string;
+  workspace_id?: string;
   agent_run_id?: string;
   // Timing metrics
   request_time: number;  // Time for HTTP request to complete
@@ -193,7 +193,7 @@ export function useStressTest() {
                           request_id: event.request_id,
                           status: event.status,
                           thread_id: event.thread_id,
-                          project_id: event.project_id,
+                          workspace_id: event.workspace_id,
                           agent_run_id: event.agent_run_id,
                           request_time: event.request_time,
                           time_to_first_response: event.time_to_first_response,

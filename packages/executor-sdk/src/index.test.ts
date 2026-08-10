@@ -117,7 +117,7 @@ describe('final Executor compatibility adapter', () => {
     const client = createExecutorClient({
       apiUrl: 'https://api.test/v1/',
       token: 'user-token',
-      projectId: 'project/1',
+      workspaceId: 'project/1',
       fetchImpl,
     });
 
@@ -136,13 +136,13 @@ describe('final Executor compatibility adapter', () => {
     );
   });
 
-  test('accepts canonical workspaceId and prefers it over deprecated projectId', async () => {
+  test('accepts canonical workspaceId and prefers it over deprecated workspaceId', async () => {
     const { calls, fetchImpl } = harness(() => ({ body: catalog }));
     const client = createExecutorClient({
       apiUrl: 'https://api.test',
       token: 'user-token',
       workspaceId: 'workspace/1',
-      projectId: 'stale-project',
+      workspaceId: 'stale-project',
       fetchImpl,
     });
 
@@ -194,7 +194,7 @@ describe('final Executor compatibility adapter', () => {
     const client = createExecutorClient({
       apiUrl: 'https://api.test',
       token: 'agent-token',
-      projectId: 'project/1',
+      workspaceId: 'project/1',
       fetchImpl,
     });
 

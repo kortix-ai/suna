@@ -35,7 +35,7 @@ const ROW =
   'group bg-popover hover:bg-muted/40 flex w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-colors active:scale-[0.995]';
 
 export function CatalogTab({
-  projectId,
+  workspaceId,
   connectedIds,
   search,
   subview,
@@ -43,7 +43,7 @@ export function CatalogTab({
   onProviderConnected,
   canWrite = false,
 }: {
-  projectId: string;
+  workspaceId: string;
   connectedIds: Set<string>;
   search: string;
   subview: CatalogSubview;
@@ -95,7 +95,7 @@ export function CatalogTab({
     }
     return (
       <ApiKeyConnectForm
-        projectId={projectId}
+        workspaceId={workspaceId}
         provider={provider}
         onBack={() => setSubview({ kind: 'detail', providerId: provider.id })}
         onConnected={(providerId) => {
@@ -109,7 +109,7 @@ export function CatalogTab({
   if (subview.kind === 'custom') {
     return (
       <CustomProviderForm
-        projectId={projectId}
+        workspaceId={workspaceId}
         onBack={() => setSubview({ kind: 'list' })}
         onDone={() => setSubview({ kind: 'list' })}
       />

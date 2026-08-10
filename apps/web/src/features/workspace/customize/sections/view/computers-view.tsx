@@ -1,11 +1,11 @@
 'use client';
 
 import { TunnelOverview } from '@/features/tunnel/tunnel-overview';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 
-export function ComputersView({ projectId }: { projectId: string }) {
+export function ComputersView({ workspaceId }: { workspaceId: string }) {
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
+    useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE).allowed === true;
   return <TunnelOverview canWrite={canWrite} />;
 }

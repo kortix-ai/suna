@@ -30,11 +30,12 @@ and approval events. The account trail requires the Enterprise plan.
 Subcommands:
   ls [filters] [--json]           List audit events, newest first.
   export [filters] [--out <f>]    Export matching events as CSV or JSONL.
-  project <project-id> [--json]   One project's canonical audit log.
-  session <session-id> --project <project-id> [--json]
+  workspace <workspace-id> [--json] One workspace's canonical audit log.
+  project <project-id> [--json]     Deprecated alias for workspace.
+  session <session-id> --workspace <workspace-id> [--json]
                                    One session's canonical ordered timeline.
 
-Filters (ls, export, project):
+Filters (ls, export, workspace):
   --since <when>       Only events at or after this point. ISO-8601, or a
                        relative span like 30m, 24h, 7d, 2w.
   --until <when>       Only events at or before this point.
@@ -42,7 +43,7 @@ Filters (ls, export, project):
   --actor <user-id>    Only this actor.
   --actor-type <t>     human | agent | service_account | system
   --outcome <o>        success | failure | denied | pending
-  --project <id>       Only this project.
+  --workspace <id>     Only this workspace.
   --session <id>       Only this session.
   --source <s>         Trusted execution source or reported client surface,
                        e.g. "agent", "opencode", "cli", "web".
@@ -50,7 +51,7 @@ Filters (ls, export, project):
   --resource-type <t>  Only this resource type.
   --request-id <id>    One request.
   --correlation-id <id>  One correlated chain of events.
-  -q, --query <text>   Free-text match on action, resource, project, session.
+  -q, --query <text>   Free-text match on action, resource, workspace, session.
 
 Options:
   --limit <n>          Events per page (default 50, server max 200).
@@ -66,8 +67,8 @@ Examples:
   kortix audit ls --since 24h
   kortix audit ls --outcome denied --since 7d
   kortix audit ls --action iam. --json
-  kortix audit ls --project <project-id> --all
-  kortix audit session <session-id> --project <project-id>
+  kortix audit ls --workspace <workspace-id> --all
+  kortix audit session <session-id> --workspace <workspace-id>
   kortix audit export --since 30d --format jsonl --out audit.jsonl
 `;
 
@@ -110,7 +111,7 @@ export function buildAuditQuery(
     ['action', flags.action],
     ['actor', flags.actor],
     ['actor_type', flags.actorType],
-    ['project_id', flags.project],
+    ['workspace_id', flags.workspace],
     ['session_id', flags.session],
     ['source', flags.source],
     ['phase', flags.phase],
@@ -291,7 +292,7 @@ export async function runAudit(argv: string[]): Promise<number> {
     f.action = takeFlagValue(rest, ['--action']);
     f.actor = takeFlagValue(rest, ['--actor']);
     f.actorType = takeFlagValue(rest, ['--actor-type']);
-    f.project = takeFlagValue(rest, ['--project']);
+    f.workspace = takeFlagValue(rest, ['--workspace', '--project']);
     f.session = takeFlagValue(rest, ['--session']);
     f.source = takeFlagValue(rest, ['--source']);
     f.phase = takeFlagValue(rest, ['--phase']);
@@ -360,13 +361,14 @@ export async function runAudit(argv: string[]): Promise<number> {
         return 0;
       }
 
+      case 'workspace':
       case 'project': {
-        const projectId = positional[0] ?? f.project;
-        if (!projectId) {
-          process.stderr.write(`${status.err('Missing a project id.')}` + '\n');
+        const workspaceId = positional[0] ?? f.workspace;
+        if (!workspaceId) {
+          process.stderr.write(`${status.err('Missing a workspace id.')}` + '\n');
           return 2;
         }
-        const built = buildAuditQuery({ ...f, project: undefined });
+        const built = buildAuditQuery({ ...f, workspace: undefined });
         if ('error' in built) {
           process.stderr.write(`${status.err(built.error)}\n`);
           return 2;
@@ -379,7 +381,7 @@ export async function runAudit(argv: string[]): Promise<number> {
             if (cursor) search.set('cursor', cursor);
             else search.delete('cursor');
             return ctx.client.get<AuditPage>(
-              `/projects/${encodeURIComponent(projectId)}/audit?${search.toString()}`,
+              `/workspaces/${encodeURIComponent(workspaceId)}/audit?${search.toString()}`,
             );
           },
           f.cursor ?? null,
@@ -424,7 +426,7 @@ export async function runAudit(argv: string[]): Promise<number> {
               format,
               action: search.get('action') ?? undefined,
               actor: search.get('actor') ?? undefined,
-              project_id: search.get('project_id') ?? undefined,
+              workspace_id: search.get('workspace_id') ?? undefined,
               session_id: search.get('session_id') ?? undefined,
               actor_type: search.get('actor_type') as
                 | 'human'
@@ -480,10 +482,10 @@ export async function runAudit(argv: string[]): Promise<number> {
           process.stderr.write(`${status.err('Missing a session id.')}\n`);
           return 2;
         }
-        const projectId = f.project;
-        if (!projectId) {
+        const workspaceId = f.workspace;
+        if (!workspaceId) {
           process.stderr.write(
-            `${status.err('Pass --project <id> — the session audit route is project-scoped.')}\n`,
+            `${status.err('Pass --workspace <id> — the session audit route is workspace-scoped.')}\n`,
           );
           return 2;
         }
@@ -496,7 +498,7 @@ export async function runAudit(argv: string[]): Promise<number> {
             else sessionSearch.delete('cursor');
             const query = sessionSearch.size ? `?${sessionSearch.toString()}` : '';
             return ctx.client.get<AuditPage>(
-              `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${query}`,
+              `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}/audit${query}`,
             );
           },
           f.cursor ?? null,

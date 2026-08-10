@@ -36,7 +36,7 @@ function sessionRow() {
   return {
     session_id: SESSION_ID,
     account_id: ACCOUNT_ID,
-    project_id: PROJECT_ID,
+    workspace_id: PROJECT_ID,
     branch_name: SESSION_ID,
     base_ref: 'main',
     sandbox_provider: 'daytona',
@@ -106,13 +106,13 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
         const url = new URL(request.url);
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`
         ) {
           return Response.json(sessionRow());
         }
         if (
           request.method === 'POST' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/start`
         ) {
           return Response.json({
             stage: 'ready',

@@ -26,7 +26,7 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { cn } from '@/lib/utils';
-import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
+import { type WorkspaceConfigSummary, getWorkspaceDetail, readWorkspaceFile } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   CaretRightIcon as ChevronRight,
@@ -50,7 +50,7 @@ const SKELETON_ROWS = ['a', 'b', 'c', 'd', 'e'];
 type ConfigKind = 'agent' | 'skill' | 'command';
 
 export interface ConfigEntityViewProps<T extends ConfigEntity> {
-  projectId: string;
+  workspaceId: string;
   kind: ConfigKind;
   /** Lowercase singular used in inline copy ("No matches", "{noun} body is empty"). */
   noun: string;
@@ -79,22 +79,22 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   emptyDocsHref?: string;
 
   // Data
-  select: (config: ProjectConfigSummary) => T[];
+  select: (config: WorkspaceConfigSummary) => T[];
   matches?: (entity: T, query: string) => boolean;
 
   // Row + detail customization
   triggerVariant?: 'popover' | 'accent';
   renderTriggerLabel: (entity: T) => ReactNode;
-  renderRowTrailing?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  renderRowTrailing?: (entity: T, config: WorkspaceConfigSummary) => ReactNode;
   renderDetailTitle: (entity: T) => ReactNode;
-  renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  renderDetailMeta?: (entity: T, config: WorkspaceConfigSummary) => ReactNode;
   /** Rendered in the detail panel between the header block and the source body
    *  — e.g. the per-agent scope (env/connectors/CLI). Read-only. */
-  renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  renderDetailExtra?: (entity: T, config: WorkspaceConfigSummary) => ReactNode;
   emptyBodyLabel: string;
 
   /** Section-level context rendered above the search (e.g. kortix.yaml manifest). */
-  renderContext?: (config: ProjectConfigSummary) => ReactNode;
+  renderContext?: (config: WorkspaceConfigSummary) => ReactNode;
 
   /**
    * Bucket rows under collapsible group headers in the `split` sidebar. Return
@@ -111,7 +111,7 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
    * Single-line sidebar rows: drop the description subtitle (it moves to the
    * row's `title` tooltip) and tighten the vertical rhythm. Roughly doubles how
    * many entities fit on screen — the difference between scanning a list and
-   * scrolling one, once a project carries a couple dozen skills.
+   * scrolling one, once a workspace carries a couple dozen skills.
    */
   compactRows?: boolean;
 
@@ -133,7 +133,7 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
 
 export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityViewProps<T>) {
   const {
-    projectId,
+    workspaceId,
     kind,
     noun,
     title,
@@ -164,8 +164,8 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   } = props;
 
   const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
     ...contract('config'),
   });
 
@@ -190,7 +190,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     return entities.filter((entity) => test(entity, q));
   }, [entities, query, matches]);
 
-  const configure = useConfigureThread(projectId);
+  const configure = useConfigureThread(workspaceId);
 
   // Master-detail selection (split layout). The right pane follows this; falls
   // back to the first visible entity so there's always something previewed.
@@ -229,7 +229,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       return next;
     });
 
-  const renderRow = (entity: T, rowConfig: ProjectConfigSummary) => {
+  const renderRow = (entity: T, rowConfig: WorkspaceConfigSummary) => {
     const trailing = renderRowTrailing?.(entity, rowConfig);
     const isActive = selected?.path === entity.path;
     return (
@@ -361,7 +361,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
             {filtered.map((entity) => (
               <li key={entity.path}>
                 <EntityDisclosure
-                  projectId={projectId}
+                  workspaceId={workspaceId}
                   kind={kind}
                   entity={entity}
                   config={config}
@@ -457,7 +457,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
             <div className="mx-auto max-w-3xl px-6 py-8 lg:py-10">
               <EntityDetail
                 key={selected.path}
-                projectId={projectId}
+                workspaceId={workspaceId}
                 kind={kind}
                 entity={selected}
                 config={config}
@@ -493,7 +493,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
 
   // Grid — browse as cards, then drill into one. The detail replaces the grid
   // rather than sitting beside it, so both views get the full section width.
-  const gridCard = (entity: T, cardConfig: ProjectConfigSummary) => {
+  const gridCard = (entity: T, cardConfig: WorkspaceConfigSummary) => {
     const trailing = renderRowTrailing?.(entity, cardConfig);
     return (
       <button
@@ -545,7 +545,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
           </Button>
           <EntityDetail
             key={gridSelected.path}
-            projectId={projectId}
+            workspaceId={workspaceId}
             kind={kind}
             entity={gridSelected}
             config={config}
@@ -619,7 +619,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       fill={layout === 'split' || layout === 'grid'}
       action={
         <div className="flex items-center gap-1.5">
-          <MarketplaceSectionButton projectId={projectId} />
+          <MarketplaceSectionButton workspaceId={workspaceId} />
           {canWrite ? (
             <Button
               size="sm"
@@ -651,22 +651,22 @@ function defaultMatches(entity: ConfigEntity, q: string) {
 }
 
 interface EntityDisclosureProps<T extends ConfigEntity> {
-  projectId: string;
+  workspaceId: string;
   kind: ConfigKind;
   entity: T;
-  config: ProjectConfigSummary;
+  config: WorkspaceConfigSummary;
   triggerVariant: 'popover' | 'accent';
   renderTriggerLabel: (entity: T) => ReactNode;
-  renderRowTrailing?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  renderRowTrailing?: (entity: T, config: WorkspaceConfigSummary) => ReactNode;
   renderDetailTitle: (entity: T) => ReactNode;
-  renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
-  renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  renderDetailMeta?: (entity: T, config: WorkspaceConfigSummary) => ReactNode;
+  renderDetailExtra?: (entity: T, config: WorkspaceConfigSummary) => ReactNode;
   emptyBodyLabel: string;
   canWrite: boolean;
 }
 
 function EntityDisclosure<T extends ConfigEntity>({
-  projectId,
+  workspaceId,
   kind,
   entity,
   config,
@@ -695,7 +695,7 @@ function EntityDisclosure<T extends ConfigEntity>({
       </DisclosureTrigger>
       <DisclosureContent variant="outline" contentClassName="border-border border-t">
         <EntityDetail
-          projectId={projectId}
+          workspaceId={workspaceId}
           kind={kind}
           entity={entity}
           config={config}
@@ -711,13 +711,13 @@ function EntityDisclosure<T extends ConfigEntity>({
 }
 
 interface EntityDetailProps<T extends ConfigEntity> {
-  projectId: string;
+  workspaceId: string;
   kind: ConfigKind;
   entity: T;
-  config: ProjectConfigSummary;
+  config: WorkspaceConfigSummary;
   renderDetailTitle: (entity: T) => ReactNode;
-  renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
-  renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  renderDetailMeta?: (entity: T, config: WorkspaceConfigSummary) => ReactNode;
+  renderDetailExtra?: (entity: T, config: WorkspaceConfigSummary) => ReactNode;
   emptyBodyLabel: string;
   /** Read-only viewers (READ leaf, no WRITE) hide the "Edit" control. */
   canWrite: boolean;
@@ -727,7 +727,7 @@ interface EntityDetailProps<T extends ConfigEntity> {
 }
 
 function EntityDetail<T extends ConfigEntity>({
-  projectId,
+  workspaceId,
   kind,
   entity,
   config,
@@ -738,14 +738,14 @@ function EntityDetail<T extends ConfigEntity>({
   canWrite,
   split,
 }: EntityDetailProps<T>) {
-  const configure = useConfigureThread(projectId);
+  const configure = useConfigureThread(workspaceId);
   // A platform-managed entity (e.g. the meta coordinator) declares an
   // absolute sandbox path — its source lives in the sandbox image, not the
-  // project repo, so there is nothing to fetch.
+  // workspace repo, so there is nothing to fetch.
   const platformSource = entity.path.startsWith('/');
   const fileQuery = useQuery({
-    queryKey: qk.project.fileSource(projectId, entity.path),
-    queryFn: () => readProjectFile(projectId, configEntitySourcePath(entity.path)),
+    queryKey: qk.workspace.fileSource(workspaceId, entity.path),
+    queryFn: () => readWorkspaceFile(workspaceId, configEntitySourcePath(entity.path)),
     ...contract('config'),
     enabled: !platformSource,
   });

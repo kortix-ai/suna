@@ -101,7 +101,7 @@ describe('createScopedSession', () => {
     // Regression: a browser-created session starts with no user override, which
     // is `secrets: null` — "inherit everything the agent's grant allows". The
     // scope replacement MUST carry `null`, because `[]` is the opposite ("inject
-    // zero project secrets") and silently denied every browser session its grant.
+    // zero workspace secrets") and silently denied every browser session its grant.
     let replacement: SessionScopeInput | undefined;
 
     await createScopedSession({
@@ -121,6 +121,33 @@ describe('createScopedSession', () => {
       require_connectors: [],
     });
     expect(replacement?.secrets).toBeNull();
+  });
+
+  test('does not replace untouched inherited connector defaults', async () => {
+    let replacement: SessionScopeInput | undefined;
+
+    await createScopedSession({
+      create: async () => 'session-inherited',
+      draft: {
+        secrets: null,
+        connector_bindings: {
+          mail: { connection_id: 'stale-client-default' },
+        },
+        connector_bindings_inherited: true,
+        require_connectors: [],
+      },
+      availability: { secrets: true, connector_bindings: true },
+      readScope: async () => scope,
+      replaceScope: async (_id, input) => {
+        replacement = input;
+      },
+      onReady: () => {},
+    });
+
+    expect(replacement).toEqual({
+      secrets: null,
+      require_connectors: [],
+    });
   });
 
   test('an explicit zero-secrets draft still PUTs [] (deliberate deselect is preserved)', async () => {

@@ -38,7 +38,7 @@
  *    exceed the human who launched it.
  *  - A skill is a DIRECTORY with a `SKILL.md` at its root. Frontmatter is
  *    `name` + `description`; the directory name must equal `name`.
- *  - Counts: 10 skills committed into a new project repo, plus 10 platform
+ *  - Counts: 10 skills committed into a new workspace repo, plus 10 platform
  *    skills injected into every session at boot (`kortix-cli` is in both lists,
  *    so 19 distinct). 2 agents ship: `kortix` and `memory-reflector`.
  *  - MARKETPLACE: ships, labelled beta, ON by default. But the deterministic
@@ -61,7 +61,7 @@ export const hero = {
   ctaPrimary: 'Start a session',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
-  ctaSecondaryHref: '/docs/project/agents',
+  ctaSecondaryHref: '/docs/workspace/agents',
   microline: 'OpenCode-native · Versioned · Deny by default · Human-merged',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
@@ -78,7 +78,7 @@ export const agent = {
   sub: 'An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.',
   md: {
     title: '.kortix/opencode/agents/kortix.md',
-    caption: 'Excerpt of the default agent in every new Kortix project.',
+    caption: 'Excerpt of the default agent in every new Kortix workspace.',
     lines: [
       '---',
       'description: "Generic Kortix general knowledge worker.',
@@ -137,8 +137,8 @@ export const agent = {
    *  `sm:grid-cols-3` grid, so a fourth orphans onto its own row. */
   notes: [
     'The manifest rejects a behavioral field in the governance block, with an error pointing at the agent’s own .md file.',
-    'Markdown is the floor, not the ceiling: the whole OpenCode surface sits beside it in the same repo — your own TypeScript tools, plugins that hook the runtime, the model and provider config. An agent can pin its own model, or inherit the project, account and platform default in that order.',
-    'Two agents ship in every new project: kortix, the generalist, and memory-reflector, which curates the project brain.',
+    'Markdown is the floor, not the ceiling: the whole OpenCode surface sits beside it in the same repo — your own TypeScript tools, plugins that hook the runtime, the model and provider config. An agent can pin its own model, or inherit the workspace, account and platform default in that order.',
+    'Two agents ship in every new workspace: kortix, the generalist, and memory-reflector, which curates the workspace brain.',
   ],
 } as const;
 
@@ -151,8 +151,8 @@ export const reach = {
     caption: 'A real permission tree, from a real agent that ships.',
     lines: [
       '---',
-      'description: "Reflects on recent project activity and',
-      '  curates .kortix/memory/ — the project brain. Runs on a',
+      'description: "Reflects on recent workspace activity and',
+      '  curates .kortix/memory/ — the workspace brain. Runs on a',
       '  cron and ends every run by opening a single change',
       '  request."',
       'mode: primary',
@@ -182,7 +182,7 @@ export const reach = {
     {
       id: 'never',
       k: 'Some things can never be granted',
-      v: 'Account-level administration — members, billing, creating projects — is outside the set an agent can hold at all. There is no value you can write in a file that turns that on.',
+      v: 'Account-level administration — members, billing, creating workspaces — is outside the set an agent can hold at all. There is no value you can write in a file that turns that on.',
     },
     {
       id: 'secrets',
@@ -203,7 +203,7 @@ export const skill = {
   sub: 'A skill is a directory with a SKILL.md at its root. Frontmatter names it and says when to reach for it; the body is the procedure. Every session can load it, so the thing you explained to one agent in March is still true for every agent in November.',
   md: {
     title: '.kortix/opencode/skills/agent-browser/SKILL.md',
-    caption: 'Excerpt of a skill that ships in every new project.',
+    caption: 'Excerpt of a skill that ships in every new workspace.',
     lines: [
       '---',
       'name: agent-browser',
@@ -252,9 +252,9 @@ export const skill = {
     },
   ],
   counts: [
-    { k: '10', v: 'skills committed into a new project repo on day one' },
+    { k: '10', v: 'skills committed into a new workspace repo on day one' },
     { k: '10', v: 'platform skills injected into every session at boot' },
-    { k: '2', v: 'agents in a new project: a generalist and a memory curator' },
+    { k: '2', v: 'agents in a new workspace: a generalist and a memory curator' },
   ],
 } as const;
 
@@ -267,8 +267,8 @@ export const repo = {
     { path: 'kortix.yaml', note: 'governance: what each agent may touch', depth: 1 },
     { path: '.kortix/opencode/', note: 'the runtime your agents think in', depth: 1 },
     { path: 'agents/', note: 'one OpenCode agent per file', depth: 2 },
-    { path: 'kortix.md', note: 'the generalist, in every project', depth: 3 },
-    { path: 'memory-reflector.md', note: 'curates the project brain on a cron', depth: 3 },
+    { path: 'kortix.md', note: 'the generalist, in every workspace', depth: 3 },
+    { path: 'memory-reflector.md', note: 'curates the workspace brain on a cron', depth: 3 },
     { path: 'skills/', note: 'one directory per skill', depth: 2 },
     { path: 'agent-browser/SKILL.md', note: 'how this company drives a browser', depth: 3 },
   ],
@@ -286,7 +286,7 @@ export const repo = {
     {
       id: 'clone',
       k: 'A workforce you can fork',
-      v: 'Because it is all text in one repo, you can branch your whole workforce, try a different set of grants, roll it back, or hand the lot to a new project. The configuration travels with the clone.',
+      v: 'Because it is all text in one repo, you can branch your whole workforce, try a different set of grants, roll it back, or hand the lot to a new workspace. The configuration travels with the clone.',
     },
   ],
 } as const;
@@ -299,7 +299,7 @@ export const marketplace = {
     {
       n: '00',
       title: 'Find it',
-      body: 'Browse the marketplace without signing in. Kortix ships its own registry — 62 agents, 61 skills and 62 project templates — and you can switch on curated outside registries with one click. None load by default.',
+      body: 'Browse the marketplace without signing in. Kortix ships its own registry — 62 agents, 61 skills and 62 workspace templates — and you can switch on curated outside registries with one click. None load by default.',
     },
     {
       n: '01',
@@ -330,5 +330,5 @@ export const closing = {
   ctaPrimary: 'Start a session',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the agent docs',
-  ctaSecondaryHref: '/docs/project/agents',
+  ctaSecondaryHref: '/docs/workspace/agents',
 } as const;

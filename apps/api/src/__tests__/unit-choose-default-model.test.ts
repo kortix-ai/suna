@@ -5,23 +5,23 @@ import { chooseDefaultModel } from '../llm-gateway/resolution/choose-default-mod
 const MANAGED = DEFAULT_MANAGED_MODEL_IDS[0]!; // a real bare managed id
 const BYOK = 'anthropic/claude-sonnet-4-6'; // a non-managed wire model
 
-describe('chooseDefaultModel — precedence (agent > project > account)', () => {
+describe('chooseDefaultModel — precedence (agent > Workspace > account)', () => {
   test('agent DB override beats everything', () => {
     expect(
       chooseDefaultModel({
         accountDefault: 'acc',
-        projectDefault: 'proj',
+        workspaceDefault: 'proj',
         agentDefaults: { release: 'agentdb' },
         agentName: 'release',
       }),
     ).toBe('agentdb');
   });
 
-  test('project default beats account', () => {
+  test('Workspace default beats account', () => {
     expect(
       chooseDefaultModel({
         accountDefault: 'acc',
-        projectDefault: 'proj',
+        workspaceDefault: 'proj',
         agentDefaults: {},
         agentName: 'release',
       }),
@@ -32,7 +32,7 @@ describe('chooseDefaultModel — precedence (agent > project > account)', () => 
     expect(
       chooseDefaultModel({
         accountDefault: 'acc',
-        projectDefault: null,
+        workspaceDefault: null,
         agentDefaults: {},
         agentName: 'release',
       }),

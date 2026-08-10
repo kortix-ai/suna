@@ -1,0 +1,111 @@
+// `member` is the floor project role (renamed from `user`). The retired `user`
+// and `viewer` tiers fold into it — see normalizeWorkspaceRole in iam/role-perms.ts,
+// the canonical parser (this module no longer keeps its own copy).
+import {
+  maxWorkspaceRole,
+  WORKSPACE_ROLE_RANK,
+  type AccountRole,
+  type WorkspaceRole,
+} from '../iam/role-perms';
+
+export type { AccountRole, WorkspaceRole };
+
+// 'session' sits between 'read' and 'write': any project member (a plain
+// `member` included) may start and run sessions, but not customize the workspace.
+export type WorkspaceAccessAction = 'read' | 'session' | 'write' | 'manage';
+
+export function isAccountManager(role: AccountRole): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+export function roleAllows(role: WorkspaceRole | null, action: WorkspaceAccessAction): boolean {
+  if (!role) return false;
+  if (action === 'read') return true;
+  // Every project role can use sessions — `member` is the base *usable* role.
+  if (action === 'session') return true;
+  if (action === 'write') return role === 'editor' || role === 'manager';
+  return role === 'manager';
+}
+
+export function effectiveWorkspaceRole(
+  accountRole: AccountRole,
+  workspaceRole: WorkspaceRole | null,
+): WorkspaceRole | null {
+  if (isAccountManager(accountRole)) return 'manager';
+  return workspaceRole;
+}
+
+// ─── Effective access fold ───────────────────────────────────────────────
+//
+// Used by GET /v1/projects/:workspaceId/access to compute each member's
+// effective access from the three independent sources V2 supports:
+//   - implicit (account owner/admin → Manager on every workspace)
+//   - direct   (explicit project_members row with a project_role)
+//   - group    (project_group_grants attaching a group the user is in)
+//
+// Folding rule: max role wins. Source label records which path produced
+// that max — used by the UI to render "via X group" or "Account admin"
+// next to the row. Tie-break (multiple paths grant the same role):
+// implicit → direct → group, matching the order admins reason about it.
+//
+// Pure so it's easy to test without spinning up the DB.
+
+type AccessSourceTag = 'implicit' | 'direct' | 'group';
+
+export interface GroupSource {
+  group_id: string;
+  group_name: string;
+  role: WorkspaceRole;
+}
+
+export interface EffectiveAccessFold {
+  effective_workspace_role: WorkspaceRole | null;
+  effective_source: AccessSourceTag | null;
+  group_sources: GroupSource[];
+}
+
+export function foldEffectiveWorkspaceAccess(input: {
+  accountRole: AccountRole;
+  directRole: WorkspaceRole | null;
+  groupSources: GroupSource[];
+}): EffectiveAccessFold {
+  let effective: WorkspaceRole | null = null;
+  let source: AccessSourceTag | null = null;
+
+  if (isAccountManager(input.accountRole)) {
+    effective = 'manager';
+    source = 'implicit';
+  }
+
+  if (input.directRole) {
+    if (!effective || WORKSPACE_ROLE_RANK[input.directRole] > WORKSPACE_ROLE_RANK[effective]) {
+      effective = input.directRole;
+      source = 'direct';
+    }
+  }
+
+  for (const gs of input.groupSources) {
+    if (!effective) {
+      effective = gs.role;
+      source = 'group';
+    } else {
+      const merged = maxWorkspaceRole(effective, gs.role);
+      if (merged !== effective) {
+        effective = merged;
+        source = 'group';
+      }
+    }
+  }
+
+  // Group sources sorted by descending role so the UI's "via X group"
+  // chip picks the strongest contributor first.
+  const sortedGroupSources = input.groupSources
+    .slice()
+    .sort((a, b) => WORKSPACE_ROLE_RANK[b.role] - WORKSPACE_ROLE_RANK[a.role]);
+
+  return {
+    effective_workspace_role: effective,
+    effective_source: source,
+    group_sources: sortedGroupSources,
+  };
+}

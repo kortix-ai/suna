@@ -13,7 +13,7 @@ import { reviewKeys } from './use-review-items';
  * on the pill always equals the sum of the dots — one coherent system.
  */
 export interface ReviewSessionSummary {
-  /** Total items awaiting the human across the project (matches the rail badge). */
+  /** Total items awaiting the human across the workspace (matches the rail badge). */
   totalNeedsYou: number;
   /**
    * `needs_you` count keyed by `origin_session_id`. Sessions with nothing pending
@@ -44,20 +44,20 @@ export function summarizeReviewSessions(items: readonly ApiReviewItem[]): Review
 }
 
 /**
- * Per-session review state for the project sidebar. Reads the unified inbox via
- * the shared `['review-center', projectId, 'list']` query key (deduping with the
+ * Per-session review state for the workspace sidebar. Reads the unified inbox via
+ * the shared `['review-center', workspaceId, 'list']` query key (deduping with the
  * Review Center view and the Customize rail badge), and derives the summary
  * client-side. Gate the caller on the `review_center` flag — pass
  * `{ enabled: false }` to keep the poll (and the surface) dark when it's off.
  */
 export function useReviewSessionSummary(
-  projectId: string,
+  workspaceId: string,
   options?: { enabled?: boolean },
 ): ReviewSessionSummary {
-  const enabled = Boolean(projectId) && options?.enabled !== false;
+  const enabled = Boolean(workspaceId) && options?.enabled !== false;
   const { data } = useQuery<{ review_items: ApiReviewItem[] }, Error, ReviewSessionSummary>({
-    queryKey: reviewKeys.list(projectId),
-    queryFn: () => listReviewItems(projectId),
+    queryKey: reviewKeys.list(workspaceId),
+    queryFn: () => listReviewItems(workspaceId),
     enabled,
     staleTime: 5_000,
     // Mutations invalidate this key. The background poll catches external work.

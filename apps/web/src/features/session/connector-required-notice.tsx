@@ -22,7 +22,11 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
-import type { KortixSendError, KortixSendErrorConnector } from '@kortix/sdk/react';
+import {
+  workspaceSendErrorConnectors,
+  type KortixSendError,
+  type WorkspaceSendErrorConnector,
+} from '@kortix/sdk/react';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
 
 export interface ConnectorNoticeCopy {
@@ -35,12 +39,12 @@ export interface ConnectorNoticeCopy {
    * RUNS AS. Nobody else can supply it, so offering a button would be offering a
    * 409 — the card says who can unblock it instead.
    */
-  connectable: KortixSendErrorConnector[];
+  connectable: WorkspaceSendErrorConnector[];
 }
 
 /** Pure so the copy and the button decision are testable without a DOM. */
 export function connectorNoticeCopy(
-  connectors: readonly KortixSendErrorConnector[],
+  connectors: readonly WorkspaceSendErrorConnector[],
 ): ConnectorNoticeCopy {
   const names = connectors.map((connector) => connector.name);
   return {
@@ -49,27 +53,30 @@ export function connectorNoticeCopy(
         ? (names[0] ?? '')
         : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`,
     connectable: connectors.filter(
-      (connector) => connector.authorization_strategy === 'project',
+      (connector) => connector.authorization_strategy === 'workspace',
     ),
   };
 }
 
 export function ConnectorRequiredNotice({
   error,
-  projectId,
+  workspaceId,
   resend,
   className,
 }: {
   error: KortixSendError | null | undefined;
-  projectId: string | undefined;
+  workspaceId: string | undefined;
   /** Re-send the refused prompt once every connector is connected. */
   resend: (() => void) | undefined;
   className?: string;
 }) {
   const openConnectorGate = useConnectorGateStore((state) => state.openConnectorGate);
 
-  const connectors = error?.kind === 'connector' ? error.connectors : undefined;
-  if (!connectors?.length || !projectId) return null;
+  const connectors =
+    error?.kind === 'connector' && error.connectors
+      ? workspaceSendErrorConnectors(error.connectors)
+      : undefined;
+  if (!connectors?.length || !workspaceId) return null;
 
   const names = connectors.map((connector) => connector.name);
   const { label, connectable } = connectorNoticeCopy(connectors);
@@ -97,7 +104,7 @@ export function ConnectorRequiredNotice({
               className="mt-3 gap-1.5"
               onClick={() =>
                 openConnectorGate({
-                  projectId,
+                  workspaceId,
                   connectorConnections: connectors,
                   retry: () => resend?.(),
                 })

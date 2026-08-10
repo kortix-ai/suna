@@ -69,13 +69,13 @@ export async function POST(req: NextRequest) {
   if (!projectImportEnabled()) return disabled();
 
   const body = (await req.json().catch(() => null)) as { project_id?: unknown } | null;
-  const projectId = typeof body?.project_id === 'string' ? body.project_id : '';
+  const workspaceId = typeof body?.project_id === 'string' ? body.project_id : '';
   // Validated before it is stored: ids from this store end up inside upstream
   // request URLs, so a malformed one must never be able to steer a request.
-  if (!isValidProjectId(projectId)) {
+  if (!isValidProjectId(workspaceId)) {
     return Response.json({ error: 'A valid project id is required.' }, { status: 400 });
   }
 
-  addOwnedProject(session.userId, projectId);
-  return Response.json({ ok: true, project_id: projectId });
+  addOwnedProject(session.userId, workspaceId);
+  return Response.json({ ok: true, project_id: workspaceId });
 }

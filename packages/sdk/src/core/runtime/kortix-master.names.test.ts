@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import * as master from './kortix-master';
-import type { KortixProject as PlatformProject } from '../rest/projects-client/projects';
+import type { KortixWorkspace as PlatformWorkspace } from '../rest/workspaces-client/workspaces';
 
 test('the daemon project is exported as KortixMasterProject', () => {
   const project: master.KortixMasterProject = {
@@ -27,9 +27,9 @@ test('the deprecated KortixProject alias still resolves to the daemon shape', ()
   expect(legacy.path).toBe('/work/demo');
 });
 
-test('the platform project is a DIFFERENT shape and keeps its name', () => {
-  const platform: PlatformProject = {
-    project_id: 'proj_1',
+test('the platform workspace is a different shape from the daemon project', () => {
+  const platform: PlatformWorkspace = {
+    workspace_id: 'ws_1',
     account_id: 'acct_1',
     name: 'demo',
     repo_url: 'https://example.test/r.git',
@@ -41,5 +41,5 @@ test('the platform project is a DIFFERENT shape and keeps its name', () => {
     created_at: '2026-07-10T00:00:00Z',
     updated_at: '2026-07-10T00:00:00Z',
   };
-  expect(platform.project_id).toBe('proj_1');
+  expect(platform.workspace_id).toBe('ws_1');
 });

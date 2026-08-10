@@ -38,7 +38,7 @@ import {
   isBrowserViewable,
   openFileInNewTab,
 } from '@/features/files/api/runtime-files';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/workspace-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';

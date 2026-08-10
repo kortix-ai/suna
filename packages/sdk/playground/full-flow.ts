@@ -74,32 +74,32 @@ async function main() {
   console.log(`${projects.length} project(s):`);
   for (const p of projects) console.log(`  - ${p.name} (${p.project_id})`);
 
-  let projectId = process.env.KORTIX_PROJECT_ID;
-  if (!projectId) {
+  let workspaceId = process.env.KORTIX_PROJECT_ID;
+  if (!workspaceId) {
     if (projects.length > 0) {
-      projectId = projects[0]!.project_id;
+      workspaceId = projects[0]!.project_id;
       console.log(`\nusing first project: ${projects[0]!.name}`);
     } else {
       console.log('\nno projects — provisioning "sdk-playground"…');
       const project = await kortix.projects.provision({
         name: "sdk-playground",
       });
-      projectId = project.project_id;
-      console.log(`provisioned ${project.name} (${projectId})`);
+      workspaceId = project.project_id;
+      console.log(`provisioned ${project.name} (${workspaceId})`);
     }
   }
 
   // 2. Session — reuse the env override or create a fresh one.
   let sessionId = process.env.KORTIX_SESSION_ID;
   if (!sessionId) {
-    const created = await kortix.projects.createSession(projectId, {
+    const created = await kortix.projects.createSession(workspaceId, {
       name: "sdk full-flow",
     });
     sessionId = created.session_id;
     console.log(`created session ${sessionId}`);
   }
 
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
 
   // 3. Ready the session (boots/resumes the sandbox — slow on first run),
   //    then connect the stream BEFORE sending so no early events are missed.
@@ -160,7 +160,7 @@ async function main() {
   }
 
   console.log("\nreuse this pair to skip provisioning next time:");
-  console.log(`  export KORTIX_PROJECT_ID=${projectId}`);
+  console.log(`  export KORTIX_PROJECT_ID=${workspaceId}`);
   console.log(`  export KORTIX_SESSION_ID=${sessionId}`);
   process.exit(0);
 }

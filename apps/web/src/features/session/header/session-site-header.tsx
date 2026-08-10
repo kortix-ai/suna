@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { sessionDisplayLabel } from '@/components/workspaces/session-label';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -28,11 +28,11 @@ import {
   sidebarOpenerLabel,
   useDesktopShell,
   useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
-import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
-import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
-import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
-import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
+} from '@/features/workspace/workspace-layout/sidebar-opener';
+import { RenameSessionModal } from '@/features/workspace/workspace-sidebar/modal/rename-session-modal';
+import { SessionDeleteModal } from '@/features/workspace/workspace-sidebar/modal/session-delete-modal';
+import { ShareSessionModal } from '@/features/workspace/workspace-sidebar/modal/share-session-modal';
+import { useReloadSessionConfig } from '@/hooks/workspaces/use-session-config-freshness';
 import { cn } from '@/lib/utils';
 import {
   type QuickView,
@@ -40,7 +40,7 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
-import { listProjectSessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { listWorkspaceSessions, restartWorkspaceSession, stopWorkspaceSession } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
@@ -121,27 +121,27 @@ export function SessionSiteHeader({
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  // Lifecycle actions (Share / Restart / Delete) operate on the project-level
+  // Lifecycle actions (Share / Restart / Delete) operate on the workspace-level
   // session, which is only addressable on the `/projects/:id/sessions/:id` route.
-  const projectRoute = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
-  const projectId = projectRoute?.[1];
-  const projectSessionId = projectRoute?.[2];
-  const isProjectSession = !!projectId && !!projectSessionId;
+  const workspaceRoute = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
+  const workspaceId = workspaceRoute?.[1];
+  const workspaceSessionId = workspaceRoute?.[2];
+  const isWorkspaceSession = !!workspaceId && !!workspaceSessionId;
 
-  const { data: projectSessions } = useQuery({
-    queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
-    enabled: isProjectSession,
+  const { data: workspaceSessions } = useQuery({
+    queryKey: qk.workspace.sessions(workspaceId ?? ''),
+    queryFn: () => listWorkspaceSessions(workspaceId!),
+    enabled: isWorkspaceSession,
     ...contract('inventory'),
   });
-  const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
-  const canShare = !!projectSession && projectSession.can_manage_sharing !== false;
+  const workspaceSession = workspaceSessions?.find((s) => s.session_id === workspaceSessionId) ?? null;
+  const canShare = !!workspaceSession && workspaceSession.can_manage_sharing !== false;
 
   const restartMutation = useMutation({
-    mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
+    mutationFn: () => restartWorkspaceSession(workspaceId!, workspaceSessionId!),
     onSuccess: () => {
       successToast('Restarting session…');
-      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.sessionsScope(workspaceId ?? '') });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to restart session');
@@ -149,22 +149,22 @@ export function SessionSiteHeader({
   });
 
   const stopMutation = useMutation({
-    mutationFn: () => stopProjectSession(projectId!, projectSessionId!),
+    mutationFn: () => stopWorkspaceSession(workspaceId!, workspaceSessionId!),
     onSuccess: () => {
       successToast('Session stopped');
-      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.sessionsScope(workspaceId ?? '') });
     },
     onError: (err) => {
       errorToast(err instanceof Error ? err.message : 'Failed to stop session');
     },
   });
-  const canStop = !!projectSession && projectSession.status === 'running' && canShare;
+  const canStop = !!workspaceSession && workspaceSession.status === 'running' && canShare;
 
   // Hoisted so the chip and the ⋯ item share one pending state and one confirm
   // dialog. `canShare` is the client mirror of the reload route's own gate
-  // (session owner or project manager) — the IAM leaf both member and editor
+  // (session owner or workspace manager) — the IAM leaf both member and editor
   // hold would still 403 here.
-  const reloadConfig = useReloadSessionConfig(projectId!, projectSessionId!);
+  const reloadConfig = useReloadSessionConfig(workspaceId!, workspaceSessionId!);
 
   // Mobile-only action-panel toggle — see its render site below.
   const isActionPanelOpen = useIsActionPanelOpen();
@@ -173,7 +173,7 @@ export function SessionSiteHeader({
 
   const sessionActionItems = (
     <>
-      {isProjectSession && (
+      {isWorkspaceSession && (
         <>
           <DropdownMenuItem className="cursor-pointer" onClick={() => setRenameOpen(true)}>
             <PencilSimpleIcon />
@@ -237,7 +237,7 @@ export function SessionSiteHeader({
         Summarize conversation
       </DropdownMenuItem>
 
-      {isProjectSession && (
+      {isWorkspaceSession && (
         <>
           <DropdownMenuSeparator />
 
@@ -303,9 +303,9 @@ export function SessionSiteHeader({
               </Button>
             )}
 
-            {isProjectSession && (
+            {isWorkspaceSession && (
               <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
-                <Link href={`/workspaces/${projectId}`}>
+                <Link href={`/workspaces/${workspaceId}`}>
                   <HouseIcon className="size-4.5" />
                 </Link>
               </Button>
@@ -340,10 +340,10 @@ export function SessionSiteHeader({
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
 
-            {isProjectSession && (
+            {isWorkspaceSession && (
               <SessionConfigIndicator
-                projectId={projectId!}
-                sessionId={projectSessionId!}
+                workspaceId={workspaceId!}
+                sessionId={workspaceSessionId!}
                 reload={reloadConfig.reload}
                 isPending={reloadConfig.isPending}
                 canReload={canShare}
@@ -436,13 +436,13 @@ export function SessionSiteHeader({
 
       <ExportTranscriptModal
         sessionId={sessionId}
-        kortixSessionScope={isProjectSession ? `${projectId}/${projectSessionId}` : undefined}
+        kortixSessionScope={isWorkspaceSession ? `${workspaceId}/${workspaceSessionId}` : undefined}
         open={exportOpen}
         onOpenChange={setExportOpen}
       />
       <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
 
-      {isProjectSession && (
+      {isWorkspaceSession && (
         <>
           {/* Mounted here, not inside the chip: a successful reload can make
               the chip unmount, and a dialog that disappears mid-question is
@@ -454,30 +454,30 @@ export function SessionSiteHeader({
             onDismiss={reloadConfig.clearBusy}
           />
           <ShareSessionModal
-            projectId={projectId!}
-            session={projectSession}
+            workspaceId={workspaceId!}
+            session={workspaceSession}
             open={shareOpen}
             onOpenChange={setShareOpen}
             onSaved={() =>
               queryClient.invalidateQueries({
-                queryKey: qk.project.sessionsScope(projectId ?? ''),
+                queryKey: qk.workspace.sessionsScope(workspaceId ?? ''),
               })
             }
           />
           <RenameSessionModal
-            projectId={projectId!}
-            sessionId={projectSessionId!}
-            currentName={projectSession ? sessionDisplayLabel(projectSession) : ''}
+            workspaceId={workspaceId!}
+            sessionId={workspaceSessionId!}
+            currentName={workspaceSession ? sessionDisplayLabel(workspaceSession) : ''}
             open={renameOpen}
             onOpenChange={setRenameOpen}
           />
           <SessionDeleteModal
-            projectId={projectId!}
-            sessionId={projectSessionId!}
+            workspaceId={workspaceId!}
+            sessionId={workspaceSessionId!}
             sessionLabel={sessionTitle}
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
-            onDeleted={() => router.push(`/workspaces/${projectId}`)}
+            onDeleted={() => router.push(`/workspaces/${workspaceId}`)}
           />
         </>
       )}

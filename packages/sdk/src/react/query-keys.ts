@@ -43,7 +43,7 @@
  * `kortixKeys`'s root (`use-kortix-master.ts:276-279`):
  * `kortixKeys.projects() = ['kortix', 'projects']` and
  * `kortixKeys.project(id) = ['kortix', 'projects', id]`. If this factory also
- * rooted at `'kortix'`, `kortixKeys.project(id)` and `qk.projects.list(id)`
+ * rooted at `'kortix'`, `kortixKeys.project(id)` and `qk.workspaces.list(id)`
  * would be the identical array for a matching id — one cache entry standing
  * in for two unrelated concepts — and `kortixKeys.projects()` (used as an
  * `invalidateQueries` prefix at `use-kortix-master.ts:371,384`) would also
@@ -51,26 +51,26 @@
  * prefix. `'kx'` makes the two factories disjoint at segment 0, so neither
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
-export const qk = {
-  projects: {
+const canonicalWorkspaceQueryKeys = {
+  workspaces: {
     /** Invalidation prefix covering every account's list AND the accountless
      *  slot. Never pass this as a `queryKey` — `list(accountId)` and
      *  `list()` are SIBLINGS (`'<id>'` vs `'all'`), not a parent/child pair,
      *  so `list()` alone does not prefix-match `list(accountId)`. Use this
      *  when a mutation needs to reach every form at once. */
-    scope: () => ['kx', 'projects'] as const,
+    scope: () => ['kx', 'workspaces'] as const,
 
     /** Every project the account can see. `undefined` means the active account. */
-    list: (accountId?: string) => [...qk.projects.scope(), accountId ?? 'all'] as const,
+    list: (accountId?: string) => [...qk.workspaces.scope(), accountId ?? 'all'] as const,
   },
 
-  project: {
+  workspace: {
     /** Invalidation prefix. Never pass this as a `queryKey`. */
-    scope: (id: string) => ['kx', 'project', id] as const,
+    scope: (id: string) => ['kx', 'workspace', id] as const,
 
     /**
      * The bare project row — `getProject`, `GET /projects/:id`, a
-     * `KortixProject`. NOT `detail(id)` below: `getProjectDetail` hits
+     * `KortixProject`. NOT `detail(id)` below: `getWorkspaceDetail` hits
      * `GET /projects/:id/detail` and returns a completely different shape,
      * `{ project, config, file_count, files, git_connection }`. An earlier
      * draft of this migration folded the two onto one key because both
@@ -82,25 +82,25 @@ export const qk = {
      * apart, the same way `sessions`/`session` and `policies`/
      * `executorPolicies` below are kept apart for the identical reason.
      */
-    summary: (id: string) => [...qk.project.scope(id), 'summary'] as const,
+    summary: (id: string) => [...qk.workspace.scope(id), 'summary'] as const,
 
-    detail: (id: string) => [...qk.project.scope(id), 'detail'] as const,
+    detail: (id: string) => [...qk.workspace.scope(id), 'detail'] as const,
     /**
      * Prefix reserved for config-adjacent sub-resources that do NOT share
-     * `getProjectDetail`'s response shape (currently only `modelPicker`
-     * below). The project config DATA ITSELF — `ProjectConfigSummary`,
-     * i.e. `getProjectDetail(id).config` — is not keyed here: it rides the
+     * `getWorkspaceDetail`'s response shape (currently only `modelPicker`
+     * below). The project config DATA ITSELF — `WorkspaceConfigSummary`,
+     * i.e. `getWorkspaceDetail(id).config` — is not keyed here: it rides the
      * shared `detail(id)` entry via a `select` projection (see
      * `use-project-config.ts`), because it IS that same response every
      * other detail reader already caches. Keying it separately here would
      * bring back the exact double-fetch this factory exists to remove —
-     * `useProjectConfig` used to do exactly that under a standalone
+     * `useWorkspaceConfig` used to do exactly that under a standalone
      * `['project-config', id]` key.
      */
-    config: (id: string) => [...qk.project.scope(id), 'config'] as const,
+    config: (id: string) => [...qk.workspace.scope(id), 'config'] as const,
     /**
-     * `getProjectModelPicker`, `GET /projects/:id/model-picker` — the compact,
-     * connection-aware model catalog. LIVE: `useProjectModels` (`use-project-
+     * `getWorkspaceModelPicker`, `GET /projects/:id/model-picker` — the compact,
+     * connection-aware model catalog. LIVE: `useWorkspaceModels` (`use-project-
      * models.ts`) `useQuery`s it directly, rendered at `gateway-view.tsx`,
      * `gateway-routing.tsx`, `gateway-playground.tsx`, `models-tab.tsx`, and
      * `use-session.ts`. `useModelEnablement` (`use-model-enablement.ts`) reads
@@ -114,7 +114,7 @@ export const qk = {
      * they lived one file away, under `packages/sdk/src/react`, which this
      * factory did not yet reach.
      */
-    modelPicker: (id: string) => [...qk.project.config(id), 'models'] as const,
+    modelPicker: (id: string) => [...qk.workspace.config(id), 'models'] as const,
 
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
@@ -126,12 +126,12 @@ export const qk = {
      * would leave the other silently stale, and this prefix is the only form
      * that reaches both in one call.
      */
-    sessionsScope: (id: string) => [...qk.project.scope(id), 'sessions'] as const,
+    sessionsScope: (id: string) => [...qk.workspace.scope(id), 'sessions'] as const,
 
     /**
      * The sessions list. `scope` is part of the key ON PURPOSE:
      * `listProjectSessions(id, { scope })`
-     * (`core/rest/projects-client/sessions.ts`) is a DIFFERENT server
+     * (`core/rest/workspaces-client/sessions.ts`) is a DIFFERENT server
      * request per scope, not a client-side filter of one response —
      * `'visible'` (the default; matches passing no `options` at all) returns
      * what the caller can see, `'project'` is the manager-only unfiltered
@@ -158,8 +158,8 @@ export const qk = {
      * collision unrepresentable, don't rely on another package's validation
      * staying strict.
      */
-    sessions: (id: string, scope: 'visible' | 'project' = 'visible') =>
-      [...qk.project.sessionsScope(id), 'list', scope] as const,
+    sessions: (id: string, scope: 'visible' | 'workspace' = 'visible') =>
+      [...qk.workspace.sessionsScope(id), 'list', scope] as const,
 
     /**
      * One session, by id. Nests directly under the scope-LESS
@@ -169,9 +169,9 @@ export const qk = {
      * its own cache entry does not carry a scope segment either.
      */
     session: (id: string, sessionId: string) =>
-      [...qk.project.sessionsScope(id), sessionId] as const,
+      [...qk.workspace.sessionsScope(id), sessionId] as const,
     messages: (id: string, sessionId: string) =>
-      [...qk.project.session(id, sessionId), 'messages'] as const,
+      [...qk.workspace.session(id, sessionId), 'messages'] as const,
     /**
      * Orphaned pre-existing behavior, migrated verbatim rather than "fixed":
      * three `apps/web` call sites invalidate this slot after a session
@@ -180,47 +180,47 @@ export const qk = {
      * resolves `undefined` and the three invalidations are no-ops today.
      * Nests under `session(id, sessionId)` rather than folding onto it
      * because `session(...)` became a REAL, live query in this same
-     * migration (`getProjectSession`); sharing that slot would make these
+     * migration (`getWorkspaceSession`); sharing that slot would make these
      * dead invalidations start firing against real session data instead of
      * continuing to hit nothing.
      */
     sessionSandbox: (id: string, sessionId: string) =>
-      [...qk.project.session(id, sessionId), 'sandbox'] as const,
+      [...qk.workspace.session(id, sessionId), 'sandbox'] as const,
 
-    connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
+    connectors: (id: string) => [...qk.workspace.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */
     connectorConfig: (id: string, slug: string) =>
-      [...qk.project.connectors(id), slug] as const,
+      [...qk.workspace.connectors(id), slug] as const,
 
-    access: (id: string) => [...qk.project.scope(id), 'access'] as const,
-    accessRequests: (id: string) => [...qk.project.access(id), 'requests'] as const,
-    pendingInvites: (id: string) => [...qk.project.access(id), 'invites'] as const,
+    access: (id: string) => [...qk.workspace.scope(id), 'access'] as const,
+    accessRequests: (id: string) => [...qk.workspace.access(id), 'requests'] as const,
+    pendingInvites: (id: string) => [...qk.workspace.access(id), 'invites'] as const,
     /** `listProjectGroupGrants` — `GET /group-grants`, `{ grants: ProjectGroupGrant[] }`. */
-    groupGrants: (id: string) => [...qk.project.access(id), 'group-grants'] as const,
+    groupGrants: (id: string) => [...qk.workspace.access(id), 'group-grants'] as const,
     /** `listProjectResourceGrants` — `GET /resource-grants`, a DIFFERENT
      *  endpoint and shape from `groupGrants` above; do not fold together. */
-    resourceGrants: (id: string) => [...qk.project.access(id), 'grants'] as const,
+    resourceGrants: (id: string) => [...qk.workspace.access(id), 'grants'] as const,
 
-    secrets: (id: string) => [...qk.project.scope(id), 'secrets'] as const,
+    secrets: (id: string) => [...qk.workspace.scope(id), 'secrets'] as const,
 
     /** Stable App inventory for `GET /projects/:id/apps`. */
-    apps: (id: string) => [...qk.project.scope(id), 'apps'] as const,
+    apps: (id: string) => [...qk.workspace.scope(id), 'apps'] as const,
     /** Access policy and short-lived browser session for one App. */
-    appAccess: (id: string, appId: string) => [...qk.project.apps(id), appId, 'access'] as const,
+    appAccess: (id: string, appId: string) => [...qk.workspace.apps(id), appId, 'access'] as const,
     /** Short-lived browser exchange URL for one App. */
     appAccessSession: (id: string, appId: string) =>
-      [...qk.project.appAccess(id, appId), 'session'] as const,
+      [...qk.workspace.appAccess(id, appId), 'session'] as const,
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
-      [...qk.project.apps(id), appId, 'deployments'] as const,
+      [...qk.workspace.apps(id), appId, 'deployments'] as const,
 
-    /** `listProjectTriggers` — `GET /projects/:id/triggers`, the cron/webhook
+    /** `listWorkspaceTriggers` — `GET /projects/:id/triggers`, the cron/webhook
      *  listing (file-defined in the repo manifest). Shared by
      *  `useProjectTriggers` (`use-project-triggers.ts`), the Customize
      *  settings pause switch, and the schedule/triggers view — all three read
-     *  and write the identical entity through `listProjectTriggers(id)`, so
+     *  and write the identical entity through `listWorkspaceTriggers(id)`, so
      *  they must share this one key. */
-    triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+    triggers: (id: string) => [...qk.workspace.scope(id), 'triggers'] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the
@@ -230,15 +230,15 @@ export const qk = {
      * string `'project-files'` — never migrated onto `qk`, and never sharing
      * this prefix).
      */
-    files: (id: string) => [...qk.project.scope(id), 'files'] as const,
-    fileSource: (id: string, path: string) => [...qk.project.files(id), path] as const,
+    files: (id: string) => [...qk.workspace.scope(id), 'files'] as const,
+    fileSource: (id: string, path: string) => [...qk.workspace.files(id), path] as const,
 
-    branches: (id: string) => [...qk.project.scope(id), 'branches'] as const,
+    branches: (id: string) => [...qk.workspace.scope(id), 'branches'] as const,
 
     /** IAM role policies — `listPolicies(accountId, { scopeId: id })`,
      *  `{ policies: IamPolicy[] }`. NOT the same entity as
      *  `executorPolicies` below — see that member's doc comment. */
-    policies: (id: string) => [...qk.project.scope(id), 'policies'] as const,
+    policies: (id: string) => [...qk.workspace.scope(id), 'policies'] as const,
     /**
      * Executor sandbox tool-execution allow/deny rules —
      * `listProjectPolicies(id)`, `GET /executor/projects/:id/policies`,
@@ -250,33 +250,55 @@ export const qk = {
      * are unrelated domains that happen to share a name, not a parent/child
      * pair, so invalidating one must never reach the other.
      */
-    executorPolicies: (id: string) => [...qk.project.scope(id), 'executor-policies'] as const,
+    executorPolicies: (id: string) => [...qk.workspace.scope(id), 'executor-policies'] as const,
 
-    sandboxes: (id: string) => [...qk.project.scope(id), 'sandboxes'] as const,
-    sandboxTemplates: (id: string) => [...qk.project.sandboxes(id), 'templates'] as const,
-    snapshots: (id: string) => [...qk.project.scope(id), 'snapshots'] as const,
+    sandboxes: (id: string) => [...qk.workspace.scope(id), 'sandboxes'] as const,
+    sandboxTemplates: (id: string) => [...qk.workspace.sandboxes(id), 'templates'] as const,
+    snapshots: (id: string) => [...qk.workspace.scope(id), 'snapshots'] as const,
 
     /** Prefix for the gateway family — keys, budgets, series, logs, overview. */
-    gateway: (id: string) => [...qk.project.scope(id), 'gateway'] as const,
+    gateway: (id: string) => [...qk.workspace.scope(id), 'gateway'] as const,
     gatewayOverview: (id: string, days: number) =>
-      [...qk.project.gateway(id), 'overview', days] as const,
+      [...qk.workspace.gateway(id), 'overview', days] as const,
     gatewaySeries: (id: string, days: number) =>
-      [...qk.project.gateway(id), 'series', days] as const,
+      [...qk.workspace.gateway(id), 'series', days] as const,
     gatewayBreakdown: (id: string, days: number) =>
-      [...qk.project.gateway(id), 'breakdown', days] as const,
+      [...qk.workspace.gateway(id), 'breakdown', days] as const,
     gatewaySessions: (id: string, days: number) =>
-      [...qk.project.gateway(id), 'sessions', days] as const,
+      [...qk.workspace.gateway(id), 'sessions', days] as const,
     gatewayErrors: (id: string, days: number) =>
-      [...qk.project.gateway(id), 'errors', days] as const,
+      [...qk.workspace.gateway(id), 'errors', days] as const,
     /** `ok` mirrors `listGatewayLogs`'s optional pass/fail filter — `null` = unfiltered. */
     gatewayLogs: (id: string, ok: boolean | null) =>
-      [...qk.project.gateway(id), 'logs', ok] as const,
+      [...qk.workspace.gateway(id), 'logs', ok] as const,
     gatewayLog: (id: string, logId: string | null) =>
-      [...qk.project.gateway(id), 'log', logId] as const,
-    gatewayBudgets: (id: string) => [...qk.project.gateway(id), 'budgets'] as const,
-    gatewayKeys: (id: string) => [...qk.project.gateway(id), 'keys'] as const,
+      [...qk.workspace.gateway(id), 'log', logId] as const,
+    gatewayBudgets: (id: string) => [...qk.workspace.gateway(id), 'budgets'] as const,
+    gatewayKeys: (id: string) => [...qk.workspace.gateway(id), 'keys'] as const,
   },
 } as const;
 
-export type ProjectScopeKey = ReturnType<typeof qk.project.scope>;
-export type ProjectsListKey = ReturnType<typeof qk.projects.list>;
+const legacyProjectQueryKeys = {
+  ...canonicalWorkspaceQueryKeys.workspace,
+  sessions: (id: string, scope: 'visible' | 'project' = 'visible') =>
+    canonicalWorkspaceQueryKeys.workspace.sessions(
+      id,
+      scope === 'project' ? 'workspace' : 'visible',
+    ),
+} as const;
+
+export const qk = {
+  workspaces: canonicalWorkspaceQueryKeys.workspaces,
+  workspace: canonicalWorkspaceQueryKeys.workspace,
+  /** @deprecated Use qk.workspaces. */
+  projects: canonicalWorkspaceQueryKeys.workspaces,
+  /** @deprecated Use qk.workspace. */
+  project: legacyProjectQueryKeys,
+} as const;
+
+export type WorkspaceScopeKey = ReturnType<typeof qk.workspace.scope>;
+export type WorkspacesListKey = ReturnType<typeof qk.workspaces.list>;
+/** @deprecated Use WorkspaceScopeKey. */
+export type ProjectScopeKey = WorkspaceScopeKey;
+/** @deprecated Use WorkspacesListKey. */
+export type ProjectsListKey = WorkspacesListKey;

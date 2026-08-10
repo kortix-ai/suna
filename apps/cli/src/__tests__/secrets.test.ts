@@ -14,6 +14,7 @@ const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
+  'KORTIX_WORKSPACE_ID',
   'KORTIX_PROJECT_ID',
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
@@ -134,7 +135,7 @@ function mockApi() {
     }
     requests.push({ url, method, body });
 
-    if (url.includes('/projects/proj_1/secrets') && method === 'GET') {
+    if (url.includes('/workspaces/proj_1/secrets') && method === 'GET') {
       return json({
         items: secretItems.map((s) => secret(s.identifier, s.name, s)),
         required: manifestRequired,
@@ -144,24 +145,24 @@ function mockApi() {
         manifest_path: 'kortix.yaml',
       });
     }
-    if (url.includes('/projects/proj_1/secrets/') && url.endsWith('/broker') && method === 'POST') {
+    if (url.includes('/workspaces/proj_1/secrets/') && url.endsWith('/broker') && method === 'POST') {
       return json({
         status: 201,
         headers: { 'content-type': 'application/json' },
         body_base64: Buffer.from('{"created":true}').toString('base64'),
       });
     }
-    if (url.endsWith('/projects/proj_1/secrets/sync') && method === 'POST') {
+    if (url.endsWith('/workspaces/proj_1/secrets/sync') && method === 'POST') {
       return json(syncResponse);
     }
-    if (url.includes('/projects/proj_1/secrets') && method === 'POST') {
+    if (url.includes('/workspaces/proj_1/secrets') && method === 'POST') {
       const input = typeof body === 'object' && body !== null ? body : {};
       const name = String(input.name).toUpperCase();
       const identifier = String(input.identifier ?? name);
       return json(secret(identifier, name));
     }
     if (
-      url.includes('/projects/proj_1/secrets/') &&
+      url.includes('/workspaces/proj_1/secrets/') &&
       url.endsWith('/strategy') &&
       method === 'PUT'
     ) {
@@ -176,7 +177,7 @@ function mockApi() {
         }),
       );
     }
-    if (url.includes('/projects/proj_1/secrets/') && method === 'DELETE') {
+    if (url.includes('/workspaces/proj_1/secrets/') && method === 'DELETE') {
       return json({ status: 'deleted' });
     }
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
@@ -190,7 +191,7 @@ beforeEach(() => {
     delete process.env[key];
   }
   process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
-  process.env.KORTIX_PROJECT_ID = 'proj_1';
+  process.env.KORTIX_WORKSPACE_ID = 'proj_1';
   originalCwd = process.cwd();
   tmp = mkdtempSync(join(tmpdir(), 'kortix-secrets-test-'));
   process.chdir(tmp);
@@ -582,6 +583,51 @@ describe('kortix secrets delivery', () => {
     });
   });
 
+  test('configures transparent network delivery for exact hosts and one header', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'egress',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+      '--template',
+      '{{secret}}',
+    ]);
+
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({
+      strategy: 'egress',
+      egress_policy: {
+        rules: [{ host: 'api.anthropic.com' }],
+        inject: { kind: 'header', name: 'x-api-key', template: '{{secret}}' },
+        on_no_match: 'deny',
+        tls: 'terminate',
+      },
+    });
+    expect(stripAnsi(stdout)).toContain('outside the sandbox');
+  });
+
+  test('rejects boundary controls that Platinum cannot enforce', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'egress',
+      '--allow-host',
+      '*.anthropic.com',
+      '--allow-method',
+      'POST',
+      '--inject-query',
+      'key',
+    ]);
+
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('exact hosts and header injection');
+  });
+
   test('configures an LLM gateway consumer without HTTP policy flags', async () => {
     const code = await runSecrets([
       'delivery',
@@ -679,7 +725,7 @@ describe('kortix secrets delivery', () => {
     ]);
     expect(code).toBe(2);
     expect(requests).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain('only valid for broker');
+    expect(stripAnsi(stderr)).toContain('only valid for broker or egress');
   });
 });
 

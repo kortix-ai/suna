@@ -499,7 +499,7 @@ flow(
   'AUD-FILTER',
   {
     domain: 'audit',
-    routes: ['GET /v1/accounts/:accountId/audit', 'GET /v1/projects/:projectId'],
+    routes: ['GET /v1/accounts/:accountId/audit', 'GET /v1/projects/:workspaceId'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
@@ -508,8 +508,8 @@ flow(
     const correlationId = ctx.fixtures.name('audit-reconstruction');
 
     await ctx.step('an allowlisted client header attributes the SDK surface', async () => {
-      const action = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', {
-        params: { projectId: project.id },
+      const action = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:workspaceId', {
+        params: { workspaceId: project.id },
         headers: {
           'x-correlation-id': correlationId,
           'x-kortix-client': 'cli',
@@ -654,11 +654,11 @@ flow(
   {
     domain: 'audit',
     routes: [
-      'GET /v1/projects/:projectId/audit',
+      'GET /v1/projects/:workspaceId/audit',
       'POST /v1/accounts/:accountId/audit/reconcile',
       'GET /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries',
       'POST /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay',
-      'POST /v1/projects/:projectId/sessions/:sessionId/audit/events',
+      'POST /v1/projects/:workspaceId/sessions/:sessionId/audit/events',
       'POST /v1/accounts/:accountId/audit/webhooks',
       'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId',
     ],
@@ -671,8 +671,8 @@ flow(
     let deliveryId = '';
 
     await ctx.step('project-scoped canonical audit page → 200', async () => {
-      const r = await owner.get('/v1/projects/:projectId/audit', {
-        params: { projectId: project.id },
+      const r = await owner.get('/v1/projects/:workspaceId/audit', {
+        params: { workspaceId: project.id },
         query: { limit: '10' },
       });
       r.status(200).body().exists('$.events').has('$.next_cursor', null);
@@ -723,11 +723,11 @@ flow(
 
     await ctx.step('human auth cannot ingest sandbox OpenCode events → 403', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/audit/events',
+        '/v1/projects/:workspaceId/sessions/:sessionId/audit/events',
         { events: [] },
         {
           params: {
-            projectId: project.id,
+            workspaceId: project.id,
             sessionId: '00000000-0000-4000-a000-000000000001',
           },
         },

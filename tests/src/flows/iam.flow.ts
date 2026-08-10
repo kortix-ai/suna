@@ -236,7 +236,10 @@ flow(
   'IAM-14',
   {
     domain: 'iam',
-    routes: ['GET /v1/accounts/:accountId/iam/groups/:groupId/project-grants'],
+    routes: [
+      'GET /v1/accounts/:accountId/iam/groups/:groupId/workspace-grants',
+      'GET /v1/accounts/:accountId/iam/groups/:groupId/project-grants',
+    ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -262,6 +265,14 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', {
+          params: { accountId: team.id, groupId },
+        });
+      r.status(200).body().exists('$.grants');
+    });
+    await ctx.step('list canonical workspace-grants (empty) → 200', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/groups/:groupId/workspace-grants', {
           params: { accountId: team.id, groupId },
         });
       r.status(200).body().exists('$.grants');
@@ -435,7 +446,10 @@ flow(
   'IAM-16',
   {
     domain: 'iam',
-    routes: ['GET /v1/accounts/:accountId/iam/members/:userId/project-access'],
+    routes: [
+      'GET /v1/accounts/:accountId/iam/members/:userId/workspace-access',
+      'GET /v1/accounts/:accountId/iam/members/:userId/project-access',
+    ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -447,6 +461,14 @@ flow(
           params: { accountId: team.id, userId: member.userId! },
         });
       r.status(200).body().exists('$.projects');
+    });
+    await ctx.step('OWNER reads canonical member workspace-access → 200', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/members/:userId/workspace-access', {
+          params: { accountId: team.id, userId: member.userId! },
+        });
+      r.status(200).body().exists('$.workspaces');
     });
     await ctx.step('NONMEMBER → 403', async () => {
       const r = await ctx.client

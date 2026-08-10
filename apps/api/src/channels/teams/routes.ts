@@ -2,8 +2,8 @@ import type { Context } from 'hono';
 import { teamsWebhookApp } from './app';
 import { teamsConfigured } from '../teams-auth';
 
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
-import { loadTeamsAppIdForProject } from '../install-store';
+import { workspaceFeatureFlagEnabled } from '../../feature-flags/for-workspace';
+import { loadTeamsAppIdForWorkspace } from '../install-store';
 import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
 import { handleFileConsentInvoke } from './file-proxy';
@@ -50,24 +50,24 @@ async function processActivity(c: Context, expectedAppId?: string | null): Promi
   return c.body(null, 200);
 }
 
-// Shared multi-tenant endpoint: the project is unknown until the activity's
-// tenant + conversation resolve to an install, so the per-project `teams` flag
+// Shared multi-tenant endpoint: the workspace is unknown until the activity's
+// tenant + conversation resolve to an install, so the per-Workspace `teams` flag
 // is enforced one level down in dispatch (handleTeamsActivity), not here.
 teamsWebhookApp.post('/messages', async (c) => {
   if (!teamsConfigured()) return c.json({ error: 'teams not configured' }, 503);
   return processActivity(c);
 });
 
-// Bring-your-own-bot endpoint: the project is in the path, so gate it here.
-teamsWebhookApp.post('/:projectId/messages', async (c) => {
-  const projectId = c.req.param('projectId');
+// Bring-your-own-bot endpoint: the workspace is in the path, so gate it here.
+teamsWebhookApp.post('/:workspaceId/messages', async (c) => {
+  const workspaceId = c.req.param('workspaceId');
   // UNAUTHENTICATED surface: same dark-when-off policy as the apps public
   // proxy. Anonymous callers get a plain 404 — never the `feature_disabled`
   // body, which names project flag state and is reserved for membered routes.
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) {
+  if (!(await workspaceFeatureFlagEnabled(workspaceId, 'teams'))) {
     return c.json({ error: 'Not found' }, 404);
   }
-  const appId = await loadTeamsAppIdForProject(projectId);
-  if (!appId) return c.json({ error: 'teams not configured for this project' }, 503);
+  const appId = await loadTeamsAppIdForWorkspace(workspaceId);
+  if (!appId) return c.json({ error: 'teams not configured for this workspace' }, 503);
   return processActivity(c, appId);
 });

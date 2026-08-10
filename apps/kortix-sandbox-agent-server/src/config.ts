@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { workspaceIdFromEnv } from './workspace-env'
+
 /**
  * Env contract for kortix-sandbox-agent-server.
  *
@@ -50,6 +52,7 @@ const Schema = z.object({
     .string()
     .default('/ephemeral/kortix-master/opencode'),
   KORTIX_PROJECT_AUTO_CLONE: BoolFlag.default(false),
+  KORTIX_WORKSPACE_ID: z.string().optional(),
   KORTIX_PROJECT_ID: z.string().optional(),
   KORTIX_API_URL: z.string().optional(),
   KORTIX_REPO_URL: z.string().optional(),
@@ -101,7 +104,7 @@ export type Config = {
   branchFetchDelaySec: number
   defaultOpencodeConfigDir: string
   autoClone: boolean
-  projectId: string | undefined
+  workspaceId: string | undefined
   apiUrl: string | undefined
   repoUrl: string | undefined
   branchName: string | undefined
@@ -129,6 +132,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_BRANCH_FETCH_DELAY: env.KORTIX_BRANCH_FETCH_DELAY,
     KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: env.KORTIX_DEFAULT_OPENCODE_CONFIG_DIR,
     KORTIX_PROJECT_AUTO_CLONE: env.KORTIX_PROJECT_AUTO_CLONE,
+    KORTIX_WORKSPACE_ID: env.KORTIX_WORKSPACE_ID,
     KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID,
     KORTIX_API_URL: env.KORTIX_API_URL,
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
@@ -155,7 +159,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     branchFetchDelaySec: parsed.KORTIX_BRANCH_FETCH_DELAY,
     defaultOpencodeConfigDir: parsed.KORTIX_DEFAULT_OPENCODE_CONFIG_DIR,
     autoClone: parsed.KORTIX_PROJECT_AUTO_CLONE,
-    projectId: parsed.KORTIX_PROJECT_ID,
+    workspaceId: workspaceIdFromEnv(env),
     apiUrl: parsed.KORTIX_API_URL,
     repoUrl: parsed.KORTIX_REPO_URL,
     branchName: parsed.KORTIX_BRANCH_NAME,

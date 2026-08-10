@@ -26,7 +26,7 @@ import type {
   MarketplaceSummary,
 } from '@/lib/marketplace-client';
 import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-slug';
-import { AddToProjectModal } from './add-to-project-modal';
+import { AddToWorkspaceModal } from './add-to-workspace-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
@@ -42,10 +42,10 @@ import {
   totalCapabilityCount,
 } from './marketplace-item-view';
 import { TypeTile, typeMeta } from './marketplace-meta';
-import { MarketplaceProjectCard } from './marketplace-project-card';
-import { projectBannerClass } from './marketplace-project-visual';
 import { MarketplaceShell } from './marketplace-shell';
 import { useMarketplaceSurface } from './marketplace-surface';
+import { MarketplaceWorkspaceCard } from './marketplace-workspace-card';
+import { workspaceBannerClass } from './marketplace-workspace-visual';
 
 function stripFrontmatter(md: string): string {
   if (md.startsWith('---')) {
@@ -77,8 +77,8 @@ function RowPanel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** A bundle/project member — navigates via the surface (route link on public,
- *  detail-store button in the in-project overlay). */
+/** A bundle/workspace member — navigates via the surface (route link on public,
+ *  detail-store button in the in-workspace overlay). */
 function BundleMemberRow({
   id,
   title,
@@ -190,8 +190,8 @@ function ExpandableText({ text }: { text: string }) {
   );
 }
 
-/** The primary CTA area — ONE "Add to a project" action (opens
- *  `AddToProjectModal`, which starts an agent-import session) for every item
+/** The primary CTA area — ONE "Add to a workspace" action (opens
+ *  `AddToWorkspaceModal`, which starts an agent-import session) for every item
  *  type on every surface. Public + signed-out gets an auth-redirect button
  *  instead. Adding is always an agent import now, so there's no deterministic
  *  "installed" state to track here and no Remove affordance. */
@@ -201,7 +201,7 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
 
   const [addOpen, setAddOpen] = useState(false);
 
-  const inProject = surface.variant === 'project';
+  const inWorkspace = surface.variant === 'workspace';
 
   if (!authLoading && !user && surface.variant === 'public') {
     const redirectHref = surface.itemHref(data.id);
@@ -224,14 +224,14 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
           disabled={authLoading}
           onClick={() => setAddOpen(true)}
         >
-          Add to a project
+          Add to a workspace
         </Button>
       </div>
-      <AddToProjectModal
+      <AddToWorkspaceModal
         item={data}
         open={addOpen}
         onOpenChange={setAddOpen}
-        fixedProjectId={inProject ? surface.projectId : undefined}
+        fixedWorkspaceId={inWorkspace ? surface.workspaceId : undefined}
       />
     </>
   );
@@ -256,7 +256,7 @@ function ItemSidebar({
 }) {
   const surface = useMarketplaceSurface();
   const tm = typeMeta(data.type);
-  const isProject = data.type === 'registry:project';
+  const isWorkspace = data.type === 'registry:workspace';
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
   const sourceUrl = company?.sourceUrl ?? data.sourceUrl;
   const companyClickable = surface.variant === 'public';
@@ -264,11 +264,11 @@ function ItemSidebar({
   return (
     <>
       <div className="space-y-4">
-        {isProject ? (
+        {isWorkspace ? (
           <div
             className={cn(
               'flex h-20 items-center justify-center rounded-md bg-gradient-to-br',
-              projectBannerClass(data.name || data.id),
+              workspaceBannerClass(data.name || data.id),
             )}
           >
             <Boxes className="text-foreground/60 size-7" aria-hidden />
@@ -307,7 +307,7 @@ function ItemSidebar({
 
       {data.partOfProject ? (
         <div>
-          <SectionLabel>Part of a project</SectionLabel>
+          <SectionLabel>Part of a workspace</SectionLabel>
           {surface.variant === 'public' ? (
             <Link
               href={marketplaceItemHref(data.partOfProject.id)}
@@ -401,7 +401,7 @@ export interface DetailNav {
  * Derives the `DetailPager` nav from a sibling id list + the currently open
  * id — 1-based position, and prev/next callbacks clamped at the ends.
  * Shared by the public detail page (`MarketplaceDetailPublic`, which routes
- * between item pages) and the in-project overlay (`MarketplaceView`, which
+ * between item pages) and the in-workspace overlay (`MarketplaceView`, which
  * drives the detail store instead) — they differ only in what `goTo` does.
  */
 export function useDetailNav(
@@ -469,22 +469,22 @@ function DetailPager({ nav }: { nav: DetailNav }) {
 
 /**
  * The one marketplace item detail — used both as the public SSR page and as
- * the in-project Customize overlay. Variant + navigation come from
+ * the in-workspace Customize overlay. Variant + navigation come from
  * `useMarketplaceSurface`; `onBack` (present in the overlay) turns the first
  * breadcrumb into an in-panel back button.
  */
 export function MarketplaceDetail({
   data,
   company,
-  otherProjects = [],
+  otherWorkspaces = [],
   onBack,
   nav,
 }: {
   data: MarketplaceItemDetail;
   company?: MarketplaceSummary;
-  /** Other `registry:project` items, for cross-link discovery (public only). */
-  otherProjects?: MarketplaceItem[];
-  /** In-project overlay: renders an embedded shell + a back-button crumb. */
+  /** Other `registry:workspace` items, for cross-link discovery (public only). */
+  otherWorkspaces?: MarketplaceItem[];
+  /** In-workspace overlay: renders an embedded shell + a back-button crumb. */
   onBack?: () => void;
   /** Floating pager over the surrounding item list (← / → + position). */
   nav?: DetailNav;
@@ -512,8 +512,8 @@ export function MarketplaceDetail({
 
   const capGroups = groupCapabilities(data.capabilities);
   const capCount = totalCapabilityCount(data.capabilities);
-  const isProject = data.type === 'registry:project';
-  const isBundle = data.type === 'registry:bundle' || isProject;
+  const isWorkspace = data.type === 'registry:workspace';
+  const isBundle = data.type === 'registry:bundle' || isWorkspace;
   const bundleMembers = isBundle
     ? resolveBundleMembers({
         dependencies: data.dependencies,
@@ -521,13 +521,13 @@ export function MarketplaceDetail({
         hrefForId: (id) => id,
       })
     : [];
-  // A project shows its README first, then its contents rendered as the SAME
+  // A workspace shows its README first, then its contents rendered as the SAME
   // marketplace cards, in the SAME typed grid, as the main gallery — so a skill
-  // inside the project looks exactly like a skill listed on the marketplace.
+  // inside the workspace looks exactly like a skill listed on the marketplace.
   // Each content item is a full catalog id, so we synthesize a MarketplaceItem
-  // from the resolved dependency metadata + the project's own source identity.
+  // from the resolved dependency metadata + the workspace's own source identity.
   const memberItemGroups = useMemo(() => {
-    if (!isProject) return [];
+    if (!isWorkspace) return [];
     const byName = new Map(data.dependencyItems.map((d) => [d.name, d]));
     const items: MarketplaceItem[] = data.dependencies
       .map((name) => byName.get(name))
@@ -550,12 +550,12 @@ export function MarketplaceDetail({
         sourceUrl: data.sourceUrl,
       }));
     return groupMarketplaceItemsByType(items);
-  }, [isProject, data]);
-  // A project's agents + triggers (parsed from kortix.yaml) rendered with the
+  }, [isWorkspace, data]);
+  // A workspace's agents + triggers (parsed from kortix.yaml) rendered with the
   // SAME card + name-based icon heuristic as its skills — just non-navigable,
   // since they aren't their own catalog items.
-  const projectExtraGroups = useMemo(() => {
-    if (!isProject) return [] as { label: string; items: MarketplaceItem[] }[];
+  const workspaceExtraGroups = useMemo(() => {
+    if (!isWorkspace) return [] as { label: string; items: MarketplaceItem[] }[];
     const toItem = (
       name: string,
       title: string,
@@ -580,24 +580,24 @@ export function MarketplaceDetail({
       sourceUrl: data.sourceUrl,
     });
     const groups: { label: string; items: MarketplaceItem[] }[] = [];
-    if (data.projectAgents?.length) {
+    if (data.workspaceAgents?.length) {
       groups.push({
         label: 'Agents',
-        items: data.projectAgents.map((a) =>
+        items: data.workspaceAgents.map((a) =>
           toItem(a.name, a.title.replaceAll('-', ' '), a.description, 'registry:agent', 'agent'),
         ),
       });
     }
-    if (data.projectTriggers?.length) {
+    if (data.workspaceTriggers?.length) {
       groups.push({
         label: 'Triggers',
-        items: data.projectTriggers.map((t) =>
+        items: data.workspaceTriggers.map((t) =>
           toItem(t.slug, t.slug.replaceAll('-', ' '), t.description, 'registry:trigger', 'trigger'),
         ),
       });
     }
     return groups;
-  }, [isProject, data]);
+  }, [isWorkspace, data]);
   const readme = data.readme ? stripFrontmatter(data.readme) : '';
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
@@ -615,21 +615,21 @@ export function MarketplaceDetail({
     setSelectedFile(readmeTarget);
   }, [readmeTarget]);
 
-  // A skill that ships inside a project gets that project as a breadcrumb level:
+  // A skill that ships inside a workspace gets that workspace as a breadcrumb level:
   // Marketplace / <source> / <Project> / <item>.
-  const projectCrumb = data.partOfProject
+  const workspaceCrumb = data.partOfProject
     ? { label: data.partOfProject.title, href: marketplaceItemHref(data.partOfProject.id) }
     : null;
   const crumbs = onBack
     ? [
         { label: 'Marketplace', onClick: onBack },
-        ...(projectCrumb ? [projectCrumb] : []),
+        ...(workspaceCrumb ? [workspaceCrumb] : []),
         { label: itemTitle },
       ]
     : [
         { label: 'Marketplace', href: '/marketplace' },
         { label: companyLabel, href: marketplaceSourceHref(data.marketplaceId) },
-        ...(projectCrumb ? [projectCrumb] : []),
+        ...(workspaceCrumb ? [workspaceCrumb] : []),
         { label: itemTitle },
       ];
 
@@ -658,10 +658,10 @@ export function MarketplaceDetail({
       </section>
     );
 
-  // Non-project bundles keep the flat "What's inside" row list; a project renders
+  // Non-workspace bundles keep the flat "What's inside" row list; a workspace renders
   // its contents as marketplace cards (memberItemGroups) below its README.
   const membersSection =
-    !isProject && isBundle && bundleMembers.length > 0 ? (
+    !isWorkspace && isBundle && bundleMembers.length > 0 ? (
       <section>
         <SectionLabel count={bundleMembers.length}>What&rsquo;s inside</SectionLabel>
         <RowPanel>
@@ -696,9 +696,9 @@ export function MarketplaceDetail({
         }
       >
         <div className="space-y-8">
-          {isProject ? (
+          {isWorkspace ? (
             <>
-              {/* README first — the file view defaults to the project's README.md
+              {/* README first — the file view defaults to the workspace's README.md
                 (the sidebar file tree drives it to browse any other file). */}
               {filesSection}
               {/* Then the contents, as the SAME cards + typed grid as the gallery. */}
@@ -714,7 +714,7 @@ export function MarketplaceDetail({
               ))}
               {/* Agents + triggers (from kortix.yaml), rendered as the SAME cards
                 in the SAME grid as the skills above — just non-navigable. */}
-              {projectExtraGroups.map((g) => (
+              {workspaceExtraGroups.map((g) => (
                 <section key={g.label}>
                   <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
                   <div className="grid gap-3 sm:grid-cols-3">
@@ -762,12 +762,12 @@ export function MarketplaceDetail({
             </section>
           ) : null}
 
-          {isProject && otherProjects.length > 0 ? (
+          {isWorkspace && otherWorkspaces.length > 0 ? (
             <section>
-              <SectionLabel count={otherProjects.length}>Other projects</SectionLabel>
+              <SectionLabel count={otherWorkspaces.length}>Other workspaces</SectionLabel>
               <div className="grid gap-3 sm:grid-cols-2">
-                {otherProjects.map((project) => (
-                  <MarketplaceProjectCard key={project.id} item={project} />
+                {otherWorkspaces.map((workspace) => (
+                  <MarketplaceWorkspaceCard key={workspace.id} item={workspace} />
                 ))}
               </div>
             </section>

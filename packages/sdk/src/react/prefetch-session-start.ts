@@ -2,7 +2,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 
-import { sessionStartKey, startProjectSession } from '../core/rest/projects-client';
+import { sessionStartKey, startWorkspaceSession } from '../core/rest/workspaces-client';
 
 /**
  * Begin the session runtime boot DURING the route transition (before the session
@@ -13,12 +13,12 @@ import { sessionStartKey, startProjectSession } from '../core/rest/projects-clie
  */
 export function prefetchSessionStart(
   queryClient: QueryClient,
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
 ): void {
   void queryClient.prefetchQuery({
-    queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId, sessionId),
+    queryKey: sessionStartKey(workspaceId, sessionId),
+    queryFn: () => startWorkspaceSession(workspaceId, sessionId),
     staleTime: 0,
   });
 }

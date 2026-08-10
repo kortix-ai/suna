@@ -366,7 +366,7 @@ async function cmdCreate(a: Args) {
       if (tries === 5) die('could not find a free port block after 6 slots');
     }
     const ports = computePorts(slot);
-    const e: SlotEntry = { slot, projectId: `kortix-wt-${name}`, path: wtPath, branch, ports, dbMode: requestedDbMode, createdAt: new Date().toISOString(), status: 'created' };
+    const e: SlotEntry = { slot, workspaceId: `kortix-wt-${name}`, path: wtPath, branch, ports, dbMode: requestedDbMode, createdAt: new Date().toISOString(), status: 'created' };
     reg.slots[name] = e; saveRegistry(reg);
     return e;
   });
@@ -408,8 +408,8 @@ async function cmdCreate(a: Args) {
   if (await run(['pnpm', 'install'], { cwd: wtPath }) !== 0) die(`pnpm install failed — fix and re-run \`pnpm worktree create --name ${name}\``);
 
   if (dbMode === 'isolated') {
-    step(`Rendering isolated Supabase project ${pc.dim('('+entry.projectId+')')}`);
-    renderSupabaseProject(name, wtPath, entry.projectId, entry.ports);
+    step(`Rendering isolated Supabase project ${pc.dim('('+entry.workspaceId+')')}`);
+    renderSupabaseProject(name, wtPath, entry.workspaceId, entry.ports);
 
     step(`Starting isolated Postgres on db ${entry.ports.sbDb}`);
     if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
@@ -473,7 +473,7 @@ async function cmdStart(a: Args) {
 
   let creds;
   if (dbMode === 'isolated') {
-    renderSupabaseProject(name, e.path, e.projectId, e.ports);
+    renderSupabaseProject(name, e.path, e.workspaceId, e.ports);
     step(`Starting Postgres for "${name}"`);
     if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
     step('Applying pending migrations (pnpm migrate)');
@@ -614,7 +614,7 @@ async function cmdStopAll() {
  * branch, slot). The confirmation and multi-name loop live in `cmdNuke`.
  */
 async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string | boolean>): Promise<void> {
-  const pid = e.projectId;
+  const pid = e.workspaceId;
   const dbMode = dbModeOf(e);
   step(`Nuking "${name}" ${pc.dim(dbMode === 'isolated' ? '(project ' + pid + ')' : '(shared DB mode)')}`);
   const stopped = await stopStack(e);
@@ -741,7 +741,7 @@ async function cmdDoctor(a: Args) {
     else if (!wts.includes(`worktree ${e.path}`)) issues.push('not a registered git worktree');
     const dbMode = dbModeOf(e);
     const orphan = dbMode === 'isolated'
-      ? sh(['bash', '-lc', `docker ps -aq --filter "name=_${e.projectId}$" | head -1`]).stdout.trim()
+      ? sh(['bash', '-lc', `docker ps -aq --filter "name=_${e.workspaceId}$" | head -1`]).stdout.trim()
       : '';
     console.log(`  ${issues.length ? pc.red('✗') : pc.green('✓')} ${n} ${pc.dim('(' + dbMode + ')')}${issues.length ? ' ' + pc.red(issues.join('; ')) : ''}${orphan ? pc.dim(' (containers present)') : ''}`);
   }

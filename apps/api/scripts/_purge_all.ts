@@ -19,10 +19,10 @@ if (DRY) process.exit(0);
 for (const [acc, ps] of byAcc) {
   const tok = (await createAccountToken({ accountId: acc, userId: acc, name: 'purge' })).secretKey;
   for (const p of ps) {
-    const r = await fetch(`http://localhost:8008/v1/projects/${(p as any).projectId}`, {
+    const r = await fetch(`http://localhost:8008/v1/projects/${(p as any).workspaceId}`, {
       method: 'DELETE', headers: { Authorization: `Bearer ${tok}` },
     });
-    console.log(`DELETE project ${(p as any).projectId.slice(0, 8)} (${(p as any).name ?? ''}) -> ${r.status}`);
+    console.log(`DELETE project ${(p as any).workspaceId.slice(0, 8)} (${(p as any).name ?? ''}) -> ${r.status}`);
   }
 }
 // orphan session sandboxes with live platinum VMs

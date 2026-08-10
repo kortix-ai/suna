@@ -49,7 +49,7 @@ const {
   refreshMirror,
   repoCachePath,
   runGit,
-} = await import('../projects/git/mirror');
+} = await import('../workspaces/git/mirror');
 
 test('runGit applies backend-produced Authorization headers without rebuilding GitHub auth', async () => {
   const basic = `Basic ${Buffer.from('t:code-storage-jwt').toString('base64')}`;
@@ -174,7 +174,7 @@ describe('refreshMirror — partial-clone cleanup on failure', () => {
     const badUpstream = join(workdir, 'does-not-exist');
 
     const project = {
-      projectId: 'cccccccc-0000-0000-0000-000000000003',
+      workspaceId: 'cccccccc-0000-0000-0000-000000000003',
       repoUrl: badUpstream,
       defaultBranch: 'main',
       manifestPath: '',
@@ -209,7 +209,7 @@ describe('refreshMirror — partial-clone cleanup on failure', () => {
     await git(['commit', '-m', 'init'], upstream);
 
     const project = {
-      projectId: 'dddddddd-0000-0000-0000-000000000004',
+      workspaceId: 'dddddddd-0000-0000-0000-000000000004',
       repoUrl: upstream,
       defaultBranch: 'main',
       manifestPath: '',
@@ -242,7 +242,7 @@ describe('refreshMirror — partial-clone cleanup on failure', () => {
     await git(['commit', '-m', 'init'], upstream);
 
     const project = {
-      projectId: 'eeeeeeee-0000-0000-0000-000000000005',
+      workspaceId: 'eeeeeeee-0000-0000-0000-000000000005',
       repoUrl: upstream,
       defaultBranch: 'main',
       manifestPath: '',

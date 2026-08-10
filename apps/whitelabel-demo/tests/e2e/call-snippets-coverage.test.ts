@@ -359,7 +359,7 @@ const OFF_CHAIN_ACTIONS: {
 describe('every snippet builds', () => {
   test('with nothing filled in, and with everything filled in', () => {
     const full = {
-      projectId: 'p1',
+      workspaceId: 'p1',
       sessionId: 's1',
       projectName: 'Acme workspace',
       executionId: 'exec_1',
@@ -403,7 +403,7 @@ describe('the panel covers every KaaB action this app performs', () => {
     // back through the SAME scanner, and the signature has to come out of it.
     for (const [signature, verdict] of Object.entries(ACTIONS)) {
       for (const id of snippetIds(verdict)) {
-        const snippet = callSnippet(id, { projectId: 'p1', sessionId: 's1' });
+        const snippet = callSnippet(id, { workspaceId: 'p1', sessionId: 's1' });
         expect({
           signature,
           id,
@@ -459,7 +459,7 @@ describe('the panel covers every KaaB action this app performs', () => {
 describe('the new coverage does not weaken the two rules', () => {
   test('no snippet renders a bearer that is not the placeholder', () => {
     const text = callSnippets({
-      projectId: 'p1',
+      workspaceId: 'p1',
       secret: { identifier: 'STRIPE_KEY', name: 'STRIPE_SECRET_KEY' },
     })
       .map((s) => `${s.sdk}\n${renderHttp(s.http)}\n${s.notes.join('\n')}`)
@@ -468,7 +468,7 @@ describe('the new coverage does not weaken the two rules', () => {
   });
 
   test('no snippet renders upstream customer attribution fields', () => {
-    const text = callSnippets({ projectId: 'p1' })
+    const text = callSnippets({ workspaceId: 'p1' })
       .map(
         (snippet) =>
           `${snippet.sdk}\n${renderHttp(snippet.http)}\n${snippet.notes.join('\n')}`,

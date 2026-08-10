@@ -17,7 +17,7 @@ import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/runtime-files';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/workspace-files';
 import { track } from '@/lib/track';
 import {
   AppWindowIcon as AppWindow,

@@ -31,7 +31,7 @@
  */
 import { and, asc, count, desc, eq, gt, inArray } from 'drizzle-orm';
 import { projectSessions, voiceCallTurns } from '@kortix/db';
-import { continueSession } from '../../projects/session-lifecycle';
+import { continueSession } from '../../workspaces/session-lifecycle';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import {
@@ -67,7 +67,7 @@ const DEFAULT_VOICE: (typeof VOICES)[number] = 'alloy';
 
 export interface VoiceCall {
   callId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   voice: string;
   /** LiveKit room name — `roomNameForCall(callId)`. */
@@ -85,7 +85,7 @@ export interface VoiceCall {
  * worker is in that room. What the Map added was a second, wrong answer: it
  * outlived calls the worker had already left (so `voice_spawn` reported a live
  * call and handed out a link to an empty room), it 404'd `/voice/prompt` with
- * "call not found" for requests whose URL already named the project and session,
+ * "call not found" for requests whose URL already named the workspace and session,
  * and being per-process it could only ever be right on a single API pod.
  */
 export async function isCallLive(callId: string): Promise<boolean> {
@@ -113,7 +113,7 @@ export interface VoiceWorkerMetadata extends VoiceRoomMetadata {
 
 export interface StartCallInput {
   callId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   botName: string;
   voice?: string | null;
@@ -126,7 +126,7 @@ export async function startCall(input: StartCallInput): Promise<VoiceCall> {
 
   const call: VoiceCall = {
     callId: input.callId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     sessionId: input.sessionId,
     voice,
     room,
@@ -153,7 +153,7 @@ export async function startCall(input: StartCallInput): Promise<VoiceCall> {
   }
 
   const roomMetadata: VoiceRoomMetadata = {
-    project_id: input.projectId,
+    project_id: input.workspaceId,
     session_id: input.sessionId,
     call_id: input.callId,
     kortix_api_url: config.KORTIX_URL,
@@ -256,9 +256,9 @@ function truncateForTranscript(text: string, max: number): string {
  */
 export async function settleAsk(callId: string, outcome: string): Promise<void> {
   try {
-    const projectId = await projectIdForSession(callId);
-    if (!projectId) {
-      console.error('[voice] cannot settle ask — no project for call', { callId });
+    const workspaceId = await projectIdForSession(callId);
+    if (!workspaceId) {
+      console.error('[voice] cannot settle ask — no workspace for call', { callId });
       return;
     }
     // `<tool>: <detail>` — the same shape every other tool row uses, so the call
@@ -266,7 +266,7 @@ export async function settleAsk(callId: string, outcome: string): Promise<void> 
     // redundant prefix and renders just the outcome, with no change needed
     // there. `ask_kortix → answered` would have rendered the tool name twice.
     await appendTurn(
-      { callId, projectId, sessionId: callId },
+      { callId, workspaceId, sessionId: callId },
       'tool',
       `${ASK_SETTLED_SPEAKER}: ${outcome}`,
       ASK_SETTLED_SPEAKER,
@@ -344,7 +344,7 @@ export async function askKortix(
         void promptVoiceAgent(
           call.callId,
           kortixSay("I couldn't reach the agent session just now, so that request didn't go through."),
-          { projectId: call.projectId },
+          { workspaceId: call.workspaceId },
         );
         // And it would hold the hand-off slot until the timeout expires. The
         // watch is still running and will settle again when it gives up; a
@@ -361,7 +361,7 @@ export async function askKortix(
 }
 
 export async function appendTurn(
-  call: Pick<VoiceCall, 'callId' | 'projectId' | 'sessionId'>,
+  call: Pick<VoiceCall, 'callId' | 'workspaceId' | 'sessionId'>,
   // 'tool' = a record of an ask_kortix/run_command call the worker made
   // through the voice MCP (mcp.ts's callTool) — not spoken, but part of what
   // "what did the voice agent DO" needs to show.
@@ -373,7 +373,7 @@ export async function appendTurn(
   if (!clean) return;
   await db.insert(voiceCallTurns).values({
     callId: call.callId,
-    projectId: call.projectId,
+    workspaceId: call.workspaceId,
     sessionId: call.sessionId,
     role,
     speaker: speaker ?? null,
@@ -505,7 +505,7 @@ export async function endCall(callId: string): Promise<boolean> {
 export async function promptVoiceAgent(
   callId: string,
   utterance: KortixUtterance,
-  opts: { projectId?: string | null } = {},
+  opts: { workspaceId?: string | null } = {},
 ): Promise<{ delivered: boolean; reason?: string }> {
   const room = roomNameForCall(callId);
   if (!(await roomHasAgent(room))) {
@@ -518,7 +518,7 @@ export async function promptVoiceAgent(
   });
   // Record HERE, at the moment the room is given something to hear — not when
   // the worker echoes it back. See `recordKortixUtterance`.
-  await recordKortixUtterance(callId, utterance, opts.projectId ?? null);
+  await recordKortixUtterance(callId, utterance, opts.workspaceId ?? null);
   return { delivered: true };
 }
 
@@ -551,16 +551,16 @@ export async function promptVoiceAgent(
 async function recordKortixUtterance(
   callId: string,
   utterance: KortixUtterance,
-  projectId: string | null,
+  workspaceId: string | null,
 ): Promise<void> {
   try {
-    const resolved = projectId ?? (await projectIdForSession(callId));
+    const resolved = workspaceId ?? (await projectIdForSession(callId));
     if (!resolved) {
-      console.error('[voice] cannot record kortix utterance — no project for call', { callId });
+      console.error('[voice] cannot record kortix utterance — no workspace for call', { callId });
       return;
     }
     await appendTurn(
-      { callId, projectId: resolved, sessionId: callId },
+      { callId, workspaceId: resolved, sessionId: callId },
       'agent',
       utterance.transcript,
       KORTIX_SPEAKER,
@@ -573,14 +573,14 @@ async function recordKortixUtterance(
 /**
  * `project_id` is NOT NULL on voice_call_turns, and most callers into a live
  * call (turn.ts, answer-watch.ts) only ever hold a session id — the call id IS
- * the session id, so the project is one indexed lookup away rather than
+ * the session id, so the workspace is one indexed lookup away rather than
  * something every caller has to thread through.
  */
 async function projectIdForSession(sessionId: string): Promise<string | null> {
   const [row] = await db
-    .select({ projectId: projectSessions.projectId })
+    .select({ workspaceId: projectSessions.workspaceId })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  return row?.projectId ?? null;
+  return row?.workspaceId ?? null;
 }

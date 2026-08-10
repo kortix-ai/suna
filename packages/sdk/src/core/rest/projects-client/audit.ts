@@ -70,7 +70,7 @@ export interface ListAccountAuditOptions {
   action?: string;
   actor?: string;
   actorType?: 'human' | 'agent' | 'service_account' | 'system';
-  projectId?: string;
+  workspaceId?: string;
   sessionId?: string;
   source?: string;
   /** Exact lifecycle phase, such as pending, completed, failed, or denied. */
@@ -96,7 +96,7 @@ export async function listAccountAudit(accountId: string, options?: ListAccountA
   if (options?.action) search.set('action', options.action);
   if (options?.actor) search.set('actor', options.actor);
   if (options?.actorType) search.set('actor_type', options.actorType);
-  if (options?.projectId) search.set('project_id', options.projectId);
+  if (options?.workspaceId) search.set('project_id', options.workspaceId);
   if (options?.sessionId) search.set('session_id', options.sessionId);
   if (options?.source) search.set('source', options.source);
   if (options?.phase) search.set('phase', options.phase);
@@ -116,7 +116,7 @@ export async function listAccountAudit(accountId: string, options?: ListAccountA
 }
 
 /** Canonical project-scoped audit timeline. The API binds project scope server-side. */
-export async function listProjectAudit(projectId: string, options?: ListAccountAuditOptions) {
+export async function listProjectAudit(workspaceId: string, options?: ListAccountAuditOptions) {
   const search = new URLSearchParams();
   if (options?.action) search.set('action', options.action);
   if (options?.actor) search.set('actor', options.actor);
@@ -135,7 +135,7 @@ export async function listProjectAudit(projectId: string, options?: ListAccountA
   if (options?.limit != null) search.set('limit', String(options.limit));
   const qs = search.toString();
   return unwrap(
-    await backendApi.get<AuditEventList>(`/projects/${projectId}/audit${qs ? `?${qs}` : ''}`),
+    await backendApi.get<AuditEventList>(`/projects/${workspaceId}/audit${qs ? `?${qs}` : ''}`),
   );
 }
 
@@ -144,7 +144,7 @@ export interface ExportAccountAuditOptions {
   action?: string;
   actor?: string;
   actorType?: 'human' | 'agent' | 'service_account' | 'system';
-  projectId?: string;
+  workspaceId?: string;
   sessionId?: string;
   source?: string;
   phase?: string;
@@ -178,7 +178,7 @@ export async function exportAccountAudit(
   if (options?.action) search.set('action', options.action);
   if (options?.actor) search.set('actor', options.actor);
   if (options?.actorType) search.set('actor_type', options.actorType);
-  if (options?.projectId) search.set('project_id', options.projectId);
+  if (options?.workspaceId) search.set('project_id', options.workspaceId);
   if (options?.sessionId) search.set('session_id', options.sessionId);
   if (options?.source) search.set('source', options.source);
   if (options?.phase) search.set('phase', options.phase);

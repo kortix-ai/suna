@@ -1,6 +1,6 @@
 'use client';
 
-import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
+import { PublicShareLinkButton } from '@/components/workspaces/public-share-link-button';
 import { Button } from '@/components/ui/button';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -63,7 +63,7 @@ export interface FilePreviewModalProps extends FilePreviewState {
   /** Optional extra toolbar actions, shown before Download (e.g. open-in-tab). */
   extraActions?: ReactNode;
   /** Public share context. Omit for non-session file surfaces. */
-  shareContext?: { projectId: string; sessionId: string };
+  shareContext?: { workspaceId: string; sessionId: string };
   /** History button tooltip. */
   historyLabel?: string;
   /**
@@ -347,7 +347,7 @@ export function FilePreviewModal({
         </Button>
         {shareContext && (
           <PublicShareLinkButton
-            projectId={shareContext.projectId}
+            workspaceId={shareContext.workspaceId}
             sessionId={shareContext.sessionId}
             input={shareInput}
             tooltip={tI18nHardcoded.raw(

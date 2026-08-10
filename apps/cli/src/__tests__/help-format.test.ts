@@ -12,7 +12,7 @@ Subcommands:
                    to a second line.
 
 Global options:
-  --project <id>   Operate on this project id.
+  --project <id>   Operate on this workspace id.
   -h, --help       Show this help.
 `;
 

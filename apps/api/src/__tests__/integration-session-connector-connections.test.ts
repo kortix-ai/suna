@@ -37,14 +37,14 @@ import {
   resolveSessionConnectorConnection,
   sessionConnectorBindingsRequirePrivateVisibility,
   validateSessionConnectorBindings,
-} from '../projects/lib/session-connector-bindings';
-import { encryptProjectSecret } from '../projects/secrets';
+} from '../workspaces/lib/session-connector-bindings';
+import { encryptWorkspaceSecret } from '../workspaces/secrets';
 import { db } from '../shared/db';
 
 const ACCOUNT_A = crypto.randomUUID();
 const ACCOUNT_B = crypto.randomUUID();
-const PROJECT_A = crypto.randomUUID();
-const PROJECT_B = crypto.randomUUID();
+const WORKSPACE_A = crypto.randomUUID();
+const WORKSPACE_B = crypto.randomUUID();
 const CONNECTOR_A = crypto.randomUUID();
 const CONNECTOR_B = crypto.randomUUID();
 const EMAIL_CONNECTOR = crypto.randomUUID();
@@ -78,13 +78,13 @@ beforeAll(async () => {
   ]);
   await db.insert(projects).values([
     {
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       accountId: ACCOUNT_A,
       name: 'connection-test-a',
       repoUrl: 'https://example.test/connection-a.git',
     },
     {
-      projectId: PROJECT_B,
+      workspaceId: WORKSPACE_B,
       accountId: ACCOUNT_B,
       name: 'connection-test-b',
       repoUrl: 'https://example.test/connection-b.git',
@@ -102,7 +102,7 @@ beforeAll(async () => {
     {
       connectorId: CONNECTOR_A,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       slug: 'veyris',
       name: 'VEYRIS',
       providerType: 'http',
@@ -112,7 +112,7 @@ beforeAll(async () => {
     {
       connectorId: CONNECTOR_B,
       accountId: ACCOUNT_B,
-      projectId: PROJECT_B,
+      workspaceId: WORKSPACE_B,
       slug: 'veyris',
       name: 'VEYRIS foreign',
       providerType: 'http',
@@ -121,7 +121,7 @@ beforeAll(async () => {
     {
       connectorId: EMAIL_CONNECTOR,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       slug: 'kortix_email',
       name: 'Email',
       providerType: 'channel',
@@ -130,7 +130,7 @@ beforeAll(async () => {
     {
       connectorId: MISSING_CONNECTOR_A,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       slug: 'missing_one',
       name: 'Missing one',
       providerType: 'http',
@@ -140,7 +140,7 @@ beforeAll(async () => {
     {
       connectorId: MISSING_CONNECTOR_B,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       slug: 'missing_two',
       name: 'Missing two',
       providerType: 'http',
@@ -150,7 +150,7 @@ beforeAll(async () => {
     {
       connectorId: SECRET_CONNECTOR,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       slug: 'secret_backed',
       name: 'Secret-backed connector',
       providerType: 'http',
@@ -169,7 +169,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_DEFAULT,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       label: 'Default workspace',
       isDefault: true,
@@ -177,7 +177,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_A,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       ownerType: 'member',
       ownerId: USER,
@@ -186,7 +186,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_B,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       ownerType: 'member',
       ownerId: OTHER_USER,
@@ -195,7 +195,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_EXTERNAL,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       ownerType: 'external',
       ownerId: 'managed-workspace',
@@ -204,7 +204,7 @@ beforeAll(async () => {
     {
       connectionId: CONNECTION_SERVICE_ACCOUNT,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       ownerType: 'member',
       ownerId: SERVICE_ACCOUNT,
@@ -213,7 +213,7 @@ beforeAll(async () => {
     {
       connectionId: EMAIL_CONNECTION_DEFAULT,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: EMAIL_CONNECTOR,
       label: 'Default email',
       isDefault: true,
@@ -221,7 +221,7 @@ beforeAll(async () => {
     {
       connectionId: SECRET_CONNECTION_DEFAULT,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: SECRET_CONNECTOR,
       label: 'Secret-backed default',
       isDefault: true,
@@ -229,7 +229,7 @@ beforeAll(async () => {
     {
       connectionId: FOREIGN_CONNECTION,
       accountId: ACCOUNT_B,
-      projectId: PROJECT_B,
+      workspaceId: WORKSPACE_B,
       connectorId: CONNECTOR_B,
       label: 'Foreign default',
       isDefault: true,
@@ -239,7 +239,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_A,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       branchName: SESSION_A,
       createdBy: USER,
       connectorBindingsConfigured: true,
@@ -247,7 +247,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_B,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       branchName: SESSION_B,
       createdBy: OTHER_USER,
       connectorBindingsConfigured: true,
@@ -255,14 +255,14 @@ beforeAll(async () => {
     {
       sessionId: SESSION_DEFAULT,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       branchName: SESSION_DEFAULT,
       createdBy: USER,
     },
     {
       sessionId: SESSION_IMPERSONATION,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       branchName: SESSION_IMPERSONATION,
       createdBy: USER,
       visibility: 'private',
@@ -271,7 +271,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_SERVICE_ACCOUNT,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       branchName: SESSION_SERVICE_ACCOUNT,
       createdBy: SERVICE_ACCOUNT,
       visibility: 'private',
@@ -280,14 +280,14 @@ beforeAll(async () => {
     {
       sessionId: SESSION_AUTO_EMAIL,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       branchName: SESSION_AUTO_EMAIL,
       createdBy: USER,
     },
     {
       sessionId: SESSION_INHERIT_UNBOUND,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       branchName: SESSION_INHERIT_UNBOUND,
       createdBy: USER,
       connectorBindingsConfigured: true,
@@ -296,7 +296,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_EXPLICIT_EMPTY,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       branchName: SESSION_EXPLICIT_EMPTY,
       createdBy: USER,
       connectorBindingsConfigured: true,
@@ -306,7 +306,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_A,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorAlias: 'veyris',
       connectorId: CONNECTOR_A,
       connectionId: CONNECTION_A,
@@ -316,7 +316,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_B,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorAlias: 'veyris',
       connectorId: CONNECTOR_A,
       connectionId: CONNECTION_B,
@@ -326,7 +326,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_IMPERSONATION,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorAlias: 'veyris',
       connectorId: CONNECTOR_A,
       connectionId: CONNECTION_B,
@@ -336,7 +336,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_SERVICE_ACCOUNT,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorAlias: 'veyris',
       connectorId: CONNECTOR_A,
       connectionId: CONNECTION_SERVICE_ACCOUNT,
@@ -348,7 +348,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_AUTO_EMAIL,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorAlias: 'kortix_email',
       connectorId: EMAIL_CONNECTOR,
       connectionId: EMAIL_CONNECTION_DEFAULT,
@@ -358,7 +358,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_DEFAULT,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorAlias: 'secret_backed',
       connectorId: SECRET_CONNECTOR,
       connectionId: SECRET_CONNECTION_DEFAULT,
@@ -370,7 +370,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION_INHERIT_UNBOUND,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorAlias: 'veyris',
       connectorId: CONNECTOR_A,
       connectionId: CONNECTION_A,
@@ -382,31 +382,31 @@ beforeAll(async () => {
     {
       connectorId: CONNECTOR_A,
       connectionId: CONNECTION_DEFAULT,
-      valueEnc: encryptProjectSecret(PROJECT_A, 'default-capability'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE_A, 'default-capability'),
     },
     {
       connectorId: CONNECTOR_A,
       connectionId: CONNECTION_A,
-      valueEnc: encryptProjectSecret(PROJECT_A, 'workspace-a-capability'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE_A, 'workspace-a-capability'),
     },
     {
       connectorId: CONNECTOR_A,
       connectionId: CONNECTION_B,
-      valueEnc: encryptProjectSecret(PROJECT_A, 'workspace-b-capability'),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE_A, 'workspace-b-capability'),
     },
   ]);
   await db.insert(projectSecrets).values({
-    projectId: PROJECT_A,
+    workspaceId: WORKSPACE_A,
     identifier: 'CONNECTOR_BOUNDARY_KEY',
     name: 'CONNECTOR_BOUNDARY_KEY',
-    valueEnc: encryptProjectSecret(PROJECT_A, 'connector-boundary-value'),
+    valueEnc: encryptWorkspaceSecret(WORKSPACE_A, 'connector-boundary-value'),
     strategy: 'broker',
     consumer: 'connector',
     createdBy: USER,
     rotatedAt: new Date(),
   });
   await saveAgentMailInstall({
-    projectId: PROJECT_A,
+    workspaceId: WORKSPACE_A,
     connectionSlug: 'kortix_email',
     inboxId: 'connection-test-default-inbox',
     email: 'default@example.test',
@@ -416,14 +416,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await deleteAgentMailInstall(PROJECT_A, 'kortix_email');
+  await deleteAgentMailInstall(WORKSPACE_A, 'kortix_email');
   await db.delete(connectionCredentials).where(eq(connectionCredentials.connectorId, CONNECTOR_A));
-  await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT_A));
+  await db.delete(projectSessions).where(eq(projectSessions.workspaceId, WORKSPACE_A));
   await db
     .delete(connectorConnections)
-    .where(eq(connectorConnections.projectId, PROJECT_A));
-  await db.delete(projects).where(eq(projects.projectId, PROJECT_A));
-  await db.delete(projects).where(eq(projects.projectId, PROJECT_B));
+    .where(eq(connectorConnections.workspaceId, WORKSPACE_A));
+  await db.delete(projects).where(eq(projects.workspaceId, WORKSPACE_A));
+  await db.delete(projects).where(eq(projects.workspaceId, WORKSPACE_B));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT_A));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT_B));
 });
@@ -432,13 +432,13 @@ describe('session connector isolation', () => {
   test('two users sessions resolve only their distinct connections and credentials', async () => {
     const a = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_A,
       alias: 'veyris',
     });
     const b = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_B,
       alias: 'veyris',
     });
@@ -457,15 +457,15 @@ describe('session connector isolation', () => {
     const principal = (sessionId: string, userId: string) => ({
       userId,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId,
       subject: { userId, groupIds: [] },
       agentGrant: { agent: 'veyris', connectors: ['veyris'] as string[], kortixCli: [] },
     });
     const depsA = makeDbGatewayDeps(principal(SESSION_A, USER));
     const depsB = makeDbGatewayDeps(principal(SESSION_B, OTHER_USER));
-    const connectorA = await depsA.loadConnectorBySlug(PROJECT_A, 'veyris');
-    const connectorB = await depsB.loadConnectorBySlug(PROJECT_A, 'veyris');
+    const connectorA = await depsA.loadConnectorBySlug(WORKSPACE_A, 'veyris');
+    const connectorB = await depsB.loadConnectorBySlug(WORKSPACE_A, 'veyris');
     expect(connectorA?.connectionId).toBe(CONNECTION_A);
     expect(connectorB?.connectionId).toBe(CONNECTION_B);
     if (!connectorA || !connectorB) throw new Error('Expected both gateway connectors');
@@ -483,12 +483,12 @@ describe('session connector isolation', () => {
     const deps = makeDbGatewayDeps({
       userId: USER,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_DEFAULT,
       subject: { userId: USER, groupIds: [] },
       agentGrant: { agent: 'secret-agent', connectors: ['secret_backed'], kortixCli: [] },
     });
-    const connector = await deps.loadConnectorBySlug(PROJECT_A, 'secret_backed');
+    const connector = await deps.loadConnectorBySlug(WORKSPACE_A, 'secret_backed');
     if (!connector) throw new Error('Expected secret-backed connector');
 
     expect(connector.authSecret).toBe('CONNECTOR_BOUNDARY_KEY');
@@ -498,7 +498,7 @@ describe('session connector isolation', () => {
   test("an omitted user-strategy binding resolves the acting member's authorization", async () => {
     const resolved = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_DEFAULT,
       alias: 'veyris',
     });
@@ -512,7 +512,7 @@ describe('session connector isolation', () => {
     expect(
       await resolveEffectiveSessionConnectorBindings({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_DEFAULT,
         grantedConnectors: ['veyris', 'email'],
       }),
@@ -524,7 +524,7 @@ describe('session connector isolation', () => {
     expect(
       await resolveEffectiveSessionConnectorBindings({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_EXPLICIT_EMPTY,
         grantedConnectors: ['veyris', 'email'],
       }),
@@ -533,7 +533,7 @@ describe('session connector isolation', () => {
     expect(
       await resolveEffectiveSessionConnectorBindings({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_A,
         grantedConnectors: ['veyris', 'email'],
       }),
@@ -544,7 +544,7 @@ describe('session connector isolation', () => {
     expect(
       await resolveEffectiveSessionConnectorBindings({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_A,
         grantedConnectors: [],
       }),
@@ -553,7 +553,7 @@ describe('session connector isolation', () => {
     expect(
       await resolveEffectiveSessionConnectorBindings({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_INHERIT_UNBOUND,
         grantedConnectors: ['veyris', 'email'],
       }),
@@ -571,7 +571,7 @@ describe('session connector isolation', () => {
     try {
       const resolved = await resolveSessionConnectorConnection({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_DEFAULT,
         alias: 'veyris',
       });
@@ -588,7 +588,7 @@ describe('session connector isolation', () => {
   test('a partially bound session fails closed for every unbound connector alias', async () => {
     const boundSessionEmail = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_A,
       alias: 'kortix_email',
     });
@@ -596,7 +596,7 @@ describe('session connector isolation', () => {
 
     const legacySessionEmail = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_DEFAULT,
       alias: 'kortix_email',
     });
@@ -614,7 +614,7 @@ describe('session connector isolation', () => {
     // project default instead of failing closed the way SESSION_A does above.
     const boundVeyris = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_INHERIT_UNBOUND,
       alias: 'veyris',
     });
@@ -622,7 +622,7 @@ describe('session connector isolation', () => {
 
     const unboundEmail = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_INHERIT_UNBOUND,
       alias: 'kortix_email',
     });
@@ -639,7 +639,7 @@ describe('session connector isolation', () => {
     // selection. Its email alias resolves via that bound row…
     const email = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_AUTO_EMAIL,
       alias: 'kortix_email',
     });
@@ -649,7 +649,7 @@ describe('session connector isolation', () => {
     // failing closed the way a caller-requested (source: 'request') binding would.
     const veyris = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_AUTO_EMAIL,
       alias: 'veyris',
     });
@@ -676,18 +676,18 @@ describe('session connector isolation', () => {
     const deps = makeDbGatewayDeps({
       userId: USER,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_DEFAULT,
       subject: { userId: USER, groupIds: [] },
       agentGrant: { agent: 'veyris', connectors: ['kortix_email'], kortixCli: [] },
     });
-    expect(await deps.loadEmailSessionContext?.(PROJECT_A, SESSION_DEFAULT)).toBeNull();
+    expect(await deps.loadEmailSessionContext?.(WORKSPACE_A, SESSION_DEFAULT)).toBeNull();
   });
 
   test('cross-project connection selection is rejected before session insert', async () => {
     const result = await validateSessionConnectorBindings({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: USER,
       actingPrincipalIsServiceAccount: false,
       mayManageSystemConnections: true,
@@ -699,7 +699,7 @@ describe('session connector isolation', () => {
   test('a member may bind their own personal connection', async () => {
     const result = await validateSessionConnectorBindings({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: USER,
       actingPrincipalIsServiceAccount: false,
       mayManageSystemConnections: false,
@@ -716,7 +716,7 @@ describe('session connector isolation', () => {
   test('manager privileges never allow binding another member personal connection', async () => {
     const result = await validateSessionConnectorBindings({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: USER,
       actingPrincipalIsServiceAccount: false,
       mayManageSystemConnections: true,
@@ -728,7 +728,7 @@ describe('session connector isolation', () => {
   test('a service account cannot bind a member connection even when the owner id matches', async () => {
     const result = await validateSessionConnectorBindings({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: SERVICE_ACCOUNT,
       actingPrincipalIsServiceAccount: true,
       mayManageSystemConnections: true,
@@ -740,7 +740,7 @@ describe('session connector isolation', () => {
   test('Connector rejects a pre-existing session bound to another member connection', async () => {
     const resolved = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_IMPERSONATION,
       alias: 'veyris',
     });
@@ -750,7 +750,7 @@ describe('session connector isolation', () => {
   test('Connector rejects a pre-existing service-account session bound to a member connection', async () => {
     const resolved = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_SERVICE_ACCOUNT,
       alias: 'veyris',
     });
@@ -765,7 +765,7 @@ describe('session connector isolation', () => {
     try {
       const projectOwned = await validateSessionConnectorBindings({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         actingUserId: USER,
         actingPrincipalIsServiceAccount: false,
         mayManageSystemConnections: false,
@@ -773,7 +773,7 @@ describe('session connector isolation', () => {
       });
       const memberOwned = await validateSessionConnectorBindings({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         actingUserId: USER,
         actingPrincipalIsServiceAccount: false,
         mayManageSystemConnections: true,
@@ -781,7 +781,7 @@ describe('session connector isolation', () => {
       });
       const unmanagedSystem = await validateSessionConnectorBindings({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         actingUserId: USER,
         actingPrincipalIsServiceAccount: false,
         mayManageSystemConnections: true,
@@ -808,7 +808,7 @@ describe('session connector isolation', () => {
       .where(eq(projectSessions.sessionId, SESSION_A));
     const resolved = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_A,
       alias: 'veyris',
     });
@@ -825,7 +825,7 @@ describe('session connector isolation', () => {
       await db.insert(projectSessionConnectorBindings).values({
         sessionId: SESSION_DEFAULT,
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         connectorAlias: 'wrong-alias',
         connectorId: CONNECTOR_A,
         connectionId: CONNECTION_A,
@@ -844,7 +844,7 @@ describe('session connector isolation', () => {
       .where(eq(connectorConnections.connectionId, CONNECTION_A));
     const resolved = await resolveSessionConnectorConnection({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       sessionId: SESSION_A,
       alias: 'veyris',
     });
@@ -867,14 +867,14 @@ describe('session connector isolation', () => {
     try {
       const resolved = await resolveSessionConnectorConnection({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_A,
         alias: 'veyris',
       });
       expect(resolved).toBeNull();
     } finally {
       await upsertConnectionCredential({
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         connectorId: CONNECTOR_A,
         connectionId: CONNECTION_A,
         value: 'workspace-a-capability',
@@ -891,7 +891,7 @@ describe('session connector isolation', () => {
     try {
       const resolved = await resolveSessionConnectorConnection({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_A,
         alias: 'veyris',
       });
@@ -899,7 +899,7 @@ describe('session connector isolation', () => {
       expect(
         await missingRequiredConnectorConnectionsForSession({
           accountId: ACCOUNT_A,
-          projectId: PROJECT_A,
+          workspaceId: WORKSPACE_A,
           sessionId: SESSION_A,
           aliases: ['veyris'],
         }),
@@ -923,7 +923,7 @@ describe('session connector isolation', () => {
     await expect(
       missingRequiredConnectorConnectionsForSession({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         sessionId: SESSION_A,
         aliases: ['unavailable_connector'],
       }),
@@ -953,7 +953,7 @@ describe('session connector isolation', () => {
     }) as typeof fetch;
     try {
       const result = await finalizePipedreamConnectionAuthorization({
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         slug: 'veyris',
         app: 'veyris',
         connectorId: CONNECTOR_A,
@@ -962,7 +962,7 @@ describe('session connector isolation', () => {
       });
       expect(result).toEqual({ connected: true, accountId: 'apn_connection_a' });
       expect(new URL(accountsUrl).searchParams.get('external_user_id')).toBe(
-        `${PROJECT_A}:veyris:${CONNECTION_A}`,
+        `${WORKSPACE_A}:veyris:${CONNECTION_A}`,
       );
       expect(
         await resolveConnectionCredentialValue({ connectorId: CONNECTOR_A, connectionId: CONNECTION_A }),
@@ -970,7 +970,7 @@ describe('session connector isolation', () => {
     } finally {
       globalThis.fetch = realFetch;
       await upsertConnectionCredential({
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         connectorId: CONNECTOR_A,
         connectionId: CONNECTION_A,
         value: 'workspace-a-capability',
@@ -982,7 +982,7 @@ describe('session connector isolation', () => {
   test('legacy/default credential helpers never read, overwrite or delete custom connections', async () => {
     expect(await resolveCredentialValue(CONNECTOR_A, null)).toBe('default-capability');
     await upsertCredential({
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       userId: null,
       value: 'rotated-default',
@@ -997,7 +997,7 @@ describe('session connector isolation', () => {
       await resolveConnectionCredentialValue({ connectorId: CONNECTOR_A, connectionId: CONNECTION_B }),
     ).toBe('workspace-b-capability');
     await upsertCredential({
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       userId: null,
       value: 'default-capability',
@@ -1018,7 +1018,7 @@ describe('session connector isolation', () => {
     try {
       await upsertConnectionOAuth2Credential(
         {
-          projectId: PROJECT_A,
+          workspaceId: WORKSPACE_A,
           connectorId: CONNECTOR_A,
           connectionId: CONNECTION_A,
           oauth2: {
@@ -1048,7 +1048,7 @@ describe('session connector isolation', () => {
       expect(acquisitions).toBe(2);
     } finally {
       await upsertConnectionCredential({
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         connectorId: CONNECTOR_A,
         connectionId: CONNECTION_A,
         value: 'workspace-a-capability',
@@ -1072,7 +1072,7 @@ describe('session connector isolation', () => {
     try {
       await upsertConnectionOAuth2Credential(
         {
-          projectId: PROJECT_A,
+          workspaceId: WORKSPACE_A,
           connectorId: CONNECTOR_A,
           connectionId: CONNECTION_A,
           oauth2: {
@@ -1097,7 +1097,7 @@ describe('session connector isolation', () => {
       expect(acquisitions).toBe(2);
     } finally {
       await upsertConnectionCredential({
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         connectorId: CONNECTOR_A,
         connectionId: CONNECTION_A,
         value: 'workspace-a-capability',
@@ -1108,7 +1108,7 @@ describe('session connector isolation', () => {
 
   test('AgentMail connections stay immutable per inbox and revoke on partial or final disconnect', async () => {
     await saveAgentMailInstall({
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectionSlug: 'workspace_a',
       inboxId: 'inbox-workspace-a',
       email: 'a@example.test',
@@ -1116,14 +1116,14 @@ describe('session connector isolation', () => {
       apiKey: 'agentmail-key',
     });
     await saveAgentMailInstall({
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectionSlug: 'workspace_b',
       inboxId: 'inbox-workspace-b',
       email: 'b@example.test',
       displayName: 'Workspace B',
       apiKey: 'agentmail-key',
     });
-    await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
+    await reconcileEmailConnections(WORKSPACE_A, ACCOUNT_A);
 
     const connections = await db
       .select({
@@ -1148,16 +1148,16 @@ describe('session connector isolation', () => {
     });
     if (!connectionA || !connectionB) throw new Error('Expected both AgentMail connections');
 
-    await deleteAgentMailInstall(PROJECT_A, 'workspace_a');
-    await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
+    await deleteAgentMailInstall(WORKSPACE_A, 'workspace_a');
+    await reconcileEmailConnections(WORKSPACE_A, ACCOUNT_A);
     const [afterPartial] = await db
       .select({ status: connectorConnections.status })
       .from(connectorConnections)
       .where(eq(connectorConnections.connectionId, connectionA.connectionId));
     expect(afterPartial?.status).toBe('revoked');
 
-    await deleteAgentMailInstall(PROJECT_A, 'workspace_b');
-    await reconcileEmailConnections(PROJECT_A, ACCOUNT_A);
+    await deleteAgentMailInstall(WORKSPACE_A, 'workspace_b');
+    await reconcileEmailConnections(WORKSPACE_A, ACCOUNT_A);
     const [afterFinal] = await db
       .select({ status: connectorConnections.status })
       .from(connectorConnections)
@@ -1169,7 +1169,7 @@ describe('session connector isolation', () => {
     const connectionSlug = 'veyris_bound';
     const inboxId = 'inbox-veyris-bound';
     await saveAgentMailInstall({
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectionSlug,
       inboxId,
       email: 'veyris-bound@example.test',
@@ -1180,7 +1180,7 @@ describe('session connector isolation', () => {
 
     const [binding] = await db
       .select({
-        projectId: chatChannelBindings.projectId,
+        workspaceId: chatChannelBindings.workspaceId,
         channelId: chatChannelBindings.channelId,
         channelName: chatChannelBindings.channelName,
         channelType: chatChannelBindings.channelType,
@@ -1195,14 +1195,14 @@ describe('session connector isolation', () => {
         ),
       );
     expect(binding).toEqual({
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       channelId: connectionSlug,
       channelName: 'veyris-bound@example.test',
       channelType: 'inbox',
       agentName: 'veyris',
     });
 
-    await deleteAgentMailInstall(PROJECT_A, connectionSlug);
+    await deleteAgentMailInstall(WORKSPACE_A, connectionSlug);
     const rows = await db
       .select({ bindingId: chatChannelBindings.bindingId })
       .from(chatChannelBindings)
@@ -1217,25 +1217,25 @@ describe('session connector isolation', () => {
   });
 
   test('saveAgentMailInstall does not delete another project chat_installs row for the same inbox (pentest 2026-07-27)', async () => {
-    // Regression for the AgentMail inbox hijack. PROJECT_A claims inbox
-    // "shared-inbox". PROJECT_B then claims the SAME inbox. Before the fix,
+    // Regression for the AgentMail inbox hijack. WORKSPACE_A claims inbox
+    // "shared-inbox". WORKSPACE_B then claims the SAME inbox. Before the fix,
     // saveAgentMailInstall ran an unscoped DELETE (platform + workspaceId only)
-    // that wiped PROJECT_A's chat_installs row. With the fix, the DELETE is
+    // that wiped WORKSPACE_A's chat_installs row. With the fix, the DELETE is
     // scoped to the calling project, so both rows coexist (unique index allows
-    // multiple projects per inbox) and resolveProjectForAgentMailInbox keeps
-    // returning PROJECT_A for PROJECT_A's install.
+    // multiple projects per inbox) and resolveWorkspaceForAgentMailInbox keeps
+    // returning WORKSPACE_A for WORKSPACE_A's install.
     const sharedInbox = 'shared-inbox-hijack-test';
     await saveAgentMailInstall({
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectionSlug: 'kortix_email',
       inboxId: sharedInbox,
       email: 'shared-a@example.test',
       displayName: 'A',
       apiKey: 'agentmail-key',
     });
-    // PROJECT_B claims the same inbox. This must NOT remove PROJECT_A's row.
+    // WORKSPACE_B claims the same inbox. This must NOT remove WORKSPACE_A's row.
     await saveAgentMailInstall({
-      projectId: PROJECT_B,
+      workspaceId: WORKSPACE_B,
       connectionSlug: 'kortix_email',
       inboxId: sharedInbox,
       email: 'shared-b@example.test',
@@ -1244,15 +1244,15 @@ describe('session connector isolation', () => {
     });
 
     const owners = await db
-      .select({ projectId: chatInstalls.projectId })
+      .select({ workspaceId: chatInstalls.workspaceId })
       .from(chatInstalls)
       .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, sharedInbox)));
-    const ownerIds = owners.map((r) => r.projectId).sort();
-    expect(ownerIds).toEqual([PROJECT_A, PROJECT_B].sort());
+    const ownerIds = owners.map((r) => r.workspaceId).sort();
+    expect(ownerIds).toEqual([WORKSPACE_A, WORKSPACE_B].sort());
 
     // Cleanup so the row does not leak into other tests.
-    await deleteAgentMailInstall(PROJECT_A, 'kortix_email');
-    await deleteAgentMailInstall(PROJECT_B, 'kortix_email');
+    await deleteAgentMailInstall(WORKSPACE_A, 'kortix_email');
+    await deleteAgentMailInstall(WORKSPACE_B, 'kortix_email');
   });
 });
 
@@ -1261,7 +1261,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
     // USER owns CONNECTION_A, a member connection for the 'veyris' connector.
     const res = await resolveRequiredConnectorConnections({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: USER,
       actingPrincipalIsServiceAccount: false,
       aliases: ['veyris'],
@@ -1286,7 +1286,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
     await db.insert(connectorConnections).values({
       connectionId: SECOND,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       ownerType: 'member',
       ownerId: USER,
@@ -1294,7 +1294,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
       isDefault: true,
     });
     await upsertConnectionCredential({
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       connectionId: SECOND,
       value: 'second-workspace-capability',
@@ -1303,7 +1303,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
     try {
       const res = await resolveRequiredConnectorConnections({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         actingUserId: USER,
         actingPrincipalIsServiceAccount: false,
         aliases: ['veyris'],
@@ -1325,7 +1325,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
     await db.insert(connectorConnections).values({
       connectionId: REVOKED,
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       connectorId: CONNECTOR_A,
       ownerType: 'member',
       ownerId: USER,
@@ -1336,7 +1336,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
     try {
       const res = await resolveRequiredConnectorConnections({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         actingUserId: USER,
         actingPrincipalIsServiceAccount: false,
         aliases: ['veyris'],
@@ -1354,7 +1354,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
     // OTHER_USER owns CONNECTION_B for the same connector — must not get USER's.
     const res = await resolveRequiredConnectorConnections({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: OTHER_USER,
       actingPrincipalIsServiceAccount: false,
       aliases: ['veyris'],
@@ -1366,7 +1366,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
   test('returns the missing connection contract when no valid connection exists', async () => {
     const res = await resolveRequiredConnectorConnections({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: USER,
       actingPrincipalIsServiceAccount: false,
       aliases: ['missing_one'],
@@ -1388,7 +1388,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
   test('returns every missing connection in one response', async () => {
     const res = await resolveRequiredConnectorConnections({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: USER,
       actingPrincipalIsServiceAccount: false,
       aliases: ['missing_two', 'missing_one', 'missing_two'],
@@ -1415,7 +1415,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
   test('a service account cannot satisfy a user-strategy requirement', async () => {
     const res = await resolveRequiredConnectorConnections({
       accountId: ACCOUNT_A,
-      projectId: PROJECT_A,
+      workspaceId: WORKSPACE_A,
       actingUserId: SERVICE_ACCOUNT,
       actingPrincipalIsServiceAccount: true,
       aliases: ['veyris'],
@@ -1432,7 +1432,7 @@ describe('resolveRequiredConnectorConnections (require_connectors)', () => {
     try {
       const res = await resolveRequiredConnectorConnections({
         accountId: ACCOUNT_A,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         actingUserId: SERVICE_ACCOUNT,
         actingPrincipalIsServiceAccount: true,
         aliases: ['veyris'],

@@ -1,0 +1,977 @@
+'use client';
+
+import { useTranslations } from 'next-intl';
+
+import {
+  directSubsessions,
+  isMetaCoordinatorSession,
+  matchesSourceFilters,
+  matchesStatusFilters,
+  SESSION_DISPLAY_STATUS_LABELS,
+  sessionDisplayStatus,
+  sessionSource,
+  spawnedBySessionId,
+  type SessionDisplayStatus,
+  type SessionSourceKind,
+} from '@/components/workspaces/session-label';
+import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
+import { useSidebar } from '@/components/ui/sidebar';
+import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { RenameSessionModal } from '@/features/workspace/workspace-sidebar/modal/rename-session-modal';
+import { SessionDeleteModal } from '@/features/workspace/workspace-sidebar/modal/session-delete-modal';
+import { ShareSessionModal } from '@/features/workspace/workspace-sidebar/modal/share-session-modal';
+import {
+  getSessionDisplayTitle,
+  groupSessionsByCoordinator,
+  resolveSessionListViewState,
+  sessionLastActivityAt,
+  shortRelative,
+  shouldPollWorkspaceSessions,
+} from '@/features/workspace/workspace-sidebar/workspace-session-list-helpers';
+import { SessionFilterMenu } from '@/features/workspace/workspace-sidebar/session-filter-menu';
+import {
+  DEFAULT_SESSION_GROUP_MODE,
+  groupSessions,
+  type SessionSection,
+} from '@/features/workspace/workspace-sidebar/session-grouping';
+import { SessionTitle } from '@/features/workspace/workspace-sidebar/session-title';
+import { cn } from '@/lib/utils';
+import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
+import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
+import {
+  listWorkspaceSessions,
+  restartWorkspaceSession,
+  stopWorkspaceSession,
+  type WorkspaceSession,
+} from '@kortix/sdk';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import {
+  CalendarDotsIcon as CalendarClock,
+  CaretRightIcon,
+  ClockCounterClockwiseIcon,
+  DotsThreeIcon,
+  EnvelopeIcon as Mail,
+  FolderSimpleIcon as MetaFolder,
+  PencilSimpleIcon,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  ShareIcon as Share,
+  ArrowElbowDownRightIcon as SpawnedBy,
+  SquareIcon as Square,
+  TrashIcon,
+  WebhooksLogoIcon as Webhook,
+} from '@phosphor-icons/react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { format, formatDistanceToNowStrict } from 'date-fns';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useState, type ComponentType, type ReactNode } from 'react';
+
+interface WorkspaceSessionListProps {
+  workspaceId: string;
+}
+
+const SESSION_RELATIVE_TIME_CLASS =
+  'text-muted-foreground/60 block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
+
+/** The one `⋯` box. All three menus in this file — the `Sessions` header, every
+ *  section header, and every session row — render `Button variant="ghost"
+ *  size="icon-xs"` with THIS class, so the glyph sits on a single vertical
+ *  axis at every level of the tree.
+ *
+ *  The geometry, given every row is `px-2` inside the same column: the trigger
+ *  is flush to the right edge of that padded box, so its 24px square spans
+ *  `[W-32, W-8]` and the 16px glyph inside spans `[W-28, W-12]` — identical for
+ *  all three, at any sidebar width.
+ *
+ *  Do NOT rebuild this from `SidebarMenuButton`. That primitive's base carries
+ *  `p-2 w-full h-8 gap-2 overflow-hidden`; `size-6` only beats `w-full`/`h-8`
+ *  through tailwind-merge, and `p-2` survives outright — leaving a 16px icon
+ *  overflowing an 8px content box, centered by coincidence rather than by
+ *  layout, with a different hover fill than the other two. */
+const SESSION_MENU_TRIGGER_CLASS =
+  'text-muted-foreground hover:text-sidebar-foreground shrink-0 focus:ring-0 focus-visible:ring-0';
+
+/** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
+ *  centered in an identical 32px line at all three levels. */
+const SESSION_ROW_HEIGHT_CLASS = 'h-8';
+
+const SOURCE_ICONS: Record<
+  Exclude<SessionSourceKind, 'chat'>,
+  ComponentType<{ className?: string }>
+> = {
+  slack: Slack,
+  telegram: Telegram,
+  email: Mail,
+  schedule: CalendarClock,
+  webhook: Webhook,
+};
+
+// Staggered (unique) widths so the loading state reads as a list of rows, not a
+// block; the width doubles as a stable key.
+const SKELETON_ROW_WIDTHS = ['w-40', 'w-28', 'w-44', 'w-32', 'w-48', 'w-24', 'w-36', 'w-20'];
+
+/** Loading placeholder mirroring the session-row layout: status dot · title · time. */
+function WorkspaceSessionListSkeleton() {
+  return (
+    <div className="space-y-px" aria-hidden>
+      {SKELETON_ROW_WIDTHS.map((width) => (
+        <div key={width} className="flex h-8 items-center gap-2 px-2">
+          <Skeleton className="size-2 shrink-0 rounded-full py-0" />
+          <Skeleton className={cn('h-3 py-0', width)} />
+          <Skeleton className="ml-auto h-3 w-7 shrink-0 py-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function WorkspaceSessionList({ workspaceId }: WorkspaceSessionListProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const { holdPeek } = useSidebar();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeOpenCodeSessionId = searchParams.get('oc');
+  const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
+  const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
+  const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
+  const cancelSessionSwitch = useSessionSwitchStore((state) => state.cancelSwitch);
+  const queryClient = useQueryClient();
+  const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
+    null,
+  );
+  const [sessionToShare, setSessionToShare] = useState<WorkspaceSession | null>(null);
+  const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: qk.workspace.sessions(workspaceId),
+    queryFn: () => listWorkspaceSessions(workspaceId),
+    refetchInterval: (query) =>
+      shouldPollWorkspaceSessions(query.state.data as WorkspaceSession[] | undefined) ? 5_000 : false,
+    refetchOnWindowFocus: false,
+    ...contract('inventory'),
+  });
+
+  // Review Center is one coherent system: the per-session row indicators, the
+  // footer "Review" pill, and the Customize rail all read the SAME inbox summary
+  // and gate on the SAME flag. When the flag is off the summary query never runs,
+  // so no indicators render and nothing polls.
+  const reviewEnabled = useFeatureFlag(workspaceId, 'review_center').enabled;
+  const reviewSummary = useReviewSessionSummary(workspaceId, { enabled: reviewEnabled });
+
+  // Grouping, ordering, and the two multi-select facets all live in the
+  // persisted session-filter store (keyed by project) — see SessionFilterMenu,
+  // which writes to the same store from the nested `⋯` menu.
+  const groupMode = useSessionFilterStore(
+    (s) => s.groupByWorkspace[workspaceId] ?? DEFAULT_SESSION_GROUP_MODE,
+  );
+  const orderMode = useSessionFilterStore((s) => s.orderByWorkspace[workspaceId] ?? 'activity');
+  const statusFilters = useSessionFilterStore(
+    (s) => s.statusFiltersByWorkspace[workspaceId] ?? EMPTY_LIST,
+  );
+  const sourceFilters = useSessionFilterStore(
+    (s) => s.sourceFiltersByWorkspace[workspaceId] ?? EMPTY_LIST,
+  );
+  const hiddenSections = useSessionFilterStore(
+    (s) => s.hiddenSectionsByWorkspace[workspaceId] ?? EMPTY_LIST,
+  );
+  const collapsedSections = useSessionFilterStore(
+    (s) => s.collapsedSectionsByWorkspace[workspaceId] ?? EMPTY_LIST,
+  );
+  const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
+
+  const restartMutation = useMutation({
+    mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
+      restartWorkspaceSession(workspaceId, sessionId),
+    onSuccess: (_data, { label }) => {
+      successToast(`Restarting "${label}"…`);
+      queryClient.invalidateQueries({ queryKey: qk.workspace.sessionsScope(workspaceId) });
+    },
+    onError: (err) => {
+      errorToast(err instanceof Error ? err.message : 'Failed to restart session');
+    },
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
+      stopWorkspaceSession(workspaceId, sessionId),
+    onSuccess: (_data, { label }) => {
+      successToast(`"${label}" stopped`);
+      queryClient.invalidateQueries({ queryKey: qk.workspace.sessionsScope(workspaceId) });
+    },
+    onError: (err) => {
+      errorToast(err instanceof Error ? err.message : 'Failed to stop session');
+    },
+  });
+
+  // Unsorted on purpose: nothing here reads the order. The two consumers are
+  // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
+  // sorting twice per render bought nothing.
+  const sessions = data ?? [];
+  // Filtering itself lives in the nested `⋯` menu (SessionFilterMenu, mounted
+  // both on the Sessions header and on every section header below); this list
+  // only applies the two ANDed multi-select facets from the store.
+  const visibleSessions = sessions.filter(
+    (session) =>
+      matchesStatusFilters(session, statusFilters) && matchesSourceFilters(session, sourceFilters),
+  );
+
+  const viewState = resolveSessionListViewState({
+    isLoading,
+    isError,
+    totalCount: sessions.length,
+    visibleCount: visibleSessions.length,
+  });
+
+  // Everything below the header — skeleton, error, empty, or the grouped list.
+  // Kept as one function so the header stays mounted across all four states
+  // instead of being re-declared at every early return.
+  function renderBody() {
+    if (viewState === 'loading') {
+      return <WorkspaceSessionListSkeleton />;
+    }
+
+    if (viewState === 'error') {
+      const message = error instanceof Error ? error.message : undefined;
+      return (
+        <div className="space-y-1.5 px-2 py-2">
+          <p className="text-destructive/80 text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
+            )}
+          </p>
+          {message && (
+            <p className="text-muted-foreground/70 truncate text-xs" title={message}>
+              {message}
+            </p>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => refetch()}
+          >
+            Retry
+          </Button>
+        </div>
+      );
+    }
+
+    if (viewState === 'empty') {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
+        </div>
+      );
+    }
+
+    if (viewState === 'no-matches') {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
+          {tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0',
+          )}
+        </div>
+      );
+    }
+
+    // Below the early returns: grouping is only ever read by the content state,
+    // and computing it above meant every loading/error/empty render paid for a
+    // result it threw away.
+    const grouped = groupSessions(visibleSessions, {
+      mode: groupMode,
+      order: orderMode,
+      reviewCountBySession: reviewSummary.needsYouBySession,
+      hiddenSections,
+    });
+
+    // `resolveSessionListViewState` only sees counts before filtering by
+    // `hiddenSections` — it has no way to know every section got hidden. Catch
+    // that case here instead of letting `FadedScrollArea` render nothing with
+    // no explanation.
+    if (grouped.sections.length === 0) {
+      return (
+        <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">All sections hidden.</div>
+      );
+    }
+
+    // One session row plus its opencode sub-sessions. `nested` marks a row drawn
+    // under its coordinator: the indent already carries the spawn link, so the
+    // row drops its own spawned-by icon.
+    const renderSessionNode = (session: WorkspaceSession, nested: boolean) => {
+      const href = `/workspaces/${session.workspace_id}/sessions/${session.session_id}`;
+      const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+      const isSwitchTarget = switchingToSessionId === session.session_id;
+      const children = directSubsessions(session);
+      return (
+        <div key={session.session_id} className="space-y-px">
+          <WorkspaceSessionRow
+            nested={nested}
+            session={session}
+            href={href}
+            isActive={!!isActive && !activeOpenCodeSessionId}
+            isSwitching={isSwitchTarget}
+            onNavigate={(event) => {
+              if (switchingToSessionId && session.session_id === activeSessionId) {
+                event.preventDefault();
+                cancelSessionSwitch();
+                router.replace(href, { scroll: false });
+                return;
+              }
+              if (shouldBeginSessionSwitch(event, session.session_id, activeSessionId)) {
+                beginSessionSwitch(session.session_id);
+              }
+            }}
+            displayTitle={getSessionDisplayTitle(session)}
+            childCount={children.length}
+            reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
+            onDelete={(id, label) => setSessionToDelete({ id, label })}
+            onShare={(s) => setSessionToShare(s)}
+            onRename={(id, name) => setSessionToRename({ id, name })}
+            onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
+            isRestarting={
+              restartMutation.isPending &&
+              restartMutation.variables?.sessionId === session.session_id
+            }
+            onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
+            isStopping={
+              stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
+            }
+          />
+          {children.length > 0 && isActive && (
+            <div className="border-border ml-3.5 border-l-2 pl-2">
+              {children.map((child) => {
+                const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+                const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+                return (
+                  <WorkspaceSubsessionRow
+                    key={child.id}
+                    title={child.title || 'Sub-session'}
+                    href={childHref}
+                    isActive={activeChild}
+                    updatedAt={child.updated_at}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <FadedScrollArea className="h-full min-h-0 space-y-1">
+        {grouped.sections.map((section) => (
+          <SessionListSection
+            key={section.id}
+            section={section}
+            workspaceId={workspaceId}
+            sessions={sessions}
+            reviewCountBySession={reviewSummary.needsYouBySession}
+            showHeader={grouped.showHeaders}
+            open={!collapsedSections.includes(section.id)}
+            onOpenChange={() => toggleSectionCollapsed(workspaceId, section.id)}
+          >
+            {/* Two independent groupings compose here: `groupSessions` splits the
+                list into sections, then within each section
+                `groupSessionsByCoordinator` nests spawned sessions under the
+                coordinator that started them. */}
+            {groupSessionsByCoordinator(section.sessions).map((group) => (
+              <div key={group.session.session_id} className="space-y-px">
+                {renderSessionNode(group.session, false)}
+                {group.children.length > 0 && (
+                  <div className="border-border ml-3.5 space-y-px border-l-2 pl-1">
+                    {group.children.map((child) => renderSessionNode(child, true))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </SessionListSection>
+        ))}
+      </FadedScrollArea>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col space-y-2">
+      <SessionListHeader
+        workspaceId={workspaceId}
+        sessions={sessions}
+        reviewCountBySession={reviewSummary.needsYouBySession}
+        onMenuOpenChange={holdPeek}
+      />
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{renderBody()}</div>
+
+      <ShareSessionModal
+        workspaceId={workspaceId}
+        session={sessionToShare}
+        open={!!sessionToShare}
+        onOpenChange={(open) => !open && setSessionToShare(null)}
+        onSaved={() =>
+          queryClient.invalidateQueries({ queryKey: qk.workspace.sessionsScope(workspaceId) })
+        }
+      />
+
+      <RenameSessionModal
+        workspaceId={workspaceId}
+        sessionId={sessionToRename?.id ?? null}
+        currentName={sessionToRename?.name}
+        open={!!sessionToRename}
+        onOpenChange={(open) => !open && setSessionToRename(null)}
+      />
+
+      <SessionDeleteModal
+        workspaceId={workspaceId}
+        sessionId={sessionToDelete?.id ?? null}
+        sessionLabel={sessionToDelete?.label}
+        open={!!sessionToDelete}
+        onOpenChange={(open) => !open && setSessionToDelete(null)}
+      />
+    </div>
+  );
+}
+
+/** The `Sessions` row above the list. Lives here — not in `workspace-sidebar.tsx`
+ *  — because everything it needs (the session list, the review summary, the
+ *  filter facets) is already read by `WorkspaceSessionList`; hoisting it up meant
+ *  a second `qk.workspace.sessions(workspaceId)` query and two files owning the
+ *  same horizontal padding. The label opens the full sessions page; the `⋯`
+ *  opens the nested Grouping/Ordering/Show/Filters menu (`SessionFilterMenu`)
+ *  and appears whenever there is at least one session. */
+function SessionListHeader({
+  workspaceId,
+  sessions,
+  reviewCountBySession,
+  onMenuOpenChange,
+}: {
+  workspaceId: string;
+  sessions: WorkspaceSession[];
+  reviewCountBySession: Record<string, number>;
+  onMenuOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex w-full shrink-0 flex-row items-center gap-1 px-2',
+        SESSION_ROW_HEIGHT_CLASS,
+      )}
+    >
+      <Link
+        href={`/workspaces/${workspaceId}/sessions`}
+        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium transition-colors duration-150"
+      >
+        <span className="truncate">Sessions</span>
+      </Link>
+      {sessions.length > 0 && (
+        <DropdownMenu onOpenChange={onMenuOpenChange}>
+          <SessionFilterMenu
+            workspaceId={workspaceId}
+            sessions={sessions}
+            reviewCountBySession={reviewCountBySession}
+            align="start"
+          />
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              type="button"
+              aria-label="Session view options"
+              className={SESSION_MENU_TRIGGER_CLASS}
+            >
+              <DotsThreeIcon className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+        </DropdownMenu>
+      )}
+    </div>
+  );
+}
+
+interface SessionListSectionProps {
+  section: SessionSection;
+  workspaceId: string;
+  sessions: WorkspaceSession[];
+  reviewCountBySession: Record<string, number>;
+  showHeader: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}
+
+/** Non-sticky by design: FadedScrollArea masks its own edges, and a sticky
+ *  header fights that mask.
+ *
+ *  When `showHeader` is false (at most one section is populated — see
+ *  `groupSessions`'s `showHeaders`), there is nothing to collapse or open a
+ *  menu on, so this renders the plain, always-expanded container it always
+ *  has. Otherwise the whole section is a `Disclosure`: `open` reflects the
+ *  store's collapsed-section list (collapsed = NOT open), so the header
+ *  toggle and the section's `Collapse all` menu action agree. */
+function SessionListSection({
+  section,
+  workspaceId,
+  sessions,
+  reviewCountBySession,
+  showHeader,
+  open,
+  onOpenChange,
+  children,
+}: SessionListSectionProps) {
+  if (!showHeader) {
+    return <div className="space-y-px">{children}</div>;
+  }
+
+  return (
+    <Disclosure
+      open={open}
+      onOpenChange={onOpenChange}
+      className="group/section space-y-px"
+      transition={{ duration: 0.15, ease: 'easeOut' }}
+    >
+      <DisclosureTrigger>
+        <div
+          className={cn(
+            'group/section-header text-muted-foreground flex items-center gap-1 px-2 text-sm font-medium',
+            SESSION_ROW_HEIGHT_CLASS,
+          )}
+        >
+          <span className="truncate">{section.label}</span>
+          <CaretRightIcon
+            aria-hidden
+            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+          />
+          <SessionSectionMenu
+            workspaceId={workspaceId}
+            sessions={sessions}
+            reviewCountBySession={reviewCountBySession}
+          />
+        </div>
+      </DisclosureTrigger>
+      <DisclosureContent contentClassName="space-y-px">{children}</DisclosureContent>
+    </Disclosure>
+  );
+}
+
+/** The section header's own `⋯` — mounts the SAME `SessionFilterMenu` as the
+ *  Sessions header (workspace-sidebar.tsx), no section-scoped filter state.
+ *  Hover-revealed via `group/section-header` on the header row only (not the
+ *  whole `group/section` disclosure), so hovering a row inside the section
+ *  doesn't also fade in the header's `⋯`; stays visible while its own menu is
+ *  open via `data-[state=open]`, which Radix stamps on this trigger directly
+ *  (not the group). Both the click AND keydown (Enter/Space) handlers stop
+ *  propagation so opening the menu — by pointer or keyboard — never also
+ *  toggles the disclosure, which Radix's `pointerdown` open would otherwise
+ *  race against the header's `onKeyDown`-driven `toggle()` — same pattern as
+ *  the row-level `⋯` in `WorkspaceSessionRow`. The hit area extends past the
+ *  visible button with `before:absolute before:-inset-1` instead of growing
+ *  the button, so the `h-6` header never changes height. */
+function SessionSectionMenu({
+  workspaceId,
+  sessions,
+  reviewCountBySession,
+}: {
+  workspaceId: string;
+  sessions: WorkspaceSession[];
+  reviewCountBySession: Record<string, number>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          type="button"
+          aria-label="Section options"
+          className={cn(
+            SESSION_MENU_TRIGGER_CLASS,
+            'relative ml-auto opacity-0 transition-opacity duration-150',
+            'before:absolute before:-inset-1',
+            'group-hover/section-header:opacity-100 data-[state=open]:opacity-100',
+          )}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.stopPropagation();
+            }
+          }}
+        >
+          <DotsThreeIcon className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <SessionFilterMenu
+        workspaceId={workspaceId}
+        sessions={sessions}
+        reviewCountBySession={reviewCountBySession}
+        align="start"
+      />
+    </DropdownMenu>
+  );
+}
+
+interface WorkspaceSessionRowProps {
+  session: WorkspaceSession;
+  href: string;
+  isActive: boolean;
+  isSwitching: boolean;
+  onNavigate: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  displayTitle: string;
+  onDelete: (sessionId: string, label: string) => void;
+  onShare: (session: WorkspaceSession) => void;
+  onRename: (sessionId: string, currentName: string) => void;
+  onRestart: (sessionId: string, label: string) => void;
+  isRestarting: boolean;
+  onStop: (sessionId: string, label: string) => void;
+  isStopping: boolean;
+  childCount?: number;
+  /** How many review items from this session are awaiting the human (`needs_you`). */
+  reviewCount?: number;
+  /** Rendered indented under its coordinator — the indent already conveys the
+   *  spawn link, so the right-side spawned-by icon is omitted. */
+  nested?: boolean;
+}
+
+function WorkspaceSessionRow({
+  session,
+  href,
+  isActive,
+  isSwitching,
+  onNavigate,
+  displayTitle,
+  onDelete,
+  onShare,
+  onRename,
+  onRestart,
+  isRestarting,
+  onStop,
+  isStopping,
+  childCount = 0,
+  reviewCount = 0,
+  nested = false,
+}: WorkspaceSessionRowProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const deferAfterClose = (fn: () => void) => {
+    setMenuOpen(false);
+    requestAnimationFrame(() => fn());
+  };
+
+  const activity = (() => {
+    try {
+      const date = new Date(sessionLastActivityAt(session));
+      return {
+        relative: formatDistanceToNowStrict(date, { addSuffix: false }),
+        exact: format(date, 'MMM d, yyyy, h:mm a'),
+      };
+    } catch {
+      return null;
+    }
+  })();
+
+  const source = sessionSource(session);
+  const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
+  const isMeta = isMetaCoordinatorSession(session);
+  const spawnedBy = spawnedBySessionId(session);
+
+  return (
+    <div className="group/session-list block">
+      <div
+        className={cn(
+          // --session-row-surface paints the row AND the title fade in the same
+          // style pass. Do not transition background — transition-colors made the
+          // fill ease for 150ms while the fade snapped, which read as a flicker.
+          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-[color] duration-150',
+          isActive
+            ? 'text-sidebar-foreground bg-[var(--session-row-surface)] font-medium [--session-row-surface:var(--sidebar-border)]'
+            : 'text-muted-foreground hover:text-sidebar-foreground bg-[var(--session-row-surface)] [--session-row-surface:var(--sidebar)] hover:[--session-row-surface:var(--sidebar-border)]',
+        )}
+      >
+        <Link
+          href={href}
+          onClick={onNavigate}
+          aria-busy={isSwitching || undefined}
+          aria-current={isActive ? 'page' : undefined}
+          className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
+        >
+          <SessionStatusDot session={session} reviewCount={reviewCount} />
+
+          {isMeta && (
+            <Hint side="top" label="Meta coordinator">
+              <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
+                <MetaFolder className="size-3.5" weight="fill" />
+              </span>
+            </Hint>
+          )}
+
+          <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
+
+          {childCount > 0 && (
+            <span className="bg-sidebar-accent/60 text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">
+              {childCount}
+            </span>
+          )}
+        </Link>
+
+        <div className="flex shrink-0 items-center gap-0">
+          {spawnedBy && !nested && (
+            <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
+              <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
+                <SpawnedBy className="size-3" />
+              </span>
+            </Hint>
+          )}
+          {SourceIcon && (
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <Hint
+                side="top"
+                label={
+                  source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
+                }
+              >
+                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                  <SourceIcon className="size-3" />
+                </span>
+              </Hint>
+            </span>
+          )}
+
+          <div className="relative w-10 min-w-10 shrink-0">
+            {activity && (
+              <span
+                className={cn(
+                  SESSION_RELATIVE_TIME_CLASS,
+                  // pr-1 (4px), not pr-1.5: the timestamp and the `⋯` swap in
+                  // this same slot on hover, so the text's right edge must land
+                  // on the GLYPH's right edge, not the button's. The 16px glyph
+                  // is inset 4px inside its 24px box — match that, or the two
+                  // states sit 2px apart and the swap visibly shifts.
+                  'pr-1 transition-opacity duration-150',
+                  'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
+                )}
+                title={`Last activity: ${activity.exact}`}
+                aria-label={`Last activity: ${activity.relative}`}
+              >
+                {shortRelative(activity.relative)}
+              </span>
+            )}
+
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  type="button"
+                  aria-label={tHardcodedUi.raw(
+                    'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
+                  )}
+                  className={cn(
+                    SESSION_MENU_TRIGGER_CLASS,
+                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150',
+                    activity
+                      ? cn(
+                          'pointer-events-none opacity-0',
+                          'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
+                          'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
+                        )
+                      : 'opacity-100',
+                  )}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <DotsThreeIcon className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="right" className="w-44">
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
+                >
+                  <PencilSimpleIcon />
+                  Rename
+                </DropdownMenuItem>
+                {session.can_manage_sharing !== false && (
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    onSelect={() => deferAfterClose(() => onShare(session))}
+                  >
+                    <Share />
+                    Share
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  disabled={isRestarting}
+                  onSelect={() =>
+                    deferAfterClose(() => onRestart(session.session_id, displayTitle))
+                  }
+                >
+                  {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
+                  Restart
+                </DropdownMenuItem>
+                {session.status === 'running' && session.can_manage_sharing !== false && (
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    disabled={isStopping}
+                    onSelect={() => deferAfterClose(() => onStop(session.session_id, displayTitle))}
+                  >
+                    {isStopping ? <Loading className="size-4 shrink-0" /> : <Square />}
+                    Stop
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
+                >
+                  <TrashIcon />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceSubsessionRow({
+  title,
+  href,
+  isActive,
+  updatedAt,
+}: {
+  title: string;
+  href: string;
+  isActive: boolean;
+  updatedAt: number | null;
+}) {
+  const relative = updatedAt
+    ? shortRelative(formatDistanceToNowStrict(new Date(updatedAt), { addSuffix: false }))
+    : '';
+
+  return (
+    <Link href={href} className="block">
+      <div
+        className={cn(
+          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-150',
+          isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
+        )}
+      >
+        <span className="bg-muted-foreground/40 h-1 w-1 shrink-0 rounded-full" />
+        <span title={title} className={cn('flex-1 truncate', isActive && 'font-medium')}>
+          {title}
+        </span>
+        {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
+      </div>
+    </Link>
+  );
+}
+
+/** Per-display-status paint. Green appears in exactly two rows — the two that
+ *  mean live or actionable. `done` is muted on purpose: it is the change that
+ *  drains the green out of a long list and makes the rest mean something.
+ *
+ *  `glyph` is what separates the two muted states. Both used to be rings that
+ *  differed only by a dash pattern, and at 16px that is not a difference a user
+ *  can see. Per spec §4 `done` is a check and `stopped` is a plain hollow ring.
+ *  The check stays muted — a check is not a licence to go green. */
+const STATUS_DOT_STYLE: Record<
+  SessionDisplayStatus,
+  { color: string; glyph: 'ring' | 'check'; fill: boolean }
+> = {
+  'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  // `starting` renders <Loading /> instead and never reads glyph/fill.
+  starting: { color: 'var(--kortix-yellow)', glyph: 'ring', fill: false },
+  running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  done: { color: 'var(--muted-foreground)', glyph: 'check', fill: false },
+  stopped: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
+  failed: { color: 'var(--kortix-red)', glyph: 'ring', fill: true },
+  // `legacy` renders <ClockCounterClockwiseIcon /> instead and never reads
+  // glyph/fill — a dormant migrated chat is neither done nor merely stopped;
+  // the history glyph says "restorable" without spending any color.
+  legacy: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
+};
+
+function SessionStatusDot({
+  session,
+  reviewCount = 0,
+}: {
+  session: WorkspaceSession;
+  reviewCount?: number;
+}) {
+  const display = sessionDisplayStatus(session, reviewCount);
+  const style = STATUS_DOT_STYLE[display];
+  const label =
+    display === 'needs-you'
+      ? `${reviewCount} awaiting your review`
+      : SESSION_DISPLAY_STATUS_LABELS[display];
+
+  return (
+    <Hint side="right" label={<span className="text-xs">{label}</span>}>
+      <div className="flex size-4 shrink-0 items-center justify-center">
+        {display === 'starting' ? (
+          // Loading is the only spinner in this codebase. The previous
+          // implementation spun an SVG with animate-spin, which the rule bans.
+          <Loading className="text-kortix-yellow size-3.5" />
+        ) : display === 'legacy' ? (
+          <ClockCounterClockwiseIcon
+            className="size-3.5 shrink-0"
+            style={{ color: style.color }}
+            aria-hidden
+          />
+        ) : (
+          <svg
+            height="16"
+            width="16"
+            viewBox="0 0 16 16"
+            strokeLinejoin="round"
+            style={{ color: style.color }}
+            className="flex shrink-0 items-center justify-center"
+            aria-hidden
+          >
+            {style.glyph === 'check' ? (
+              // Same 16px box, same 1.5 stroke, same currentColor as the rings,
+              // so the dot column stays optically aligned row to row.
+              <path
+                d="M4 8.4 L6.8 11.2 L12 5.2"
+                stroke="currentColor"
+                fill="none"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            ) : (
+              <>
+                <circle cx="8" cy="8" r="6.3" stroke="currentColor" fill="none" strokeWidth="1.5" />
+                {style.fill && (
+                  <circle cx="8" cy="8" r={display === 'needs-you' ? 3.2 : 4} fill="currentColor" />
+                )}
+              </>
+            )}
+          </svg>
+        )}
+      </div>
+    </Hint>
+  );
+}

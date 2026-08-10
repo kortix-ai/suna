@@ -9,12 +9,12 @@ import {
   requestChangesOnChangeRequest,
   type ChangeRequest,
   type ChangeRequestStatus,
-} from '../core/rest/projects-client';
+} from '../core/rest/workspaces-client';
 
 /** Stable query-key factory — reuse to read/invalidate the same cache entry
  *  `useChangeRequests` populates. */
-export const changeRequestsKey = (projectId: string | null | undefined) =>
-  ['project-change-requests', projectId] as const;
+export const changeRequestsKey = (workspaceId: string | null | undefined) =>
+  ['project-change-requests', workspaceId] as const;
 
 /**
  * Change requests — the Kortix-native PR layer. List + open/merge/close/
@@ -26,40 +26,40 @@ export const changeRequestsKey = (projectId: string | null | undefined) =>
  * one-shot views, not a list this hook owns.
  */
 export function useChangeRequests(
-  projectId: string | null | undefined,
+  workspaceId: string | null | undefined,
   status?: ChangeRequestStatus | 'all',
 ) {
   const queryClient = useQueryClient();
-  const queryKey = [...changeRequestsKey(projectId), status ?? 'open'] as const;
+  const queryKey = [...changeRequestsKey(workspaceId), status ?? 'open'] as const;
 
   const query = useQuery<{ change_requests: ChangeRequest[] }>({
     queryKey,
-    queryFn: () => listChangeRequests(projectId as string, status),
-    enabled: !!projectId,
+    queryFn: () => listChangeRequests(workspaceId as string, status),
+    enabled: !!workspaceId,
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: changeRequestsKey(projectId) });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: changeRequestsKey(workspaceId) });
 
   const open = useMutation({
     mutationFn: (input: Parameters<typeof openChangeRequest>[1]) =>
-      openChangeRequest(projectId as string, input),
+      openChangeRequest(workspaceId as string, input),
     onSuccess: invalidate,
   });
 
   const merge = useMutation({
     mutationFn: (args: { crId: string; input?: Parameters<typeof mergeChangeRequest>[2] }) =>
-      mergeChangeRequest(projectId as string, args.crId, args.input),
+      mergeChangeRequest(workspaceId as string, args.crId, args.input),
     onSuccess: invalidate,
   });
 
   const close = useMutation({
-    mutationFn: (crId: string) => closeChangeRequest(projectId as string, crId),
+    mutationFn: (crId: string) => closeChangeRequest(workspaceId as string, crId),
     onSuccess: invalidate,
   });
 
   const requestChanges = useMutation({
     mutationFn: (args: { crId: string; feedback: string }) =>
-      requestChangesOnChangeRequest(projectId as string, args.crId, args.feedback),
+      requestChangesOnChangeRequest(workspaceId as string, args.crId, args.feedback),
     onSuccess: invalidate,
   });
 

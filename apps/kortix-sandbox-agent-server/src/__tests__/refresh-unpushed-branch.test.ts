@@ -78,7 +78,7 @@ afterEach(() => {
 })
 
 function cfg(): Config {
-  // No apiUrl/projectId/sandboxToken, so credential resolution short-circuits
+  // No apiUrl/workspaceId/sandboxToken, so credential resolution short-circuits
   // and this stays offline.
   return {
     projectTarget: work,

@@ -3,7 +3,7 @@ import { db } from './db';
 
 export interface UsageEventInput {
   accountId: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
   provider: string;
@@ -28,7 +28,7 @@ export async function recordUsageEvent(input: UsageEventInput): Promise<string |
     .insert(usageEvents)
     .values({
       accountId: input.accountId,
-      projectId: input.projectId || null,
+      workspaceId: input.workspaceId || null,
       sessionId: input.sessionId || null,
       actorUserId: input.actorUserId || null,
       provider: input.provider,

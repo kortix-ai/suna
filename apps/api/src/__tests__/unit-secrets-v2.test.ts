@@ -12,8 +12,8 @@ import {
   identifierKeyConflicts,
   isValidIdentifier,
   resolveGrantedSecretEnv,
-  type ResolvedProjectSecret,
-} from '../projects/secrets';
+  type ResolvedWorkspaceSecret,
+} from '../workspaces/secrets';
 import { agentMayUseEnv } from '../iam/agent-scope';
 import type { AgentGrant } from '@kortix/db';
 
@@ -48,7 +48,7 @@ describe('identifierKeyConflicts', () => {
   });
 });
 
-const row = (identifier: string, key: string, value: string): ResolvedProjectSecret => ({
+const row = (identifier: string, key: string, value: string): ResolvedWorkspaceSecret => ({
   secretId: `secret-${identifier}`,
   identifier,
   key,

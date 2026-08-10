@@ -31,22 +31,23 @@ import {
 import {
   sessionLastActivityAt,
   sortSessionsByLastActivity,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+} from '@/features/workspace/workspace-sidebar/workspace-session-list-helpers';
+import { useNewWorkspaceSession } from '@/hooks/workspaces/use-new-workspace-session';
 import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
+import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
+import { useWorkspaceFeatureFlags } from '@/lib/use-workspace-feature-flags';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useWorkspaceSessionTabsStore } from '@/stores/workspace-session-tabs-store';
 import {
   type KortixAccount,
-  type KortixProject,
-  type ProjectSession,
+  type KortixWorkspace,
+  type WorkspaceSession,
   listAccounts,
-  listProjectSessions,
-  listProjectsForAccount,
+  listWorkspaceSessions,
+  listWorkspacesForAccount,
   systemReload,
 } from '@kortix/sdk';
 import { featureFlags } from '@kortix/sdk/feature-flags';
@@ -115,7 +116,7 @@ import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 
 type PalettePage =
-  'root' | 'agents' | 'models' | 'messages' | 'projects' | 'accounts' | 'sessions' | 'files';
+  'root' | 'agents' | 'models' | 'messages' | 'workspaces' | 'accounts' | 'sessions' | 'files';
 
 function sanitizeCmdkValue(value: string): string {
   return value
@@ -147,9 +148,9 @@ const LEGACY_PALETTE_HIDDEN = new Set([
 ]);
 
 const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
-  'nav-projects': 'projects',
+  'nav-workspaces': 'workspaces',
   'nav-accounts': 'accounts',
-  'proj-sessions': 'sessions',
+  'workspace-sessions': 'sessions',
 };
 
 function FileSearchPage({
@@ -374,8 +375,8 @@ export function CommandPalette() {
   const pathname = normalizeAppPathname(rawPathname);
   const params = useParams<{ id?: string; sessionId?: string }>();
   const queryClient = useQueryClient();
-  const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
-  const projectId =
+  const openWorkspaceTab = useWorkspaceSessionTabsStore((s) => s.openTab);
+  const workspaceId =
     rawPathname?.startsWith('/workspaces/') || rawPathname?.startsWith('/projects/')
       ? (params?.id ?? null)
       : null;
@@ -411,32 +412,32 @@ export function CommandPalette() {
     accountsList?.[0] ??
     null;
   const activeAccountId = activeAccount?.account_id ?? null;
-  const { data: projectsList } = useQuery({
-    queryKey: qk.projects.list(activeAccountId ?? undefined),
-    queryFn: () => listProjectsForAccount(activeAccountId || undefined),
+  const { data: workspacesList } = useQuery({
+    queryKey: qk.workspaces.list(activeAccountId ?? undefined),
+    queryFn: () => listWorkspacesForAccount(activeAccountId || undefined),
     enabled: open && !!activeAccountId,
     ...contract('inventory'),
   });
-  const { data: projectSessionsList } = useQuery({
-    queryKey: qk.project.sessions(projectId ?? ''),
-    queryFn: () => listProjectSessions(projectId!),
-    enabled: open && !!projectId,
+  const { data: workspaceSessionsList } = useQuery({
+    queryKey: qk.workspace.sessions(workspaceId ?? ''),
+    queryFn: () => listWorkspaceSessions(workspaceId!),
+    enabled: open && !!workspaceId,
     ...contract('inventory'),
   });
 
   // The registry's `requiresFlag` gate. One primitive (`useFeatureFlag`, via
-  // `useProjectFeatureFlags`) decides for every surface, so a palette entry can
+  // `useWorkspaceFeatureFlags`) decides for every surface, so a palette entry can
   // never survive a flag its rail item does not. Fail-closed: unresolved detail
   // ⇒ every flag reads false.
   //
   // `llm_gateway` used to resolve to AVAILABILITY here while the Customize
   // panel rendered nothing unless it was ENABLED — a palette entry that opened
   // a blank pane. It now follows enablement like every other flag.
-  // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
+  // `workspaceFlags`, not `featureFlags` — the module-scope `featureFlags` import
   // above is the DEPLOYMENT flag set (`@kortix/sdk/feature-flags`, build-time
   // capabilities like `enableProjects`), a different concept from the
-  // per-project feature flags this gates on.
-  const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
+  // per-workspace feature flags this gates on.
+  const { flags: workspaceFlags } = useWorkspaceFeatureFlags(open ? workspaceId : null);
 
   const allModels = useMemo(() => flattenModels(providers), [providers]);
   // Only for the persisted selection state (session agent, per-agent model,
@@ -582,16 +583,16 @@ export function CommandPalette() {
         if (item.id === 'toggle-sidebar' && !sidebarCtx) return false;
         if (item.requiresBilling && !billingEnabled) return false;
         if (item.requiresSession && !currentSessionId) return false;
-        if (item.requiresProject && !projectId) return false;
-        if (item.requiresFlag && !projectFlags[item.requiresFlag]) return false;
+        if (item.requiresWorkspace && !workspaceId) return false;
+        if (item.requiresFlag && !workspaceFlags[item.requiresFlag]) return false;
         return true;
       })
       .map((item) =>
-        item.href?.includes('{projectId}') && projectId
-          ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
+        item.href?.includes('{workspaceId}') && workspaceId
+          ? { ...item, href: item.href.replaceAll('{workspaceId}', workspaceId) }
           : item,
       );
-  }, [billingEnabled, currentSessionId, projectId, sidebarCtx, projectFlags]);
+  }, [billingEnabled, currentSessionId, workspaceId, sidebarCtx, workspaceFlags]);
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
@@ -607,9 +608,9 @@ export function CommandPalette() {
 
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
-    const projectOnlyAgents = new Set(['project-manager']);
+    const workspaceOnlyAgents = new Set(['project-manager']);
     return agents.filter(
-      (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),
+      (a) => !a.hidden && (featureFlags.enableProjects || !workspaceOnlyAgents.has(a.name)),
     );
   }, [agents]);
 
@@ -633,7 +634,7 @@ export function CommandPalette() {
 
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
-    // Same rule as the session picker: only what the project OFFERS
+    // Same rule as the session picker: only what the workspace OFFERS
     // (server-resolved `enabled`, `/model-picker`). Searching does not resurface
     // a disabled model — "Manage models" is where the full catalog lives.
     return allModels
@@ -712,9 +713,9 @@ export function CommandPalette() {
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
 
-  const newSession = useNewProjectSession(projectId ?? undefined);
+  const newSession = useNewWorkspaceSession(workspaceId ?? undefined);
   const handleNewSession = useCallback(() => {
-    if (projectId) {
+    if (workspaceId) {
       newSession();
       close();
       return;
@@ -738,13 +739,13 @@ export function CommandPalette() {
       })
       .catch(() => errorToast('Failed to create session'))
       .finally(() => setIsCreating(false));
-  }, [isCreating, projectId, newSession, createSession, openProjectTab, close]);
+  }, [isCreating, workspaceId, newSession, createSession, openWorkspaceTab, close]);
 
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
-  const handleSelectProject = useCallback(
-    (p: KortixProject) => {
-      router.push(`/workspaces/${p.project_id}`);
+  const handleSelectWorkspace = useCallback(
+    (workspace: KortixWorkspace) => {
+      router.push(`/workspaces/${workspace.workspace_id}`);
       close();
     },
     [router, close],
@@ -753,48 +754,55 @@ export function CommandPalette() {
   const handleSelectAccount = useCallback(
     (a: KortixAccount) => {
       setSelectedAccountId(a.account_id);
-      router.push('/workspaces');
+      // The landing door, NOT `latestWorkspacePath`: the last-workspace cookie
+      // names a workspace in the account just left, which still passes the
+      // ownership check (it's scoped by user, not account) and would open
+      // the wrong account's workspace. Same rule `account-switcher.tsx`
+      // follows after creating an account.
+      router.push(WORKSPACE_LANDING_PATH);
       close();
     },
     [setSelectedAccountId, router, close],
   );
 
-  const handleSelectProjectSession = useCallback(
-    (s: ProjectSession) => {
-      if (!projectId) return close();
-      openProjectTab(projectId, s.session_id);
-      router.push(`/workspaces/${projectId}/sessions/${s.session_id}`);
+  const handleSelectWorkspaceSession = useCallback(
+    (s: WorkspaceSession) => {
+      if (!workspaceId) return close();
+      openWorkspaceTab(workspaceId, s.session_id);
+      router.push(`/workspaces/${workspaceId}/sessions/${s.session_id}`);
       close();
     },
-    [projectId, openProjectTab, router, close],
+    [workspaceId, openWorkspaceTab, router, close],
   );
 
-  const sessionName = (s: ProjectSession) =>
+  const sessionName = (s: WorkspaceSession) =>
     s.name ||
     (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
     s.branch_name ||
     s.session_id.slice(0, 8);
 
-  const sortedProjects = useMemo(
+  const sortedWorkspaces = useMemo(
     () =>
-      [...(projectsList ?? [])].sort((a, b) =>
+      [...(workspacesList ?? [])].sort((a, b) =>
         (b.last_opened_at || b.updated_at).localeCompare(a.last_opened_at || a.updated_at),
       ),
-    [projectsList],
+    [workspacesList],
   );
 
-  const filteredProjectsList = useMemo(() => {
+  const filteredWorkspacesList = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (
-      q ? sortedProjects.filter((p) => p.name.toLowerCase().includes(q)) : sortedProjects
+      q
+        ? sortedWorkspaces.filter((workspace) => workspace.name.toLowerCase().includes(q))
+        : sortedWorkspaces
     ).slice(0, 50);
-  }, [sortedProjects, query]);
+  }, [sortedWorkspaces, query]);
 
-  const recentProjectSessions = useMemo(() => {
-    return sortSessionsByLastActivity(projectSessionsList ?? []).slice(0, 5);
-  }, [projectSessionsList]);
+  const recentWorkspaceSessions = useMemo(() => {
+    return sortSessionsByLastActivity(workspaceSessionsList ?? []).slice(0, 5);
+  }, [workspaceSessionsList]);
 
-  const recentProjects = useMemo(() => sortedProjects.slice(0, 5), [sortedProjects]);
+  const recentWorkspaces = useMemo(() => sortedWorkspaces.slice(0, 5), [sortedWorkspaces]);
 
   const filteredAccountsList = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -804,29 +812,29 @@ export function CommandPalette() {
     return q ? sorted.filter((a) => (a.name || '').toLowerCase().includes(q)) : sorted;
   }, [accountsList, query]);
 
-  const filteredProjectSessionsList = useMemo(() => {
+  const filteredWorkspaceSessionsList = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
+    const sorted = sortSessionsByLastActivity(workspaceSessionsList ?? []);
     return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(
       0,
       50,
     );
-  }, [projectSessionsList, query]);
+  }, [workspaceSessionsList, query]);
 
   const rootSessionResults = useMemo(() => {
-    if (!hasQuery || !projectId) return [];
-    return filteredProjectSessionsList.slice(0, 8);
-  }, [hasQuery, projectId, filteredProjectSessionsList]);
+    if (!hasQuery || !workspaceId) return [];
+    return filteredWorkspaceSessionsList.slice(0, 8);
+  }, [hasQuery, workspaceId, filteredWorkspaceSessionsList]);
 
-  const rootProjectResults = useMemo(() => {
-    if (!hasQuery || projectId) return [];
-    return filteredProjectsList.slice(0, 8);
-  }, [hasQuery, projectId, filteredProjectsList]);
+  const rootWorkspaceResults = useMemo(() => {
+    if (!hasQuery || workspaceId) return [];
+    return filteredWorkspacesList.slice(0, 8);
+  }, [hasQuery, workspaceId, filteredWorkspacesList]);
 
   const hasSessionResults = rootSessionResults.length > 0;
-  const hasProjectResults = rootProjectResults.length > 0;
+  const hasWorkspaceResults = rootWorkspaceResults.length > 0;
   const hasAnyResults =
-    hasNavResults || hasSessionResults || hasProjectResults || hasSessionActionResults;
+    hasNavResults || hasSessionResults || hasWorkspaceResults || hasSessionActionResults;
 
   const showNoResults = hasQuery && queryLongEnough && !hasAnyResults;
 
@@ -849,11 +857,11 @@ export function CommandPalette() {
 
   const handleSelectFile = useCallback(
     (_filePath: string, _lineNumber?: number) => {
-      if (!projectId) return close();
-      router.push(`/workspaces/${projectId}/files`);
+      if (!workspaceId) return close();
+      router.push(`/workspaces/${workspaceId}/files`);
       close();
     },
-    [projectId, router, close],
+    [workspaceId, router, close],
   );
 
   const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
@@ -1298,15 +1306,15 @@ export function CommandPalette() {
   const totalSearchResults = useMemo(() => {
     if (page === 'agents') return filteredAgents.length;
     if (page === 'models') return visibleModels.length;
-    if (page === 'projects') return filteredProjectsList.length;
+    if (page === 'workspaces') return filteredWorkspacesList.length;
     if (page === 'accounts') return filteredAccountsList.length;
-    if (page === 'sessions') return filteredProjectSessionsList.length;
+    if (page === 'sessions') return filteredWorkspaceSessionsList.length;
     if (page === 'messages') return 0;
     if (!hasQuery) return 0;
     return (
       filteredNavItems.length +
       rootSessionResults.length +
-      rootProjectResults.length +
+      rootWorkspaceResults.length +
       sessionActionItems.length
     );
   }, [
@@ -1314,21 +1322,21 @@ export function CommandPalette() {
     hasQuery,
     filteredNavItems,
     rootSessionResults,
-    rootProjectResults,
+    rootWorkspaceResults,
     sessionActionItems,
     filteredAgents,
     visibleModels,
-    filteredProjectsList,
+    filteredWorkspacesList,
     filteredAccountsList,
-    filteredProjectSessionsList,
+    filteredWorkspaceSessionsList,
   ]);
 
   const placeholder = useMemo(() => {
     if (page === 'agents') return 'Search agents...';
     if (page === 'models') return 'Search models...';
-    if (page === 'files') return 'Search files in this project...';
+    if (page === 'files') return 'Search files in this workspace...';
     if (page === 'messages') return 'Search messages...';
-    if (page === 'projects') return 'Search projects...';
+    if (page === 'workspaces') return 'Search workspaces...';
     if (page === 'accounts') return 'Search accounts...';
     if (page === 'sessions') return 'Search sessions...';
     return 'Search commands, sessions...';
@@ -1339,7 +1347,7 @@ export function CommandPalette() {
     if (page === 'models') return 'Change Model';
     if (page === 'files') return 'Search Files';
     if (page === 'messages') return 'Jump to Message';
-    if (page === 'projects') return 'Switch Project';
+    if (page === 'workspaces') return 'Switch Workspace';
     if (page === 'accounts') return 'Switch Account';
     if (page === 'sessions') return 'Open Session';
     return null;
@@ -1472,7 +1480,7 @@ export function CommandPalette() {
                         </>
                       )}
 
-                      {projectId && (
+                      {workspaceId && (
                         <CommandItem
                           value="suggestion search files find file grep repo content"
                           onSelect={() => goToPage('files')}
@@ -1491,20 +1499,20 @@ export function CommandPalette() {
                       )}
                     </CommandGroup>
 
-                    {projectId && recentProjectSessions.length > 0 && (
+                    {workspaceId && recentWorkspaceSessions.length > 0 && (
                       <CommandGroup
                         heading={tHardcodedUi.raw(
                           'componentsCommandPalette.line1260JsxAttrHeadingRecentSessions',
                         )}
                         forceMount
                       >
-                        {recentProjectSessions.map((session) => (
+                        {recentWorkspaceSessions.map((session) => (
                           <CommandItem
                             key={session.session_id}
                             value={sanitizeCmdkValue(
                               `recent ${sessionName(session)} ${session.session_id}`,
                             )}
-                            onSelect={() => handleSelectProjectSession(session)}
+                            onSelect={() => handleSelectWorkspaceSession(session)}
                           >
                             <MessageCircle className="size-4 flex-shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
@@ -1518,27 +1526,29 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {!projectId && recentProjects.length > 0 && (
+                    {!workspaceId && recentWorkspaces.length > 0 && (
                       <CommandGroup
                         heading={tHardcodedUi.raw(
                           'componentsCommandPalette.line1281JsxAttrHeadingRecentProjects',
                         )}
                         forceMount
                       >
-                        {recentProjects.map((project) => (
+                        {recentWorkspaces.map((workspace) => (
                           <CommandItem
-                            key={project.project_id}
+                            key={workspace.workspace_id}
                             value={sanitizeCmdkValue(
-                              `recent project ${project.name} ${project.project_id}`,
+                              `recent workspace ${workspace.name} ${workspace.workspace_id}`,
                             )}
-                            onSelect={() => handleSelectProject(project)}
+                            onSelect={() => handleSelectWorkspace(workspace)}
                           >
                             <FolderGit2 className="size-4 flex-shrink-0" />
-                            <span className="flex-1 truncate">{project.name}</span>
-                            {(project.last_opened_at || project.updated_at) && (
+                            <span className="flex-1 truncate">{workspace.name}</span>
+                            {(workspace.last_opened_at || workspace.updated_at) && (
                               <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
                                 {formatRelativeTime(
-                                  new Date(project.last_opened_at || project.updated_at).getTime(),
+                                  new Date(
+                                    workspace.last_opened_at || workspace.updated_at,
+                                  ).getTime(),
                                 )}
                               </span>
                             )}
@@ -1636,7 +1646,7 @@ export function CommandPalette() {
                             value={sanitizeCmdkValue(
                               `session ${sessionName(session)} ${session.session_id}`,
                             )}
-                            onSelect={() => handleSelectProjectSession(session)}
+                            onSelect={() => handleSelectWorkspaceSession(session)}
                           >
                             <MessageCircle className="size-4 flex-shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
@@ -1653,22 +1663,24 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {hasProjectResults && (
-                      <CommandGroup heading="Projects" forceMount>
-                        {rootProjectResults.map((project) => (
+                    {hasWorkspaceResults && (
+                      <CommandGroup heading="Workspaces" forceMount>
+                        {rootWorkspaceResults.map((workspace) => (
                           <CommandItem
-                            key={project.project_id}
+                            key={workspace.workspace_id}
                             value={sanitizeCmdkValue(
-                              `project ${project.name} ${project.project_id}`,
+                              `workspace ${workspace.name} ${workspace.workspace_id}`,
                             )}
-                            onSelect={() => handleSelectProject(project)}
+                            onSelect={() => handleSelectWorkspace(workspace)}
                           >
                             <FolderGit2 className="size-4 flex-shrink-0" />
-                            <span className="flex-1 truncate">{project.name}</span>
-                            {(project.last_opened_at || project.updated_at) && (
+                            <span className="flex-1 truncate">{workspace.name}</span>
+                            {(workspace.last_opened_at || workspace.updated_at) && (
                               <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
                                 {formatRelativeTime(
-                                  new Date(project.last_opened_at || project.updated_at).getTime(),
+                                  new Date(
+                                    workspace.last_opened_at || workspace.updated_at,
+                                  ).getTime(),
                                 )}
                               </span>
                             )}
@@ -1703,7 +1715,7 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {queryLongEnough && !detectedUrl && projectId && (
+                    {queryLongEnough && !detectedUrl && workspaceId && (
                       <CommandGroup
                         heading={tHardcodedUi.raw(
                           'componentsCommandPalette.line1437JsxAttrHeadingFileSearch',
@@ -1914,22 +1926,24 @@ export function CommandPalette() {
               </>
             )}
 
-            {page === 'files' && projectId && (
+            {page === 'files' && workspaceId && (
               <FileSearchPage query={query} onSelect={handleSelectFile} />
             )}
 
-            {page === 'projects' &&
-              (filteredProjectsList.length > 0 ? (
-                <CommandGroup heading="Projects" forceMount>
-                  {filteredProjectsList.map((project) => (
+            {page === 'workspaces' &&
+              (filteredWorkspacesList.length > 0 ? (
+                <CommandGroup heading="Workspaces" forceMount>
+                  {filteredWorkspacesList.map((workspace) => (
                     <CommandItem
-                      key={project.project_id}
-                      value={sanitizeCmdkValue(`project ${project.name} ${project.project_id}`)}
-                      onSelect={() => handleSelectProject(project)}
+                      key={workspace.workspace_id}
+                      value={sanitizeCmdkValue(
+                        `workspace ${workspace.name} ${workspace.workspace_id}`,
+                      )}
+                      onSelect={() => handleSelectWorkspace(workspace)}
                     >
                       <FolderGit2 className="text-muted-foreground size-4 shrink-0" />
-                      <span className="flex-1 truncate">{project.name}</span>
-                      {project.project_id === params?.id && (
+                      <span className="flex-1 truncate">{workspace.name}</span>
+                      {workspace.workspace_id === params?.id && (
                         <Check className="text-primary h-3.5 w-3.5 shrink-0" />
                       )}
                     </CommandItem>
@@ -1939,7 +1953,7 @@ export function CommandPalette() {
                 <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
                   <FolderGit2 className="text-muted-foreground/30 size-5" />
                   <span className="text-muted-foreground/60 text-sm">
-                    {query ? `No projects matching "${query}"` : 'No projects yet'}
+                    {query ? `No workspaces matching "${query}"` : 'No workspaces yet'}
                   </span>
                 </div>
               ))}
@@ -1977,15 +1991,15 @@ export function CommandPalette() {
               ))}
 
             {page === 'sessions' &&
-              (filteredProjectSessionsList.length > 0 ? (
+              (filteredWorkspaceSessionsList.length > 0 ? (
                 <CommandGroup heading="Sessions" forceMount>
-                  {filteredProjectSessionsList.map((session) => (
+                  {filteredWorkspaceSessionsList.map((session) => (
                     <CommandItem
                       key={session.session_id}
                       value={sanitizeCmdkValue(
                         `session ${sessionName(session)} ${session.session_id}`,
                       )}
-                      onSelect={() => handleSelectProjectSession(session)}
+                      onSelect={() => handleSelectWorkspaceSession(session)}
                     >
                       <MessageCircle className="text-muted-foreground size-4 shrink-0" />
                       <span className="flex-1 truncate">{sessionName(session)}</span>

@@ -318,7 +318,7 @@ const META_TOOLS = [
   {
     name: 'request_secret',
     description:
-      'Get a link the human opens to enter one or more project SECRET values (e.g. an API key), and SURFACE the returned url in your reply. Use this whenever you need a credential you do not have — never ask the human to paste a raw key into chat or to hunt through the dashboard. The value is never pasted into chat; once they submit it, the secret becomes available to your session (check KORTIX_PROJECT_SECRET_NAMES). In the web UI the link opens a fill-in modal; in Slack it is a tappable link. scope "runtime" (default) injects the value into your sandbox env; "connector" keeps it server-side only.',
+      'Get a link the human opens to enter one or more workspace SECRET values (e.g. an API key), and SURFACE the returned url in your reply. Use this whenever you need a credential you do not have — never ask the human to paste a raw key into chat or to hunt through the dashboard. The value is never pasted into chat; once they submit it, the secret becomes available to your session (check KORTIX_WORKSPACE_SECRET_NAMES; KORTIX_PROJECT_SECRET_NAMES remains a compatibility alias). In the web UI the link opens a fill-in modal; in Slack it is a tappable link. scope "runtime" (default) injects the value into your sandbox env; "connector" keeps it server-side only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -354,7 +354,7 @@ const META_TOOLS = [
   {
     name: 'add_connector',
     description:
-      'Add or update a connector on this project now. The command commits kortix.yaml to main and syncs it server-side. Use `connect` for Pipedream or `request_secret` for its credential. For Pipedream pass provider="pipedream" and app (for example, "smartlead").',
+      'Add or update a connector on this workspace now. The command commits kortix.yaml to main and syncs it server-side. Use `connect` for Pipedream or `request_secret` for its credential. For Pipedream pass provider="pipedream" and app (for example, "smartlead").',
     inputSchema: {
       type: 'object',
       properties: {
@@ -392,7 +392,7 @@ const META_TOOLS = [
   {
     name: 'remove_connector',
     description:
-      'Remove a connector from this project (committed to kortix.yaml on main + catalog). No change request needed.',
+      'Remove a connector from this workspace (committed to kortix.yaml on main + catalog). No change request needed.',
     inputSchema: {
       type: 'object',
       properties: { slug: { type: 'string', description: 'Connector slug to remove.' } },

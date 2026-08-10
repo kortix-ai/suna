@@ -84,7 +84,7 @@ describe('projectWebUrl / sessionWebUrl', () => {
     );
   });
 
-  test('session url is built on the project url', () => {
+  test('session url is built on the workspace url', () => {
     expect(sessionWebUrl('https://api-prod.kortix.com/v1', 'p1', 's1')).toBe(
       'https://kortix.com/projects/p1/sessions/s1',
     );

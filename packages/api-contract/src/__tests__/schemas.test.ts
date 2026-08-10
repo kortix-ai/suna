@@ -14,6 +14,11 @@ import {
   ProjectSchema,
   ProjectSessionSandboxSchema,
   ProjectSessionSchema,
+  WorkspaceSchema,
+  WorkspaceSessionSchema,
+  WorkspaceSessionSandboxSchema,
+  WorkspaceSessionStartResultSchema,
+  WorkspaceSecretSchema,
   SecretBrokerRequestSchema,
   SecretBrokerResponseSchema,
   ReconcileConnectionInputSchema,
@@ -232,6 +237,58 @@ function secretFixture(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('Workspace and Project compatibility contracts', () => {
+  test('keeps distinct canonical and legacy entity fields', () => {
+    const { project_id, project_role, effective_project_role, ...shared } = projectFixture();
+    const workspace = {
+      ...shared,
+      workspace_id: project_id,
+      workspace_role: project_role,
+      effective_workspace_role: effective_project_role,
+    };
+
+    expect(WorkspaceSchema.strict().parse(workspace)).toEqual(workspace as any);
+    expect(ProjectSchema.strict().parse(projectFixture())).toEqual(projectFixture() as any);
+    expect(WorkspaceSchema.strict().safeParse(projectFixture()).success).toBe(false);
+    expect(ProjectSchema.strict().safeParse(workspace).success).toBe(false);
+  });
+
+  test('keeps canonical session, sandbox, start, and secret fields Workspace-specific', () => {
+    const { project_id: sessionProjectId, ...sessionShared } = sessionFixture();
+    const session = { ...sessionShared, workspace_id: sessionProjectId };
+    const { project_id: sandboxProjectId, ...sandboxShared } = sandboxFixture();
+    const sandbox = { ...sandboxShared, workspace_id: sandboxProjectId };
+    const { project_id: secretProjectId, ...secretShared } = secretFixture();
+    const secret = { ...secretShared, workspace_id: secretProjectId };
+    const start = {
+      stage: 'ready',
+      agent_name: 'default',
+      retriable: false,
+      sandbox,
+      opencode_session_id: 'ses_abc',
+    };
+
+    expect(WorkspaceSessionSchema.strict().parse(session)).toEqual(session as any);
+    expect(
+      WorkspaceSessionSchema.strict().safeParse({
+        ...session,
+        visibility: 'workspace',
+        sharing: { mode: 'workspace' },
+      }).success,
+    ).toBe(true);
+    expect(
+      WorkspaceSessionSchema.strict().safeParse({
+        ...session,
+        visibility: 'project',
+        sharing: { mode: 'project' },
+      }).success,
+    ).toBe(false);
+    expect(WorkspaceSessionSandboxSchema.strict().parse(sandbox)).toEqual(sandbox as any);
+    expect(WorkspaceSessionStartResultSchema.strict().parse(start)).toEqual(start as any);
+    expect(WorkspaceSecretSchema.strict().parse(secret)).toEqual(secret as any);
+  });
+});
 
 describe('ProjectSchema', () => {
   test('accepts a full serialized project', () => {

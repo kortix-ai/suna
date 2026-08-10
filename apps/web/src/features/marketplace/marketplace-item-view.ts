@@ -69,7 +69,7 @@ export interface TypedMemberGroup {
   members: BundleMember[];
 }
 
-// Order + plural labels for a project's contents, so "what's inside" reads as
+// Order + plural labels for a workspace's contents, so "what's inside" reads as
 // typed sections (Skills, Agents, Tools, …) instead of a flat list.
 const MEMBER_TYPE_ORDER = [
   'registry:skill',
@@ -85,10 +85,10 @@ const MEMBER_TYPE_LABELS: Record<string, string> = {
   'registry:command': 'Commands',
   'registry:tool': 'Tools',
   'registry:bundle': 'Bundles',
-  'registry:project': 'Projects',
+  'registry:project': 'Workspaces',
 };
 
-/** Bucket bundle/project members by registry type in a stable order, with an
+/** Bucket bundle/workspace members by registry type in a stable order, with an
  *  "Other" bucket for anything unrecognized (or a null type). */
 export function groupBundleMembersByType(members: BundleMember[]): TypedMemberGroup[] {
   const byType = new Map<string, BundleMember[]>();

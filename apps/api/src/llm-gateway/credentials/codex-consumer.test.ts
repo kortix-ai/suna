@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
+const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
 const USER_ID = '33333333-3333-4333-8333-333333333333';
 const SESSION_ID = 'session-1';
@@ -11,7 +11,7 @@ const updates: Array<Record<string, unknown>> = [];
 let resolvedValue: string | null = JSON.stringify({
   openai: { type: 'oauth', access: 'codex-access', expires: Date.now() + 60 * 60_000 },
 });
-const resolveProjectSecretForConsumer = mock(async () =>
+const resolveWorkspaceSecretForConsumer = mock(async () =>
   resolvedValue === null
     ? null
     : {
@@ -23,10 +23,10 @@ const resolveProjectSecretForConsumer = mock(async () =>
       },
 );
 
-mock.module('../../projects/secrets', () => ({
-  decryptProjectSecret: (_projectId: string, value: string) => value,
-  encryptProjectSecret: (_projectId: string, value: string) => value,
-  resolveProjectSecretForConsumer,
+mock.module('../../workspaces/secrets', () => ({
+  decryptWorkspaceSecret: (_workspaceId: string, value: string) => value,
+  encryptWorkspaceSecret: (_workspaceId: string, value: string) => value,
+  resolveWorkspaceSecretForConsumer,
 }));
 
 mock.module('../../shared/db', () => ({
@@ -61,7 +61,7 @@ const { CodexRefreshError, resolveCodexCredential } = await import('./codex');
 
 describe('resolveCodexCredential consumer boundary', () => {
   beforeEach(() => {
-    resolveProjectSecretForConsumer.mockClear();
+    resolveWorkspaceSecretForConsumer.mockClear();
     audits.length = 0;
     updates.length = 0;
     resolvedValue = JSON.stringify({
@@ -71,13 +71,13 @@ describe('resolveCodexCredential consumer boundary', () => {
 
   test('loads the user override through the audited LLM gateway boundary', async () => {
     expect(
-      await resolveCodexCredential(PROJECT_ID, USER_ID, undefined, {
+      await resolveCodexCredential(WORKSPACE_ID, USER_ID, undefined, {
         accountId: ACCOUNT_ID,
         sessionId: SESSION_ID,
       }),
     ).toEqual({ access: 'codex-access', accountId: undefined });
-    expect(resolveProjectSecretForConsumer).toHaveBeenCalledWith({
-      projectId: PROJECT_ID,
+    expect(resolveWorkspaceSecretForConsumer).toHaveBeenCalledWith({
+      workspaceId: WORKSPACE_ID,
       accountId: ACCOUNT_ID,
       sessionId: SESSION_ID,
       actorUserId: USER_ID,
@@ -91,7 +91,7 @@ describe('resolveCodexCredential consumer boundary', () => {
     resolvedValue = null;
 
     expect(
-      await resolveCodexCredential(PROJECT_ID, USER_ID, undefined, {
+      await resolveCodexCredential(WORKSPACE_ID, USER_ID, undefined, {
         accountId: ACCOUNT_ID,
         sessionId: SESSION_ID,
       }),
@@ -107,7 +107,7 @@ describe('resolveCodexCredential consumer boundary', () => {
     );
 
     expect(
-      await resolveCodexCredential(PROJECT_ID, USER_ID, fetchImpl, {
+      await resolveCodexCredential(WORKSPACE_ID, USER_ID, fetchImpl, {
         accountId: ACCOUNT_ID,
         sessionId: SESSION_ID,
       }),
@@ -136,7 +136,7 @@ describe('resolveCodexCredential consumer boundary', () => {
     const fetchImpl = mock(async () => new Response('{}', { status: 401 }));
 
     await expect(
-      resolveCodexCredential(PROJECT_ID, USER_ID, fetchImpl, {
+      resolveCodexCredential(WORKSPACE_ID, USER_ID, fetchImpl, {
         accountId: ACCOUNT_ID,
         sessionId: SESSION_ID,
       }),

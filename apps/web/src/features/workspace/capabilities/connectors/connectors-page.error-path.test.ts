@@ -9,7 +9,7 @@ const source = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8'
  * `connector-tools.write-path.test.ts`.
  *
  * The page runs TWO queries and every flag read off the second one FAILS
- * CLOSED. `getProjectDetail` returning 500 leaves `experimental` undefined, so
+ * CLOSED. `getWorkspaceDetail` returning 500 leaves `experimental` undefined, so
  * `discoverEnabled` and `emailChannelEnabled` are both false, and two things
  * change with no error and no way back:
  *
@@ -29,7 +29,7 @@ const source = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8'
  */
 describe('connectors page error path', () => {
   test('the grid reports a failure in EITHER query', () => {
-    expect(source).toContain('const isError = connectorsQuery.isError || projectQuery.isError;');
+    expect(source).toContain('const isError = connectorsQuery.isError || workspaceQuery.isError;');
     expect(source).toContain('isError={isError}');
     // A bare `connectorsQuery.isError` reaching the grid is the regression.
     expect(source).not.toContain('isError={connectorsQuery.isError}');
@@ -44,24 +44,24 @@ describe('connectors page error path', () => {
     expect(end).toBeGreaterThan(start);
     const retry = source.slice(start, end);
     expect(retry).toContain('connectorsQuery.refetch()');
-    expect(retry).toContain('projectQuery.refetch()');
+    expect(retry).toContain('workspaceQuery.refetch()');
     expect(source).toContain('onRetry={retry}');
   });
 
-  test('every flag the project query feeds is still derived from it alone', () => {
-    // If a flag ever stops coming from `projectQuery`, the coupling above is
+  test('every flag the workspace query feeds is still derived from it alone', () => {
+    // If a flag ever stops coming from `workspaceQuery`, the coupling above is
     // no longer sufficient and this test should be revisited rather than
     // silently outlived.
     // The flags now come from the ONE gating primitive, which reads the SAME
-    // `qk.project.detail(projectId)` entry `projectQuery` holds — so the
+    // `qk.workspace.detail(workspaceId)` entry `workspaceQuery` holds — so the
     // coupling this file guards is unchanged, only the expression is.
     expect(source).toContain(
-      "const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;",
+      "const discoverEnabled = useFeatureFlag(workspaceId, 'connectors_api_discover').enabled;",
     );
     expect(source).toContain(
-      "const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;",
+      "const emailChannelEnabled = useFeatureFlag(workspaceId, 'agentmail_email').enabled;",
     );
-    expect(source).toContain('queryKey: qk.project.detail(projectId)');
+    expect(source).toContain('queryKey: qk.workspace.detail(workspaceId)');
     // No hand-rolled flag read survives here.
     expect(source).not.toContain('?.experimental?.');
   });

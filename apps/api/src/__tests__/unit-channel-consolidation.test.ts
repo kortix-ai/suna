@@ -11,8 +11,8 @@ import {
   extractConnectors,
   SLACK_RESERVED_SLUG,
   RESERVED_CONNECTOR_SLUGS,
-} from '../projects/connectors';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+} from '../workspaces/connectors';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../workspaces/triggers';
 import {
   hideSupersededSlack,
   withChannelDeclaration,

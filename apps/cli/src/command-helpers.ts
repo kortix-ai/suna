@@ -3,18 +3,18 @@ import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
 import { activeHostName, hasEnvTokenHost, listHosts } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { ensureDefaultProjectBinding } from './project-bind.ts';
-import { loadLink, resolveProjectId } from './project-link.ts';
+import { ensureDefaultWorkspaceBinding } from './workspace-bind.ts';
+import { loadWorkspaceLink, resolveWorkspaceId } from './workspace-link.ts';
 import { C, status } from './style.ts';
-import type { MeResponse, ProjectSession, ProjectSummary } from './api/types.ts';
+import type { MeResponse, WorkspaceSession, WorkspaceSummary } from './api/types.ts';
 
-interface ProjectContextOpts {
-  /** Override project via --project flag or KORTIX_PROJECT_ID env. */
-  projectArg?: string;
+interface WorkspaceContextOpts {
+  /** Override workspace via --workspace or the deprecated --project alias. */
+  workspaceArg?: string;
   /** Override active host for this invocation via --host flag. */
   hostArg?: string;
   /**
-   * Do not print "No project linked" when nothing resolves.
+   * Do not print "No workspace linked" when nothing resolves.
    *
    * Set by callers that have a fallback — `locateSessionAnywhere` goes on to
    * scan the host's other accounts, and usually finds the session. Printing a
@@ -26,8 +26,8 @@ interface ProjectContextOpts {
 }
 
 /**
- * Common setup for any project-scoped command: validate auth, resolve a
- * project id, build an API client. Prints a friendly error and returns
+ * Common setup for any workspace-scoped command: validate auth, resolve a
+ * workspace id, build an API client. Prints a friendly error and returns
  * null if either piece is missing.
  *
  * Host resolution order:
@@ -39,20 +39,20 @@ interface ProjectContextOpts {
  *   4. globally active host (~/.config/kortix/config.json)
  *
  * Backward-compatible call shape: callers that pass a string get the
- * `(projectArg)` behavior; callers that need --host pass an object.
+ * `(workspaceArg)` behavior; callers that need --host pass an object.
  */
-export async function resolveProjectContext(
-  optsOrProjectArg?: ProjectContextOpts | string,
-): Promise<{ client: ApiClient; projectId: string; auth: Auth } | null> {
-  const opts: ProjectContextOpts =
-    typeof optsOrProjectArg === 'string'
-      ? { projectArg: optsOrProjectArg }
-      : optsOrProjectArg ?? {};
+export async function resolveWorkspaceContext(
+  optsOrWorkspaceArg?: WorkspaceContextOpts | string,
+): Promise<{ client: ApiClient; workspaceId: string; auth: Auth } | null> {
+  const opts: WorkspaceContextOpts =
+    typeof optsOrWorkspaceArg === 'string'
+      ? { workspaceArg: optsOrWorkspaceArg }
+      : optsOrWorkspaceArg ?? {};
 
   // Resolve the host: explicit flag → sandbox env token → link.json's host → active.
   let hostFromLink: string | undefined;
   if (!opts.hostArg && !hasEnvTokenHost()) {
-    hostFromLink = loadLink()?.host ?? undefined;
+    hostFromLink = loadWorkspaceLink()?.host ?? undefined;
   }
   const hostName = opts.hostArg ?? hostFromLink;
 
@@ -69,28 +69,28 @@ export async function resolveProjectContext(
     }
     return null;
   }
-  let projectId = resolveProjectId(opts.projectArg);
-  if (!projectId) {
-    // The always-bound invariant: recover by binding a default project right
+  let workspaceId = resolveWorkspaceId(opts.workspaceArg);
+  if (!workspaceId) {
+    // The always-bound invariant: recover by binding a default workspace right
     // here instead of dead-ending. (Inside a sandbox the env-token host
-    // always carries KORTIX_PROJECT_ID, so this never fires there; on a
+    // carries KORTIX_WORKSPACE_ID, so this never fires there; on a
     // non-TTY it degrades to a hint and the error below.)
-    const outcome = await ensureDefaultProjectBinding(auth, {
-      promptTitle: 'No project bound — pick one for this command',
+    const outcome = await ensureDefaultWorkspaceBinding(auth, {
+      promptTitle: 'No workspace bound — pick one for this command',
       quiet: opts.quietWhenUnresolved,
     });
-    projectId = outcome.project?.project_id ?? null;
+    workspaceId = outcome.workspace?.workspace_id ?? null;
   }
-  if (!projectId) {
+  if (!workspaceId) {
     if (!opts.quietWhenUnresolved) {
       process.stderr.write(
-        `${status.err('No project linked.')} Run \`kortix projects use\`, ` +
-          `\`kortix projects link\`, or pass ${C.cyan}--project <id>${C.reset}.\n`,
+        `${status.err('No workspace linked.')} Run \`kortix workspaces use\`, ` +
+          `\`kortix workspaces link\`, or pass ${C.cyan}--workspace <id>${C.reset}.\n`,
       );
     }
     return null;
   }
-  return { client: clientFromAuth(auth), projectId, auth };
+  return { client: clientFromAuth(auth), workspaceId, auth };
 }
 
 /**
@@ -103,15 +103,15 @@ export function emitJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
 
-// ── Cross-host/account/project resource discovery ───────────────────────────
+// ── Cross-host/account/workspace resource discovery ─────────────────────────
 //
-// Every session/project route is scoped to a specific Kortix host (a project
+// Every session/workspace route is scoped to a specific Kortix host (a workspace
 // id or session id only exists in one Postgres) — so an id from a different
 // host, or a different account on the same host, than the one currently
 // active/linked 404s even though it's real and reachable with the same (or a
 // differently-logged-in) set of credentials. `locateSessionAnywhere` and
-// `locateProjectAnywhere` try the normal fast path first, then — unless the
-// caller pinned --host/--project — scan every OTHER logged-in host (and, for
+// `locateWorkspaceAnywhere` try the normal fast path first, then — unless the
+// caller pinned --host/--workspace — scan every OTHER logged-in host (and, for
 // sessions, every account on it) for the id. If it's on a host with no stored
 // credentials at all, we can't silently authenticate (login is an interactive
 // browser flow) — so the failure message prints ready-to-run
@@ -120,20 +120,20 @@ export function emitJson(data: unknown): void {
 export interface LocatedSession {
   client: ApiClient;
   auth: Auth;
-  projectId: string;
-  projectName?: string;
-  session: ProjectSession;
+  workspaceId: string;
+  workspaceName?: string;
+  session: WorkspaceSession;
   /** Only set when the session was found via the cross-host scan. */
   hostName?: string;
 }
 
 /**
- * Resolve which project (and host) a session id lives in, and return the
+ * Resolve which workspace (and host) a session id lives in, and return the
  * already-fetched session row (no redundant re-fetch by the caller). Tries
- * the caller's normally-resolved context (--host/--project, link, or
- * default) first. `--project` pins the exact target — no further search.
+ * the caller's normally-resolved context (--host/--workspace, link, or
+ * default) first. `--workspace` pins the exact target — no further search.
  * `--host` alone only pins the HOST — the id may still be in a different
- * account/project on it, so that host's other accounts/projects are
+ * account/workspace on it, so that host's other accounts/workspaces are
  * scanned too before giving up and moving on. With neither flag, every
  * other logged-in host is scanned as well. `retryCommand` builds the full
  * CLI invocation to suggest for a host without stored credentials (e.g.
@@ -142,24 +142,24 @@ export interface LocatedSession {
  */
 export async function locateSessionAnywhere(
   sessionId: string,
-  opts: ProjectContextOpts,
+  opts: WorkspaceContextOpts,
   retryCommand: (hostName: string) => string,
 ): Promise<{ located: LocatedSession; switched: boolean } | null> {
-  const projectPinned = Boolean(opts.projectArg);
+  const workspacePinned = Boolean(opts.workspaceArg);
   // A pinned host with literally no stored credentials can't be scanned
-  // either — resolveProjectContext already explained that below.
+  // either — resolveWorkspaceContext already explained that below.
   const hostPinnedButLoggedOut = Boolean(opts.hostArg) && !loadAuthForHost(opts.hostArg!)?.token;
 
   // Quiet: the cross-account scan below is the real answer for a user whose
-  // active account holds no projects, and it usually finds the session.
-  const ctx = await resolveProjectContext({ ...opts, quietWhenUnresolved: true });
+  // active account holds no workspaces, and it usually finds the session.
+  const ctx = await resolveWorkspaceContext({ ...opts, quietWhenUnresolved: true });
   if (ctx) {
     // Short-id ergonomics: `sessions ls`/`status` print 8-char ids, so accept
     // any unambiguous prefix instead of failing with "Invalid session id". The
     // list already carries the full row, so a prefix hit returns it directly and
     // skips the per-session re-fetch below.
     if (!SESSION_UUID_RE.test(sessionId)) {
-      const expanded = await expandSessionIdPrefix(ctx.client, ctx.projectId, sessionId);
+      const expanded = await expandSessionIdPrefix(ctx.client, ctx.workspaceId, sessionId);
       if (expanded === 'ambiguous') {
         process.stderr.write(
           `${status.err(`Several sessions match "${sessionId}" — use more of the id.`)}\n`,
@@ -168,15 +168,15 @@ export async function locateSessionAnywhere(
       }
       if (expanded) {
         return {
-          located: { client: ctx.client, auth: ctx.auth, projectId: ctx.projectId, session: expanded },
+          located: { client: ctx.client, auth: ctx.auth, workspaceId: ctx.workspaceId, session: expanded },
           switched: false,
         };
       }
     }
-    const probed = await probeSession(ctx.client, ctx.projectId, sessionId);
+    const probed = await probeSession(ctx.client, ctx.workspaceId, sessionId);
     if (probed !== false && !(probed instanceof ApiError)) {
       return {
-          located: { client: ctx.client, auth: ctx.auth, projectId: ctx.projectId, session: probed },
+          located: { client: ctx.client, auth: ctx.auth, workspaceId: ctx.workspaceId, session: probed },
         switched: false,
       };
     }
@@ -184,64 +184,56 @@ export async function locateSessionAnywhere(
       surfaceApiError(probed);
       return null;
     }
-  } else if (projectPinned || hostPinnedButLoggedOut) {
-    // resolveProjectContext already printed why (bad --host/--project, or
+  } else if (workspacePinned || hostPinnedButLoggedOut) {
+    // resolveWorkspaceContext already printed why (bad --host/--workspace, or
     // not logged in on that host).
     return null;
   }
 
-  if (projectPinned) {
-    process.stderr.write(`${status.err(`Session ${sessionId} not found in this project.`)}\n`);
+  if (workspacePinned) {
+    process.stderr.write(`${status.err(`Session ${sessionId} not found in this workspace.`)}\n`);
     return null;
   }
 
   process.stderr.write(
-    `${C.dim}Not in the active project — checking ` +
+    `${C.dim}Not in the active workspace — checking ` +
       `${opts.hostArg ? `other accounts on "${opts.hostArg}"` : 'your other logged-in hosts'}…${C.reset}\n`,
   );
   const found = opts.hostArg
     ? await scanHostForSession(opts.hostArg, sessionId)
     : await scanAllHostsForSession(sessionId);
   if (!found) {
-    process.stderr.write(`${status.err(`Session ${sessionId} not found in any project you can access.`)}\n`);
+    process.stderr.write(`${status.err(`Session ${sessionId} not found in any workspace you can access.`)}\n`);
     if (!opts.hostArg) printHostRetryHints(retryCommand);
     return null;
   }
   return { located: found, switched: true };
 }
 
-export interface LocatedProject {
+export interface LocatedWorkspace {
   client: ApiClient;
   auth: Auth;
-  project: ProjectSummary;
-  /** Only set when the project was found via the cross-host scan. */
+  workspace: WorkspaceSummary;
+  /** Only set when the workspace was found via the cross-host scan. */
   hostName?: string;
 }
 
-export interface ProjectNamespace {
-  route: '/projects' | '/workspaces';
-  singular: 'project' | 'workspace';
-  normalize: (value: unknown) => ProjectSummary;
-}
-
-const PROJECT_NAMESPACE: ProjectNamespace = {
-  route: '/projects',
-  singular: 'project',
-  normalize: (value) => value as ProjectSummary,
-};
-
 /**
- * Resolve which host a project id lives on, and return the already-fetched
- * project row. Project-id routes resolve their account from the id itself
+ * Resolve which host a workspace id lives on, and return the already-fetched
+ * workspace row. Workspace-id routes resolve their account from the id itself
  * (see `ClientFromAuthOptions.accountId` in api/client.ts), so unlike
  * sessions this only needs to scan hosts, not accounts within a host.
  */
-export async function locateProjectAnywhere(
-  projectId: string,
-  opts: { hostArg?: string },
+export async function locateWorkspaceAnywhere(
+  workspaceId: string,
+  opts: {
+    hostArg?: string;
+    /** Compatibility adapter for legacy top-level namespaces. */
+    route?: string;
+    normalize?: (value: unknown) => WorkspaceSummary;
+  },
   retryCommand: (hostName: string) => string,
-  namespace: ProjectNamespace = PROJECT_NAMESPACE,
-): Promise<{ located: LocatedProject; switched: boolean } | null> {
+): Promise<{ located: LocatedWorkspace; switched: boolean } | null> {
   const pinned = Boolean(opts.hostArg);
   const primaryHostName = opts.hostArg ?? activeHostName() ?? undefined;
   const primaryAuth = opts.hostArg ? loadAuthForHost(opts.hostArg) : loadAuth();
@@ -253,16 +245,19 @@ export async function locateProjectAnywhere(
     return null;
   }
   if (primaryAuth?.token) {
-    const probed = await probeProject(clientFromAuth(primaryAuth), projectId, namespace);
+    const probed = await probeWorkspace(clientFromAuth(primaryAuth), workspaceId, opts);
     if (probed !== false && !(probed instanceof ApiError)) {
-      return { located: { client: clientFromAuth(primaryAuth), auth: primaryAuth, project: probed }, switched: false };
+      return {
+        located: { client: clientFromAuth(primaryAuth), auth: primaryAuth, workspace: probed },
+        switched: false,
+      };
     }
     if (probed instanceof ApiError) {
       surfaceApiError(probed);
       return null;
     }
     if (pinned) {
-      process.stderr.write(`${status.err(`${capitalize(namespace.singular)} ${projectId} not found on host "${opts.hostArg}".`)}\n`);
+      process.stderr.write(`${status.err(`Workspace ${workspaceId} not found on host "${opts.hostArg}".`)}\n`);
       return null;
     }
   }
@@ -274,17 +269,24 @@ export async function locateProjectAnywhere(
   const hit = await probeConcurrently(others, async (h) => {
     const auth = loadAuthForHost(h.name);
     if (!auth) return false as const;
-    return probeProject(clientFromAuth(auth), projectId, namespace);
+    return probeWorkspace(clientFromAuth(auth), workspaceId, opts);
   });
   if (hit) {
     const auth = loadAuthForHost(hit.item.name)!;
     return {
-      located: { client: clientFromAuth(auth), auth, project: hit.result, hostName: hit.item.name },
+      located: {
+        client: clientFromAuth(auth),
+        auth,
+        workspace: hit.result,
+        hostName: hit.item.name,
+      },
       switched: true,
     };
   }
 
-  process.stderr.write(`${status.err(`${capitalize(namespace.singular)} ${projectId} not found on any host you're logged into.`)}\n`);
+  process.stderr.write(
+    `${status.err(`Workspace ${workspaceId} not found on any host you're logged into.`)}\n`,
+  );
   printHostRetryHints(retryCommand);
   return null;
 }
@@ -310,15 +312,15 @@ function printHostRetryHints(retryCommand: (hostName: string) => string): void {
 const SESSION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Expand a short session-id prefix against the project's session list,
+/** Expand a short session-id prefix against the workspace's session list,
  *  returning the matched row (the list already carries it — no re-fetch). */
 async function expandSessionIdPrefix(
   client: ApiClient,
-  projectId: string,
+  workspaceId: string,
   reference: string,
-): Promise<ProjectSession | 'ambiguous' | null> {
+): Promise<WorkspaceSession | 'ambiguous' | null> {
   try {
-    const sessions = await client.get<ProjectSession[]>(`/projects/${projectId}/sessions`);
+    const sessions = await client.get<WorkspaceSession[]>(`/workspaces/${workspaceId}/sessions`);
     const matches = sessions.filter((s) => s.session_id.startsWith(reference));
     if (matches.length === 1) return matches[0];
     if (matches.length > 1) return 'ambiguous';
@@ -331,37 +333,36 @@ async function expandSessionIdPrefix(
 
 async function probeSession(
   client: ApiClient,
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
-): Promise<ProjectSession | false | ApiError> {
+): Promise<WorkspaceSession | false | ApiError> {
   try {
-    return await client.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`);
+    return await client.get<WorkspaceSession>(`/workspaces/${workspaceId}/sessions/${sessionId}`);
   } catch (err) {
     if (err instanceof ApiError) return err.status === 404 ? false : err;
-    return false; // network hiccup on one project shouldn't kill the whole scan
+    return false; // A network failure on one workspace must not stop the scan.
   }
 }
 
-async function probeProject(
+async function probeWorkspace(
   client: ApiClient,
-  projectId: string,
-  namespace: ProjectNamespace = PROJECT_NAMESPACE,
-): Promise<ProjectSummary | false | ApiError> {
+  workspaceId: string,
+  adapter: {
+    route?: string;
+    normalize?: (value: unknown) => WorkspaceSummary;
+  } = {},
+): Promise<WorkspaceSummary | false | ApiError> {
   try {
-    const value = await client.get<unknown>(`${namespace.route}/${projectId}`);
-    return namespace.normalize(value);
+    const value = await client.get<unknown>(`${adapter.route ?? '/workspaces'}/${workspaceId}`);
+    return adapter.normalize ? adapter.normalize(value) : (value as WorkspaceSummary);
   } catch (err) {
     if (err instanceof ApiError) return err.status === 404 ? false : err;
     return false;
   }
 }
 
-function capitalize(value: string): string {
-  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
-}
-
-/** Scan every logged-in host's accounts and projects for a session id,
- *  active host first (most likely spot); each host's accounts/projects are
+/** Scan every logged-in host's accounts and workspaces for a session id,
+ *  active host first (most likely spot); each host's accounts/workspaces are
  *  probed with bounded concurrency. */
 async function scanAllHostsForSession(sessionId: string): Promise<LocatedSession | null> {
   const hosts = [...listHosts()]
@@ -376,7 +377,7 @@ async function scanAllHostsForSession(sessionId: string): Promise<LocatedSession
 }
 
 /** Scan every account on ONE named (already logged-in) host for a session
- *  id, concurrency-capped within each account's project list. */
+ *  id, concurrency-capped within each account's workspace list. */
 async function scanHostForSession(hostName: string, sessionId: string): Promise<LocatedSession | null> {
   const auth = loadAuthForHost(hostName);
   if (!auth?.token) return null;
@@ -388,19 +389,21 @@ async function scanHostForSession(hostName: string, sessionId: string): Promise<
   }
   for (const acct of me.accounts) {
     const client = clientFromAuth(auth, { accountId: acct.account_id });
-    let projects: ProjectSummary[];
+    let workspaces: WorkspaceSummary[];
     try {
-      projects = await client.get<ProjectSummary[]>('/projects');
+      workspaces = await client.get<WorkspaceSummary[]>('/workspaces');
     } catch {
       continue;
     }
-    const hit = await probeConcurrently(projects, (p) => probeSession(client, p.project_id, sessionId));
+    const hit = await probeConcurrently(workspaces, (workspace) =>
+      probeSession(client, workspace.workspace_id, sessionId),
+    );
     if (hit) {
       return {
         client,
         auth,
-        projectId: hit.item.project_id,
-        projectName: hit.item.name,
+        workspaceId: hit.item.workspace_id,
+        workspaceName: hit.item.name,
         session: hit.result,
         hostName,
       };
@@ -486,7 +489,7 @@ export function surfaceApiError(err: unknown): number {
       // backend-only secrets 403 tells you to use an API key or PAT);
       // fall back to the generic role message otherwise.
       process.stderr.write(
-        `${status.err(err.message || 'Forbidden — you may not have permission on this project.')}\n`,
+        `${status.err(err.message || 'Forbidden — you may not have permission on this workspace.')}\n`,
       );
     } else if (err.status === 404) {
       process.stderr.write(`${status.err(err.message || 'Not found.')}\n`);

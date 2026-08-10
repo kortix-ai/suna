@@ -44,13 +44,13 @@ interface AccountSummary {
 }
 interface TemplateCreateResult { template_id: string; slug: string }
 
-async function openSandboxSection(page: Page, projectId: string) {
+async function openSandboxSection(page: Page, workspaceId: string) {
   await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible({ timeout: 30_000 });
   const sandboxHeading = page.getByRole('heading', { name: /Sandbox templates/i });
   if (!(await sandboxHeading.isVisible({ timeout: 5_000 }).catch(() => false))) {
     await page.getByRole('button', { name: /^Sandbox$/i }).click();
   }
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), { timeout: 30_000 });
+  await expect(page).toHaveURL(new RegExp(`/projects/${workspaceId}$`), { timeout: 30_000 });
   await expect(sandboxHeading).toBeVisible({ timeout: 30_000 });
 }
 
@@ -59,7 +59,7 @@ test.describe('12 — Sandbox templates UI', () => {
 
   let user: AuthUser;
   let session: AuthSession;
-  let projectId: string;
+  let workspaceId: string;
 
   test.beforeAll(async () => {
     const email = `e2e-sbx-${Date.now()}@kortix.test`;
@@ -75,7 +75,7 @@ test.describe('12 — Sandbox templates UI', () => {
       (account) => account.personal_account || account.is_primary_owner || account.account_role === 'owner',
     );
     expect(personalAccount?.account_id).toBeTruthy();
-    projectId = seedSelfHostedProject({
+    workspaceId = seedSelfHostedProject({
       accountId: personalAccount!.account_id,
       userId: user.id,
       name: projectName,
@@ -83,8 +83,8 @@ test.describe('12 — Sandbox templates UI', () => {
   });
 
   test.afterAll(async () => {
-    if (projectId && session) {
-      await api(session.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+    if (workspaceId && session) {
+      await api(session.access_token, 'DELETE', `/projects/${workspaceId}`).catch(() => {});
     }
     if (user?.id) await deleteAuthUser(user.id, authOptions);
   });
@@ -93,7 +93,7 @@ test.describe('12 — Sandbox templates UI', () => {
     const { status, json } = await api<{
       items: Array<{ slug: string; is_default: boolean; source: string }>;
       default_slug: string | null;
-    }>(session.access_token, 'GET', `/projects/${projectId}/sandbox-templates`);
+    }>(session.access_token, 'GET', `/projects/${workspaceId}/sandbox-templates`);
     expect(status).toBe(200);
     expect(json?.default_slug).toBe('default');
     const platformDefault = json?.items.find((t) => t.is_default && t.slug === 'default');
@@ -105,8 +105,8 @@ test.describe('12 — Sandbox templates UI', () => {
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
-    await installBrowserSession(page, session, `/projects/${projectId}/customize/sandbox`, password);
-    await openSandboxSection(page, projectId);
+    await installBrowserSession(page, session, `/projects/${workspaceId}/customize/sandbox`, password);
+    await openSandboxSection(page, workspaceId);
     pageErrors.length = 0;
 
     // Platform default row: "Default" name + "default" slug code chip.
@@ -129,7 +129,7 @@ test.describe('12 — Sandbox templates UI', () => {
     const created = await api<TemplateCreateResult>(
       session.access_token,
       'POST',
-      `/projects/${projectId}/sandbox-templates`,
+      `/projects/${workspaceId}/sandbox-templates`,
       {
         slug: customSlug,
         name: 'E2E image template',
@@ -145,15 +145,15 @@ test.describe('12 — Sandbox templates UI', () => {
     const seenRebuildStatuses: number[] = [];
     page.on('response', (res) => {
       if (
-        res.url().includes(`/projects/${projectId}/sandbox-templates/${templateId}/build`) &&
+        res.url().includes(`/projects/${workspaceId}/sandbox-templates/${templateId}/build`) &&
         res.request().method() === 'POST'
       ) {
         seenRebuildStatuses.push(res.status());
       }
     });
 
-    await installBrowserSession(page, session, `/projects/${projectId}/customize/sandbox`, password);
-    await openSandboxSection(page, projectId);
+    await installBrowserSession(page, session, `/projects/${workspaceId}/customize/sandbox`, password);
+    await openSandboxSection(page, workspaceId);
     pageErrors.length = 0;
 
     const templateRow = page.locator('li', { hasText: customSlug });

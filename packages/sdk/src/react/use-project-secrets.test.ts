@@ -35,7 +35,7 @@ describe('useProjectSecrets (query-key stability + invalidation wiring)', () => 
     expect(result.queryKey).toEqual(qk.project.secrets('proj-1'));
   });
 
-  test('is disabled without a projectId, enabled once one is supplied', () => {
+  test('is disabled without a workspaceId, enabled once one is supplied', () => {
     expect((useProjectSecrets(undefined) as any).enabled).toBe(false);
     expect((useProjectSecrets(null) as any).enabled).toBe(false);
     expect((useProjectSecrets('proj-1') as any).enabled).toBe(true);
@@ -53,7 +53,7 @@ describe('useProjectSecrets (query-key stability + invalidation wiring)', () => 
     expect(invalidated).toEqual([expectedKey, expectedKey, expectedKey, expectedKey]);
   });
 
-  test('a different projectId gets its own (non-colliding) query key', () => {
+  test('a different workspaceId gets its own (non-colliding) query key', () => {
     const a = useProjectSecrets('proj-a') as any;
     const b = useProjectSecrets('proj-b') as any;
     expect(a.queryKey).not.toEqual(b.queryKey);

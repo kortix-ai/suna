@@ -9,7 +9,7 @@ interface UpgradeDialogState {
   message: string;
   balance: number;
   /** The account that actually needs the upgrade (the blocked account from the
-   *  402 — e.g. the project's owning team account). `undefined` falls back to the
+   *  402 — e.g. the workspace's owning team account). `undefined` falls back to the
    *  user's primary account. The dialog scopes its billing state + subscribe
    *  action to this, so a non-billing member sees the *team's* gated CTA, not
    *  their own personal account's. */

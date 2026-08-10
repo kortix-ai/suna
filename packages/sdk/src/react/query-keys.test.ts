@@ -5,6 +5,17 @@ import { kortixKeys } from './use-kortix-master';
 const startsWith = (key: readonly unknown[], prefix: readonly unknown[]) =>
   prefix.every((segment, i) => key[i] === segment);
 
+test('qk publishes canonical Workspace keys and keeps Project aliases on the same cache entries', () => {
+  expect(qk.workspaces.list('acct_1')).toEqual([...qk.workspaces.scope(), 'acct_1']);
+  expect(qk.workspace.sessions('workspace_1')).toEqual([
+    ...qk.workspace.sessionsScope('workspace_1'),
+    'list',
+    'visible',
+  ]);
+  expect(qk.projects.list('acct_1')).toEqual(qk.workspaces.list('acct_1'));
+  expect(qk.project.sessions('workspace_1')).toEqual(qk.workspace.sessions('workspace_1'));
+});
+
 // `kortixKeys` (use-kortix-master.ts) addresses the multi-server Kortix
 // Master surface. `qk` addresses the platform project surface. Both used to
 // root at `'kortix'`, so `kortixKeys.project(id)` and `qk.projects.list(id)`
@@ -264,7 +275,7 @@ describe('qk.project', () => {
   // `listProjectTriggers` is its own endpoint/shape — must not collide with a
   // sibling like `secrets`, and it is the fix for a live evasion: apps/web's
   // Customize settings pause switch and the schedule/triggers view both used
-  // to build their own local `['project-triggers', projectId]` array by hand
+  // to build their own local `['project-triggers', workspaceId]` array by hand
   // instead of calling a shared factory.
   test('triggers(id) is a sibling of secrets(id), not a prefix relationship', () => {
     expect(qk.project.triggers(id)).not.toEqual(qk.project.secrets(id) as never);
@@ -326,4 +337,16 @@ describe('qk.projects.scope', () => {
     expect(qk.projects.list()).not.toEqual(scope as never);
     expect(qk.projects.list('acct_1')).not.toEqual(scope as never);
   });
+});
+const canonicalWorkspaceSessionScope: Parameters<typeof qk.workspace.sessions>[1] = 'workspace';
+
+test('qk.workspace.sessions accepts the canonical workspace inventory scope', () => {
+  expect(qk.workspace.sessions('workspace_1', canonicalWorkspaceSessionScope)).toEqual([
+    'kx',
+    'workspace',
+    'workspace_1',
+    'sessions',
+    'list',
+    'workspace',
+  ]);
 });

@@ -16,7 +16,7 @@ import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
 import { createWebProxyRouter } from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
-import type { ProjectEnvStore } from './project-env'
+import type { WorkspaceSecretEnvStore } from './workspace-secret-env'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -106,7 +106,7 @@ export function buildOpencodeApp(
   opencode: Opencode,
   bootTime: number,
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
-  projectEnv?: ProjectEnvStore,
+  workspaceSecretEnv?: WorkspaceSecretEnvStore,
   staticWebPort: number | null = null,
   ptyRegistry?: PtyRegistry,
   agentEnvFile?: string,
@@ -121,8 +121,8 @@ export function buildOpencodeApp(
   const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
   const abortRouter = createAbortRouter(cfg, opencode)
-  const envRouter = projectEnv
-    ? createEnvRouter(cfg, opencode, projectEnv, { agentEnvFile })
+  const envRouter = workspaceSecretEnv
+    ? createEnvRouter(cfg, opencode, workspaceSecretEnv, { agentEnvFile })
     : null
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
   // opens change requests from a chat prompt). Kept as a host-driven primitive.
@@ -352,7 +352,7 @@ export function startProxy(
   opencode: Opencode,
   bootTime: number,
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
-  projectEnv?: ProjectEnvStore,
+  workspaceSecretEnv?: WorkspaceSecretEnvStore,
   staticWebPort: number | null = null,
 ): ProxyServer {
   // Mutable so restore-time reload() can hot-swap the handler in place; the
@@ -361,7 +361,7 @@ export function startProxy(
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
   const ptyRegistry = createPtyRegistry(cfg)
-  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
+  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, workspaceSecretEnv, staticWebPort, ptyRegistry)
 
   const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
@@ -437,8 +437,8 @@ export function startProxy(
     port: boundPort,
     reload(next: Config) {
       currentCfg = next
-      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
-      logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
+      app = buildOpencodeApp(next, opencode, bootTime, bootState, workspaceSecretEnv, staticWebPort, ptyRegistry)
+      logger.info('[proxy] reloaded with session config', { workspaceId: next.workspaceId })
     },
     async stop() {
       server.stop(true)

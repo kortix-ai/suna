@@ -47,7 +47,7 @@ export const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon:
  * The Upgrades section is always reachable (it hosts the one-off prompt runner)
  * and lives pinned at the very bottom of the rail — out of the scrolling nav (see
  * the desktop footer / mobile tail in customize-panel). When a registry upgrade is
- * actually applicable (e.g. the project is still on a v1 manifest) it carries a
+ * actually applicable (e.g. the workspace is still on a v1 manifest) it carries a
  * small attention dot instead of claiming a more prominent slot.
  */
 export const UPGRADE_ITEM: RailItem = {

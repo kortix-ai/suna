@@ -37,19 +37,19 @@ function isAccessError(err: unknown): boolean {
 
 export function ProjectShell({ children }: { children: React.ReactNode }) {
   const params = useParams();
-  const projectId = String(params.id);
+  const workspaceId = String(params.id);
   const activeSessionId = params.sessionId ? String(params.sessionId) : null;
 
   const project = useQuery({
-    queryKey: qk.project(projectId),
-    queryFn: () => kortix.project(projectId).get(),
+    queryKey: qk.project(workspaceId),
+    queryFn: () => kortix.project(workspaceId).get(),
     // 403/404 never recovers on retry — fail fast instead of spamming.
     retry: (count, err) => !isAccessError(err) && count < 2,
   });
   const denied = project.isError && isAccessError(project.error);
   const sessions = useQuery({
-    queryKey: qk.sessions(projectId),
-    queryFn: () => kortix.project(projectId).sessions.list(),
+    queryKey: qk.sessions(workspaceId),
+    queryFn: () => kortix.project(workspaceId).sessions.list(),
     refetchInterval: denied ? false : 5_000,
     enabled: !denied,
     retry: (count, err) => !isAccessError(err) && count < 2,
@@ -75,7 +75,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
               <div className="truncate text-sm font-medium">{project.data?.name ?? 'Project'}</div>
             )}
           </div>
-          <Link href={`/projects/${projectId}/settings`}>
+          <Link href={`/projects/${workspaceId}/settings`}>
             <Button variant="ghost" size="icon" className="size-8" aria-label="Project settings">
               <Settings className="size-4" />
             </Button>
@@ -87,7 +87,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
               overrides behind this dialog are create-only, so this is the only
               moment they can be chosen at all. */}
           <NewSessionDialog
-            projectId={projectId}
+            workspaceId={workspaceId}
             trigger={
               <Button className="w-full justify-start gap-2" variant="secondary">
                 <Plus className="size-4" /> New session
@@ -113,7 +113,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
               return (
                 <Link
                   key={s.session_id}
-                  href={`/projects/${projectId}/sessions/${s.session_id}`}
+                  href={`/projects/${workspaceId}/sessions/${s.session_id}`}
                   className={cn(
                     'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
                     active

@@ -92,7 +92,7 @@ export function ChatIdentityConnect({
         title={`${service} connected`}
         description={
           !result?.hasAccess
-            ? `Your Kortix account is connected${workspace}. Head back to ${service} and request project access to continue.`
+            ? `Your Kortix account is connected${workspace}. Head back to ${service} and request workspace access to continue.`
             : result?.resumed
               ? `Your Kortix account is connected${workspace}. Kortix is picking up your ${service} message now.`
               : `Your Kortix account is connected${workspace}. Head back to ${service} and mention Kortix with a task.`

@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { DriveExplorer, FileExplorerSourceProvider } from '@/features/project-files';
+import { DriveExplorer, FileExplorerSourceProvider } from '@/features/workspace-files';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon as RefreshCw,
@@ -22,7 +22,7 @@ export function SandboxFileExplorer({
   shareContext,
 }: {
   embedded?: boolean;
-  shareContext?: { projectId: string; sessionId: string };
+  shareContext?: { workspaceId: string; sessionId: string };
 } = {}) {
   return (
     <FileExplorerSourceProvider value={sandboxExplorerSource}>

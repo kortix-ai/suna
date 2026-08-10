@@ -5,7 +5,7 @@ import { getClient } from '../../core/runtime/client';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
-import { getProjectDetail, type ProjectConfigSummary } from '../../core/rest/projects-client';
+import { getWorkspaceDetail, type WorkspaceConfigSummary } from '../../core/rest/workspaces-client';
 import { qk } from '../query-keys';
 
 // Re-export filtered agents hook for UI agent selectors
@@ -16,37 +16,37 @@ export { useVisibleAgents } from '../use-visible-agents';
 // ============================================================================
 
 /**
- * Load agents. With `projectId`, the server-side project config is source of
+ * Load agents. With `workspaceId`, the server-side project config is source of
  * truth: it returns declarative `kortix.yaml` `agents:` entries for adopted
- * projects and OpenCode file discovery for legacy projects. Without `projectId`,
+ * projects and OpenCode file discovery for legacy projects. Without `workspaceId`,
  * this falls back to the sandbox OpenCode runtime.
  */
-export function useOpenCodeAgents(options?: { directory?: string; projectId?: string | null }) {
+export function useOpenCodeAgents(options?: { directory?: string; workspaceId?: string | null }) {
   const directory = options?.directory;
-  const projectId = options?.projectId ?? null;
+  const workspaceId = options?.workspaceId ?? null;
   const runtimeReady = useOpenCodeRuntimeReady();
-  const cacheScope = projectId
-    ? `project:${projectId}`
+  const cacheScope = workspaceId
+    ? `project:${workspaceId}`
     : directory
       ? `dir:${directory}`
       : CACHE_SCOPE_GLOBAL;
   return useQuery<Agent[]>({
-    // This is its OWN fetch (re-derives agents from a fresh `getProjectDetail`
-    // call rather than a `select` projection over the shared `qk.project.detail`
-    // entry — see `useProjectConfig` for that pattern), so it keeps its own
-    // cache slot. It still nests under `qk.project.detail(id)` so a detail
+    // This is its OWN fetch (re-derives agents from a fresh `getWorkspaceDetail`
+    // call rather than a `select` projection over the shared `qk.workspace.detail`
+    // entry — see `useWorkspaceConfig` for that pattern), so it keeps its own
+    // cache slot. It still nests under `qk.workspace.detail(id)` so a detail
     // invalidation (rename, config save, sandbox provider change, …) reaches
     // it by prefix — it used to be a child of the old flat `project-detail`
     // array key for exactly that reason, and nesting under the new key
     // restores that reach.
-    queryKey: projectId
-      ? [...qk.project.detail(projectId), 'agents']
+    queryKey: workspaceId
+      ? [...qk.workspace.detail(workspaceId), 'agents']
       : directory
         ? [...opencodeKeys.agents(), 'dir', directory]
         : opencodeKeys.agents(),
     queryFn: async () => {
-      if (projectId) {
-        const detail = await getProjectDetail(projectId);
+      if (workspaceId) {
+        const detail = await getWorkspaceDetail(workspaceId);
         const agents = projectConfigAgentsToOpenCodeAgents(detail.config);
         setLSCache(LS_AGENTS, agents, cacheScope);
         return agents;
@@ -67,8 +67,8 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
       return agents;
     },
     placeholderData: () => getLSCache<Agent[]>(LS_AGENTS, cacheScope),
-    enabled: projectId ? true : runtimeReady,
-    staleTime: projectId ? 30_000 : Infinity,
+    enabled: workspaceId ? true : runtimeReady,
+    staleTime: workspaceId ? 30_000 : Infinity,
     gcTime: 10 * 60 * 1000,
   });
 }
@@ -78,7 +78,7 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
  * "first visible agent" fallback agrees with the project contract. Explicit
  * per-session/user picks still resolve by name and therefore keep precedence.
  */
-export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary): Agent[] {
+export function projectConfigAgentsToOpenCodeAgents(config: WorkspaceConfigSummary): Agent[] {
   const agents = config.agents.map(projectConfigAgentToOpenCodeAgent);
   const defaultName = config.default_agent ?? config.open_code_default_agent;
   if (!defaultName) return agents;
@@ -89,7 +89,7 @@ export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary
   });
 }
 
-function projectConfigAgentToOpenCodeAgent(agent: ProjectConfigSummary['agents'][number]): Agent {
+function projectConfigAgentToOpenCodeAgent(agent: WorkspaceConfigSummary['agents'][number]): Agent {
   return {
     name: agent.name,
     description: agent.description ?? undefined,

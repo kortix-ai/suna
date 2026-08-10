@@ -25,10 +25,10 @@ import {
 import { db } from '../shared/db';
 import { syncSsoMembership } from '../iam/sso-sync';
 import { authorizeV2 } from '../iam/engine-v2';
-import { PROJECT_ACTIONS } from '../iam';
+import { WORKSPACE_ACTIONS } from '../iam';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const SUPA_SSO = crypto.randomUUID(); // stands in for the Supabase auth.sso_providers id
 const MKT_GROUP = crypto.randomUUID();
 const AAD_CLAIM = 'Marketing-AAD'; // what Entra ships in the memberOf claim
@@ -46,15 +46,15 @@ const jwt = (memberOf: string[]) => ({
 });
 
 const canWrite = async (userId: string) =>
-  (await authorizeV2(userId, ACCOUNT, PROJECT_ACTIONS.PROJECT_WRITE, { type: 'project', id: PROJECT })).allowed;
+  (await authorizeV2(userId, ACCOUNT, WORKSPACE_ACTIONS.WORKSPACE_WRITE, { type: 'project', id: WORKSPACE })).allowed;
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'sso-sync-test' });
-  await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
+  await db.insert(projects).values({ workspaceId: WORKSPACE, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
   await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'scim' });
   // The group grants EDITOR on the project — this is the admin-configured
   // group→project→role binding the synced membership rides on.
-  await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'editor' });
+  await db.insert(projectGroupGrants).values({ workspaceId: WORKSPACE, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'editor' });
   await db.insert(accountSsoProviders).values({
     ssoProviderId: crypto.randomUUID(),
     accountId: ACCOUNT,

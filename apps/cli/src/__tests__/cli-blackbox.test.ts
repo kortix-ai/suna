@@ -174,12 +174,12 @@ function startSystemSkillsServer() {
  *  `featureDisabledBody('apps')` in apps/api/src/feature-flags/gate.ts. Copied
  *  verbatim so the test asserts the real wire shape, not a paraphrase. */
 const APPS_FEATURE_DISABLED_BODY = {
-  error: 'Apps is not enabled for this project. Enable it in Settings → Feature flags.',
+  error: 'Apps is not enabled for this workspace. Enable it in Settings → Feature flags.',
   code: 'feature_disabled',
   feature: 'apps',
 };
 
-/** `serverGate: true` keeps the project row reporting the flag ON while every
+/** `serverGate: true` keeps the workspace row reporting the flag ON while every
  *  `/apps` route rejects with the server's gate — the case a client-side
  *  pre-check cannot catch (flag turned off between the two calls). */
 function startAppsServer(appsEnabled = true, serverGate = false) {
@@ -188,7 +188,7 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
   const app = {
     app_id: 'app_1',
     account_id: 'account_1',
-    project_id: 'proj_e2e',
+    workspace_id: 'proj_e2e',
     slug: 'demo',
     name: 'Demo',
     url: 'https://dev-demo-route.apps.kortix.com',
@@ -217,18 +217,18 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
         authorization: req.headers.get('authorization'),
         body,
       });
-      if (url.pathname === '/v1/projects/proj_e2e' && req.method === 'GET') {
+      if (url.pathname === '/v1/workspaces/proj_e2e' && req.method === 'GET') {
         return Response.json({
-          project_id: 'proj_e2e',
+          workspace_id: 'proj_e2e',
           account_id: 'account_1',
           name: 'Apps Test',
           experimental: { apps: appsEnabled },
         });
       }
-      if (serverGate && url.pathname.startsWith('/v1/projects/proj_e2e/apps')) {
+      if (serverGate && url.pathname.startsWith('/v1/workspaces/proj_e2e/apps')) {
         return Response.json(APPS_FEATURE_DISABLED_BODY, { status: 403 });
       }
-      if (url.pathname === '/v1/projects/proj_e2e/apps' && req.method === 'GET') {
+      if (url.pathname === '/v1/workspaces/proj_e2e/apps' && req.method === 'GET') {
         return Response.json({
           apps: [
             {
@@ -239,17 +239,17 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
           ],
         });
       }
-      if (url.pathname === '/v1/projects/proj_e2e/apps' && req.method === 'POST') {
+      if (url.pathname === '/v1/workspaces/proj_e2e/apps' && req.method === 'POST') {
         return Response.json(app, { status: 201 });
       }
-      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1' && req.method === 'GET') {
+      if (url.pathname === '/v1/workspaces/proj_e2e/apps/app_1' && req.method === 'GET') {
         return Response.json({
           ...app,
           access_mode: appAccessMode,
           access_revision: appAccessRevision,
         });
       }
-      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1/access' && req.method === 'GET') {
+      if (url.pathname === '/v1/workspaces/proj_e2e/apps/app_1/access' && req.method === 'GET') {
         return Response.json({
           mode: 'private',
           revision: 1,
@@ -258,7 +258,7 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
           password_configured: false,
         });
       }
-      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1/access' && req.method === 'PATCH') {
+      if (url.pathname === '/v1/workspaces/proj_e2e/apps/app_1/access' && req.method === 'PATCH') {
         appAccessMode = String((body as Record<string, unknown>)?.mode ?? appAccessMode);
         appAccessRevision += 1;
         return Response.json({
@@ -270,7 +270,7 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
         });
       }
       if (
-        url.pathname === '/v1/projects/proj_e2e/apps/app_1/access-session' &&
+        url.pathname === '/v1/workspaces/proj_e2e/apps/app_1/access-session' &&
         req.method === 'POST'
       ) {
         return Response.json({
@@ -278,12 +278,12 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
           expires_at: '2026-08-07T01:00:00.000Z',
         });
       }
-      if (url.pathname === '/v1/projects/proj_e2e/apps/artifacts' && req.method === 'POST') {
+      if (url.pathname === '/v1/workspaces/proj_e2e/apps/artifacts' && req.method === 'POST') {
         return Response.json(
           {
             artifact: {
               artifact_id: 'artifact_1',
-              project_id: 'proj_e2e',
+              workspace_id: 'proj_e2e',
               kind: 'oci_image',
               status: 'ready',
               image_reference: 'ghcr.io/kortix/demo:1',
@@ -299,7 +299,7 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
         );
       }
       if (
-        url.pathname === '/v1/projects/proj_e2e/apps/app_1/deployments' &&
+        url.pathname === '/v1/workspaces/proj_e2e/apps/app_1/deployments' &&
         req.method === 'POST'
       ) {
         return Response.json(
@@ -702,7 +702,7 @@ describe('kortix CLI black-box behavior', () => {
     });
     expect(help.stdout).toContain('apps <subcommand>');
 
-    const listed = await runCli(['apps', 'list', '--project', 'proj_e2e', '--json'], tmp, {
+    const listed = await runCli(['apps', 'list', '--workspace', 'proj_e2e', '--json'], tmp, {
       KORTIX_CONFIG_FILE: configFile,
     });
     expect(listed.code).toBe(0);
@@ -730,7 +730,7 @@ describe('kortix CLI black-box behavior', () => {
         '--password',
         'test-password-123',
         '--no-wait',
-        '--project',
+        '--workspace',
         'proj_e2e',
         '--json',
       ],
@@ -744,14 +744,14 @@ describe('kortix CLI black-box behavior', () => {
       deployment: { deployment_id: 'deployment_1', status: 'queued' },
     });
     expect(requests.map((request) => [request.method, request.path])).toEqual([
-      ['GET', '/v1/projects/proj_e2e'],
-      ['GET', '/v1/projects/proj_e2e/apps'],
-      ['GET', '/v1/projects/proj_e2e'],
-      ['GET', '/v1/projects/proj_e2e/apps'],
-      ['PATCH', '/v1/projects/proj_e2e/apps/app_1/access'],
-      ['GET', '/v1/projects/proj_e2e/apps/app_1'],
-      ['POST', '/v1/projects/proj_e2e/apps/artifacts'],
-      ['POST', '/v1/projects/proj_e2e/apps/app_1/deployments'],
+      ['GET', '/v1/workspaces/proj_e2e'],
+      ['GET', '/v1/workspaces/proj_e2e/apps'],
+      ['GET', '/v1/workspaces/proj_e2e'],
+      ['GET', '/v1/workspaces/proj_e2e/apps'],
+      ['PATCH', '/v1/workspaces/proj_e2e/apps/app_1/access'],
+      ['GET', '/v1/workspaces/proj_e2e/apps/app_1'],
+      ['POST', '/v1/workspaces/proj_e2e/apps/artifacts'],
+      ['POST', '/v1/workspaces/proj_e2e/apps/app_1/deployments'],
     ]);
     expect(requests[4]?.body).toEqual({
       mode: 'password',
@@ -788,7 +788,7 @@ describe('kortix CLI black-box behavior', () => {
         '--provider',
         retiredProviderId,
         '--no-wait',
-        '--project',
+        '--workspace',
         'proj_e2e',
       ],
       tmp,
@@ -808,7 +808,7 @@ describe('kortix CLI black-box behavior', () => {
         '11111111-1111-4111-8111-111111111111',
         '--groups',
         '22222222-2222-4222-8222-222222222222',
-        '--project',
+        '--workspace',
         'proj_e2e',
         '--json',
       ],
@@ -828,7 +828,7 @@ describe('kortix CLI black-box behavior', () => {
     });
     expect(requests.at(-2)).toMatchObject({
       method: 'PATCH',
-      path: '/v1/projects/proj_e2e/apps/app_1/access',
+      path: '/v1/workspaces/proj_e2e/apps/app_1/access',
       body: {
         mode: 'restricted',
         member_ids: ['11111111-1111-4111-8111-111111111111'],
@@ -837,11 +837,11 @@ describe('kortix CLI black-box behavior', () => {
     });
     expect(requests.at(-1)).toMatchObject({
       method: 'GET',
-      path: '/v1/projects/proj_e2e/apps/app_1',
+      path: '/v1/workspaces/proj_e2e/apps/app_1',
     });
 
     const accessLink = await runCli(
-      ['apps', 'access-link', 'demo', '--project', 'proj_e2e', '--json'],
+      ['apps', 'access-link', 'demo', '--workspace', 'proj_e2e', '--json'],
       tmp,
       { KORTIX_CONFIG_FILE: configFile },
     );
@@ -855,15 +855,15 @@ describe('kortix CLI black-box behavior', () => {
     });
     expect(requests.at(-2)).toMatchObject({
       method: 'GET',
-      path: '/v1/projects/proj_e2e/apps',
+      path: '/v1/workspaces/proj_e2e/apps',
     });
     expect(requests.at(-1)).toMatchObject({
       method: 'POST',
-      path: '/v1/projects/proj_e2e/apps/app_1/access-session',
+      path: '/v1/workspaces/proj_e2e/apps/app_1/access-session',
     });
   }, 20_000);
 
-  test('Apps help stays discoverable but operations reject a project with Apps disabled', async () => {
+  test('Apps help stays discoverable but operations reject a workspace with Apps disabled', async () => {
     const apiBase = startAppsServer(false);
     const configFile = writeConfig(apiBase, true);
     const env = { KORTIX_CONFIG_FILE: configFile };
@@ -873,31 +873,31 @@ describe('kortix CLI black-box behavior', () => {
     expect(landing.stdout).toContain('apps <subcommand>');
     expect(landing.stdout).toContain('Experimental: deploy serverless Apps');
 
-    const help = await runCli(['apps', '--help', '--project', 'proj_e2e'], tmp, env);
+    const help = await runCli(['apps', '--help', '--workspace', 'proj_e2e'], tmp, env);
     expect(help.code).toBe(0);
     expect(help.stdout).toContain('Usage: kortix apps');
-    expect(help.stdout).toContain('private (default), project, restricted, public, or password');
+    expect(help.stdout).toContain('private (default), workspace, restricted, public, or password');
 
-    const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
+    const listed = await runCli(['apps', 'list', '--workspace', 'proj_e2e'], tmp, env);
     expect(listed.code).toBe(1);
     expect(listed.stdout).not.toContain('No Apps deployed');
     // The pre-check says exactly what the server's gate says, so the user reads
     // one sentence whichever side rejects.
     expect(listed.stderr).toContain(
-      'Apps is not enabled for this project. Enable it in Settings → Feature flags.',
+      'Apps is not enabled for this workspace. Enable it in Settings → Feature flags.',
     );
     expect(listed.stderr).not.toContain('Experimental');
-    expect(requests.every((request) => request.path === '/v1/projects/proj_e2e')).toBe(true);
+    expect(requests.every((request) => request.path === '/v1/workspaces/proj_e2e')).toBe(true);
   }, 20_000);
 
   test("a raw 403 feature_disabled from the API surfaces the server's message verbatim", async () => {
-    // The project row still reports the flag ON — only the server gate rejects,
+    // The workspace row still reports the flag ON — only the server gate rejects,
     // so this exercises `surfaceApiError`, not the client-side pre-check.
     const apiBase = startAppsServer(true, true);
     const configFile = writeConfig(apiBase, true);
     const env = { KORTIX_CONFIG_FILE: configFile };
 
-    const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
+    const listed = await runCli(['apps', 'list', '--workspace', 'proj_e2e'], tmp, env);
 
     expect(listed.code).toBe(1);
     expect(listed.stderr).toContain(APPS_FEATURE_DISABLED_BODY.error);
@@ -906,8 +906,8 @@ describe('kortix CLI black-box behavior', () => {
     expect(listed.stderr).not.toContain('HTTP 403');
     expect(listed.stdout).not.toContain('No Apps deployed');
     expect(requests.map((request) => [request.method, request.path])).toEqual([
-      ['GET', '/v1/projects/proj_e2e'],
-      ['GET', '/v1/projects/proj_e2e/apps'],
+      ['GET', '/v1/workspaces/proj_e2e'],
+      ['GET', '/v1/workspaces/proj_e2e/apps'],
     ]);
   }, 20_000);
 
@@ -923,7 +923,7 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.stdout).not.toContain('tunnelId');
   });
 
-  test('an unknown command errors instead of scaffolding a project named after the typo', async () => {
+  test('an unknown command errors instead of scaffolding a workspace named after the typo', async () => {
     const result = await runCli(['use']);
 
     expect(result.code).toBe(2);

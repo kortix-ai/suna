@@ -1,15 +1,15 @@
 import { locales, type Locale } from '@/i18n/config';
 import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
-  LAST_PROJECT_COOKIE,
-  PROJECT_LANDING_PATH,
+  LAST_WORKSPACE_COOKIE,
+  WORKSPACE_LANDING_PATH,
   resolveDefaultLandingPath,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
-import { canonicalWorkspacePath, workspaceCompatibilityPath } from '@/lib/workspace-routing';
+import { canonicalWorkspacePath } from '@/lib/workspace-routing';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -100,10 +100,7 @@ const PUBLIC_ROUTES = [
 
 // Visual, static public canvases do not need Supabase session reads. Keep them
 // reachable even when local encrypted env vars are not available.
-const STATIC_PUBLIC_ROUTES = [
-  '/game-of-life',
-  '/rauch',
-];
+const STATIC_PUBLIC_ROUTES = ['/game-of-life', '/rauch'];
 
 const MARKDOWN_NEGOTIATION_ROUTES = new Set([
   '/',
@@ -133,13 +130,14 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
 // these route prefixes — plus /auth/* for sign-in — are allowed to render
 // inside the desktop window. Every other route (the marketing homepage, blog,
 // pricing, careers, contact, legal, help, docs, share, design-system, … which
-// all live at root-level slugs) is bounced to /projects. Docs and external
+// all live at root-level slugs) is bounced to /workspaces. Docs and external
 // links are opened in the user's real browser by the Tauri shell, never shown
 // in-app. Keep this an allowlist, not a blocklist — new marketing slugs must
 // stay blocked by default.
 const DESKTOP_ALLOWED_ROUTES = [
   '/workspaces',
   '/projects',
+  '/new',
   '/accounts',
   '/invites',
   '/admin',
@@ -298,11 +296,11 @@ export async function middleware(request: NextRequest) {
     if (!isAllowed) {
       // Into the latest project, not the list — the desktop shell has no
       // marketing surface, so this bounce IS the user's default destination.
-      // The landing door, not the remembered project: this gate runs BEFORE the
+      // The landing door, not the remembered workspace: this gate runs BEFORE the
       // Supabase user is fetched below, so there is no identity here to check
       // the cookie against — and an unowned cookie read is exactly the bug that
       // sent one account into another account's project. The door re-resolves.
-      return NextResponse.redirect(new URL(PROJECT_LANDING_PATH, request.url));
+      return NextResponse.redirect(new URL(WORKSPACE_LANDING_PATH, request.url));
     }
   }
 
@@ -334,7 +332,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (STATIC_PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+  if (
+    STATIC_PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))
+  ) {
     return NextResponse.next();
   }
 
@@ -350,12 +350,6 @@ export async function middleware(request: NextRequest) {
   // on the client, so the next request just repeats the same failure.
   const redirectPreservingSession = (url: URL) =>
     redirectPreservingCookies(url, supabaseResponse.cookies);
-
-  const rewritePreservingSession = (url: URL) => {
-    const response = NextResponse.rewrite(url);
-    for (const cookie of supabaseResponse.cookies.getAll()) response.cookies.set(cookie as never);
-    return response;
-  };
 
   // IMPORTANT: NEXT_PUBLIC_ vars are inlined at build time by Next.js, so in
   // Docker containers they contain placeholder values. We MUST use runtime
@@ -438,7 +432,10 @@ export async function middleware(request: NextRequest) {
       /invalid.*(jwt|token)/i.test(message)
     ) {
       for (const { name } of request.cookies.getAll()) {
-        if (name === KORTIX_SUPABASE_AUTH_COOKIE || name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)) {
+        if (
+          name === KORTIX_SUPABASE_AUTH_COOKIE ||
+          name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
+        ) {
           supabaseResponse.cookies.delete(name);
         }
       }
@@ -446,17 +443,17 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // The default destination is a PROJECT, not the projects list. When the
-  // browser remembers which project was open last we jump straight there;
+  // The default destination is a workspace, not the workspaces list. When the
+  // browser remembers which workspace was open last we jump straight there;
   // otherwise the id-free landing door resolves (or provisions) one behind an
   // instant paint. The cookie is browser-written, so `resolveDefaultLandingPath`
-  // only accepts a well-formed project id and falls back to the door.
+  // only accepts a well-formed workspace id and falls back to the door.
   const defaultLandingPath = resolveDefaultLandingPath(
-    request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+    request.cookies.get(LAST_WORKSPACE_COOKIE)?.value,
     user?.id,
   );
 
-  // FAST PATH: authenticated users hitting the homepage go straight to a project.
+  // FAST PATH: authenticated users hitting the homepage go straight to a workspace.
   if (pathname === '/' && user) {
     return redirectPreservingSession(new URL(defaultLandingPath, request.url));
   }
@@ -477,15 +474,16 @@ export async function middleware(request: NextRequest) {
   // (KORTIX_PUBLIC_/NEXT_PUBLIC_ set at `docker run`) is what must win here,
   // same convention as the Supabase vars below.
   const disableLandingPage =
-    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE || process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
+    (process.env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE ||
+      process.env.NEXT_PUBLIC_DISABLE_LANDING_PAGE) === 'true';
   if (disableLandingPage) {
     const isMarketingContent =
       pathname === '/' ||
-      SELF_HOST_MARKETING_ONLY.some((route) => pathname === route || pathname.startsWith(`${route}/`));
-    if (isMarketingContent) {
-      return redirectPreservingSession(
-        new URL(user ? defaultLandingPath : '/auth', request.url),
+      SELF_HOST_MARKETING_ONLY.some(
+        (route) => pathname === route || pathname.startsWith(`${route}/`),
       );
+    if (isMarketingContent) {
+      return redirectPreservingSession(new URL(user ? defaultLandingPath : '/auth', request.url));
     }
   }
 
@@ -513,13 +511,6 @@ export async function middleware(request: NextRequest) {
       // auth page's own client-side session check has to rediscover the same
       // invalidity from scratch before it can show a usable form.
       return redirectPreservingSession(url);
-    }
-
-    const compatibilityPath = workspaceCompatibilityPath(pathname);
-    if (compatibilityPath) {
-      const url = request.nextUrl.clone();
-      url.pathname = compatibilityPath;
-      return rewritePreservingSession(url);
     }
 
     return supabaseResponse;

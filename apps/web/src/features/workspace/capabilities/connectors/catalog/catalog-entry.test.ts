@@ -1,10 +1,11 @@
-import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
+import type { WorkspaceAdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
   catalogSections,
+  computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
   POPULAR_SECTION,
@@ -37,22 +38,32 @@ const app = (over: Partial<PipedreamApp> = {}): PipedreamApp => ({
   ...over,
 });
 
-const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
+const conn = (over: Partial<WorkspaceAdminConnector> = {}): WorkspaceAdminConnector =>
   ({
     slug: 'linear',
     name: 'Linear',
     provider: 'mcp',
     status: 'active',
     credentialMode: 'shared',
-    authorizationStrategy: 'project',
+    authorizationStrategy: 'workspace',
     sensitive: false,
     actions: [],
     authSecret: null,
     secretSet: false,
     ...over,
-  }) as AdminConnector;
+  }) as WorkspaceAdminConnector;
 
 describe('normalising the two catalogues', () => {
+  test('Computers is a native connector catalogue entry', () => {
+    const entry = computersCatalogEntry();
+    expect(entry).toMatchObject({
+      source: 'computer',
+      slug: 'computers',
+      name: 'Computers',
+      categories: ['developer-tools'],
+    });
+  });
+
   test('a Discover entry keeps its rank and its raw connector', () => {
     const entry = catalogEntryFromDiscover(connector({ popularity: 42 }));
     expect(entry.source).toBe('discover');
@@ -103,6 +114,13 @@ describe('connected join', () => {
   test('a fully renamed connector falls back to + rather than matching wrongly', () => {
     const keys = connectedCatalogKeys([conn({ slug: 'tracker', name: 'Tracker' })]);
     expect(isCatalogEntryConnected(catalogEntryFromDiscover(connector()), keys)).toBe(false);
+  });
+
+  test('Computers stays connected when every profile has a custom name and slug', () => {
+    const keys = connectedCatalogKeys([
+      conn({ provider: 'computer', slug: 'studio-machines', name: 'Studio' }),
+    ]);
+    expect(isCatalogEntryConnected(computersCatalogEntry(), keys)).toBe(true);
   });
 
   // A connector with a blank name must not index the empty string, or every

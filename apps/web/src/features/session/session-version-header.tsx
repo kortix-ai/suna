@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
  * SessionVersionHeader — the top of the session's Files / Changes panel.
  *
  * It frames the surface in plain, version-first language: a **separate version**
- * of the project's main version. The agent works here without touching the live
+ * of the workspace's main version. The agent works here without touching the live
  * version, so changes made in this session aren't in the main version until you
  * open a change request and merge them in.
  *
@@ -82,14 +82,14 @@ export function SessionVersionHeader({
   // The git branch == the ROUTE session id; the chat session id is passed in.
 
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { id: projectId, sessionId: gitSessionId } = useParams<{
+  const { id: workspaceId, sessionId: gitSessionId } = useParams<{
     id: string;
     sessionId: string;
   }>();
 
   const statusQuery = useGitStatus();
   const changedCount = statusQuery.data?.length ?? 0;
-  const baseRef = useSessionBaseRef(projectId, gitSessionId);
+  const baseRef = useSessionBaseRef(workspaceId, gitSessionId);
 
   // Short, stable handle for this version — the session id is its identity.
   const shortVersionId = gitSessionId ? gitSessionId.slice(0, 8) : '—';

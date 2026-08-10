@@ -13,12 +13,12 @@ import { unwrap } from './shared';
  * object clears every exception, restoring the pure catalog default.
  */
 export async function setProjectModelEnablement(
-  projectId: string,
+  workspaceId: string,
   modelOverrides: Record<string, boolean>,
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; modelOverrides: Record<string, boolean> }>(
-      `/projects/${projectId}/model-enablement`,
+      `/projects/${workspaceId}/model-enablement`,
       { modelOverrides },
     ),
   );

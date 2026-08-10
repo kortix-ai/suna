@@ -42,7 +42,7 @@ describe('/api/preview-url', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        projectId: '00000000-0000-4000-8000-000000000001',
+        workspaceId: '00000000-0000-4000-8000-000000000001',
         sessionId: SESSION_ID,
         preview: { port: 3000, path: '/' },
       }),
@@ -62,7 +62,7 @@ describe('/api/preview-url', () => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        projectId: other.project_id,
+        workspaceId: other.project_id,
         sessionId: SESSION_ID,
         preview: { port: 3000, path: '/' },
       }),
@@ -80,7 +80,7 @@ describe('/api/preview-url', () => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        projectId: 'not-a-project',
+        workspaceId: 'not-a-project',
         sessionId: '',
         preview: { port: 0, path: '/' },
       }),
@@ -104,7 +104,7 @@ describe('/api/preview-url', () => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        projectId: project.project_id,
+        workspaceId: project.project_id,
         sessionId: SESSION_ID,
         preview: { port: 3000, path: '/docs?section=setup' },
       }),
@@ -156,7 +156,7 @@ describe('/api/preview-url', () => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        projectId: project.project_id,
+        workspaceId: project.project_id,
         sessionId: '10000000-0000-4000-8000-000000000002',
         targetUrl: 'http://localhost:4173/demo?tab=activity',
       }),
@@ -189,7 +189,7 @@ describe('/api/preview-url', () => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        projectId: project.project_id,
+        workspaceId: project.project_id,
         sessionId: '10000000-0000-4000-8000-000000000003',
         preview: { port: 3000, path: '/' },
       }),
@@ -221,7 +221,7 @@ describe('/api/preview-url in direct mode', () => {
   });
 
   test('caller token resolves the final URL without wrapper auth or ownership state', async () => {
-    const projectId = '20000000-0000-4000-8000-000000000001';
+    const workspaceId = '20000000-0000-4000-8000-000000000001';
     const sessionId = '20000000-0000-4000-8000-000000000002';
     const response = await fetch(`${app.baseUrl}/api/preview-url`, {
       method: 'POST',
@@ -230,7 +230,7 @@ describe('/api/preview-url in direct mode', () => {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        projectId,
+        workspaceId,
         sessionId,
         preview: { port: 8080, path: '/health' },
       }),
@@ -246,7 +246,7 @@ describe('/api/preview-url in direct mode', () => {
     const previewUrl = new URL(data.url);
     expect(previewUrl.hostname).toBe(`p8080-session-${sessionId}.localhost`);
     expect(previewUrl.pathname).toBe('/health');
-    expect(previewUrl.searchParams.get('token')).toContain(`kortix_pat_test_${projectId}`);
+    expect(previewUrl.searchParams.get('token')).toContain(`kortix_pat_test_${workspaceId}`);
     expect(typeof data.tokenId).toBe('string');
     expect(data.token).toBeUndefined();
     expect(data.upstream).toBeUndefined();

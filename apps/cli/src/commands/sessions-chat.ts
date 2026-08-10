@@ -3,11 +3,11 @@ import type { MessageWithParts, OpencodeClient, Part, SessionHandle } from '@kor
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
-import type { ProjectSession } from '../api/types.ts';
+import type { WorkspaceSession } from '../api/types.ts';
 import {
   emitJson,
   locateSessionAnywhere,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -15,11 +15,11 @@ import {
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 
-type CtxOpts = { projectArg?: string; hostArg?: string };
+type CtxOpts = { workspaceArg?: string; hostArg?: string };
 
 export interface ResolvedSession {
   /** Kortix session row. */
-  session: ProjectSession;
+  session: WorkspaceSession;
   /** Auth used for every scoped SDK call. */
   auth: Auth;
   /** Session-scoped SDK handle. */
@@ -31,14 +31,14 @@ export interface ResolvedSession {
   /** Canonical OpenCode session id resolved by `/start`. */
   opencodeSessionId: string;
   /** Kortix-side API client (for PATCH/save-back). */
-  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveWorkspaceContext>>>;
 }
 
 /**
- * Common pre-flight for chat commands: locate which project (and host) the
+ * Common pre-flight for chat commands: locate which workspace (and host) the
  * session lives in — trying the active/linked one first, then scanning
  * every other logged-in host/account when it's not pinned by
- * --host/--project — fetch the Kortix session, confirm the sandbox is
+ * --host/--workspace — fetch the Kortix session, confirm the sandbox is
  * reachable, and return a bundle of everything the caller needs.
  *
  * `cliCommand` (e.g. `"sessions chat"`) is used only to build the
@@ -59,11 +59,11 @@ export async function loadSessionForChat(
     (host) => `kortix ${cliCommand} ${sessionId} --host ${host}`,
   );
   if (!found) return null;
-  const { client, projectId, auth, session, projectName, hostName } = found.located;
-  const ctx = { client, projectId, auth };
+  const { client, workspaceId, auth, session, workspaceName, hostName } = found.located;
+  const ctx = { client, workspaceId, auth };
   if (found.switched) {
     process.stderr.write(
-      `${status.ok(`Found in ${C.bold}${projectName ?? projectId}${C.reset}`)} ` +
+      `${status.ok(`Found in ${C.bold}${workspaceName ?? workspaceId}${C.reset}`)} ` +
         `${C.dim}(host ${hostName}) — using it.${C.reset}\n`,
     );
   }
@@ -75,7 +75,7 @@ export async function loadSessionForChat(
     );
     return null;
   }
-  const handle = kortixFromAuth(auth).session(projectId, session.session_id);
+  const handle = kortixFromAuth(auth).session(workspaceId, session.session_id);
   let ready: Awaited<ReturnType<SessionHandle['ensureReady']>>;
   try {
     ready = await withKortixScope(auth, () => handle.ensureReady());
@@ -176,7 +176,7 @@ session (or starts one with --new).
                           synchronous subagent calls).
   --new                   Start a fresh session and chat with it.
   --agent <name>          Agent to run for this turn (defaults to the session's).
-  --project <id>          Operate on this project id (default: linked).
+  --workspace <id>          Operate on this workspace id (default: linked).
   --host <name>           Operate against a non-default Kortix host.
   -h, --help              Show this help.
 
@@ -193,14 +193,14 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     return 0;
   }
 
-  let projectArg: string | undefined;
+  let workspaceArg: string | undefined;
   let hostArg: string | undefined;
   let promptText: string | undefined;
   let agent: string | undefined;
   let wantNew = false;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    workspaceArg = takeFlagValue(rest, ['--workspace', '--project']);
     hostArg = takeFlagValue(rest, ['--host']);
     promptText = takeFlagValue(rest, ['--prompt', '-p']);
     agent = takeFlagValue(rest, ['--agent']);
@@ -215,7 +215,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err('Pass at most one session id.')}\n`);
     return 2;
   }
-  const opts: CtxOpts = { projectArg, hostArg };
+  const opts: CtxOpts = { workspaceArg, hostArg };
 
   // ── Resolve which session to chat with ──────────────────────────────────
   const sessionId = await resolveChatSessionId(positional[0], wantNew, promptText, opts);
@@ -272,7 +272,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
 
 /**
  * Resolve the target session id: explicit positional → --new (create) →
- * most-recent running session on the project. Prints guidance + returns null
+ * most-recent running session on the workspace. Prints guidance + returns null
  * when nothing is usable.
  */
 async function resolveChatSessionId(
@@ -283,15 +283,15 @@ async function resolveChatSessionId(
 ): Promise<string | null> {
   if (explicit) return explicit;
 
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return null;
 
   if (wantNew) {
     const body: Record<string, unknown> = {};
     if (initialPrompt) body.initial_prompt = initialPrompt;
     try {
-      const created = await ctx.client.post<ProjectSession>(
-        `/projects/${ctx.projectId}/sessions`,
+      const created = await ctx.client.post<WorkspaceSession>(
+        `/workspaces/${ctx.workspaceId}/sessions`,
         body,
       );
       process.stdout.write(
@@ -333,12 +333,12 @@ async function resolveChatSessionId(
  * Returns the sentinel `'error'` (after printing the API error) on failure.
  */
 export async function chooseRunningSession(
-  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveWorkspaceContext>>>,
   pickTitle: string,
-): Promise<ProjectSession | null | 'error'> {
-  let sessions: ProjectSession[];
+): Promise<WorkspaceSession | null | 'error'> {
+  let sessions: WorkspaceSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+    sessions = await ctx.client.get<WorkspaceSession[]>(`/workspaces/${ctx.workspaceId}/sessions`);
   } catch (err) {
     surfaceApiError(err);
     return 'error';
@@ -353,7 +353,7 @@ export async function chooseRunningSession(
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
   if (!tty) return first;
 
-  const picked = await selectFromList<ProjectSession>({
+  const picked = await selectFromList<WorkspaceSession>({
     title: pickTitle,
     items: running.map((s) => ({
       value: s,
@@ -366,7 +366,7 @@ export async function chooseRunningSession(
 
 /**
  * Resolve a target session id when the caller may not have passed one:
- * explicit id wins outright; otherwise resolve the project context and hand
+ * explicit id wins outright; otherwise resolve the workspace context and hand
  * off to {@link chooseRunningSession}. Shared by commands like `connect` and
  * `shell` that both need "an id, or let me pick a running one" up front.
  * Prints its own "no running session" guidance (with `startHint` appended)
@@ -379,7 +379,7 @@ export async function resolveRunningSessionId(
   startHint = 'kortix sessions new --wait',
 ): Promise<string | null> {
   if (explicit) return explicit;
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return null;
   const chosen = await chooseRunningSession(ctx, pickTitle);
   if (chosen === 'error') return null;
@@ -396,13 +396,13 @@ export async function resolveRunningSessionId(
 
 /** Poll a freshly-created session until it's running (or fails / times out). */
 async function waitForRunning(
-  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveWorkspaceContext>>>,
   sessionId: string,
 ): Promise<boolean> {
   for (let i = 0; i < 75; i += 1) {
-    let s: ProjectSession;
+    let s: WorkspaceSession;
     try {
-      s = await ctx.client.get<ProjectSession>(`/projects/${ctx.projectId}/sessions/${sessionId}`);
+      s = await ctx.client.get<WorkspaceSession>(`/workspaces/${ctx.workspaceId}/sessions/${sessionId}`);
     } catch (err) {
       surfaceApiError(err);
       return false;
@@ -428,7 +428,7 @@ most recent running session.
 
   --limit, -n <N>   How many recent messages to show (default 10).
   --json            Emit structured JSON (role / text / parts) for scripting.
-  --project <id>    Operate on this project id (default: linked).
+  --workspace <id>    Operate on this workspace id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
 
@@ -449,12 +449,12 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     return 0;
   }
 
-  let projectArg: string | undefined;
+  let workspaceArg: string | undefined;
   let hostArg: string | undefined;
   let limitRaw: string | undefined;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    workspaceArg = takeFlagValue(rest, ['--workspace', '--project']);
     hostArg = takeFlagValue(rest, ['--host']);
     limitRaw = takeFlagValue(rest, ['--limit', '-n']);
     json = takeFlagBool(rest, ['--json']);
@@ -472,12 +472,12 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err(`Invalid --limit "${limitRaw}".`)}\n`);
     return 2;
   }
-  const opts: CtxOpts = { projectArg, hostArg };
+  const opts: CtxOpts = { workspaceArg, hostArg };
 
   // Resolve which session: explicit id → most-recent running.
   let sessionId = positional[0];
   if (!sessionId) {
-    const ctx = await resolveProjectContext(opts);
+    const ctx = await resolveWorkspaceContext(opts);
     if (!ctx) return 1;
     const chosen = await chooseRunningSession(ctx, 'Pick a session to read');
     if (chosen === 'error') return 1;
@@ -604,7 +604,7 @@ to include stopped ones. Aliases: \`overview\`, \`ps\`.
 
   --all, -a         Include stopped/completed sessions.
   --json            Structured output for scripting.
-  --project <id>    Operate on this project id (default: linked).
+  --workspace <id>    Operate on this workspace id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
 
@@ -636,12 +636,12 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
     return 0;
   }
 
-  let projectArg: string | undefined;
+  let workspaceArg: string | undefined;
   let hostArg: string | undefined;
   let all = false;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    workspaceArg = takeFlagValue(rest, ['--workspace', '--project']);
     hostArg = takeFlagValue(rest, ['--host']);
     all = takeFlagBool(rest, ['--all', '-a']);
     json = takeFlagBool(rest, ['--json']);
@@ -653,15 +653,15 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err(`Unexpected argument: ${rest[0]}`)}\n${STATUS_HELP}\n`);
     return 2;
   }
-  const opts: CtxOpts = { projectArg, hostArg };
-  const ctx = await resolveProjectContext(opts);
+  const opts: CtxOpts = { workspaceArg, hostArg };
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
   const auth = ctx.auth;
 
-  let sessions: ProjectSession[];
+  let sessions: WorkspaceSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+    sessions = await ctx.client.get<WorkspaceSession[]>(`/workspaces/${ctx.workspaceId}/sessions`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -678,7 +678,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   const running = shown.filter((s) => s.status === 'running');
   const activity = new Map<string, SessionActivity>();
   await mapLimit(running, 8, async (s) => {
-    const a = await fetchSessionActivity(s, ctx.projectId, auth);
+    const a = await fetchSessionActivity(s, ctx.workspaceId, auth);
     if (a) activity.set(s.session_id, a);
   });
 
@@ -736,12 +736,12 @@ const SESSION_ACTIVITY_PHASE_TIMEOUT_MS = 2_500;
 
 /** Read one running session's latest message and summarize what it's doing. */
 async function fetchSessionActivity(
-  s: ProjectSession,
-  projectId: string,
+  s: WorkspaceSession,
+  workspaceId: string,
   auth: Auth,
 ): Promise<SessionActivity | null> {
   try {
-    const handle = kortixFromAuth(auth).session(projectId, s.session_id);
+    const handle = kortixFromAuth(auth).session(workspaceId, s.session_id);
     const ready = await withKortixScope(auth, () =>
       handle.ensureReady({ readyTimeoutMs: SESSION_ACTIVITY_PHASE_TIMEOUT_MS }),
     );
@@ -777,7 +777,7 @@ async function fetchSessionActivity(
  */
 export function deriveActivity(
   messages: MessageWithParts[],
-  status: ProjectSession['status'],
+  status: WorkspaceSession['status'],
 ): SessionActivity {
   // Lifecycle states before the agent can run describe the BOX, not a turn.
   if (status === 'provisioning' || status === 'branching') {
@@ -914,7 +914,7 @@ function statusDot(s: string): string {
   }
 }
 
-function countByStatus(sessions: ProjectSession[]): Record<string, number> {
+function countByStatus(sessions: WorkspaceSession[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const s of sessions) out[s.status] = (out[s.status] ?? 0) + 1;
   return out;

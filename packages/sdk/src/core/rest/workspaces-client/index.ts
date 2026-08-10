@@ -1,2 +1,2 @@
-export * from './workspaces';
-export * from './compat';
+export * from './implementation';
+export * from './canonical-names';

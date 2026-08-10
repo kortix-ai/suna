@@ -22,7 +22,7 @@ import { eq, sql } from 'drizzle-orm';
 import { getCreditAccount, setDemoEnterprise } from '../billing/repositories/credit-accounts';
 import { config } from '../config';
 import { app } from '../index';
-import { metadataClearSubtreeKey, metadataMergeSubtree } from '../projects/lib/metadata-merge';
+import { metadataClearSubtreeKey, metadataMergeSubtree } from '../workspaces/lib/metadata-merge';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
@@ -31,8 +31,8 @@ const minted: string[] = [];
 const execIds: string[] = [];
 const SESSION = crypto.randomUUID();
 const CHAIN_SESSION = crypto.randomUUID();
-const CHAIN_PROJECT = crypto.randomUUID();
-let ctx: { projectId: string; accountId: string; userId: string } | null = null;
+const CHAIN_WORKSPACE = crypto.randomUUID();
+let ctx: { workspaceId: string; accountId: string; userId: string } | null = null;
 let secret = '';
 let humanToken = '';
 let humanUserId = '';
@@ -60,7 +60,7 @@ beforeAll(async () => {
     limit 1`)) as unknown as Array<{ project_id: string; account_id: string; user_id: string }>;
   const r = rows[0];
   if (!r) return;
-  ctx = { projectId: r.project_id, accountId: r.account_id, userId: r.user_id };
+  ctx = { workspaceId: r.project_id, accountId: r.account_id, userId: r.user_id };
   const t = await createAccountToken({
     accountId: ctx.accountId,
     userId: ctx.userId,
@@ -102,7 +102,7 @@ beforeAll(async () => {
   await db.insert(projectSessions).values({
     sessionId: SESSION,
     accountId: ctx.accountId,
-    projectId: ctx.projectId,
+    workspaceId: ctx.workspaceId,
     branchName: 'approvals-test',
     createdBy: humanUserId,
     visibility: 'private',
@@ -136,7 +136,7 @@ beforeAll(async () => {
   });
   await db.insert(projectMembers).values({
     accountId: ctx.accountId,
-    projectId: ctx.projectId,
+    workspaceId: ctx.workspaceId,
     userId: readOnlyUserId,
     projectRole: 'member',
   });
@@ -162,7 +162,7 @@ beforeAll(async () => {
   const [projectRow] = await db
     .select({ metadata: projects.metadata })
     .from(projects)
-    .where(eq(projects.projectId, ctx.projectId))
+    .where(eq(projects.workspaceId, ctx.workspaceId))
     .limit(1);
   priorReviewCenterOverride =
     (projectRow?.metadata as { experimental?: Record<string, unknown> } | null)?.experimental
@@ -170,7 +170,7 @@ beforeAll(async () => {
   await db
     .update(projects)
     .set({ metadata: metadataMergeSubtree('experimental', { review_center: true }) })
-    .where(eq(projects.projectId, ctx.projectId));
+    .where(eq(projects.workspaceId, ctx.workspaceId));
 }, 30_000);
 
 afterAll(async () => {
@@ -183,7 +183,7 @@ afterAll(async () => {
             ? metadataMergeSubtree('experimental', { review_center: priorReviewCenterOverride })
             : metadataClearSubtreeKey('experimental', 'review_center'),
       })
-      .where(eq(projects.projectId, ctx.projectId));
+      .where(eq(projects.workspaceId, ctx.workspaceId));
   }
   for (const id of execIds)
     await db.delete(connectorCalls).where(eq(connectorCalls.executionId, id));
@@ -196,7 +196,7 @@ afterAll(async () => {
   });
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, CHAIN_SESSION));
-  await db.delete(projects).where(eq(projects.projectId, CHAIN_PROJECT));
+  await db.delete(projects).where(eq(projects.workspaceId, CHAIN_WORKSPACE));
   for (const id of minted)
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${id}`);
   if (ctx && humanUserId) {
@@ -217,7 +217,7 @@ afterAll(async () => {
     await db
       .delete(projectMembers)
       .where(
-        sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${readOnlyUserId}`,
+        sql`${projectMembers.workspaceId} = ${ctx.workspaceId} and ${projectMembers.userId} = ${readOnlyUserId}`,
       );
     await db
       .delete(accountMembers)
@@ -241,7 +241,7 @@ async function seedPending(argsPreviewComplete = true): Promise<string> {
     .insert(connectorCalls)
     .values({
       accountId: ctx.accountId,
-      projectId: ctx.projectId,
+      workspaceId: ctx.workspaceId,
       actionPath: 'github.repos.delete',
       actingUserId: ctx.userId,
       sessionId: SESSION,
@@ -281,7 +281,7 @@ describe('approvals inbox + resolution', () => {
   test('session reconstruction includes integrity-linked events with partial request context', async () => {
     if (!ctx) return;
     await db.insert(projects).values({
-      projectId: CHAIN_PROJECT,
+      workspaceId: CHAIN_WORKSPACE,
       accountId: ctx.accountId,
       name: 'audit-chain-test',
       repoUrl: 'https://example.test/audit-chain-test.git',
@@ -289,7 +289,7 @@ describe('approvals inbox + resolution', () => {
     await db.insert(projectSessions).values({
       sessionId: CHAIN_SESSION,
       accountId: ctx.accountId,
-      projectId: CHAIN_PROJECT,
+      workspaceId: CHAIN_WORKSPACE,
       branchName: 'audit-chain-test',
       createdBy: ctx.userId,
       visibility: 'private',
@@ -303,7 +303,7 @@ describe('approvals inbox + resolution', () => {
       .values([
         {
           accountId: ctx.accountId,
-          projectId: CHAIN_PROJECT,
+          workspaceId: CHAIN_WORKSPACE,
           sessionId: CHAIN_SESSION,
           action: 'test.session_chain.first',
           resourceType: 'test',
@@ -312,7 +312,7 @@ describe('approvals inbox + resolution', () => {
         },
         {
           accountId: null,
-          projectId: CHAIN_PROJECT,
+          workspaceId: CHAIN_WORKSPACE,
           sessionId: CHAIN_SESSION,
           action: 'auth.login.success',
           resourceType: 'session',
@@ -321,7 +321,7 @@ describe('approvals inbox + resolution', () => {
         },
         {
           accountId: ctx.accountId,
-          projectId: null,
+          workspaceId: null,
           sessionId: CHAIN_SESSION,
           action: 'GET /v1/skills',
           resourceType: 'skill',
@@ -330,7 +330,7 @@ describe('approvals inbox + resolution', () => {
         },
         {
           accountId: ctx.accountId,
-          projectId: CHAIN_PROJECT,
+          workspaceId: CHAIN_WORKSPACE,
           sessionId: CHAIN_SESSION,
           action: 'test.session_chain.last',
           resourceType: 'test',
@@ -341,7 +341,7 @@ describe('approvals inbox + resolution', () => {
       .returning({ eventId: auditEvents.eventId });
 
     const response = await patGet(
-      `/v1/projects/${CHAIN_PROJECT}/sessions/${CHAIN_SESSION}/audit?limit=1000`,
+      `/v1/projects/${CHAIN_WORKSPACE}/sessions/${CHAIN_SESSION}/audit?limit=1000`,
     );
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
@@ -371,12 +371,12 @@ describe('approvals inbox + resolution', () => {
     }
     const execId = await seedPending();
 
-    const list = await authGet(`/v1/projects/${ctx.projectId}/approvals`);
+    const list = await authGet(`/v1/projects/${ctx.workspaceId}/approvals`);
     expect(list.status).toBe(200);
     const listBody = (await list.json()) as { approvals: Array<{ execution_id: string }> };
     expect(listBody.approvals.some((approval) => approval.execution_id === execId)).toBe(true);
 
-    const ap = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+    const ap = await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, {
       decision: 'approve',
     });
     expect(ap.status).toBe(200);
@@ -395,16 +395,16 @@ describe('approvals inbox + resolution', () => {
     expect(callback?.commandType).toBe('continue_session');
     expect(callback?.payload).toMatchObject({ executionId: execId });
 
-    const list2 = await authGet(`/v1/projects/${ctx.projectId}/approvals`);
+    const list2 = await authGet(`/v1/projects/${ctx.workspaceId}/approvals`);
     const list2Body = (await list2.json()) as { approvals: Array<{ execution_id: string }> };
     expect(list2Body.approvals.some((approval) => approval.execution_id === execId)).toBe(false);
 
-    const again = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+    const again = await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, {
       decision: 'approve',
     });
     expect(again.status).toBe(409);
 
-    const audit = await authGet(`/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit`);
+    const audit = await authGet(`/v1/projects/${ctx.workspaceId}/sessions/${SESSION}/audit`);
     expect(audit.status).toBe(200);
     const auditBody = (await audit.json()) as {
       audit_access: boolean;
@@ -415,7 +415,7 @@ describe('approvals inbox + resolution', () => {
     expect(entry?.resolved_by).toBe(humanUserId);
 
     const approvalsOnly = await authGet(
-      `/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit?include_events=false&limit=1`,
+      `/v1/projects/${ctx.workspaceId}/sessions/${SESSION}/audit?include_events=false&limit=1`,
     );
     expect(approvalsOnly.status).toBe(200);
     const approvalsOnlyBody = (await approvalsOnly.json()) as {
@@ -432,14 +432,14 @@ describe('approvals inbox + resolution', () => {
     if (!ctx) return;
     // A resolved action (history) + a still-pending one.
     const resolvedId = await seedPending();
-    await authPost(`/v1/projects/${ctx.projectId}/approvals/${resolvedId}`, {
+    await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${resolvedId}`, {
       decision: 'approve',
     });
     const pendingId = await seedPending();
 
     await setDemoEnterprise(ctx.accountId, false);
     try {
-      const res = await authGet(`/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit`);
+      const res = await authGet(`/v1/projects/${ctx.workspaceId}/sessions/${SESSION}/audit`);
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         audit_access: boolean;
@@ -458,7 +458,7 @@ describe('approvals inbox + resolution', () => {
   test('deny flips the action to denied + records the denier', async () => {
     if (!ctx) return;
     const execId = await seedPending();
-    const dn = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+    const dn = await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, {
       decision: 'deny',
     });
     expect(dn.status).toBe(200);
@@ -475,7 +475,7 @@ describe('approvals inbox + resolution', () => {
   test('a PAT cannot approve even when it belongs to an account owner', async () => {
     if (!ctx) return;
     const execId = await seedPending();
-    const response = await patPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+    const response = await patPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, {
       decision: 'approve',
     });
     expect(response.status).toBe(403);
@@ -485,7 +485,7 @@ describe('approvals inbox + resolution', () => {
   test('the shared approval link requires a human account and returns complete parameters', async () => {
     if (!ctx) return;
     const execId = await seedPending();
-    const { token } = mintSetupLink(ctx.projectId, {
+    const { token } = mintSetupLink(ctx.workspaceId, {
       kind: 'approval',
       executionId: execId,
       sessionId: SESSION,
@@ -513,7 +513,7 @@ describe('approvals inbox + resolution', () => {
   test('Review Center exposes parameters only to a human who can resolve the approval', async () => {
     if (!ctx) return;
     const execId = await seedPending();
-    const path = `/v1/projects/${ctx.projectId}/review/items`;
+    const path = `/v1/projects/${ctx.workspaceId}/review/items`;
 
     const owner = await authGet(path);
     expect(owner.status).toBe(200);
@@ -558,13 +558,13 @@ describe('approvals inbox + resolution', () => {
   test('an incomplete parameter preview blocks approve but still permits deny', async () => {
     if (!ctx) return;
     const execId = await seedPending(false);
-    const approve = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+    const approve = await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, {
       decision: 'approve',
     });
     expect(approve.status).toBe(409);
     expect(await approve.json()).toMatchObject({ code: 'APPROVAL_PREVIEW_INCOMPLETE' });
 
-    const deny = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+    const deny = await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, {
       decision: 'deny',
     });
     expect(deny.status).toBe(200);
@@ -574,8 +574,8 @@ describe('approvals inbox + resolution', () => {
     if (!ctx) return;
     const execId = await seedPending();
     const [a, b] = await Promise.all([
-      authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'approve' }),
-      authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'deny' }),
+      authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, { decision: 'approve' }),
+      authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, { decision: 'deny' }),
     ]);
     const statuses = [a.status, b.status].sort();
     expect(statuses).toEqual([200, 409]);
@@ -588,7 +588,7 @@ describe('approvals inbox + resolution', () => {
       .insert(connectorCalls)
       .values({
         accountId: ctx.accountId,
-        projectId: ctx.projectId,
+        workspaceId: ctx.workspaceId,
         actionPath: 'github.repos.delete',
         actingUserId: ctx.userId,
         sessionId: missingSessionId,
@@ -601,7 +601,7 @@ describe('approvals inbox + resolution', () => {
       .returning({ id: connectorCalls.executionId });
     execIds.push(row.id);
 
-    const response = await authPost(`/v1/projects/${ctx.projectId}/approvals/${row.id}`, {
+    const response = await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${row.id}`, {
       decision: 'approve',
     });
     expect(response.status).toBe(500);
@@ -618,15 +618,15 @@ describe('approvals inbox + resolution', () => {
   test('needs-input summary counts the session, and decrements when resolved', async () => {
     if (!ctx) return;
     const execId = await seedPending();
-    const res = await authGet(`/v1/projects/${ctx.projectId}/approvals/needs-input`);
+    const res = await authGet(`/v1/projects/${ctx.workspaceId}/approvals/needs-input`);
     expect(res.status).toBe(200);
     const body = await res.json();
     const before = body.sessions[SESSION] ?? 0;
     expect(before).toBeGreaterThanOrEqual(1);
     // Resolving one drops this session's count by exactly one.
-    await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'approve' });
+    await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, { decision: 'approve' });
     const after = await (
-      await authGet(`/v1/projects/${ctx.projectId}/approvals/needs-input`)
+      await authGet(`/v1/projects/${ctx.workspaceId}/approvals/needs-input`)
     ).json();
     expect(after.sessions[SESSION] ?? 0).toBe(before - 1);
   });
@@ -634,7 +634,7 @@ describe('approvals inbox + resolution', () => {
   test('an invalid decision is rejected 400', async () => {
     if (!ctx) return;
     const execId = await seedPending();
-    const bad = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, {
+    const bad = await authPost(`/v1/projects/${ctx.workspaceId}/approvals/${execId}`, {
       decision: 'maybe',
     });
     expect(bad.status).toBe(400);

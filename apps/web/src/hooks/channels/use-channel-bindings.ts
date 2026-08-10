@@ -11,14 +11,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type { ChannelBinding, ChannelBindingsResponse, UpdateChannelBindingInput };
 
-const key = (projectId: string | null) => ['channels', 'bindings', projectId ?? 'none'] as const;
+const key = (workspaceId: string | null) => ['channels', 'bindings', workspaceId ?? 'none'] as const;
 
-export function useChannelBindings(projectId: string | null) {
+export function useChannelBindings(workspaceId: string | null) {
   return useQuery({
-    queryKey: key(projectId),
-    enabled: !!projectId,
+    queryKey: key(workspaceId),
+    enabled: !!workspaceId,
     staleTime: 15_000,
-    queryFn: () => (projectId ? listChannelBindings(projectId) : null),
+    queryFn: () => (workspaceId ? listChannelBindings(workspaceId) : null),
   });
 }
 
@@ -26,13 +26,13 @@ export function useUpdateChannelBinding() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      projectId,
+      workspaceId,
       bindingId,
       ...input
-    }: { projectId: string; bindingId: string } & UpdateChannelBindingInput) =>
-      updateChannelBinding(projectId, bindingId, input),
-    onSuccess: (_data, { projectId }) => {
-      qc.invalidateQueries({ queryKey: key(projectId) });
+    }: { workspaceId: string; bindingId: string } & UpdateChannelBindingInput) =>
+      updateChannelBinding(workspaceId, bindingId, input),
+    onSuccess: (_data, { workspaceId }) => {
+      qc.invalidateQueries({ queryKey: key(workspaceId) });
     },
   });
 }

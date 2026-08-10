@@ -255,13 +255,13 @@ describe('narrateStep - automations must distinguish create/update from read fro
 
 describe('narrateStep - project_delete must never claim to have opened anything', () => {
   it('does not say "Opened" for project_delete', () => {
-    const line = narrateStep('projects', [part('project_delete', { project: 'demo' })]);
+    const line = narrateStep('workspaces', [part('project_delete', { workspace: 'demo' })]);
     expect(line).not.toContain('Opened');
   });
 
   it('still says "Opened" for project_get/project_list/project_select', () => {
     for (const t of ['project_get', 'project_list', 'project_select']) {
-      expect(narrateStep('projects', [part(t, { project: 'demo' })])).toContain('Opened');
+      expect(narrateStep('workspaces', [part(t, { workspace: 'demo' })])).toContain('Opened');
     }
   });
 });
@@ -493,14 +493,14 @@ describe('narrateStep - create family grouped (n > 1) must resolve each part\'s 
   });
 });
 
-describe('narrateStep - project_update is a real mutation, not "Opened your project"', () => {
+describe('narrateStep - project_update is a real mutation, not "Opened your workspace"', () => {
   it('does not say "Opened" for project_update', () => {
-    const line = narrateStep('projects', [part('project_update', { project: 'demo' })]);
+    const line = narrateStep('workspaces', [part('project_update', { workspace: 'demo' })]);
     expect(line).not.toContain('Opened');
   });
 
-  it('says the project was updated', () => {
-    const line = narrateStep('projects', [part('project_update', { project: 'demo' })]);
+  it('says the workspace was updated', () => {
+    const line = narrateStep('workspaces', [part('project_update', { workspace: 'demo' })]);
     expect(line.toLowerCase()).toContain('updat');
   });
 });
@@ -534,11 +534,11 @@ describe('narrateStep - automations must not guess a read for an unrecognized ac
 
 describe('narrateStep - projects/skills are count-aware, not just parts[0]', () => {
   it('reports the count for multiple created projects instead of only naming the first', () => {
-    const line = narrateStep('projects', [
-      part('project_create', { project: 'alpha' }),
-      part('project_create', { project: 'beta' }),
+    const line = narrateStep('workspaces', [
+      part('project_create', { workspace: 'alpha' }),
+      part('project_create', { workspace: 'beta' }),
     ]);
-    expect(line).toContain('2 projects');
+    expect(line).toContain('2 workspaces');
   });
 
   it('reports the count for multiple skills instead of only naming the first', () => {
@@ -681,7 +681,7 @@ describe('narrateStep - task_update/agent_task_update resolve their own action f
 describe('narrateFailedStep (W7)', () => {
   const FAMILIES: StepFamily[] = [
     'explore', 'edit', 'run', 'web', 'create', 'plan', 'delegate', 'sessions',
-    'memory', 'apps', 'automations', 'projects', 'skills', 'ask', 'retired', 'other',
+    'memory', 'apps', 'automations', 'workspaces', 'skills', 'ask', 'retired', 'other',
   ];
 
   it('every family produces failure phrasing with no raw identifiers', () => {
@@ -718,4 +718,3 @@ describe('narrateFailedStep (W7)', () => {
     expect(s).not.toContain('Send Message');
   });
 });
-

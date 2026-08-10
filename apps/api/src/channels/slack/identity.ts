@@ -3,10 +3,10 @@ import { accountMembers, chatUserIdentities, projectAccessRequests, projects } f
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { authorize } from '../../iam';
-import { PROJECT_ACTIONS } from '../../iam/actions';
-import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
-import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { loadSlackTokenForProject } from '../install-store';
+import { WORKSPACE_ACTIONS } from '../../iam/actions';
+import { notifyWorkspaceAccessRequestManagers } from '../../workspaces/lib/access-requests';
+import { lookupEmailsByUserIds } from '../../workspaces/lib/access';
+import { loadSlackTokenForWorkspace } from '../install-store';
 import { openDmChannel, postBlocks, postEphemeral } from '../slack-api';
 import { createPendingSlackAuthMessage } from './auth-resume';
 import { buildSlackLoginUrl } from './login';
@@ -20,13 +20,13 @@ export type SlackActor =
   | { reason: 'unlinked' | 'not_member' };
 
 // Resolve the Slack sender to the Kortix user they linked via `/login`, and
-// confirm that user may start work in this project. This is the authoritative
-// security gate: no live, project-write-capable mapping → no run.
+// confirm that user may start work in this workspace. This is the authoritative
+// security gate: no live, workspace-write-capable mapping → no run.
 export async function resolveSlackActor(
   teamId: string,
   slackUserId: string,
   accountId: string,
-  projectId: string,
+  workspaceId: string,
 ): Promise<SlackActor> {
   if (!teamId || !slackUserId) return { reason: 'unlinked' };
 
@@ -36,7 +36,7 @@ export async function resolveSlackActor(
     .where(
       and(
         eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, teamId),
+        eq(chatUserIdentities.platformWorkspaceId, teamId),
         eq(chatUserIdentities.platformUserId, slackUserId),
         isNull(chatUserIdentities.revokedAt),
       ),
@@ -48,8 +48,8 @@ export async function resolveSlackActor(
   const verdict = await authorize(
     link.userId,
     accountId,
-    PROJECT_ACTIONS.PROJECT_WRITE,
-    { type: 'project', id: projectId },
+    WORKSPACE_ACTIONS.WORKSPACE_WRITE,
+    { type: 'project', id: workspaceId },
   );
   if (!verdict.allowed) return { reason: 'not_member' };
   return { userId: link.userId };
@@ -74,7 +74,7 @@ export async function lookupSlackIdentity(
     .where(
       and(
         eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, teamId),
+        eq(chatUserIdentities.platformWorkspaceId, teamId),
         eq(chatUserIdentities.platformUserId, slackUserId),
         isNull(chatUserIdentities.revokedAt),
       ),
@@ -95,14 +95,14 @@ export async function linkSlackIdentity(input: {
     .insert(chatUserIdentities)
     .values({
       platform: PLATFORM,
-      workspaceId: input.teamId,
+      platformWorkspaceId: input.teamId,
       platformUserId: input.slackUserId,
       userId: input.userId,
     })
     .onConflictDoUpdate({
       target: [
         chatUserIdentities.platform,
-        chatUserIdentities.workspaceId,
+        chatUserIdentities.platformWorkspaceId,
         chatUserIdentities.platformUserId,
       ],
       set: { userId: input.userId, linkedAt: new Date(), revokedAt: null },
@@ -116,7 +116,7 @@ export async function revokeSlackIdentity(teamId: string, slackUserId: string): 
     .where(
       and(
         eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, teamId),
+        eq(chatUserIdentities.platformWorkspaceId, teamId),
         eq(chatUserIdentities.platformUserId, slackUserId),
         isNull(chatUserIdentities.revokedAt),
       ),
@@ -130,7 +130,7 @@ export async function revokeSlackIdentity(teamId: string, slackUserId: string): 
 // they asked — an ephemeral (“only visible to you”) message in the same thread —
 // instead of a separate DM. Two states, two affordances:
 //   • unlinked   → "Connect your Kortix account" (opens the /login web flow)
-//   • not_member → "Request access" (files a project access request for an admin)
+//   • not_member → "Request access" (files a workspace access request for an admin)
 // Connecting is decoupled from access, so a brand-new user connects once and then
 // requests access in-thread without bouncing off a hard "ask an admin" wall.
 
@@ -158,13 +158,13 @@ export function connectAccountBlocks(url: string, pendingId?: string | null): un
   ];
 }
 
-export function requestAccessBlocks(projectId: string): unknown[] {
+export function requestAccessBlocks(workspaceId: string): unknown[] {
   return [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "You're connected, but your Kortix account doesn't have access to this project yet. Request access and an admin will approve it. _Only you can see this._",
+        text: "You're connected, but your Kortix account doesn't have access to this workspace yet. Request access and an admin will approve it. _Only you can see this._",
       },
     },
     {
@@ -174,7 +174,7 @@ export function requestAccessBlocks(projectId: string): unknown[] {
           type: 'button',
           text: { type: 'plain_text', text: 'Request access', emoji: true },
           style: 'primary',
-          value: JSON.stringify({ projectId }),
+          value: JSON.stringify({ workspaceId }),
           action_id: 'slack_request_access',
         },
       ],
@@ -183,7 +183,7 @@ export function requestAccessBlocks(projectId: string): unknown[] {
 }
 
 export async function postIdentityPrompt(input: {
-  projectId: string;
+  workspaceId: string;
   teamId: string;
   channel?: string;
   threadTs?: string;
@@ -192,7 +192,7 @@ export async function postIdentityPrompt(input: {
   envelope?: SlackEnvelope;
   event?: SlackEvent;
 }): Promise<void> {
-  const token = await loadSlackTokenForProject(input.projectId);
+  const token = await loadSlackTokenForWorkspace(input.workspaceId);
   if (!token) return;
 
   let blocks: unknown[];
@@ -200,7 +200,7 @@ export async function postIdentityPrompt(input: {
   if (input.reason === 'unlinked') {
     const pendingId = input.envelope && input.event
       ? await createPendingSlackAuthMessage({
-        projectId: input.projectId,
+        workspaceId: input.workspaceId,
         teamId: input.teamId,
         slackUserId: input.slackUserId,
         envelope: input.envelope,
@@ -214,8 +214,8 @@ export async function postIdentityPrompt(input: {
     }), pendingId);
     fallback = 'Kortix needs a linked Kortix account to continue.';
   } else {
-    blocks = requestAccessBlocks(input.projectId);
-    fallback = "You're connected, but don't have access to this project yet.";
+    blocks = requestAccessBlocks(input.workspaceId);
+    fallback = "You're connected, but don't have access to this workspace yet.";
   }
 
   // Send BOTH: an in-thread ephemeral for context right where they asked, AND a
@@ -230,37 +230,37 @@ export async function postIdentityPrompt(input: {
 
 export type AccessRequestOutcome =
   | { status: 'created' | 'pending' | 'already-member'; requesterUserId: string; accountId: string }
-  | { status: 'no-identity' | 'no-project' };
+  | { status: 'no-identity' | 'no-workspace' };
 
-// File (or find the existing pending) project access request for the Slack sender,
+// File (or find the existing pending) workspace access request for the Slack sender,
 // reusing the same projectAccessRequests table the web "Request access" flow uses.
 // Idempotent: a second click while one is pending returns 'pending', not a dupe.
 export async function createSlackAccessRequest(input: {
   teamId: string;
   slackUserId: string;
-  projectId: string;
+  workspaceId: string;
 }): Promise<AccessRequestOutcome> {
   const identity = await lookupSlackIdentity(input.teamId, input.slackUserId);
   if (!identity) return { status: 'no-identity' };
 
-  const [project] = await db
+  const [workspace] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
-    .where(eq(projects.projectId, input.projectId))
+    .where(eq(projects.workspaceId, input.workspaceId))
     .limit(1);
-  if (!project) return { status: 'no-project' };
+  if (!workspace) return { status: 'no-workspace' };
 
-  const base = { requesterUserId: identity.userId, accountId: project.accountId };
-  if (await isAccountMember(identity.userId, project.accountId)) {
+  const base = { requesterUserId: identity.userId, accountId: workspace.accountId };
+  if (await isAccountMember(identity.userId, workspace.accountId)) {
     const verdict = await authorize(
       identity.userId,
-      project.accountId,
-      PROJECT_ACTIONS.PROJECT_WRITE,
-      { type: 'project', id: input.projectId },
+      workspace.accountId,
+      WORKSPACE_ACTIONS.WORKSPACE_WRITE,
+      { type: 'project', id: input.workspaceId },
     );
     if (!verdict.allowed) {
       // They are in the org, but cannot run Slack-started sessions for this
-      // project yet. Keep the same review queue instead of silently failing.
+      // workspace yet. Keep the same review queue instead of silently failing.
     } else {
       return { status: 'already-member', ...base };
     }
@@ -271,7 +271,7 @@ export async function createSlackAccessRequest(input: {
     .from(projectAccessRequests)
     .where(
       and(
-        eq(projectAccessRequests.projectId, input.projectId),
+        eq(projectAccessRequests.workspaceId, input.workspaceId),
         eq(projectAccessRequests.requesterUserId, identity.userId),
         eq(projectAccessRequests.status, 'pending'),
       ),
@@ -281,8 +281,8 @@ export async function createSlackAccessRequest(input: {
 
   const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
   await db.insert(projectAccessRequests).values({
-    accountId: project.accountId,
-    projectId: input.projectId,
+    accountId: workspace.accountId,
+    workspaceId: input.workspaceId,
     requesterUserId: identity.userId,
     requesterEmail: email || identity.userId,
     message: 'Requested from Slack. Approve as Editor so they can run Kortix from Slack.',
@@ -296,18 +296,18 @@ export async function createSlackAccessRequest(input: {
 // Members screen (the same request row powers both).
 export async function notifyAdminsOfAccessRequest(input: {
   teamId: string;
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   requesterUserId: string;
   requesterSlackUserId: string;
 }): Promise<void> {
-  await notifyProjectAccessRequestManagers({
+  await notifyWorkspaceAccessRequestManagers({
     accountId: input.accountId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     requesterUserId: input.requesterUserId,
   });
 
-  const token = await loadSlackTokenForProject(input.projectId);
+  const token = await loadSlackTokenForWorkspace(input.workspaceId);
   if (!token) return;
 
   const admins = await db
@@ -325,8 +325,8 @@ export async function notifyAdminsOfAccessRequest(input: {
     input.requesterUserId,
   );
   const who = email ? `*${email}*` : `<@${input.requesterSlackUserId}>`;
-  const projectUrl = `${dashboardBase(config.FRONTEND_URL)}/projects/${input.projectId}/customize/members`;
-  const text = `${who} requested access to a Kortix project in this workspace.`;
+  const workspaceUrl = `${dashboardBase(config.FRONTEND_URL)}/workspaces/${input.workspaceId}/customize/members`;
+  const text = `${who} requested access to a Kortix workspace in this workspace.`;
   const blocks = [
     {
       type: 'section',
@@ -339,7 +339,7 @@ export async function notifyAdminsOfAccessRequest(input: {
           type: 'button',
           text: { type: 'plain_text', text: 'Review in Kortix', emoji: true },
           style: 'primary',
-          url: projectUrl,
+          url: workspaceUrl,
           action_id: 'slack_open_access_review',
         },
       ],
@@ -365,7 +365,7 @@ export async function lookupSlackUserIdForKortixUser(teamId: string, userId: str
     .where(
       and(
         eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, teamId),
+        eq(chatUserIdentities.platformWorkspaceId, teamId),
         eq(chatUserIdentities.userId, userId),
         isNull(chatUserIdentities.revokedAt),
       ),

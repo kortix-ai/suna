@@ -47,7 +47,7 @@
  *  - CHANNELS are a closed enum of four: `packages/manifest-schema/src/
  *    constants.ts:55` → `['slack','teams','email','voice']`. Slack is live;
  *    Teams is `TEAMS_CHANNEL_ENABLED: optBoolFalse` (`apps/api/src/config.ts:364`);
- *    email and voice are experimental, per-project opt-in. Telegram, WhatsApp,
+ *    email and voice are experimental, per-workspace opt-in. Telegram, WhatsApp,
  *    SMS and Discord are NOT channels, in any tense. And `channels:` is REJECTED
  *    by the v2 manifest validator — channel routing is live project state, never
  *    repo config, so no passage may say `kortix.yaml` declares a channel.
@@ -94,7 +94,7 @@
  *    session needs its own `session_key` template (`triggers.ts:636`).
  *  - POLICY. Actions are `always_run | require_approval | block`
  *    (`apps/api/src/connectors/policy.ts:20`). `default_mode` falls back to
- *    `allow_all` when a project declares no `policy:` block
+ *    `allow_all` when a workspace declares no `policy:` block
  *    (`apps/api/src/projects/policies.ts:73`) — approval gates are OFF by
  *    default. Say "set it", never "it is on".
  *  - MERGE is default-deny for agents, not human-only. `project.cr.merge` is a
@@ -196,8 +196,8 @@ export const channels: Passage = {
   eyebrow: 'Where work arrives',
   title: 'A message in Slack starts a session.',
   paragraphs: [
-    'Bind a project to Slack and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread: the reply streams into one message, files move both directions, and a decision it needs from you arrives as a card with buttons.',
-    'A thread is exactly one session — a unique index in the database, not a convention two services agree to honour. Slack is the surface that is live. Microsoft Teams is code-complete behind an operator switch; email and voice are experimental and opt in per project. That is the entire list, because the platform enum is closed at four.',
+    'Bind a workspace to Slack and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread: the reply streams into one message, files move both directions, and a decision it needs from you arrives as a card with buttons.',
+    'A thread is exactly one session — a unique index in the database, not a convention two services agree to honour. Slack is the surface that is live. Microsoft Teams is code-complete behind an operator switch; email and voice are experimental and opt in per workspace. That is the entire list, because the platform enum is closed at four.',
   ],
   facts: ['Slack, live', 'Teams behind an operator switch', 'Email and voice experimental'],
   href: '/channels',
@@ -237,11 +237,11 @@ export const control: Passage = {
   eyebrow: 'In bounds',
   title: 'Secrets, approvals, and the way work lands.',
   paragraphs: [
-    'People, groups and service accounts are all principals, and a permission attaches to a principal for an action on a resource type. A service account never inherits the reach of whoever created it. Secrets are sealed with AES-256-GCM under a key derived per project, and an agent receives only the ones its grant names.',
-    'We will not tell you a granted secret is invisible to the model: once delivered it is a real environment value in the session, because that is how a tool uses it. What holds is narrower — connector credentials never enter the machine at all, and the machine is destroyed with everything on it. Account administration — members, billing, creating projects — is outside the set an agent can hold at all.',
+    'People, groups and service accounts are all principals, and a permission attaches to a principal for an action on a resource type. A service account never inherits the reach of whoever created it. Secrets are sealed with AES-256-GCM under a key derived per workspace, and an agent receives only the ones its grant names.',
+    'We will not tell you a granted secret is invisible to the model: once delivered it is a real environment value in the session, because that is how a tool uses it. What holds is narrower — connector credentials never enter the machine at all, and the machine is destroyed with everything on it. Account administration — members, billing, creating workspaces — is outside the set an agent can hold at all.',
     'Approval gates are not on by default, so set the default you want. When one fires it holds the call open rather than failing it, so the run resumes from exactly where it stopped — a gate that errors out just teaches an agent to retry around it. Work reaches main one way: a change request, and merge is refused to every agent unless an admin grants it in kortix.yaml, which is itself an edit a person has to merge.',
   ],
-  facts: ['AES-256-GCM per project', 'Gates off until you set them', 'Merge default-deny'],
+  facts: ['AES-256-GCM per workspace', 'Gates off until you set them', 'Merge default-deny'],
   href: '/security',
   linkLabel: 'Security',
 };

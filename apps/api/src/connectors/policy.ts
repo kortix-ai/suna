@@ -322,7 +322,7 @@ export interface EffectiveResolveInput {
   projectPolicies: Policy[];
   connectorPolicies: Policy[];
   risk: Risk;
-  /** Project setting from `policy.default_mode` in kortix.yaml. */
+  /** Workspace setting from `policy.default_mode` in kortix.yaml. */
   defaultMode: DefaultMode;
   /** Connector marked `sensitive` — its reads default to require_approval too. */
   sensitive?: boolean;
@@ -350,7 +350,7 @@ export interface EffectiveResolveResult {
  *   3. `defaultMode = risk` → action from risk class.
  *   4. `defaultMode = allow_all` → always_run.
  *
- * Project rules are evaluated BEFORE connector rules and CANNOT be overridden
+ * Workspace rules are evaluated BEFORE connector rules and CANNOT be overridden
  * by them — admin trust property.
  */
 export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveResolveResult {

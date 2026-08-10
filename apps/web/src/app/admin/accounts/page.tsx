@@ -64,7 +64,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useAdminAccountLedger,
-  useAdminAccountProjects,
+  useAdminAccountWorkspaces,
   useAdminAccountUsers,
   useAdminAccounts,
   useAdminDebitCredits,
@@ -342,7 +342,7 @@ function activeFilterCount(f: AccountFilters): number {
 }
 
 export default function AdminAccountsPage() {
-  // Seed from ?search= so cross-links (e.g. the Projects page's account cell)
+  // Seed from ?search= so cross-links (for example, the Workspaces page account cell)
   // land on a filtered list instead of the whole fleet.
   const urlSearchParams = useSearchParams();
   const [searchInput, setSearchInput] = useState(urlSearchParams.get('search') ?? '');
@@ -1080,15 +1080,15 @@ function AccountDetailSheet({
         side="right"
         className="w-full overflow-y-auto p-0 sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[960px]"
       >
-        {account && <AccountDetail account={account} />}
+        {account && <WorkspaceAccountDetail account={account} />}
       </SheetContent>
     </Sheet>
   );
 }
 
-function AccountDetail({ account }: { account: AdminAccount }) {
+function WorkspaceAccountDetail({ account }: { account: AdminAccount }) {
   const usersQuery = useAdminAccountUsers(account.accountId);
-  const projectsQuery = useAdminAccountProjects(account.accountId);
+  const workspacesQuery = useAdminAccountWorkspaces(account.accountId);
   const ledgerQuery = useAdminAccountLedger(account.accountId, 100);
   const actions = billingActionsFor(account);
 
@@ -1168,12 +1168,12 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="projects" className="gap-1.5">
+            <TabsTrigger value="workspaces" className="gap-1.5">
               <FolderKanban className="h-3.5 w-3.5" />
-              Projects
-              {projectsQuery.data?.projects && (
+              Workspaces
+              {workspacesQuery.data?.workspaces && (
                 <Badge variant="muted" size="sm">
-                  {projectsQuery.data.projects.length}
+                  {workspacesQuery.data.workspaces.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -1196,8 +1196,8 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           <TabsContent value="users" className="mt-4">
             <UsersTab usersQuery={usersQuery} />
           </TabsContent>
-          <TabsContent value="projects" className="mt-4">
-            <ProjectsTab projectsQuery={projectsQuery} />
+          <TabsContent value="workspaces" className="mt-4">
+            <WorkspacesTab workspacesQuery={workspacesQuery} />
           </TabsContent>
           <TabsContent value="ledger" className="mt-4">
             <LedgerTab ledgerQuery={ledgerQuery} />
@@ -1816,7 +1816,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               immediately.
             </p>
             <p className="text-muted-foreground text-xs">
-              Entitlements, project and session limits, and the managed-models gate all revert on
+              Entitlements, workspace and session limits, and the managed-models gate all revert on
               the next request. Credits already granted are not clawed back.
             </p>
           </div>
@@ -1911,28 +1911,28 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
   );
 }
 
-function ProjectsTab({
-  projectsQuery,
+function WorkspacesTab({
+  workspacesQuery,
 }: {
-  projectsQuery: ReturnType<typeof useAdminAccountProjects>;
+  workspacesQuery: ReturnType<typeof useAdminAccountWorkspaces>;
 }) {
-  if (projectsQuery.isLoading) {
+  if (workspacesQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
         <Loading className="h-4 w-4" />
-        Loading projects…
+        Loading workspaces…
       </div>
     );
   }
 
-  const projects = projectsQuery.data?.projects ?? [];
-  if (projects.length === 0) {
+  const workspaces = workspacesQuery.data?.workspaces ?? [];
+  if (workspaces.length === 0) {
     return (
       <div className="border-border/60 bg-card rounded-2xl border">
         <EmptyState
           icon={FolderKanban}
-          title="No projects on this account"
-          description="Projects will appear here once the user creates one."
+          title="No workspaces on this account"
+          description="Workspaces will appear here once the user creates one."
           size="sm"
         />
       </div>
@@ -1941,25 +1941,25 @@ function ProjectsTab({
 
   return (
     <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border">
-      {projects.map((project) => (
+      {workspaces.map((workspace) => (
         <a
-          key={project.projectId}
-          href={`/workspaces/${project.projectId}`}
+          key={workspace.workspaceId}
+          href={`/workspaces/${workspace.workspaceId}`}
           target="_blank"
           rel="noopener noreferrer"
           className="hover:bg-muted/40 flex flex-col gap-2 px-4 py-3 text-sm transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate font-medium">{project.name}</span>
-              {project.activeSessionCount > 0 && (
+              <span className="truncate font-medium">{workspace.name}</span>
+              {workspace.activeSessionCount > 0 && (
                 <Badge variant="success" size="sm">
-                  {project.activeSessionCount} active
+                  {workspace.activeSessionCount} active
                 </Badge>
               )}
-              {project.status && project.status !== 'active' && (
+              {workspace.status && workspace.status !== 'active' && (
                 <Badge variant="muted" size="sm" className="capitalize">
-                  {project.status}
+                  {workspace.status}
                 </Badge>
               )}
             </div>
@@ -1968,19 +1968,19 @@ function ProjectsTab({
           <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
             <div className="truncate">
               <span className="text-muted-foreground/70">Sessions: </span>
-              <span className="text-foreground/80">{project.sessionCount}</span>
+              <span className="text-foreground/80">{workspace.sessionCount}</span>
             </div>
             <div className="truncate">
               <span className="text-muted-foreground/70">Last activity: </span>
               <span className="text-foreground/80">
-                {project.lastSessionAt ? formatRelative(project.lastSessionAt) : '—'}
+                {workspace.lastSessionAt ? formatRelative(workspace.lastSessionAt) : '—'}
               </span>
             </div>
             <div className="truncate">
               <span className="text-muted-foreground/70">Updated: </span>
-              <span className="text-foreground/80">{formatRelative(project.updatedAt)}</span>
+              <span className="text-foreground/80">{formatRelative(workspace.updatedAt)}</span>
             </div>
-            <div className="truncate font-mono text-xs">{project.projectId.slice(0, 8)}…</div>
+            <div className="truncate font-mono text-xs">{workspace.workspaceId.slice(0, 8)}…</div>
           </div>
         </a>
       ))}

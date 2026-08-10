@@ -8,16 +8,16 @@ import { Label } from '@/components/ui/label';
 import { errorToast, successToast } from '@/components/ui/toast';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { useSetVoiceBotName } from '@/hooks/channels/use-voice-settings';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 
 const DEFAULT_BOT_NAME = 'Kortix';
 
-export function VoiceView({ projectId }: { projectId: string }) {
+export function VoiceView({ workspaceId }: { workspaceId: string }) {
   const setBotName = useSetVoiceBotName();
   // Read-only unless the role can write customize settings; fails closed while
   // the probe resolves.
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+  const canWrite = useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE).allowed === true;
   const [name, setName] = useState('');
 
   const dirty = name.trim().length > 0;
@@ -25,7 +25,7 @@ export function VoiceView({ projectId }: { projectId: string }) {
   async function onSave() {
     if (!dirty) return;
     try {
-      const saved = await setBotName.mutateAsync({ projectId, name: name.trim() });
+      const saved = await setBotName.mutateAsync({ workspaceId, name: name.trim() });
       successToast(`Bot name set to ${saved.bot_name}`);
       setName('');
     } catch (err) {

@@ -1,9 +1,4 @@
-import type {
-  AdminConnector,
-  Connection,
-  ProjectSecret,
-  SessionScope,
-} from '@kortix/sdk';
+import type { WorkspaceAdminConnector, Connection, WorkspaceSecret, SessionScope } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -29,10 +24,10 @@ const scope = (overrides: Partial<SessionScope> = {}): SessionScope => ({
   ...overrides,
 });
 
-const secret = (identifier: string, overrides: Partial<ProjectSecret> = {}): ProjectSecret => ({
+const secret = (identifier: string, overrides: Partial<WorkspaceSecret> = {}): WorkspaceSecret => ({
   identifier,
   name: identifier,
-  project_id: 'project-1',
+  workspace_id: 'workspace-1',
   secret_id: `secret-${identifier}`,
   created_by: null,
   created_at: null,
@@ -46,9 +41,9 @@ const secret = (identifier: string, overrides: Partial<ProjectSecret> = {}): Pro
 
 const connector = (
   slug: string,
-  authorizationStrategy: AdminConnector['authorizationStrategy'],
-  overrides: Partial<AdminConnector> = {},
-): AdminConnector => ({
+  authorizationStrategy: WorkspaceAdminConnector['authorizationStrategy'],
+  overrides: Partial<WorkspaceAdminConnector> = {},
+): WorkspaceAdminConnector => ({
   slug,
   name: slug,
   provider: 'pipedream',
@@ -71,7 +66,7 @@ const connection = (
   connection_id: connectionId,
   connector_alias: connectorAlias,
   owner_type: ownerType,
-  owner_id: ownerType === 'project' ? null : 'user-1',
+  owner_id: ownerType === 'workspace' ? null : 'user-1',
   label: connectionId,
   status: 'active',
   is_default: false,
@@ -133,19 +128,19 @@ describe('createSessionScopeDraft', () => {
 });
 
 describe('createNewSessionScopeDraft', () => {
-  test('starts with unrestricted secrets (null) and no connections selected', () => {
+  test('starts with unrestricted secrets and every available default connection', () => {
     // `null` is the no-override state — "inherit everything the agent's grant
     // allows", identical to how a server-created session starts. `[]` would be an
-    // explicit "inject zero project secrets", which silently denied every
+    // explicit "inject zero workspace secrets", which silently denied every
     // browser-created session its grant. A user who deliberately wants zero can
     // still get `[]` via `setAllSessionSecrets(draft, false)`; the two are
     // opposite and must not be conflated.
     const catalog = buildSessionScopeSelectionCatalog({
       secrets: ready([secret('MAIL_TOKEN')]),
-      connectors: ready([connector('mail-read', 'project'), connector('issues', 'user')]),
+      connectors: ready([connector('mail-read', 'workspace'), connector('issues', 'user')]),
       connections: ready([
-        connection('connection-mail-secondary', 'mail-read', 'project'),
-        connection('connection-mail-default', 'mail-read', 'project', {
+        connection('connection-mail-secondary', 'mail-read', 'workspace'),
+        connection('connection-mail-default', 'mail-read', 'workspace', {
           is_default: true,
         }),
         connection('connection-issues-only', 'issues', 'member'),
@@ -154,7 +149,11 @@ describe('createNewSessionScopeDraft', () => {
 
     expect(createNewSessionScopeDraft(catalog)).toEqual({
       secrets: null,
-      connector_bindings: {},
+      connector_bindings: {
+        'mail-read': { connection_id: 'connection-mail-default' },
+        issues: { connection_id: 'connection-issues-only' },
+      },
+      connector_bindings_inherited: true,
       require_connectors: [],
     });
   });
@@ -174,6 +173,7 @@ describe('createNewSessionScopeDraft', () => {
     expect(createNewSessionScopeDraft(catalog)).toEqual({
       secrets: null,
       connector_bindings: {},
+      connector_bindings_inherited: true,
       require_connectors: [],
     });
   });
@@ -236,7 +236,7 @@ describe('buildSessionScopeReplacement', () => {
   test('a new-session draft with null secrets stays null in the replacement', () => {
     // Regression: `createNewSessionScopeDraft` returns `secrets: null` (no
     // override). The replacement MUST carry `null` — "stop narrowing, inherit the
-    // grant" — not `[]` ("inject zero project secrets"). The two are opposite, and
+    // grant" — not `[]` ("inject zero workspace secrets"). The two are opposite, and
     // flipping null to [] silently denied every browser-created session its grant.
     expect(
       buildSessionScopeReplacement({
@@ -247,6 +247,22 @@ describe('buildSessionScopeReplacement', () => {
     ).toEqual({
       secrets: null,
       connector_bindings: {},
+      require_connectors: [],
+    });
+  });
+
+  test('keeps untouched connector defaults on server-side inheritance', () => {
+    expect(
+      buildSessionScopeReplacement({
+        secrets: null,
+        connector_bindings: {
+          mail: { connection_id: 'stale-client-default' },
+        },
+        connector_bindings_inherited: true,
+        require_connectors: [],
+      }),
+    ).toEqual({
+      secrets: null,
       require_connectors: [],
     });
   });
@@ -282,12 +298,12 @@ describe('buildSessionScopeSelectionCatalog', () => {
     const result = buildSessionScopeSelectionCatalog({
       secrets: ready([secret('MAIL_TOKEN'), secret('ISSUE_TOKEN'), secret('UNUSED_TOKEN')]),
       connectors: ready([
-        connector('mail-read', 'project'),
+        connector('mail-read', 'workspace'),
         connector('issues', 'user'),
-        connector('storage', 'project'),
+        connector('storage', 'workspace'),
       ]),
       connections: ready([
-        connection('connection-mail-1', 'mail-read', 'project'),
+        connection('connection-mail-1', 'mail-read', 'workspace'),
         connection('connection-issues-1', 'issues', 'member'),
       ]),
       grants: {
@@ -313,8 +329,8 @@ describe('buildSessionScopeSelectionCatalog', () => {
   test('treats an ungoverned grant as all and none as empty', () => {
     const inputs = {
       secrets: ready([secret('MAIL_TOKEN')]),
-      connectors: ready([connector('mail-read', 'project')]),
-      connections: ready([connection('connection-mail-1', 'mail-read', 'project')]),
+      connectors: ready([connector('mail-read', 'workspace')]),
+      connections: ready([connection('connection-mail-1', 'mail-read', 'workspace')]),
     };
 
     const ungoverned = buildSessionScopeSelectionCatalog({
@@ -328,21 +344,23 @@ describe('buildSessionScopeSelectionCatalog', () => {
 
     expect(ungoverned.secrets.status === 'ready' ? ungoverned.secrets.items : []).toHaveLength(1);
     expect(
-      ungoverned.connector_connections.status === 'ready' ? ungoverned.connector_connections.items : [],
+      ungoverned.connector_connections.status === 'ready'
+        ? ungoverned.connector_connections.items
+        : [],
     ).toHaveLength(1);
     expect(none.secrets).toEqual({ status: 'ready', items: [] });
     expect(none.connector_connections).toEqual({ status: 'ready', items: [] });
   });
 
-  test('offers only project connections for project strategy connectors', () => {
+  test('offers only workspace connections for workspace strategy connectors', () => {
     const result = buildSessionScopeSelectionCatalog({
       secrets: ready([]),
-      connectors: ready([connector('mail-read', 'project')]),
+      connectors: ready([connector('mail-read', 'workspace')]),
       connections: ready([
-        connection('project-active', 'mail-read', 'project', { is_default: true }),
+        connection('workspace-active', 'mail-read', 'workspace', { is_default: true }),
         connection('member-active', 'mail-read', 'member'),
-        connection('project-revoked', 'mail-read', 'project', { status: 'revoked' }),
-        connection('other-project', 'issues', 'project'),
+        connection('workspace-revoked', 'mail-read', 'workspace', { status: 'revoked' }),
+        connection('other-workspace', 'issues', 'workspace'),
       ]),
       grants: { connectors: 'all' },
     });
@@ -353,11 +371,11 @@ describe('buildSessionScopeSelectionCatalog', () => {
         {
           slug: 'mail-read',
           name: 'mail-read',
-          authorization_strategy: 'project',
+          authorization_strategy: 'workspace',
           connections: [
             {
-              connection_id: 'project-active',
-              label: 'project-active',
+              connection_id: 'workspace-active',
+              label: 'workspace-active',
               is_default: true,
             },
           ],
@@ -372,7 +390,7 @@ describe('buildSessionScopeSelectionCatalog', () => {
       connectors: ready([connector('issues', 'user')]),
       connections: ready([
         connection('member-active', 'issues', 'member'),
-        connection('project-active', 'issues', 'project'),
+        connection('workspace-active', 'issues', 'workspace'),
         connection('member-error', 'issues', 'member', { status: 'error' }),
       ]),
       grants: { connectors: 'all' },
@@ -406,7 +424,7 @@ describe('buildSessionScopeSelectionCatalog', () => {
     });
     const connectionsUnavailable = buildSessionScopeSelectionCatalog({
       secrets: ready([]),
-      connectors: ready([connector('mail-read', 'project')]),
+      connectors: ready([connector('mail-read', 'workspace')]),
       connections: unavailable(),
       grants: {},
     });

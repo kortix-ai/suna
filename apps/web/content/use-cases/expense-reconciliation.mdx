@@ -52,7 +52,7 @@ the sheet, and escalates anything it can't match to a person.
 <Steps>
 <Step title="Connect a monthly cron as the trigger">
 
-A **cron** trigger fires the project on a schedule — once a month, after the
+A **cron** trigger fires the workspace on a schedule — once a month, after the
 period closes. Each firing spawns a fresh **session** in its own sandbox. One
 run, one session, one disposable machine, with nothing carried over from the last
 month's run.
@@ -98,7 +98,7 @@ sent to a person to chase, with the two records it couldn't reconcile attached.
 </Steps>
 
 <Callout title="The pattern" tone="accent">
-  Fire the project on a monthly **cron**, give the agent read access to Stripe
+  Fire the workspace on a monthly **cron**, give the agent read access to Stripe
   and the bank feed and write access to the sheet through scoped **connectors**,
   encode the reconciliation rules as **skills** and **memory**, and escalate
   anything it can't match to a person.
