@@ -72,9 +72,11 @@ import {
   useAdminGrantTrial,
   useAdminRevokeTrial,
   useAdminSetEnterpriseDemo,
+  useAdminAccount,
   useAdminSetEnterpriseEntitled,
+  useAdminSetMemberRole,
+  type AdminAccountMemberRole,
   useAdminSetManagedModels,
-  useAdminSetTier,
   type AdminAccount,
   type AdminAccountsFilters,
   type AdminAccountsSortBy,
@@ -379,12 +381,16 @@ export default function AdminAccountsPage() {
 
   const filtersCount = activeFilterCount(filters);
 
-  // `selected` is the row object captured at click time. Re-resolve it against
-  // the latest page so an in-sheet mutation (credits, trial, entitlement flags)
-  // shows its own result once the invalidated list query refetches, instead of
-  // rendering the pre-mutation snapshot until the sheet is reopened.
+  // `selected` is the row object captured at click time. The live source is
+  // the exact-id lookup (immune to the list's filters — a mutation that pushes
+  // the row out of a filtered list no longer strands the sheet on a
+  // pre-mutation snapshot); the filtered list row and the click-time snapshot
+  // are fallbacks while the lookup loads.
+  const selectedDetail = useAdminAccount(selected?.accountId ?? null);
   const selectedAccount = selected
-    ? (accounts.find((a) => a.accountId === selected.accountId) ?? selected)
+    ? (selectedDetail.data ??
+      accounts.find((a) => a.accountId === selected.accountId) ??
+      selected)
     : null;
 
   const setSort = useCallback((sortBy: AdminAccountsSortBy) => {
@@ -1194,7 +1200,7 @@ function WorkspaceAccountDetail({ account }: { account: AdminAccount }) {
             <EntitlementsTab account={account} />
           </TabsContent>
           <TabsContent value="users" className="mt-4">
-            <UsersTab usersQuery={usersQuery} />
+            <UsersTab usersQuery={usersQuery} accountId={account.accountId} />
           </TabsContent>
           <TabsContent value="workspaces" className="mt-4">
             <WorkspacesTab workspacesQuery={workspacesQuery} />
@@ -1214,7 +1220,7 @@ function WorkspaceAccountDetail({ account }: { account: AdminAccount }) {
 function CreditsTab({ account }: { account: AdminAccount }) {
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
-  const setTier = useAdminSetTier();
+  const setEnterpriseEntitled = useAdminSetEnterpriseEntitled();
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('Reimbursement');
   const [isExpiring, setIsExpiring] = useState(false);
@@ -1267,25 +1273,28 @@ function CreditsTab({ account }: { account: AdminAccount }) {
     }
   }
 
-  async function handleSetTier(tier: string, label: string) {
+  async function handleSetEnterprise(enabled: boolean) {
     try {
-      await setTier.mutateAsync({ accountId: account.accountId, tier });
-      toast.success(`Plan set to ${label}`, {
-        description: `${account.name || account.accountId} is now on ${label}.`,
+      await setEnterpriseEntitled.mutateAsync({ accountId: account.accountId, enabled });
+      toast.success(enabled ? 'Enterprise activated' : 'Enterprise entitlement revoked', {
+        description: `${account.name || account.accountId} ${enabled ? 'now has' : 'no longer has'} SSO, SCIM, RBAC and audit entitlements.`,
       });
     } catch (error) {
-      toast.error('Failed to set plan', {
+      toast.error('Failed to update Enterprise entitlement', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
 
-  const isEnterprise = account.tier === 'enterprise';
+  const isEnterprise = account.enterpriseEntitled;
 
   return (
     <>
-      {/* Plan / Enterprise activation — sales-assigned tiers have no self-serve
-          path; this flips the account onto Enterprise (unlocks SSO + SCIM). */}
+      {/* Plan / Enterprise activation. Enterprise is the `enterprise_entitled`
+          FLAG, not a tier write: the flag survives Stripe subscription sync,
+          while a `tier='enterprise'` write is reverted by the next
+          customer.subscription.updated event (the bug this replaced). The
+          billed plan label stays whatever the account actually pays for. */}
       <div className="border-border/60 bg-card mb-4 space-y-3 rounded-2xl border p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
@@ -1293,7 +1302,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             <div className="text-muted-foreground text-xs">
               Current:{' '}
               <span className="text-foreground font-medium">{tierLabel(account.tier)}</span>
-              {isEnterprise && ' · SSO + SCIM unlocked'}
+              {isEnterprise && ' · Enterprise entitlements active'}
             </div>
           </div>
           <Badge variant={tierBadgeVariant(account.tier)} className="capitalize">
@@ -1302,25 +1311,25 @@ function CreditsTab({ account }: { account: AdminAccount }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
-            onClick={() => handleSetTier('enterprise', 'Enterprise')}
-            disabled={setTier.isPending || isEnterprise}
+            onClick={() => handleSetEnterprise(true)}
+            disabled={setEnterpriseEntitled.isPending || isEnterprise}
             className="gap-1.5"
           >
-            {setTier.isPending && <Loading className="h-3.5 w-3.5" />}
+            {setEnterpriseEntitled.isPending && <Loading className="h-3.5 w-3.5" />}
             {isEnterprise ? 'Enterprise active' : 'Activate Enterprise'}
           </Button>
           {isEnterprise && (
             <Button
               variant="outline"
-              onClick={() => handleSetTier('per_seat', 'Team')}
-              disabled={setTier.isPending}
+              onClick={() => handleSetEnterprise(false)}
+              disabled={setEnterpriseEntitled.isPending}
             >
-              {'Revert to Team'}
+              {'Revoke Enterprise entitlement'}
             </Button>
           )}
         </div>
         <p className="text-muted-foreground text-xs">
-          {'Enterprise unlocks SAML SSO + SCIM directory sync for this account. Seat billing is unchanged.'}
+          {'Enterprise unlocks SAML SSO, SCIM directory sync, RBAC and audit access for this account. The billed plan and seat billing are unchanged.'}
         </p>
       </div>
 
@@ -1829,7 +1838,28 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
   );
 }
 
-function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccountUsers> }) {
+const MEMBER_ROLES: AdminAccountMemberRole[] = ['owner', 'admin', 'member'];
+
+function UsersTab({
+  usersQuery,
+  accountId,
+}: {
+  usersQuery: ReturnType<typeof useAdminAccountUsers>;
+  accountId: string;
+}) {
+  const setMemberRole = useAdminSetMemberRole();
+
+  async function handleRoleChange(userId: string, email: string, role: AdminAccountMemberRole) {
+    try {
+      await setMemberRole.mutateAsync({ accountId, userId, role });
+      toast.success('Role updated', { description: `${email} is now ${role}.` });
+    } catch (error) {
+      toast.error('Failed to update role', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
   if (usersQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
@@ -1877,9 +1907,24 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
                   </Badge>
                 )}
               </div>
-              <Badge variant="muted" size="sm" className="shrink-0 capitalize">
-                {user.account_role}
-              </Badge>
+              <Select
+                value={user.account_role}
+                disabled={setMemberRole.isPending}
+                onValueChange={(role) =>
+                  handleRoleChange(user.user_id, user.email, role as AdminAccountMemberRole)
+                }
+              >
+                <SelectTrigger size="sm" className="h-7 w-[7.5rem] shrink-0 text-xs capitalize">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {MEMBER_ROLES.map((role) => (
+                    <SelectItem key={role} value={role} className="capitalize">
+                      {role}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
               <div className="truncate">

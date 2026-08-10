@@ -12,6 +12,41 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-11 — session `workspace-refactor-billing-revamp-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into PR #5480 after Main added billing trial lifecycle and admin account controls.
+
+Claimed SDK scope:
+
+- Preserve Main's exact-id admin account lookup and member-role mutation.
+- Keep Workspace as the canonical admin inventory contract.
+- Preserve the deprecated Project inventory hook and route for compatibility.
+- Preserve every published export from both merge parents.
+- Preserve the release-managed package version.
+
+The required `tdd` skill is unavailable in this session. Main supplied the new
+tests before this reconciliation. The merge adds no new SDK behavior beyond
+preserving those already-tested changes.
+
+GREEN:
+
+- Focused API and SDK reconciliation coverage: `28 pass`, `0 fail`.
+- `pnpm --dir apps/api typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2269 pass`, `0 fail`, `10226 expect()` calls
+  across `184` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the
+  deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- Runtime and type-level surface snapshots contain every export from both merge
+  parents. The set comparison reports `0` removals.
+
+**Status:** RECONCILED. The exact-head full repository gate and GitHub checks are pending.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.**
+
 ### 2026-08-10 — session `workspace-refactor-session-overrides-reconciliation` claim
 
 No **Now** task claimed. This is the user-directed merge of current `origin/main`
@@ -8598,3 +8633,23 @@ activity, and the account cell's `/admin/accounts?search=<ownerEmail>` href).
 this entry is the handoff record).
 
 **SDK package shippable to production: YES.**
+
+---
+
+## 2026-08-11 — admin member-role mutation + exact-id account lookup (branch `billing-revamp-pr1`)
+
+Part of the billing-revamp PR1 (enterprise-entitlement primitive fix, expiring
+trial grants, admin role control). SDK surface additions in
+`src/react/use-admin-accounts.ts`, TDD (`use-admin-accounts.test.ts`, RED→GREEN):
+
+- `useAdminSetMemberRole` + `adminMemberRolePath` + type `AdminAccountMemberRole`
+  — POST `/admin/api/accounts/{id}/members/{userId}/role` (platform-admin
+  override; server refuses demoting the last owner).
+- `useAdminAccount` + `adminAccountLookupPath` — live single-account row via the
+  list route's new exact-id `accountId` filter; fixes the admin sheet's stale
+  pre-mutation snapshot when list filters no longer match the row.
+
+Both surface snapshots re-recorded — additive only (5 names runtime, 5 type),
+no rename, no removal.
+
+**Status:** COMPLETE on branch `billing-revamp-pr1`, commit `0c295a7652`.

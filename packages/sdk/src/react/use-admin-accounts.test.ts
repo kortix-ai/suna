@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
+import type { AdminAccountMemberRole } from './use-admin-accounts';
 
 // Same harness as `./use-project-secrets.test.ts`: react-query's `useMutation`
 // is mocked down to an identity function (returns the config object) so each
@@ -47,6 +48,10 @@ const {
   useAdminSetEnterpriseEntitled,
   useAdminAccountWorkspaces,
   useAdminAccountProjects,
+  adminAccountLookupPath,
+  adminMemberRolePath,
+  useAdminAccount,
+  useAdminSetMemberRole,
 } = await import('./use-admin-accounts');
 
 beforeEach(() => {
@@ -62,18 +67,41 @@ describe('admin account Workspace inventory compatibility', () => {
     const hook = useAdminAccountWorkspaces(ACCOUNT) as any;
     expect(hook.queryKey).toEqual(['admin', 'accounts', ACCOUNT, 'workspaces']);
     await hook.queryFn();
-    expect(calls).toEqual([
-      { method: 'GET', path: `/admin/api/accounts/${ACCOUNT}/workspaces` },
-    ]);
+    expect(calls).toEqual([{ method: 'GET', path: `/admin/api/accounts/${ACCOUNT}/workspaces` }]);
   });
 
   test('deprecated Project hook retains its exact route and query key', async () => {
     const hook = useAdminAccountProjects(ACCOUNT) as any;
     expect(hook.queryKey).toEqual(['admin', 'accounts', ACCOUNT, 'projects']);
     await hook.queryFn();
-    expect(calls).toEqual([
-      { method: 'GET', path: `/admin/api/accounts/${ACCOUNT}/projects` },
-    ]);
+    expect(calls).toEqual([{ method: 'GET', path: `/admin/api/accounts/${ACCOUNT}/projects` }]);
+  });
+});
+
+describe('admin single-account lookup contract', () => {
+  test('queries the list route by exact accountId', () => {
+    expect(adminAccountLookupPath('acct_1')).toBe('/admin/api/accounts?accountId=acct_1&limit=1');
+  });
+
+  test('exports the single-account hook', () => {
+    expect(typeof useAdminAccount).toBe('function');
+  });
+});
+
+describe('admin member-role mutation contract', () => {
+  test('targets the platform-admin role route', () => {
+    expect(adminMemberRolePath('acct_1', 'user_9')).toBe(
+      '/admin/api/accounts/acct_1/members/user_9/role',
+    );
+  });
+
+  test('exports the member-role mutation hook', () => {
+    expect(typeof useAdminSetMemberRole).toBe('function');
+  });
+
+  test('covers the three account roles', () => {
+    const roles: AdminAccountMemberRole[] = ['owner', 'admin', 'member'];
+    expect(roles).toHaveLength(3);
   });
 });
 

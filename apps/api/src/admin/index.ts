@@ -11,36 +11,33 @@
  * service). Stripe customer id/email are still returned as null (no join yet);
  * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
-import { createRoute, z } from "@hono/zod-openapi";
-import type { AppEnv } from "../types";
-import { supabaseAuth } from "../middleware/auth";
-import { requireAdmin } from "../middleware/require-admin";
-import { makeOpenApiApp, json, errors, auth } from "../openapi";
-import {
-  MAX_ACCOUNT_SESSION_LIMIT,
-  setAccountSessionLimit,
-} from "./account-session-limit";
-import { analyticsApp } from "./analytics";
+import { createRoute, z } from '@hono/zod-openapi';
+import type { AppEnv } from '../types';
+import { supabaseAuth } from '../middleware/auth';
+import { requireAdmin } from '../middleware/require-admin';
+import { makeOpenApiApp, json, errors, auth } from '../openapi';
+import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-session-limit';
+import { analyticsApp } from './analytics';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
 
 // Every admin route requires a logged-in platform admin.
-adminApp.use("*", supabaseAuth, requireAdmin);
+adminApp.use('*', supabaseAuth, requireAdmin);
 
 // Activity analytics. Mounted HERE — directly after the gate above and before
 // any route definition — so it inherits supabaseAuth + requireAdmin instead of
 // re-declaring them. `analyticsApp` carries no middleware of its own; moving
 // this line above the `use('*')` would publish platform-wide activity data to
 // anonymous callers. `analytics-mount.test.ts` fails if that happens.
-adminApp.route("/analytics", analyticsApp);
+adminApp.route('/analytics', analyticsApp);
 
 // ── List accounts ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: "get",
-    path: "/api/accounts",
-    tags: ["admin"],
-    summary: "List accounts (admin console)",
+    method: 'get',
+    path: '/api/accounts',
+    tags: ['admin'],
+    summary: 'List accounts (admin console)',
     ...auth,
     request: {
       query: z.object({
@@ -58,15 +55,15 @@ adminApp.openapi(
       }),
     },
     responses: {
-      200: json(z.record(z.string(), z.any()), "Accounts page"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.record(z.string(), z.any()), 'Accounts page'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const { db } = await import("../shared/db");
-      const { accounts, creditAccounts } = await import("@kortix/db");
+      const { db } = await import('../shared/db');
+      const { accounts, creditAccounts } = await import('@kortix/db');
       const {
         and,
         asc,
@@ -81,12 +78,12 @@ adminApp.openapi(
         isNull,
         or,
         sql,
-      } = await import("drizzle-orm");
-      const { parseAdminAccountsListQuery, UNPAID_TIERS } =
-        await import("./accounts-query");
+      } = await import('drizzle-orm');
+      const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
 
       const {
         search,
+        accountId: accountIdFilter,
         tierValues,
         paymentStatusValues,
         paidOnly,
@@ -99,7 +96,7 @@ adminApp.openapi(
         limit,
         offset,
       } = parseAdminAccountsListQuery((k: string) => c.req.query(k));
-      const dir = sortDir === "asc" ? asc : desc;
+      const dir = sortDir === 'asc' ? asc : desc;
 
       const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
@@ -111,24 +108,22 @@ adminApp.openapi(
       SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${accounts.accountId})`;
 
       const conds: any[] = [];
+      // Exact-id lookup keeps the admin detail sheet independent from list filters.
+      if (accountIdFilter) conds.push(eq(accounts.accountId, accountIdFilter));
       if (search) {
         conds.push(
           or(
             ilike(accounts.name, `%${search}%`),
             sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${"%" + search + "%"})`,
+                      WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
           ),
         );
       }
-      if (tierValues.length)
-        conds.push(inArray(creditAccounts.tier, tierValues));
+      if (tierValues.length) conds.push(inArray(creditAccounts.tier, tierValues));
       // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
       if (paidOnly) {
         conds.push(
-          and(
-            isNotNull(creditAccounts.tier),
-            notInArray(creditAccounts.tier, [...UNPAID_TIERS]),
-          ),
+          and(isNotNull(creditAccounts.tier), notInArray(creditAccounts.tier, [...UNPAID_TIERS])),
         );
       }
       if (paymentStatusValues.length)
@@ -154,9 +149,9 @@ adminApp.openapi(
       const where = conds.length ? and(...conds) : undefined;
 
       const sortCol =
-        sortBy === "balance"
+        sortBy === 'balance'
           ? creditAccounts.balance
-          : sortBy === "name"
+          : sortBy === 'name'
             ? accounts.name
             : accounts.createdAt;
 
@@ -189,10 +184,7 @@ adminApp.openapi(
           memberCount,
         })
         .from(accounts)
-        .leftJoin(
-          creditAccounts,
-          eq(creditAccounts.accountId, accounts.accountId),
-        )
+        .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
         .where(where)
         .orderBy(dir(sortCol))
         .limit(limit)
@@ -201,10 +193,7 @@ adminApp.openapi(
       const [{ total }] = await db
         .select({ total: sql<number>`count(*)::int` })
         .from(accounts)
-        .leftJoin(
-          creditAccounts,
-          eq(creditAccounts.accountId, accounts.accountId),
-        )
+        .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
         .where(where);
 
       const list = rows.map((r) => ({
@@ -224,7 +213,7 @@ adminApp.openapi(
         billingModel: r.billingModel ?? null,
         seatCount: r.seatCount ?? null,
         trial: {
-          status: r.trialStatus ?? "none",
+          status: r.trialStatus ?? 'none',
           tier: r.trialTier ?? null,
           seats: r.trialSeats ?? null,
           startedAt: r.trialStartedAt ?? null,
@@ -238,9 +227,7 @@ adminApp.openapi(
         // billing-customers join is added; the console degrades gracefully.
         billingCustomerId: null,
         billingCustomerEmail: null,
-        createdAt: r.createdAt
-          ? new Date(r.createdAt as any).toISOString()
-          : null,
+        createdAt: r.createdAt ? new Date(r.createdAt as any).toISOString() : null,
       }));
 
       return c.json({
@@ -268,23 +255,23 @@ adminApp.openapi(
 // ── Account members ──────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: "get",
-    path: "/api/accounts/{id}/users",
-    tags: ["admin"],
-    summary: "List members of an account",
+    method: 'get',
+    path: '/api/accounts/{id}/users',
+    tags: ['admin'],
+    summary: 'List members of an account',
     ...auth,
     request: { params: z.object({ id: z.string() }) },
     responses: {
-      200: json(z.object({ users: z.array(z.any()) }), "Account members"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.object({ users: z.array(z.any()) }), 'Account members'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const { db } = await import("../shared/db");
-      const { sql } = await import("drizzle-orm");
+      const accountId = c.req.param('id');
+      const { db } = await import('../shared/db');
+      const { sql } = await import('drizzle-orm');
 
       const result: any = await db.execute(sql`
       SELECT au.id AS user_id, au.email,
@@ -307,45 +294,149 @@ adminApp.openapi(
   },
 );
 
+// ── Set a member's role ──────────────────────────────────────────────────────
+// Platform-admin override of the in-account role system. The customer route
+// requires account membership, which platform support staff do not have.
+// This route keeps the invariant that an account always has at least one owner.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/members/{userId}/role',
+    tags: ['admin'],
+    summary: "Set an account member's role (platform-admin override)",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string(), userId: z.string() }),
+      body: {
+        content: {
+          'application/json': { schema: z.object({ role: z.string() }) },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({
+          ok: z.boolean(),
+          user_id: z.string(),
+          account_role: z.string(),
+        }),
+        'Updated member role',
+      ),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      404: json(z.record(z.string(), z.any()), 'Not a member'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const userId = c.req.param('userId');
+      const actorUserId = c.get('userId') as string | undefined;
+      const body = await c.req.json().catch(() => ({}));
+      const roleRaw = String(body.role || '').trim();
+
+      if (roleRaw !== 'owner' && roleRaw !== 'admin' && roleRaw !== 'member') {
+        return c.json({ error: 'role must be one of owner|admin|member' }, 400);
+      }
+      const role = roleRaw;
+
+      const { db } = await import('../shared/db');
+      const { accountMembers } = await import('@kortix/db');
+      const { and, eq } = await import('drizzle-orm');
+
+      const [target] = await db
+        .select({ accountRole: accountMembers.accountRole })
+        .from(accountMembers)
+        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+        .limit(1);
+      if (!target) {
+        return c.json({ error: 'user is not a member of this account' }, 404);
+      }
+      if (target.accountRole === role) {
+        return c.json({ ok: true, user_id: userId, account_role: role });
+      }
+
+      if (target.accountRole === 'owner' && role !== 'owner') {
+        const owners = await db
+          .select({ userId: accountMembers.userId })
+          .from(accountMembers)
+          .where(
+            and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')),
+          );
+        if (owners.length <= 1) {
+          return c.json({ error: 'cannot demote the last owner of an account' }, 400);
+        }
+      }
+
+      await db
+        .update(accountMembers)
+        .set({ accountRole: role })
+        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.member_role.set',
+          resourceType: 'account_member',
+          resourceId: userId,
+          before: { account_role: target.accountRole },
+          after: { account_role: role },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the role change */
+      }
+
+      return c.json({ ok: true, user_id: userId, account_role: role });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  },
+);
+
 // ── Account workspaces ───────────────────────────────────────────────────────
 // The support-desk view for every Workspace an account owns. The canonical
 // route returns `workspaces`; the deprecated Project route preserves `projects`.
 const adminAccountWorkspacesRoute = createRoute({
-  method: "get",
-  path: "/api/accounts/{id}/workspaces",
-  tags: ["admin"],
-  summary: "List workspaces owned by an account",
+  method: 'get',
+  path: '/api/accounts/{id}/workspaces',
+  tags: ['admin'],
+  summary: 'List workspaces owned by an account',
   ...auth,
   request: { params: z.object({ id: z.string() }) },
   responses: {
-    200: json(z.object({ workspaces: z.array(z.any()) }), "Account workspaces"),
-    500: json(z.record(z.string(), z.any()), "Server error"),
+    200: json(z.object({ workspaces: z.array(z.any()) }), 'Account workspaces'),
+    500: json(z.record(z.string(), z.any()), 'Server error'),
     ...errors(401, 403),
   },
 });
 
 const legacyAdminAccountProjectsRoute = createRoute({
-  method: "get",
-  path: "/api/accounts/{id}/projects",
-  tags: ["admin"],
-  summary: "List workspaces owned by an account (deprecated Project alias)",
+  method: 'get',
+  path: '/api/accounts/{id}/projects',
+  tags: ['admin'],
+  summary: 'List workspaces owned by an account (deprecated Project alias)',
   deprecated: true,
   ...auth,
   request: { params: z.object({ id: z.string() }) },
   responses: {
-    200: json(z.object({ projects: z.array(z.any()) }), "Account projects"),
-    500: json(z.record(z.string(), z.any()), "Server error"),
+    200: json(z.object({ projects: z.array(z.any()) }), 'Account projects'),
+    500: json(z.record(z.string(), z.any()), 'Server error'),
     ...errors(401, 403),
   },
 });
 
 const listAdminAccountWorkspaces = async (c: any) => {
-  const legacyProjectResponse = c.req.path.endsWith("/projects");
+  const legacyProjectResponse = c.req.path.endsWith('/projects');
   try {
-    const accountId = c.req.param("id");
-    const { db } = await import("../shared/db");
-    const { projects, projectSessions } = await import("@kortix/db");
-    const { eq, desc, sql } = await import("drizzle-orm");
+    const accountId = c.req.param('id');
+    const { db } = await import('../shared/db');
+    const { projects, projectSessions } = await import('@kortix/db');
+    const { eq, desc, sql } = await import('drizzle-orm');
 
     const sessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.workspaceId})`;
@@ -383,9 +474,7 @@ const listAdminAccountWorkspaces = async (c: any) => {
   } catch (error: any) {
     const message = error?.message || String(error);
     return c.json(
-      legacyProjectResponse
-        ? { projects: [], error: message }
-        : { workspaces: [], error: message },
+      legacyProjectResponse ? { projects: [], error: message } : { workspaces: [], error: message },
       500,
     );
   }
@@ -403,10 +492,10 @@ adminApp.openapi(legacyAdminAccountProjectsRoute, listAdminAccountWorkspaces);
 // it reports touched, not active. NULLS LAST keeps never-run workspaces out of
 // the top of the default view instead of ahead of it.
 const adminWorkspacesRoute = createRoute({
-  method: "get",
-  path: "/api/workspaces",
-  tags: ["admin"],
-  summary: "List workspaces across all accounts (admin console)",
+  method: 'get',
+  path: '/api/workspaces',
+  tags: ['admin'],
+  summary: 'List workspaces across all accounts (admin console)',
   ...auth,
   request: {
     query: z.object({
@@ -420,17 +509,17 @@ const adminWorkspacesRoute = createRoute({
     }),
   },
   responses: {
-    200: json(z.record(z.string(), z.any()), "Workspaces page"),
-    500: json(z.record(z.string(), z.any()), "Server error"),
+    200: json(z.record(z.string(), z.any()), 'Workspaces page'),
+    500: json(z.record(z.string(), z.any()), 'Server error'),
     ...errors(401, 403),
   },
 });
 
 const legacyAdminProjectsRoute = createRoute({
-  method: "get",
-  path: "/api/projects",
-  tags: ["admin"],
-  summary: "List workspaces across all accounts (deprecated Project alias)",
+  method: 'get',
+  path: '/api/projects',
+  tags: ['admin'],
+  summary: 'List workspaces across all accounts (deprecated Project alias)',
   deprecated: true,
   ...auth,
   request: {
@@ -445,22 +534,20 @@ const legacyAdminProjectsRoute = createRoute({
     }),
   },
   responses: {
-    200: json(z.record(z.string(), z.any()), "Workspaces page"),
-    500: json(z.record(z.string(), z.any()), "Server error"),
+    200: json(z.record(z.string(), z.any()), 'Workspaces page'),
+    500: json(z.record(z.string(), z.any()), 'Server error'),
     ...errors(401, 403),
   },
 });
 
 const listAdminWorkspaces = async (c: any) => {
-  const legacyProjectResponse = c.req.path.endsWith("/api/projects");
+  const legacyProjectResponse = c.req.path.endsWith('/api/projects');
   try {
-    const { db } = await import("../shared/db");
-    const { accounts, projects, projectSessions } = await import("@kortix/db");
-    const { and, eq, ilike, inArray, or, sql } = await import("drizzle-orm");
-    const { parseAdminWorkspacesListQuery } =
-      await import("./workspaces-query");
-    const { ACTIVE_SESSION_STATUSES } =
-      await import("../workspaces/lib/session-status");
+    const { db } = await import('../shared/db');
+    const { accounts, projects, projectSessions } = await import('@kortix/db');
+    const { and, eq, ilike, inArray, or, sql } = await import('drizzle-orm');
+    const { parseAdminWorkspacesListQuery } = await import('./workspaces-query');
+    const { ACTIVE_SESSION_STATUSES } = await import('../workspaces/lib/session-status');
 
     const {
       search,
@@ -512,7 +599,7 @@ const listAdminWorkspaces = async (c: any) => {
           ilike(projects.name, `%${search}%`),
           ilike(accounts.name, `%${search}%`),
           sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
-                      WHERE am.account_id = ${projects.accountId} AND au.email ILIKE ${"%" + search + "%"})`,
+                      WHERE am.account_id = ${projects.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
         ),
       );
     }
@@ -520,11 +607,11 @@ const listAdminWorkspaces = async (c: any) => {
     if (statusValues.length) conds.push(inArray(projects.status, statusValues));
     const where = conds.length ? and(...conds) : undefined;
 
-    const dirSql = sortDir === "asc" ? sql`asc` : sql`desc`;
+    const dirSql = sortDir === 'asc' ? sql`asc` : sql`desc`;
     const sortExpr =
-      sortBy === "created"
+      sortBy === 'created'
         ? sql`${projects.createdAt}`
-        : sortBy === "sessions"
+        : sortBy === 'sessions'
           ? sessionCount
           : lastSessionAt;
     // `project_id` breaks ties so pagination cannot repeat or skip a row when
@@ -564,14 +651,10 @@ const listAdminWorkspaces = async (c: any) => {
       accountId: r.accountId,
       accountName: r.accountName ?? null,
       ownerEmail: r.ownerEmail ?? null,
-      createdAt: r.createdAt
-        ? new Date(r.createdAt as any).toISOString()
-        : null,
+      createdAt: r.createdAt ? new Date(r.createdAt as any).toISOString() : null,
       sessionCount: Number(r.sessionCount ?? 0),
       activeSessionCount: Number(r.activeSessionCount ?? 0),
-      lastSessionAt: r.lastSessionAt
-        ? new Date(r.lastSessionAt as any).toISOString()
-        : null,
+      lastSessionAt: r.lastSessionAt ? new Date(r.lastSessionAt as any).toISOString() : null,
     }));
 
     return c.json(
@@ -596,34 +679,28 @@ adminApp.openapi(legacyAdminProjectsRoute, listAdminWorkspaces);
 // ── Credit ledger ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: "get",
-    path: "/api/accounts/{id}/ledger",
-    tags: ["admin"],
-    summary: "List credit ledger entries for an account",
+    method: 'get',
+    path: '/api/accounts/{id}/ledger',
+    tags: ['admin'],
+    summary: 'List credit ledger entries for an account',
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       query: z.object({ limit: z.string().optional() }),
     },
     responses: {
-      200: json(
-        z.object({ entries: z.array(z.any()) }),
-        "Credit ledger entries",
-      ),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.object({ entries: z.array(z.any()) }), 'Credit ledger entries'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const limit = Math.min(
-        200,
-        Math.max(1, parseInt(c.req.query("limit") || "50", 10)),
-      );
-      const { db } = await import("../shared/db");
-      const { creditLedger } = await import("@kortix/db");
-      const { eq, desc } = await import("drizzle-orm");
+      const accountId = c.req.param('id');
+      const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
+      const { db } = await import('../shared/db');
+      const { creditLedger } = await import('@kortix/db');
+      const { eq, desc } = await import('drizzle-orm');
       const entries = await db
         .select()
         .from(creditLedger)
@@ -640,16 +717,16 @@ adminApp.openapi(
 // ── Grant credits ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/accounts/{id}/credits",
-    tags: ["admin"],
-    summary: "Grant credits to an account",
+    method: 'post',
+    path: '/api/accounts/{id}/credits',
+    tags: ['admin'],
+    summary: 'Grant credits to an account',
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({
               amount: z.number(),
               description: z.string().optional(),
@@ -660,33 +737,29 @@ adminApp.openapi(
       },
     },
     responses: {
-      200: json(
-        z.object({ ok: z.boolean(), balance: z.any() }),
-        "Grant result",
-      ),
-      400: json(z.record(z.string(), z.any()), "Bad request"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.object({ ok: z.boolean(), balance: z.any() }), 'Grant result'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = c.get("userId") as string | undefined;
+      const accountId = c.req.param('id');
+      const actorUserId = c.get('userId') as string | undefined;
       const body = await c.req.json().catch(() => ({}));
       const amount = Number(body.amount);
-      const description = String(body.description || "Admin credit grant");
+      const description = String(body.description || 'Admin credit grant');
       const isExpiring = body.isExpiring !== false;
       if (!Number.isFinite(amount) || amount <= 0)
-        return c.json({ error: "amount must be a positive number" }, 400);
+        return c.json({ error: 'amount must be a positive number' }, 400);
 
-      const { grantCredits, getBalance } =
-        await import("../billing/services/credits");
+      const { grantCredits, getBalance } = await import('../billing/services/credits');
       await grantCredits(
         accountId,
         amount,
-        "admin_grant",
-        `${description} (by admin ${actorUserId ?? "unknown"})`,
+        'admin_grant',
+        `${description} (by admin ${actorUserId ?? 'unknown'})`,
         isExpiring,
       );
       const balance = await getBalance(accountId);
@@ -700,16 +773,16 @@ adminApp.openapi(
 // ── Debit credits ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/accounts/{id}/credits/debit",
-    tags: ["admin"],
-    summary: "Debit credits from an account",
+    method: 'post',
+    path: '/api/accounts/{id}/credits/debit',
+    tags: ['admin'],
+    summary: 'Debit credits from an account',
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({
               amount: z.number(),
               description: z.string().optional(),
@@ -719,32 +792,28 @@ adminApp.openapi(
       },
     },
     responses: {
-      200: json(
-        z.object({ ok: z.boolean(), balance: z.any() }),
-        "Debit result",
-      ),
-      400: json(z.record(z.string(), z.any()), "Bad request"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.object({ ok: z.boolean(), balance: z.any() }), 'Debit result'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = c.get("userId") as string | undefined;
+      const accountId = c.req.param('id');
+      const actorUserId = c.get('userId') as string | undefined;
       const body = await c.req.json().catch(() => ({}));
       const amount = Number(body.amount);
-      const description = String(body.description || "Admin credit debit");
+      const description = String(body.description || 'Admin credit debit');
       if (!Number.isFinite(amount) || amount <= 0)
-        return c.json({ error: "amount must be a positive number" }, 400);
+        return c.json({ error: 'amount must be a positive number' }, 400);
 
-      const { grantCredits, getBalance } =
-        await import("../billing/services/credits");
+      const { grantCredits, getBalance } = await import('../billing/services/credits');
       await grantCredits(
         accountId,
         -Math.abs(amount),
-        "admin_debit",
-        `${description} (by admin ${actorUserId ?? "unknown"})`,
+        'admin_debit',
+        `${description} (by admin ${actorUserId ?? 'unknown'})`,
         false,
       );
       const balance = await getBalance(accountId);
@@ -762,44 +831,53 @@ adminApp.openapi(
 // and clears the tier cache so the change takes effect immediately.
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/accounts/{id}/tier",
-    tags: ["admin"],
+    method: 'post',
+    path: '/api/accounts/{id}/tier',
+    tags: ['admin'],
     summary: "Set an account's plan tier (e.g. activate Enterprise)",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({ tier: z.string() }),
           },
         },
       },
     },
     responses: {
-      200: json(
-        z.object({ ok: z.boolean(), tier: z.string() }),
-        "Updated tier",
-      ),
-      400: json(z.record(z.string(), z.any()), "Bad request"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.object({ ok: z.boolean(), tier: z.string() }), 'Updated tier'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = c.get("userId") as string | undefined;
+      const accountId = c.req.param('id');
+      const actorUserId = c.get('userId') as string | undefined;
       const body = await c.req.json().catch(() => ({}));
-      const tier = String(body.tier || "").trim();
+      const tier = String(body.tier || '').trim();
 
-      const { isValidTier } = await import("../billing/services/tiers");
-      if (!isValidTier(tier))
-        return c.json({ error: `unknown tier "${tier}"` }, 400);
+      const { isValidTier } = await import('../billing/services/tiers');
+      if (!isValidTier(tier)) return c.json({ error: `unknown tier "${tier}"` }, 400);
 
-      const { getSubscriptionInfo, upsertCreditAccount } =
-        await import("../billing/repositories/credit-accounts");
+      // Enterprise is an entitlement. Stripe synchronization can overwrite a
+      // tier write, while the dedicated entitlement flag persists.
+      if (tier === 'enterprise') {
+        return c.json(
+          {
+            error:
+              'enterprise is not assignable as a tier — use POST /admin/api/accounts/{id}/enterprise-entitlement instead (the flag survives Stripe subscription sync; a tier write does not)',
+          },
+          400,
+        );
+      }
+
+      const { getSubscriptionInfo, upsertCreditAccount } = await import(
+        '../billing/repositories/credit-accounts'
+      );
       const before = await getSubscriptionInfo(accountId);
       await upsertCreditAccount(accountId, { tier });
 
@@ -809,25 +887,23 @@ adminApp.openapi(
       // clearing only the limit cache left the gateway serving the old tier for
       // up to 30s. The per-request entitlement read (SSO/SCIM gates) is uncached
       // and already sees it.
-      const { clearAccountLimitCache } =
-        await import("../shared/account-limits");
-      const { invalidateCachedAccountTier } =
-        await import("../billing/services/entitlements");
+      const { clearAccountLimitCache } = await import('../shared/account-limits');
+      const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
       clearAccountLimitCache();
       invalidateCachedAccountTier(accountId);
 
       try {
-        const { recordAuditEvent } = await import("../shared/audit");
+        const { recordAuditEvent } = await import('../shared/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
-          action: "admin.account.tier.set",
-          resourceType: "credit_account",
+          action: 'admin.account.tier.set',
+          resourceType: 'credit_account',
           resourceId: accountId,
           before: { tier: before?.tier ?? null },
           after: { tier },
-          ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || null,
-          userAgent: c.req.header("user-agent") || null,
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
         });
       } catch {
         /* audit is best-effort — never block the tier change */
@@ -853,43 +929,41 @@ adminApp.openapi(
 // the additional, independent entitlement source for the hybrid case.
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/accounts/{id}/enterprise-entitlement",
-    tags: ["admin"],
+    method: 'post',
+    path: '/api/accounts/{id}/enterprise-entitlement',
+    tags: ['admin'],
     summary: "Set the account's contracted-Enterprise entitlement flag",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({ enabled: z.boolean() }),
           },
         },
       },
     },
     responses: {
-      200: json(
-        z.object({ ok: z.boolean(), enabled: z.boolean() }),
-        "Updated entitlement flag",
-      ),
-      400: json(z.record(z.string(), z.any()), "Bad request"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.object({ ok: z.boolean(), enabled: z.boolean() }), 'Updated entitlement flag'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = c.get("userId") as string | undefined;
+      const accountId = c.req.param('id');
+      const actorUserId = c.get('userId') as string | undefined;
       const body = await c.req.json().catch(() => ({}));
       const enabled = body.enabled;
-      if (typeof enabled !== "boolean") {
-        return c.json({ error: "enabled must be a boolean" }, 400);
+      if (typeof enabled !== 'boolean') {
+        return c.json({ error: 'enabled must be a boolean' }, 400);
       }
 
-      const { isEnterpriseEntitled, setEnterpriseEntitled } =
-        await import("../billing/repositories/credit-accounts");
+      const { isEnterpriseEntitled, setEnterpriseEntitled } = await import(
+        '../billing/repositories/credit-accounts'
+      );
       const before = await isEnterpriseEntitled(accountId);
       await setEnterpriseEntitled(accountId, enabled);
 
@@ -897,17 +971,17 @@ adminApp.openapi(
       // the change immediately; no tier-cache invalidation needed because
       // enterprise_entitled is resolved independently of the cached tier.
       try {
-        const { recordAuditEvent } = await import("../shared/audit");
+        const { recordAuditEvent } = await import('../shared/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
-          action: "admin.account.enterprise_entitlement.set",
-          resourceType: "credit_account",
+          action: 'admin.account.enterprise_entitlement.set',
+          resourceType: 'credit_account',
           resourceId: accountId,
           before: { enterprise_entitled: before },
           after: { enterprise_entitled: enabled },
-          ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || null,
-          userAgent: c.req.header("user-agent") || null,
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
         });
       } catch {
         /* audit is best-effort — never block the entitlement change */
@@ -925,16 +999,16 @@ adminApp.openapi(
 // policy changes and for bounded end-to-end limit verification.
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/accounts/{id}/session-limit",
-    tags: ["admin"],
+    method: 'post',
+    path: '/api/accounts/{id}/session-limit',
+    tags: ['admin'],
     summary: "Set an account's concurrent-session override",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({
               max_concurrent_sessions: z
                 .number()
@@ -954,38 +1028,37 @@ adminApp.openapi(
           previous: z.number().int().nullable(),
           current: z.number().int().nullable(),
         }),
-        "Updated concurrent-session override",
+        'Updated concurrent-session override',
       ),
-      400: json(z.record(z.string(), z.any()), "Bad request"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = (c.get("userId") as string | undefined) ?? null;
-      const body = c.req.valid("json") as {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as {
         max_concurrent_sessions: number | null;
       };
-      const { getSubscriptionInfo, upsertCreditAccount } =
-        await import("../billing/repositories/credit-accounts");
-      const { clearAccountLimitCache } =
-        await import("../shared/account-limits");
-      const { recordAuditEvent } = await import("../shared/audit");
+      const { getSubscriptionInfo, upsertCreditAccount } = await import(
+        '../billing/repositories/credit-accounts'
+      );
+      const { clearAccountLimitCache } = await import('../shared/account-limits');
+      const { recordAuditEvent } = await import('../shared/audit');
 
       const result = await setAccountSessionLimit(
         {
           accountId,
           actorUserId,
           maxConcurrentSessions: body.max_concurrent_sessions,
-          ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || null,
-          userAgent: c.req.header("user-agent") || null,
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
         },
         {
           getCurrent: async () =>
-            (await getSubscriptionInfo(accountId))?.maxConcurrentSessions ??
-            null,
+            (await getSubscriptionInfo(accountId))?.maxConcurrentSessions ?? null,
           persist: async (id, value) => {
             await upsertCreditAccount(id, { maxConcurrentSessions: value });
           },
@@ -1010,16 +1083,16 @@ adminApp.openapi(
 // to run sessions.
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/accounts/{id}/trial",
-    tags: ["admin"],
-    summary: "Grant or replace an account trial",
+    method: 'post',
+    path: '/api/accounts/{id}/trial',
+    tags: ['admin'],
+    summary: 'Grant or replace an account trial',
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({
               tier_key: z.string().min(1).max(50),
               seats: z.number().int().min(1),
@@ -1032,25 +1105,26 @@ adminApp.openapi(
       },
     },
     responses: {
-      200: json(z.record(z.string(), z.any()), "Trial granted"),
-      400: json(z.record(z.string(), z.any()), "Bad request"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.record(z.string(), z.any()), 'Trial granted'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = (c.get("userId") as string | undefined) ?? null;
-      const body = c.req.valid("json") as {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as {
         tier_key: string;
         seats: number;
         duration_days: number;
         note?: string;
         credit_grant?: number;
       };
-      const { grantTrial, validateGrantTrialInput } =
-        await import("../billing/services/trial-admin");
+      const { grantTrial, validateGrantTrialInput } = await import(
+        '../billing/services/trial-admin'
+      );
       const input = {
         accountId,
         tierKey: body.tier_key,
@@ -1066,20 +1140,20 @@ adminApp.openapi(
       const result = await grantTrial(input);
 
       try {
-        const { recordAuditEvent } = await import("../shared/audit");
+        const { recordAuditEvent } = await import('../shared/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
-          action: "admin.account.trial.grant",
-          resourceType: "credit_account",
+          action: 'admin.account.trial.grant',
+          resourceType: 'credit_account',
           resourceId: accountId,
           before: { trial: result.before },
           after: {
             trial: result.current,
             credit_granted: result.creditGranted,
           },
-          ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || null,
-          userAgent: c.req.header("user-agent") || null,
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
         });
       } catch {
         /* audit is best-effort — never block the grant */
@@ -1099,24 +1173,24 @@ adminApp.openapi(
 // ── Revoke an account trial ──────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: "delete",
-    path: "/api/accounts/{id}/trial",
-    tags: ["admin"],
-    summary: "Revoke an active account trial",
+    method: 'delete',
+    path: '/api/accounts/{id}/trial',
+    tags: ['admin'],
+    summary: 'Revoke an active account trial',
     ...auth,
     request: { params: z.object({ id: z.string() }) },
     responses: {
-      200: json(z.record(z.string(), z.any()), "Trial revoked"),
-      400: json(z.record(z.string(), z.any()), "No active trial"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.record(z.string(), z.any()), 'Trial revoked'),
+      400: json(z.record(z.string(), z.any()), 'No active trial'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = (c.get("userId") as string | undefined) ?? null;
-      const { revokeTrial } = await import("../billing/services/trial-admin");
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const { revokeTrial } = await import('../billing/services/trial-admin');
       let result;
       try {
         result = await revokeTrial(accountId);
@@ -1125,17 +1199,17 @@ adminApp.openapi(
       }
 
       try {
-        const { recordAuditEvent } = await import("../shared/audit");
+        const { recordAuditEvent } = await import('../shared/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
-          action: "admin.account.trial.revoke",
-          resourceType: "credit_account",
+          action: 'admin.account.trial.revoke',
+          resourceType: 'credit_account',
           resourceId: accountId,
           before: { trial: result.before },
           after: { trial: result.current },
-          ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || null,
-          userAgent: c.req.header("user-agent") || null,
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
         });
       } catch {
         /* audit is best-effort — never block the revoke */
@@ -1153,16 +1227,16 @@ adminApp.openapi(
 // (Kortix-credential) models regardless of tier; false forces BYOK-only.
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/accounts/{id}/managed-models",
-    tags: ["admin"],
+    method: 'post',
+    path: '/api/accounts/{id}/managed-models',
+    tags: ['admin'],
     summary: "Set the account's managed-models override",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({ override: z.boolean().nullable() }),
           },
         },
@@ -1171,47 +1245,45 @@ adminApp.openapi(
     responses: {
       200: json(
         z.object({ ok: z.boolean(), override: z.boolean().nullable() }),
-        "Updated managed-models override",
+        'Updated managed-models override',
       ),
-      400: json(z.record(z.string(), z.any()), "Bad request"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = (c.get("userId") as string | undefined) ?? null;
-      const body = c.req.valid("json") as { override: boolean | null };
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as { override: boolean | null };
 
-      const { getCreditAccount, setManagedModelsOverride } =
-        await import("../billing/repositories/credit-accounts");
-      const before =
-        (await getCreditAccount(accountId))?.managedModelsOverride ?? null;
+      const { getCreditAccount, setManagedModelsOverride } = await import(
+        '../billing/repositories/credit-accounts'
+      );
+      const before = (await getCreditAccount(accountId))?.managedModelsOverride ?? null;
       await setManagedModelsOverride(accountId, body.override);
 
       // The managed-models answer is served from the shared tier-snapshot
       // cache (gateway auth hot path) AND the limit cache (sandbox-provision
       // gateway mount) — clear both so the flip is visible immediately.
-      const { invalidateCachedAccountTier } =
-        await import("../billing/services/entitlements");
-      const { clearAccountLimitCache } =
-        await import("../shared/account-limits");
+      const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
+      const { clearAccountLimitCache } = await import('../shared/account-limits');
       invalidateCachedAccountTier(accountId);
       clearAccountLimitCache();
 
       try {
-        const { recordAuditEvent } = await import("../shared/audit");
+        const { recordAuditEvent } = await import('../shared/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
-          action: "admin.account.managed_models.set",
-          resourceType: "credit_account",
+          action: 'admin.account.managed_models.set',
+          resourceType: 'credit_account',
           resourceId: accountId,
           before: { managed_models_override: before },
           after: { managed_models_override: body.override },
-          ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || null,
-          userAgent: c.req.header("user-agent") || null,
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
         });
       } catch {
         /* audit is best-effort — never block the change */
@@ -1230,54 +1302,52 @@ adminApp.openapi(
 // (credit_accounts.demo_enterprise), same entitlement effect.
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/accounts/{id}/enterprise-demo",
-    tags: ["admin"],
+    method: 'post',
+    path: '/api/accounts/{id}/enterprise-demo',
+    tags: ['admin'],
     summary: "Set the account's enterprise-demo flag",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({ enabled: z.boolean() }),
           },
         },
       },
     },
     responses: {
-      200: json(
-        z.object({ ok: z.boolean(), enabled: z.boolean() }),
-        "Updated demo flag",
-      ),
-      400: json(z.record(z.string(), z.any()), "Bad request"),
-      500: json(z.record(z.string(), z.any()), "Server error"),
+      200: json(z.object({ ok: z.boolean(), enabled: z.boolean() }), 'Updated demo flag'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     try {
-      const accountId = c.req.param("id");
-      const actorUserId = (c.get("userId") as string | undefined) ?? null;
-      const body = c.req.valid("json") as { enabled: boolean };
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const body = c.req.valid('json') as { enabled: boolean };
 
-      const { isDemoEnterprise, setDemoEnterprise } =
-        await import("../billing/repositories/credit-accounts");
+      const { isDemoEnterprise, setDemoEnterprise } = await import(
+        '../billing/repositories/credit-accounts'
+      );
       const before = await isDemoEnterprise(accountId);
       await setDemoEnterprise(accountId, body.enabled);
 
       try {
-        const { recordAuditEvent } = await import("../shared/audit");
+        const { recordAuditEvent } = await import('../shared/audit');
         await recordAuditEvent({
           accountId,
           actorUserId,
-          action: "admin.account.enterprise_demo.set",
-          resourceType: "credit_account",
+          action: 'admin.account.enterprise_demo.set',
+          resourceType: 'credit_account',
           resourceId: accountId,
           before: { demo_enterprise: before },
           after: { demo_enterprise: body.enabled },
-          ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || null,
-          userAgent: c.req.header("user-agent") || null,
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
         });
       } catch {
         /* audit is best-effort — never block the change */
@@ -1295,23 +1365,22 @@ adminApp.openapi(
 // (platform/services/provider-balancer); unset/zero -> first allowed provider.
 adminApp.openapi(
   createRoute({
-    method: "get",
-    path: "/api/provider-distribution",
-    tags: ["admin"],
-    summary: "Get provider split weights",
+    method: 'get',
+    path: '/api/provider-distribution',
+    tags: ['admin'],
+    summary: 'Get provider split weights',
     ...auth,
     responses: {
-      200: json(z.record(z.string(), z.any()), "weights"),
+      200: json(z.record(z.string(), z.any()), 'weights'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
-    const { config } = await import("../config");
-    const { db } = await import("../shared/db");
-    const { platformSettings } = await import("@kortix/db");
-    const { eq } = await import("drizzle-orm");
-    const { PROVIDER_DISTRIBUTION_KEY } =
-      await import("../platform/services/provider-balancer");
+    const { config } = await import('../config');
+    const { db } = await import('../shared/db');
+    const { platformSettings } = await import('@kortix/db');
+    const { eq } = await import('drizzle-orm');
+    const { PROVIDER_DISTRIBUTION_KEY } = await import('../platform/services/provider-balancer');
     const [row] = await db
       .select({ value: platformSettings.value })
       .from(platformSettings)
@@ -1328,36 +1397,37 @@ adminApp.openapi(
 // PUT new weights ({ platinum: 70, daytona: 30 }). Filtered to allowed providers.
 adminApp.openapi(
   createRoute({
-    method: "put",
-    path: "/api/provider-distribution",
-    tags: ["admin"],
-    summary: "Set provider split weights",
+    method: 'put',
+    path: '/api/provider-distribution',
+    tags: ['admin'],
+    summary: 'Set provider split weights',
     ...auth,
     request: {
       body: {
         content: {
-          "application/json": { schema: z.record(z.string(), z.number()) },
+          'application/json': { schema: z.record(z.string(), z.number()) },
         },
       },
     },
     responses: {
-      200: json(z.record(z.string(), z.any()), "ok"),
+      200: json(z.record(z.string(), z.any()), 'ok'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
-    const src = body && typeof body.weights === "object" ? body.weights : body;
-    const { config } = await import("../config");
+    const src = body && typeof body.weights === 'object' ? body.weights : body;
+    const { config } = await import('../config');
     const weights: Record<string, number> = {};
     for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
       const w = Number(src?.[p]);
       if (Number.isFinite(w) && w >= 0) weights[p] = w;
     }
-    const { db } = await import("../shared/db");
-    const { platformSettings } = await import("@kortix/db");
-    const { PROVIDER_DISTRIBUTION_KEY, invalidateProviderDistributionCache } =
-      await import("../platform/services/provider-balancer");
+    const { db } = await import('../shared/db');
+    const { platformSettings } = await import('@kortix/db');
+    const { PROVIDER_DISTRIBUTION_KEY, invalidateProviderDistributionCache } = await import(
+      '../platform/services/provider-balancer'
+    );
     await db
       .insert(platformSettings)
       .values({
@@ -1379,19 +1449,18 @@ adminApp.openapi(
 // session at birth hands off once to the next allowed provider. Default OFF.
 adminApp.openapi(
   createRoute({
-    method: "get",
-    path: "/api/provider-fallback",
-    tags: ["admin"],
-    summary: "Get provider failover config",
+    method: 'get',
+    path: '/api/provider-fallback',
+    tags: ['admin'],
+    summary: 'Get provider failover config',
     ...auth,
     responses: {
-      200: json(z.record(z.string(), z.any()), "config"),
+      200: json(z.record(z.string(), z.any()), 'config'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
-    const { providerFallbackSetting } =
-      await import("../platform/services/runtime-settings");
+    const { providerFallbackSetting } = await import('../platform/services/runtime-settings');
     return c.json(providerFallbackSetting());
   },
 );
@@ -1399,33 +1468,30 @@ adminApp.openapi(
 // PUT failover toggle ({ enabled }).
 adminApp.openapi(
   createRoute({
-    method: "put",
-    path: "/api/provider-fallback",
-    tags: ["admin"],
-    summary: "Set provider failover config",
+    method: 'put',
+    path: '/api/provider-fallback',
+    tags: ['admin'],
+    summary: 'Set provider failover config',
     ...auth,
     request: {
       body: {
         content: {
-          "application/json": { schema: z.object({ enabled: z.boolean() }) },
+          'application/json': { schema: z.object({ enabled: z.boolean() }) },
         },
       },
     },
     responses: {
-      200: json(z.record(z.string(), z.any()), "ok"),
+      200: json(z.record(z.string(), z.any()), 'ok'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
     const value = { enabled: body?.enabled === true };
-    const { db } = await import("../shared/db");
-    const { platformSettings } = await import("@kortix/db");
-    const {
-      PROVIDER_FALLBACK_KEY,
-      invalidateRuntimeSettings,
-      refreshRuntimeSettings,
-    } = await import("../platform/services/runtime-settings");
+    const { db } = await import('../shared/db');
+    const { platformSettings } = await import('@kortix/db');
+    const { PROVIDER_FALLBACK_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } =
+      await import('../platform/services/runtime-settings');
     await db
       .insert(platformSettings)
       .values({ key: PROVIDER_FALLBACK_KEY, value, updatedAt: new Date() })
@@ -1442,10 +1508,10 @@ adminApp.openapi(
 // ── Sandboxes: list all with provider + a per-provider count ─────────────────
 adminApp.openapi(
   createRoute({
-    method: "get",
-    path: "/api/sandboxes",
-    tags: ["admin"],
-    summary: "List sandboxes with provider type",
+    method: 'get',
+    path: '/api/sandboxes',
+    tags: ['admin'],
+    summary: 'List sandboxes with provider type',
     ...auth,
     request: {
       query: z.object({
@@ -1455,18 +1521,18 @@ adminApp.openapi(
       }),
     },
     responses: {
-      200: json(z.record(z.string(), z.any()), "sandboxes"),
+      200: json(z.record(z.string(), z.any()), 'sandboxes'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
-    const { db } = await import("../shared/db");
-    const { sessionSandboxes } = await import("@kortix/db");
-    const { desc, eq, and, sql } = await import("drizzle-orm");
-    const limit = Math.min(Number(c.req.query("limit") || 200), 1000);
+    const { db } = await import('../shared/db');
+    const { sessionSandboxes } = await import('@kortix/db');
+    const { desc, eq, and, sql } = await import('drizzle-orm');
+    const limit = Math.min(Number(c.req.query('limit') || 200), 1000);
     const conds: any[] = [];
-    const prov = c.req.query("provider");
-    const st = c.req.query("status");
+    const prov = c.req.query('provider');
+    const st = c.req.query('status');
     if (prov) conds.push(eq(sessionSandboxes.provider, prov as any));
     if (st) conds.push(eq(sessionSandboxes.status, st as any));
     const rows = await db
@@ -1499,66 +1565,62 @@ adminApp.openapi(
 // rebuild statelessly), then async-removes the old provider's box.
 adminApp.openapi(
   createRoute({
-    method: "post",
-    path: "/api/sandboxes/{sessionId}/migrate",
-    tags: ["admin"],
-    summary: "Migrate sandbox to another provider",
+    method: 'post',
+    path: '/api/sandboxes/{sessionId}/migrate',
+    tags: ['admin'],
+    summary: 'Migrate sandbox to another provider',
     ...auth,
     request: {
       params: z.object({ sessionId: z.string() }),
       body: {
         content: {
-          "application/json": {
+          'application/json': {
             schema: z.object({ targetProvider: z.string() }),
           },
         },
       },
     },
     responses: {
-      200: json(z.record(z.string(), z.any()), "ok"),
+      200: json(z.record(z.string(), z.any()), 'ok'),
       ...errors(400, 401, 403, 404),
     },
   }),
   async (c: any) => {
-    const sessionId = c.req.param("sessionId");
+    const sessionId = c.req.param('sessionId');
     const body = await c.req.json().catch(() => ({}));
-    const target = String(body.targetProvider || "");
-    const { config } = await import("../config");
-    if (
-      !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)
-    )
-      return c.json({ error: "invalid targetProvider" }, 400);
-    const { db } = await import("../shared/db");
-    const { sessionSandboxes, projectSessions, projects } =
-      await import("@kortix/db");
-    const { eq } = await import("drizzle-orm");
+    const target = String(body.targetProvider || '');
+    const { config } = await import('../config');
+    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target))
+      return c.json({ error: 'invalid targetProvider' }, 400);
+    const { db } = await import('../shared/db');
+    const { sessionSandboxes, projectSessions, projects } = await import('@kortix/db');
+    const { eq } = await import('drizzle-orm');
     const [sb] = await db
       .select()
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.sessionId, sessionId))
       .limit(1);
-    if (!sb) return c.json({ error: "sandbox not found" }, 404);
-    if (sb.provider === target)
-      return c.json({ error: "already on target provider" }, 400);
+    if (!sb) return c.json({ error: 'sandbox not found' }, 404);
+    if (sb.provider === target) return c.json({ error: 'already on target provider' }, 400);
     const [sess] = await db
       .select()
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
-    if (!sess) return c.json({ error: "session not found" }, 404);
+    if (!sess) return c.json({ error: 'session not found' }, 404);
     const [proj] = await db
       .select()
       .from(projects)
       .where(eq(projects.workspaceId, sess.workspaceId))
       .limit(1);
-    if (!proj) return c.json({ error: "project not found" }, 404);
+    if (!proj) return c.json({ error: 'project not found' }, 404);
     const oldProvider = sb.provider;
     if (sb.externalId) {
       return c.json(
         {
           error:
-            "A materialized session sandbox cannot be replaced or migrated in place because it may contain uncommitted data.",
-          code: "SESSION_RUNTIME_IDENTITY_IMMUTABLE",
+            'A materialized session sandbox cannot be replaced or migrated in place because it may contain uncommitted data.',
+          code: 'SESSION_RUNTIME_IDENTITY_IMMUTABLE',
           sessionId,
           provider: oldProvider,
           externalId: sb.externalId,
@@ -1568,13 +1630,10 @@ adminApp.openapi(
     }
     // A placeholder that never acquired an external provider object contains no
     // user data and can safely be reassigned.
-    await db
-      .delete(sessionSandboxes)
-      .where(eq(sessionSandboxes.sessionId, sessionId));
-    const { allocateRuntimeOnOpen } =
-      await import("../workspaces/routes/shared");
+    await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
+    const { allocateRuntimeOnOpen } = await import('../workspaces/routes/shared');
     await allocateRuntimeOnOpen(
-      { row: proj as any, userId: sess.createdBy ?? "" },
+      { row: proj as any, userId: sess.createdBy ?? '' },
       {
         sandboxProvider: target,
         baseRef: sess.baseRef,
@@ -1583,12 +1642,11 @@ adminApp.openapi(
       sess.workspaceId,
       sessionId,
     );
-    const { recordProviderEvent } =
-      await import("../platform/services/provider-events");
+    const { recordProviderEvent } = await import('../platform/services/provider-events');
     recordProviderEvent({
       provider: target,
-      kind: "migrate",
-      outcome: "ok",
+      kind: 'migrate',
+      outcome: 'ok',
       fromProvider: oldProvider,
       sessionId,
       accountId: (proj as any).accountId ?? null,
@@ -1604,22 +1662,22 @@ adminApp.openapi(
 // and aggregate in JS rather than push percentiles into SQL.
 adminApp.openapi(
   createRoute({
-    method: "get",
-    path: "/api/provider-analytics",
-    tags: ["admin"],
-    summary: "Provider performance analytics",
+    method: 'get',
+    path: '/api/provider-analytics',
+    tags: ['admin'],
+    summary: 'Provider performance analytics',
     ...auth,
     request: { query: z.object({ days: z.string().optional() }) },
     responses: {
-      200: json(z.record(z.string(), z.any()), "analytics"),
+      200: json(z.record(z.string(), z.any()), 'analytics'),
       ...errors(401, 403),
     },
   }),
   async (c: any) => {
-    const { db } = await import("../shared/db");
-    const { providerEvents } = await import("@kortix/db");
-    const { gte, desc } = await import("drizzle-orm");
-    const days = Math.min(Math.max(Number(c.req.query("days") || 7), 1), 90);
+    const { db } = await import('../shared/db');
+    const { providerEvents } = await import('@kortix/db');
+    const { gte, desc } = await import('drizzle-orm');
+    const days = Math.min(Math.max(Number(c.req.query('days') || 7), 1), 90);
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const rows = await db
       .select()
@@ -1631,33 +1689,27 @@ adminApp.openapi(
     const pct = (xs: number[], p: number): number => {
       if (!xs.length) return 0;
       const s = [...xs].sort((a, b) => a - b);
-      return Math.round(
-        s[Math.min(s.length - 1, Math.floor((p / 100) * (s.length - 1)))],
-      );
+      return Math.round(s[Math.min(s.length - 1, Math.floor((p / 100) * (s.length - 1)))]);
     };
     const normLabel = (l: string): string =>
-      l.startsWith("provider-create")
-        ? "provider-create"
-        : l === "image-built" || l === "image-cached"
-          ? "image"
+      l.startsWith('provider-create')
+        ? 'provider-create'
+        : l === 'image-built' || l === 'image-cached'
+          ? 'image'
           : l;
     const dayKey = (d: Date): string => new Date(d).toISOString().slice(0, 10);
 
-    const provision = rows.filter((r: any) => r.kind === "provision");
-    const migrate = rows.filter((r: any) => r.kind === "migrate");
-    const provNames = Array.from(
-      new Set(provision.map((r: any) => r.provider)),
-    ).sort();
+    const provision = rows.filter((r: any) => r.kind === 'provision');
+    const migrate = rows.filter((r: any) => r.kind === 'migrate');
+    const provNames = Array.from(new Set(provision.map((r: any) => r.provider))).sort();
 
     // Per-provider summary + phase breakdown.
     const providers = provNames.map((p) => {
       const evs = provision.filter((r: any) => r.provider === p);
-      const ok = evs.filter((r: any) => r.outcome === "ok");
-      const error = evs.filter((r: any) => r.outcome === "error");
-      const stopped = evs.filter((r: any) => r.outcome === "stopped");
-      const okMs = ok
-        .map((r: any) => r.totalMs ?? 0)
-        .filter((n: number) => n > 0);
+      const ok = evs.filter((r: any) => r.outcome === 'ok');
+      const error = evs.filter((r: any) => r.outcome === 'error');
+      const stopped = evs.filter((r: any) => r.outcome === 'stopped');
+      const okMs = ok.map((r: any) => r.totalMs ?? 0).filter((n: number) => n > 0);
       const finished = ok.length + error.length;
       const phaseTotals: Record<string, { sum: number; n: number }> = {};
       for (const r of ok) {
@@ -1682,9 +1734,7 @@ adminApp.openapi(
         p50Ms: pct(okMs, 50),
         p95Ms: pct(okMs, 95),
         avgMs: okMs.length
-          ? Math.round(
-              okMs.reduce((a: number, b: number) => a + b, 0) / okMs.length,
-            )
+          ? Math.round(okMs.reduce((a: number, b: number) => a + b, 0) / okMs.length)
           : 0,
         phases,
       };
@@ -1695,12 +1745,10 @@ adminApp.openapi(
     for (const r of provision as any[]) {
       const dk = dayKey(r.createdAt);
       (dayBuckets[dk] ||= {})[r.provider] ||= [];
-      if (r.outcome === "ok" && r.totalMs)
-        dayBuckets[dk][r.provider].push(r.totalMs);
+      if (r.outcome === 'ok' && r.totalMs) dayBuckets[dk][r.provider].push(r.totalMs);
     }
     const allDays: string[] = [];
-    for (let i = days - 1; i >= 0; i--)
-      allDays.push(dayKey(new Date(Date.now() - i * 86_400_000)));
+    for (let i = days - 1; i >= 0; i--) allDays.push(dayKey(new Date(Date.now() - i * 86_400_000)));
     const countByDay: Record<string, Record<string, number>> = {};
     for (const r of provision as any[]) {
       const dk = dayKey(r.createdAt);
@@ -1722,7 +1770,7 @@ adminApp.openapi(
     // Migration flows.
     const flowMap: Record<string, number> = {};
     for (const r of migrate as any[]) {
-      const key = `${r.fromProvider ?? "?"}→${r.provider}`;
+      const key = `${r.fromProvider ?? '?'}→${r.provider}`;
       flowMap[key] = (flowMap[key] || 0) + 1;
     }
     const migrations = Object.entries(flowMap).map(([flow, count]) => ({
@@ -1730,10 +1778,10 @@ adminApp.openapi(
       count,
     }));
 
-    const okTot = provision.filter((r: any) => r.outcome === "ok").length;
-    const errTot = provision.filter((r: any) => r.outcome === "error").length;
+    const okTot = provision.filter((r: any) => r.outcome === 'ok').length;
+    const errTot = provision.filter((r: any) => r.outcome === 'error').length;
     const recentErrors = (rows as any[])
-      .filter((r) => r.outcome === "error")
+      .filter((r) => r.outcome === 'error')
       .slice(0, 10)
       .map((r) => ({
         provider: r.provider,
@@ -1748,10 +1796,9 @@ adminApp.openapi(
         provisions: provision.length,
         ok: okTot,
         error: errTot,
-        stopped: provision.filter((r: any) => r.outcome === "stopped").length,
+        stopped: provision.filter((r: any) => r.outcome === 'stopped').length,
         migrations: migrate.length,
-        successRate:
-          okTot + errTot ? Math.round((okTot / (okTot + errTot)) * 100) : null,
+        successRate: okTot + errTot ? Math.round((okTot / (okTot + errTot)) * 100) : null,
       },
       providers,
       latencyByDay,

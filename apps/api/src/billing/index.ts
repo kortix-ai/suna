@@ -157,9 +157,10 @@ billingApp.openapi(
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
       return c.json({ skipped: true, reason: 'billing disabled' });
     }
-    const { sweepExpiredTrials } = await import('./services/trial-admin');
+    const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
     const expired = await sweepExpiredTrials();
-    return c.json({ expired });
+    const monthlyRegrants = await sweepTrialMonthlyGrants();
+    return c.json({ expired, monthly_regrants: monthlyRegrants });
   },
 );
 
@@ -167,8 +168,9 @@ if (billingRotationIntervalsEnabled(config)) {
   const TRIAL_EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
   setInterval(async () => {
     try {
-      const { sweepExpiredTrials } = await import('./services/trial-admin');
+      const { sweepExpiredTrials, sweepTrialMonthlyGrants } = await import('./services/trial-admin');
       await sweepExpiredTrials();
+      await sweepTrialMonthlyGrants();
     } catch (err) {
       console.error('[BillingApp] Trial-expiry sweep interval error:', err);
     }

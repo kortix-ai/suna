@@ -84,9 +84,13 @@ describe('admin accounts — Entitlements tab', () => {
     expect(pageSource).toMatch(/entry\.legacy \? `\$\{entry\.label\} · legacy` : entry\.label/);
   });
 
-  test('the open sheet re-resolves against the refetched list so a mutation shows its result', () => {
+  test('the open sheet resolves a live row via the exact-id lookup, with list/snapshot fallback', () => {
+    // The live source is useAdminAccount (immune to list filters); the filtered
+    // list row and the click-time snapshot are only fallbacks while it loads.
+    expect(pageSource).toContain('useAdminAccount(selected?.accountId ?? null)');
+    expect(pageSource).toContain('selectedDetail.data ??');
     expect(pageSource).toContain(
-      'accounts.find((a) => a.accountId === selected.accountId) ?? selected',
+      'accounts.find((a) => a.accountId === selected.accountId) ??',
     );
     expect(pageSource).toContain('<AccountDetailSheet account={selectedAccount}');
   });

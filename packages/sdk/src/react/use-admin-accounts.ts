@@ -160,6 +160,34 @@ export function useAdminAccounts(filters: AdminAccountsFilters = {}) {
   });
 }
 
+/** Wire path of the exact-id single-account lookup (list route + accountId filter). */
+export function adminAccountLookupPath(accountId: string): string {
+  return `/admin/api/accounts?accountId=${encodeURIComponent(accountId)}&limit=1`;
+}
+
+/**
+ * Live single-account row for the admin detail sheet. Uses the list route's
+ * exact-id filter, so it stays correct when the list's own filters (tier,
+ * balance, payment status) no longer match the account after a mutation —
+ * the bug where the sheet kept rendering a pre-mutation snapshot.
+ * Invalidated by the same ['admin','accounts', accountId] subtree every admin
+ * mutation already targets.
+ */
+export function useAdminAccount(accountId: string | null) {
+  return useQuery<AdminAccount | null>({
+    queryKey: ['admin', 'accounts', accountId, 'detail'],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const response = await backendApi.get<AdminAccountsResponse>(
+        adminAccountLookupPath(accountId!),
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data?.accounts?.[0] ?? null;
+    },
+    staleTime: 5_000,
+  });
+}
+
 export function useAdminAccountUsers(accountId: string | null) {
   return useQuery<{ users: AdminAccountUser[] }>({
     queryKey: ['admin', 'accounts', accountId, 'users'],
@@ -355,6 +383,38 @@ export function useAdminSetEnterpriseEntitled() {
       const response = await backendApi.post<{ ok: boolean; enabled: boolean }>(
         `/admin/api/accounts/${accountId}/enterprise-entitlement`,
         { enabled },
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
+  });
+}
+
+export type AdminAccountMemberRole = 'owner' | 'admin' | 'member';
+
+/** Wire path of the platform-admin member-role override route. */
+export function adminMemberRolePath(accountId: string, userId: string): string {
+  return `/admin/api/accounts/${accountId}/members/${userId}/role`;
+}
+
+/**
+ * Platform-admin override of an account member's role. Bypasses the in-account
+ * permission rules (which require the caller to be a member), but the server
+ * still refuses to demote an account's last owner. Invalidates the account
+ * subtree, which includes the users list the Users tab renders.
+ */
+export function useAdminSetMemberRole() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { ok: boolean; user_id: string; account_role: string },
+    Error,
+    { accountId: string; userId: string; role: AdminAccountMemberRole }
+  >({
+    mutationFn: async ({ accountId, userId, role }) => {
+      const response = await backendApi.post<{ ok: boolean; user_id: string; account_role: string }>(
+        adminMemberRolePath(accountId, userId),
+        { role },
       );
       if (response.error) throw new Error(response.error.message);
       return response.data!;
