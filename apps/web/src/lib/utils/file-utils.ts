@@ -4,17 +4,195 @@
  */
 
 import {
-  ArchiveIcon as Archive,
-  DatabaseIcon as Database,
-  FileIcon as File,
-  FileAudioIcon as FileAudio,
-  FileCodeIcon as FileCode,
-  FileImageIcon as FileImage,
-  FileXlsIcon as FileSpreadsheet,
-  FileTextIcon as FileText,
-  FileTextIcon as FileType,
-  FileVideoIcon as FileVideo,
+  FileArchiveIcon,
+  FileAudioIcon,
+  FileCIcon,
+  FileCodeIcon,
+  FileCppIcon,
+  FileCSharpIcon,
+  FileCssIcon,
+  FileCsvIcon,
+  FileDocIcon,
+  FileHtmlIcon,
+  FileImageIcon,
+  FileIniIcon,
+  FileJpgIcon,
+  FileJsIcon,
+  FileJsxIcon,
+  FileLockIcon,
+  FileMdIcon,
+  FilePdfIcon,
+  FilePngIcon,
+  FilePptIcon,
+  FilePyIcon,
+  FileRsIcon,
+  FileSqlIcon,
+  FileSvgIcon,
+  FileTextIcon,
+  FileTsIcon,
+  FileTsxIcon,
+  FileTxtIcon,
+  FileVideoIcon,
+  FileVueIcon,
+  FileXlsIcon,
+  FileZipIcon,
 } from '@phosphor-icons/react';
+
+type PhosphorIcon = typeof FileTextIcon;
+
+/**
+ * Extension → the glyph Phosphor already draws for it.
+ *
+ * Every surface that showed a file — the chip on a write row, the tile on a
+ * user message, the drive list — drew one of five category glyphs, so a `.pdf`,
+ * a `.png` and a `.zip` were all "a file" and every `.ts`, `.css` and `.html`
+ * was the same anonymous `FileCode`. Phosphor ships a specific icon for each of
+ * these; not using them was throwing away recognition the reader gets for free.
+ *
+ * Grouped by what the icon actually depicts, not by language family: `.scss`
+ * gets the CSS glyph because that is what it compiles to and what it looks like,
+ * and `.mjs` gets the JS one for the same reason.
+ *
+ * Anything not listed falls back to {@link FileTextIcon} — the honest answer for
+ * an unknown file, and never a lie about its contents.
+ */
+const ICON_BY_EXTENSION: Readonly<Record<string, PhosphorIcon>> = {
+  // Documents
+  pdf: FilePdfIcon,
+  doc: FileDocIcon,
+  docx: FileDocIcon,
+  odt: FileDocIcon,
+  rtf: FileDocIcon,
+  txt: FileTxtIcon,
+  log: FileTxtIcon,
+  md: FileMdIcon,
+  mdx: FileMdIcon,
+  markdown: FileMdIcon,
+
+  // Presentations and sheets
+  ppt: FilePptIcon,
+  pptx: FilePptIcon,
+  key: FilePptIcon,
+  xls: FileXlsIcon,
+  xlsx: FileXlsIcon,
+  ods: FileXlsIcon,
+  csv: FileCsvIcon,
+  tsv: FileCsvIcon,
+
+  // Web
+  html: FileHtmlIcon,
+  htm: FileHtmlIcon,
+  css: FileCssIcon,
+  scss: FileCssIcon,
+  sass: FileCssIcon,
+  less: FileCssIcon,
+  styl: FileCssIcon,
+
+  // JavaScript and TypeScript
+  js: FileJsIcon,
+  mjs: FileJsIcon,
+  cjs: FileJsIcon,
+  jsx: FileJsxIcon,
+  ts: FileTsIcon,
+  mts: FileTsIcon,
+  cts: FileTsIcon,
+  tsx: FileTsxIcon,
+  vue: FileVueIcon,
+
+  // Other languages
+  py: FilePyIcon,
+  pyi: FilePyIcon,
+  pyw: FilePyIcon,
+  rs: FileRsIcon,
+  c: FileCIcon,
+  h: FileCIcon,
+  cpp: FileCppIcon,
+  cc: FileCppIcon,
+  cxx: FileCppIcon,
+  hpp: FileCppIcon,
+  cs: FileCSharpIcon,
+  sql: FileSqlIcon,
+  db: FileSqlIcon,
+  sqlite: FileSqlIcon,
+
+  // Config
+  ini: FileIniIcon,
+  cfg: FileIniIcon,
+  conf: FileIniIcon,
+  toml: FileIniIcon,
+  properties: FileIniIcon,
+  env: FileLockIcon,
+  pem: FileLockIcon,
+
+  // Images
+  png: FilePngIcon,
+  jpg: FileJpgIcon,
+  jpeg: FileJpgIcon,
+  svg: FileSvgIcon,
+  gif: FileImageIcon,
+  webp: FileImageIcon,
+  bmp: FileImageIcon,
+  ico: FileImageIcon,
+  avif: FileImageIcon,
+  heic: FileImageIcon,
+  heif: FileImageIcon,
+
+  // Media
+  mp3: FileAudioIcon,
+  wav: FileAudioIcon,
+  ogg: FileAudioIcon,
+  flac: FileAudioIcon,
+  m4a: FileAudioIcon,
+  aac: FileAudioIcon,
+  mp4: FileVideoIcon,
+  webm: FileVideoIcon,
+  mov: FileVideoIcon,
+  avi: FileVideoIcon,
+  mkv: FileVideoIcon,
+
+  // Archives
+  zip: FileZipIcon,
+  rar: FileArchiveIcon,
+  tar: FileArchiveIcon,
+  gz: FileArchiveIcon,
+  tgz: FileArchiveIcon,
+  bz2: FileArchiveIcon,
+  xz: FileArchiveIcon,
+  '7z': FileArchiveIcon,
+
+  // Code with no glyph of its own — the generic one is still better than text
+  json: FileCodeIcon,
+  jsonc: FileCodeIcon,
+  json5: FileCodeIcon,
+  yaml: FileCodeIcon,
+  yml: FileCodeIcon,
+  xml: FileCodeIcon,
+  go: FileCodeIcon,
+  rb: FileCodeIcon,
+  java: FileCodeIcon,
+  kt: FileCodeIcon,
+  swift: FileCodeIcon,
+  php: FileCodeIcon,
+  sh: FileCodeIcon,
+  bash: FileCodeIcon,
+  zsh: FileCodeIcon,
+  ps1: FileCodeIcon,
+  svelte: FileCodeIcon,
+};
+
+/**
+ * The icon for a file, by its name.
+ *
+ * Prefer this over {@link getFileIcon}: it answers with the glyph for THIS file
+ * rather than for the broad category it belongs to.
+ */
+export function fileIconFor(filename: string): PhosphorIcon {
+  // A name with no dot has no extension, and `split('.').pop()` hands back the
+  // whole name — so a file called `key` or `css` would otherwise borrow the
+  // Keynote or stylesheet glyph outright.
+  if (!filename.includes('.')) return FileTextIcon;
+  return ICON_BY_EXTENSION[getExtension(filename)] ?? FileTextIcon;
+}
 function getExtension(filename: string): string {
   return filename.split('.').pop()?.toLowerCase() || '';
 }
@@ -54,28 +232,6 @@ export function getFileType(filename: string): FileType {
   if (['db', 'sqlite', 'sql'].includes(ext)) return 'database';
 
   return 'other';
-}
-
-/**
- * Get appropriate icon component for file type
- */
-export function getFileIcon(type: FileType) {
-  const icons: Record<FileType, typeof FileImage> = {
-    image: FileImage,
-    code: FileCode,
-    text: FileText,
-    markdown: FileText,
-    pdf: FileType,
-    audio: FileAudio,
-    video: FileVideo,
-    spreadsheet: FileSpreadsheet,
-    csv: FileSpreadsheet,
-    archive: Archive,
-    database: Database,
-    other: File,
-  };
-
-  return icons[type];
 }
 
 /**

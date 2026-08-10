@@ -22,7 +22,7 @@ export function DCPCompressTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className="text-muted-foreground/50 size-3.5 flex-shrink-0" />}
+      icon={<Scissors className="text-muted-foreground/50 size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">Compress</span>

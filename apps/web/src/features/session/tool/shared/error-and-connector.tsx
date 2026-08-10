@@ -119,7 +119,7 @@ export function ConnectorRiskBadge({ risk }: { risk?: unknown }) {
         ? STATUS_TEXT.destructive
         : STATUS_TEXT.warning;
   return (
-    <span className={cn('flex-shrink-0 text-[10px] font-semibold tracking-wide uppercase', tint)}>
+    <span className={cn('shrink-0 text-[10px] font-semibold tracking-wide uppercase', tint)}>
       {risk}
     </span>
   );

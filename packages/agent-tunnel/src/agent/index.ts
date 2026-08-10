@@ -5,6 +5,7 @@ export type { Capability, RpcHandler } from './capabilities/index';
 export { createFilesystemCapability } from './capabilities/filesystem';
 export { createShellCapability } from './capabilities/shell';
 export { createDesktopCapability } from './capabilities/desktop';
+export { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
 export { PermissionGuard } from './security/permission-guard';
 export type { LocalPermission } from './security/permission-guard';
 export { validateCommand } from './security/command-validator';

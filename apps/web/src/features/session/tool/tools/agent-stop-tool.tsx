@@ -9,7 +9,7 @@ export function AgentStopTool({ part, forceOpen }: ToolProps) {
   const agentId = (input.agent_id as string) || '';
   return (
     <BasicTool
-      icon={<StopCircle className="size-3.5 flex-shrink-0" />}
+      icon={<StopCircle className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Stop agent',
         subtitle: agentId ? agentId.slice(-12) : undefined,

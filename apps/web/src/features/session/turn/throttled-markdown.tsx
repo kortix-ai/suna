@@ -2,6 +2,8 @@
 
 /** Moved verbatim from session-chat.tsx so turn components can import it. */
 
+import { memo, useMemo } from 'react';
+
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 
 function trimIncompleteTableRow(text: string): string {
@@ -39,7 +41,7 @@ function closeUnterminatedCodeFence(text: string): string {
   return `${text}\n\n\`\`\``;
 }
 
-export function ThrottledMarkdown({
+function ThrottledMarkdownImpl({
   content,
   isStreaming,
 }: {
@@ -50,8 +52,21 @@ export function ThrottledMarkdown({
   // appends closing backticks). Do NOT trim table rows — that strips
   // real content mid-stream and causes garbled text until completion.
   // The reference (opencode PacedMarkdown) does zero content modification.
-  const displayContent = isStreaming
-    ? closeUnterminatedCodeFence(content)
-    : trimIncompleteTableRow(content);
+  // Both branches walk the whole text line by line. Memoised so a re-render
+  // that changed nothing about the text does not re-scan it.
+  const displayContent = useMemo(
+    () => (isStreaming ? closeUnterminatedCodeFence(content) : trimIncompleteTableRow(content)),
+    [content, isStreaming],
+  );
   return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
 }
+
+/**
+ * Both props are primitives, so this memo bites immediately — and it matters:
+ * this component is not throttled despite its name, and it walks the entire
+ * text (`split('\n')` per line) on every render. Uncached it ran for every text
+ * segment of every turn on every frame; `UnifiedMarkdown` below is already
+ * memoised, so the parse was safe, but the scan was not.
+ */
+export const ThrottledMarkdown = memo(ThrottledMarkdownImpl);
+ThrottledMarkdown.displayName = 'ThrottledMarkdown';

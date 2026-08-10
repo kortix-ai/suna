@@ -2,10 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 
 import { loadConfig } from './config';
 
-const ENV_KEYS = [
-  'TUNNEL_API_URL',
-  'TUNNEL_WS_PATH',
-] as const;
+const ENV_KEYS = ['TUNNEL_API_URL', 'TUNNEL_WS_PATH'] as const;
 
 let saved: Record<string, string | undefined>;
 
@@ -35,6 +32,15 @@ describe('loadConfig', () => {
   it('rejects non-http API URLs before network use', () => {
     expect(() => loadConfig({ apiUrl: 'file:///tmp/config.json' })).toThrow(
       'Invalid tunnel API URL protocol',
+    );
+  });
+
+  it('rejects plaintext HTTP for remote tunnel APIs', () => {
+    expect(() => loadConfig({ apiUrl: 'http://relay.example/v1/tunnel' })).toThrow(
+      'Remote tunnel API URLs must use https',
+    );
+    expect(loadConfig({ apiUrl: 'http://127.0.0.1:8008/v1/tunnel' }).apiUrl).toBe(
+      'http://127.0.0.1:8008/v1/tunnel',
     );
   });
 

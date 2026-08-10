@@ -59,7 +59,9 @@ export class TunnelRelay extends EventEmitter {
           this.pendingRPCs.delete(requestId);
         }
       }
-      try { existing.ws.close(1000, 'replaced by new connection'); } catch {}
+      // A normal close makes the displaced agent reconnect and replace the new
+      // socket forever. Use a terminal code so one process wins deterministically.
+      try { existing.ws.close(4004, 'replaced by another agent process'); } catch {}
       this.emitEvent('connection:replaced', { tunnelId });
     }
 
@@ -96,6 +98,16 @@ export class TunnelRelay extends EventEmitter {
     return true;
   }
 
+  disconnectAgent(tunnelId: string, code = 1000, reason = 'disconnected by server'): boolean {
+    const agent = this.agents.get(tunnelId);
+    if (!agent) return false;
+    const removed = this.unregisterAgent(tunnelId, agent.ws);
+    if (removed) {
+      try { agent.ws.close(code, reason); } catch {}
+    }
+    return removed;
+  }
+
   isConnected(tunnelId: string): boolean {
     return this.agents.has(tunnelId);
   }
@@ -120,7 +132,14 @@ export class TunnelRelay extends EventEmitter {
     return this.agents.get(tunnelId)?.metadata;
   }
 
-  handleAgentMessage(tunnelId: string, raw: string | Buffer): void {
+  updateAgentMetadata(tunnelId: string, patch: Record<string, unknown>): boolean {
+    const agent = this.agents.get(tunnelId);
+    if (!agent) return false;
+    agent.metadata = { ...(agent.metadata ?? {}), ...patch };
+    return true;
+  }
+
+  handleAgentMessage(tunnelId: string, ws: WebSocket, raw: string | Buffer): void {
     let msg: any;
     try {
       msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf-8'));
@@ -131,6 +150,10 @@ export class TunnelRelay extends EventEmitter {
 
     // Verify HMAC signature on ALL messages from agent (including pong)
     const agent = this.agents.get(tunnelId);
+    if (!agent || agent.ws !== ws) {
+      console.warn(`[tunnel-relay] Message from inactive socket for ${tunnelId}, discarding`);
+      return;
+    }
     if (agent && msg._sig !== undefined && msg._nonce !== undefined) {
       if (msg._nonce <= agent.lastResponseNonce) {
         console.warn(`[tunnel-relay] Replay detected from agent ${tunnelId}: nonce ${msg._nonce} <= ${agent.lastResponseNonce}`);
@@ -150,7 +173,7 @@ export class TunnelRelay extends EventEmitter {
       console.warn(`[tunnel-relay] Unsigned message from agent ${tunnelId}, discarding`);
       return;
     }
-   
+
     if ('method' in msg && msg.method === 'tunnel.pong') {
       this.emitEvent('message:pong', { tunnelId, params: msg.params });
       return;
@@ -162,7 +185,7 @@ export class TunnelRelay extends EventEmitter {
     }
 
     const pending = this.pendingRPCs.get(msg.id);
-    if (!pending) {
+    if (!pending || pending.tunnelId !== tunnelId) {
       return;
     }
 
@@ -229,6 +252,13 @@ export class TunnelRelay extends EventEmitter {
     const payload = JSON.stringify(request);
     const sig = signMessage(agent.signingKey, payload, nonce);
     const signedRequest = { ...request, _sig: sig, _nonce: nonce };
+    const encodedRequest = JSON.stringify(signedRequest);
+    if (Buffer.byteLength(encodedRequest, 'utf8') > this.config.maxWsMessageSize) {
+      throw new TunnelRelayError(
+        TunnelErrorCode.LOCAL_ERROR,
+        `RPC request exceeds the maximum tunnel message size for ${method}`,
+      );
+    }
 
     this.emitEvent('rpc:request', { tunnelId, method, requestId });
 
@@ -253,7 +283,7 @@ export class TunnelRelay extends EventEmitter {
       });
 
       try {
-        agent.ws.send(JSON.stringify(signedRequest));
+        agent.ws.send(encodedRequest);
       } catch (err) {
         clearTimeout(timer);
         this.pendingRPCs.delete(requestId);
@@ -281,7 +311,9 @@ export class TunnelRelay extends EventEmitter {
     const signedNotification = { ...notification, _sig: sig, _nonce: nonce };
 
     try {
-      agent.ws.send(JSON.stringify(signedNotification));
+      const encoded = JSON.stringify(signedNotification);
+      if (Buffer.byteLength(encoded, 'utf8') > this.config.maxWsMessageSize) return false;
+      agent.ws.send(encoded);
       return true;
     } catch {
       return false;

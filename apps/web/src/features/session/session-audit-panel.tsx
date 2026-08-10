@@ -3,7 +3,6 @@
 import {
   type ApprovalDecisionValue,
   ApprovalRequest,
-  type ApprovalRequestData,
 } from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +18,7 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { approvalRequestFromAction } from '@/features/session/session-approval-review';
 import {
   isPendingAction,
   relativeTime,
@@ -32,33 +32,6 @@ import {
 import type { AuditEvent, SessionAuditAction } from '@kortix/sdk';
 import { CaretRightIcon, ShieldCheckIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
-
-function argsPreview(action: SessionAuditAction): Record<string, unknown> | null {
-  const summary = action.result_summary;
-  if (!summary || typeof summary !== 'object') return null;
-  const preview = summary.args_preview;
-  if (!preview || typeof preview !== 'object' || Array.isArray(preview)) return null;
-  return preview as Record<string, unknown>;
-}
-
-function requestFromAction(
-  action: SessionAuditAction,
-  pending = isPendingAction(action),
-): ApprovalRequestData {
-  const summary = action.result_summary;
-  const decision = summary?.decision;
-  return {
-    action: action.action,
-    risk: action.risk,
-    requestedAt: action.at,
-    argsPreview: argsPreview(action),
-    reviewComplete: !pending || !summary || summary.args_preview_complete === true,
-    resolution: decision === 'approve' || decision === 'deny' ? decision : null,
-    pending,
-    status: action.status,
-    resolvedAt: action.resolved_at,
-  };
-}
 
 export function SessionAuditPanel({
   projectId,
@@ -110,7 +83,7 @@ export function SessionAuditPanel({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <header className="border-border flex-shrink-0 border-b px-6 py-3">
+      <header className="border-border shrink-0 border-b px-6 py-3">
         <h2 className="text-foreground text-sm font-medium">Audit</h2>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
           Reconstruct every session event in order and review governed actions.
@@ -169,7 +142,7 @@ export function SessionAuditPanel({
                     return (
                       <ApprovalRequest
                         key={action.execution_id}
-                        request={requestFromAction(action, outcome === null)}
+                        request={approvalRequestFromAction(action, outcome === null)}
                         onDecision={(decision) => decide(action.execution_id, decision)}
                         busyDecision={busy[action.execution_id] ?? null}
                         outcome={outcome}
@@ -321,7 +294,9 @@ export function SessionAuditPanel({
             <ModalDescription>The same parameter view used for live approvals.</ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[70vh] overflow-y-auto">
-            {selected ? <ApprovalRequest request={requestFromAction(selected, false)} /> : null}
+            {selected ? (
+              <ApprovalRequest request={approvalRequestFromAction(selected, false)} />
+            ) : null}
           </ModalBody>
         </ModalContent>
       </Modal>

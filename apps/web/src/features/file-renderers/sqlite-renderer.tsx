@@ -868,7 +868,7 @@ export function SqliteRenderer({
   return (
     <div className={cn('bg-background relative flex h-full w-full flex-col', className)}>
       {/* ── Top toolbar ──────────────────────────────────────────────── */}
-      <div className="flex h-10 flex-shrink-0 items-center gap-2 border-b px-3 py-1.5">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3 py-1.5">
         {/* Left: summary (no filename — parent header already shows it) */}
         <span className="text-muted-foreground/60 text-xs tabular-nums">
           {tables.filter((t) => t.type === 'table').length} table
@@ -952,7 +952,7 @@ export function SqliteRenderer({
       {/* ── Content area ─────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
         {/* ── Sidebar: table list ───────────────────────────────────── */}
-        <div className="bg-muted/10 flex w-56 flex-shrink-0 flex-col border-r">
+        <div className="bg-muted/10 flex w-56 shrink-0 flex-col border-r">
           {/* Table search */}
           <div className="border-b p-2">
             <div className="relative">
@@ -998,12 +998,12 @@ export function SqliteRenderer({
                 )}
               >
                 {table.type === 'view' ? (
-                  <Eye className="h-3.5 w-3.5 flex-shrink-0 text-purple-500/70" />
+                  <Eye className="h-3.5 w-3.5 shrink-0 text-purple-500/70" />
                 ) : (
-                  <Table2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500/70" />
+                  <Table2 className="h-3.5 w-3.5 shrink-0 text-blue-500/70" />
                 )}
                 <span className="flex-1 truncate text-xs font-medium">{table.name}</span>
-                <span className="text-muted-foreground/50 flex-shrink-0 text-xs tabular-nums">
+                <span className="text-muted-foreground/50 shrink-0 text-xs tabular-nums">
                   {table.rowCount.toLocaleString()}
                 </span>
               </button>
@@ -1022,18 +1022,18 @@ export function SqliteRenderer({
           {viewMode === 'data' && selectedTableInfo && (
             <>
               {/* Data toolbar */}
-              <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b px-3 py-1.5">
+              <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3 py-1.5">
                 {/* Table name + stats */}
                 <div className="flex min-w-0 items-center gap-1.5">
                   {selectedTableInfo.type === 'view' ? (
-                    <Eye className="h-3.5 w-3.5 flex-shrink-0 text-purple-500/70" />
+                    <Eye className="h-3.5 w-3.5 shrink-0 text-purple-500/70" />
                   ) : (
-                    <Table2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500/70" />
+                    <Table2 className="h-3.5 w-3.5 shrink-0 text-blue-500/70" />
                   )}
                   <span className="text-foreground truncate text-xs font-medium">
                     {selectedTableInfo.name}
                   </span>
-                  <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
+                  <span className="text-muted-foreground/40 shrink-0 text-xs tabular-nums">
                     {selectedTableInfo.rowCount.toLocaleString()} ×{' '}
                     {selectedTableInfo.columns.length}
                   </span>
@@ -1320,7 +1320,7 @@ export function SqliteRenderer({
           {viewMode === 'query' && (
             <div className="flex flex-1 flex-col overflow-hidden">
               {/* Query input */}
-              <div className="flex-shrink-0 space-y-2 border-b p-3">
+              <div className="shrink-0 space-y-2 border-b p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground/50 text-xs">SQL</span>
                   <div className="ml-auto flex items-center gap-1.5">
@@ -1368,13 +1368,13 @@ export function SqliteRenderer({
               {/* Query results */}
               <div className="flex flex-1 flex-col overflow-hidden">
                 {queryResult?.error && (
-                  <div className="flex-shrink-0 border-b border-red-500/20 bg-red-500/5 px-4 py-2 font-mono text-xs text-red-500 select-text">
+                  <div className="shrink-0 border-b border-red-500/20 bg-red-500/5 px-4 py-2 font-mono text-xs text-red-500 select-text">
                     Error: {queryResult.error}
                   </div>
                 )}
 
                 {queryResult && !queryResult.error && (
-                  <div className="text-muted-foreground flex flex-shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
+                  <div className="text-muted-foreground flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
                     <span>
                       {queryResult.rowCount.toLocaleString()} row
                       {queryResult.rowCount !== 1 ? 's' : ''}

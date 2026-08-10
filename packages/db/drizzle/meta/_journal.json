@@ -316,6 +316,13 @@
       "when": 1786196649694,
       "tag": "20260808134409_centralized_audit_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786306539063,
+      "tag": "20260809201539_preserve_tunnel_audit_history",
+      "breakpoints": true
     }
   ]
 }

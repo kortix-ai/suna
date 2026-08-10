@@ -705,7 +705,7 @@ export function CodeEditor({
     >
       {/* Header with save controls and language */}
       {!readOnly && showHeader && (
-        <div className="bg-muted/30 flex max-w-full min-w-0 flex-shrink-0 items-center justify-between border-b px-3 py-1.5">
+        <div className="bg-muted/30 flex max-w-full min-w-0 shrink-0 items-center justify-between border-b px-3 py-1.5">
           {/* Left: Save/Discard/Unsaved */}
           <div className="flex min-w-0 items-center gap-1">
             <SaveButton />

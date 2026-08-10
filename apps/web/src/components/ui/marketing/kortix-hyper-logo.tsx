@@ -135,7 +135,7 @@ export function KortixHyperLogo({
       viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn('flex-shrink-0', className)}
+      className={cn('shrink-0', className)}
       style={{ width: `${size}px`, height: `${size}px` }}
       onMouseEnter={handleAnimationTrigger}
       {...props}

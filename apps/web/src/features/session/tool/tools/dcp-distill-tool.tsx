@@ -24,7 +24,7 @@ export function DCPDistillTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.info)} />}
+      icon={<Scissors className={cn('size-3.5 shrink-0', STATUS_TEXT.info)} />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">Distill</span>

@@ -7,6 +7,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import {
   isShowContentUnavailable,
+  isShowPayloadEmpty,
   type ShowLoadStatus,
 } from '@/features/session/show-availability';
 import {
@@ -39,24 +40,6 @@ import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
-
-// Concave corner that joins a raised tab into the strip behind it.
-// Same path as the marketing web-panel / interactive-demo scallops.
-function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
-  const path = side === 'right' ? 'M0 0C0 32 16 64 38 64L0 64Z' : 'M38 0C38 32 22 64 0 64L38 64Z';
-  return (
-    <svg
-      viewBox="0 0 38 64"
-      fill="none"
-      preserveAspectRatio="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-      className="text-secondary mt-auto h-full w-3.5 shrink-0 self-stretch overflow-visible"
-    >
-      <path d={path} fill="currentColor" />
-    </svg>
-  );
-}
 
 // The header owns a single preview state for the active item; the carousel gets it
 // through context so its viewport and the header controls drive the same iframe.
@@ -110,18 +93,19 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   const activePath = isCarousel ? currentItem?.path || '' : path;
   const activeTitle = isCarousel ? currentItem?.title || '' : title;
 
-  const activeHasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
-
-  const activeIsHtmlFilePath =
-    !!activePath &&
-    SHOW_HTML_EXT_RE.test(activePath) &&
-    (activeType === 'file' || activeType === 'html');
-
-  const resolvedPreviewUrl = activeHasLocalhostUrl
-    ? activeUrl
-    : activeIsHtmlFilePath
-      ? buildHtmlStaticUrl(activePath)
-      : '';
+  // Resolving the preview target parses `activeUrl` as a URL twice
+  // (`parseLocalhostUrl`, then `isAppRouteUrl`) and scans `activePath` with the
+  // extension regex. None of it depends on render state, so uncached it ran on
+  // every frame of every `show` row still mounted in the transcript.
+  const resolvedPreviewUrl = useMemo(() => {
+    const hasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
+    if (hasLocalhostUrl) return activeUrl;
+    const isHtmlFilePath =
+      !!activePath &&
+      SHOW_HTML_EXT_RE.test(activePath) &&
+      (activeType === 'file' || activeType === 'html');
+    return isHtmlFilePath ? buildHtmlStaticUrl(activePath) : '';
+  }, [activeUrl, activePath, activeType]);
   const isWebsitePreview = !!resolvedPreviewUrl;
 
   /**
@@ -130,8 +114,8 @@ export function ShowTool({ part, sessionId }: ToolProps) {
    * supplies the row itself for the viewers that ship none. There is never a
    * second header stacked above the viewer.
    *
-   * On the inline (chat) surface the scallop shell owns the toolbar tab, so
-   * these stay out of the renderer there and only land in the right tab.
+   * On the inline (chat) surface the card header owns the toolbar, so these
+   * stay out of the renderer there and only land in the header row.
    */
   const fileActions =
     !isWebsitePreview && activePath ? (
@@ -153,38 +137,62 @@ export function ShowTool({ part, sessionId }: ToolProps) {
 
   // Precomputed up front (pure derivations over state already resolved above)
   // so both the loading body and the main body can feed the same safe title
-  // into the inline row below — mirrors the `showLabel`-style precedence
+  // into the inline header — mirrors the `showLabel`-style precedence
   // (title > description/domain fallback > generic label), never the raw
   // path/URL. `showDomain` echoes its input verbatim when URL parsing fails,
   // so the type==='url' fallback is gated through `safeHttpUrl` first (the
   // same pattern show-content-renderer.tsx uses): a relative or non-http(s)
   // value never reaches the always-visible subtitle — it degrades to 'Link'.
-  const safeSubtitleUrl = type === 'url' ? safeHttpUrl(url) : null;
+  const safeSubtitleUrl = useMemo(() => (type === 'url' ? safeHttpUrl(url) : null), [type, url]);
+  const subtitleDomain = useMemo(
+    () => (safeSubtitleUrl ? showDomain(safeSubtitleUrl) : ''),
+    [safeSubtitleUrl],
+  );
   const displayTitle = isCarousel
     ? title || `${items!.length} items`
-    : title ||
-      (type === 'error'
-        ? 'Error'
-        : type === 'url'
-          ? (safeSubtitleUrl && showDomain(safeSubtitleUrl)) || 'Link'
-          : 'Output');
+    : title || (type === 'error' ? 'Error' : type === 'url' ? subtitleDomain || 'Link' : 'Output');
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
 
-  // Inline shell owns the toolbar in its right scallop tab. Panel keeps the
-  // actions inside the renderer / website header as before.
+  // Inline card header owns the toolbar. Panel keeps the actions inside the
+  // renderer / website header as before.
   const inlineToolbar = isWebsitePreview ? (
     <ServicePreviewActions preview={preview} />
   ) : (
     fileActions || contentActions
   );
-  const hasInlineToolbar = !!inlineToolbar;
+
+  // `prefersPreviewLink` parses the candidate URL; it is an argument to the
+  // availability gate below, so it was re-parsed on every render.
+  const previewIsLinkOnly = useMemo(
+    () => prefersPreviewLink(preview.previewUrl),
+    [preview.previewUrl],
+  );
+
+  // Nothing was handed over: no items, no path, no url, no content — only
+  // metadata about an artifact that never arrived. Every branch of
+  // `ShowContentRenderer` is guarded on one of those fields, so the cascade
+  // falls through to a fallback with all four sub-conditions false and the card
+  // renders as a header over an empty box. Draw nothing instead.
+  //
+  // The chat transcript drops the part one level higher (`isEmptyShowPart`, so
+  // no blank row or rail is left behind); this is the same verdict applied at
+  // the renderer, which is what the Action Panel and /debug/tools reach.
+  //
+  // `running` is the guard, not the status: a call still streaming its
+  // arguments has an empty input because the input has not arrived yet, and its
+  // header carries the spinner that says so.
+  const hasNothingToShow = useMemo(
+    () => isShowPayloadEmpty({ items, path, url, content }),
+    [items, path, url, content],
+  );
+  if (!running && hasNothingToShow) return null;
 
   let body: ReactNode;
 
   if (running && !type && !items) {
-    // Only the panel surface (no trigger button) still needs the bespoke
-    // loading card. Inline, the left scallop tab carries the running spinner.
+    // Only the panel surface still needs the bespoke loading card. Inline, the
+    // card header carries the running spinner.
     body = fill ? (
       <div className="bg-card flex h-full items-center justify-center overflow-hidden">
         <div className="flex items-center gap-3 px-5 py-4">
@@ -202,7 +210,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
       contentStatus,
       isWebsitePreview,
       previewHasError: preview.hasError,
-      previewIsLinkOnly: prefersPreviewLink(preview.previewUrl),
+      previewIsLinkOnly,
     })
   ) {
     // The artifact didn't load (renamed/deleted file, dead preview). Never
@@ -236,7 +244,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
     body = (
       <div className={cn('overflow-hidden', fill ? 'flex h-full flex-col' : 'min-h-0 flex-1')}>
         {/* Panel website header stays; inline moves these actions into the
-            right scallop tab so the shell is the only chrome. */}
+            card header so there is only one chrome row. */}
         {isWebsitePreview && fill && (
           <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-1">
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -297,51 +305,28 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   // filling the pane with no shell wrapper.
   if (fill) return body;
 
-  // Inline (chat) surface: scalloped panel shell — left tab is the file name,
-  // right tab is the toolbar. Content always visible; no disclosure.
+  // Inline (chat) surface: plain card — header row + always-visible payload.
   return (
-    <div data-component="tool-trigger" className="flex w-full flex-col">
-      {/* `items-stretch` + matching `py-1` keep left/right tabs one height.
-          `items-center` + asymmetric padding floated them off the shared
-          baseline (toolbar buttons are taller than the title text). */}
-      <div className="shadow-custom flex w-full items-stretch justify-between overflow-hidden">
-        <span
-          aria-current="page"
-          className="text-foreground relative flex min-w-0 shrink items-stretch"
-        >
-          <span className="bg-secondary relative z-10 flex h-full min-w-0 items-center gap-2 rounded-t-lg px-3.5 py-0.5 text-xs [&>svg]:size-4">
-            {running && !type && !items ? (
-              <Loading className="text-muted-foreground size-4 shrink-0" />
-            ) : (
-              showTypeIcon(headerIcon)
-            )}
-            <span className="min-w-0 truncate" title={displayTitle}>
-              {displayTitle}
-            </span>
+    <div
+      data-component="tool-trigger"
+      className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg"
+    >
+      <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+        <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
+          {running && !type && !items ? (
+            <Loading className="text-muted-foreground size-4 shrink-0" />
+          ) : (
+            showTypeIcon(headerIcon)
+          )}
+          <span className="min-w-0 truncate" title={displayTitle}>
+            {displayTitle}
           </span>
-          <TabScallopEdge side="right" />
-        </span>
-
-        {hasInlineToolbar && (
-          <span className="text-foreground relative flex shrink-0 items-stretch">
-            <TabScallopEdge side="left" />
-            <span className="bg-secondary relative z-10 flex h-full items-center gap-1 rounded-t-lg px-2 py-0.5">
-              {inlineToolbar}
-            </span>
-          </span>
-        )}
+        </div>
+        {inlineToolbar ? (
+          <div className="flex shrink-0 items-center gap-1">{inlineToolbar}</div>
+        ) : null}
       </div>
-
-      <div
-        className={cn(
-          'bg-secondary flex min-h-0 w-full flex-col overflow-hidden rounded-b-lg',
-          // Left tab covers top-left. Without a right toolbar tab the
-          // top-right of the content plane is exposed — round it.
-          !hasInlineToolbar && 'rounded-tr-lg',
-        )}
-      >
-        <div className="min-h-0 overflow-hidden">{body}</div>
-      </div>
+      <div className="min-h-0 overflow-hidden">{body}</div>
     </div>
   );
 }
