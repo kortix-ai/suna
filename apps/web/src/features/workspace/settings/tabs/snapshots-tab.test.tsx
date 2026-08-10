@@ -2,14 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { ProjectSnapshotBuild } from '@kortix/sdk';
+import type { ProjectSnapshotBuild, SandboxRuntimeStatus } from '@kortix/sdk';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 import type { FailedBuildRelevance } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
-import type { SandboxProviderMode } from './sandbox-provider-coverage';
-import { BuildRow, isProjectAcceleratorBuild } from './sandbox-view';
+import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-provider-coverage';
+import { BuildRow, SnapshotsTabView, isProjectAcceleratorBuild } from './snapshots-tab';
 
+/**
+ * Carries forward ALL of `sandbox-view.test.tsx`'s coverage (deleted — see
+ * Task 20's brief) — same assertions, import path updated from
+ * `./sandbox-view` to `./snapshots-tab` since `BuildRow`/
+ * `isProjectAcceleratorBuild` are Snapshots-half symbols per JAY-508.
+ */
 const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBuild => ({
   build_id: 'build-1',
   slug: 'essentia',
@@ -24,6 +30,19 @@ const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBu
   provider: 'daytona',
   started_at: '2026-07-13T10:00:00.000Z',
   finished_at: '2026-07-13T10:05:00.000Z',
+  ...overrides,
+});
+
+const runtimeStatus = (overrides: Partial<SandboxRuntimeStatus> = {}): SandboxRuntimeStatus => ({
+  state: 'ready',
+  snapshot_name: 'kortix-tpl-abc123',
+  current_failure: null,
+  stale_failure: null,
+  stale_reason: null,
+  ready_providers: [],
+  building_providers: [],
+  failed_providers: [],
+  fix_with_agent_available: false,
   ...overrides,
 });
 
@@ -129,5 +148,93 @@ describe('sandbox template build row provider disclosure', () => {
     expect(html).not.toContain('Daytona');
     expect(html).not.toContain('Platinum');
     expect(html).not.toContain('E2B');
+  });
+});
+
+/**
+ * `SnapshotsTabView` — the pure half of the split. Unlike `SandboxTabView`,
+ * no slots are needed — `BuildRow`/`SandboxStatusBanner` are already
+ * props-only (see this tab's header comment) — so these tests exercise the
+ * whole build log directly through data props.
+ */
+describe('SnapshotsTabView', () => {
+  test('renders the build log for a template build', () => {
+    const out = renderToStaticMarkup(
+      <TooltipProvider>
+        <SnapshotsTabView templateBuilds={[build()]} />
+      </TooltipProvider>,
+    );
+    expect(out).toContain('essentia');
+    expect(out).toContain('Build log');
+  });
+
+  test('renders the empty build-log fallback when there are no builds', () => {
+    const out = renderToStaticMarkup(<SnapshotsTabView />);
+    expect(out).toContain('No builds recorded yet.');
+  });
+
+  test('renders the project accelerator section only when accelerator builds exist', () => {
+    const withAccelerator = renderToStaticMarkup(
+      <TooltipProvider>
+        <SnapshotsTabView
+          acceleratorBuilds={[
+            build({
+              slug: 'default-warm',
+              snapshot_name: 'kortix-ppwarm-abc123',
+            }),
+          ]}
+        />
+      </TooltipProvider>,
+    );
+    expect(withAccelerator).toContain('Project accelerator');
+    expect(withAccelerator).toContain('Repository accelerator');
+
+    const without = renderToStaticMarkup(<SnapshotsTabView />);
+    expect(without).not.toContain('Project accelerator');
+  });
+
+  test('shows the blocked status banner with a Rebuild action for a manager', () => {
+    const out = renderToStaticMarkup(
+      <SnapshotsTabView
+        canManage
+        status={runtimeStatus({ state: 'blocked', failed_providers: ['daytona'] })}
+      />,
+    );
+    expect(out).toContain('Sessions can’t start');
+    expect(out).toContain('Rebuild');
+  });
+
+  test('hides the Rebuild action for a non-manager', () => {
+    const out = renderToStaticMarkup(
+      <SnapshotsTabView
+        canManage={false}
+        status={runtimeStatus({ state: 'blocked', failed_providers: ['daytona'] })}
+      />,
+    );
+    expect(out).not.toContain('Rebuild');
+  });
+
+  test('shows no status banner for a healthy project', () => {
+    const out = renderToStaticMarkup(<SnapshotsTabView status={runtimeStatus({ state: 'ready' })} />);
+    expect(out).not.toContain('Sessions can’t start');
+    expect(out).not.toContain('Some sessions won’t start');
+  });
+
+  test('loading state shows a skeleton, not the build log', () => {
+    const out = renderToStaticMarkup(<SnapshotsTabView isLoading templateBuilds={[build()]} />);
+    expect(out).not.toContain('essentia');
+  });
+
+  test('error state shows a retry action', () => {
+    const out = renderToStaticMarkup(<SnapshotsTabView isError errorMessage="boom" />);
+    expect(out).toContain('Retry');
+    expect(out).toContain('boom');
+  });
+
+  test('never renders the template form or template vocabulary — that lives in SandboxTabView', () => {
+    const out = renderToStaticMarkup(<SnapshotsTabView templateBuilds={[build()]} />);
+    expect(out).not.toContain('New template');
+    expect(out).not.toContain('Sandbox templates');
+    expect(out).not.toContain('No templates resolved yet.');
   });
 });

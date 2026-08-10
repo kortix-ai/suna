@@ -39,10 +39,16 @@
  * `webhooks`, `git`, `review`, `sandbox`, `members`, `settings`, `upgrade`,
  * and `llm-*` become `instructions`, `marketplace`, `secrets`, `channels`,
  * `voice`, `computers`, `schedules`, `webhooks`, `repositories`, `review`,
- * `sandbox`, `members`, `general`, `upgrades`, and `models`. `sandbox` here
- * still renders the UNSPLIT `SandboxView` (templates + build log together);
- * splitting off `snapshots` (build log only) is a later task, so `snapshots`
- * stays a placeholder.
+ * `sandbox`, `members`, `general`, `upgrades`, and `models`.
+ *
+ * **Task 20 update.** `sandbox` and `snapshots` are the split halves of the
+ * legacy `SandboxView` (see `tabs/sandbox-tab.tsx` / `tabs/snapshots-tab.tsx`
+ * for the full split rationale): `sandbox` is now `SandboxTab` (template
+ * CRUD, no build log) and `snapshots` is now `SnapshotsTab` (the build log,
+ * status, and error categories, no template form) — `SandboxView`/
+ * `sandbox-view.tsx` is deleted. `snapshots` stays deliberately absent from
+ * `ACCOUNT_SCOPED_SETTINGS_TABS` below, same as `sandbox` — both are
+ * project-scoped only.
  *
  * **Task 7 update.** `profile` is wired to the real `ProfileTab` (see
  * `tabs/profile-tab.tsx`) — the first of the ten still-new, account-scoped
@@ -209,7 +215,6 @@ import { CommandsView } from '@/features/workspace/customize/sections/view/comma
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
-import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { SettingsNavProvider, type SettingsNav } from '@/features/workspace/shared/settings-nav-context';
@@ -253,6 +258,8 @@ import { OrganizationTab } from './tabs/organization-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
 import { RolesTab } from './tabs/roles-tab';
+import { SandboxTab } from './tabs/sandbox-tab';
+import { SnapshotsTab } from './tabs/snapshots-tab';
 import { UsageTab } from './tabs/usage-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
@@ -994,13 +1001,10 @@ export function SettingsPanelShell({
  * mapping of the legacy panel's `SectionContent` (14 `case` labels + the
  * `llm-*` prefix branch) onto the new tab ids, PLUS `general` (rewired, Task
  * 18) and `experimental` (newly wired, Task 18) — see this file's header
- * comment. A tab NOT listed here or above — `snapshots` — is a genuinely new
- * surface with no legacy source to port; it keeps the placeholder header
- * until a later phase builds it. `snapshots` is HALF of the legacy `sandbox`
- * case (`SandboxView` renders templates and the build log together);
- * splitting them is a later task, so `sandbox` alone gets the full unsplit
- * view for now and `snapshots` stays a placeholder — do not fold
- * `SandboxView` onto both tabs, that would render the build log twice.
+ * comment. `sandbox` and `snapshots` (Task 20) are the split halves of the
+ * legacy `sandbox` case's `SandboxView`, which used to render templates and
+ * the build log together — see `tabs/sandbox-tab.tsx`'s header comment for
+ * the full split rationale.
  */
 function SettingsTabPane({
   item,
@@ -1124,7 +1128,9 @@ function SettingsTabPane({
       case 'voice':
         return <VoiceView projectId={projectId} />;
       case 'sandbox':
-        return <SandboxView projectId={projectId} />;
+        return <SandboxTab projectId={projectId} />;
+      case 'snapshots':
+        return <SnapshotsTab projectId={projectId} />;
       case 'upgrades':
         return <UpgradesView projectId={projectId} />;
       default:

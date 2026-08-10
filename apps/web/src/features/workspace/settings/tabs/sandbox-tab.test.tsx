@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+
 import {
   type ProviderCoverageEntry,
   SandboxTemplateProviderCoverage,
@@ -8,8 +9,17 @@ import {
   describeProviderCoverage,
   describeProviderMode,
   sandboxProviderLabel,
-} from './sandbox-provider-coverage';
+} from '../../customize/sections/view/sandbox-provider-coverage';
+import { SandboxTabView } from './sandbox-tab';
 
+/**
+ * Carries forward ALL of `sandbox-provider-coverage.test.tsx`'s coverage
+ * (deleted — see Task 20's brief) — same assertions, same import path
+ * (`sandbox-provider-coverage.tsx` itself did not move, only its test did,
+ * since `SandboxTemplateProviderCoverage`/`SandboxTemplateProviderModeBadge`
+ * are Sandbox-half symbols per JAY-508, used only by this tab's
+ * `TemplateRow`).
+ */
 const coverageEntry = (
   overrides: Partial<ProviderCoverageEntry> & Pick<ProviderCoverageEntry, 'provider'>,
 ): ProviderCoverageEntry => {
@@ -145,5 +155,72 @@ describe('sandbox template provider coverage presentation', () => {
     expect(html).not.toContain('Platinum');
     expect(html).not.toContain('E2B');
     expect(html).not.toContain('Unavailable');
+  });
+});
+
+/**
+ * `SandboxTabView` — the pure half of the split. `templatesSlot` is a slot
+ * (see this tab's header comment for why `TemplateRow` can't render under
+ * `renderToStaticMarkup`); these tests pin everything the pure view DOES
+ * own directly: loading/error/empty states, the manifest hint, and that no
+ * build-log content ever appears here.
+ */
+describe('SandboxTabView', () => {
+  test('renders the header and the templates slot', () => {
+    const out = renderToStaticMarkup(
+      <SandboxTabView isEmpty={false} templatesSlot={<li>template-row-marker</li>} />,
+    );
+    expect(out).toContain('Sandbox templates');
+    expect(out).toContain('template-row-marker');
+  });
+
+  test('renders the empty state with its action when there are no templates', () => {
+    const out = renderToStaticMarkup(
+      <SandboxTabView isEmpty emptyAction={<button type="button">new-template-marker</button>} />,
+    );
+    expect(out).toContain('No templates resolved yet.');
+    expect(out).toContain('new-template-marker');
+  });
+
+  test('renders the header action when provided', () => {
+    const out = renderToStaticMarkup(
+      <SandboxTabView headerAction={<button type="button">header-action-marker</button>} />,
+    );
+    expect(out).toContain('header-action-marker');
+  });
+
+  test('reads the manifest hint from kortix.toml by default, kortix.yaml at manifest v2', () => {
+    const v1 = renderToStaticMarkup(<SandboxTabView manifestVersion={1} />);
+    expect(v1).toContain('kortix.toml');
+    expect(v1).not.toContain('kortix.yaml');
+
+    const v2 = renderToStaticMarkup(<SandboxTabView manifestVersion={2} />);
+    expect(v2).toContain('kortix.yaml');
+    expect(v2).not.toContain('kortix.toml');
+  });
+
+  test('surfaces a partial-read warning without failing the whole tab', () => {
+    const out = renderToStaticMarkup(<SandboxTabView templatesError="permission denied" />);
+    expect(out).toContain('permission denied');
+  });
+
+  test('loading state shows a skeleton, not the manifest hint', () => {
+    const out = renderToStaticMarkup(<SandboxTabView isLoading />);
+    expect(out).not.toContain('Sessions boot from a sandbox template');
+  });
+
+  test('error state shows a retry action', () => {
+    const out = renderToStaticMarkup(<SandboxTabView isError errorMessage="boom" />);
+    expect(out).toContain('Retry');
+    expect(out).toContain('boom');
+  });
+
+  test('never renders the build log or its vocabulary — that lives in SnapshotsTabView', () => {
+    const out = renderToStaticMarkup(<SandboxTabView isEmpty={false} />);
+    expect(out).not.toContain('Session template builds');
+    expect(out).not.toContain('Build log');
+    expect(out).not.toContain('Project accelerator');
+    expect(out).not.toContain('Snapshot quota reached');
+    expect(out).not.toContain('Sessions can’t start');
   });
 });

@@ -191,6 +191,12 @@ const REAL_VIEW_TABS: readonly SettingsTab[] = [
   'review',
   'voice',
   'sandbox',
+  // Task 20: `snapshots` is the split-off build-log half of the legacy
+  // `sandbox` case's `SandboxView` — see `tabs/sandbox-tab.tsx`'s header
+  // comment. It was the LAST tab still on the placeholder header (see the
+  // now-removed "still-placeholder active tab" test above this array's
+  // former comment); every `SettingsTab` is a real view as of this task.
+  'snapshots',
   'experimental',
   'upgrades',
 ];
@@ -214,26 +220,16 @@ const allFlagsOnItems: readonly RailItem[] = [
   UPGRADE_ITEM,
 ];
 
+/**
+ * `snapshots` was the last tab this describe block used as its "still a
+ * placeholder" example, after `usage` (Task 12) and `experimental` (Task 18)
+ * were each wired in turn — see this array's own comment above. Task 20
+ * wires `snapshots` to `SnapshotsTab`, so as of this task EVERY
+ * `SettingsTab` is a real view: there is no placeholder tab left to exercise
+ * a "still-placeholder active tab renders cleanly" test against. That test
+ * is removed rather than repointed at a fabricated placeholder tab.
+ */
 describe('SettingsPanelShell — real tab content gating', () => {
-  test('a still-placeholder active tab renders cleanly, even though every real-view tab exists as an inactive sibling', () => {
-    expect(() =>
-      render({
-        // `snapshots` is the last genuinely unbuilt placeholder — every
-        // other tab this describe block once used as its "still a
-        // placeholder" example (`usage`, then `experimental`) has since been
-        // wired to a real view (Task 12, Task 18). `snapshots` stays a
-        // placeholder on purpose: it's HALF of the legacy `sandbox` case
-        // (build log only), and splitting it out of `SandboxView` is a later
-        // task — see `settings-panel.tsx`'s `SettingsTabPane` header comment.
-        tab: 'snapshots',
-        projectId: 'p1',
-        llmGatewayEnabled: true,
-        groups: allFlagsOnGroups,
-        allItems: allFlagsOnItems,
-      }),
-    ).not.toThrow();
-  });
-
   test('activating profile mounts its real view — it calls react-query with no provider present, so it throws', () => {
     expect(() =>
       render({
