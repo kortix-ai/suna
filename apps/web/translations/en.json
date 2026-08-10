@@ -5525,6 +5525,17 @@
     "componentsSessionSandboxImage": {
       "line96JsxTextImageUnavailable": "Image unavailable"
     },
+    "featuresSessionComposerTokenProgress": {
+      "titleHealthy": "Conversation space",
+      "titleWarning": "Getting full",
+      "titleDanger": "Almost full",
+      "labelUsed": "Used",
+      "labelLimit": "Limit",
+      "percentFull": "{percent}% full",
+      "tipWarning": "Longer chats may forget earlier messages.",
+      "tipDanger": "Older messages may drop soon.",
+      "viewDetails": "View details"
+    },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "No actions yet.",
       "line185JsxAttrAriaLabelPreviousAction": "Previous action",

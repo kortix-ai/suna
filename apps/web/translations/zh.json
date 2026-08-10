@@ -5454,6 +5454,17 @@
     "componentsSessionSandboxImage": {
       "line96JsxTextImageUnavailable": "图片不可用"
     },
+    "featuresSessionComposerTokenProgress": {
+      "titleHealthy": "对话空间",
+      "titleWarning": "快满了",
+      "titleDanger": "几乎已满",
+      "labelUsed": "已用",
+      "labelLimit": "上限",
+      "percentFull": "已用 {percent}%",
+      "tipWarning": "较长的对话可能会忘记更早的消息。",
+      "tipDanger": "较早的消息可能很快被丢弃。",
+      "viewDetails": "查看详情"
+    },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "尚无操作。",
       "line185JsxAttrAriaLabelPreviousAction": "上一个操作",

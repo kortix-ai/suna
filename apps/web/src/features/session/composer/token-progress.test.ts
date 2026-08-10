@@ -2,7 +2,16 @@ import { describe, expect, test } from 'bun:test';
 
 import type { MessageWithParts } from '@kortix/sdk/react';
 import type { FlatModel } from '../model-flatten';
-import { getContextLimit, getLastAssistantTokenTotal } from './token-progress';
+import { STATUS_TEXT } from '@/components/ui/status';
+import {
+  CONTEXT_DANGER_RATIO,
+  CONTEXT_WARNING_RATIO,
+  contextTone,
+  contextUsageHeadlineKind,
+  formatContextCount,
+  getContextLimit,
+  getLastAssistantTokenTotal,
+} from './token-progress';
 
 function assistantMessage(tokens: Record<string, unknown> | undefined): MessageWithParts {
   return {
@@ -79,5 +88,81 @@ describe('getContextLimit', () => {
     expect(
       getContextLimit(models, { providerID: 'openai', modelID: 'gpt-5' }),
     ).toBe(200000);
+  });
+});
+
+describe('contextTone', () => {
+  test('an empty or barely-used context is blue, not grey', () => {
+    // `info`, not `neutral`: the ring carries no label, so a muted grey arc
+    // reads as chrome rather than as a reading.
+    expect(contextTone(0)).toBe('info');
+    expect(contextTone(0.42)).toBe('info');
+  });
+
+  test('blue right up to the warning threshold, yellow AT it', () => {
+    // `>=`, not `>`. Exactly 70% is already the warning, otherwise the band
+    // starts one floating-point hair late and 0.7 renders blue.
+    expect(contextTone(CONTEXT_WARNING_RATIO - 0.001)).toBe('info');
+    expect(contextTone(CONTEXT_WARNING_RATIO)).toBe('warning');
+  });
+
+  test('yellow across the whole warning band', () => {
+    expect(contextTone(0.7)).toBe('warning');
+    expect(contextTone(0.8)).toBe('warning');
+    expect(contextTone(CONTEXT_DANGER_RATIO - 0.001)).toBe('warning');
+  });
+
+  test('destructive AT the danger threshold and above, including a full ring', () => {
+    expect(contextTone(CONTEXT_DANGER_RATIO)).toBe('destructive');
+    expect(contextTone(0.95)).toBe('destructive');
+    // `ratio` is clamped to 1 by the component, but the function must not
+    // depend on that to stay correct.
+    expect(contextTone(1)).toBe('destructive');
+  });
+
+  test('the two thresholds leave a real warning band, not a flicker', () => {
+    // The guard on the numbers themselves: collapsing them would make yellow
+    // unreachable in practice while every assertion above still passed.
+    expect(CONTEXT_DANGER_RATIO - CONTEXT_WARNING_RATIO).toBeGreaterThanOrEqual(0.1);
+  });
+
+  test('every tone it returns exists in the status family', () => {
+    // `STATUS_TEXT[tone]` is looked up directly in the render; a tone with no
+    // entry would produce `undefined` and an uncoloured ring.
+    for (const ratio of [0, 0.7, 0.85, 1]) {
+      expect(STATUS_TEXT[contextTone(ratio)]).toBeTruthy();
+    }
+  });
+});
+
+describe('formatContextCount', () => {
+  test('returns 0 for empty or invalid input', () => {
+    expect(formatContextCount(0)).toBe('0');
+    expect(formatContextCount(-1)).toBe('0');
+    expect(formatContextCount(Number.NaN)).toBe('0');
+  });
+
+  test('keeps small counts as integers', () => {
+    expect(formatContextCount(512)).toBe('512');
+    expect(formatContextCount(999)).toBe('999');
+  });
+
+  test('compacts thousands with a lowercase k', () => {
+    expect(formatContextCount(1234)).toBe('1.2k');
+    expect(formatContextCount(12300)).toBe('12.3k');
+    expect(formatContextCount(200000)).toBe('200k');
+  });
+
+  test('compacts millions with a lowercase m', () => {
+    expect(formatContextCount(1_000_000)).toBe('1m');
+    expect(formatContextCount(1_500_000)).toBe('1.5m');
+  });
+});
+
+describe('contextUsageHeadlineKind', () => {
+  test('maps ring tones to plain-language headline bands', () => {
+    expect(contextUsageHeadlineKind('info')).toBe('healthy');
+    expect(contextUsageHeadlineKind('warning')).toBe('warning');
+    expect(contextUsageHeadlineKind('destructive')).toBe('danger');
   });
 });

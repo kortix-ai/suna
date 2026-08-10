@@ -152,7 +152,7 @@ export function ComposerToolbar({
 
   return (
     <div className="kortix-composer-toolbar flex items-center justify-between gap-1 overflow-visible px-1">
-      <div className="flex min-w-0 items-center gap-0 overflow-visible">
+      <div className="flex min-w-0 items-center gap-1 overflow-visible">
         <Hint
           side="top"
           label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
@@ -197,10 +197,6 @@ export function ComposerToolbar({
           />
         )}
 
-        {/* Reasoning effort sits BESIDE the model, not inside it. It renders
-            nothing at all unless the selected model exposes an effort knob and
-            there is a project to scope the setting to, so a non-reasoning
-            model leaves the row exactly as it was. */}
         <ReasoningEffortSelector
           model={selectedModel}
           projectId={projectId}

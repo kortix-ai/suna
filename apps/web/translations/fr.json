@@ -5461,6 +5461,17 @@
     "componentsSessionSandboxImage": {
       "line96JsxTextImageUnavailable": "Image indisponible"
     },
+    "featuresSessionComposerTokenProgress": {
+      "titleHealthy": "Espace de conversation",
+      "titleWarning": "Se remplit",
+      "titleDanger": "Presque plein",
+      "labelUsed": "Utilisé",
+      "labelLimit": "Limite",
+      "percentFull": "{percent}% plein",
+      "tipWarning": "Les longs chats peuvent oublier les messages plus anciens.",
+      "tipDanger": "Les messages plus anciens peuvent bientôt disparaître.",
+      "viewDetails": "Voir les détails"
+    },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "Aucune action pour le moment.",
       "line185JsxAttrAriaLabelPreviousAction": "Action précédente",

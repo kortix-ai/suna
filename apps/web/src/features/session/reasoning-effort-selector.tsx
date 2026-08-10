@@ -35,10 +35,8 @@
  * injection only ever fills a field the client left unset.
  *
  * Writing requires the `gateway.routing-policy` PUT's capability gate
- * (`PROJECT_CUSTOMIZE_WRITE`, editor+) — a plain project member can see the
- * currently configured effort but not change it; the control disables with
- * an explanatory tooltip in that case rather than hiding outright, so it
- * stays discoverable.
+ * (`PROJECT_CUSTOMIZE_WRITE`, editor+) — a plain project member gets no
+ * control at all. A locked dropdown that cannot change the value is noise.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -54,11 +52,19 @@ import {
 import Hint from '@/components/ui/hint';
 import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
 import { cn } from '@/lib/utils';
-import { modelKeyToWire } from '@kortix/sdk/react';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
 import type { GatewayProjectRoutingPolicy } from '@kortix/sdk';
-import { useGatewayRoutingPolicy } from '@kortix/sdk/react';
-import { BrainIcon, CaretDownIcon } from '@phosphor-icons/react';
+import { modelKeyToWire, useGatewayRoutingPolicy } from '@kortix/sdk/react';
+import {
+  CaretDownIcon,
+  CellSignalFullIcon,
+  CellSignalHighIcon,
+  CellSignalLowIcon,
+  CellSignalMediumIcon,
+  CellSignalNoneIcon,
+} from '@phosphor-icons/react';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Kortix } from '../icon/icons/kortix';
 
 export interface ReasoningEffortModelKey {
   providerID: string;
@@ -66,8 +72,9 @@ export interface ReasoningEffortModelKey {
 }
 
 export interface ReasoningEffortControl {
-  /** False when the model has no reasoning-effort knob, or there's no
-   *  project to scope the setting to — render nothing. */
+  /** False when the model has no reasoning-effort knob, there's no project
+   *  to scope the setting to, or the user cannot write the routing policy —
+   *  render nothing. */
   visible: boolean;
   /** The model's own effort labels (e.g. ['none','low','medium','high','xhigh','max']). */
   values: string[];
@@ -146,7 +153,9 @@ export function useReasoningEffortControl(
   };
 
   return {
-    visible: !!projectId && values.length > 0,
+    // Viewers (no `gateway.routing-policy` write) never see the control —
+    // a disabled effort picker is not useful discovery, it is dead chrome.
+    visible: !!projectId && values.length > 0 && canWrite,
     values,
     current,
     canWrite,
@@ -167,6 +176,44 @@ const AUTO = '__auto__';
  *  menu should not. */
 function label(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/**
+ * Same stop list as `KORTIX_BULLET_GRADIENT` — expressed as a Tailwind
+ * arbitrary `bg-[linear-gradient(...)]` so max/full stay utility-class-only
+ * (no `style={{ backgroundImage }}`).
+ */
+/**
+ * Cell-signal bars for effort — empty → full maps none/auto → max. Extra
+ * ladder steps (`xhigh`, `max`) share Full; unknown ids fall back to Medium
+ * so a future catalog value never renders without an icon.
+ *
+ * `max` / `full` paint the Kortix rainbow through the icon via
+ * `mix-blend-destination-in` — `bg-clip-text` does not clip to SVG paths.
+ *
+ * A switch that returns JSX (not a component reference) — assigning
+ * `const Icon = map[value]` and then `<Icon />` trips the React Compiler's
+ * "Cannot create components during render" rule.
+ */
+function EffortIcon({ value, className }: { value: string | null; className?: string }) {
+  switch (value) {
+    case null:
+    case 'none':
+      return <CellSignalNoneIcon className={className} weight="fill" />;
+    case 'low':
+      return <CellSignalLowIcon className={className} weight="fill" />;
+    case 'medium':
+      return <CellSignalMediumIcon className={className} weight="fill" />;
+    case 'high':
+      return <CellSignalHighIcon className={className} weight="fill" />;
+    case 'xhigh':
+      return <CellSignalFullIcon className={className} weight="fill" />;
+    case 'max':
+    case 'full':
+      return <CellSignalFullIcon weight="fill" className={className} />;
+    default:
+      return <CellSignalMediumIcon className={className} weight="fill" />;
+  }
 }
 
 export interface ReasoningEffortSelectorProps {
@@ -191,9 +238,9 @@ export interface ReasoningEffortSelectorProps {
  * nothing in the composer showed the effort a turn would actually run at. As a
  * peer of the model pill it states its own value without being opened.
  *
- * Renders NOTHING when `visible` is false — the model exposes no effort knob,
- * or there is no project to scope the setting to. That is the same gate the
- * folded-in row used, so a model without reasoning never grows a dead control.
+ * Renders NOTHING when `visible` is false — no effort knob, no project, or
+ * the user cannot write the routing policy. A model without reasoning, or a
+ * viewer without `PROJECT_CUSTOMIZE_WRITE`, never grows a dead control.
  *
  * A `DropdownMenu` rather than the `CommandPopover` the model and agent
  * pickers use: this is a fixed list of four to six values with no search, no
@@ -207,7 +254,7 @@ export function ReasoningEffortSelector({
   open: openProp,
   onOpenChange,
 }: ReasoningEffortSelectorProps) {
-  const { visible, values, current, canWrite, pending, setEffort } = useReasoningEffortControl(
+  const { visible, values, current, pending, setEffort } = useReasoningEffortControl(
     model,
     projectId,
   );
@@ -230,39 +277,24 @@ export function ReasoningEffortSelector({
 
   if (!visible) return null;
 
-  const locked = !canWrite;
-
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <Hint
-        side="top"
-        label={
-          locked
-            ? 'Only project editors can change reasoning effort for this model'
-            : 'Reasoning effort — how much the model thinks before answering'
-        }
-        delayDuration={400}
-      >
+      <Hint side="top" label="Effort Level" delayDuration={700}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            // `aria-disabled`, not `disabled`: a viewer must still be able to
-            // focus this and read the hint explaining why it is locked.
-            // `disabled` would make it unreachable by keyboard and strip the
-            // hint with it, which is how a permission boundary turns into
-            // "the control is just missing".
-            aria-disabled={locked || pending || undefined}
+            aria-disabled={pending || undefined}
             onClick={(e) => {
-              if (locked || pending) e.preventDefault();
+              if (pending) e.preventDefault();
             }}
             className={cn(
               'text-foreground/70 gap-1.5 rounded-full',
-              (locked || pending) && 'cursor-not-allowed opacity-60',
+              pending && 'cursor-not-allowed opacity-60',
             )}
           >
-            <BrainIcon className="size-4 shrink-0" />
+            <EffortIcon value={current} className="size-4 shrink-0" />
             <span className="max-w-[7rem] truncate">{current ? label(current) : 'Auto'}</span>
             <CaretDownIcon className={cn('size-3 opacity-50', open && 'rotate-180')} />
           </Button>
@@ -274,12 +306,18 @@ export function ReasoningEffortSelector({
           {/* Auto is first and always present: it is the only way BACK to the
               model's own default once an override is set, and without it the
               control would be a one-way door. */}
-          <DropdownMenuRadioItem value={AUTO} disabled={locked || pending}>
-            Auto
+          <DropdownMenuRadioItem value={AUTO} disabled={pending}>
+            <span className="flex items-center gap-2">
+              <Kortix className="size-4 shrink-0" />
+              Auto
+            </span>
           </DropdownMenuRadioItem>
           {values.map((value) => (
-            <DropdownMenuRadioItem key={value} value={value} disabled={locked || pending}>
-              {label(value)}
+            <DropdownMenuRadioItem key={value} value={value} disabled={pending}>
+              <span className="flex items-center gap-2">
+                <EffortIcon value={value} className="size-4 shrink-0" />
+                {label(value)}
+              </span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

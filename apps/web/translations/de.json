@@ -5458,6 +5458,17 @@
     "componentsSessionSandboxImage": {
       "line96JsxTextImageUnavailable": "Bild nicht verfügbar"
     },
+    "featuresSessionComposerTokenProgress": {
+      "titleHealthy": "Gesprächsraum",
+      "titleWarning": "Wird voll",
+      "titleDanger": "Fast voll",
+      "labelUsed": "Belegt",
+      "labelLimit": "Limit",
+      "percentFull": "{percent}% voll",
+      "tipWarning": "Längere Chats können frühere Nachrichten vergessen.",
+      "tipDanger": "Ältere Nachrichten können bald wegfallen.",
+      "viewDetails": "Details anzeigen"
+    },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "Noch keine Aktionen.",
       "line185JsxAttrAriaLabelPreviousAction": "Vorherige Aktion",

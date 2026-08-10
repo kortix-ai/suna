@@ -5458,6 +5458,17 @@
     "componentsSessionSandboxImage": {
       "line96JsxTextImageUnavailable": "Imagem indisponível"
     },
+    "featuresSessionComposerTokenProgress": {
+      "titleHealthy": "Espaço da conversa",
+      "titleWarning": "Está a ficar cheio",
+      "titleDanger": "Quase cheio",
+      "labelUsed": "Usado",
+      "labelLimit": "Limite",
+      "percentFull": "{percent}% cheio",
+      "tipWarning": "Conversas longas podem esquecer mensagens anteriores.",
+      "tipDanger": "Mensagens antigas podem desaparecer em breve.",
+      "viewDetails": "Ver detalhes"
+    },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "Ainda não há ações.",
       "line185JsxAttrAriaLabelPreviousAction": "Ação anterior",
