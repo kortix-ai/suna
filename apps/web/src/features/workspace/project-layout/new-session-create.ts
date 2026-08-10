@@ -35,7 +35,8 @@ export function buildNewSessionCreateInput(
   if (options.agent) input.agent_name = options.agent;
   if (
     options.scope?.availability.connector_bindings &&
-    options.scope.draft.connector_bindings !== undefined
+    options.scope.draft.connector_bindings !== undefined &&
+    options.scope.draft.connector_bindings_inherited !== true
   ) {
     input.connector_bindings = Object.fromEntries(
       Object.entries(options.scope.draft.connector_bindings).map(([alias, binding]) => [

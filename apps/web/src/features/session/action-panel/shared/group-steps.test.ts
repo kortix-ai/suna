@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test';
 import type { MessageWithParts, ToolPart } from '@/ui';
+import { describe, expect, it } from 'bun:test';
 import { collectAllToolParts } from './collect-tool-parts';
 import { groupSteps } from './group-steps';
 
@@ -36,10 +36,33 @@ describe('groupSteps', () => {
 
   it('never folds show / show_user — each is its own step', () => {
     const steps = groupSteps([
-      part('show', 'completed', { title: 'one' }),
-      part('show', 'completed', { title: 'two' }),
+      part('show', 'completed', { title: 'one', path: '/workspace/one.png' }),
+      part('show', 'completed', { title: 'two', path: '/workspace/two.png' }),
     ]);
     expect(steps).toHaveLength(2);
+  });
+
+  // A `show` carrying no path, url, content or items renders an empty card. Its
+  // step would narrate "Showed you the result" and open onto nothing, so it is
+  // dropped — and, like `prune`, it must not split the run around it.
+  it('drops a show that handed nothing over, without splitting the run', () => {
+    const steps = groupSteps([
+      part('read'),
+      part('show', 'completed', { type: 'markdown', title: 'Report' }),
+      part('read'),
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].parts).toHaveLength(2);
+  });
+
+  it('keeps a show that is still running — its input has not arrived yet', () => {
+    const steps = groupSteps([part('show', 'running', {})]);
+    expect(steps).toHaveLength(1);
+  });
+
+  it('keeps a show whose state errored — a failure is real content', () => {
+    const steps = groupSteps([part('show', 'error', {})]);
+    expect(steps).toHaveLength(1);
   });
 
   it('consecutive writes fold into one edit step', () => {

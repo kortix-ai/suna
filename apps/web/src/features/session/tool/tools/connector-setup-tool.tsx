@@ -21,13 +21,17 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
   const input = partInput(part);
   const output = partOutput(part);
   const data = useMemo(() => parseConnectorSetupOutput(output || ''), [output]);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it, and this row asked it twice per render — once for the subtitle, once for
+  // the body.
+  const isError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
       icon={<Plug className="text-muted-foreground size-3.5" />}
       trigger={{
-        title: 'Connector Setup',
-        subtitle: isErrorOutput(output)
+        title: 'Connected an app',
+        subtitle: isError
           ? 'failed'
           : data
             ? `${data.count} connector${data.count !== 1 ? 's' : ''} configured`
@@ -38,13 +42,13 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
       forceOpen={forceOpen}
     >
       <div className="p-2">
-        {isErrorOutput(output) ? (
+        {isError ? (
           <ToolOutputFallback output={output} toolName="connector_setup" />
         ) : output ? (
           <div className="space-y-1">
             {data?.connectors.map((conn, i) => (
               <div key={i} className="flex items-center gap-2 py-1 text-xs">
-                <Plug className="text-muted-foreground size-3.5 flex-shrink-0" />
+                <Plug className="text-muted-foreground size-3.5 shrink-0" />
                 <span className="font-medium">{conn}</span>
               </div>
             ))}

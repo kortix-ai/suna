@@ -13,6 +13,7 @@ import {
 } from '@kortix/sdk';
 import { getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import JSZip from 'jszip';
+import { readRuntimeFileWithRetry } from './runtime-file-read';
 
 // Data operations — single source of truth in the SDK. Aliased to the names the
 // file panel components already import.
@@ -111,7 +112,7 @@ export async function openFileInNewTab(filePath: string): Promise<void> {
 
 /** Download a single file to the user's machine. */
 export async function downloadFile(filePath: string, fileName?: string): Promise<void> {
-  const blob = await readBlob(filePath);
+  const blob = await readRuntimeFileWithRetry(filePath, () => readBlob(filePath));
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -164,7 +165,11 @@ export async function downloadFilesAsZip(
 ): Promise<void> {
   const zip = new JSZip();
   const names = uniqueZipNames(files.map((f) => f.name));
-  await Promise.all(files.map(async (f, i) => zip.file(names[i], await readBlob(f.path))));
+  await Promise.all(
+    files.map(async (f, i) =>
+      zip.file(names[i], await readRuntimeFileWithRetry(f.path, () => readBlob(f.path))),
+    ),
+  );
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -194,7 +199,7 @@ export async function downloadDirectory(
       const relativePath = filePath.startsWith(dirPath + '/')
         ? filePath.slice(dirPath.length + 1)
         : filePath.split('/').pop() || filePath;
-      zip.file(relativePath, await readBlob(filePath));
+      zip.file(relativePath, await readRuntimeFileWithRetry(filePath, () => readBlob(filePath)));
       done++;
       onProgress?.(done / allFiles.length);
     }

@@ -78,8 +78,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /metrics': 'Viewed system metrics',
   'GET /v1/accounts/:accountId/audit': 'Viewed audit log',
   'GET /v1/accounts/:accountId/audit/export': 'Exported audit log',
+  'POST /v1/accounts/:accountId/audit/reconcile': 'Reconciled audit log',
   'GET /v1/accounts/:accountId/audit/webhooks': 'Listed audit webhooks',
   'POST /v1/accounts/:accountId/audit/webhooks': 'Created audit webhook',
+  'GET /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries':
+    'Listed audit webhook deliveries',
+  'POST /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay':
+    'Replayed audit webhook delivery',
   'PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId': 'Updated audit webhook',
   'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId': 'Deleted audit webhook',
   'GET /v1/accounts/:accountId/iam/mfa-required': 'Viewed MFA requirement',
@@ -91,11 +96,22 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/accounts/me': 'Viewed current account',
   'GET /v1/accounts/:accountId/iam/enterprise-demo': 'Viewed Enterprise preview',
   'PUT /v1/accounts/:accountId/iam/enterprise-demo': 'Updated Enterprise preview',
+  'GET /v1/projects/:projectId/audit': 'Viewed project audit log',
   'GET /v1/projects/:projectId/sessions/:sessionId/audit': 'Viewed session audit log',
+  'POST /v1/projects/:projectId/sessions/:sessionId/audit/events': 'Ingested session audit events',
   'GET /v1/projects/:projectId/sessions/:sessionId/transcript': 'Viewed session transcript',
   'GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
+  // The park-and-restore pair (`r4.ts`): a parked session's `question` tool
+  // survives past its sandbox (`lib/pending-questions.ts`); GET reads the one
+  // still waiting on a human, POST answers it as a follow-up turn. Reads
+  // naturally beside `turn-question`'s "Submitted session question" below —
+  // submitted, then viewed, then answered.
+  'GET /v1/projects/:projectId/sessions/:sessionId/question': 'Viewed open session question',
+  'POST /v1/projects/:projectId/sessions/:sessionId/question': 'Answered session question',
   'POST /v1/projects/:projectId/sessions/:sessionId/commit-push':
     'Committed and pushed session changes',
+  'POST /v1/projects/:projectId/sessions/:sessionId/reload': 'Reloaded session agent config',
+  'POST /v1/projects/:projectId/sessions/:sessionId/reload-stream': 'Reloaded session agent config',
   'POST /v1/projects/:projectId/turn-stream': 'Streamed session turn',
   'POST /v1/projects/:projectId/turn-question': 'Submitted session question',
   'POST /v1/projects/:projectId/sessions/warm': 'Warmed session sandbox',
@@ -108,10 +124,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/approvals/:executionId': 'Resolved approval',
   'GET /v1/projects/:projectId/approvals/needs-input': 'Listed approvals needing input',
   'POST /v1/projects/:projectId/connect-requests': 'Created connection request',
-  'PUT /v1/projects/:projectId/connections/:connectionId/activate':
-    'Activated connector',
-  'PUT /v1/projects/:projectId/connections/:connectionId/default':
-    'Set default connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/activate': 'Activated connector',
+  'PUT /v1/projects/:projectId/connections/:connectionId/default': 'Set default connector',
   'PUT /v1/projects/:projectId/connections/:connectionId/revoke': 'Revoked connector',
   'POST /v1/projects/:projectId/connections/me': 'Created personal connector',
   'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',
@@ -121,6 +135,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/review/bulk': 'Updated review items in bulk',
   'POST /v1/projects/:projectId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
   'POST /v1/projects/github/installations/linkable': 'Listed linkable GitHub installations',
+  // Same underlying create as bare `POST /v1/projects/provision` (both run
+  // `runProvision` in `apps/api/src/projects/provision-core.ts` — see that
+  // route's own doc comment) — this is just the phased-progress transport for
+  // it, not a different action. `provision` itself has no override here (the
+  // generic fallback already reads correctly as "Provisioned project"); this
+  // entry pins the SAME text so the two never drift apart in the log.
+  'POST /v1/projects/provision-stream': 'Provisioned project',
   'POST /v1/projects/suna-migration/start': 'Started project migration',
   'POST /v1/connectors/call': 'Ran connector call',
   'GET /v1/connectors/catalog': 'Viewed connector catalog',
@@ -142,6 +163,21 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /internal/gateway/models': 'Resolved gateway models',
   'POST /internal/gateway/trace': 'Recorded gateway trace',
   'POST /internal/gateway/usage': 'Recorded gateway usage',
+  // The in-process LLM gateway ingress (`llm-gateway/wire.ts`). Each action is
+  // mounted twice — bare and `/v1`-prefixed — because OpenAI-shaped clients
+  // treat the base URL as an origin and append `/v1/...` themselves. Both
+  // mounts are the SAME handler, so both carry the SAME text: one action, one
+  // label, however the caller spelled the path. `/messages` is the Anthropic
+  // wire shape over that same completion pipeline, not a separate action.
+  // Without these the auto-labeller reads them as bare nouns ("Created
+  // completion", "Viewed health") with no hint that the gateway served them.
+  'POST /v1/llm/chat/completions': 'Ran gateway completion',
+  'POST /v1/llm/v1/chat/completions': 'Ran gateway completion',
+  'POST /v1/llm/messages': 'Ran gateway completion',
+  'POST /v1/llm/v1/messages': 'Ran gateway completion',
+  'GET /v1/llm/models': 'Listed gateway models',
+  'GET /v1/llm/v1/models': 'Listed gateway models',
+  'GET /v1/llm/health': 'Checked gateway health',
   'GET /scim/v2/accounts/:accountId/ResourceTypes': 'Listed SCIM resource types',
   'GET /scim/v2/accounts/:accountId/ResourceTypes/:id': 'Viewed SCIM resource type',
   'POST /v1/account-invites/:inviteId/accept': 'Accepted account invitation',

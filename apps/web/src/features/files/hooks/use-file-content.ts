@@ -1,10 +1,10 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { readFile } from '../api/runtime-files';
 import type { FileContent } from '@/features/file-browser/types';
-import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
+import { readFile } from '../api/runtime-files';
 import { isSystemDirectoryPath } from './system-dir';
 
 export const fileContentKeys = {
@@ -27,16 +27,13 @@ export function useFileContent(
 
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
-    queryFn: () => readFile(filePath!),
-    enabled:
-      !!filePath &&
-      !isSystemDirectoryPath(filePath) &&
-      options?.enabled !== false,
+    queryFn: ({ signal }) =>
+      readRuntimeFileWithRetry(filePath!, () => readFile(filePath!), undefined, signal),
+    enabled: !!filePath && !isSystemDirectoryPath(filePath) && options?.enabled !== false,
     staleTime: options?.staleTime ?? 10_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: (failureCount, error) => shouldRetryFileRead(filePath, failureCount, error),
-    retryDelay: (attempt) => fileReadRetryDelayMs(attempt, filePath),
+    retry: false,
   });
 }
 

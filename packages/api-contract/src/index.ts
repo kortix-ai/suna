@@ -39,12 +39,17 @@ export const OkResponseSchema = z.object({ ok: z.literal(true) });
 export type OkResponse = z.infer<typeof OkResponseSchema>;
 
 /**
- * Effective on/off map for every experimental feature. Keys mirror the
- * registry in apps/api/src/experimental/features.ts, which imports
- * `ExperimentalFeatureKey` from here — adding a feature there without
- * updating this map fails typecheck.
+ * Effective on/off map for every feature flag. Keys mirror the registry in
+ * apps/api/src/feature-flags/registry.ts, which imports `FeatureFlagKey` from
+ * here — adding a flag there without updating this map fails typecheck.
+ *
+ * Wire note: the serialized project fields keep their historical names
+ * (`experimental`, `experimental_features`) and the override map lives at
+ * `projects.metadata.experimental` — both are stable wire/storage details.
+ * Code-level names are the FeatureFlag* family; the Experimental* exports
+ * below are deprecated aliases kept for published-SDK compatibility.
  */
-export const ExperimentalFeatureMapSchema = z.object({
+export const FeatureFlagMapSchema = z.object({
   agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
@@ -56,23 +61,55 @@ export const ExperimentalFeatureMapSchema = z.object({
   meta_agent: z.boolean(),
   apps: z.boolean(),
 });
-export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
+export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
-export const ExperimentalFeatureKeySchema = ExperimentalFeatureMapSchema.keyof();
-export type ExperimentalFeatureKey = z.infer<typeof ExperimentalFeatureKeySchema>;
-export const EXPERIMENTAL_FEATURE_KEYS = ExperimentalFeatureKeySchema.options;
+export const FeatureFlagKeySchema = FeatureFlagMapSchema.keyof();
+export type FeatureFlagKey = z.infer<typeof FeatureFlagKeySchema>;
+export const FEATURE_FLAG_KEYS = FeatureFlagKeySchema.options;
 
-/** One catalog entry of the self-describing experimental-features UI list. */
-export const ExperimentalFeatureViewSchema = z.object({
-  key: ExperimentalFeatureKeySchema,
+/** How settled a flag's surface is — a badge, not a mechanism. A `stable`
+ *  feature can still ship behind a flag (dark launch, gradual rollout). */
+export const FeatureFlagStabilitySchema = z.enum(['experimental', 'beta', 'stable']);
+export type FeatureFlagStability = z.infer<typeof FeatureFlagStabilitySchema>;
+
+/** One catalog entry of the self-describing feature-flag UI list. */
+export const FeatureFlagViewSchema = z.object({
+  key: FeatureFlagKeySchema,
   name: z.string(),
   description: z.string(),
-  stability: z.enum(['experimental', 'beta']),
+  stability: FeatureFlagStabilitySchema,
   available: z.boolean(),
   enabled: z.boolean(),
   overridden: z.boolean(),
 });
-export type ExperimentalFeatureView = z.infer<typeof ExperimentalFeatureViewSchema>;
+export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
+
+/**
+ * Standard error body for a route whose feature flag is off for the project:
+ * `403` with `code: 'feature_disabled'`. Emitted only after membership authz,
+ * so it reveals nothing to non-members.
+ */
+export const FeatureDisabledErrorSchema = z.object({
+  error: z.string(),
+  code: z.literal('feature_disabled'),
+  feature: FeatureFlagKeySchema,
+});
+export type FeatureDisabledError = z.infer<typeof FeatureDisabledErrorSchema>;
+
+/** @deprecated Use {@link FeatureFlagMapSchema}. */
+export const ExperimentalFeatureMapSchema = FeatureFlagMapSchema;
+/** @deprecated Use {@link FeatureFlagMap}. */
+export type ExperimentalFeatureMap = FeatureFlagMap;
+/** @deprecated Use {@link FeatureFlagKeySchema}. */
+export const ExperimentalFeatureKeySchema = FeatureFlagKeySchema;
+/** @deprecated Use {@link FeatureFlagKey}. */
+export type ExperimentalFeatureKey = FeatureFlagKey;
+/** @deprecated Use {@link FEATURE_FLAG_KEYS}. */
+export const EXPERIMENTAL_FEATURE_KEYS = FEATURE_FLAG_KEYS;
+/** @deprecated Use {@link FeatureFlagViewSchema}. */
+export const ExperimentalFeatureViewSchema = FeatureFlagViewSchema;
+/** @deprecated Use {@link FeatureFlagView}. */
+export type ExperimentalFeatureView = FeatureFlagView;
 
 /** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
 export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
@@ -817,7 +854,16 @@ export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
 
 export const SessionStartFailureSchema = z
   .object({
-    category: z.enum(['provider-capacity', 'git-auth', 'sandbox-provider']),
+    category: z.enum([
+      'provider-capacity',
+      'git-auth',
+      // The PROVIDER cannot do network-boundary delivery (e.g. a Daytona box).
+      'unsupported-secret-delivery',
+      // The PROJECT's own boundary policy is unusable — two secrets claiming the same
+      // (host, header), or a policy the boundary cannot enforce. Never retryable.
+      'invalid-secret-boundary-policy',
+      'sandbox-provider',
+    ]),
     message: z.string(),
     retryable: z.boolean(),
   })
@@ -937,6 +983,19 @@ export type SecretConsumer = z.infer<typeof SecretConsumerSchema>;
 export const SecretDeliveryStatusSchema = z.enum(['available', 'unavailable', 'disabled']);
 export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
 
+/**
+ * Why a secret reaches no agent, even though the platform supports its delivery
+ * mode. Tri-state, and the distinction is load-bearing:
+ *
+ *   'no_agent_grant' — CERTAIN: no agent in the manifest can receive this secret.
+ *   null / absent    — granted, not applicable, or the server could not tell.
+ *
+ * Never a guess. A warning raised because the manifest failed to load is worse
+ * than no warning, so an unreadable manifest reports null.
+ */
+export const SecretDeliveryBlockedReasonSchema = z.enum(['no_agent_grant']);
+export type SecretDeliveryBlockedReason = z.infer<typeof SecretDeliveryBlockedReasonSchema>;
+
 export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
   z.object({ kind: z.literal('query'), name: z.string() }),
@@ -1017,6 +1076,12 @@ export const SecretSchema = z.object({
   strategy: SecretDeliveryStrategySchema,
   consumer: SecretConsumerSchema.nullable(),
   delivery_status: SecretDeliveryStatusSchema,
+  /** The agent-grant axis of delivery, orthogonal to `delivery_status`.
+   *  `delivery_status` says the deployment supports the mode; this says whether
+   *  any agent may actually receive the secret. See
+   *  `SecretDeliveryBlockedReasonSchema` for the tri-state rule. */
+  delivery_blocked_reason: SecretDeliveryBlockedReasonSchema.nullable().optional(),
+  network_boundary_available: z.boolean().optional(),
   egress_policy: SecretEgressPolicySchema.nullable(),
   strategy_locked: z.boolean(),
   last_rotated_at: z.string().nullable(),

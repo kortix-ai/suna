@@ -38,6 +38,9 @@ import {
   creditLedger,
   usageEvents,
   gatewayRequestLogs,
+  auditEvents,
+  auditSessionSequences,
+  auditWebhookDeliveries,
   accountSsoProviders,
   connectorAuthorizationStrategyEnum,
   connectorCalls,
@@ -150,10 +153,86 @@ describe('kortix enums', () => {
   });
 
   test('connector authorization strategy is project or user', () => {
-    expect(connectorAuthorizationStrategyEnum.enumName).toBe(
-      'connector_authorization_strategy',
-    );
+    expect(connectorAuthorizationStrategyEnum.enumName).toBe('connector_authorization_strategy');
     expect(connectorAuthorizationStrategyEnum.enumValues).toEqual(['project', 'user']);
+  });
+});
+
+describe('canonical audit ledger', () => {
+  test('exposes reconstruction, provenance, source-ledger, redaction, and integrity columns', () => {
+    expect(columnNames(auditEvents)).toEqual(
+      expect.arrayContaining([
+        'opencode_session_id',
+        'turn_id',
+        'message_id',
+        'tool_call_id',
+        'execution_id',
+        'session_sequence',
+        'agent_id',
+        'agent_name',
+        'initiator_actor_type',
+        'initiator_actor_id',
+        'parent_event_id',
+        'delegation_depth',
+        'authoritative_source',
+        'client_reported_source',
+        'phase',
+        'causation_id',
+        'source_ledger',
+        'source_record_id',
+        'source_revision',
+        'input_summary',
+        'output_summary',
+        'input_sha256',
+        'output_sha256',
+        'error_code',
+        'error_message',
+        'integrity_previous_hash',
+        'integrity_hash',
+      ]),
+    );
+  });
+
+  test('indexes ordered session reads and idempotent source-ledger projections', () => {
+    expect(indexNames(auditEvents)).toEqual(
+      expect.arrayContaining([
+        'idx_audit_events_account_project_sequence',
+        'idx_audit_events_account_session_sequence',
+        'idx_audit_events_source_phase',
+        'idx_audit_events_action_pattern',
+      ]),
+    );
+  });
+
+  test('preserves tenant scope when the account record is deleted', () => {
+    expect(getTableConfig(auditEvents).foreignKeys).toHaveLength(0);
+  });
+
+  test('stores one monotonic allocator row per session', () => {
+    expect(primaryColumn(auditSessionSequences)).toBe('session_id');
+    expect(columnNames(auditSessionSequences)).toEqual([
+      'session_id',
+      'last_sequence',
+      'last_integrity_hash',
+      'updated_at',
+    ]);
+  });
+
+  test('stores durable retry and dead-letter state for each webhook event', () => {
+    expect(columnNames(auditWebhookDeliveries)).toEqual(
+      expect.arrayContaining([
+        'delivery_id',
+        'webhook_id',
+        'event_id',
+        'status',
+        'attempts',
+        'next_attempt_at',
+        'locked_until',
+        'last_status',
+        'last_error',
+        'delivered_at',
+      ]),
+    );
   });
 });
 
@@ -232,15 +311,17 @@ describe('sandbox compute provider attribution', () => {
 describe('Kortix Apps schema', () => {
   test('stores stable app routing and an atomic active deployment pointer', () => {
     expect(getTableConfig(apps).name).toBe('apps');
-    expect(columnNames(apps)).toEqual(expect.arrayContaining([
-      'app_id',
-      'project_id',
-      'route_key',
-      'desired_state',
-      'active_deployment_id',
-      'idle_timeout_seconds',
-      'monthly_budget_usd',
-    ]));
+    expect(columnNames(apps)).toEqual(
+      expect.arrayContaining([
+        'app_id',
+        'project_id',
+        'route_key',
+        'desired_state',
+        'active_deployment_id',
+        'idle_timeout_seconds',
+        'monthly_budget_usd',
+      ]),
+    );
     expect(indexNames(apps)).toContain('apps_project_slug_live_unique');
   });
 
@@ -262,18 +343,16 @@ describe('Kortix Apps schema', () => {
   });
 
   test('attributes compute windows to App runtimes', () => {
-    expect(columnNames(sandboxComputeSessions)).toEqual(expect.arrayContaining([
-      'workload_type',
-      'app_runtime_id',
-    ]));
+    expect(columnNames(sandboxComputeSessions)).toEqual(
+      expect.arrayContaining(['workload_type', 'app_runtime_id']),
+    );
   });
 });
 
 describe('warm project session uniqueness', () => {
   test('allows one available warm session per project and creator', () => {
     const index = getTableConfig(projectSessions).indexes.find(
-      (candidate) =>
-        candidate.config.name === 'idx_project_sessions_one_available_warm',
+      (candidate) => candidate.config.name === 'idx_project_sessions_one_available_warm',
     );
 
     expect(index).toBeDefined();

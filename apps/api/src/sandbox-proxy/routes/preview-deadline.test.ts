@@ -37,12 +37,14 @@ const ACTIVE_RECORD = {
 let extends_: Array<{ target: unknown; grantMs: number | undefined }> = [];
 /** What observeTurnStart answers — the box's remaining stretch, in effect. */
 let turnStartObservation: 'granted' | 'at_cap' | 'no_box' = 'granted';
-let observeCalls: unknown[] = [];
+let observeCalls: Array<{ target: unknown; grantMs: number | undefined }> = [];
 let parkCalls: unknown[] = [];
 
 let upstreamPort = 3000;
 
-mock.module('../../config', () => ({ config: { KORTIX_ENFORCE_SESSION_AGENT_LOCK: false } }));
+mock.module('../../config', () => ({
+  config: { KORTIX_ENFORCE_SESSION_AGENT_LOCK: false },
+}));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),
@@ -96,8 +98,8 @@ mock.module('../../projects/sandbox-deadline', () => ({
   extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
     extends_.push({ target, grantMs });
   },
-  observeTurnStart: async (target: unknown) => {
-    observeCalls.push(target);
+  observeTurnStart: async (target: unknown, grantMs?: number) => {
+    observeCalls.push({ target, grantMs });
     return turnStartObservation;
   },
 }));
@@ -105,7 +107,10 @@ mock.module('../../projects/sandbox-deadline', () => ({
 mock.module('../backend', () => ({
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
   routeSandboxIngress: () => ({ effectivePort: upstreamPort }),
-  resolveSandboxIngress: async () => ({ url: 'http://sandbox.local', headers: {} }),
+  resolveSandboxIngress: async () => ({
+    url: 'http://sandbox.local',
+    headers: {},
+  }),
   buildSandboxUpstreamHeaders: async () => ({}),
   invalidatePreviewLink: () => {},
   markSandboxUsed: () => {},
@@ -247,8 +252,11 @@ describe('a turn start is observed BEFORE the prompt is relayed', () => {
 
     const res = await prompt(HUMAN);
 
-    expect(observeCalls).toEqual([{ externalId }]);
+    expect(observeCalls).toEqual([
+      { target: { externalId }, grantMs: realDeadline.turnDeliveryGraceMs() },
+    ]);
     expect(res.status).toBe(200);
+    expect(extends_).toEqual([{ target: { externalId }, grantMs: realDeadline.turnGrantMs() }]);
     expect(parkCalls).toEqual([]);
   });
 
@@ -311,5 +319,17 @@ describe('a turn start is observed BEFORE the prompt is relayed', () => {
     await prompt(BOX_ITSELF);
 
     expect(observeCalls).toEqual([]);
+  });
+
+  test('a failed upstream prompt receives no full active-turn grant', async () => {
+    respondWith(new Response('upstream failed', { status: 502 }));
+
+    const res = await prompt(HUMAN);
+
+    expect(res.status).toBe(502);
+    expect(observeCalls).toEqual([
+      { target: { externalId }, grantMs: realDeadline.turnDeliveryGraceMs() },
+    ]);
+    expect(extends_).toEqual([]);
   });
 });

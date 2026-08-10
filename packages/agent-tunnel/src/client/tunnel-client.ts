@@ -36,7 +36,16 @@ export class TunnelClient {
   readonly cua: CuaNamespace;
 
   constructor(config: TunnelClientConfig) {
-    this.apiUrl = trimTrailingSlashes(config.apiUrl);
+    const apiUrl = new URL(config.apiUrl);
+    const loopback =
+      apiUrl.hostname === 'localhost' ||
+      apiUrl.hostname === '127.0.0.1' ||
+      apiUrl.hostname === '[::1]' ||
+      apiUrl.hostname === '::1';
+    if (apiUrl.protocol !== 'https:' && !(apiUrl.protocol === 'http:' && loopback)) {
+      throw new Error('Remote tunnel API URLs must use https');
+    }
+    this.apiUrl = trimTrailingSlashes(apiUrl.toString());
     this.token = config.token;
     this.explicitTunnelId = config.tunnelId;
     this.cacheTtlMs = config.cacheTtlMs ?? 10_000;

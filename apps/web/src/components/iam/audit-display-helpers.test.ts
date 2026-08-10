@@ -49,12 +49,32 @@ describe('audit HTTP route registry', () => {
     expect(describeAuditAction(`POST /v1/accounts/${UID}/audit/webhooks`).title).toBe(
       'Created audit webhook',
     );
+    expect(describeAuditAction(`POST /v1/accounts/${UID}/audit/reconcile`).title).toBe(
+      'Reconciled audit log',
+    );
+    expect(
+      describeAuditAction(`GET /v1/accounts/${UID}/audit/webhooks/${UID2}/deliveries`).title,
+    ).toBe('Listed audit webhook deliveries');
+    expect(
+      describeAuditAction(
+        `POST /v1/accounts/${UID}/audit/webhooks/${UID2}/deliveries/${UID}/replay`,
+      ).title,
+    ).toBe('Replayed audit webhook delivery');
     expect(describeAuditAction(`PATCH /v1/accounts/${UID}/audit/webhooks/${UID2}`).title).toBe(
       'Updated audit webhook',
+    );
+    expect(describeAuditAction(`GET /v1/projects/${UID}/audit`).title).toBe(
+      'Viewed project audit log',
     );
     expect(describeAuditAction(`GET /v1/projects/${UID}/sessions/${UID2}/audit`).title).toBe(
       'Viewed session audit log',
     );
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/audit/events`).title,
+    ).toBe('Ingested session audit events');
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/reload-stream`).title,
+    ).toBe('Reloaded session agent config');
     expect(describeAuditAction(`POST /v1/projects/${UID}/turn-stream`).title).toBe(
       'Streamed session turn',
     );
@@ -355,6 +375,11 @@ describe('humanizeAuditAction — fallbacks', () => {
     expect(humanizeAuditAction('computer.shell.exec')).toEqual({
       title: 'Ran computer operation',
       detail: 'shell.exec',
+      kind: 'update',
+    });
+    expect(humanizeAuditAction('connector.computer.shell.exec')).toEqual({
+      title: 'Ran connector call',
+      detail: 'computer.shell.exec',
       kind: 'update',
     });
   });

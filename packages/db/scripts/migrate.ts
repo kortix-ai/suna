@@ -16,17 +16,23 @@ import { join } from 'node:path';
  *   bun scripts/migrate.ts down [--count=N]   roll back N (default 1)
  *   bun scripts/migrate.ts fake               mark pending as applied without running (baseline)
  *   bun scripts/migrate.ts bootstrap          fresh-DB: install non-kortix prereqs, then `up`
+ *   bun scripts/migrate.ts local-up           loopback-only; tolerate cross-worktree ledger order
  *
  * DB URL: $DATABASE_URL, or --target=<env> (reads <ENV>_DB_URL / DATABASE_URL
  * from apps/api/.env so secrets never go through the shell).
  */
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
+import { repairLocalAuditV2Ledger } from './local-audit-v2-ledger-repair';
+import { dropLocalInvalidIndexes } from './local-invalid-index-repair';
 import {
   migrationLedgerRepairConnectorName,
   repairMigrationLedger,
 } from './migration-ledger-repair';
+import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
 import { withMigrationDeadlockRetry } from './migration-retry';
+import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
+import { migrationBootstrapsPrerequisites, migrationCheckOrder } from './migration-target';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
 const BOOTSTRAP_SQL = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
@@ -194,26 +200,31 @@ async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
 async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
   const databaseUrl = resolveUrl(rest);
+  const checkOrder = migrationCheckOrder(cmd, databaseUrl);
   const countArg = rest.find((a) => a.startsWith('--count='))?.slice('--count='.length);
+  const runtimeMigrations = materializeMigrationRuntimeDirectory(MIGRATIONS_DIR);
 
   const base = {
     databaseUrl,
-    dir: MIGRATIONS_DIR,
+    dir: runtimeMigrations.path,
     migrationsTable: 'pgmigrations',
     migrationsSchema: 'kortix_migrations',
     createMigrationsSchema: true,
-    checkOrder: true,
+    checkOrder,
     singleTransaction: true,
     verbose: false,
     logger: console,
   } as const;
 
   console.log(`node-pg-migrate ${cmd}  DB: ${fmtUrl(databaseUrl)}`);
+  for (const override of runtimeMigrations.appliedOverrides) {
+    console.warn(`[migrate] checksum-guarded runtime override: ${override}`);
+  }
 
   const repairAppliedMigrationRenames = async () => {
     const repaired = await repairMigrationLedger({
       databaseUrl,
-      migrationsDir: MIGRATIONS_DIR,
+      migrationsDir: runtimeMigrations.path,
       applyConnectorMigration: async () => {
         await runner({
           ...base,
@@ -225,7 +236,7 @@ async function main() {
       },
     });
     if (repaired) {
-      console.log('[migrate] reconciled renamed sandbox deadline migration records.');
+      console.log('[migrate] reconciled renamed migration records.');
     }
   };
 
@@ -238,47 +249,74 @@ async function main() {
     },
   );
 
-  switch (cmd) {
-    case 'up':
-      await autoBaselineIfNeeded(base, databaseUrl);
-      await repairAppliedMigrationRenames();
-      await applyPendingMigrations();
-      return;
-    case 'bootstrap':
-      // Fresh-DB convenience for self-host: prereqs → then `up`.
+  try {
+    if (migrationBootstrapsPrerequisites(cmd)) {
       await selfHostBootstrapIfFresh(databaseUrl);
-      await autoBaselineIfNeeded(base, databaseUrl);
-      await repairAppliedMigrationRenames();
-      await applyPendingMigrations();
-      return;
-    case 'fake':
-      await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY, fake: true });
-      return;
-    case 'down':
-      await runner({
-        ...base,
-        direction: 'down',
-        count: countArg ? Number.parseInt(countArg, 10) : 1,
-      });
-      return;
-    case 'status': {
-      const pending = await runner({
-        ...base,
-        direction: 'up',
-        count: Number.POSITIVE_INFINITY,
-        dryRun: true,
-      });
-      if (pending.length === 0) console.log('Up to date — no pending migrations.');
-      else {
-        console.log(`${pending.length} pending migration(s):`);
-        for (const m of pending) console.log(`  pending  ${m.name}`);
-      }
-      if (pending.length > 0) process.exitCode = 1;
-      return;
     }
-    default:
-      console.error(`Unknown command: ${cmd}. Use: up | status | down | fake | bootstrap`);
-      process.exit(1);
+    switch (cmd) {
+      case 'up':
+        await autoBaselineIfNeeded(base, databaseUrl);
+        await repairAppliedMigrationRenames();
+        await applyPendingMigrations();
+        return;
+      case 'local-up': {
+        await autoBaselineIfNeeded(base, databaseUrl);
+        const warmIndexRepair = await repairLocalWarmSessionIndex(databaseUrl);
+        if (warmIndexRepair.repaired) {
+          console.warn(
+            `[migrate] repaired local warm-session index; discarded ${warmIndexRepair.discardedDuplicates} duplicate row(s).`,
+          );
+        }
+        if (await repairLocalAuditV2Ledger(databaseUrl, MIGRATIONS_DIR)) {
+          console.warn('[migrate] recorded the complete untracked local audit-v2 schema.');
+        }
+        const invalidIndexes = await dropLocalInvalidIndexes(databaseUrl);
+        if (invalidIndexes.length > 0) {
+          console.warn(
+            `[migrate] dropped invalid local indexes for migration retry: ${invalidIndexes.join(', ')}.`,
+          );
+        }
+        await repairAppliedMigrationRenames();
+        await applyPendingMigrations();
+        return;
+      }
+      case 'bootstrap':
+        // Fresh-DB convenience for self-host: prereqs → then `up`.
+        await autoBaselineIfNeeded(base, databaseUrl);
+        await repairAppliedMigrationRenames();
+        await applyPendingMigrations();
+        return;
+      case 'fake':
+        await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY, fake: true });
+        return;
+      case 'down':
+        await runner({
+          ...base,
+          direction: 'down',
+          count: countArg ? Number.parseInt(countArg, 10) : 1,
+        });
+        return;
+      case 'status': {
+        const pending = await runner({
+          ...base,
+          direction: 'up',
+          count: Number.POSITIVE_INFINITY,
+          dryRun: true,
+        });
+        if (pending.length === 0) console.log('Up to date — no pending migrations.');
+        else {
+          console.log(`${pending.length} pending migration(s):`);
+          for (const m of pending) console.log(`  pending  ${m.name}`);
+        }
+        if (pending.length > 0) process.exitCode = 1;
+        return;
+      }
+      default:
+        console.error(`Unknown command: ${cmd}. Use: up | local-up | status | down | fake | bootstrap`);
+        process.exit(1);
+    }
+  } finally {
+    runtimeMigrations.cleanup();
   }
 }
 

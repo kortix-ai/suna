@@ -27,7 +27,7 @@ resource "aws_iam_role" "gha_tf_plan" {
         Federated = data.aws_iam_openid_connect_provider.github_actions.arn
       }
       Action = "sts:AssumeRoleWithWebIdentity"
-      # Pinned to the default branch, NOT repo:kortix-ai/suna:* — qa-pr.yml runs
+      # Pinned to the default branch, NOT repo:kortix-ai/suna:* — tests-pr.yml runs
       # on pull_request with id-token: write and executes PR-controlled code, so
       # a wildcard subject would let any pull request mint a token and assume
       # this account-wide read role. Drift runs on schedule and manual dispatch,

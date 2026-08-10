@@ -7,6 +7,7 @@ import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
+import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
   EMPTY_REAP_RESULT,
   countBillingInvariantViolations,
@@ -236,6 +237,7 @@ export async function runProjectMaintenance(): Promise<void> {
       staleBuilds,
       snapshotGc,
       connectorAttachments,
+      runtimeWakes,
     ] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
@@ -336,6 +338,15 @@ export async function runProjectMaintenance(): Promise<void> {
         );
         return { deleted: 0, errors: 1 };
       }),
+      // A timed-out provider start can complete after its request owner exits.
+      // Stop that late VM while the durable row remains stopped and unbilled.
+      reconcileRuntimeWakeFences().catch((err) => {
+        console.warn(
+          '[project-maintenance] runtime-wake reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { checked: 0, stopped: 0, errors: 1 };
+      }),
     ]);
     const hadAction = Boolean(
       idle.stopped ||
@@ -356,7 +367,9 @@ export async function runProjectMaintenance(): Promise<void> {
         staleBuilds.closedFailed ||
         snapshotGc.deleted ||
         connectorAttachments.deleted ||
-        connectorAttachments.errors,
+        connectorAttachments.errors ||
+        runtimeWakes.stopped ||
+        runtimeWakes.errors,
     );
     if (hadAction) {
       console.log('[project-maintenance] completed', {
@@ -370,6 +383,7 @@ export async function runProjectMaintenance(): Promise<void> {
         staleBuilds,
         snapshotGc,
         connectorAttachments,
+        runtimeWakes,
       });
     }
     // Unconditional heartbeat — proof-of-life independent of whether any
@@ -394,6 +408,7 @@ export async function runProjectMaintenance(): Promise<void> {
       `idle_stopped=${idle.stopped}`,
       `idle_skipped=${idle.skipped}`,
       `compute_rows_closed=${orphanCompute.closed}`,
+      `late_wakes_stopped=${runtimeWakes.stopped}`,
       `action=${hadAction}`,
     );
 

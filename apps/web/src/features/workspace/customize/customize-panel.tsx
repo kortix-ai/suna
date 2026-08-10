@@ -10,7 +10,7 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
-import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
+import { FeatureFlagsView } from '@/features/workspace/customize/sections/view/feature-flags-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
@@ -19,14 +19,13 @@ import { SettingsView } from '@/features/workspace/customize/sections/view/setti
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
-import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -86,12 +85,13 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     [caps, capsResolved],
   );
 
-  const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
-  const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
-  const llmGatewayEnabled = isLlmGatewayEnabled(detail.data?.project);
-  const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
-  const voiceEnabled = detail.data?.project?.experimental?.voice ?? false;
-  const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
+  // One gating primitive for every flag-gated rail item: `useFeatureFlag` reads
+  // the SAME `qk.project.detail(projectId)` entry the `detail` query above
+  // already holds, so this adds no fetch. Fail-closed while it resolves.
+  const marketplaceEnabled = useFeatureFlag(projectId, 'marketplace').enabled;
+  const llmGatewayEnabled = useFeatureFlag(projectId, 'llm_gateway').enabled;
+  const voiceEnabled = useFeatureFlag(projectId, 'voice').enabled;
+  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
   // Pin Upgrades to the top only once the manifest read resolved to v1 —
   // while the detail query is in flight (or on v2 projects) the item sits in
   // its calm Manage slot instead. Same detection the section rows use.
@@ -112,22 +112,14 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     // groups drop out so no orphan header renders.
     () =>
       railGroups({
-        tunnelEnabled,
         marketplaceEnabled,
-        llmGatewayAvailable,
+        llmGatewayEnabled,
         voiceEnabled,
         reviewEnabled,
       })
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
-    [
-      tunnelEnabled,
-      marketplaceEnabled,
-      llmGatewayAvailable,
-      voiceEnabled,
-      reviewEnabled,
-      isSectionAllowed,
-    ],
+    [marketplaceEnabled, llmGatewayEnabled, voiceEnabled, reviewEnabled, isSectionAllowed],
   );
   // Upgrades lives in its own pinned footer, but stays in the item universe so
   // deep-links, the mobile tail, and the active-section fallback all still see it.
@@ -378,6 +370,10 @@ function SectionContent({
   projectId: string;
   llmGatewayEnabled: boolean;
 }) {
+  // Deep-link guard only. The rail item itself now requires the flag to be
+  // ENABLED (see `RailFlags.llmGatewayEnabled`), so the rail can no longer
+  // offer an entry that lands here — this only catches a bookmarked
+  // `/customize/llm-*` URL on a project that has the gateway switched off.
   if (section.startsWith('llm-') && !llmGatewayEnabled) {
     return null;
   }
@@ -400,8 +396,6 @@ function SectionContent({
       return <ChannelsView projectId={projectId} />;
     case 'voice':
       return <VoiceView projectId={projectId} />;
-    case 'computers':
-      return <ComputersView projectId={projectId} />;
     case 'schedules':
       return <ScheduleView projectId={projectId} type="cron" />;
     case 'webhooks':
@@ -416,6 +410,8 @@ function SectionContent({
       return <MembersView projectId={projectId} />;
     case 'settings':
       return <SettingsView projectId={projectId} />;
+    case 'feature-flags':
+      return <FeatureFlagsView projectId={projectId} />;
     case 'upgrade':
       return <UpgradesView projectId={projectId} />;
     default:

@@ -175,18 +175,43 @@ describe('session scope control changes', () => {
       },
     };
 
-    expect(setSessionConnectorConnection(draft, 'calendar', 'connection-calendar-2')).toEqual(
-      {
-        connector_bindings: {
-          calendar: { connection_id: 'connection-calendar-2' },
-          crm: { connection_id: 'connection-crm' },
-        },
+    expect(setSessionConnectorConnection(draft, 'calendar', 'connection-calendar-2')).toEqual({
+      connector_bindings: {
+        calendar: { connection_id: 'connection-calendar-2' },
+        crm: { connection_id: 'connection-crm' },
       },
-    );
+      connector_bindings_inherited: false,
+    });
     expect(setSessionConnectorConnection(draft, 'calendar', null)).toEqual({
       connector_bindings: {
         crm: { connection_id: 'connection-crm' },
       },
+      connector_bindings_inherited: false,
+    });
+  });
+
+  test('changes inherited connector defaults into an explicit replacement', () => {
+    const connector =
+      catalog.connector_connections.status === 'ready'
+        ? catalog.connector_connections.items[0]
+        : undefined;
+    expect(connector).toBeDefined();
+    const draft: SessionScopeDraft = {
+      connector_bindings: {
+        calendar: { connection_id: 'connection-calendar' },
+      },
+      connector_bindings_inherited: true,
+    };
+
+    expect(setSessionConnectorConnection(draft, 'calendar', 'connection-calendar-2')).toEqual({
+      connector_bindings: {
+        calendar: { connection_id: 'connection-calendar-2' },
+      },
+      connector_bindings_inherited: false,
+    });
+    expect(setSessionConnectorEnabled(draft, connector!, false)).toEqual({
+      connector_bindings: {},
+      connector_bindings_inherited: false,
     });
   });
 
@@ -201,6 +226,7 @@ describe('session scope control changes', () => {
       connector_bindings: {
         calendar: { connection_id: 'connection-calendar' },
       },
+      connector_bindings_inherited: false,
     });
     expect(
       setSessionConnectorEnabled(
@@ -212,7 +238,7 @@ describe('session scope control changes', () => {
         connector!,
         false,
       ),
-    ).toEqual({ connector_bindings: {} });
+    ).toEqual({ connector_bindings: {}, connector_bindings_inherited: false });
   });
 
   test('a connector with NO authorization is selectable, as a requirement', () => {
@@ -232,6 +258,7 @@ describe('session scope control changes', () => {
 
     expect(next.require_connectors).toEqual([connector!.slug]);
     expect(next.connector_bindings).toEqual({});
+    expect(next.connector_bindings_inherited).toBeFalse();
   });
 
   test('unchecking it drops the requirement rather than leaving it behind', () => {

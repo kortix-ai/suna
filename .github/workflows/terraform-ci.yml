@@ -40,6 +40,8 @@ jobs:
         run: terraform fmt -check -recursive infra/terraform
       - name: nacl auditor unit tests
         run: python3 infra/terraform/scripts/test_audit_nacl_admin_ports.py
+      - name: preview runtime contract tests
+        run: python3 infra/scripts/test-ecs-preview-runtime.py
       - name: terraform validate (every root)
         run: |
           set -euo pipefail
@@ -145,6 +147,7 @@ jobs:
           - infra/terraform/environments/prod
           - infra/terraform/environments/staging
           - infra/terraform/environments/dev
+          - infra/terraform/environments/preview
           # Not under environments/ — the stack lives at the terraform root.
           - infra/terraform/security-baseline
     steps:
@@ -165,4 +168,7 @@ jobs:
           if [ "$code" = "2" ]; then
             echo "::warning title=Drift detected::${{ matrix.root }} has drifted from its Terraform state"
           fi
-          exit $([ "$code" = "1" ] && echo 1 || echo 0)
+          if [ "$code" = "1" ]; then
+            exit 1
+          fi
+          exit 0

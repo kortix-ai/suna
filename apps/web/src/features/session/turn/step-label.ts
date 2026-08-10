@@ -8,6 +8,7 @@
  *
  * No React import.
  */
+import { humanizeSearchQuery } from '@/features/session/tool/shared/search-query';
 import { isReasoningPart, isToolPart, type Part } from '@/ui';
 import { normalizeActivityToolName } from '../session-activity-groups';
 
@@ -83,12 +84,20 @@ const VERBS: Record<string, VerbSpec> = {
   context_info: { verb: 'Checked context', running: 'Checking context' },
 };
 
-/** A file path renders as its basename; anything else renders whole. */
+/**
+ * A file path renders as its basename, a search query drops its engine
+ * operators, and anything else renders whole.
+ *
+ * Both are the same rule: the row shows what was worked ON, not the argument
+ * the tool was handed. `Searched site:daytona.io Daytona sandboxes` reads as a
+ * bug for the same reason `Read /a/b/c/d/package.json` reads as noise.
+ */
 function shorten(key: string, value: string): string {
   if (key === 'filePath' || key === 'path' || key === 'file') {
     const segments = value.split('/');
     return segments[segments.length - 1] || value;
   }
+  if (key === 'query') return humanizeSearchQuery(value) || value;
   return value;
 }
 

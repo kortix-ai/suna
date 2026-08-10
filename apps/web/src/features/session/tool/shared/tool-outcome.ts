@@ -10,8 +10,8 @@
  * No React / DOM / framework imports allowed — type-only imports only.
  */
 
-import type { ToolPart } from '@/ui';
 import type { ParsedJsonFailure } from '@/features/session/tool/shared/types';
+import type { ToolPart } from '@/ui';
 
 export type ToolOutcome = 'ok' | 'partial' | 'failed';
 
@@ -61,14 +61,69 @@ export function isErrorOutput(output: string): boolean {
  * the one this fixes.
  */
 export function partOutcome(part: Pick<ToolPart, 'state'>): ToolOutcome {
+  const cached = OUTCOME_CACHE.get(part);
+  // Guarded on `state`, not just on the part: the cache is only sound while the
+  // thing it was computed from is the same object.
+  if (cached && cached.state === part.state) return cached.outcome;
+
+  const outcome = computeOutcome(part);
+  OUTCOME_CACHE.set(part, { state: part.state, outcome });
+  return outcome;
+}
+
+/**
+ * The verdict, memoised per part.
+ *
+ * `partOutcome` is called from four places and none of them are rare: once per
+ * tool row in `ToolPartRenderer`, once per part in `burstSummary`, once per part
+ * in a file-chip run, and once per bare `ActivityStep`. So a burst of ten tool
+ * calls asks this question twelve times — and asks it again on every SSE frame,
+ * because the memos above it are invalidated by the turn's identity changing.
+ *
+ * Uncached, each of those calls did a full `.trim()` copy plus up to TWO
+ * complete `JSON.parse` runs (see `computeOutcome`) over an output that can be
+ * hundreds of kilobytes for a `scrape_webpage` or a `web_search`.
+ *
+ * A `WeakMap` is exactly the right shape here: a part is immutable and is
+ * REPLACED rather than mutated when it changes (`sync-store` swaps the element),
+ * so the key is a natural version stamp, and entries die with the parts.
+ */
+const OUTCOME_CACHE = new WeakMap<
+  Pick<ToolPart, 'state'>,
+  { state: ToolPart['state']; outcome: ToolOutcome }
+>();
+
+function computeOutcome(part: Pick<ToolPart, 'state'>): ToolOutcome {
   const state = part.state;
   if (state.status === 'error') return 'failed';
   if (state.status !== 'completed') return 'ok';
 
   const output = typeof state.output === 'string' ? state.output.trim() : '';
   if (!output) return 'ok';
-  if (isErrorOutput(output)) return 'failed';
-  return batchOutcome(output);
+  if (looksLikeError(output)) return 'failed';
+
+  // ONE parse answers both remaining questions. `isErrorOutput` → `parseJsonFailure`
+  // parsed the whole output to ask "is this the {success:false} contract?", and
+  // then `batchOutcome` parsed the identical string again to ask "does it hold a
+  // results[] array?". Two passes over the same bytes, every call.
+  const parsed = tryParseJson(output);
+  if (parsed === undefined) return 'ok';
+  if (isJsonFailure(parsed)) return 'failed';
+  return batchOutcomeOf(parsed);
+}
+
+/** `undefined` when the text is not JSON — distinct from a parsed `undefined`. */
+function tryParseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The boolean half of {@link parseJsonFailure}, without rebuilding its result. */
+function isJsonFailure(parsed: unknown): boolean {
+  return isJsonObject(parsed) && parsed.success === false && typeof parsed.error === 'string';
 }
 
 /**
@@ -80,16 +135,7 @@ export function partOutcome(part: Pick<ToolPart, 'state'>): ToolOutcome {
  * than the sibling `failed` field because that field is optional, while the
  * array is the thing actually rendered in the card.
  */
-function batchOutcome(output: string): ToolOutcome {
-  if (!output.startsWith('{')) return 'ok';
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(output);
-  } catch {
-    return 'ok';
-  }
-
+function batchOutcomeOf(parsed: unknown): ToolOutcome {
   const results = isJsonObject(parsed) ? parsed.results : undefined;
   if (!Array.isArray(results) || results.length === 0) return 'ok';
 

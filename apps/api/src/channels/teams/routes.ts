@@ -1,7 +1,8 @@
 import type { Context } from 'hono';
 import { teamsWebhookApp } from './app';
 import { teamsConfigured } from '../teams-auth';
-import { projectFeatureEnabled } from '../../experimental/for-project';
+
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { loadTeamsAppIdForProject } from '../install-store';
 import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
@@ -60,8 +61,11 @@ teamsWebhookApp.post('/messages', async (c) => {
 // Bring-your-own-bot endpoint: the project is in the path, so gate it here.
 teamsWebhookApp.post('/:projectId/messages', async (c) => {
   const projectId = c.req.param('projectId');
-  if (!(await projectFeatureEnabled(projectId, 'teams'))) {
-    return c.json({ error: 'teams channel disabled' }, 404);
+  // UNAUTHENTICATED surface: same dark-when-off policy as the apps public
+  // proxy. Anonymous callers get a plain 404 — never the `feature_disabled`
+  // body, which names project flag state and is reserved for membered routes.
+  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) {
+    return c.json({ error: 'Not found' }, 404);
   }
   const appId = await loadTeamsAppIdForProject(projectId);
   if (!appId) return c.json({ error: 'teams not configured for this project' }, 503);

@@ -324,24 +324,29 @@ describe('kortix channels --platform teams', () => {
     expect(parsed.orgInstalled).toBe(false);
   });
 
-  test('connect with the `teams` experiment off → points at Settings, not at server env vars', async () => {
+  test('connect with the `teams` feature flag off → points at Settings on stderr, not at server env vars', async () => {
     state.teamsEnabled = false;
     const code = await runChannels(['connect', '--platform', 'teams']);
     expect(code).toBe(1);
-    const out = stripAnsi(stdout);
-    expect(out).toContain('Customize → Settings → Experimental');
-    expect(out).not.toContain(TEAMS_CONSENT_URL);
-    expect(out).not.toContain('MICROSOFT_APP_ID');
+    // A rejection is an error: it belongs on stderr, worded exactly like the
+    // server's feature-flag gate so both sides read identically.
+    const err = stripAnsi(stderr);
+    expect(err).toContain(
+      'Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.',
+    );
+    expect(stripAnsi(stdout)).toBe('');
+    expect(err).not.toContain(TEAMS_CONSENT_URL);
+    expect(err).not.toContain('MICROSOFT_APP_ID');
   });
 
-  test('connect with the experiment on but no bot credentials → points at the credentials', async () => {
+  test('connect with the feature flag on but no bot credentials → points at the credentials', async () => {
     state.oauthAvailable = false;
     const code = await runChannels(['connect', '--platform', 'teams']);
     expect(code).toBe(1);
     const out = stripAnsi(stdout);
     expect(out).toContain('MICROSOFT_APP_ID');
     expect(out).toContain('bring your own bot');
-    expect(out).not.toContain('Settings → Experimental');
+    expect(out).not.toContain('Settings → Feature flags');
   });
 
   test('invalid --platform value → exit 2', async () => {

@@ -1,7 +1,12 @@
 import { isCallLive, readTurns } from '../../channels/voice/runtime';
 import { SessionScopeInputSchema, SessionScopeSchema } from '@kortix/api-contract';
 import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
-import { loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../connectors/share';
+import {
+  loadSessionGrants,
+  parseSharingIntent,
+  resolveShareSubject,
+  setSessionSharing,
+} from '../../connectors/share';
 import {
   PROJECT_ACTIONS,
   deleteResourceGrant,
@@ -9,25 +14,36 @@ import {
   listResourceGrants,
   upsertResourceGrant,
 } from '../../iam';
-import {
-  assertAgentScope,
-  isProjectSessionPrincipal,
-} from '../../iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { approvalPageUrl } from '../../setup-links/token';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { normalizeProjectRole } from '../../iam/role-perms';
-import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
+import {
+  projectHasResource,
+  projectResourcesFromConfig,
+  loadConfigWithFiles,
+} from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { db } from '../../shared/db';
 import { inferAuditSource, recordAuditEvent } from '../../shared/audit';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, connectors, connectorCalls, projectGroupGrants, projectSessions, sessionLifecycleCommands, sessionSandboxes,
+import {
+  accountGroupMembers,
+  accountGroups,
+  accountMembers,
+  auditEvents,
+  connectors,
+  connectorCalls,
+  projectGroupGrants,
+  projectSessions,
+  sessionLifecycleCommands,
+  sessionSandboxes,
   projectSessionConnectorBindings,
   serviceAccounts,
 } from '@kortix/db';
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { config } from '../../config';
@@ -41,10 +57,40 @@ import {
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid, projectCapabilityAllowed, resolveSessionOwnerIdentities } from '../lib/access';
-import { AnyObject, ClaimWarmProjectSessionInputSchema, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
-import { createProjectSession, sendSessionCreateError, type SessionCreateError } from '../lib/sessions';
+import {
+  loadProjectForUser,
+  loadVisibleSession,
+  lookupEmailsByUserIds,
+  parseExpiresAtBody,
+  assertProjectCapability,
+  isUuid,
+  projectCapabilityAllowed,
+  resolveSessionOwnerIdentities,
+} from '../lib/access';
+import {
+  AnyObject,
+  ClaimWarmProjectSessionInputSchema,
+  GroupGrantSchema,
+  OkSchema,
+  SessionCreateAcceptedSchema,
+  SessionCreateInputSchema,
+  SessionSchema,
+  WarmProjectSessionResultSchema,
+  projectsApp,
+} from '../lib/app';
+import {
+  UUID_V4_REGEX,
+  hasOwn,
+  normalizeString,
+  readBody,
+  requestAuditContext,
+  serializeSession,
+} from '../lib/serializers';
+import {
+  createProjectSession,
+  sendSessionCreateError,
+  type SessionCreateError,
+} from '../lib/sessions';
 import {
   RequiredConnectorConnectionUnavailableError,
   resolveEffectiveSessionConnectorBindings,
@@ -60,10 +106,7 @@ import {
   withWarmProjectSessionLock,
 } from '../lib/warm-session-store';
 import { prepareReusedWarmSession } from '../lib/warm-session-refresh';
-import {
-  createWarmProjectSessionCoordinator,
-  WarmProjectSessionError,
-} from '../lib/warm-sessions';
+import { createWarmProjectSessionCoordinator, WarmProjectSessionError } from '../lib/warm-sessions';
 import {
   createSession,
   buildContinueSessionCommandValues,
@@ -72,7 +115,19 @@ import {
 } from '../session-lifecycle';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
+import { buildFilters } from '../../accounts/audit-filters';
+import {
+  buildAuditCursorCondition,
+  parseAuditCursor,
+  parseAuditInstant,
+  parseAuditLimit,
+  parseAuditSessionCursor,
+  serializeAuditEvent,
+} from '../../shared/audit-query';
+import { AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
+import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import {
   isConfigStale,
   latestAgentConfigEtag,
@@ -80,17 +135,11 @@ import {
   reloadDetail,
   reloadSessionConfig,
 } from '../lib/session-reload';
-import {
-  canonicalConnectorAlias,
-  publicConnectorAlias,
-} from '../../shared/connector-alias';
+import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
-import {
-  listResolvedProjectSecrets,
-  secretKeyCollisionInAllowlist,
-} from '../secrets';
+import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
 import { missingWarmSessionConnections } from '../lib/warm-session-connections';
 
@@ -177,11 +226,7 @@ projectsApp.openapi(
     for (const m of memberRows) {
       const stats = statsByGroup.get(m.groupId) ?? { total: 0, overrideCount: 0 };
       stats.total += 1;
-      if (
-        m.isSuperAdmin ||
-        m.accountRole === 'owner' ||
-        m.accountRole === 'admin'
-      ) {
+        if (m.isSuperAdmin || m.accountRole === 'owner' || m.accountRole === 'admin') {
         stats.overrideCount += 1;
       }
       statsByGroup.set(m.groupId, stats);
@@ -212,9 +257,7 @@ projectsApp.openapi(
 class WarmSessionCreateFailure extends Error {
   constructor(readonly detail: SessionCreateError) {
     super(
-      typeof detail.body.error === 'string'
-        ? detail.body.error
-        : 'Warm session creation failed',
+      typeof detail.body.error === 'string' ? detail.body.error : 'Warm session creation failed',
     );
     this.name = 'WarmSessionCreateFailure';
   }
@@ -228,8 +271,7 @@ function resolvedWarmSessionConfiguration(project: {
   return {
     baseRef: project.defaultBranch,
     agentName: normalizeString(metadata.default_agent) ?? 'default',
-    sandboxSlug:
-      normalizeString(metadata.default_sandbox_slug) ?? DEFAULT_SANDBOX_SLUG,
+    sandboxSlug: normalizeString(metadata.default_sandbox_slug) ?? DEFAULT_SANDBOX_SLUG,
   };
 }
 
@@ -298,8 +340,7 @@ projectsApp.openapi(
       findAvailable: () => findAvailableWarmProjectSession(scope),
       discard: (sessionId, metadata) =>
         discardAvailableWarmProjectSession(scope, sessionId, metadata),
-      claim: (sessionId, metadata) =>
-        claimAvailableWarmProjectSession(scope, sessionId, metadata),
+      claim: (sessionId, metadata) => claimAvailableWarmProjectSession(scope, sessionId, metadata),
       create: async (metadata) => {
         const result = await createProjectSession({
           project: loaded.row,
@@ -508,7 +549,13 @@ projectsApp.openapi(
   // assertProjectCapability (not bare assertAuthorized) so the acting token is
   // threaded and the agent-grant fold fires: an agent-session token must also
   // hold project.members.manage to mutate group grants, not just its user.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
   // Entitlement mirror of accounts/iam/groups.ts so grants can't be minted
   // through the project-scoped path when the account-scoped one is gated.
   // Dormant since 2026-07-08: `rbac` is granted on every tier (groups + roles
@@ -597,7 +644,13 @@ projectsApp.openapi(
   // assertProjectCapability (not bare assertAuthorized) so the acting token is
   // threaded and the agent-grant fold fires: an agent-session token must also
   // hold project.members.manage to mutate group grants, not just its user.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
   // Same dormant entitlement mirror as the POST above (rbac is on every
   // tier). DELETE below carries no gate at all: revoking access is never
   // paywalled, so an account can always detach grants it can't manage.
@@ -622,10 +675,7 @@ projectsApp.openapi(
       ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
     })
     .where(
-      and(
-        eq(projectGroupGrants.projectId, projectId),
-        eq(projectGroupGrants.groupId, groupId),
-      ),
+        and(eq(projectGroupGrants.projectId, projectId), eq(projectGroupGrants.groupId, groupId)),
     )
     .returning({ groupId: projectGroupGrants.groupId });
 
@@ -662,15 +712,18 @@ projectsApp.openapi(
   // assertProjectCapability (not bare assertAuthorized) so the acting token is
   // threaded and the agent-grant fold fires: an agent-session token must also
   // hold project.members.manage to mutate group grants, not just its user.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
 
   await db
     .delete(projectGroupGrants)
     .where(
-      and(
-        eq(projectGroupGrants.projectId, projectId),
-        eq(projectGroupGrants.groupId, groupId),
-      ),
+        and(eq(projectGroupGrants.projectId, projectId), eq(projectGroupGrants.groupId, groupId)),
     );
   await invalidateIamCacheForGroup(groupId);
 
@@ -861,7 +914,10 @@ projectsApp.openapi(
           and(
             eq(sessionSandboxes.projectId, projectId),
             eq(sessionSandboxes.accountId, loaded.row.accountId),
-            inArray(sessionSandboxes.sessionId, rows.map((row) => row.sessionId)),
+              inArray(
+                sessionSandboxes.sessionId,
+                rows.map((row) => row.sessionId),
+              ),
           ),
         )
     : [];
@@ -986,7 +1042,13 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    );
 
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
@@ -1003,12 +1065,232 @@ projectsApp.openapi(
 },
 );
 
+// GET /v1/projects/:projectId/audit
+// Canonical project slice. It returns the same event contract and cursor as
+// the account log, with project_id bound server-side to the authorized project.
+// This aggregate oversight surface can include private-session metadata, so it
+// requires the project-members management capability instead of session read.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/audit',
+    tags: ['projects'],
+    summary: 'List canonical project audit events',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string().uuid() }),
+      query: z.object({
+        action: z.string().optional(),
+        actor: z.string().uuid().optional(),
+        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        session_id: z.string().optional(),
+        source: z.string().optional(),
+        phase: z.string().optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        request_id: z.string().optional(),
+        correlation_id: z.string().optional(),
+        resource_type: z.string().optional(),
+        since: z.string().optional(),
+        until: z.string().optional(),
+        q: z.string().optional(),
+        cursor: z.string().optional(),
+        limit: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: json(AuditListSchema, 'Canonical project audit page'),
+      ...errors(400, 402, 403, 404),
+    },
+  }),
+  // biome-ignore lint/suspicious/noExplicitAny: Current OpenAPI response unions require the established untyped route-handler boundary.
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'auditAccess');
+    if (denied) return denied;
+
+    const sinceRaw = c.req.query('since')?.trim() || null;
+    const untilRaw = c.req.query('until')?.trim() || null;
+    let cursor: ReturnType<typeof parseAuditCursor>;
+    let limit: number;
+    try {
+      parseAuditInstant(sinceRaw, 'since');
+      parseAuditInstant(untilRaw, 'until');
+      cursor = parseAuditCursor(c.req.query('cursor')?.trim() || null);
+      limit = parseAuditLimit(c.req.query('limit')?.trim() || null, 50, 200);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+
+    const conditions = buildFilters(loaded.row.accountId, {
+      actor: c.req.query('actor')?.trim() || null,
+      actorType: c.req.query('actor_type')?.trim() || null,
+      projectId,
+      sessionId: c.req.query('session_id')?.trim() || null,
+      source: c.req.query('source')?.trim() || null,
+      phase: c.req.query('phase')?.trim() || null,
+      outcome: c.req.query('outcome')?.trim() || null,
+      requestId: c.req.query('request_id')?.trim() || null,
+      correlationId: c.req.query('correlation_id')?.trim() || null,
+      actionPrefix: c.req.query('action')?.trim() || null,
+      resourceType: c.req.query('resource_type')?.trim() || null,
+      sinceRaw,
+      untilRaw,
+      q: c.req.query('q')?.trim() || null,
+    });
+    if (cursor) {
+      conditions.push(
+        buildAuditCursorCondition(cursor, loaded.row.accountId, 'descending'),
+      );
+    }
+    const fetched = await db
+      .select()
+      .from(auditEvents)
+      .where(and(...conditions))
+      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .limit(limit + 1);
+    const hasMore = fetched.length > limit;
+    const rows = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = rows.at(-1);
+    return c.json({
+      events: rows.map(serializeAuditEvent),
+      next_cursor: hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null,
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/sessions/:sessionId/audit/events
+// Authenticated sandbox ingestion. The credential is bound to one project and
+// one session. Only redacted summaries and hashes are accepted.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/audit/events',
+    tags: ['sessions'],
+    summary: 'Ingest an idempotent OpenCode audit batch',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 200: json(AnyObject, 'Batch ingestion result'), ...errors(400, 403, 404) },
+  }),
+  async (c) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (c.get('authType') !== 'apiKey' || c.get('apiKeyType') !== 'sandbox') {
+      return c.json({ error: 'audit ingestion requires a sandbox token' }, 403);
+    }
+    const accountId = c.get('accountId');
+    const sandboxId = c.get('sandboxId');
+    if (!accountId || !sandboxId || !sandboxTokenMayActOnSession(sandboxId, sessionId)) {
+      return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+    }
+    const [scope] = await db
+      .select({
+        sessionId: sessionSandboxes.sessionId,
+        opencodeSessionId: projectSessions.opencodeSessionId,
+        agentName: projectSessions.agentName,
+        createdBy: projectSessions.createdBy,
+      })
+      .from(sessionSandboxes)
+      .innerJoin(
+        projectSessions,
+        and(
+          eq(projectSessions.accountId, sessionSandboxes.accountId),
+          eq(projectSessions.projectId, sessionSandboxes.projectId),
+          eq(projectSessions.sessionId, sessionSandboxes.sessionId),
+        ),
+      )
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, sandboxId),
+          eq(sessionSandboxes.accountId, accountId),
+          eq(sessionSandboxes.projectId, projectId),
+          inArray(sessionSandboxes.status, ['provisioning', 'active']),
+        ),
+      )
+      .limit(1);
+    if (!scope || (scope.sessionId ?? sandboxId) !== sessionId) {
+      return c.json({ error: 'sandbox token is not scoped to this project and session' }, 403);
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const identityConditions = [
+      and(
+        eq(serviceAccounts.projectId, projectId),
+        eq(serviceAccounts.agentName, scope.agentName),
+      ),
+    ];
+    if (scope.createdBy) {
+      identityConditions.push(eq(serviceAccounts.serviceAccountId, scope.createdBy));
+    }
+    const identities = await db
+      .select({
+        serviceAccountId: serviceAccounts.serviceAccountId,
+        agentName: serviceAccounts.agentName,
+      })
+      .from(serviceAccounts)
+      .where(and(eq(serviceAccounts.accountId, accountId), or(...identityConditions)));
+    const agentIdentity = identities.find((identity) => identity.agentName === scope.agentName);
+    const initiatorIdentity = scope.createdBy
+      ? identities.find((identity) => identity.serviceAccountId === scope.createdBy)
+      : null;
+
+    let parsed: ReturnType<typeof parseOpenCodeAuditBatch>;
+    try {
+      parsed = parseOpenCodeAuditBatch(body, {
+        accountId,
+        projectId,
+        sessionId,
+        trustedProvenance: {
+          opencodeSessionId: scope.opencodeSessionId,
+          agentId: agentIdentity?.serviceAccountId ?? null,
+          agentName: scope.agentName,
+          initiatorActorType: initiatorIdentity
+            ? 'service_account'
+            : scope.createdBy
+              ? 'human'
+              : 'system',
+          initiatorActorId: scope.createdBy,
+          correlationId: sessionId,
+          causationId: null,
+          delegationDepth: 0,
+        },
+      });
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    const inserted = await db
+      .insert(auditEvents)
+      .values(parsed.values)
+      .onConflictDoNothing()
+      .returning({ eventId: auditEvents.eventId });
+    return c.json({
+      accepted: parsed.accepted,
+      inserted: inserted.length,
+      duplicates: parsed.accepted - inserted.length,
+    });
+  },
+);
 
 // GET /v1/projects/:projectId/sessions/:sessionId/audit
-// Per-session audit log — the governed actions an agent took in this session:
-// every connector/tool call the connector gated, with its risk, allow/ask/block
-// verdict, who acted, and (for approvals) who resolved it. This is the enterprise
-// "what did the agent actually do" trail, read straight from connector_calls.
+// Per-session audit log. `events` is the canonical ordered reconstruction
+// timeline. `actions` preserves the governed connector approval projection.
 // Same visibility gate as the session detail/transcript (project read + the
 // session must be visible to the caller). Non-Enterprise accounts get only the
 // unresolved pending approvals (never a 402 — see the entitlement note below).
@@ -1022,24 +1304,52 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      query: z.object({ limit: z.string().optional() }),
+      query: z.object({
+        limit: z.string().optional(),
+        cursor: z.string().optional(),
+        include_events: z.enum(['true', 'false']).optional(),
+      }),
     },
     responses: {
-      200: json(AnyObject, 'Per-session agent action audit log'),
+      200: json(
+        z.object({
+          session_id: z.string(),
+          agent: z.string().nullable(),
+          audit_access: z.boolean(),
+          count: z.number().int(),
+          events: z.array(AuditEventSchema),
+          next_cursor: z.string().nullable(),
+          actions: z.array(z.record(z.unknown())),
+        }),
+        'Canonical per-session reconstruction log and connector approval projection',
+      ),
       ...errors(400, 404),
     },
   }),
+  // biome-ignore lint/suspicious/noExplicitAny: Current OpenAPI response unions require the established untyped route-handler boundary.
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    const limit = parseBoundedPositiveInt(c.req.query('limit'), 200, 1, 1000, 'limit');
-    if (!limit.ok) return c.json({ error: limit.error }, 400);
+    let limit: number;
+    let cursor: ReturnType<typeof parseAuditSessionCursor>;
+    try {
+      limit = parseAuditLimit(c.req.query('limit')?.trim() || null, 200, 1000);
+      cursor = parseAuditSessionCursor(c.req.query('cursor')?.trim() || null);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    );
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
@@ -1051,6 +1361,37 @@ projectsApp.openapi(
     // the upsell on each poll) — so unentitled accounts degrade to unresolved
     // pending approvals only instead of being denied.
     const audited = await accountHasEntitlement(loaded.row.accountId, 'auditAccess');
+    const includeEvents = c.req.query('include_events') !== 'false';
+
+    // `session_id` is the integrity-chain scope and is globally unique. The
+    // visibility gate above already proves that the caller may read this
+    // project session. Some request-level events are written before account
+    // resolution (`auth.login.success`) or from a project-neutral endpoint
+    // (`GET /v1/skills`). Those rows still belong to this session's chain. An
+    // account/project predicate would remove the middle row while returning its
+    // successor, which makes a valid persisted chain impossible to verify.
+    const eventConditions = [eq(auditEvents.sessionId, sessionId)];
+    if (cursor) {
+      const cursorCondition = or(
+        gt(auditEvents.sessionSequence, cursor.sequence),
+        and(
+          eq(auditEvents.sessionSequence, cursor.sequence),
+          gt(auditEvents.eventId, cursor.eventId),
+        ),
+      );
+      if (cursorCondition) eventConditions.push(cursorCondition);
+    }
+    const fetchedEvents = audited && includeEvents
+      ? await db
+          .select()
+          .from(auditEvents)
+          .where(and(...eventConditions))
+          .orderBy(asc(auditEvents.sessionSequence), asc(auditEvents.eventId))
+          .limit(limit + 1)
+      : [];
+    const hasMoreEvents = fetchedEvents.length > limit;
+    const eventRows = hasMoreEvents ? fetchedEvents.slice(0, limit) : fetchedEvents;
+    const lastEvent = eventRows.at(-1);
 
     const rows = await db
       .select({
@@ -1082,17 +1423,23 @@ projectsApp.openapi(
       // Most-recent-first: when a busy session exceeds `limit`, keep the RECENT
       // actions (truncating oldest), not the other way round.
       .orderBy(desc(connectorCalls.createdAt))
-      .limit(limit.value);
+      .limit(limit);
 
     // Resolve actor + approver emails in one batched lookup (managers see who).
     const userIds = [
-      ...new Set(rows.flatMap((r) => [r.actingUserId, r.approvedBy]).filter((v): v is string => !!v)),
+      ...new Set(
+        rows.flatMap((r) => [r.actingUserId, r.approvedBy]).filter((v): v is string => !!v),
+      ),
     ];
-    const emailByUser = userIds.length ? await lookupEmailsByUserIds(userIds) : new Map<string, string>();
+    const emailByUser = userIds.length
+      ? await lookupEmailsByUserIds(userIds)
+      : new Map<string, string>();
 
     // Connector slugs in one batched lookup — the UI needs `<slug>.<action>`
     // to offer a "always run this" project-policy shortcut on a pending row.
-    const connectorIds = [...new Set(rows.map((r) => r.connectorId).filter((v): v is string => !!v))];
+    const connectorIds = [
+      ...new Set(rows.map((r) => r.connectorId).filter((v): v is string => !!v)),
+    ];
     const slugByConnector = new Map<string, string>();
     if (connectorIds.length) {
       const conns = await db
@@ -1109,7 +1456,12 @@ projectsApp.openapi(
       // `actions` then contains only unresolved pending approvals, and the UI
       // shows the upgrade path for the full trail.
       audit_access: audited,
-      count: rows.length,
+      count: audited ? eventRows.length : rows.length,
+      events: eventRows.map(serializeAuditEvent),
+      next_cursor:
+        hasMoreEvents && lastEvent?.sessionSequence != null
+          ? `${lastEvent.sessionSequence}|${lastEvent.eventId}`
+          : null,
       // Most-recent-first trail of every connector-gated action this session took.
       actions: rows.map((r) => ({
         execution_id: r.executionId,
@@ -1119,11 +1471,11 @@ projectsApp.openapi(
         status: r.status, // ok | error | denied | pending_approval
         risk: r.risk, // read | write | destructive | null
         acted_by: r.actingUserId,
-        acted_by_email: r.actingUserId ? emailByUser.get(r.actingUserId) ?? null : null,
+        acted_by_email: r.actingUserId ? (emailByUser.get(r.actingUserId) ?? null) : null,
         // Who resolved a gated action — set for BOTH approve and deny (the
         // approvedBy column doubles as "resolver"). null while still pending.
         resolved_by: r.approvedBy,
-        resolved_by_email: r.approvedBy ? emailByUser.get(r.approvedBy) ?? null : null,
+        resolved_by_email: r.approvedBy ? (emailByUser.get(r.approvedBy) ?? null) : null,
         result_summary: r.resultSummary ?? null,
         at: r.createdAt.toISOString(),
         resolved_at: r.resolvedAt?.toISOString() ?? null,
@@ -1140,7 +1492,6 @@ projectsApp.openapi(
     });
   },
 );
-
 
 // GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript
 // The live-call transcript for a session's voice connector call — every spoken
@@ -1196,14 +1547,26 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    const cursor = parseBoundedPositiveInt(c.req.query('cursor'), 0, 0, Number.MAX_SAFE_INTEGER, 'cursor');
+    const cursor = parseBoundedPositiveInt(
+      c.req.query('cursor'),
+      0,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      'cursor',
+    );
     if (!cursor.ok) return c.json({ error: cursor.error }, 400);
     const limit = parseBoundedPositiveInt(c.req.query('limit'), 200, 1, 500, 'limit');
     if (!limit.ok) return c.json({ error: limit.error }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    );
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
@@ -1222,7 +1585,6 @@ projectsApp.openapi(
     });
   },
 );
-
 
 // GET /v1/projects/:projectId/approvals
 // The approval inbox: connector actions a policy gated as `require_approval` that
@@ -1251,7 +1613,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
 
     const limit = parseBoundedPositiveInt(c.req.query('limit'), 100, 1, 500, 'limit');
     if (!limit.ok) return c.json({ error: limit.error }, 400);
@@ -1279,7 +1647,9 @@ projectsApp.openapi(
       .limit(limit.value);
 
     const userIds = [...new Set(rows.map((r) => r.actingUserId).filter((v): v is string => !!v))];
-    const emailByUser = userIds.length ? await lookupEmailsByUserIds(userIds) : new Map<string, string>();
+    const emailByUser = userIds.length
+      ? await lookupEmailsByUserIds(userIds)
+      : new Map<string, string>();
 
     return c.json({
       count: rows.length,
@@ -1289,7 +1659,7 @@ projectsApp.openapi(
         risk: r.risk,
         session_id: r.sessionId,
         requested_by: r.actingUserId,
-        requested_by_email: r.actingUserId ? emailByUser.get(r.actingUserId) ?? null : null,
+        requested_by_email: r.actingUserId ? (emailByUser.get(r.actingUserId) ?? null) : null,
         requested_at: r.createdAt.toISOString(),
         detail: r.resultSummary ?? null,
       })),
@@ -1373,7 +1743,12 @@ projectsApp.openapi(
         origin: projectSessions.origin,
       })
       .from(projectSessions)
-      .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, kortixIds)));
+      .where(
+        and(
+          eq(projectSessions.projectId, projectId),
+          inArray(projectSessions.sessionId, kortixIds),
+        ),
+      );
 
     const sessions: Record<string, number> = {};
     let total = 0;
@@ -1464,7 +1839,9 @@ projectsApp.openapi(
         resultSummary: connectorCalls.resultSummary,
       })
       .from(connectorCalls)
-      .where(and(eq(connectorCalls.executionId, executionId), eq(connectorCalls.projectId, projectId)))
+      .where(
+        and(eq(connectorCalls.executionId, executionId), eq(connectorCalls.projectId, projectId)),
+      )
       .limit(1);
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.status !== 'pending_approval' || row.approvedBy || row.resolvedAt) {
@@ -1498,7 +1875,12 @@ projectsApp.openapi(
         .from(projectSessions)
         // Scope to THIS project too — sessionId is a PK so it's globally unique,
         // but making the project bound explicit keeps the gate self-documenting.
-        .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
+        .where(
+          and(
+            eq(projectSessions.sessionId, row.sessionId),
+            eq(projectSessions.projectId, projectId),
+          ),
+        )
         .limit(1);
       targetCreatedBy = session?.createdBy ?? null;
       targetOrigin = session?.origin ?? null;
@@ -1515,8 +1897,7 @@ projectsApp.openapi(
       return c.json(
         verdict.reason === 'session_bound_caller'
           ? {
-              error:
-                'An agent cannot resolve its own approval — a human must approve or deny this',
+              error: 'An agent cannot resolve its own approval — a human must approve or deny this',
               code: 'APPROVAL_REQUIRES_HUMAN',
             }
           : verdict.reason === 'non_human_caller'
@@ -1556,7 +1937,8 @@ projectsApp.openapi(
         ? `Your pending approval to run ${row.actionPath} was approved — continue.`
         : `Your request to run ${row.actionPath} was denied — continue without it.`
       : null;
-    const callbackValues = row.sessionId && resumeText
+    const callbackValues =
+      row.sessionId && resumeText
       ? buildContinueSessionCommandValues({
           source: 'system:approval-resume',
           projectId,
@@ -1636,7 +2018,6 @@ projectsApp.openapi(
   },
 );
 
-
 // PUT /v1/projects/:projectId/sessions/:sessionId/sharing
 // Owner or project manager sets who can see/open this session
 // (private | project | members). Mirrors connector/secret sharing.
@@ -1669,11 +2050,15 @@ projectsApp.openapi(
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
-    return c.json({ error: 'Only the session owner or a project manager can change sharing' }, 403);
+      return c.json(
+        { error: 'Only the session owner or a project manager can change sharing' },
+        403,
+      );
   }
 
   const intent = parseSharingIntent(body, loaded.userId);
-  if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+    if (!intent)
+      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
 
   if (
     intent.mode !== 'private' &&
@@ -1695,11 +2080,15 @@ projectsApp.openapi(
   await setSessionSharing(sessionId, intent);
 
   const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
-  return c.json(fresh ? serializeSession(fresh.row, {
+    return c.json(
+      fresh
+        ? serializeSession(fresh.row, {
     grants: fresh.grants,
     viewerId: loaded.userId,
     canManageProject: fresh.canManageProject,
-  }) : { ok: true });
+          })
+        : { ok: true },
+    );
 },
 );
 
@@ -1739,7 +2128,9 @@ projectsApp.openapi(
   // opencode_session_id is SERVER-MANAGED: the backend is the sole authority
   // for the OpenCode↔Kortix mapping (see ensure-opencode + opencode-mapping.ts).
   // Clients must never set it, so a stale/forged client value can't drift it.
-  const opencodeManagedField = ['opencode_session_id', 'opencodeSessionId'].find((f) => hasOwn(body, f));
+    const opencodeManagedField = ['opencode_session_id', 'opencodeSessionId'].find((f) =>
+      hasOwn(body, f),
+    );
   if (opencodeManagedField) {
     return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
@@ -1776,7 +2167,8 @@ projectsApp.openapi(
     'name',
     'title_source',
   ];
-  const metadataInput = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+    const metadataInput =
+      body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
     ? (body.metadata as Record<string, unknown>)
     : null;
   if (metadataInput) {
@@ -1816,19 +2208,23 @@ projectsApp.openapi(
   const [row] = await db
     .update(projectSessions)
     .set(updates)
-    .where(and(
+      .where(
+        and(
       eq(projectSessions.sessionId, sessionId),
       eq(projectSessions.projectId, projectId),
       eq(projectSessions.accountId, loaded.row.accountId),
-    ))
+        ),
+      )
     .returning();
 
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json(serializeSession(row, {
+    return c.json(
+      serializeSession(row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
-  }));
+      }),
+    );
 },
 );
 
@@ -1866,7 +2262,10 @@ projectsApp.openapi(
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
-    return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);
+      return c.json(
+        { error: 'Only the session owner or a project manager can stop this session' },
+        403,
+      );
   }
 
   const result = await deleteSession({
@@ -1908,7 +2307,13 @@ projectsApp.openapi(
     // catalogue + granted-member emails, so it must NOT be readable by a scoped
     // member (who'd otherwise enumerate exactly what they were scoped away from).
     // Gate identical to the POST/DELETE siblings below.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
 
     // Enumerate grantable resources from the project config (best-effort: a repo
     // that won't load just yields empty lists — the existing grants still show).
@@ -1954,7 +2359,11 @@ projectsApp.openapi(
     const liveSkillIds = new Set(resources.skills.map((r) => r.id));
     const isOrphan = (type: string, id: string) => {
       if (!configLoaded) return false;
-      return type === 'agent' ? !liveAgentIds.has(id) : type === 'skill' ? !liveSkillIds.has(id) : false;
+      return type === 'agent'
+        ? !liveAgentIds.has(id)
+        : type === 'skill'
+          ? !liveSkillIds.has(id)
+          : false;
     };
 
     // Agents/skills come from iam_resource_grants. SECRETS no longer have a
@@ -1963,15 +2372,26 @@ projectsApp.openapi(
     const grants = (await listResourceGrants(projectId)).filter((g) => g.resourceType !== 'secret');
 
     // Resolve principal labels in two batched lookups.
-    const memberIds = [...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId))];
-    const groupIds = [...new Set(grants.filter((g) => g.principalType === 'group').map((g) => g.principalId))];
-    const emailByUser = memberIds.length ? await lookupEmailsByUserIds(memberIds) : new Map<string, string>();
+    const memberIds = [
+      ...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId)),
+    ];
+    const groupIds = [
+      ...new Set(grants.filter((g) => g.principalType === 'group').map((g) => g.principalId)),
+    ];
+    const emailByUser = memberIds.length
+      ? await lookupEmailsByUserIds(memberIds)
+      : new Map<string, string>();
     const groupNameById = new Map<string, string>();
     if (groupIds.length) {
       const groupRows = await db
         .select({ groupId: accountGroups.groupId, name: accountGroups.name })
         .from(accountGroups)
-        .where(and(eq(accountGroups.accountId, loaded.row.accountId), inArray(accountGroups.groupId, groupIds)));
+        .where(
+          and(
+            eq(accountGroups.accountId, loaded.row.accountId),
+            inArray(accountGroups.groupId, groupIds),
+          ),
+        );
       for (const g of groupRows) groupNameById.set(g.groupId, g.name);
     }
 
@@ -1985,8 +2405,8 @@ projectsApp.openapi(
         principal_id: g.principalId,
         principal_label:
           g.principalType === 'member'
-            ? emailByUser.get(g.principalId) ?? g.principalId
-            : groupNameById.get(g.principalId) ?? g.principalId,
+            ? (emailByUser.get(g.principalId) ?? g.principalId)
+            : (groupNameById.get(g.principalId) ?? g.principalId),
         granted_by: g.grantedBy,
         created_at: g.createdAt.toISOString(),
         expires_at: g.expiresAt?.toISOString() ?? null,
@@ -2018,7 +2438,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
 
     const body = await readBody(c);
     const resourceType = normalizeString(body.resource_type ?? body.resourceType);
@@ -2050,14 +2476,24 @@ projectsApp.openapi(
       const [m] = await db
         .select({ userId: accountMembers.userId })
         .from(accountMembers)
-        .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, principalId)))
+        .where(
+          and(
+            eq(accountMembers.accountId, loaded.row.accountId),
+            eq(accountMembers.userId, principalId),
+          ),
+        )
         .limit(1);
       if (!m) return c.json({ error: 'member not found in this account' }, 404);
     } else {
       const [g] = await db
         .select({ groupId: accountGroups.groupId })
         .from(accountGroups)
-        .where(and(eq(accountGroups.accountId, loaded.row.accountId), eq(accountGroups.groupId, principalId)))
+        .where(
+          and(
+            eq(accountGroups.accountId, loaded.row.accountId),
+            eq(accountGroups.groupId, principalId),
+          ),
+        )
         .limit(1);
       if (!g) return c.json({ error: 'group not found in this account' }, 404);
     }
@@ -2071,7 +2507,12 @@ projectsApp.openapi(
     try {
       config = await loadConfigWithFiles(loaded.row);
     } catch (err) {
-      return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
+      return c.json(
+        {
+          error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}`,
+        },
+        400,
+      );
     }
     if (!projectHasResource(config, resourceType, resourceId)) {
       return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
@@ -2087,7 +2528,16 @@ projectsApp.openapi(
       grantedBy: loaded.userId,
       expiresAt: expires.value ?? null,
     });
-    return c.json({ grant_id: grantId, resource_type: resourceType, resource_id: resourceId, principal_type: principalType, principal_id: principalId }, 201);
+    return c.json(
+      {
+        grant_id: grantId,
+        resource_type: resourceType,
+        resource_id: resourceId,
+        principal_type: principalType,
+        principal_id: principalId,
+      },
+      201,
+    );
   },
 );
 
@@ -2110,7 +2560,13 @@ projectsApp.openapi(
     if (!isUuid(grantId)) return c.json({ error: 'grant not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    );
 
     // The id belongs to an agent/skill grant (iam_resource_grants). Secrets no
     // longer have a resource grant to remove — secret sharing was retired.
@@ -2327,6 +2783,124 @@ projectsApp.openapi(
       ...result,
       detail: reloadDetail(result),
     });
+  },
+);
+
+// POST /v1/projects/:projectId/sessions/:sessionId/reload-stream
+// Same reload as POST /reload. This sibling route preserves the JSON contract
+// used by the CLI while letting web clients render real operation phases.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/reload-stream',
+    tags: ['sessions'],
+    summary: "Reload a running session's agent config with live progress",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } }, required: false },
+    },
+    responses: {
+      200: {
+        description: 'A text/event-stream ending in one done or error frame',
+        content: { 'text/event-stream': { schema: z.any() } },
+      },
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+    );
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    if (!mayChangeSessionModel(visible)) {
+      return c.json(
+        { error: 'Only the session owner or a project manager can reload this session' },
+        403,
+      );
+    }
+
+    const body = (await readBody(c)) as { refresh_repo?: unknown; force?: unknown };
+
+    return new Response(
+      new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          let readable = true;
+          const write = (data: unknown) => {
+            if (!readable) return;
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+            } catch {
+              readable = false;
+            }
+          };
+
+          try {
+            const result = await reloadSessionConfig({
+              projectId,
+              accountId: loaded.row.accountId,
+              sessionId,
+              repoUrl: loaded.row.repoUrl,
+              defaultBranch: loaded.row.defaultBranch,
+              manifestPath: loaded.row.manifestPath,
+              baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
+              refreshRepo: body?.refresh_repo !== false,
+              force: body?.force === true,
+              onPhase: (phase) => write({ type: 'phase', phase }),
+            });
+
+            if (
+              result.reason === 'session is mid-turn' ||
+              result.reason === 'could not confirm the session is idle'
+            ) {
+              write({
+                type: 'error',
+                error:
+                  result.reason === 'session is mid-turn'
+                    ? 'This session is mid-turn. A reload restarts the runtime and ends it — retry when idle, or pass force: true.'
+                    : 'Could not confirm this session is idle, and a reload restarts the runtime. Retry, or pass force: true.',
+                code: 'SESSION_BUSY',
+                status: 409,
+                reason: result.reason,
+              });
+            } else {
+              write({ type: 'done', result: { ...result, detail: reloadDetail(result) } });
+            }
+          } catch (error) {
+            write({
+              type: 'error',
+              error: error instanceof Error && error.message ? error.message : 'Reload failed',
+            });
+          } finally {
+            if (readable) {
+              try {
+                controller.close();
+              } catch {}
+            }
+          }
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      },
+    ) as any;
   },
 );
 

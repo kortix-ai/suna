@@ -23,10 +23,8 @@ import {
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { isExperimentalFeatureKey } from '../../experimental/features';
-import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../connectors/sync';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { isFeatureFlagKey } from '../../feature-flags/registry';
+import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
 import {
   requestProviderTransition,
@@ -1197,73 +1195,95 @@ projectsApp.openapi(
 // role on that project. These routes work for both V1 and V2 accounts —
 // V1 just ignores the rows because V1's engine reads from iam_policies.
 
-// PATCH /:projectId/experimental — toggle a per-project experimental-feature
-// override (ported from main's unified feature-flag system). Auth-first (matches
-// the other project routes), then validate the body — so the body schema stays
-// permissive (AnyObject) and the handler returns the precise 400/403/404.
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/experimental',
-    tags: ['projects'],
-    summary: 'Set or clear a per-project experimental feature override',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(AnyObject, 'Updated project (with experimental features)'),
-      ...errors(400, 401, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const body = await readBody(c);
-    const feature = body.feature;
-    const enabled = body.enabled;
-    // Floor 'read' (membership); project.customize.write is the human gate below
-    // (was 'manage' → project.write, so unchecking customize.write did nothing).
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    // Per-agent gate: toggling experimental features is project config. A scoped
-    // agent token must hold project.customize.write (no-op for humans/PATs).
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    if (!isExperimentalFeatureKey(feature)) {
-      return c.json({ error: `Unknown experimental feature '${feature}'` }, 400);
-    }
-    if (enabled !== null && typeof enabled !== 'boolean') {
-      return c.json({ error: 'enabled must be a boolean or null' }, 400);
-    }
-    // FIX-J: `experimental` is a NESTED object, so a whole-object `||` merge of it
-    // would lose an update one level down when two features are toggled
-    // concurrently. Re-read + merge the CURRENT `experimental` sub-object in-SQL:
-    // set writes only `experimental.<feature>`; clear removes it (dropping the
-    // whole `experimental` key once the last override is gone, matching the old
-    // applyExperimentalOverride behavior). Every write preserves the routing pin.
-    const metadataExpr =
-      enabled === null
-        ? metadataClearSubtreeKey('experimental', feature)
-        : metadataMergeSubtree('experimental', { [feature]: enabled });
-    const [row] = await db
-      .update(projects)
-      .set({ metadata: metadataExpr, updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-    if (feature === 'agent_tunnel') {
-      void reconcileComputerConnectors(row.accountId);
-    }
-    if (feature === 'voice') {
-      void reconcileChannelConnectors(projectId);
-    }
-    if (feature === 'llm_gateway') {
-      void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
-    }
-    return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
-  },
-);
+// PATCH /:projectId/features (canonical) and /:projectId/experimental
+// (compat alias — published SDKs call it) — set or clear a per-project
+// feature-flag override. Auth-first (matches the other project routes), then
+// validate the body — so the body schema stays permissive (AnyObject) and the
+// handler returns the precise 400/403/404.
+const patchFeatureFlagHandler = async (c: any) => {
+  const projectId = c.req.param('projectId');
+  // Strict body: malformed JSON is a client error, not an empty object —
+  // readBody() would swallow the parse failure and mis-report "unknown flag".
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Request body must be a JSON object' }, 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return c.json({ error: 'Request body must be a JSON object' }, 400);
+  }
+  const feature = body.feature;
+  const enabled = body.enabled;
+  // Floor 'read' (membership); project.customize.write is the human gate below
+  // (was 'manage' → project.write, so unchecking customize.write did nothing).
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Per-agent gate: toggling feature flags is project config. A scoped agent
+  // token must hold project.customize.write (no-op for humans/PATs).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  if (!isFeatureFlagKey(feature)) {
+    return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
+  }
+  if (enabled !== null && typeof enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean or null' }, 400);
+  }
+  // Archived projects are read-only: reject BEFORE the write. The old order
+  // (update, then 404 on archived) committed the metadata mutation anyway.
+  if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+  // FIX-J: `experimental` is a NESTED object, so a whole-object `||` merge of it
+  // would lose an update one level down when two flags are toggled
+  // concurrently. Re-read + merge the CURRENT `experimental` sub-object in-SQL:
+  // set writes only `experimental.<feature>`; clear removes it (dropping the
+  // whole `experimental` key once the last override is gone). The metadata key
+  // name `experimental` is a stable storage detail. Every write preserves the
+  // routing pin.
+  const metadataExpr =
+    enabled === null
+      ? metadataClearSubtreeKey('experimental', feature)
+      : metadataMergeSubtree('experimental', { [feature]: enabled });
+  const [row] = await db
+    .update(projects)
+    .set({ metadata: metadataExpr, updatedAt: new Date() })
+    .where(eq(projects.projectId, projectId))
+    .returning();
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  // Convergence work (connector materialization, sandbox env fan-out) runs
+  // behind the response; runFeatureFlagToggleEffects retries once and logs
+  // failures at error level. See feature-flags/toggle-effects.ts.
+  void runFeatureFlagToggleEffects({
+    key: feature,
+    projectId,
+    accountId: row.accountId,
+    metadata: row.metadata,
+  });
+  return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+};
+
+for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as const) {
+  projectsApp.openapi(
+    createRoute({
+      method: 'patch',
+      path,
+      tags: ['projects'],
+      summary:
+        path === '/{projectId}/features'
+          ? 'Set or clear a per-project feature-flag override'
+          : 'Set or clear a per-project feature-flag override (deprecated alias of /features)',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+      responses: {
+        200: json(AnyObject, 'Updated project (with feature-flag state)'),
+        ...errors(400, 401, 403, 404),
+      },
+    }),
+    patchFeatureFlagHandler,
+  );
+}
 
 // PATCH /:projectId/sandbox-provider — set or clear the per-project sandbox-provider
 // pin (Customize → Settings). The value must be an ENABLED provider

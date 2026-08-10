@@ -363,7 +363,7 @@ flow(
 
 flow(
   "GH-15",
-  { domain: "git", routes: ["POST /v1/projects/link-repository"] },
+  { domain: "git", requires: ["managedGit"], routes: ["POST /v1/projects/link-repository"] },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client

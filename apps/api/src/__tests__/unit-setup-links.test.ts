@@ -55,6 +55,26 @@ describe('setup-link token codec', () => {
     expect(r.payload.app).toBe('smartlead');
   });
 
+  test('connector link carries the requesting session id (sid) for the finalize callback', () => {
+    const { token } = mintSetupLink(PROJECT_A, {
+      kind: 'connector',
+      slug: 'smartlead',
+      app: 'smartlead',
+      uid: 'user-1',
+      sid: 'ses_abc123',
+    });
+    const r = resolveSetupLink(token);
+    if (!r.ok || r.payload.kind !== 'connector') throw new Error('expected connector');
+    expect(r.payload.sid).toBe('ses_abc123');
+  });
+
+  test('connector link sid defaults to null when not provided', () => {
+    const { token } = mintSetupLink(PROJECT_A, { kind: 'connector', slug: 'smartlead' });
+    const r = resolveSetupLink(token);
+    if (!r.ok || r.payload.kind !== 'connector') throw new Error('expected connector');
+    expect(r.payload.sid).toBeNull();
+  });
+
   test('scope defaults to runtime when omitted', () => {
     const { token } = mintSetupLink(PROJECT_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
     const r = resolveSetupLink(token);

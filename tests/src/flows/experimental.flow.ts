@@ -1,14 +1,16 @@
 /**
- * Experimental features — the unified per-project feature-flag surface.
- * Maps to spec §EXP-*.
+ * Feature flags — the unified per-project flag surface. Maps to spec §EXP-*.
  *
- * `PATCH /v1/projects/:projectId/experimental {feature, enabled}` is the single
- * write path for opting a project into an experimental feature (agent_tunnel,
- * review_center, …). State is DB-only (projects.metadata.experimental). The
- * response is the serialized project, which carries `experimental` (effective
- * map) and `experimental_features` (the self-describing catalog the UI renders).
+ * `PATCH /v1/projects/:projectId/features {feature, enabled}` is the canonical
+ * write path for opting a project into a flag (agent_tunnel, review_center, …);
+ * `PATCH /v1/projects/:projectId/experimental` is the deprecated alias published
+ * SDKs still call, registered on the SAME handler. State is DB-only
+ * (projects.metadata.experimental — a stable storage detail). The response is
+ * the serialized project, which carries `experimental` (effective map) and
+ * `experimental_features` (the self-describing catalog the UI renders); both
+ * wire names are historical and stable.
  *
- * Not behind any feature gate — it's how a project opts in — so it's always
+ * Not behind any flag itself — it's how a project opts in — so it's always
  * reachable for a project editor / account owner/admin.
  */
 import { flow } from "../core/flow";
@@ -17,18 +19,32 @@ flow(
   "EXP-1",
   {
     domain: "projects",
-    tags: ["experimental"],
-    routes: ["PATCH /v1/projects/:projectId/experimental"],
+    tags: ["experimental", "feature-flags"],
+    routes: [
+      "PATCH /v1/projects/:projectId/features",
+      "PATCH /v1/projects/:projectId/experimental",
+    ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
 
-    await ctx.step("OWNER enables agent_tunnel → 200 + catalog in body", async () => {
+    await ctx.step("OWNER enables agent_tunnel via /features → 200 + catalog in body", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          "/v1/projects/:projectId/features",
+          { feature: "agent_tunnel", enabled: true },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().exists("$.experimental_features").exists("$.experimental");
+    });
+
+    await ctx.step("the deprecated /experimental alias writes the same state → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           "/v1/projects/:projectId/experimental",
-          { feature: "agent_tunnel", enabled: true },
+          { feature: "agent_tunnel", enabled: false },
           { params: { projectId: p.id } },
         );
       r.status(200).body().exists("$.experimental_features").exists("$.experimental");
@@ -38,7 +54,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/experimental",
+          "/v1/projects/:projectId/features",
           { feature: "agent_tunnel", enabled: null },
           { params: { projectId: p.id } },
         );

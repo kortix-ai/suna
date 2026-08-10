@@ -51,6 +51,7 @@ aren't a schema-shape diff.
 
 - **Schema shape** is defined in `kortix.ts`. You edit the schema and *generate* the SQL — you don't hand-write schema DDL. (Data migrations, RLS, custom functions, and CONCURRENTLY operations are the exception — hand-written; see below.)
 - **Migration files** in `packages/db/migrations/` are **immutable, timestamp-named** `YYYYMMDDHHMMSSmmm_slug.sql` (17-digit UTC — node-pg-migrate's native format; collision-safe across parallel branches). The one exception is the `.concurrent.ts` escape hatch, same timestamp prefix, different suffix — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch).
+- A merged migration that fails its first hosted deployment remains immutable. A runtime correction must live in `scripts/migration-runtime-overrides.ts`, match the exact committed SHA-256, change the minimum required statement, fail closed on drift, and have an integration test. The migration runner prints each applied override.
 - **Applied state** lives in `kortix_migrations.pgmigrations` (node-pg-migrate's table; one row per migration, by name — **not** the `public` schema, and not the same table CI/local dev might assume by default).
 
 ### Tracking is by NAME, not checksum (known tradeoff)

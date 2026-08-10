@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
+  clearAutoProjectSuppression,
   ensureFirstProject,
   isAutoProjectSuppressed,
   isProvisionInFlightError,
@@ -16,6 +17,8 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { classifyLandingTerminal, ProjectStartEmpty } from './landing-terminal';
 
 /**
  * Carry the incoming query string onto the resolved destination.
@@ -56,10 +59,25 @@ export default function ProjectStartPage() {
   const attempts = useRef(0);
   const resolving = useRef(false);
   const [failed, setFailed] = useState(false);
+  const [terminal, setTerminal] = useState<ReturnType<typeof classifyLandingTerminal> | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
+
+  // The guard has done its one job the moment this surface renders: the user
+  // has now been TOLD their last workspace is gone and offered a way back
+  // (below). Leaving the flag set past this point would silently block
+  // auto-provision for the next account this tab visits that happens to be
+  // empty too — it's a single process-wide sessionStorage key, not scoped to
+  // the account that triggered it. Session-scoped by design (see
+  // ensure-first-project.ts): a later sign-in or a fresh tab still
+  // auto-provisions normally, clear or not.
+  useEffect(() => {
+    if (terminal === 'suppressed') clearAutoProjectSuppression();
+  }, [terminal]);
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -83,11 +101,12 @@ export default function ProjectStartPage() {
 
     // Only owners/admins may create a project (ACCOUNT_ACTIONS.PROJECT_CREATE).
     const canCreate = account.account_role === 'owner' || account.account_role === 'admin';
+    const suppressed = isAutoProjectSuppressed();
 
     try {
       const project = await ensureFirstProject(account.account_id, {
         preferredProjectId: readLastProjectId(user?.id),
-        allowCreate: canCreate && !isAutoProjectSuppressed() && navigationMayCreateProject(),
+        allowCreate: canCreate && !suppressed && navigationMayCreateProject(),
       });
 
       if (project) {
@@ -97,11 +116,11 @@ export default function ProjectStartPage() {
       }
 
       // No project exists AND none may be created here: a member without
-      // PROJECT_CREATE, or the account the user just emptied by deleting their
-      // last project. There is no project to open, so the list is the only
-      // surface that can explain the state — this is a terminal case, not a
-      // default landing.
-      router.replace(withCurrentQuery('/projects'));
+      // PROJECT_CREATE, the account the user just emptied by deleting their
+      // last project, or the rare cross-site-navigation edge. `/projects` is
+      // a redirect back to THIS route (Task 21), so bouncing there would
+      // loop forever — render the terminal state inline instead.
+      setTerminal(classifyLandingTerminal({ canCreate, suppressed }));
     } catch (err) {
       // A concurrent, healthy provision — this account's OTHER tab or entry
       // point is mid-create with the same persisted idempotency key — is not
@@ -137,6 +156,10 @@ export default function ProjectStartPage() {
     void resolve();
   }, [resolve]);
 
+  if (terminal) {
+    return <ProjectStartEmpty reason={terminal} />;
+  }
+
   if (failed || accountsQuery.isError) {
     return (
       <ProjectStartError
@@ -157,8 +180,10 @@ export default function ProjectStartPage() {
 /**
  * Failure stays on this route. Falling back to `/projects` would quietly make
  * the list the default destination again, which is exactly what this flow
- * removes — so the recovery is an explicit retry, and the list is offered only
- * as a deliberate choice.
+ * removes — so the recovery is an explicit retry, and the secondary action
+ * goes to `/new`, not `/projects`: the list is gone (Task 21), and `/projects`
+ * is now a redirect back to THIS route, which would just re-run the same
+ * failing resolve a beat later instead of offering anything new.
  */
 function ProjectStartError({ onRetry }: { onRetry: () => void }) {
   return (
@@ -172,7 +197,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
       <div className="flex items-center gap-2">
         <Button onClick={onRetry}>Try again</Button>
         <Button variant="ghost" asChild>
-          <Link href="/projects">View all projects</Link>
+          <Link href="/new">Create a workspace</Link>
         </Button>
       </div>
     </div>

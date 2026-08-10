@@ -37,6 +37,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import * as realAgents from '../../projects/agents';
 import * as realProviders from '../providers';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 
@@ -292,6 +293,7 @@ mock.module('../../projects/triggers', () => ({
 }));
 
 mock.module('../../projects/agents', () => ({
+  ...realAgents,
   resolveAgentGrant: async (_agentName: string, _gitProject: unknown) => null,
 }));
 

@@ -30,6 +30,13 @@ import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
+import {
+  OPENCODE_SESSION_PIN_PATH,
+  resolveOpenCodeAuditSpoolPath,
+  writeOpenCodeSeedBakedPin,
+  writeOpenCodeSessionPin,
+} from './runtime-state'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
 import {
@@ -46,11 +53,6 @@ import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
 
-// Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
-// Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
-// prompts into the same opencode conversation instead of opening a fresh
-// session with no context.
-export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
   'mimo-v2.5-free',
@@ -307,8 +309,7 @@ async function main() {
           // existing, so writing the marker first guarantees every fork that
           // inherits the pin also inherits the marker (else it can't rotate).
           markSeedBakedSession(session.id)
-          mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-          writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+          writeOpenCodeSessionPin(session.id)
           bootMark('seed-opencode-session')
           logger.info('[seed] pre-created root opencode session', { sessionId: session.id })
         }
@@ -387,6 +388,46 @@ async function startSessionRuntime(
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
+  const auditRelay = createAuditRelay(
+    async (events) => {
+      const ctx = sandboxRelayContext(auditRelayToken(process.env))
+      if (!ctx) throw new Error('audit relay context is unavailable')
+      const response = await fetch(
+        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
+          body: JSON.stringify({ events }),
+          signal: AbortSignal.timeout(15_000),
+        },
+      )
+      if (!response.ok) {
+        const body = await response.text().catch(() => '')
+        throw new Error(`audit batch rejected: ${response.status} ${body.slice(0, 200)}`)
+      }
+    },
+    { spoolPath: resolveOpenCodeAuditSpoolPath(process.env) },
+  )
+  const flushAuditRelay = () => {
+    void auditRelay.stop().catch((error) =>
+      logger.warn('[opencode-events] audit relay shutdown flush failed', {
+        err: error instanceof Error ? error.message : String(error),
+      }),
+    )
+  }
+  process.once('SIGTERM', flushAuditRelay)
+  process.once('SIGINT', flushAuditRelay)
+  const onEvent = (event: { type?: string; properties?: unknown }) => {
+    try {
+      auditRelay.enqueue(event)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      bootState.auditRelayError = message
+      logger.error('[opencode-events] audit relay persistence failed; runtime is unhealthy', {
+        err: message,
+      })
+    }
+  }
   const onQuestionAsked = (req: QuestionRequest) => {
     void relayQuestionToApi(req, cfg, opencode).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
@@ -414,7 +455,7 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
     )
   }
-  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError, onConnected }
+  const eventHandlers = { onEvent, onQuestionAsked, onSessionIdle, onSessionError, onConnected }
   let loopStarted = false
   if (bootState.initialOpenCodeSessionRequired) {
     // SUBSCRIBE BEFORE PROMPT: start the /event loop first and hand its
@@ -628,8 +669,7 @@ async function runWarmSeedMode(
           // existing, so writing the marker first guarantees every fork that
           // inherits the pin also inherits the marker (else it can't rotate).
           markSeedBakedSession(session.id)
-          mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-          writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+          writeOpenCodeSessionPin(session.id)
           bootMark('seed-opencode-session')
           logger.info('[seed] pre-created + pinned root opencode session', { sessionId: session.id })
         }
@@ -838,7 +878,12 @@ async function maybeCreateInitialOpencodeSession(
     })
     // A turn interrupted by the restart left a part stuck "running"; finalize it
     // so a client streaming this root sees the turn end instead of spinning.
-    if (existing.lastTurnIncomplete) await abortOpencodeTurn(baseUrl, workspace, sessionId)
+    if (
+      existing.lastTurnIncomplete &&
+      (await confirmTurnOrphaned(baseUrl, workspace, sessionId, existing))
+    ) {
+      await abortOpencodeTurn(baseUrl, workspace, sessionId)
+    }
     bootMark('runtime-session-resume-requested')
   } else {
     logger.info('[boot] creating initial opencode session', {
@@ -922,6 +967,10 @@ export async function finalizeOrphanedTurn(
 ): Promise<boolean> {
   const inspection = await inspectRoot(baseUrl, workspace, sessionId)
   if (!inspection.lastTurnIncomplete) return false
+  // Never abort a turn that is merely still being written — see
+  // confirmTurnOrphaned. This is the difference between closing a turn its
+  // opencode took to the grave and interrupting one that was about to finish.
+  if (!(await confirmTurnOrphaned(baseUrl, workspace, sessionId, inspection))) return false
   await abortOpencodeTurn(baseUrl, workspace, sessionId)
   return true
 }
@@ -930,8 +979,7 @@ export async function finalizeOrphanedTurn(
  *  file (the in-sandbox source of truth read by abort/relay/turn-end). */
 function pinOpencodeSessionFile(sessionId: string): void {
   try {
-    mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-    writeFileSync(OPENCODE_SESSION_PIN_PATH, sessionId, 'utf8')
+    writeOpenCodeSessionPin(sessionId)
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
   }
@@ -942,8 +990,7 @@ function pinOpencodeSessionFile(sessionId: string): void {
  *  snapshot next to the pin, so every fork inherits it. See opencode-fork-root.ts. */
 function markSeedBakedSession(sessionId: string): void {
   try {
-    mkdirSync(dirname(OPENCODE_SEED_BAKED_PIN_PATH), { recursive: true })
-    writeFileSync(OPENCODE_SEED_BAKED_PIN_PATH, sessionId, 'utf8')
+    writeOpenCodeSeedBakedPin(sessionId)
   } catch (err) {
     logger.warn('[seed] failed to write seed-baked session marker', err)
   }
@@ -983,7 +1030,14 @@ async function deleteOpencodeSession(baseUrl: string, workspace: string, session
   }
 }
 
-interface ExistingRoot { id: string; hasMessages: boolean; lastTurnIncomplete: boolean }
+interface ExistingRoot {
+  id: string
+  hasMessages: boolean
+  lastTurnIncomplete: boolean
+  /** Carried through so the orphan re-check can tell the same unfinished turn
+   *  from a different one that started since. */
+  lastMessageId: string | null
+}
 
 /**
  * Resolve a usable existing canonical root for this workspace so a restart
@@ -1002,7 +1056,12 @@ async function resolveExistingRoot(baseUrl: string, workspace: string): Promise<
   const chosen = (pinned && roots.find((r) => r.id === pinned)) || pickMostRecentRoot(roots)
   if (!chosen) return null
   const inspection = await inspectRoot(baseUrl, workspace, chosen.id)
-  return { id: chosen.id, hasMessages: inspection.hasMessages, lastTurnIncomplete: inspection.lastTurnIncomplete }
+  return {
+    id: chosen.id,
+    hasMessages: inspection.hasMessages,
+    lastTurnIncomplete: inspection.lastTurnIncomplete,
+    lastMessageId: inspection.lastMessageId,
+  }
 }
 
 interface RootLite { id: string; created: number; updated: number }
@@ -1059,7 +1118,30 @@ function pickMostRecentRoot(roots: RootLite[]): RootLite | null {
   return best
 }
 
-interface RootInspection { hasMessages: boolean; lastTurnIncomplete: boolean }
+interface RootInspection {
+  hasMessages: boolean
+  lastTurnIncomplete: boolean
+  /** Identity of the last message, so a re-check can tell "same turn, still
+   *  unfinished" from "a different turn has since started". */
+  lastMessageId: string | null
+}
+
+/**
+ * How long to let an "incomplete" turn prove itself alive before aborting it.
+ *
+ * `lastTurnIncomplete` is `role === 'assistant' && !time.completed`, which is
+ * equally true of a turn nobody is writing (orphaned by a dead opencode) and
+ * one that is streaming right now. Aborting the second kind ends a healthy turn
+ * and stamps it with an AbortError, which the UI renders as "Interrupted" under
+ * an answer that finished perfectly well.
+ *
+ * The two are separable by waiting: nothing is writing an orphaned turn, so it
+ * stays incomplete forever, while a live one completes in moments. Two seconds
+ * is far longer than the gap between opencode finishing a turn and stamping
+ * `time.completed`, and it costs nothing on the path that matters — a genuinely
+ * orphaned turn is already broken and two seconds later still is.
+ */
+const ORPHAN_SETTLE_MS = 2_000
 
 /** Does the root already have messages (prompt delivered), and is its last turn
  *  an assistant message left incomplete by a crash (no completion time)? */
@@ -1069,15 +1151,52 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
       `${baseUrl}/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`,
       { signal: AbortSignal.timeout(5_000) },
     )
-    if (!res.ok) return { hasMessages: false, lastTurnIncomplete: false }
-    const msgs = (await res.json()) as Array<{ info?: { role?: string; time?: { completed?: number } } }>
-    if (!Array.isArray(msgs) || msgs.length === 0) return { hasMessages: false, lastTurnIncomplete: false }
+    if (!res.ok) return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    const msgs = (await res.json()) as Array<{
+      info?: { id?: string; role?: string; time?: { completed?: number } }
+    }>
+    if (!Array.isArray(msgs) || msgs.length === 0) {
+      return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    }
     const last = msgs[msgs.length - 1]
     const incomplete = last?.info?.role === 'assistant' && !last?.info?.time?.completed
-    return { hasMessages: true, lastTurnIncomplete: Boolean(incomplete) }
+    return {
+      hasMessages: true,
+      lastTurnIncomplete: Boolean(incomplete),
+      lastMessageId: last?.info?.id ?? null,
+    }
   } catch {
-    return { hasMessages: false, lastTurnIncomplete: false }
+    return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
   }
+}
+
+/**
+ * Is the turn actually ORPHANED, or just still being written?
+ *
+ * Look again after a settle window. Nothing is writing an orphaned turn, so it
+ * is still incomplete; a live one has finished, and aborting it would have
+ * ended a healthy answer and labelled it "Interrupted".
+ *
+ * Also refuses when the last message CHANGED — a different turn started in the
+ * meantime, and that one is certainly alive.
+ */
+async function confirmTurnOrphaned(
+  baseUrl: string,
+  workspace: string,
+  sessionId: string,
+  first: RootInspection,
+): Promise<boolean> {
+  await new Promise((r) => setTimeout(r, ORPHAN_SETTLE_MS))
+  const second = await inspectRoot(baseUrl, workspace, sessionId)
+  if (!second.lastTurnIncomplete) {
+    logger.info('[boot] turn completed on its own; not aborting', { sessionId })
+    return false
+  }
+  if (first.lastMessageId && second.lastMessageId !== first.lastMessageId) {
+    logger.info('[boot] a newer turn started; not aborting', { sessionId })
+    return false
+  }
+  return true
 }
 
 /** Finalize an interrupted turn so a streaming client stops spinning. */
@@ -1236,18 +1355,21 @@ type SandboxRelayContext = {
 // The control-plane callback context for every project session. The sandbox
 // credential can call the sandbox-identity turn-stream route. This callback is
 // safe for web, CLI, Slack, Teams, and email sessions.
-function sandboxRelayContext(): SandboxRelayContext | null {
+function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext | null {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
   // (it's a sandbox-identity route). Prefer the session token; fall back to the
   // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
-  const token = (
-    process.env.KORTIX_CLI_TOKEN ||
-    process.env.KORTIX_SANDBOX_TOKEN ||
-    process.env.KORTIX_TOKEN ||
-    ''
-  ).trim()
+  const token =
+    tokenOverride !== undefined
+      ? (tokenOverride ?? '')
+      : (
+          process.env.KORTIX_CLI_TOKEN ||
+          process.env.KORTIX_SANDBOX_TOKEN ||
+          process.env.KORTIX_TOKEN ||
+          ''
+        ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
     logger.warn('[opencode-events] missing env to relay to apps/api', {

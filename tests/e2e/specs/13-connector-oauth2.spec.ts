@@ -1,89 +1,145 @@
-import { expect, test } from '@playwright/test';
-import { authHeaders, createApiResultClient } from '../helpers/http';
+import { expect, test } from "@playwright/test";
+import { seedDatabaseProject } from "../helpers/database";
+import { createApiResultClient } from "../helpers/http";
 import {
   type AuthSession,
   type AuthUser,
   createAuthUser,
   deleteAuthUser,
-  installBrowserSession,
+  installBrowserSessionDirect,
   signIn,
-} from '../helpers/session-auth';
+} from "../helpers/session-auth";
+import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
 
-const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
-const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
-const password = 'E2eConnectorOauth123!';
+const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
+const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
+const password = "E2eConnectorOauth123!";
 const api = createApiResultClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
-test.describe('13 — Custom connector OAuth2', () => {
+interface AccountSummary {
+  account_id: string;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
+  account_role?: "owner" | "admin" | "member";
+}
+
+test.describe("13 — Custom connector OAuth2", () => {
   test.setTimeout(180_000);
 
   let user: AuthUser;
   let session: AuthSession;
   let projectId: string;
+  let accountId: string;
 
   test.beforeAll(async () => {
     const email = `e2e-connector-oauth-${Date.now()}@kortix.test`;
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
-
-    const response = await fetch(`${apiBase}/projects/provision`, {
-      method: 'POST',
-      headers: authHeaders(session.access_token),
-      body: JSON.stringify({
-        name: `e2e-connector-oauth-${Date.now()}`,
-      }),
+    const accounts = await api<AccountSummary[]>(
+      session.access_token,
+      "GET",
+      "/accounts",
+    );
+    const personalAccount = accounts.json?.find(
+      (account) =>
+        account.personal_account ||
+        account.is_primary_owner ||
+        account.account_role === "owner",
+    );
+    expect(personalAccount?.account_id).toBeTruthy();
+    if (!personalAccount) throw new Error("test user has no personal account");
+    accountId = personalAccount.account_id;
+    projectId = await seedDatabaseProject({
+      accountId,
+      userId: user.id,
+      name: `e2e-connector-oauth-${Date.now()}`,
     });
-    const body = (await response.json()) as { project_id?: string; error?: string };
-    expect(response.status, JSON.stringify(body)).toBe(201);
-    expect(body.project_id).toBeTruthy();
-    if (!body.project_id)
-      throw new Error(`Project provision returned no project_id: ${JSON.stringify(body)}`);
-    projectId = body.project_id;
   });
 
   test.afterAll(async () => {
     if (projectId && session) {
-      await api(session.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
+      await api(session.access_token, "DELETE", `/projects/${projectId}`).catch(
+        () => {},
+      );
     }
     if (user?.id) await deleteAuthUser(user.id, authOptions);
   });
 
-  test('shows every OAuth2 client-credentials strategy during connector creation', async ({
+  test("shows every OAuth2 client-credentials strategy during connector creation", async ({
     page,
   }) => {
     const pageErrors: string[] = [];
-    page.on('pageerror', (error) => pageErrors.push(error.message));
+    page.on("pageerror", (error) => pageErrors.push(error.message));
 
-    await installBrowserSession(
+    await installBrowserSessionDirect(
       page,
       session,
-      `/projects/${projectId}/customize/connectors`,
-      password,
+      "/favicon.png",
+      authOptions,
     );
-    await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible();
-    await page.getByRole('tab', { name: /^Custom$/ }).click();
+    await selectAccountForUi(page, accountId);
+    await page.goto(`/projects/${projectId}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await dismissOnboarding(page);
 
-    const authSelect = page.getByRole('combobox', { name: /^Auth$/ });
+    // A user opens the standalone Connectors surface from the sidebar. This is
+    // a real link, so navigation also works before client hydration completes.
+    const connectorsLink = page.getByRole("link", { name: /^Customize$/i });
+    await expect(connectorsLink).toHaveAttribute(
+      "href",
+      `/projects/${projectId}/connectors`,
+    );
+    await connectorsLink.click();
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${projectId}/connectors$`),
+    );
+    await page
+      .getByRole("button", { name: /^Add a custom connector$/i })
+      .click();
+    await expect(
+      page.getByRole("dialog", { name: /^Add a custom connector$/i }),
+    ).toBeVisible();
+
+    const authSelect = page.getByRole("combobox", { name: /^Auth$/ });
     await authSelect.click();
-    await expect(page.getByRole('option', { name: 'OAuth 2.0 client credentials' })).toBeVisible();
-    await page.getByRole('option', { name: 'OAuth 2.0 client credentials' }).click();
+    await expect(page.getByRole("option", { name: "OAuth 2.0" })).toBeVisible();
+    await page.getByRole("option", { name: "OAuth 2.0" }).click();
 
-    await expect(page.getByLabel('Token URL')).toBeVisible();
-    await expect(page.getByLabel('Client ID')).toBeVisible();
-    await expect(page.getByLabel('Client secret')).toBeVisible();
-    await expect(page.getByRole('button', { name: /Add connector/i })).toBeDisabled();
+    await expect(page.getByLabel("Token URL")).toBeVisible();
+    await expect(page.getByLabel("Client ID")).toBeVisible();
+    await expect(page.getByLabel("Client secret")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Add connector/i }),
+    ).toBeDisabled();
 
-    const methodSelect = page.getByRole('combobox', { name: 'Token authentication' });
+    const methodSelect = page.getByRole("combobox", {
+      name: "Token authentication",
+    });
     await methodSelect.click();
-    await expect(page.getByRole('option', { name: 'Client secret in body' })).toBeVisible();
-    await expect(page.getByRole('option', { name: 'Client secret with Basic' })).toBeVisible();
-    await expect(page.getByRole('option', { name: 'Certificate assertion' })).toBeVisible();
-    await page.getByRole('option', { name: 'Certificate assertion' }).click();
+    await expect(
+      page.getByRole("option", { name: "Client secret in body" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: "Client secret with Basic" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: "Public client" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: "Client secret JWT" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: "Private key JWT" }),
+    ).toBeVisible();
+    await page.getByRole("option", { name: "Private key JWT" }).click();
 
-    await expect(page.getByLabel('Private key PEM')).toBeVisible();
-    await expect(page.getByLabel('Certificate SHA-256 thumbprint')).toBeVisible();
-    await expect(page.getByLabel('Client secret')).toHaveCount(0);
-    expect(pageErrors, `client errors: ${pageErrors.join(' | ')}`).toEqual([]);
+    await expect(page.getByLabel("Private key PEM")).toBeVisible();
+    await expect(
+      page.getByLabel("Certificate SHA-256 thumbprint"),
+    ).toBeVisible();
+    await expect(page.getByLabel("Client secret")).toHaveCount(0);
+    expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 });

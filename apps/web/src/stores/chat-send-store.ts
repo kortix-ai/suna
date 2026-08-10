@@ -12,42 +12,52 @@ import { create } from 'zustand';
  * replaces the old copy-prompt-to-clipboard hack, which existed only because
  * the panel had no reliable way to reach the chat's sender from outside it.
  *
- * Keyed by the OpenCode chat session id (the one `handleSend` posts to) — not
- * the route/git session id — so pre-mounted tab sessions never collide.
+ * Each sender owns its OpenCode chat id and can register the durable project
+ * session id as an alias. This lets route-level controls reach the active chat
+ * without learning the runtime's internal id.
  */
-type ChatSender = (text: string) => Promise<unknown>;
+export type ChatSendDisposition = 'sent' | 'queued';
+type ChatSender = (text: string) => Promise<ChatSendDisposition>;
+type RegisteredChatSender = { ownerId: string; send: ChatSender };
 
 interface ChatSendState {
-  senders: Record<string, ChatSender>;
-  registerSender: (sessionId: string, sender: ChatSender) => void;
+  senders: Record<string, RegisteredChatSender>;
+  registerSender: (sessionId: string, sender: ChatSender, aliases?: string[]) => void;
   unregisterSender: (sessionId: string) => void;
   /**
    * Send `text` to the agent in `sessionId`. Rejects if no chat is mounted for
    * that session, or if the underlying send fails — callers should surface the
    * reason to the user.
    */
-  sendToSession: (sessionId: string, text: string) => Promise<void>;
+  sendToSession: (sessionId: string, text: string) => Promise<ChatSendDisposition>;
 }
 
 export const useChatSendStore = create<ChatSendState>()((set, get) => ({
   senders: {},
 
-  registerSender: (sessionId, sender) =>
-    set((state) => ({ senders: { ...state.senders, [sessionId]: sender } })),
+  registerSender: (sessionId, sender, aliases = []) =>
+    set((state) => {
+      const registration = { ownerId: sessionId, send: sender };
+      const registrations = Object.fromEntries(
+        [sessionId, ...aliases].map((id) => [id, registration]),
+      );
+      return { senders: { ...state.senders, ...registrations } };
+    }),
 
   unregisterSender: (sessionId) =>
     set((state) => {
-      const { [sessionId]: _removed, ...rest } = state.senders;
-      return { senders: rest };
+      return {
+        senders: Object.fromEntries(
+          Object.entries(state.senders).filter(([, sender]) => sender.ownerId !== sessionId),
+        ),
+      };
     }),
 
   sendToSession: async (sessionId, text) => {
-    const sender = get().senders[sessionId];
-    if (!sender) {
-      throw new Error(
-        'The conversation is still loading — open it and try again in a moment.',
-      );
+    const registration = get().senders[sessionId];
+    if (!registration) {
+      throw new Error('The conversation is still loading — open it and try again in a moment.');
     }
-    await sender(text);
+    return registration.send(text);
   },
 }));

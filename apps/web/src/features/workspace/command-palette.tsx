@@ -23,7 +23,9 @@ import {
 import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import {
   consumePendingCommandPalette,
   OPEN_COMMAND_PALETTE_EVENT,
@@ -35,16 +37,17 @@ import {
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
+import { useChatSendStore } from '@/stores/chat-send-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import {
-  type ExperimentalFeatureKey,
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
-  getProjectDetail,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
@@ -86,7 +89,6 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
-import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
 import { track } from '@/lib/track';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
@@ -125,28 +127,6 @@ function sanitizeCmdkValue(value: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
-
-const LEGACY_PALETTE_HIDDEN = new Set([
-  'workspace',
-  'dashboard',
-  'scheduled-tasks',
-  'files',
-  'tunnel',
-  'running-services-cmd',
-  'agent-browser-cmd',
-  'internal-browser-cmd',
-  'desktop-cmd',
-  'templates',
-  'changelog',
-  'credits-explained',
-  'secrets-manager',
-  'api-keys',
-  'llm-providers',
-  'open-terminal',
-  'restart-config',
-  'restart-full',
-  'ssh-quick',
-]);
 
 const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   'nav-projects': 'projects',
@@ -341,8 +321,8 @@ function MessagesPage({
           value={sanitizeCmdkValue(`message ${index} ${item.text.slice(0, 80)}`)}
           onSelect={() => onSelect(item.id)}
         >
-          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 flex-shrink-0" />
-          <span className="text-muted-foreground/50 w-6 flex-shrink-0 text-right text-xs tabular-nums">
+          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 shrink-0" />
+          <span className="text-muted-foreground/50 w-6 shrink-0 text-right text-xs tabular-nums">
             #{index + 1}
           </span>
           <span className="flex-1 truncate text-sm">
@@ -422,22 +402,24 @@ export function CommandPalette() {
     enabled: open && !!projectId,
     ...contract('inventory'),
   });
-
-  const { data: projectDetail } = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId!),
-    enabled: open && !!projectId,
-    ...contract('config'),
-  });
-  const isExperimentalEnabled = useCallback(
-    (key: ExperimentalFeatureKey) => {
-      const project = projectDetail?.project;
-      if (!project) return false;
-      if (key === 'llm_gateway') return isLlmGatewayAvailable(project);
-      return project.experimental?.[key] === true;
-    },
-    [projectDetail],
+  const sendToSession = useChatSendStore((state) => state.sendToSession);
+  const currentProjectSession = projectSessionsList?.find(
+    (session) => session.session_id === currentSessionId,
   );
+
+  // The registry's `requiresFlag` gate. One primitive (`useFeatureFlag`, via
+  // `useProjectFeatureFlags`) decides for every surface, so a palette entry can
+  // never survive a flag its rail item does not. Fail-closed: unresolved detail
+  // ⇒ every flag reads false.
+  //
+  // `llm_gateway` used to resolve to AVAILABILITY here while the Customize
+  // panel rendered nothing unless it was ENABLED — a palette entry that opened
+  // a blank pane. It now follows enablement like every other flag.
+  // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
+  // above is the DEPLOYMENT flag set (`@kortix/sdk/feature-flags`, build-time
+  // capabilities like `enableProjects`), a different concept from the
+  // per-project feature flags this gates on.
+  const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
   const allModels = useMemo(() => flattenModels(providers), [providers]);
   // Only for the persisted selection state (session agent, per-agent model,
@@ -584,8 +566,7 @@ export function CommandPalette() {
         if (item.requiresBilling && !billingEnabled) return false;
         if (item.requiresSession && !currentSessionId) return false;
         if (item.requiresProject && !projectId) return false;
-        if (item.requiresExperimental && !isExperimentalEnabled(item.requiresExperimental))
-          return false;
+        if (item.requiresFlag && !projectFlags[item.requiresFlag]) return false;
         return true;
       })
       .map((item) =>
@@ -593,7 +574,7 @@ export function CommandPalette() {
           ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
           : item,
       );
-  }, [billingEnabled, currentSessionId, projectId, sidebarCtx, isExperimentalEnabled]);
+  }, [billingEnabled, currentSessionId, projectId, sidebarCtx, projectFlags]);
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
@@ -755,7 +736,12 @@ export function CommandPalette() {
   const handleSelectAccount = useCallback(
     (a: KortixAccount) => {
       setSelectedAccountId(a.account_id);
-      router.push('/projects');
+      // The landing door, NOT `latestProjectPath`: the last-project cookie
+      // names a project in the account just left, which still passes the
+      // ownership check (it's scoped by user, not account) and would open
+      // the wrong account's workspace. Same rule `account-switcher.tsx`
+      // follows after creating an account.
+      router.push(PROJECT_LANDING_PATH);
       close();
     },
     [setSelectedAccountId, router, close],
@@ -1160,16 +1146,24 @@ export function CommandPalette() {
       .catch((err: unknown) => errorToast(reloadErrorMessage(err)));
   }, [close]);
 
-  const handleRestartFull = useCallback(() => {
+  const handleReconcileSession = useCallback(() => {
+    if (!currentSessionId) return;
     close();
-    systemReload('full')
-      .then((r) =>
-        r.success
-          ? successToast('Workspace pulled and runtime restarted')
-          : errorToast(r.errors[0] ?? 'The sandbox did not confirm the restart'),
+    sendToSession(
+      currentSessionId,
+      buildAgentGitReconciliationPrompt(currentProjectSession?.base_ref),
+    )
+      .then((disposition) =>
+        successToast(
+          disposition === 'queued'
+            ? 'Branch sync queued after the current turn'
+            : 'Asked the agent to sync the branch',
+        ),
       )
-      .catch((err: unknown) => errorToast(reloadErrorMessage(err)));
-  }, [close]);
+      .catch((err: unknown) =>
+        errorToast(err instanceof Error ? err.message : 'Could not reach the agent'),
+      );
+  }, [close, currentProjectSession?.base_ref, currentSessionId, sendToSession]);
 
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
@@ -1189,7 +1183,7 @@ export function CommandPalette() {
       openProviderModal: handleOpenProviderModal,
       generateSSHKey: handleGenerateSSHKey,
       restartConfig: handleRestartConfig,
-      restartFull: handleRestartFull,
+      reconcileSession: handleReconcileSession,
     }),
     [
       handleNewSession,
@@ -1208,7 +1202,7 @@ export function CommandPalette() {
       handleOpenProviderModal,
       handleGenerateSSHKey,
       handleRestartConfig,
-      handleRestartFull,
+      handleReconcileSession,
     ],
   );
 
@@ -1504,9 +1498,9 @@ export function CommandPalette() {
                             )}
                             onSelect={() => handleSelectProjectSession(session)}
                           >
-                            <MessageCircle className="size-4 flex-shrink-0" />
+                            <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
-                            <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
+                            <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
                               {formatRelativeTime(
                                 new Date(sessionLastActivityAt(session)).getTime(),
                               )}
@@ -1531,10 +1525,10 @@ export function CommandPalette() {
                             )}
                             onSelect={() => handleSelectProject(project)}
                           >
-                            <FolderGit2 className="size-4 flex-shrink-0" />
+                            <FolderGit2 className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{project.name}</span>
                             {(project.last_opened_at || project.updated_at) && (
-                              <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
+                              <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
                                 {formatRelativeTime(
                                   new Date(project.last_opened_at || project.updated_at).getTime(),
                                 )}
@@ -1636,12 +1630,12 @@ export function CommandPalette() {
                             )}
                             onSelect={() => handleSelectProjectSession(session)}
                           >
-                            <MessageCircle className="size-4 flex-shrink-0" />
+                            <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
                             {session.session_id === params?.sessionId && (
-                              <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />
+                              <Check className="text-primary h-3.5 w-3.5 shrink-0" />
                             )}
-                            <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
+                            <span className="text-muted-foreground/40 shrink-0 text-xs tabular-nums">
                               {formatRelativeTime(
                                 new Date(sessionLastActivityAt(session)).getTime(),
                               )}
@@ -1661,10 +1655,10 @@ export function CommandPalette() {
                             )}
                             onSelect={() => handleSelectProject(project)}
                           >
-                            <FolderGit2 className="size-4 flex-shrink-0" />
+                            <FolderGit2 className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{project.name}</span>
                             {(project.last_opened_at || project.updated_at) && (
-                              <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
+                              <span className="text-muted-foreground/40 shrink-0 text-xs tabular-nums">
                                 {formatRelativeTime(
                                   new Date(project.last_opened_at || project.updated_at).getTime(),
                                 )}
@@ -1788,7 +1782,7 @@ export function CommandPalette() {
                               </span>
                             )}
                           </div>
-                          {isActive && <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />}
+                          {isActive && <Check className="text-primary h-3.5 w-3.5 shrink-0" />}
                         </CommandItem>
                       );
                     })}
@@ -1831,7 +1825,7 @@ export function CommandPalette() {
                               </span>
                             )}
                           </div>
-                          {isActive && <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />}
+                          {isActive && <Check className="text-primary h-3.5 w-3.5 shrink-0" />}
                         </CommandItem>
                       );
                     })}
@@ -1882,7 +1876,7 @@ export function CommandPalette() {
                               {model.modelID}
                             </span>
                           </div>
-                          <div className="flex flex-shrink-0 items-center gap-1.5">
+                          <div className="flex shrink-0 items-center gap-1.5">
                             {model.capabilities?.reasoning && (
                               <Badge variant="kortix" size="sm">
                                 reasoning

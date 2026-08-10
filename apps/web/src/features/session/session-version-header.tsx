@@ -98,7 +98,7 @@ export function SessionVersionHeader({
   const hasChanges = changedCount > 0;
 
   return (
-    <div className="border-border/60 flex-shrink-0 border-b">
+    <div className="border-border/60 shrink-0 border-b">
       {/* Compact header row — tabs (left) + version chip & CTA (right). */}
       <div className="flex items-center gap-3 px-4">
         {/* Tabs — All files (default) · Changes (secondary). */}

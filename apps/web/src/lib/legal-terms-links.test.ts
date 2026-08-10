@@ -34,7 +34,7 @@ const LINK_SITES: LinkSite[] = [
     expectAbsent: [`href: '/legal?tab=terms'`],
   },
   {
-    file: 'features/layout/user-menu.tsx',
+    file: 'features/layout/user-menu-shared.tsx',
     expectPresent: [`href: '/legal/terms'`, `href: '/legal?tab=privacy'`],
     expectAbsent: [`href: '/legal?tab=terms'`],
   },

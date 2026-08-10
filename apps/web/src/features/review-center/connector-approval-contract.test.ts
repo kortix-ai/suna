@@ -21,6 +21,20 @@ describe('connector approval review contract', () => {
     expect(source).not.toContain('h-7');
   });
 
+  test('the in-session card reviews the same parameters inline and keeps the link', () => {
+    const source = read('../session/session-approval-prompt.tsx');
+
+    expect(source).toContain('ApprovalParameters');
+    expect(source).toContain('ApprovalDecisionActions');
+    expect(source).toContain('approval_url');
+    expect(source).not.toContain('Allow for session');
+    expect(source).not.toContain('Allow everything');
+    expect(source).not.toContain('Always allow');
+    expect(source).toContain('text-kortix-orange');
+    expect(source).not.toContain('text-amber-');
+    expect(source).not.toContain('bg-amber-');
+  });
+
   test('Review Center uses the shared full-parameter component', () => {
     const modal = read('./review-detail-modal.tsx');
     const center = read('./review-center.tsx');

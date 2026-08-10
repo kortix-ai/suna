@@ -22,8 +22,9 @@ import { useState } from 'react';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
   getProjectSessionConfigState,
-  reloadProjectSessionConfig,
+  reloadProjectSessionConfigStream,
   type SessionConfigState,
+  type SessionReloadPhase,
   type SessionReloadResult,
   sessionStartKey,
 } from '@kortix/sdk';
@@ -151,6 +152,7 @@ export function useSessionConfigFreshness(projectId?: string, sessionId?: string
 
 export function useReloadSessionConfig(projectId: string, sessionId: string) {
   const queryClient = useQueryClient();
+  const [phase, setPhase] = useState<SessionReloadPhase | null>(null);
   // Held in state rather than read off `mutation.error`, because `mutate()`
   // CLEARS the previous error before it starts. Derived straight from the
   // mutation, the confirm dialog would unmount on the very click that confirms
@@ -168,14 +170,23 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
     // start. A reload is cheap to repeat by hand and expensive to repeat by
     // accident.
     retry: false,
-    mutationFn: (vars: { force?: boolean } = {}) =>
+    mutationFn: (vars: { force?: boolean } = {}) => {
+      setPhase(null);
       // This web action is named "Reload config", so it only reloads config.
       // Repository refresh remains an explicit CLI operation. This prevents a
       // low-priority UI action from changing the project checkout.
-      reloadProjectSessionConfig(projectId, sessionId, {
-        refresh_repo: false,
-        ...(vars.force ? { force: true } : {}),
-      }),
+      return reloadProjectSessionConfigStream(
+        projectId,
+        sessionId,
+        {
+          refresh_repo: false,
+          ...(vars.force ? { force: true } : {}),
+        },
+        (event) => {
+          if (event.type === 'phase') setPhase(event.phase);
+        },
+      );
+    },
     onSuccess: (result: SessionReloadResult) => {
       // It landed — whatever refusal opened the dialog is answered.
       setBusyReason(null);
@@ -218,11 +229,14 @@ export function useReloadSessionConfig(projectId: string, sessionId: string) {
       const message = error instanceof Error ? error.message.trim() : '';
       errorToast(message || 'Reload failed. Try again in a moment.');
     },
+    onSettled: () => setPhase(null),
   });
 
   return {
     reload: (vars: { force?: boolean } = {}) => mutation.mutate(vars),
     isPending: mutation.isPending,
+    /** The latest server-confirmed boundary reached by the active reload. */
+    phase,
     /** Set when an attempt was refused for a running turn; drives the confirm. */
     busyReason,
     clearBusy: () => setBusyReason(null),

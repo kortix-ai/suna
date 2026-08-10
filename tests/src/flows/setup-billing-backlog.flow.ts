@@ -132,20 +132,22 @@ flow(
       r.status(401);
     });
 
-    await ctx.step("OWNER server-type-scoped checkout → Stripe URL or rejection", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/billing/create-checkout-session", {
-        account_id: team.id,
-        tier_key: "pro",
-        server_type: "compute",
-        location: "us",
-        success_url: "https://example.com/ok",
-        cancel_url: "https://example.com/cancel",
+    if (ctx.env.target !== "local") {
+      await ctx.step("OWNER server-type-scoped checkout → Stripe URL or rejection", async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).post("/v1/billing/create-checkout-session", {
+          account_id: team.id,
+          tier_key: "pro",
+          server_type: "compute",
+          location: "us",
+          success_url: "https://example.com/ok",
+          cancel_url: "https://example.com/cancel",
+        });
+        // Member-of-account passes authz; the outcome depends on Stripe wiring on the
+        // target. A configured target returns a hosted URL (200); an unconfigured or
+        // input-rejecting one returns 4xx/5xx. Permissive envelope covers both.
+        r.status([200, 400, 404, 500]);
       });
-      // Member-of-account passes authz; the outcome depends on Stripe wiring on the
-      // target. A configured target returns a hosted URL (200); an unconfigured or
-      // input-rejecting one returns 4xx/5xx. Permissive envelope covers both.
-      r.status([200, 400, 404, 500]);
-    });
+    }
   },
 );
 

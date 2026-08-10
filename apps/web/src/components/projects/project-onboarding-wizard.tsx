@@ -17,6 +17,7 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { listConnectors } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
+import { completeThenNotify } from './onboarding/complete-then';
 import { slideVariants } from './onboarding/motion';
 import {
   buildSteps,
@@ -76,7 +77,28 @@ function AnimatedStep({
   );
 }
 
-export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
+export function ProjectOnboardingWizard({
+  projectId,
+  onCompleted,
+  onSkip,
+}: {
+  projectId: string;
+  /**
+   * Called once onboarding has finished — after the completion stamp has been
+   * attempted, whether or not it succeeded (see `completeThenNotify`).
+   * `project-shell.tsx` passes nothing: there the wizard simply disappears in
+   * place, which is the behaviour that shipped.
+   */
+  onCompleted?: () => void;
+  /**
+   * When supplied, renders a "Skip for now" control. Skipping STAMPS the
+   * project onboarded, exactly like finishing — see `skip` below for why the
+   * "leave it unstamped and catch them later" design could not work. Absent on
+   * the project shell, where there is nowhere to skip TO: the wizard is already
+   * the thing standing between the user and their workspace.
+   */
+  onSkip?: () => void;
+}) {
   const contactTier = usePersonalContactTier();
   const showFounderStep = contactTier === 'personal';
   const { user } = useAuth();
@@ -157,7 +179,26 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
     [goTo, steps.length],
   );
   const back = useCallback(() => goTo((i) => Math.max(i - 1, 0)), [goTo]);
-  const complete = useCallback(() => onboarding.complete(), [onboarding]);
+  // ONE exit for the whole wizard: `startWithPrompt` and `DoneStep`'s `onStart`
+  // both come through here, so `onCompleted` needs exactly one wrapping site.
+  // `skipSurvey` below is NOT an exit — it moves between steps.
+  const complete = useCallback(
+    () => completeThenNotify(() => onboarding.complete(), onCompleted),
+    [onboarding, onCompleted],
+  );
+
+  // Skipping STAMPS, exactly like finishing. It used to leave the project
+  // unstamped on the theory that the project shell's copy of this wizard would
+  // "catch the user later" — but that copy reads the SAME `qk.project.detail`
+  // entry this one just warmed, so it reopened the instant the user landed,
+  // with no skip control, `showCloseButton={false}`,
+  // `closeOnOutsideClick={false}` and Escape intercepted. Skipping was strictly
+  // worse than not skipping. Stamping is what makes "Skip for now" mean what it
+  // says.
+  const skip = useCallback(
+    () => completeThenNotify(() => onboarding.complete(), onSkip),
+    [onboarding, onSkip],
+  );
 
   // Picking a starting point on the finish step seeds the project-home composer
   // and closes the wizard in one action. `composer-prefill-store` is the
@@ -195,22 +236,58 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
           }}
         >
           <div className="flex h-full flex-col overflow-hidden">
-            {/* The entire chrome: a back control on the left, progress centred.
-              No mark, no title. Nothing here competes with the question. */}
-            <div className="relative flex h-14 shrink-0 items-center px-4 ">
-              {index > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Back"
-                  className="text-muted-foreground hover:text-foreground active:scale-[0.96] motion-reduce:active:scale-100"
-                  onClick={back}
-                >
-                  <ArrowLeft className="size-4" />
-                </Button>
-              )}
-              <div className="pointer-events-none absolute inset-x-0 flex justify-center">
-                <StepProgress total={steps.length} current={index} />
+            {/* The entire chrome: a back control on the left, progress centred,
+              the skip escape hatch on the right. No mark, no title. Nothing here
+              competes with the question.
+
+              THREE COLUMNS IN FLOW, not a centred overlay. The progress used to be
+              `absolute inset-x-0` at a fixed 200px, so on a 375px screen it ran
+              x≈87→287 while "Skip for now" started at x≈264 — ~23px of overlap,
+              ~51px at 320px. `pointer-events-none` meant clicks still landed, so it
+              failed silently as a visual collision rather than a broken control.
+              Grid tracks cannot overlap: `1fr auto 1fr` keeps the progress optically
+              centred (both side tracks are equal) while each control reserves its
+              own space at every width. Do not go back to absolute centring. */}
+            <div className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 sm:px-4">
+              <div className="flex justify-start">
+                {index > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Back"
+                    className="text-muted-foreground hover:text-foreground active:scale-[0.96] motion-reduce:active:scale-100"
+                    onClick={back}
+                  >
+                    <ArrowLeft className="size-4" />
+                  </Button>
+                )}
+              </div>
+
+              <StepProgress total={steps.length} current={index} />
+
+              <div className="flex justify-end">
+                {/* Muted at rest — an escape hatch, never a call to action competing
+                    with the step's own primary button.
+
+                    `magic-sm` is the design system's responsive size (h-9 on touch,
+                    h-8 from `sm`), so the tap target does not shrink to the desktop
+                    height on a phone. The label shortens too: at 320px each side
+                    track gets ~80px, and "Skip for now" needs ~110px with padding
+                    while "Skip" needs ~58px. `aria-label` carries the full phrase at
+                    every width, so the short label never reaches assistive tech. */}
+                {onSkip && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="magic-sm"
+                    aria-label="Skip for now"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={skip}
+                  >
+                    <span className="sm:hidden">Skip</span>
+                    <span className="hidden sm:inline">Skip for now</span>
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -265,7 +342,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                     {stepId === 'slack' && (
                       <SlackStep projectId={projectId} onContinue={next} onSkip={next} />
                     )}
-                    {stepId === 'plan' && <PlanStep onContinue={next} />}
+                    {stepId === 'plan' && <PlanStep projectId={projectId} onContinue={next} />}
                     {stepId === 'done' && (
                       <DoneStep
                         useCase={answers.use_case ?? null}

@@ -25,12 +25,12 @@ import {
 } from '@kortix/sdk';
 import {
   type QueryClient,
+  useInfiniteQuery,
   useMutation,
   useQueries,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useMemo } from 'react';
 
 /**
  * Per-session pending-approval summary for the sidebar "needs input" badge.
@@ -66,18 +66,15 @@ export function useSessionsNeedingInputForProjects(projectIds: string[]) {
       refetchInterval: 12_000,
     })),
   });
-  const dataList = results.map((r) => r.data);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- merge when any result changes
-  return useMemo(() => {
-    const sessions: Record<string, number> = {};
-    let total = 0;
-    for (const d of dataList) {
-      if (!d) continue;
-      for (const [k, v] of Object.entries(d.sessions)) sessions[k] = v;
-      total += d.total ?? 0;
-    }
-    return { sessions, total };
-  }, [JSON.stringify(dataList)]);
+  const sessions: Record<string, number> = {};
+  let total = 0;
+  for (const result of results) {
+    const data = result.data;
+    if (!data) continue;
+    for (const [key, count] of Object.entries(data.sessions)) sessions[key] = count;
+    total += data.total ?? 0;
+  }
+  return { sessions, total };
 }
 
 /** One poll cadence for the shared session-audit query, so both surfaces (panel
@@ -113,12 +110,41 @@ export function useSessionAudit(
     queryKey: sessionAuditKey(projectId, sessionId),
     // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
     queryFn: () =>
-      getSessionAudit(projectId ?? '', sessionId ?? '', undefined, {
+      getSessionAudit(projectId ?? '', sessionId ?? '', 1000, {
         showErrors: !options?.silent,
+        includeEvents: false,
       }),
     enabled,
     staleTime: 10_000,
     refetchInterval: options?.refetchInterval ?? SESSION_AUDIT_REFETCH_MS,
+  });
+}
+
+/**
+ * Paginated canonical session timeline.
+ *
+ * This query does not poll. Pending approvals use `useSessionAudit`, whose
+ * lightweight request excludes historical events. Loading more history never
+ * makes the 15-second approval poll refetch pages the user already read.
+ */
+export function useSessionAuditTimeline(
+  projectId: string | undefined,
+  sessionId: string | undefined,
+  options?: Pick<UseSessionAuditOptions, 'enabled' | 'silent'>,
+) {
+  const enabled = !!projectId && !!sessionId && (options?.enabled ?? true);
+  return useInfiniteQuery({
+    queryKey: ['session-audit-timeline', projectId ?? '', sessionId ?? ''] as const,
+    queryFn: ({ pageParam }) =>
+      getSessionAudit(projectId ?? '', sessionId ?? '', 200, {
+        cursor: typeof pageParam === 'string' ? pageParam : undefined,
+        includeEvents: true,
+        showErrors: !options?.silent,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled,
+    staleTime: 10_000,
   });
 }
 

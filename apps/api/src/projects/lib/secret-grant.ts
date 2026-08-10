@@ -216,6 +216,10 @@ export interface SessionSecretGrantInput {
   /** Operational kill switch for the grant-change refusal — see
    *  `secretGrantEnvForRunningAgent`. Defaults to enforced. */
   enforceGrantLock?: boolean;
+  /** Bypass the process-local Git mirror TTL. Authorization paths set this so
+   *  a manifest commit handled by another API replica applies on the next
+   *  request, not up to 60 seconds later. */
+  forceRefresh?: boolean;
 }
 
 /**
@@ -271,7 +275,7 @@ async function loadGrantForRunningAgent(
         manifestPath: input.manifestPath ?? 'kortix.yaml',
         gitAuthToken: null,
       },
-      { rethrowReadErrors: true },
+      { rethrowReadErrors: true, forceRefresh: input.forceRefresh },
     );
   } catch (err) {
     throw new SecretGrantResolutionError(runningAgent, err);
