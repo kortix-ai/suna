@@ -43,15 +43,16 @@ the label. A writer or administrator must review the new SHA and reapply it.
 1. Three unprivileged jobs build fixed-tag API, gateway, and frontend archives.
    They receive no Docker Hub, AWS, or application secrets.
 2. A trusted job publishes the archives without starting their containers.
-3. Terraform creates PR-specific listener rules, target groups, and DNS records.
-4. The workflow deploys one ECS Fargate service for the pull request.
+3. Terraform owns the shared preview ALB and wildcard DNS records.
+4. The workflow creates PR-specific listener rules and target groups, then
+   deploys one ECS Fargate service for the pull request.
 5. Verification checks the API commit, frontend commit, runtime URLs, password
-   gate, shared parent-domain cookie, and black-box API flows.
+   gate, and shared parent-domain cookie.
 6. One sticky pull-request comment publishes the API, health, and frontend URLs.
 
 Removing the label or closing the pull request destroys the ECS service, task
-definitions, listener rules, target groups, and DNS records. A daily
-reconciliation run removes leaked preview resources.
+definitions, listener rules, and target groups. The shared wildcard DNS records
+remain. A daily reconciliation run removes leaked preview resources.
 
 Preview compute is isolated per pull request. Preview database and Supabase
 state are shared with dev.

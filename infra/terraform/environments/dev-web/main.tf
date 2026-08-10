@@ -107,6 +107,7 @@ module "dns" {
       value   = module.web.alb_dns_name
       proxied = true
       ttl     = 1
+      comment = "Kortix dev frontend on ECS Fargate; canonical ECS endpoint"
     }
   }
 }
