@@ -1,1 +1,1 @@
-kortix-preview-e2e-v1
+kortix-preview-e2e-v2
