@@ -286,7 +286,13 @@ flow(
 
 flow(
   'CONN-9',
-  { domain: 'connectors', routes: ['GET /v1/connectors/projects/:projectId/pipedream/apps'] },
+  {
+    domain: 'connectors',
+    routes: [
+      'GET /v1/connectors/projects/:projectId/pipedream/apps',
+      'GET /v1/connectors/projects/:projectId/pipedream/sections',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('pipedream catalog → 200 or 501', async () => {
@@ -295,6 +301,26 @@ flow(
         .get('/v1/connectors/projects/:projectId/pipedream/apps', { params: { projectId: p.id } });
       r.status([200, 501]);
     });
+    await ctx.step('pipedream category sections are bounded and stable → 200 or 501', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/pipedream/sections', {
+          params: { projectId: p.id },
+          query: { perCategory: '4', maxCategories: '6' },
+        });
+      r.status([200, 501]);
+      if (r.statusCode === 200) {
+        r.body().exists('$.sections').exists('$.categories').exists('$.indexReady');
+      }
+    });
+    await ctx.step('NONMEMBER cannot read pipedream category sections → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/connectors/projects/:projectId/pipedream/sections', {
+          params: { projectId: p.id },
+        });
+      r.status(403);
+    });
   },
 );
 
@@ -302,13 +328,23 @@ flow(
   'CONN-15',
   {
     domain: 'connectors',
+    serial: true,
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'GET /v1/connectors/projects/:projectId/discover/connectors',
       'GET /v1/connectors/projects/:projectId/discover/connectors/detail',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
+    await ctx.step('project admin enables direct catalogue discovery', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/features',
+        { feature: 'connectors_api_discover', enabled: true },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
+    });
     await ctx.step('project admin browses the direct catalogue', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -606,7 +642,7 @@ flow(
 // already-covered POST /v1/connectors/projects/:projectId/connectors, then drives
 // the full connections surface against it.
 flow(
-  'COVD-1',
+  'CONN-21',
   {
     domain: 'connectors',
     routes: [
@@ -957,16 +993,22 @@ flow(
   },
 );
 
-// Setup-links (connector half) — public, token-gated read + start. The minting
-// side (POST /v1/projects/:projectId/connect-requests) belongs to a different
-// coverage group; this covers the two public consume-side routes independently
-// via the boundary case (a bogus token can never resolve, regardless of who
-// eventually mints real ones), which is legitimate coverage on its own.
+// Setup-links (connector half) — public, token-gated read + start + finalize.
+// The minting side (POST /v1/projects/:projectId/connect-requests) belongs to a
+// different coverage group; this covers the three public consume-side routes
+// independently via the boundary case (a bogus token can never resolve,
+// regardless of who eventually mints real ones), which is legitimate coverage
+// on its own. `finalize` is the authoritative persist-and-notify call the
+// hosted connect page's opener polls; the Pipedream webhook is redundancy.
 flow(
-  'COVD-2',
+  'CONN-22',
   {
     domain: 'connectors',
-    routes: ['GET /v1/setup-links/connectors/:token', 'POST /v1/setup-links/connectors/:token/start'],
+    routes: [
+      'GET /v1/setup-links/connectors/:token',
+      'POST /v1/setup-links/connectors/:token/start',
+      'POST /v1/setup-links/connectors/:token/finalize',
+    ],
   },
   async (ctx) => {
     await ctx.step('GET with a bogus token → 404 (invalid/unknown link)', async () => {
@@ -987,6 +1029,16 @@ flow(
         );
       r.status(404).body().exists('$.error');
     });
+    await ctx.step('POST .../finalize with a bogus token → 404 (invalid/unknown link)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          '/v1/setup-links/connectors/:token/finalize',
+          {},
+          { params: { token: 'bogus-connector-setup-link' } },
+        );
+      r.status(404).body().exists('$.error');
+    });
   },
 );
 
@@ -997,18 +1049,18 @@ flow(
 // Pipedream connector on this project → 404 (or 501 if Pipedream isn't
 // configured on this deployment at all — both are legitimate real outcomes,
 // never a 200/201 without a real connector). The analogous public consume
-// routes (`GET/POST /v1/setup-links/connectors/:token[/start]`, COVD-2 above)
+// routes (`GET/POST /v1/setup-links/connectors/:token[/start]`, CONN-22 above)
 // belong to a different coverage group.
 flow(
   'CONN-18',
   { domain: 'connectors', routes: ['POST /v1/projects/:projectId/connect-requests'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step('missing slug → 400', async () => {
+    await ctx.step("missing slug → 400, or 501 when Pipedream is disabled", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post('/v1/projects/:projectId/connect-requests', {}, { params: { projectId: p.id } });
-      r.status(400);
+      r.status([400, 501]);
     });
     await ctx.step("unconnected slug → 404 (or 501 if Pipedream isn't configured)", async () => {
       const r = await ctx.client

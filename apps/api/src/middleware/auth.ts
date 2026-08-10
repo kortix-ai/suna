@@ -721,6 +721,17 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // authorization.
   if (path === '/v1/skills' || path.startsWith('/v1/skills/')) return;
 
+  // `/v1/runtime-assets` — the CLI binary + managed-skill overlay this deploy
+  // bakes into sandboxes. Same situation and same reasoning as `/v1/skills`
+  // above, and for the same single caller: the in-sandbox daemon reconciles
+  // against these on every session start/restart/resume holding exactly a
+  // project+session-scoped `KORTIX_CLI_TOKEN`. A 403 here means a sandbox can
+  // never repair a stale CLI, which is the whole bug these routes exist to fix.
+  // Safe to allow — the payloads are the deploy's own build artifacts, identical
+  // for every caller, with no account or project data in them. Authentication,
+  // not authorization.
+  if (path.startsWith('/v1/runtime-assets/')) return;
+
   // Reject other account-level routes outright.
   if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {
     throw new HTTPException(403, {

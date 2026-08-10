@@ -3,13 +3,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The sidebar header row: the merged brand/switcher control, search, and the
- * panel's own collapse toggle.
+ * The sidebar header row: the workspace switcher, search, and the panel's own
+ * collapse toggle.
  *
- * The Kortix mark used to be its own button next to the switcher. Both answered
- * "which project am I in / where do I go", looked nothing alike, and left dead
- * space between them. They are one segmented control now, owned by
- * ProjectSwitcher — the mark keeps its link to the project's home.
+ * That first control used to be three. A `<Link>` carrying the Kortix mark was
+ * fused to a separate dropdown trigger carrying the workspace name, and the user
+ * menu was a third control down in the footer — two of the three being
+ * dropdowns, all answering some slice of "where am I / where can I go / who am
+ * I". It is one `WorkspaceSwitcher` now, named for the question it exists to
+ * answer, with the directory behind a "Switch Workspace" submenu.
  *
  * Asserted against the source because the alternative is mounting the whole
  * sidebar (sidebar + auth + query + i18n providers) to observe which controls
@@ -19,15 +21,32 @@ const source = readFileSync(join(import.meta.dir, 'project-sidebar.tsx'), 'utf8'
 
 const header = source.slice(source.indexOf('<SidebarHeader'), source.indexOf('</SidebarHeader>'));
 
+/**
+ * Comments stripped before the absence checks, same convention as
+ * `workspace-vocabulary.test.ts`. This header's own comment explains the old
+ * design in prose — "a `<Link>` carrying the Kortix mark" — so an unstripped
+ * `.not.toContain('<Link')` fails on the explanation of the thing it is
+ * checking was removed.
+ */
+const headerCode = header.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
 describe('project sidebar header', () => {
-  test('the merged brand/switcher control leads the row', () => {
-    expect(header).toContain('<ProjectSwitcher variant="sidebar"');
+  test('the workspace switcher leads the row', () => {
+    expect(header).toContain('<WorkspaceSwitcher projectId={projectId} />');
   });
 
-  // The whole point of the merge: one control, not a mark button parked beside
-  // a switcher. The mark now lives inside ProjectSwitcher.
-  test('no standalone Kortix mark button is left beside it', () => {
-    expect(header).not.toContain('<Icon.Kortix');
+  // The whole point of the merge: one control. The old split brand/name control
+  // and the standalone mark button may not come back.
+  test('no standalone Kortix mark button beside it', () => {
+    expect(headerCode).not.toContain('<Icon.Kortix');
+    expect(headerCode).not.toContain('<Link');
+  });
+
+  // The user menu was the third control, at the other end of the same panel.
+  // It belongs to the app header now; the sidebar has exactly one dropdown.
+  test('the footer carries no second menu', () => {
+    expect(source).not.toContain('<SidebarFooter');
+    expect(source).not.toContain('UserMenu');
   });
 
   // A `w-fit` trigger inside a full-width wrapper left an inert strip between

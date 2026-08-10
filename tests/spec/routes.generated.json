@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 563,
+  "count": 571,
   "routes": [
     {
       "method": "GET",
@@ -869,6 +869,10 @@
     {
       "method": "GET",
       "path": "/v1/connectors/projects/:projectId/pipedream/apps"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/pipedream/sections"
     },
     {
       "method": "GET",
@@ -1852,6 +1856,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reload-stream"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
     },
     {
@@ -1991,6 +1999,10 @@
       "path": "/v1/projects/provision"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/provision-stream"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/suna-migration/eligibility"
     },
@@ -2044,7 +2056,27 @@
     },
     {
       "method": "GET",
+      "path": "/v1/runtime-assets/cli"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/runtime-assets/cli"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/managed-skills"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/manifest"
+    },
+    {
+      "method": "GET",
       "path": "/v1/setup-links/connectors/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup-links/connectors/:token/finalize"
     },
     {
       "method": "POST",

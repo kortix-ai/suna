@@ -54,7 +54,7 @@ linux-vm Dockerfile build is Daytona telling us a registry must be configured.
 - **~35% faster create + eliminates the 21s `create→running` spikes** (the "30s+ on
   2× retry" — Daytona's container create hanging to the 30s timeout then retrying).
   microVM `create→running` was median ~1.1s, max 1.4s over 20 runs vs container max
-  21.4s. (See `tests/performance/session-start/`.)
+  21.4s in the recorded provider benchmark.
 - **The image *build* moves entirely off the session hot path.** Pre-building means
   the 30–400s snapshot build (the rebuild landmine on any runtime change) happens in
   CI ahead of time, never at first-session. Non-declarative *fixes* that as a side

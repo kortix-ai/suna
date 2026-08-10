@@ -28,6 +28,7 @@
 
 import { readRuntimeTextFile } from '@kortix/sdk/react';
 
+import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { resolveRuntimePath } from './use-oc-file-open';
 
 export type FileAvailability = 'unknown' | 'available' | 'missing';
@@ -48,7 +49,7 @@ export interface ProbeDeps {
 
 const defaultDeps: ProbeDeps = {
   resolve: resolveRuntimePath,
-  read: readRuntimeTextFile,
+  read: (path) => readRuntimeFileWithRetry(path, () => readRuntimeTextFile(path)),
 };
 
 const verdicts = new Map<string, Exclude<FileAvailability, 'unknown'>>();

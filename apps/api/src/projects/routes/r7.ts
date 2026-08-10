@@ -2644,6 +2644,13 @@ projectsApp.openapi(
       added_secrets: [],
       dropped_bindings: [],
       retroactive: true,
+      // `connector_bindings` above is the RESOLVED map, so an inherited session
+      // and an overridden one look identical in it. Clients read this flag to
+      // tell them apart — without it the browser rendered "None selected" for a
+      // session that was simply inheriting, then wrote an explicit
+      // zero-connector override on the next untouched save.
+      connector_bindings_configured: visible.row.connectorBindingsConfigured === true,
+      connector_bindings_inherit_unbound: visible.row.connectorBindingsInheritUnbound === true,
       detail: 'Current session scope.',
     });
   },
@@ -2786,6 +2793,124 @@ projectsApp.openapi(
   },
 );
 
+// POST /v1/projects/:projectId/sessions/:sessionId/reload-stream
+// Same reload as POST /reload. This sibling route preserves the JSON contract
+// used by the CLI while letting web clients render real operation phases.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/reload-stream',
+    tags: ['sessions'],
+    summary: "Reload a running session's agent config with live progress",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } }, required: false },
+    },
+    responses: {
+      200: {
+        description: 'A text/event-stream ending in one done or error frame',
+        content: { 'text/event-stream': { schema: z.any() } },
+      },
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+    );
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    if (!mayChangeSessionModel(visible)) {
+      return c.json(
+        { error: 'Only the session owner or a project manager can reload this session' },
+        403,
+      );
+    }
+
+    const body = (await readBody(c)) as { refresh_repo?: unknown; force?: unknown };
+
+    return new Response(
+      new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          let readable = true;
+          const write = (data: unknown) => {
+            if (!readable) return;
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+            } catch {
+              readable = false;
+            }
+          };
+
+          try {
+            const result = await reloadSessionConfig({
+              projectId,
+              accountId: loaded.row.accountId,
+              sessionId,
+              repoUrl: loaded.row.repoUrl,
+              defaultBranch: loaded.row.defaultBranch,
+              manifestPath: loaded.row.manifestPath,
+              baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
+              refreshRepo: body?.refresh_repo !== false,
+              force: body?.force === true,
+              onPhase: (phase) => write({ type: 'phase', phase }),
+            });
+
+            if (
+              result.reason === 'session is mid-turn' ||
+              result.reason === 'could not confirm the session is idle'
+            ) {
+              write({
+                type: 'error',
+                error:
+                  result.reason === 'session is mid-turn'
+                    ? 'This session is mid-turn. A reload restarts the runtime and ends it — retry when idle, or pass force: true.'
+                    : 'Could not confirm this session is idle, and a reload restarts the runtime. Retry, or pass force: true.',
+                code: 'SESSION_BUSY',
+                status: 409,
+                reason: result.reason,
+              });
+            } else {
+              write({ type: 'done', result: { ...result, detail: reloadDetail(result) } });
+            }
+          } catch (error) {
+            write({
+              type: 'error',
+              error: error instanceof Error && error.message ? error.message : 'Reload failed',
+            });
+          } finally {
+            if (readable) {
+              try {
+                controller.close();
+              } catch {}
+            }
+          }
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      },
+    ) as any;
+  },
+);
+
 projectsApp.openapi(
   createRoute({
     method: 'put',
@@ -2847,6 +2972,11 @@ projectsApp.openapi(
     const body = parsedBody.data;
     const wantsSecrets = Object.hasOwn(body, 'secrets');
     const wantsBindings = Object.hasOwn(body, 'connector_bindings');
+    // `null` CLEARS the override: drop the stored rows AND the configured flag,
+    // so every granted alias resolves to the project default again. `{}` is the
+    // opposite — an explicit "no connectors at all". Before this existed an
+    // override was one-way: nothing in the API could undo one.
+    const clearsBindings = wantsBindings && body.connector_bindings === null;
     const wantsRequired = Object.hasOwn(body, 'require_connectors');
 
     // The agent grant is the ceiling for both axes. Resolved from the agent this
@@ -2979,7 +3109,12 @@ projectsApp.openapi(
 
     let nextBindings = currentDurableBindings;
     let droppedBindings: string[] = [];
-    if (wantsBindings) {
+    if (clearsBindings) {
+      // No grant check and no binding validation: removing every stored binding
+      // cannot widen what this session may reach beyond the project default,
+      // which is what an un-overridden session already resolves to.
+      nextBindings = {};
+    } else if (wantsBindings) {
       const requested = Object.fromEntries(
         Object.entries(body.connector_bindings ?? {}).map(([alias, value]) => [
           alias,
@@ -3034,7 +3169,7 @@ projectsApp.openapi(
       source: 'request';
       createdBy: string;
     }> = [];
-    if (wantsBindings) {
+    if (wantsBindings && !clearsBindings) {
       const [ownerServiceAccount] = visible.row.createdBy
         ? await db
             .select({ id: serviceAccounts.serviceAccountId })
@@ -3098,7 +3233,9 @@ projectsApp.openapi(
       if (wantsSecrets) sessionUpdates.secretsAllowlist = nextAllowlist;
       if (wantsRequired) sessionUpdates.requiredConnectors = nextRequired;
       if (wantsBindings) {
-        sessionUpdates.connectorBindingsConfigured = true;
+        // `null` reverts the session to inheriting project defaults; anything
+        // else is an explicit override.
+        sessionUpdates.connectorBindingsConfigured = !clearsBindings;
         // Deliberately NOT touching connectorBindingsInheritUnbound. Forcing it
         // false here meant a single scope save silently cut off project-default
         // fallback for every alias the caller did not re-bind — a session that had
@@ -3193,6 +3330,12 @@ projectsApp.openapi(
       dropped_secrets: canReadSecretNames ? droppedSecrets : [],
       added_secrets: addedSecrets,
       dropped_bindings: droppedBindings,
+      // Echoed so the caller can re-render from THIS response instead of
+      // re-fetching the scope to learn whether an override now exists.
+      connector_bindings_configured: wantsBindings
+        ? !clearsBindings
+        : visible.row.connectorBindingsConfigured === true,
+      connector_bindings_inherit_unbound: visible.row.connectorBindingsInheritUnbound === true,
       // Connector bindings ARE retroactive (resolved at call time). Secrets are
       // not: a dropped one stops being delivered from the next prompt, but the
       // agent's context and any shell it already spawned still hold what it read.
@@ -3213,7 +3356,9 @@ projectsApp.openapi(
           : scopeAppliedLive
             ? 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.'
             : 'Applies from the next prompt.'
-        : 'No change to the secrets scope.',
+        : clearsBindings
+          ? 'Connector access is back to the project defaults.'
+          : 'No change to the secrets scope.',
     });
   },
 );

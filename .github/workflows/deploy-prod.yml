@@ -102,6 +102,34 @@ jobs:
             echo "No RELEASE_SOURCE_SHA (legacy release) — will use legacy dev fallback images"
           fi
 
+  # ── Apply production Terraform before any image rolls ───────────────────────
+  # Scope: environments/prod-web only. environments/prod reads an
+  # operator-local, gitignored terraform.tfvars (it pins api_image to the
+  # release tag and sets api_environment), so CI would plan against inputs no
+  # operator ever used. That root stays manual until those inputs move into
+  # variables this workflow supplies — see terraform-apply.yml.
+  #
+  # Skipped while TF_APPLY_ROLE_ARN_PROD is unset, so merging this before the
+  # IAM role exists cannot break a release. Once set, a failed apply blocks the
+  # release: shipping an image onto infrastructure that failed to converge is
+  # exactly the state this pipeline exists to prevent.
+  terraform-prod:
+    name: Apply prod Terraform
+    needs: version
+    if: vars.TF_APPLY_ROLE_ARN_PROD != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/prod-web
+      aws_region: eu-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_PROD }}
+      github_environment: prod
+      trusted_branch: prod
+      cloudflare: true
+    secrets: inherit
+
   # ── Raise the "release in progress" banner ──────────────────────────────────
   # Show users a CRITICAL banner for the duration of the rollout (non-dismissible
   # for members; admins can still dismiss). Best-effort and non-blocking: it never
@@ -318,25 +346,28 @@ jobs:
             artifacts/kortix-linux-arm64
           if-no-files-found: error
 
-  # ── Publish the public SDKs to npm ──────────────────────────────────────────
-  # Three packages ship to npm on this version release, in lockstep with the
+  # ── Publish the public npm packages ─────────────────────────────────────────
+  # Three packages ship to npm on every version release, in lockstep with the
   # platform version:
   #   @kortix/llm-catalog   — the model catalog (models + managed-model defaults)
   #                           the frontend SDK consumes
   #   @kortix/sdk           — the frontend data-layer SDK; depends on
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
-  #   @kortix/executor-sdk  — one final deprecated adapter over @kortix/sdk
+  #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
-  # Each package declares its published (dist-pointing) layout in its own
+  # @kortix/executor-sdk had one final deprecated publication at 0.12.5.
+  #
+  # Each package declares its published layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
   # (scripts/stage-npm-publish.mjs: promote publishConfig, pin workspace deps to
-  # the release version, verify every entrypoint exists in dist/) and publishes
+  # the release version, verify every entrypoint and binary exists) and publishes
   # idempotently.
   #
   # Auth is Trusted Publishing (OIDC) when the job grants id-token, else the
   # NPM_TOKEN secret (an npm automation token with publish rights on the @kortix
-  # org). With neither, the publish step skips cleanly so a release is never
-  # blocked. Once Trusted Publishing is verified per package on npmjs.com (package
+  # org). Production sets REQUIRE_NPM_AUTH=1: missing auth fails the release
+  # instead of silently omitting a package. Once Trusted Publishing is verified
+  # per package on npmjs.com (package
   # → Settings → Trusted Publisher → this repo + this workflow), the NPM_TOKEN
   # secret and the NODE_AUTH_TOKEN env line below can be removed — OIDC needs no
   # stored secret.
@@ -374,6 +405,7 @@ jobs:
         working-directory: packages/llm-catalog
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           # Fallback only. Once Trusted Publishing is verified, delete the
           # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -409,8 +441,43 @@ jobs:
         working-directory: packages/sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           # Fallback only. Once Trusted Publishing is verified, delete the
           # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bash ../../scripts/publish-npm-package.sh
+
+  publish-agent-tunnel:
+    name: Publish @kortix/agent-tunnel to npm
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+        working-directory: packages/agent-tunnel
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: bash ../../scripts/publish-npm-package.sh
 
@@ -445,6 +512,7 @@ jobs:
         working-directory: packages/executor-sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           bash ../../scripts/publish-npm-package.sh
@@ -576,8 +644,9 @@ jobs:
           if-no-files-found: error
 
   # ── Cut a single GitHub Release vX.Y.Z (CLI + desktop) ──────────────────────
-  # HARD-GATED on the ECS backend deploy (deploy-ecs) AND on verify-live-version proving the public
-  # endpoints serve exactly X.Y.Z. The vX.Y.Z tag + Release are the public
+  # HARD-GATED on the required npm publications, ECS backend deploy (deploy-ecs),
+  # and verify-live-version proving the public endpoints serve exactly X.Y.Z.
+  # The vX.Y.Z tag + Release are the public
   # announcement — they must never exist for a version prod isn't running
   # (v0.10.0/v0.10.1 shipped Releases while deploy-ecs failed on IAM and
   # api.kortix.com kept serving the old build; that is now impossible).
@@ -587,7 +656,7 @@ jobs:
   # `attach-desktop` job, best-effort — a desktop problem can never block a release.
   github-release:
     name: GitHub Release v${{ needs.version.outputs.version }}
-    needs: [version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof]
+    needs: [version, retag-images, build-cli, publish-sdk, publish-agent-tunnel, deploy-ecs, verify-live-version, frontend-auth-proof]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -606,9 +675,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp -v artifacts/kortix-* release/
+          cp -v ./artifacts/kortix-* release/
           cd release
-          sha256sum * > SHA256SUMS
+          sha256sum ./* > SHA256SUMS
           ls -lh
 
       - name: Create GitHub Release
@@ -651,8 +720,8 @@ jobs:
             exit 0
           fi
           cd desktop-artifacts
-          sha256sum * > DESKTOP-SHA256SUMS
-          gh release upload "${{ needs.version.outputs.tag }}" * --clobber --repo "$GITHUB_REPOSITORY"
+          sha256sum ./* > DESKTOP-SHA256SUMS
+          gh release upload "${{ needs.version.outputs.tag }}" ./* --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -706,9 +775,10 @@ jobs:
     # TEMPORARILY DISABLED. Prod is broadly diverged from the migration baseline
     # (e.g. execution_status / sandbox_provider enum values the canonical schema
     # defines but prod lacks). Reconciling that is a separate, deliberate effort;
-    # until then this presence check blocks every prod roll. Re-enable by flipping
-    # `if` back to the default and restoring `verify-schema` in deploy-ecs.needs.
-    if: false
+    # until then this presence check blocks every prod roll. Re-enable with the
+    # repository variable ENABLE_PROD_SCHEMA_GATE=true and restore
+    # `verify-schema` in deploy-ecs.needs.
+    if: vars.ENABLE_PROD_SCHEMA_GATE == 'true'
     needs: migrate-db
     runs-on: ubuntu-latest
     services:
@@ -770,7 +840,16 @@ jobs:
   # active backend serves old code.
   deploy-ecs:
     name: Deploy API + gateway to prod (ECS Fargate)
-    needs: [version, retag-images, verify-image-commits, migrate-db]
+    needs: [version, retag-images, verify-image-commits, migrate-db, terraform-prod]
+    # `always()` is required because terraform-prod is SKIPPED while
+    # TF_APPLY_ROLE_ARN_PROD is unset. Every other upstream stays required, so
+    # this remains the hard gate described above.
+    if: >-
+      ${{ always()
+        && needs.retag-images.result == 'success'
+        && needs.verify-image-commits.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-prod.result == 'success' || needs.terraform-prod.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → ECS deploy role
@@ -1013,7 +1092,7 @@ jobs:
                 ]},
                 { type:"actions", elements: [
                   { type:"button", text:{ type:"plain_text", text:"📦 Release notes", emoji:true }, url:$rel_url },
-                  { type:"button", text:{ type:"plain_text", text:"🚢 Argo CD", emoji:true }, url:"https://ops.kortix.com" },
+                  { type:"button", text:{ type:"plain_text", text:"🩺 API health", emoji:true }, url:"https://api.kortix.com/v1/health" },
                   { type:"button", text:{ type:"plain_text", text:"🔧 Pipeline", emoji:true }, url:$run_url }
                 ]}
               ]
@@ -1040,25 +1119,164 @@ jobs:
           done
           echo "::error::Slack failed after 5 attempts (last: ${err})."; exit 1
 
-  # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
-  # No job here: the Vercel project is git-connected and auto-deploys the `prod`
-  # branch on every push (→ kortix.com) — the same way dev.kortix.com
-  # auto-deploys from `main`. The promote workflow's push to `prod` triggers it.
+  # ── Prod frontend (parallel ECS + Vercel) ───────────────────────────────────
+  deploy-web-ecs:
+    name: Deploy prod web to ECS Fargate
+    needs: [version, retag-images, deploy-ecs]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: eu-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      DOTENV_PRIVATE_KEY_PROD: ${{ secrets.WEB_DOTENV_PRIVATE_KEY_PROD }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Sync the encrypted production web profile to Secrets Manager
+        run: |
+          set -euo pipefail
+          test -n "${DOTENV_PRIVATE_KEY_PROD:-}" || {
+            echo "::error::WEB_DOTENV_PRIVATE_KEY_PROD is not configured."
+            exit 1
+          }
+          npx --yes @dotenvx/dotenvx@1.75.1 run \
+            -f apps/web/.env.prod -- bash infra/scripts/sync-web-env.sh prod
+      - name: Roll the production web service onto the release image
+        run: |
+          bash infra/scripts/ecs-deploy.sh \
+            prod \
+            "kortix/kortix-frontend:${VERSION}" \
+            --service web \
+            --version "${VERSION}" \
+            --database-migrated
+
+  publish-web-ecs-dns:
+    name: Publish prod FE-ECS DNS
+    needs: [deploy-web-ecs]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: eu-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Point only the isolated prod FE-ECS hostname at the web ALB
+        run: |
+          set -euo pipefail
+          alb="$(aws elbv2 describe-load-balancers \
+            --names kortix-prod-web-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)"
+          node infra/scripts/sync-web-dns.mjs prod "$alb"
+
+  verify-web-ecs:
+    name: Verify prod FE-ECS
+    needs: [version, publish-web-ecs-dns]
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_COMMIT: ${{ needs.version.outputs.source_sha }}
+      EXPECTED_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Verify exact release, public access, runtime config, and isolation
+        run: |
+          set -euo pipefail
+          base=https://prod-fe-ecs.kortix.com
+          for attempt in $(seq 1 30); do
+            health="$(curl -fsS --max-time 15 "$base/api/health" 2>/dev/null || true)"
+            commit="$(jq -r '.commit // empty' <<<"$health" 2>/dev/null || true)"
+            version="$(jq -r '.version // empty' <<<"$health" 2>/dev/null || true)"
+            status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
+            runtime="$(curl -fsS --max-time 15 "$base/api/runtime-config" 2>/dev/null || true)"
+            headers="$(curl -sS -D - -o /dev/null --max-time 15 "$base/" || true)"
+            vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$headers")"
+            echo "(${attempt}/30) commit=${commit:-?} version=${version:-?} status=${status:-?} vercel_headers=$vercel_headers"
+            if [ "$commit" = "$EXPECTED_COMMIT" ] \
+              && [ "$version" = "$EXPECTED_VERSION" ] \
+              && { [ "$status" = 200 ] || [ "$status" = 307 ] || [ "$status" = 308 ]; } \
+              && grep -F '"BACKEND_URL":"https://api.kortix.com/v1"' <<<"$runtime" >/dev/null \
+              && grep -F '"APP_URL":"https://prod-fe-ecs.kortix.com"' <<<"$runtime" >/dev/null \
+              && [ "$vercel_headers" = 0 ]; then
+              echo "Prod FE-ECS serves ${EXPECTED_COMMIT} at version ${EXPECTED_VERSION}."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Prod FE-ECS did not serve the expected release."
+          exit 1
+
+  # Deploy kortix.com (Vercel) ONLY after the API provably serves the release.
+  # Vercel's git auto-deploy for `prod` is OFF (vercel.json deploymentEnabled +
+  # vercel-ignore.sh): during the 2026-08-10 v0.12.7 rollout the auto-deployed
+  # new frontend called routes the still-old API did not have, and every
+  # project load failed. Ordering the frontend after `verify-live-version`
+  # makes a mixed frontend/API pair impossible.
+  deploy-web-vercel:
+    name: Deploy prod web to Vercel (after API is live)
+    needs: [version, verify-live-version]
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Link and verify the Vercel project
+        run: |
+          set -euo pipefail
+          test -n "${VERCEL_TOKEN:-}" || { echo "::error::VERCEL_TOKEN is not configured."; exit 1; }
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          linked="$(jq -r '.projectId' .vercel/project.json)"
+          if [ "$linked" != "prj_SoUUSNJPvOTDneE0E7faWHFuWMAY" ]; then
+            echo "::error::VERCEL_PROJECT_ID resolves to '$linked', not the suna project — refusing to deploy the wrong project."
+            exit 1
+          fi
+      - name: Deploy the release frontend to production
+        run: |
+          set -euo pipefail
+          # Stamp the release version explicitly: the Vercel build cannot always
+          # read the repo-root VERSION file from the apps/web root directory
+          # (v0.12.7 shipped a frontend reporting VERSION "dev" and failed
+          # frontend-auth-proof until redeployed with the env set).
+          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" \
+            --build-env "NEXT_PUBLIC_KORTIX_VERSION=${{ needs.version.outputs.version }}"
+
   frontend-note:
-    name: Prod frontend (Vercel auto-deploys prod)
-    needs: version  # gate with the rest of the pipeline (skipped on a failed promote)
+    name: Prod frontend paths active
+    needs: [version, publish-web-ecs-dns]
     runs-on: ubuntu-latest
     steps:
       - name: Note
         run: |
           {
-            echo "### Frontend → **prod** (Vercel)"
-            echo "Vercel auto-deploys the \`prod\` branch (→ kortix.com). No action needed here."
+            echo "### Frontend → **prod** (parallel)"
+            echo "- ECS: https://prod-fe-ecs.kortix.com"
+            echo "- Vercel: https://kortix.com"
           } >> "$GITHUB_STEP_SUMMARY"
 
   frontend-auth-proof:
     name: Prod frontend auth configuration
-    needs: [version, frontend-note]
+    needs: [version, frontend-note, verify-web-ecs, deploy-web-vercel]
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

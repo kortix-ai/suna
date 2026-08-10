@@ -18,6 +18,7 @@ import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
+import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
@@ -191,6 +192,13 @@ export async function resumeStoppedSandbox(row: {
       await markComputeSessionAlive(row.sandboxId, confirmedAt).catch((err) =>
         console.warn(`[projects] compute liveness stamp failed for ${row.sandboxId}:`, err),
       );
+      // A resume wakes the SAME powered-down VM, so the daemon's boot-time
+      // reconcile never re-runs and the box keeps the `kortix` binary its image
+      // was built with. Poke the daemon to re-converge on this deploy's runtime
+      // assets. Detached and after the rows are already active: it must not
+      // extend the wake the user is waiting on. It retries on its own, because
+      // provider-running precedes the guest daemon binding its port.
+      scheduleSandboxRuntimeRefresh(row.sessionId, 'resume');
       return true;
     },
     fail: async (reason) => {
@@ -624,6 +632,8 @@ export function sessionStartFailureFromSandbox(
   const storedCategory =
     rawCategory === 'provider-capacity' ||
     rawCategory === 'git-auth' ||
+    rawCategory === 'unsupported-secret-delivery' ||
+    rawCategory === 'invalid-secret-boundary-policy' ||
     rawCategory === 'sandbox-provider'
       ? rawCategory
       : 'sandbox-provider';
@@ -646,7 +656,14 @@ export function sessionStartFailureFromSandbox(
     (typeof metadata.errorMessage === 'string' && metadata.errorMessage.length > 0
       ? metadata.errorMessage
       : 'The sandbox provider could not start this session. Try again.');
-  return { category, message, retryable: true };
+  // Both secret-delivery categories are configuration states, not transient faults: the identical
+  // input produces the identical failure every time, so offering a retry only wastes the user's time.
+  return {
+    category,
+    message,
+    retryable:
+      category !== 'unsupported-secret-delivery' && category !== 'invalid-secret-boundary-policy',
+  };
 }
 
 async function preserveEstablishedRuntimeOnOpen(

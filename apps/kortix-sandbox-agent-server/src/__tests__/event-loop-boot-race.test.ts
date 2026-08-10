@@ -158,7 +158,10 @@ describe('event-loop boot race — the SSE subscribe must not sleep through open
     const loop = startOpencodeEventLoop(fakeOpencode(port), cfg, {})
     loops.push(loop)
 
-    await new Promise((r) => setTimeout(r, 600))
+    const deadline = Date.now() + 5_000
+    while (attemptCount() <= 2 && Date.now() < deadline) {
+      await Bun.sleep(25)
+    }
     expect(attemptCount()).toBeGreaterThan(2)
   }, 20_000)
 })

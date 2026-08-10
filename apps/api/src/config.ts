@@ -368,7 +368,12 @@ const envSchema = z.object({
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
   LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('claude-sonnet-4.6'),
+  // Target when a DEFAULT-model request carries image input and the default
+  // model lacks vision. Empty = no reroute (the request goes to the default
+  // model as-is). gpt-5.6-luna is the cheapest vision-capable managed model
+  // ($0.20/$1.20) — the default platform model (deepseek-v4-flash) is
+  // text-only.
+  LLM_GATEWAY_VISION_MODEL: optStrDefault('gpt-5.6-luna'),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,
   // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
@@ -380,7 +385,7 @@ const envSchema = z.object({
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('claude-sonnet-4.6'),
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4-flash'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT: optInt(0),
@@ -583,7 +588,8 @@ const envSchema = z.object({
   // Every provider is optional; the transport tries each configured one in
   // EMAIL_PROVIDER_ORDER and falls through on failure. See lib/email/transport.ts.
   EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap'),
-  // AWS SES (SigV4-signed SESv2 HTTP API; IAM user kortix-ses-sender).
+  // AWS SES (SigV4-signed SESv2 HTTP API). ECS uses its task role. Static
+  // credentials remain optional for local and self-hosted deployments.
   AWS_SES_REGION: optStrDefault('us-east-2'),
   AWS_SES_ACCESS_KEY_ID: optStr,
   AWS_SES_SECRET_ACCESS_KEY: optStr,
@@ -593,6 +599,9 @@ const envSchema = z.object({
   // domain is not yet claimed/verified in the Resend team. The intended from
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
+  // Local-only HTTP capture. The deterministic test profile points this at
+  // Supabase Mailpit. Deployed environments leave it unset.
+  MAILPIT_API_URL: optStr,
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
@@ -767,7 +776,17 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (tunnelEnabled && !raw.TUNNEL_SIGNING_SECRET) {
     issues.push({
       var: 'TUNNEL_SIGNING_SECRET',
-      message: 'Required when tunnel is enabled — used for HMAC signing key derivation',
+      message: 'Required when tunnel is enabled — protects device-handoff token derivation',
+      level: 'error',
+    });
+  } else if (
+    tunnelEnabled &&
+    typeof raw.TUNNEL_SIGNING_SECRET === 'string' &&
+    Buffer.byteLength(raw.TUNNEL_SIGNING_SECRET, 'utf8') < 24
+  ) {
+    issues.push({
+      var: 'TUNNEL_SIGNING_SECRET',
+      message: 'Must contain at least 24 bytes of secret material',
       level: 'error',
     });
   }
@@ -1130,6 +1149,7 @@ export const config = {
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,

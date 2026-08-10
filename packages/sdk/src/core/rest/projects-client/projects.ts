@@ -1,6 +1,6 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
-import { type ApiClientOptions, backendApi } from '../../http/api-client';
+import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
   type ProjectFileEntry,
@@ -289,6 +289,9 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
+  /** Default branch for the newly-created managed repo. Omit to accept the
+   *  server's own default (`apps/api/src/projects/routes/r1.ts`). */
+  default_branch?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
   marketplace_items?: string[];
   /** Clone a `registry:project` marketplace item instead of the blank
@@ -525,6 +528,193 @@ export async function provisionProject(
       },
     ),
   );
+}
+
+/**
+ * The phases `POST /projects/provision-stream` reports, in the order it
+ * reports them. Mirrors `PROVISION_PHASES` in
+ * `apps/api/src/projects/provision-core.ts` — a separate package, so a
+ * separate declaration, but the two must stay byte-identical. A drift here
+ * (a renamed or reordered phase on one side only) means the UI silently
+ * stops advancing on whichever phase name no longer matches, with no error —
+ * see the exhaustiveness test in `projects.test.ts` that pins this union
+ * against the literal phase list.
+ */
+export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering' | 'seeding';
+
+/**
+ * One frame of `POST /projects/provision-stream`'s SSE body.
+ *
+ * The `error` frame's `status` mirrors the HTTP status the equivalent
+ * `/provision` response would have carried for the same failure — the route
+ * (`apps/api/src/projects/routes/r1.ts`) writes `result.status` from the
+ * shared `runProvision` core alongside `error`/`code`, exactly the fields
+ * `provisionProjectStream` (below) copies onto the error it throws. Without
+ * this, a host reading only `.status`/`.code` (as `apps/web`'s
+ * `messageFor`/`isRetryableError` do) cannot tell a 400 from a 409 on this
+ * transport, even though it can on the plain `provisionProject` path.
+ */
+export type ProvisionStreamEvent =
+  | { type: 'phase'; phase: ProvisionPhase }
+  | { type: 'done'; project: KortixProject }
+  | { type: 'error'; error: string; code?: string; status?: number };
+
+/**
+ * Parse ONE SSE frame — the text between two `\n\n` boundaries — into a
+ * `ProvisionStreamEvent`, or `null` if the frame carries no `data:` line.
+ *
+ * Line-by-line, not `frame.startsWith('data: ')` against the whole frame:
+ * SSE permits `: comment` lines and an `event:` line ahead of `data:`, and
+ * the wire contract here is data-only (no `event:` line) ONLY as an
+ * implementation choice the server documents, not a protocol guarantee a
+ * client should hard-fail without. A parser that rejects any frame that
+ * isn't EXACTLY `data: <json>` breaks the moment a spec-legal frame shows up
+ * that it wasn't exactly expecting. Per the SSE spec, multiple `data:` lines
+ * in one frame are joined with `\n` before parsing.
+ */
+/** How much of an unparseable frame's payload to surface in the thrown error.
+ *  Bounded hard: a frame can be arbitrarily large, and — in the wrong build,
+ *  on the wrong route — could in principle carry something sensitive (a push
+ *  token). Never include more than this, and never log the payload anywhere. */
+const FRAME_PARSE_ERROR_EXCERPT_LENGTH = 200;
+
+function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
+  const dataLines = frame
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).replace(/^ /, ''));
+  if (dataLines.length === 0) return null;
+
+  const payload = dataLines.join('\n');
+  try {
+    return JSON.parse(payload) as ProvisionStreamEvent;
+  } catch (cause) {
+    const excerpt =
+      payload.length > FRAME_PARSE_ERROR_EXCERPT_LENGTH
+        ? `${payload.slice(0, FRAME_PARSE_ERROR_EXCERPT_LENGTH)}…`
+        : payload;
+    // Named + attributed: a bare `SyntaxError: JSON Parse error: Expected
+    // '}'` gives someone debugging a proxy that mangled one frame in
+    // production nothing to go on — no mention of provisionProjectStream, no
+    // mention that this came from an SSE frame, no sight of what the frame
+    // actually contained.
+    throw new Error(
+      `provisionProjectStream: received an unparseable SSE frame (${excerpt})`,
+      { cause },
+    );
+  }
+}
+
+/**
+ * Create a managed-repo project, reporting which phase the server is in as
+ * it happens.
+ *
+ * Same create as {@link provisionProject} — the server runs ONE shared
+ * implementation (`runProvision` in `apps/api/src/projects/provision-core.ts`)
+ * behind both `/projects/provision` and `/projects/provision-stream`. Use
+ * this when a UI needs to show progress; use `provisionProject` for a plain
+ * request/response.
+ *
+ * The stream always ends in a terminal `done` or `error` frame — the server
+ * guarantees it (see the route's `finally`/catch in
+ * `apps/api/src/projects/routes/r1.ts`). A stream that closes with NEITHER is
+ * treated as a failure here too, never as an implicit success: resolving
+ * with no project would hand the caller an undefined project id and route a
+ * user to `/projects/undefined`.
+ *
+ * A pre-stream authorization denial (e.g. "Owner or admin role required")
+ * arrives as a plain non-2xx JSON response, never as a `200` that then opens
+ * an SSE body containing an `error` frame — this function rejects with that
+ * response's message the same way it rejects an in-stream `error` event.
+ * Both rejections are a real `ApiError` carrying `.status`/`.code`, not a
+ * bare `Error` — see the `ProvisionStreamEvent` doc comment above for why
+ * that match to `ApiError`'s shape matters.
+ *
+ * ## Streaming target matrix
+ *
+ * Requires `fetch` with a real `ReadableStream` response body:
+ *
+ * | Target                          | Streams? |
+ * |----------------------------------|----------|
+ * | Modern browsers (Safari 16.4+)   | yes |
+ * | Node >= 18                       | yes |
+ * | Bun                               | yes |
+ * | Cloudflare Workers                | yes |
+ * | **React Native / Expo**          | **NO** |
+ *
+ * **React Native is NOT supported.** RN's `fetch` has no `response.body` —
+ * there is no way to read a stream incrementally on that runtime, full stop.
+ * (This function decodes with plain `TextDecoder.decode()`, not
+ * `TextDecoderStream`, so Hermes's missing `TextDecoderStream` is not what
+ * blocks it here — the absent `response.body` alone is sufficient.) Callers
+ * on RN must use `provisionProject` instead (single request/response, no
+ * progress reporting).
+ */
+export async function provisionProjectStream(
+  input: ProvisionProjectInput,
+  onEvent: (event: ProvisionStreamEvent) => void,
+  options: ApiClientOptions = {},
+): Promise<KortixProject> {
+  const response = await backendApi.postStream(
+    '/projects/provision-stream',
+    { seed_starter: true, ...input },
+    options,
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+    // A REAL `ApiError`, not a bare `Error` — see the `ProvisionStreamEvent`
+    // doc comment above. `apps/web`'s `messageFor`/`isRetryableError` read
+    // `.status`/`.code` off whatever `provisionProject`/`provisionProjectStream`
+    // throw; without this they saw `undefined` for both on this transport.
+    throw new ApiError(body?.error || `Provision failed: HTTP ${response.status}`, {
+      status: response.status,
+      code: body?.code,
+    });
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Provision stream is unavailable on this runtime (no response body)');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let settled: KortixProject | null = null;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf('\n\n');
+
+        const event = parseProvisionStreamFrame(frame);
+        if (!event) continue;
+        onEvent(event);
+        // Same `ApiError` shape as the pre-stream-denial branch above, so a
+        // host classifying create failures gets identical `.status`/`.code`
+        // whichever branch fired.
+        if (event.type === 'error') {
+          throw new ApiError(event.error, { status: event.status, code: event.code });
+        }
+        if (event.type === 'done') settled = event.project;
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+
+  // A stream that closes without a terminal event is a failure, not a
+  // success. Resolving here would hand the caller an undefined project id
+  // and route a user to `/projects/undefined`.
+  if (!settled) throw new Error('Provision stream ended without a result');
+  return settled;
 }
 
 export interface ManagedGitStatus {

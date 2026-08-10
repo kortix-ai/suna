@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { isAbsolute } from 'node:path';
 import type { TriggerList } from '@kortix/api-contract';
 import { connectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
@@ -1810,7 +1811,8 @@ export async function commitRepoFile(
       };
     }
   }
-  if (!gitProject.gitAuthToken) {
+  const localRepository = process.env.KORTIX_LOCAL_DEV === '1' && isAbsolute(gitProject.repoUrl);
+  if (!gitProject.gitAuthToken && !localRepository) {
     return { error: 'No git credentials available to write to the project repo', status: 502 };
   }
 

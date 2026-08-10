@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Part } from '../runtime/client';
 import { classifyPart, type ClassifiedPart } from './classify';
 import type { ToolView } from './classify';
-import { toolViewModel } from './view-model';
+import { shellExitCode, toolViewModel } from './view-model';
 
 /** Build a minimal ToolView directly — most tests here exercise `toolViewModel`
  *  in isolation rather than going through the full `classifyPart` pipeline. */
@@ -113,6 +113,47 @@ describe('toolViewModel — web-search / image-search', () => {
       },
     ]);
   });
+});
+
+describe('shellExitCode', () => {
+	// Exported because a host cannot otherwise learn that a command failed. The
+	// bash tool appends `<exit_code>` after its output, every consumer strips
+	// that tail before display, and a non-zero exit is not inferable from what
+	// survives: a failing build prints to stdout like a passing one, and the
+	// heuristics that catch `Error: …` payloads bail on anything long.
+	test("reads the tag the tool appends after its output", () => {
+		expect(shellExitCode("boom\n<exit_code>1</exit_code>")).toBe(1);
+		expect(shellExitCode("ok\n<exit_code>0</exit_code>")).toBe(0);
+	});
+
+	test("a signal's negative code is a code, not a parse failure", () => {
+		expect(shellExitCode("<exit_code>-9</exit_code>")).toBe(-9);
+	});
+
+	test("whitespace inside the tag is tolerated", () => {
+		expect(shellExitCode("<exit_code> 127 </exit_code>")).toBe(127);
+	});
+
+	test("no tag means no verdict — never a zero", () => {
+		// Defaulting to 0 would report every un-tagged call as a success.
+		expect(shellExitCode("plain output")).toBeUndefined();
+		expect(shellExitCode("")).toBeUndefined();
+		expect(shellExitCode("<exit_code>abc</exit_code>")).toBeUndefined();
+	});
+
+	test("agrees with the view model it is extracted from", () => {
+		const raw = "out\n<exit_code>2</exit_code>";
+		const tool = classifyToolPart("bash", {
+			status: "completed",
+			input: { command: "false" },
+			output: raw,
+			title: "Shell",
+			metadata: {},
+			time: { start: 0, end: 1 },
+		});
+		const vm = toolViewModel(tool);
+		expect(vm.kind === "shell" && vm.exitCode).toBe(shellExitCode(raw));
+	});
 });
 
 describe('toolViewModel — shell (bash)', () => {

@@ -25,6 +25,7 @@ const run = (dir, version) =>
   mkdirSync(join(dir, 'dist'));
   writeFileSync(join(dir, 'dist', 'index.js'), '');
   writeFileSync(join(dir, 'dist', 'index.d.ts'), '');
+  writeFileSync(join(dir, 'dist', 'cli.js'), '');
   writeFileSync(
     join(dir, 'package.json'),
     JSON.stringify(
@@ -34,6 +35,7 @@ const run = (dir, version) =>
         main: './src/index.ts',
         types: './src/index.ts',
         exports: { '.': './src/index.ts' },
+        bin: { 'kortix-x': './src/cli.ts' },
         dependencies: { '@kortix/shared': 'workspace:*', zustand: '^5.0.3' },
         files: ['dist', 'src', 'README.md'],
         publishConfig: {
@@ -42,6 +44,7 @@ const run = (dir, version) =>
           main: './dist/index.js',
           types: './dist/index.d.ts',
           exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
+          bin: { 'kortix-x': './dist/cli.js' },
           files: ['dist', 'README.md'],
         },
       },
@@ -56,6 +59,7 @@ const run = (dir, version) =>
   assert(out.main === './dist/index.js', 'main promoted to dist');
   assert(out.types === './dist/index.d.ts', 'types promoted to dist');
   assert(out.exports['.'].import === './dist/index.js', 'exports promoted to dist');
+  assert(out.bin['kortix-x'] === './dist/cli.js', 'bin promoted to dist');
   assert(JSON.stringify(out.files) === JSON.stringify(['dist', 'README.md']), 'files promoted from publishConfig');
   assert(out.dependencies['@kortix/shared'] === '2.3.4', 'workspace dep pinned to the release version');
   assert(out.dependencies.zustand === '^5.0.3', 'registry dep range left untouched');
@@ -179,7 +183,38 @@ const run = (dir, version) =>
   rmSync(dir, { recursive: true, force: true });
 }
 
-// 5) Missing VERSION must fail.
+// 5) A declared binary missing from the build output must fail loudly. A
+// package can otherwise publish successfully while every `npx` invocation is
+// broken.
+{
+  const dir = mkdtempSync(join(tmpdir(), 'stage-bin-miss-'));
+  mkdirSync(join(dir, 'dist'));
+  writeFileSync(
+    join(dir, 'package.json'),
+    JSON.stringify(
+      {
+        name: '@kortix/bin-miss',
+        version: '1.0.0',
+        publishConfig: {
+          access: 'public',
+          bin: { 'kortix-bin-miss': 'dist/cli.js' },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  let threw = false;
+  try {
+    run(dir, '1.0.0');
+  } catch {
+    threw = true;
+  }
+  assert(threw, 'missing bin target must fail');
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// 6) Missing VERSION must fail.
 {
   const dir = mkdtempSync(join(tmpdir(), 'stage-nov-'));
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@kortix/z', version: '1.0.0' }, null, 2));

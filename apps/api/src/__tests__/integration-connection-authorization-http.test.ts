@@ -878,6 +878,85 @@ describe('connection owner authorization over HTTP', () => {
     });
   });
 
+  test('scope reports whether the session holds a connector override, and null clears it', async () => {
+    // The resolved `connector_bindings` map looks the same whether a session
+    // overrode its connectors or merely inherited the project defaults. A
+    // client that cannot tell the two apart renders an inherited session as
+    // "none" and writes an explicit zero-connector override on the next save.
+    // So: the flag says which state the row is in, and `null` is the verb that
+    // gets back out of an override.
+    const token = await mint(ALICE);
+    const connected = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/credential`,
+      token,
+      { value: 'scope-clear-capability' },
+    );
+    expect(connected.status).toBe(200);
+
+    await db
+      .update(projectSessions)
+      .set({ connectorBindingsConfigured: false, connectorBindingsInheritUnbound: true })
+      .where(eq(projectSessions.sessionId, DEFAULT_SCOPE_SESSION));
+
+    const inherited = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      token,
+    );
+    expect(inherited.status).toBe(200);
+    expect(await inherited.json()).toMatchObject({
+      connector_bindings_configured: false,
+      connector_bindings_inherit_unbound: true,
+    });
+
+    // A save that names no connector axis must not create an override.
+    const secretsOnly = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      token,
+      { secrets: null },
+    );
+    expect(secretsOnly.status).toBe(200);
+    expect(await secretsOnly.json()).toMatchObject({ connector_bindings_configured: false });
+
+    const explicit = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      token,
+      { connector_bindings: {} },
+    );
+    expect(explicit.status).toBe(200);
+    expect(await explicit.json()).toMatchObject({ connector_bindings_configured: true });
+
+    const cleared = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      token,
+      { connector_bindings: null },
+    );
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({
+      connector_bindings_configured: false,
+      // Back to resolving the project default, which is the whole point.
+      connector_bindings: {
+        personal_data: { connection_id: ALICE_CONNECTION },
+      },
+    });
+
+    const [row] = await db
+      .select({ configured: projectSessions.connectorBindingsConfigured })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, DEFAULT_SCOPE_SESSION));
+    expect(row).toEqual({ configured: false });
+    expect(
+      await db
+        .select({ alias: projectSessionConnectorBindings.connectorAlias })
+        .from(projectSessionConnectorBindings)
+        .where(eq(projectSessionConnectorBindings.sessionId, DEFAULT_SCOPE_SESSION)),
+    ).toEqual([]);
+  });
+
   test('scope replacement uses the session owner and rejects shared user authorization', async () => {
     const ownerToken = await mint(ALICE);
     const connected = await request(

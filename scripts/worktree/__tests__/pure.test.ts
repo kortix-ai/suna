@@ -4,6 +4,7 @@ import {
   DEV_GATEWAY_INTERNAL_TOKEN,
   STRIDE,
   apiLaunchEnv,
+  LOCAL_FLOW_INTERNAL_SERVICE_KEY,
   computePorts,
   dbModeOf,
   gatewayLaunchEnv,
@@ -126,6 +127,12 @@ describe('launch envs', () => {
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
     expect(env.KORTIX_APPS_LOCAL).toBe('true');
     expect(env.KORTIX_APPS_LOCAL_PORT).toBe(String(ports.api));
+    expect(env.INTERNAL_SERVICE_KEY).toBe(LOCAL_FLOW_INTERNAL_SERVICE_KEY);
+  });
+
+  test('api receives the local Supabase JWT secret for signed state contracts', () => {
+    const env = apiLaunchEnv(ports, { ...creds, jwtSecret: 'local-jwt-secret' });
+    expect(env.SUPABASE_JWT_SECRET).toBe('local-jwt-secret');
   });
 
   test('worktrees do not pin a sandbox provider over dotenv or shell configuration', () => {
@@ -137,6 +144,12 @@ describe('launch envs', () => {
     const env = apiLaunchEnv(ports, creds, { stripeWebhookSecret: 'whsec_x' });
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
     expect(env.STRIPE_WEBHOOK_SECRET).toBe('whsec_x');
+  });
+
+  test('--billing exposes local billing routes without webhook forwarding', () => {
+    const env = apiLaunchEnv(ports, creds, { billing: true });
+    expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
+    expect(env.STRIPE_WEBHOOK_SECRET).toBeUndefined();
   });
 
   test('api and gateway share the SAME internal token (mutual auth invariant)', () => {

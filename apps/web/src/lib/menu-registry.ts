@@ -20,6 +20,7 @@
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { FeatureFlagKey } from '@kortix/sdk';
 import {
@@ -44,11 +45,9 @@ import {
   KeyboardIcon as Keyboard,
   KeyIcon as KeyRound,
   StackIcon as Layers,
-  WaveformIcon as Waveform,
   SquaresFourIcon as LayoutDashboard,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
-  MonitorIcon as Monitor,
   PaletteIcon as Palette,
   SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
@@ -66,6 +65,7 @@ import {
   UsersIcon as UsersSolid,
   SpeakerHighIcon as Volume2,
   ImagesSquareIcon as WallpaperIcon,
+  WaveformIcon as Waveform,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
@@ -319,19 +319,19 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'restartConfig',
     keywords: 'reload restart config agents skills commands',
+    requiresSession: true,
   },
   {
-    id: 'restart-full',
-    // Says what it does. This maps to the daemon's /kortix/refresh, which pulls
-    // the workspace AND restarts the runtime — "Full" alone did not warn that it
-    // touches the working tree, or that it ends the turn in flight.
-    label: 'Restart: Pull & Restart Runtime',
+    id: 'sync-session-branch',
+    label: 'Ask Agent: Sync Branch & Reload',
     icon: RefreshCw,
     group: 'actions',
     showIn: ['commandPalette'],
     kind: 'action',
-    actionId: 'restartFull',
-    keywords: 'reload restart full services kill nuclear pull refresh workspace',
+    actionId: 'reconcileSession',
+    keywords:
+      'agent sync branch base pull merge conflict resolve reconcile reload restart refresh workspace',
+    requiresSession: true,
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -346,7 +346,10 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects',
+    // Static registry entry — no user id to resolve the latest project with,
+    // so this is the id-free landing door, never the removed `/projects`
+    // list.
+    href: PROJECT_LANDING_PATH,
     keywords: 'projects list all workspaces switch',
   },
   {
@@ -536,19 +539,6 @@ export const menuRegistry: MenuItemDef[] = [
     requiresFlag: 'llm_gateway',
     keywords:
       'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
-  },
-  {
-    id: 'proj-computers',
-    label: 'Customize · Computers',
-    icon: Monitor,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/customize/computers',
-    requiresProject: true,
-    requiresFlag: 'agent_tunnel',
-    keywords:
-      'computers tunnel machines connect reverse local devices remote agent access project customize',
   },
   {
     id: 'proj-review',

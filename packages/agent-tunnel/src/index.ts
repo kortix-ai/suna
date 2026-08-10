@@ -8,6 +8,11 @@ export {
   timingSafeStringEqual,
   TunnelErrorCode,
   TunnelMethods,
+  capabilityForMethod,
+  desktopFeatureForMethod,
+  isTunnelCapability,
+  operationForMethod,
+  validateTunnelPermissionScope,
 } from './shared';
 
 export type {
@@ -33,6 +38,7 @@ export type {
   TunnelCapability,
   TunnelMethod,
   TunnelErrorCodeValue,
+  PermissionScopeValidationResult,
 } from './shared';
 
 // ─── Server: Relay ──────────────────────────────────────────────────────────

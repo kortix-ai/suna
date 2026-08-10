@@ -582,7 +582,7 @@ export function SessionContextModal({
         className="flex max-h-[85vh] max-w-4xl flex-col overflow-hidden"
         aria-describedby={undefined}
       >
-        <DialogHeader className="flex-shrink-0">
+        <DialogHeader className="shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base font-semibold">Context</DialogTitle>
             <Button onClick={handleCopyAll} variant="outline" size="toolbar" className="mr-8">

@@ -17,7 +17,7 @@
  */
 
 import Loading from '@/components/ui/loading';
-import { getFileIcon, getFileType } from '@/lib/utils/file-utils';
+import { fileIconFor } from '@/lib/utils/file-utils';
 
 /**
  * Every attachment is the same square tile — the picture if we have one, an
@@ -63,7 +63,7 @@ export const TILE_INTERACTIVE =
  * mime) and this body only ever needed the name.
  */
 export function FileTileBody({ filename, pending }: { filename: string; pending?: boolean }) {
-  const Icon = getFileIcon(getFileType(filename));
+  const Icon = fileIconFor(filename);
   return (
     <span className="flex size-full flex-col justify-between gap-1 p-2">
       {pending ? (

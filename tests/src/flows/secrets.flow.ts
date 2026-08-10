@@ -131,6 +131,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
     const p = await team.project();
+    let networkBoundaryAvailable = false;
 
     await ctx.step("create returns explicit runtime delivery metadata", async () => {
       const r = await ctx.client
@@ -146,6 +147,7 @@ flow(
         .has("$.consumer", "sandbox")
         .has("$.delivery_status", "available")
         .has("$.requires_rotation", false);
+      networkBoundaryAvailable = r.json<{ network_boundary_available?: boolean }>().network_boundary_available === true;
     });
 
     await ctx.step("manager disables sandbox delivery", async () => {
@@ -226,7 +228,34 @@ flow(
         .has("$.egress_policy", policy);
     });
 
-    await ctx.step("transparent egress fails closed until its adapter is available", async () => {
+    await ctx.step("transparent egress follows the deployment capability", async () => {
+      const policy = {
+        rules: [{ host: "api.example.com" }],
+        inject: { kind: "header", name: "authorization", template: "Bearer {{secret}}" },
+      };
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          {
+            strategy: "egress",
+            egress_policy: policy,
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      if (networkBoundaryAvailable) {
+        r.status(200)
+          .body()
+          .has("$.strategy", "egress")
+          .has("$.consumer", "network")
+          .has("$.delivery_status", "available")
+          .has("$.egress_policy", policy);
+      } else {
+        r.status(409).body().has("$.code", "secret_delivery_unavailable");
+      }
+    });
+
+    await ctx.step("transparent egress rejects controls the provider cannot enforce", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
@@ -234,14 +263,13 @@ flow(
           {
             strategy: "egress",
             egress_policy: {
-              backend: "llm_gateway",
-              rules: [{ host: "api.example.com" }],
+              rules: [{ host: "api.example.com", methods: ["POST"] }],
               inject: { kind: "header", name: "authorization" },
             },
           },
           { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
-      r.status(409).body().has("$.code", "secret_delivery_unavailable");
+      r.status(400).body().has("$.code", "secret_delivery_policy_invalid");
     });
 
     await ctx.step("broker execution requires a session-scoped agent token", async () => {
@@ -267,7 +295,11 @@ flow(
           { name: "CONTROL_PLANE_KEY", value: "rotated-control-plane-value" },
           { params: { projectId: p.id } },
         );
-      rotate.status(200).body().has("$.strategy", "broker").has("$.requires_rotation", false);
+      rotate
+        .status(200)
+        .body()
+        .has("$.strategy", networkBoundaryAvailable ? "egress" : "broker")
+        .has("$.requires_rotation", false);
 
       const restore = await ctx.client
         .as(ctx.P.OWNER)

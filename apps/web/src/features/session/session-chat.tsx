@@ -21,17 +21,19 @@ import {
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
-import type { QueueDrainGates } from './message-queue-boundary';
+import { hasOpenAssistantTurn } from './assistant-turn-open';
+import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
+import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
 import { useMessageQueueDrain } from './use-message-queue-drain';
@@ -48,7 +50,7 @@ import {
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
@@ -139,7 +141,6 @@ import {
   groupMessagesIntoTurns,
   isAgentPart,
   isAttachment,
-  isLastUserMessage,
   isReasoningPart,
   isTextPart,
   isToolPart,
@@ -503,7 +504,18 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 
 interface SessionTurnProps {
   turn: Turn;
-  allMessages: MessageWithParts[];
+  /**
+   * Both were derived HERE from `allMessages`, once per turn, on every render.
+   *
+   * `ownsPlan` was the worst thing in the chat: `planAnchorMessageId` walks
+   * every message and calls `parts.some(...)` on each, so a fifty-turn session
+   * ran an O(total-parts) scan fifty times per frame. Hoisting it to the parent
+   * makes it one scan for the whole transcript. `isLast` is cheap by comparison,
+   * but it took `allMessages` — a new array every frame — which alone would have
+   * defeated `React.memo` on this component.
+   */
+  isLast: boolean;
+  ownsPlan: boolean;
   sessionId: string;
   sessionStatus: import('@/ui').SessionStatus | undefined;
   permissions: PermissionRequest[];
@@ -593,9 +605,10 @@ export function SessionReportCard({
   );
 }
 
-function SessionTurn({
+function SessionTurnImpl({
   turn,
-  allMessages,
+  isLast,
+  ownsPlan,
   sessionId,
   sessionStatus,
   permissions,
@@ -637,16 +650,6 @@ function SessionTurn({
   const hasReasoning = useMemo(
     () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
     [allParts],
-  );
-  const isLast = useMemo(
-    () => isLastUserMessage(turn.userMessage.info.id, allMessages),
-    [turn.userMessage.info.id, allMessages],
-  );
-  // The plan belongs to the turn that WROTE it, not to whichever turn happens
-  // to be last — see turn/plan-anchor.ts.
-  const ownsPlan = useMemo(
-    () => planAnchorMessageId(allMessages) === turn.userMessage.info.id,
-    [turn.userMessage.info.id, allMessages],
   );
   // A turn is "working" when:
   // 1. The session status says busy/retry (via getWorkingState), OR
@@ -735,6 +738,31 @@ function SessionTurn({
       }
     }
     return undefined;
+  }, [turn]);
+
+  /**
+   * Was the turn ACTUALLY aborted, as opposed to failing with a message that
+   * happens to contain the word?
+   *
+   * `getTurnError` flattens the structured error to a display string and drops
+   * its `name`, so the banner was left substring-matching "abort" over arbitrary
+   * prose — which renders a genuine failure as a muted "Interrupted" and hides
+   * what really went wrong. The identity is right here on the message; read it.
+   *
+   * Both real producers set `name: 'AbortError'`: opencode's own abort, and the
+   * optimistic patch applied when the user hits Stop.
+   */
+  const turnErrorIsAbort = useMemo(() => {
+    for (const msg of turn.assistantMessages) {
+      const err = (msg.info as { error?: unknown }).error;
+      if (!err || typeof err !== 'object') continue;
+      // Narrow to a string BEFORE comparing — `name` is `unknown` here, and
+      // comparing that to a literal is the inconvertible-types smell CodeQL
+      // flags (and would silently be false for a boxed String or a symbol).
+      const name = (err as { name?: unknown }).name;
+      return typeof name === 'string' && name === 'AbortError';
+    }
+    return false;
   }, [turn]);
 
   // The gateway's structured fields (provider/suggestion/request_id) for
@@ -1105,6 +1133,40 @@ function SessionTurn({
     return ids;
   }, [permissions, answeredQuestionParts, sessionId]);
 
+  /**
+   * The turn's parts, cut into bursts / standalone tools / text.
+   *
+   * This ran INLINE in the JSX below, which meant a `map`, a `filter` and the
+   * whole of `segmentTurn` on every render of this turn — and, worse, a brand
+   * new `segment.parts` array for every burst every time. `ActivityBurst` keys
+   * its `useMemo`s on `parts`, so a fresh array identity per render made every
+   * one of them a guaranteed miss: `mergeBurstSteps`, `burstSummary` and
+   * `stepLabel` recomputed for every burst in the turn on every frame, and no
+   * `React.memo` below could ever hold. A turn re-renders for reasons that have
+   * nothing to do with its parts — a hover, a permission arriving, the parent's
+   * state — and each of those paid the full price.
+   *
+   * Memoised, the arrays keep their identity until the parts actually change,
+   * which is what makes the memo boundaries downstream able to bite.
+   */
+  const segments = useMemo(
+    () =>
+      segmentTurn(
+        allParts
+          .map(({ part }) => part)
+          .filter((part) => {
+            if (isToolPart(part) && part.tool === 'todowrite') return false;
+            if (isToolPart(part) && part.tool === 'question') {
+              // Keep only answered questions, and only if not rendering inline
+              return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
+            }
+            return true;
+          }),
+        { standaloneCallIds },
+      ),
+    [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds],
+  );
+
   // ============================================================================
   // Shell mode — short-circuit rendering
   // ============================================================================
@@ -1124,6 +1186,7 @@ function SessionTurn({
           <TurnErrorDisplay
             errorText={turnError}
             errorDetails={turnErrorDetails}
+            isAbort={turnErrorIsAbort}
             className="mt-2"
           />
         )}
@@ -1178,7 +1241,7 @@ function SessionTurn({
   // ============================================================================
 
   return (
-    <div className="group/turn space-y-2.5">
+    <div className="group/turn text-factor-[2] space-y-2.5">
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
@@ -1233,20 +1296,8 @@ function SessionTurn({
 			      answered questions are dropped when rendering inline content
 			      (below), since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
-        <div className="space-y-2">
-          {segmentTurn(
-            allParts
-              .map(({ part }) => part)
-              .filter((part) => {
-                if (isToolPart(part) && part.tool === 'todowrite') return false;
-                if (isToolPart(part) && part.tool === 'question') {
-                  // Keep only answered questions, and only if not rendering inline
-                  return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
-                }
-                return true;
-              }),
-            { standaloneCallIds },
-          ).map((segment, index, segments) => {
+        <div className="space-y-3">
+          {segments.map((segment, index) => {
             if (segment.kind === 'burst') {
               return (
                 <ActivityBurst
@@ -1411,7 +1462,13 @@ function SessionTurn({
       )}
 
       {/* ── Error (abort / failure banner) ── */}
-      {turnError && <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} />}
+      {turnError && (
+        <TurnErrorDisplay
+          errorText={turnError}
+          errorDetails={turnErrorDetails}
+          isAbort={turnErrorIsAbort}
+        />
+      )}
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
@@ -1420,11 +1477,11 @@ function SessionTurn({
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             onClick={handleCopy}
             aria-label={copied ? 'Copied' : 'Copy response'}
           >
-            <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+            <span className="relative inline-flex shrink-0 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
                 <m.span
                   key={copied ? 'check' : 'copy'}
@@ -1435,9 +1492,9 @@ function SessionTurn({
                   className="absolute inset-0 inline-flex items-center justify-center"
                 >
                   {copied ? (
-                    <CheckIcon className="text-foreground size-4" />
+                    <CheckIcon className="text-foreground/70 size-[1.05rem]" />
                   ) : (
-                    <Copy className="size-4" />
+                    <Copy className="text-foreground/70 size-[1.05rem]" />
                   )}
                 </m.span>
               </AnimatePresence>
@@ -1460,6 +1517,27 @@ function SessionTurn({
     </div>
   );
 }
+
+/**
+ * The boundary that stops the transcript re-rendering with the stream.
+ *
+ * `messages` is rebuilt on every SSE frame, so this component used to re-render
+ * for every turn in the session ~60 times a second — and each of those renders
+ * re-ran ~28 `useMemo`s (all keyed on `turn`), a `planAnchorMessageId` scan of
+ * the whole transcript, `segmentTurn`, and every tool renderer beneath it.
+ * `content-visibility: auto` on the wrapper hid the layout cost of that, not the
+ * JavaScript.
+ *
+ * The default shallow compare is correct here ONLY because three things were
+ * fixed first, and each is load-bearing: `turn` keeps its identity when its
+ * messages have not changed (`stabilizeTurns`), the `allMessages` array prop is
+ * gone (replaced by the `isLast` / `ownsPlan` booleans derived once above), and
+ * `onRewind` is a `useCallback` rather than an inline arrow. Any one of the
+ * three reverting silently turns this memo back into a no-op — it would still
+ * compile, still pass tests, and simply never bail out.
+ */
+const SessionTurn = memo(SessionTurnImpl);
+SessionTurn.displayName = 'SessionTurn';
 
 // ============================================================================
 // Main SessionChat Component
@@ -1967,19 +2045,16 @@ export function SessionChat({
   const sessionStatus = sessionState?.status ?? syncStatus;
   const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
-  // Pending: last assistant message has no time.completed.
-  // Used as a SECONDARY signal — only contributes to busy when the
-  // server also says busy. Prevents the event-ordering race where
-  // session.idle arrives before message.updated sets time.completed.
-  const hasIncompleteAssistant = useMemo(() => {
-    if (!messages || messages.length === 0) return false;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].info.role === 'assistant') {
-        return !(messages[i].info as any).time?.completed;
-      }
-    }
-    return false;
-  }, [messages]);
+  // Pending: last assistant message is neither completed nor errored.
+  // Used as a SECONDARY signal for busy — only contributes when the server
+  // also says busy. Prevents the event-ordering race where session.idle
+  // arrives before message.updated sets time.completed.
+  //
+  // It is ALSO a queue drain gate, which is why "errored counts as ended"
+  // matters: an aborted turn keeps `time.completed` unset, so reading only
+  // that field left this true forever after the stop button and closed the
+  // gate permanently. See `assistant-turn-open.ts`.
+  const hasIncompleteAssistant = useMemo(() => hasOpenAssistantTurn(messages), [messages]);
 
   const hasPendingUserReply = useMemo(() => {
     if (!messages || messages.length === 0) return false;
@@ -2510,7 +2585,44 @@ export function SessionChat({
       }
     };
   }, []);
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
+  const rawTurns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
+  /**
+   * `groupMessagesIntoTurns` allocates a fresh object per turn on every call, and
+   * `messages` is rebuilt on every SSE frame — so a fifty-turn session handed
+   * React fifty new `turn` objects ~60 times a second, of which at most one had
+   * changed. `turn` is the dependency of ~28 memos inside `SessionTurn`, so that
+   * one fact invalidated all of them, for every turn, every frame.
+   *
+   * Writing the ref during render is deliberate and safe: `stabilizeTurns` is
+   * idempotent, so StrictMode's double invocation lands on the same objects.
+   */
+  const stableTurnsRef = useRef<Turn[]>([]);
+  const turns = useMemo(() => {
+    const stable = stabilizeTurns(rawTurns, stableTurnsRef.current);
+    stableTurnsRef.current = stable;
+    return stable;
+  }, [rawTurns]);
+
+  /**
+   * One scan of the transcript, not one per turn.
+   *
+   * `planAnchorMessageId` inspects every part of every message. It used to run
+   * inside each turn, which made it O(turns x total-parts) — on the order of
+   * 100k part inspections per frame for a long session.
+   */
+  const planAnchorId = useMemo(() => (messages ? planAnchorMessageId(messages) : null), [messages]);
+  const lastUserMessageId = useMemo(() => {
+    if (!messages) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].info.role === 'user') return messages[i].info.id;
+    }
+    return null;
+  }, [messages]);
+  /** Hoisted out of the JSX: an inline arrow prop defeats `React.memo` by itself. */
+  const handleRewind = useCallback(
+    (messageId: string, text: string) => setRewindTarget({ messageId, text }),
+    [],
+  );
   const hasAnyMessages = turns.length > 0;
   const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
@@ -3041,9 +3153,39 @@ export function SessionChat({
   const registerSender = useChatSendStore((s) => s.registerSender);
   const unregisterSender = useChatSendStore((s) => s.unregisterSender);
   useEffect(() => {
-    registerSender(sessionId, (text: string) => handleSend(text));
+    registerSender(
+      sessionId,
+      async (text: string) => {
+        const shouldQueue = shouldQueueInsteadOfSend({
+          isBusy:
+            isBusy || hasActiveQuestion || hasPendingApproval || pendingPermissions.length > 0,
+          pendingCount: sessionQueue.pending.length,
+          hasInFlight: !!sessionQueue.inFlightId,
+        });
+        if (shouldQueue) {
+          handleQueueMessage(text);
+          return 'queued';
+        }
+        await handleSend(text);
+        return 'sent';
+      },
+      projectSessionId ? [projectSessionId] : [],
+    );
     return () => unregisterSender(sessionId);
-  }, [sessionId, handleSend, registerSender, unregisterSender]);
+  }, [
+    sessionId,
+    projectSessionId,
+    isBusy,
+    hasActiveQuestion,
+    hasPendingApproval,
+    pendingPermissions.length,
+    sessionQueue.pending.length,
+    sessionQueue.inFlightId,
+    handleSend,
+    handleQueueMessage,
+    registerSender,
+    unregisterSender,
+  ]);
 
   // Release queued messages, one per turn, only when the turn actually ended.
   //
@@ -3080,6 +3222,11 @@ export function SessionChat({
 
   const sendQueuedMessage = useCallback(
     async (message: WebQueuedMessage) => {
+      // ONE message. The queue is first-come-first-served: `queue[0]` goes out
+      // by itself, and the rest wait for the turn it starts to finish. Merging
+      // the queue into a single prompt would destroy that ordering and hand the
+      // agent several unrelated instructions at once.
+      //
       // Files that did not survive being stored carry no data — send the text
       // rather than a broken attachment. The composer shows the user that the
       // attachments were dropped.
@@ -3129,12 +3276,12 @@ export function SessionChat({
   }, [sessionId, sessionState, abortSession, queueDrain]);
 
   /**
-   * "Stop & send" on a queued message: end the current turn, then send that one.
+   * The per-row action: end the current turn if one is running, then send that
+   * message. The only path that interrupts a running turn — automatic draining
+   * never does — which is why it is a deliberate click and says what it does.
    *
-   * The only path that interrupts a running turn, and it is labelled as such in
-   * the composer — automatic draining never does. Waits for the server to
-   * actually report idle rather than guessing with a fixed delay, so the prompt
-   * cannot race the abort it just issued.
+   * Waits for the server to actually report idle rather than guessing with a
+   * fixed delay, so the prompt cannot race the abort it just issued.
    */
   const handleQueueSendNow = useCallback(
     async (id: string) => {
@@ -3438,13 +3585,37 @@ export function SessionChat({
   const chatToolbarSlot = useMemo(
     () =>
       projectId && projectSessionId ? (
-        <SessionScopeToolbar
+        <SessionOverridesComposer
           projectId={projectId}
           sessionId={projectSessionId}
-          agentName={sessionScopeAgentName}
+          agents={local.agent.list}
+          selectedAgent={sessionScopeAgentName ?? null}
+          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
+          agentLocked={!!lockedAgentName}
+          defaultAgentName={projectConfig?.open_code_default_agent}
+          models={local.model.list}
+          modelsLoading={providersLoading}
+          selectedModel={local.model.currentKey ?? null}
+          onModelChange={handleModelChange}
+          providers={providers}
+          defaultModel={local.model.defaults.resolveDefaultFor(sessionScopeAgentName)}
         />
       ) : undefined,
-    [projectId, projectSessionId, sessionScopeAgentName],
+    [
+      handleAgentChange,
+      handleModelChange,
+      local.agent.list,
+      local.model.currentKey,
+      local.model.defaults,
+      local.model.list,
+      lockedAgentName,
+      projectConfig?.open_code_default_agent,
+      projectId,
+      projectSessionId,
+      providers,
+      providersLoading,
+      sessionScopeAgentName,
+    ],
   );
 
   const chatInputSlot = useMemo(
@@ -3705,7 +3876,7 @@ export function SessionChat({
                           <img
                             src="/kortix-logomark-white.svg"
                             alt="Kortix"
-                            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+                            className="h-[14px] w-auto shrink-0 invert dark:invert-0"
                           />
                           <div className="text-muted-foreground text-sm">
                             {tHardcodedUi.raw(
@@ -3783,7 +3954,8 @@ export function SessionChat({
                             )}
                             <SessionTurn
                               turn={turn}
-                              allMessages={messages!}
+                              isLast={turn.userMessage.info.id === lastUserMessageId}
+                              ownsPlan={turn.userMessage.info.id === planAnchorId}
                               sessionId={sessionId}
                               sessionStatus={sessionStatus}
                               permissions={pendingPermissions}
@@ -3797,7 +3969,7 @@ export function SessionChat({
                               commands={commands}
                               disableToolNavigation={disableToolNavigation}
                               onPermissionReply={handlePermissionReply}
-                              onRewind={(messageId, text) => setRewindTarget({ messageId, text })}
+                              onRewind={handleRewind}
                               rewindDisabled={
                                 !!readOnly || !sessionState || isBusy || sessionState.rewindPending
                               }
@@ -3953,11 +4125,13 @@ export function SessionChat({
                 queuedMessages={queuedMessages}
                 failedQueuedMessages={failedQueuedMessages}
                 queueInFlightId={sessionQueue.inFlightId}
+                queuePaused={queueDrain.paused}
+                queueIsRunning={isBusy}
+                onSendQueuedMessageNow={handleQueueSendNow}
                 onQueueMessage={handleQueueMessage}
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onEditQueuedMessage={handleEditQueuedMessage}
                 onReorderQueuedMessage={handleReorderQueuedMessage}
-                onSendQueuedMessageNow={handleQueueSendNow}
                 onRetryQueuedMessage={handleRetryQueuedMessage}
                 onStop={handleStop}
                 escCount={escCount}

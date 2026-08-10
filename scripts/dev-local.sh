@@ -94,6 +94,10 @@ load_local_env() {
       echo "[dev] personal overrides loaded from $_f"
     fi
   done
+
+  # Local REST-flow contracts use this deterministic, non-secret key. Keep the
+  # running dev API and `pnpm test` on the same auth boundary.
+  export INTERNAL_SERVICE_KEY="local-flow-runner-internal-service-key"
 }
 
 # Front the local API with a public Cloudflare quick tunnel so cloud Daytona
@@ -487,6 +491,9 @@ ALLOWED_SANDBOX_PROVIDERS=daytona
 DATABASE_URL=${SB_DB_URL}
 SUPABASE_URL=${SB_API_URL}
 SUPABASE_SERVICE_ROLE_KEY=${SB_SERVICE_ROLE_KEY}
+SUPABASE_JWT_SECRET=${SB_JWT_SECRET}
+INTERNAL_SERVICE_KEY=local-flow-runner-internal-service-key
+KORTIX_BILLING_INTERNAL_ENABLED=true
 DAYTONA_API_KEY=${DAYTONA_API_KEY:-}
 DAYTONA_SERVER_URL=${DAYTONA_SERVER_URL:-}
 DAYTONA_TARGET=${DAYTONA_TARGET:-us}
@@ -644,6 +651,10 @@ if [[ "$SUPABASE_IS_LOCAL" == "1" || "$DB_IS_LOCAL" == "1" ]]; then
     (cd "$SUPABASE_DIR" && supabase stop >/dev/null 2>&1 || true)
     (cd "$SUPABASE_DIR" && supabase start)
   fi
+  # GitHub App manifest-state flows sign with the same JWT secret used by the
+  # local Supabase instance. Export it only for the local data plane.
+  eval "$(cd "$SUPABASE_DIR" && supabase status -o env 2>/dev/null | sed 's/^/export SB_/')"
+  export SUPABASE_JWT_SECRET="${SB_JWT_SECRET:-}"
 else
   echo "[dev] Using configured cloud Supabase: $SUPABASE_TARGET"
 fi

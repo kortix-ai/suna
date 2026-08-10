@@ -29,10 +29,10 @@ describe('providerFlagship', () => {
 
 describe('labelForModelRef', () => {
   test('managed ref (kortix/<id>) → the managed display name', () => {
-    const sonnet = RUNTIME_MANAGED_MODELS.find((m) => m.id === 'claude-sonnet-4.6');
-    expect(labelForModelRef('kortix/claude-sonnet-4.6')).toBe(sonnet!.name);
+    const glm = RUNTIME_MANAGED_MODELS.find((m) => m.id === 'glm-5.2');
+    expect(labelForModelRef('kortix/glm-5.2')).toBe(glm!.name);
     // bare managed id resolves too
-    expect(labelForModelRef('claude-sonnet-4.6')).toBe(sonnet!.name);
+    expect(labelForModelRef('glm-5.2')).toBe(glm!.name);
   });
 
   test('an unknown ref falls back to the raw id (never throws)', () => {

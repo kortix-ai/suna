@@ -365,9 +365,15 @@ describe('identity page progressive disclosure', () => {
     expect(scimCardSource).toContain("freshness === 'never'");
     // Setup values auto-open while a minted token awaits its first IdP call —
     // that is exactly when the admin is pasting them — and tuck away after.
-    expect(scimCardSource.replace(/\s+/g, ' ')).toContain(
-      "open={tokens.length > 0 && freshness === 'never'}",
-    );
+    //
+    // `defaultOpen`, deliberately not `open`: a controlled `open` with no
+    // `onOpenChange` fights the admin's own clicks (it was one of the call sites
+    // behind the flaky-disclosure report). The `key` re-seeds that starting
+    // value when the condition flips, so the auto-open behaviour above survives
+    // while a manual collapse in between now sticks. See disclosure.tsx.
+    const flat = scimCardSource.replace(/\s+/g, ' ');
+    expect(flat).toContain("defaultOpen={tokens.length > 0 && freshness === 'never'}");
+    expect(flat).toContain("key={tokens.length > 0 && freshness === 'never'");
   });
 });
 

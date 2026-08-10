@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { cn } from '@/lib/utils';
 import {
   FileXlsIcon as FileSpreadsheet,
@@ -53,6 +54,7 @@ export function XlsxRenderer({
     if (!xlsxPath) return;
     let cancelled = false;
     let objectUrl: string | null = null;
+    const abortController = new AbortController();
 
     setSrc(null);
     setError(null);
@@ -64,12 +66,21 @@ export function XlsxRenderer({
           return;
         }
         const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
-        const blob = await readFileAsBlob(xlsxPath);
+        const blob = await readRuntimeFileWithRetry(
+          xlsxPath,
+          async () => {
+            const blob = await readFileAsBlob(xlsxPath);
+            if (!blob || blob.size === 0) throw new Error('Empty file received');
+            return blob;
+          },
+          undefined,
+          abortController.signal,
+        );
         if (cancelled) return;
-        if (!blob || blob.size === 0) throw new Error('Empty file received');
         objectUrl = URL.createObjectURL(blob);
         setSrc(objectUrl);
       } catch (e) {
+        if (abortController.signal.aborted) return;
         console.error('[XlsxRenderer] Error:', e);
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load spreadsheet');
       }
@@ -77,6 +88,7 @@ export function XlsxRenderer({
 
     return () => {
       cancelled = true;
+      abortController.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [xlsxPath, attempt]);

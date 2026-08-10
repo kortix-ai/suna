@@ -43,7 +43,12 @@ const rowClassName = cn(
 export function StepProgress({ total, current }: { total: number; current: number }) {
   return (
     <div
-      className="flex w-[200px] items-center gap-1.5"
+      // Narrower on phones. This sits in the wizard chrome's centre grid track
+      // between the back control and the skip control; at 320px the side tracks
+      // are only ~80px each, and a fixed 200px here would squeeze them below
+      // their own content width. 120px keeps every segment legible while leaving
+      // both controls room.
+      className="flex w-[7.5rem] items-center gap-1.5 sm:w-[200px]"
       role="progressbar"
       aria-label="Setup progress"
       aria-valuemin={1}

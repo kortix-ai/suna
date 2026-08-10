@@ -104,9 +104,9 @@ function FileDiffCard({
       >
         {hasDiffContent &&
           (expanded ? (
-            <ChevronDown className="text-muted-foreground/50 size-3 flex-shrink-0" />
+            <ChevronDown className="text-muted-foreground/50 size-3 shrink-0" />
           ) : (
-            <ChevronRight className="text-muted-foreground/50 size-3 flex-shrink-0" />
+            <ChevronRight className="text-muted-foreground/50 size-3 shrink-0" />
           ))}
         {!hasDiffContent && <span className="w-3" />}
 
@@ -128,7 +128,7 @@ function FileDiffCard({
         <DiffStat
           additions={diff.additions}
           deletions={diff.deletions}
-          className="flex-shrink-0 text-xs whitespace-nowrap"
+          className="shrink-0 text-xs whitespace-nowrap"
         />
       </button>
 

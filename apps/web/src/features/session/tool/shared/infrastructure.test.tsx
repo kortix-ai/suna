@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   BasicTool,
   BoundActivateContext,
+  shouldShowToolPartInActionsPanel,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 
@@ -61,5 +62,41 @@ describe('BasicTool inline surface — activate context vs defaultOpen', () => {
       </BoundActivateContext.Provider>,
     );
     expect(html).not.toContain('file contents');
+  });
+});
+
+// ─── The Actions stepper opens one tool at a time, so a row that renders
+// nothing is a dead click. A `show` carrying no path/url/content/items draws an
+// empty card, and the chat transcript already drops it — the stepper must reach
+// the same verdict or the two surfaces disagree about what exists. ───────────
+describe('shouldShowToolPartInActionsPanel — empty show', () => {
+  const showPart = (status: string, input: Record<string, unknown>) =>
+    ({ tool: 'show', state: { status, input } }) as unknown as Parameters<
+      typeof shouldShowToolPartInActionsPanel
+    >[0];
+
+  test('drops a settled show that handed nothing over', () => {
+    expect(shouldShowToolPartInActionsPanel(showPart('completed', { type: 'markdown' }))).toBe(
+      false,
+    );
+  });
+
+  test('keeps a show with a real artifact', () => {
+    expect(
+      shouldShowToolPartInActionsPanel(showPart('completed', { path: '/workspace/q3.pdf' })),
+    ).toBe(true);
+  });
+
+  test('keeps a still-running show — its input has not arrived yet', () => {
+    expect(shouldShowToolPartInActionsPanel(showPart('running', {}))).toBe(true);
+  });
+
+  test('leaves every other tool alone', () => {
+    expect(
+      shouldShowToolPartInActionsPanel({
+        tool: 'bash',
+        state: { status: 'completed', input: {} },
+      } as unknown as Parameters<typeof shouldShowToolPartInActionsPanel>[0]),
+    ).toBe(true);
   });
 });

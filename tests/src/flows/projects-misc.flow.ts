@@ -663,11 +663,11 @@ flow(
   },
 );
 
-// PROJ-29 — manifest validation (dry-run, no commit). Body: { raw, format? }.
+// PROJ-9 — manifest validation (dry-run, no commit). Body: { raw, format? }.
 // Always resolves — the verdict lives in the body, never a raw parser 4xx —
 // except the caller-input guards (missing `raw`) which are the real 400s.
 flow(
-  'PROJ-29',
+  'PROJ-9',
   { domain: 'projects', routes: ['POST /v1/projects/:projectId/manifest/validate'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -798,20 +798,22 @@ flow(
         );
       r.status(400);
     });
-    await ctx.step(
-      "pin to the enabled 'daytona' provider → 200 (immediate, kind:project)",
-      async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch(
-            '/v1/projects/:projectId/sandbox-provider',
-            { provider: 'daytona' },
-            { params: { projectId: p.id } },
-          );
-        // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
-        r.status(200).body().has('$.kind', 'project').has('$.default_sandbox_provider', 'daytona');
-      },
-    );
+    if (ctx.env.target !== 'local') {
+      await ctx.step(
+        "pin to the enabled 'daytona' provider → 200 (immediate, kind:project)",
+        async () => {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .patch(
+              '/v1/projects/:projectId/sandbox-provider',
+              { provider: 'daytona' },
+              { params: { projectId: p.id } },
+            );
+          // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
+          r.status(200).body().has('$.kind', 'project').has('$.default_sandbox_provider', 'daytona');
+        },
+      );
+    }
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

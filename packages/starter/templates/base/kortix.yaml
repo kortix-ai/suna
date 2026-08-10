@@ -130,12 +130,14 @@ triggers:
     cron: "0 0 3 * * *" # 03:00 daily
     timezone: UTC
     prompt: |
-      Load the `kortix-harness-refinement` skill, then run the four-pass
-      refinement protocol over the last 24h of project activity:
-      `kortix sessions digest --since 24h`, git log, and merged CRs.
-      Identify failure signatures, refine only the components with
-      observed failures, and open a single CR titled `harness: …`.
-      Exit silently if nothing is worth changing.
+      Load the `kortix-cli` skill, then read the refinement protocol
+      with `kortix skills get kortix-harness-refinement` (served live by
+      the CLI; `kortix skills get kortix-memory` for the memory pass).
+      Run the four-pass refinement protocol over the last 24h of project
+      activity: `kortix sessions digest --since 24h`, git log, and
+      merged CRs. Identify failure signatures, refine only the
+      components with observed failures, and open a single CR titled
+      `harness: …`. Exit silently if nothing is worth changing.
 
   # Cron trigger — fires on a 6-field croner expression
   # (second minute hour day month weekday).

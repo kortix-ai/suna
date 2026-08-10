@@ -19,7 +19,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ComputerMachineSelector } from '@/features/workspace/capabilities/connectors/detail/computer-connector-account';
+import { ComputerTunnelManager } from '@/features/tunnel/tunnel-overview';
 import {
   isConnectorConnectionSlugAvailable,
   normalizeConnectorConnectionSlug,
@@ -63,8 +63,8 @@ function ComputersAddFlowContent({
   onClose: () => void;
   onAdded: (slug?: string) => void;
 }) {
-  const initialSlug = proposeConnectorConnectionSlug('Computers', existingSlugs);
-  const [name, setName] = useState('Computers');
+  const initialSlug = proposeConnectorConnectionSlug('Computer Tunnel', existingSlugs);
+  const [name, setName] = useState('Computer Tunnel');
   const [slug, setSlug] = useState(initialSlug);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
@@ -83,7 +83,7 @@ function ComputersAddFlowContent({
       onAdded(slug);
       onClose();
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add Computers'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to add Computer Tunnel'),
   });
 
   const slugAvailable = isConnectorConnectionSlugAvailable(slug, existingSlugs);
@@ -91,16 +91,17 @@ function ComputersAddFlowContent({
 
   return (
     <Modal open onOpenChange={(next) => !next && !add.isPending && onClose()}>
-      <ModalContent className="lg:max-w-xl">
+      <ModalContent className="lg:max-w-3xl">
         <ModalHeader>
           <div className="flex items-start gap-3">
             <span className="bg-kortix-blue/15 text-kortix-blue flex size-10 shrink-0 items-center justify-center rounded-sm">
               <MonitorIcon className="size-5" />
             </span>
             <div className="min-w-0 space-y-1">
-              <ModalTitle>Add Computers</ModalTitle>
+              <ModalTitle>Add Computer Tunnel</ModalTitle>
               <ModalDescription>
-                Select the paired machines this connector profile can access.
+                Pair Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel.
+                Select the machines that agents using this profile can access.
               </ModalDescription>
             </div>
           </div>
@@ -111,7 +112,7 @@ function ComputersAddFlowContent({
             if (valid && !add.isPending) add.mutate();
           }}
         >
-          <ModalBody className="max-h-[65vh] space-y-5 overflow-y-auto">
+          <ModalBody className="max-h-[75vh] space-y-5 overflow-y-auto">
             <FieldGroup className="grid gap-3 sm:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="computers-profile-name">Profile name</FieldLabel>
@@ -140,17 +141,18 @@ function ComputersAddFlowContent({
               </Field>
             </FieldGroup>
 
-            <section className="space-y-2">
+            <section className="space-y-3">
               <div className="space-y-1">
-                <FieldLabel>Computers</FieldLabel>
+                <FieldLabel>Machines</FieldLabel>
                 <p className="text-muted-foreground text-xs text-pretty">
-                  You can select one machine or create a shared profile for several machines.
+                  Pair, inspect, and select one or more machines without leaving this profile.
                 </p>
               </div>
-              <ComputerMachineSelector
+              <ComputerTunnelManager
+                canWrite
                 selectedIds={selectedIds}
                 onSelectedIdsChange={setSelectedIds}
-                disabled={add.isPending}
+                selectionDisabled={add.isPending}
               />
             </section>
           </ModalBody>
@@ -165,7 +167,7 @@ function ComputersAddFlowContent({
             </Button>
             <Button type="submit" disabled={!valid || add.isPending}>
               {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
-              Add connector
+              Create profile
             </Button>
           </ModalFooter>
         </form>

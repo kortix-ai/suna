@@ -143,6 +143,12 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       });
   }, [output]);
 
+  // `isErrorOutput` trims the whole output and attempts a `JSON.parse` over it,
+  // and the fallback preview copies up to 3 KB. Both sat unmemoised in the render
+  // path, so a trigger list re-parsed itself on every frame of the streaming turn.
+  const isError = useMemo(() => isErrorOutput(output), [output]);
+  const outputPreview = useMemo(() => output.slice(0, 3000), [output]);
+
   return (
     <BasicTool
       icon={icon}
@@ -151,7 +157,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       forceOpen={forceOpen}
     >
       <div className="p-2">
-        {isErrorOutput(output) ? (
+        {isError ? (
           <ToolOutputFallback output={output} toolName="triggers" />
         ) : triggerLines.length > 0 ? (
           <div className="space-y-1">
@@ -162,9 +168,9 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
                   className="hover:bg-muted/30 flex items-center gap-2 rounded px-1 py-1 text-xs"
                 >
                   {t.sourceType === 'webhook' ? (
-                    <Globe className="text-muted-foreground size-3 flex-shrink-0" />
+                    <Globe className="text-muted-foreground size-3 shrink-0" />
                   ) : (
-                    <CalendarClock className="text-muted-foreground size-3 flex-shrink-0" />
+                    <CalendarClock className="text-muted-foreground size-3 shrink-0" />
                   )}
                   <span className="text-foreground truncate font-medium">{t.name}</span>
                   <span className="text-muted-foreground ml-auto truncate font-mono text-xs">
@@ -179,7 +185,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
                           : 'muted'
                     }
                     size="sm"
-                    className="flex-shrink-0"
+                    className="shrink-0"
                   >
                     {t.status}
                   </Badge>
@@ -192,7 +198,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
             )}
           </div>
         ) : output ? (
-          <OutputBlock text={output.slice(0, 3000)} />
+          <OutputBlock text={outputPreview} />
         ) : (
           <div className="p-3">
             <TextShimmer>

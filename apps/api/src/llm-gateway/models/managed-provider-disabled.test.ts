@@ -141,7 +141,7 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
     await expect(
       resolveCandidates(
         { userId: 'u-managed', accountId: 'a-managed', projectId: 'p-managed' },
-        'claude-sonnet-4.6',
+        'glm-5.2',
       ),
     ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
@@ -149,6 +149,7 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
     });
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
+    expect(asterKeyReads).toBe(0);
   });
 
   test('a BYOK request still works on its own key, but gets NO managed fallback appended', async () => {

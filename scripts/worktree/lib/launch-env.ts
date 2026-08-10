@@ -1,16 +1,20 @@
 import { DEV_GATEWAY_INTERNAL_TOKEN, type Ports } from './ports';
 import type { SlotCreds } from './supabase';
 
+export const LOCAL_FLOW_INTERNAL_SERVICE_KEY = 'local-flow-runner-internal-service-key';
+
 export interface ApiLaunchOpts {
   /** Public origin cloud sandboxes call back to (the cloudflared tunnel URL). */
   kortixUrl?: string;
   /** `whsec_…` from `stripe listen`. When set, billing is turned ON for this
    *  worktree (STRIPE_SECRET_KEY must come from the decrypted local .env). */
   stripeWebhookSecret?: string;
+  /** Expose billing routes without requiring live Stripe webhook forwarding. */
+  billing?: boolean;
 }
 
 export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {}): Record<string, string> {
-  const billing = !!opts.stripeWebhookSecret;
+  const billing = opts.billing ?? !!opts.stripeWebhookSecret;
   return {
     ENV_MODE: 'local', KORTIX_LOCAL_DEV: '1',
     PORT: String(ports.api),
@@ -25,9 +29,11 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     DATABASE_URL: c.dbUrl,
     SUPABASE_URL: c.supabaseUrl,
     ...(c.serviceRoleKey ? { SUPABASE_SERVICE_ROLE_KEY: c.serviceRoleKey } : {}),
+    ...(c.jwtSecret ? { SUPABASE_JWT_SECRET: c.jwtSecret } : {}),
+    INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
     SCHEDULER_ENABLED: 'false',
-    // Billing off by default; --stripe flips it on and injects the webhook
-    // secret. STRIPE_SECRET_KEY (test mode) is inherited from the local .env.
+    // Billing is opt-in. --billing exposes local routes. --stripe also injects
+    // a live webhook secret. STRIPE_SECRET_KEY comes from the local .env.
     KORTIX_BILLING_INTERNAL_ENABLED: billing ? 'true' : 'false',
     ...(billing ? { STRIPE_WEBHOOK_SECRET: opts.stripeWebhookSecret! } : {}),
     CORS_ALLOWED_ORIGINS: `http://localhost:${ports.web}`,

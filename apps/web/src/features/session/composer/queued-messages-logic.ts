@@ -7,21 +7,26 @@
  * by clicking around.
  */
 
-/** Queue length at which the list opens itself, because scanning beats guessing. */
-export const QUEUE_AUTO_EXPAND_AT = 3;
-
 /**
- * @param userToggled the user's explicit choice, or `null` if they have not made one
+ * The screen-reader announcement for the queue.
+ *
+ * Sighted users get the same fact from the numbered rows — `1` sends when this
+ * turn ends, then `2` — which is why there is no visible header saying it. This
+ * string exists so the change is not silent for anyone reading by ear.
  */
-export function shouldExpandQueue(count: number, userToggled: boolean | null): boolean {
-  if (userToggled !== null) return userToggled;
-  return count >= QUEUE_AUTO_EXPAND_AT;
-}
-
-/** Header text. Says what happens next, not just how many are waiting — the
- *  count alone left people unsure whether anything would send at all. */
 export function queueSummaryLabel(count: number): string {
   return `${count} queued · sends when this turn ends`;
+}
+
+/**
+ * The announcement for a queue held by a stop.
+ *
+ * Distinct from `queueSummaryLabel` on purpose: "2 queued · sends when this turn
+ * ends" is a lie while the queue is paused, and it is exactly the lie that made
+ * a stopped queue look like a broken one.
+ */
+export function pausedSummaryLabel(count: number): string {
+  return `${count} queued · paused, will not send until resumed`;
 }
 
 /**

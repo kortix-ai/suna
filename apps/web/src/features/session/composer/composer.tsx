@@ -67,6 +67,18 @@ export interface SessionChatInputProps {
   queuedMessages?: QueuedMessageView[];
   failedQueuedMessages?: QueuedMessageView[];
   queueInFlightId?: string | null;
+  /**
+   * The queue is held by a stop. Dims the list — never silent.
+   *
+   * Ported from `session-chat-input.tsx` during the main merge: that file is
+   * now a re-export barrel, and its old implementation (which main had grown
+   * these two props on) is gone. `session-chat.tsx` still passes them, and
+   * `QueuedMessages` still reads them, so without this the paused state would
+   * have been dropped on the floor by the merge rather than by a decision.
+   */
+  queuePaused?: boolean;
+  /** The agent is mid-turn, so the per-row send must stop it first. */
+  queueIsRunning?: boolean;
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
@@ -161,6 +173,8 @@ function ComposerImpl({
   queuedMessages,
   failedQueuedMessages,
   queueInFlightId = null,
+  queuePaused = false,
+  queueIsRunning = false,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
@@ -791,6 +805,8 @@ function ComposerImpl({
                 messages={queuedMessages ?? EMPTY_QUEUE}
                 failed={failedQueuedMessages}
                 inFlightId={queueInFlightId}
+                paused={queuePaused}
+                isRunning={queueIsRunning}
                 onRemove={onRemoveQueuedMessage}
                 onEdit={onEditQueuedMessage}
                 onReorder={onReorderQueuedMessage}

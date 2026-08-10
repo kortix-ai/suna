@@ -37,6 +37,8 @@ import {
 } from './index';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { providerAutoStopBackstopMinutes } from './index';
+import { syncPlatinumNetworkBoundary } from '../../secrets/platinum-network-boundary';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
@@ -104,6 +106,16 @@ export class PlatinumProvider implements SandboxProvider {
 
   async getProvisioningStatus(): Promise<ProvisioningStatus | null> {
     return null;
+  }
+
+  syncNetworkBoundary(
+    externalId: string,
+    bindings: NetworkBoundarySecretBinding[],
+  ): Promise<{ state: 'armed'; attached: number }> {
+    return syncPlatinumNetworkBoundary(externalId, bindings, {
+      environment: config.INTERNAL_KORTIX_ENV,
+      rootSecret: config.API_KEY_SECRET,
+    });
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
@@ -336,6 +348,15 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async remove(externalId: string): Promise<void> {
+    await syncPlatinumNetworkBoundary(externalId, [], {
+      environment: config.INTERNAL_KORTIX_ENV,
+      rootSecret: config.API_KEY_SECRET,
+    }).catch((error) => {
+      console.warn(
+        `[platinum] failed to erase network-boundary replicas for ${externalId}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    });
     await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
   }
 

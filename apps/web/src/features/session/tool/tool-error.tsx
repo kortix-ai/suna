@@ -52,7 +52,7 @@ export function ToolError({ error, toolName }: { error: string; toolName?: strin
 				    so it read as a line that stopped short rather than a divider.
 				    Spacing separates the header from the issues instead. */}
         <div className="flex items-center gap-2 px-2 pt-1.5 pb-1 text-xs">
-          <Ban className="text-muted-foreground/70 size-3.5 flex-shrink-0" />
+          <Ban className="text-muted-foreground/70 size-3.5 shrink-0" />
           <span className="text-muted-foreground font-medium">{displayType}</span>
           {toolName && (
             <span className="text-muted-foreground/50 ml-auto font-mono">{toolName}</span>
@@ -63,7 +63,7 @@ export function ToolError({ error, toolName }: { error: string; toolName?: strin
           {validationIssues.map((issue, i) => (
             <div key={i} className="space-y-1.5">
               <div className="flex items-start gap-2">
-                <CircleAlert className="text-muted-foreground/60 mt-0.5 size-3.5 flex-shrink-0" />
+                <CircleAlert className="text-muted-foreground/60 mt-0.5 size-3.5 shrink-0" />
                 <div className="min-w-0 flex-1">
                   {issue.path.length > 0 && (
                     <span className="bg-muted/60 text-muted-foreground/70 mr-1.5 rounded-sm px-1.5 py-0.5 font-mono text-xs">

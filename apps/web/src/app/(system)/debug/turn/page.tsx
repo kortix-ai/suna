@@ -423,7 +423,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
     ],
   },
   {
-    label: 'plumbing only · reads "Housekeeping", never a work verb',
+    label: 'plumbing only · renders NOTHING — no rows means no burst',
     working: false,
     parts: [tool('dcp_prune', {}), tool('context_info', {})],
   },

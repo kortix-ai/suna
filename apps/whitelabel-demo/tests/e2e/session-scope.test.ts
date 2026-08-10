@@ -107,6 +107,8 @@ describe('authoritative session scope', () => {
     secrets_allowlist: ['PRIMARY_TOKEN'],
     required_connectors: null,
     connector_bindings: { gmail: { connection_id: 'auth-primary' } },
+    connector_bindings_configured: true,
+    connector_bindings_inherit_unbound: true,
     dropped_secrets: [],
     added_secrets: [],
     dropped_bindings: [],

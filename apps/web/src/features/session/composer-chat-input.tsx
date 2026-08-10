@@ -2,8 +2,8 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
-import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -57,11 +57,13 @@ export function ComposerChatInput({
   queuedMessages,
   failedQueuedMessages,
   queueInFlightId,
+  queuePaused,
+  queueIsRunning,
+  onSendQueuedMessageNow,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
-  onSendQueuedMessageNow,
   onRetryQueuedMessage,
   onAgentSelectionChange,
 }: {
@@ -96,11 +98,13 @@ export function ComposerChatInput({
   queuedMessages?: SessionChatInputProps['queuedMessages'];
   failedQueuedMessages?: SessionChatInputProps['failedQueuedMessages'];
   queueInFlightId?: SessionChatInputProps['queueInFlightId'];
+  queuePaused?: SessionChatInputProps['queuePaused'];
+  queueIsRunning?: SessionChatInputProps['queueIsRunning'];
+  onSendQueuedMessageNow?: SessionChatInputProps['onSendQueuedMessageNow'];
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  onSendQueuedMessageNow?: (id: string) => void;
   onRetryQueuedMessage?: (id: string) => void;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
@@ -141,18 +145,42 @@ export function ComposerChatInput({
     },
     [selectedAgentName],
   );
+  // Every axis a session can override, in one popover — built from the SAME
+  // agent/model/effort controls this toolbar already renders.
   const sessionScopeToolbar = useMemo(
     () =>
       projectId ? (
-        <SessionScopeToolbar
+        <SessionOverridesComposer
           projectId={projectId}
           sessionId={sessionId}
-          agentName={selectedAgentName ?? undefined}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
+          agents={local.agent.list}
+          selectedAgent={selectedAgentName}
+          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+          agentLocked={!!lockedAgentName}
+          defaultAgentName={projectConfig?.open_code_default_agent}
+          models={local.model.list}
+          modelsLoading={providersLoading}
+          selectedModel={local.model.currentKey ?? null}
+          onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
+          providers={providers}
+          defaultModel={local.model.defaults.resolveDefaultFor(selectedAgentName ?? undefined)}
         />
       ) : null,
-    [handleCommittedScope, projectId, selectedAgentName, sessionId],
+    [
+      handleCommittedScope,
+      local.agent,
+      local.model,
+      lockedAgentName,
+      projectConfig?.open_code_default_agent,
+      projectId,
+      providers,
+      providersLoading,
+      selectedAgentName,
+      sessionId,
+    ],
   );
+
   const combinedToolbarSlot = useMemo(
     () =>
       toolbarSlot || sessionScopeToolbar ? (
@@ -185,11 +213,13 @@ export function ComposerChatInput({
       queuedMessages={queuedMessages}
       failedQueuedMessages={failedQueuedMessages}
       queueInFlightId={queueInFlightId}
+      queuePaused={queuePaused}
+      queueIsRunning={queueIsRunning}
+      onSendQueuedMessageNow={onSendQueuedMessageNow}
       onQueueMessage={onQueueMessage}
       onRemoveQueuedMessage={onRemoveQueuedMessage}
       onEditQueuedMessage={onEditQueuedMessage}
       onReorderQueuedMessage={onReorderQueuedMessage}
-      onSendQueuedMessageNow={onSendQueuedMessageNow}
       onRetryQueuedMessage={onRetryQueuedMessage}
       isBusy={isBusy}
       stopDisabled={stopDisabled}

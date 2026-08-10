@@ -1,5 +1,6 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import { ApiError } from '../../http/api-client';
 import { configureKortix } from '../../http/config';
 import {
   type CreateProjectRepoInput,
@@ -10,11 +11,14 @@ import {
   type FeatureFlagView,
   type KortixProject,
   type ProjectInput,
+  type ProvisionPhase,
   type ProvisionProjectInput,
+  type ProvisionStreamEvent,
   createProjectRepo,
   getProject,
   getProjectDetail,
   provisionProject,
+  provisionProjectStream,
   provisionProjectWithToken,
   updateExperimentalFeature,
   updateFeatureFlag,
@@ -539,6 +543,379 @@ test('a project response with a null icon_glyph reaches the caller as null', asy
   const project = await updateProject('proj-1', { icon_glyph: null });
 
   expect(project.icon_glyph).toBeNull();
+});
+
+// ── B-default-branch: `default_branch` on `ProvisionProjectInput` ───────────
+//
+// Carried Minor: apps/web sends `default_branch` on provision and the server
+// (apps/api/src/projects/routes/r1.ts:546) reads it, but the SDK's
+// `ProvisionProjectInput` never declared it — forcing a double-cast at the
+// web call site. Additive only: a new optional field, no existing member
+// touched.
+
+test('ProvisionProjectInput accepts an optional default_branch', () => {
+  const withBranch: ProvisionProjectInput = {
+    name: 'My First Project',
+    default_branch: 'develop',
+  };
+  const without: ProvisionProjectInput = { name: 'My First Project' };
+
+  expect(withBranch.default_branch).toBe('develop');
+  expect('default_branch' in without).toBe(false);
+});
+
+test('provisionProject sends default_branch on the wire', async () => {
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentBody: unknown;
+  globalThis.fetch = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    sentBody = JSON.parse(String(init?.body ?? '{}'));
+    return new Response(JSON.stringify({ project_id: 'proj-1' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await provisionProject({ account_id: 'acc-1', name: 'x', default_branch: 'develop' });
+
+  expect(sentBody).toMatchObject({ default_branch: 'develop' });
+});
+
+// ── provisionProjectStream ───────────────────────────────────────────────────
+//
+// POST /projects/provision-stream reports the same create as provisionProject,
+// but as a series of data-only SSE frames (`data: {"type":…}\n\n`, no `event:`
+// line — see apps/api/src/projects/routes/r1.ts). Frame parsing is line-by-line
+// on purpose: SSE allows `: comment` lines and, in principle, an `event:` line
+// ahead of `data:`; a parser that hard-fails on any frame that isn't EXACTLY
+// `data: <json>` breaks on the first spec-legal frame a server adds.
+
+/**
+ * A `fetch` that streams `chunks` as SEPARATE `enqueue()` calls, in order —
+ * so a test can force a frame boundary, a JSON body, or a multi-byte UTF-8
+ * character to land split across two (or more) reads, matching how a real
+ * network actually delivers bytes. A string chunk is UTF-8-encoded whole;
+ * pass a raw `Uint8Array` chunk to split a multi-byte character mid-sequence
+ * (a plain string chunk can't express "half a codepoint").
+ */
+function stubStreamingFetch(chunks: Array<string | Uint8Array>) {
+  return async () =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) {
+            controller.enqueue(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk);
+          }
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+}
+
+describe('provisionProjectStream', () => {
+  test('is exported', () => {
+    expect(typeof provisionProjectStream).toBe('function');
+  });
+
+  test('reports each phase in order and resolves with the project', async () => {
+    const seen: string[] = [];
+    const body = [
+      'data: {"type":"phase","phase":"validating"}\n\n',
+      'data: {"type":"phase","phase":"creating_repository"}\n\n',
+      'data: {"type":"phase","phase":"registering"}\n\n',
+      'data: {"type":"phase","phase":"seeding"}\n\n',
+      'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n',
+    ].join('');
+
+    const project = await provisionProjectStream(
+      { name: 'suna-web' },
+      (event) => {
+        if (event.type === 'phase') seen.push(event.phase);
+      },
+      { fetch: stubStreamingFetch([body]) },
+    );
+
+    expect(seen).toEqual(['validating', 'creating_repository', 'registering', 'seeding']);
+    expect(project.project_id).toBe('p1');
+  });
+
+  test('rejects with the server error when the stream ends in an error event', async () => {
+    const body = 'data: {"type":"error","error":"Owner or admin role required"}\n\n';
+    await expect(
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch([body]) }),
+    ).rejects.toThrow('Owner or admin role required');
+  });
+
+  test('rejects when the stream closes with no terminal event', async () => {
+    await expect(
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch([]) }),
+    ).rejects.toThrow();
+  });
+
+  // Not in the brief's draft, added for robustness: the parser must be
+  // defensive to frames that aren't a bare `data: <json>` line — an SSE
+  // comment line (`: …`) and a leading `event:` line are both spec-legal and
+  // must be skipped rather than treated as a parse failure.
+  test('skips SSE comment and event lines instead of failing on them', async () => {
+    const body = [
+      ': keep-alive\n\n',
+      'event: phase\ndata: {"type":"phase","phase":"validating"}\n\n',
+      'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n',
+    ].join('');
+    const seen: string[] = [];
+
+    const project = await provisionProjectStream(
+      { name: 'suna-web' },
+      (event) => {
+        if (event.type === 'phase') seen.push(event.phase);
+      },
+      { fetch: stubStreamingFetch([body]) },
+    );
+
+    expect(seen).toEqual(['validating']);
+    expect(project.project_id).toBe('p1');
+  });
+
+  // ── Chunk-boundary reassembly ────────────────────────────────────────────
+  //
+  // packages/sdk/CLAUDE.md calls streaming "the single most breakable surface
+  // in this package" precisely because chunk boundaries over a real network
+  // are unpredictable — a frame can split anywhere, including mid-JSON and
+  // mid-codepoint. Every test above delivers its whole body in ONE
+  // `enqueue()`, so none of them exercise the `buffer +=` / `{ stream: true }`
+  // reassembly logic at all; a refactor that dropped `{ stream: true }` or
+  // broke the `\n\n` boundary search would stay green against all of them.
+  // These pin the reassembly itself, not just the single-chunk happy path.
+
+  test('reassembles a frame split mid-JSON across two chunks', async () => {
+    const frame = 'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n';
+    const splitPoint = frame.indexOf('"project_id"') + 5; // land inside the JSON body
+
+    const project = await provisionProjectStream(
+      { name: 'x' },
+      () => {},
+      { fetch: stubStreamingFetch([frame.slice(0, splitPoint), frame.slice(splitPoint)]) },
+    );
+
+    expect(project.project_id).toBe('p1');
+    expect(project.name).toBe('suna-web');
+  });
+
+  test('reassembles a frame split mid multi-byte UTF-8 character across two chunks', async () => {
+    // 🚀 is U+1F680, a 4-byte UTF-8 sequence. Splitting it in half is exactly
+    // what `decoder.decode(value, { stream: true })` exists to survive —
+    // without `{ stream: true }` the decoder emits a replacement character
+    // (U+FFFD) for the truncated half and `JSON.parse` fails.
+    const name = 'suna-🚀';
+    const frame = `data: ${JSON.stringify({ type: 'done', project: { project_id: 'p1', name } })}\n\n`;
+    const bytes = new TextEncoder().encode(frame);
+    const emojiByteOffset = new TextEncoder().encode(frame.slice(0, frame.indexOf('🚀'))).length;
+    const splitPoint = emojiByteOffset + 2; // split the 4-byte emoji sequence in half
+
+    const project = await provisionProjectStream(
+      { name: 'x' },
+      () => {},
+      { fetch: stubStreamingFetch([bytes.slice(0, splitPoint), bytes.slice(splitPoint)]) },
+    );
+
+    expect(project.name).toBe(name);
+  });
+
+  test('parses two frames delivered in a single chunk', async () => {
+    const seen: string[] = [];
+    const combinedChunk = [
+      'data: {"type":"phase","phase":"validating"}\n\n',
+      'data: {"type":"phase","phase":"creating_repository"}\n\n',
+    ].join('');
+
+    const project = await provisionProjectStream(
+      { name: 'x' },
+      (event) => {
+        if (event.type === 'phase') seen.push(event.phase);
+      },
+      {
+        fetch: stubStreamingFetch([
+          combinedChunk,
+          'data: {"type":"done","project":{"project_id":"p1"}}\n\n',
+        ]),
+      },
+    );
+
+    expect(seen).toEqual(['validating', 'creating_repository']);
+    expect(project.project_id).toBe('p1');
+  });
+
+  test('reassembles a single frame split across three chunks', async () => {
+    const frame = 'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n';
+    const third = Math.ceil(frame.length / 3);
+    const chunks = [frame.slice(0, third), frame.slice(third, third * 2), frame.slice(third * 2)];
+
+    const project = await provisionProjectStream(
+      { name: 'x' },
+      () => {},
+      { fetch: stubStreamingFetch(chunks) },
+    );
+
+    expect(project.project_id).toBe('p1');
+    expect(project.name).toBe('suna-web');
+  });
+
+  // ── Malformed frame ───────────────────────────────────────────────────────
+
+  test('wraps a JSON parse failure with context, and still cancels the reader', async () => {
+    let cancelled = false;
+    const stub = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {this is not json}\n\n'));
+            // Deliberately left open — no controller.close(). A stream that
+            // is already closed would make a real `reader.cancel()` and a
+            // no-op look identical; leaving it open is what proves the
+            // cancel algorithm actually ran.
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+
+    await expect(
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
+    ).rejects.toThrow('provisionProjectStream: received an unparseable SSE frame');
+
+    expect(cancelled).toBe(true);
+  });
+
+  // Guards the pre-stream denial path documented in
+  // apps/api/src/projects/routes/r1.ts: an unauthorized caller gets a plain
+  // JSON 403, never a 200 SSE stream carrying an error frame. The client must
+  // not silently hang or resolve undefined when the response never opens a
+  // stream body at all.
+  test('rejects when the initial response is not ok and carries no stream', async () => {
+    const stub = async () =>
+      new Response(JSON.stringify({ error: 'Owner or admin role required' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    await expect(
+      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
+    ).rejects.toThrow('Owner or admin role required');
+  });
+
+  // ── Final-review FIX 1 ───────────────────────────────────────────────────
+  //
+  // Every failure `provisionProjectStream` threw used to be a bare `new
+  // Error(message)` — no `.status`, no `.code`, even though the server sends
+  // both (`apps/api/src/projects/routes/r1.ts`'s error frame, and the
+  // pre-stream denial body) and `apps/web`'s `messageFor`/`isRetryableError`
+  // (`use-create-workspace.ts`) classify EVERY create failure by reading
+  // exactly those two fields. On the streaming path — the one every user
+  // takes by default — those classifiers silently saw `undefined` for both,
+  // so a 400 got an unwinnable "Try again" and a 409 leaked the literal
+  // string "idempotency_key" to the user. These two tests prove the thrown
+  // error now carries `status`/`code` matching `ApiError`'s shape
+  // (`packages/sdk/src/core/http/api/errors.ts`), so the SAME host
+  // classifiers work identically whether the create went through the stream
+  // or the plain POST fallback.
+
+  test('FIX 1: an in-band error frame propagates status and code onto the thrown error', async () => {
+    const body =
+      'data: {"type":"error","error":"Another provision with this idempotency_key is in flight","code":"provision_in_flight","status":409}\n\n';
+    let caught: unknown;
+    try {
+      await provisionProjectStream({ name: 'x' }, () => {}, { fetch: stubStreamingFetch([body]) });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).code).toBe('provision_in_flight');
+    expect((caught as ApiError).message).toBe(
+      'Another provision with this idempotency_key is in flight',
+    );
+  });
+
+  test('FIX 1: a pre-stream denial (non-2xx, no stream ever opened) propagates status and code the same way', async () => {
+    const stub = async () =>
+      new Response(JSON.stringify({ error: 'name is required', code: 'invalid_name' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
+    let caught: unknown;
+    try {
+      await provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(400);
+    expect((caught as ApiError).code).toBe('invalid_name');
+    expect((caught as ApiError).message).toBe('name is required');
+  });
+
+  test('FIX 1: a pre-stream denial with no code still carries status, and the message stays exactly the server text', async () => {
+    const stub = async () =>
+      new Response(JSON.stringify({ error: 'Owner or admin role required' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      });
+    let caught: unknown;
+    try {
+      await provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(403);
+    expect((caught as ApiError).code).toBeUndefined();
+    expect((caught as ApiError).message).toBe('Owner or admin role required');
+  });
+
+  test('the phase union matches the API contract exactly', () => {
+    const phases: ProvisionPhase[] = [
+      'validating',
+      'creating_repository',
+      'registering',
+      'seeding',
+    ];
+    // Compile-time: any added or renamed member breaks this assignment.
+    const exhaustive: Record<ProvisionPhase, true> = {
+      validating: true,
+      creating_repository: true,
+      registering: true,
+      seeding: true,
+    };
+    expect(Object.keys(exhaustive).sort()).toEqual([...phases].sort());
+  });
+
+  // Replaces an earlier version of this test that only constructed three
+  // `ProvisionStreamEvent` literals and asserted `event.type === 'x'` — true
+  // by construction, already guaranteed by the type checker, and exercising
+  // no code under test. This version drives a REAL runtime `switch` and
+  // proves each arm is actually reached for each of the three wire shapes,
+  // which the compiler cannot guarantee on its own.
+  test('a runtime switch over ProvisionStreamEvent.type reaches all three wire shapes', () => {
+    const describeEvent = (event: ProvisionStreamEvent): string => {
+      switch (event.type) {
+        case 'phase':
+          return `phase:${event.phase}`;
+        case 'done':
+          return `done:${event.project.project_id}`;
+        case 'error':
+          return `error:${event.error}`;
+      }
+    };
+
+    expect(describeEvent({ type: 'phase', phase: 'validating' })).toBe('phase:validating');
+    expect(describeEvent({ type: 'done', project: { project_id: 'p1' } as KortixProject })).toBe(
+      'done:p1',
+    );
+    expect(describeEvent({ type: 'error', error: 'boom', code: 'x' })).toBe('error:boom');
+  });
 });
 
 // ── Feature flags (canonical naming) ────────────────────────────────────────

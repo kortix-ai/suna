@@ -1,4 +1,10 @@
-import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
+import type {
+  Project,
+  ProjectSession,
+  Secret,
+  SecretDeliveryBlockedReason,
+  SecretDeliveryStrategy,
+} from '@kortix/api-contract';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -22,12 +28,14 @@ import {
 } from '../../snapshots/error-classify';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import type { ProjectRole } from '../access';
+import type { ProjectConfigSummary } from '../git/types';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
-import { isPlaceholderOpencodeTitle } from './opencode-title';
+import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { proxyGitUrl } from './sessions';
+import { networkBoundaryDeliveryAvailable } from '../../secrets/network-boundary-availability';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -103,6 +111,11 @@ export function serializeSession(
   const rawAutoName =
     canAccess && typeof row.metadata?.name === 'string' ? row.metadata.name : null;
   const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
+  // The runtime's own root-conversation title (already access-gated: the
+  // snapshot above is [] when canAccess is false). It outranks the generated
+  // auto title so list reads resolve the SAME string the session header shows
+  // live, but never a user rename.
+  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.opencodeSessionId);
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -113,7 +126,7 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     opencode_session_id: row.opencodeSessionId,
-    name: customName ?? autoName,
+    name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
     agent_name: row.agentName,
     status: row.status,
@@ -290,6 +303,69 @@ export function requestAuditContext(c: Context): RequestAuditContext {
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
 /**
+ * The slice of a loaded `ProjectConfigSummary` the agent-grant axis needs. A
+ * `Pick`, so a route hands the whole loaded config straight through.
+ */
+export type SecretAgentGrantConfig = Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'>;
+
+/** Grant membership. Case-insensitive, mirroring `listAdmits` in
+ *  ../../secrets/strategy.ts — a hand-written `secrets:` list in kortix.yaml may
+ *  use any case, and the two answers must agree. */
+function grantAdmits(list: string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+/**
+ * Can any agent receive this secret? Returns the block reason, or null.
+ *
+ * `resolveSecretDelivery` (../../secrets/strategy.ts) hands an `egress`/`broker`
+ * secret to a session only when some agent's `secrets:` list is an explicit
+ * ARRAY naming this IDENTIFIER. `'all'` and an absent list both withhold it as
+ * `agent_grant_unscoped`, so neither counts as a grant here. Matching is by
+ * identifier, never by the env-var `name` — several identifiers may share one
+ * name.
+ *
+ * The tri-state forbids guessing, so read `agent_discovery` for what
+ * `resolveConfigAgents` (../git/config.ts) actually means by it:
+ *
+ *   `opencode`   — the manifest yielded NO agent specs AND NO parse errors, i.e.
+ *                  it declared no `agents:` at all (or there is no manifest).
+ *                  `grantFromLoadedAgents` then resolves to a null grant, which
+ *                  `resolveSecretDelivery` withholds. CERTAIN: no session can
+ *                  ever receive this secret. A native `.opencode` agent does not
+ *                  rescue it — grants come only from manifest specs.
+ *   `declarative`, agents non-empty — the manifest parsed and its declarations
+ *                  are the complete grant set. CERTAIN either way.
+ *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached by
+ *                  a manifest that FAILED to parse (specs empty, errors present)
+ *                  or one whose agents are all disabled. Report null.
+ *
+ * Getting this backwards would be worse than useless in both directions: silent
+ * on the commonest broken setup (no `agents:` block), and crying wolf on a
+ * manifest we merely failed to read.
+ */
+export function secretDeliveryBlockedReason(
+  identifier: string,
+  strategy: SecretDeliveryStrategy,
+  config: SecretAgentGrantConfig | null | undefined,
+): SecretDeliveryBlockedReason | null {
+  if (strategy !== 'egress' && strategy !== 'broker') return null;
+  if (!config) return null;
+  if (config.agent_discovery === 'opencode') return 'no_agent_grant';
+  // Anything other than the two known modes is a config we do not understand —
+  // including a partial object from a caller that resolved only part of it.
+  if (config.agent_discovery !== 'declarative') return null;
+  const agents = config.agents;
+  if (!Array.isArray(agents) || agents.length === 0) return null;
+  const granted = agents.some((agent) => {
+    const env = agent.scope?.env;
+    return Array.isArray(env) && grantAdmits(env, identifier);
+  });
+  return granted ? null : 'no_agent_grant';
+}
+
+/**
  * The view of one project secret (one IDENTIFIER): the shared/project row
  * merged with the requesting member's own private override (used today only by
  * the CODEX_AUTH_JSON per-user provider login), plus which one wins at runtime.
@@ -305,6 +381,9 @@ export function buildSecretView(input: {
   shared?: SecretRow;
   personal?: SecretRow;
   canManageShared: boolean;
+  /** The project's loaded config, for the agent-grant axis. Omit it and every
+   *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
+  agentGrants?: SecretAgentGrantConfig | null;
 }): Secret {
   const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
@@ -371,11 +450,18 @@ export function buildSecretView(input: {
       (strategy === 'broker' && consumer === 'llm_gateway') ||
       (strategy === 'broker' && consumer === 'git_proxy') ||
       (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
+      (strategy === 'egress' && consumer === 'network' && networkBoundaryDeliveryAvailable()) ||
       consumer === 'connector'
         ? 'available'
         : strategy === 'denied'
           ? 'disabled'
           : 'unavailable',
+    // Two axes, deliberately not folded together. `delivery_status` answers
+    // "does this deployment support the mode" and stays 'available' on a missing
+    // grant, because the CLI, the SDK and the web chip all key off that meaning.
+    // The grant axis is per-project and lives here.
+    delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
+    network_boundary_available: networkBoundaryDeliveryAvailable(),
     egress_policy: deliveryRow?.egressPolicy ?? null,
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
@@ -392,6 +478,9 @@ export async function loadSecretViewsForUser(
   projectId: string,
   userId: string,
   canManageShared: boolean,
+  /** The project's loaded config. Callers that have already read it pass it so
+   *  every row reports the agent-grant axis; omitting it reports null. */
+  agentGrants?: SecretAgentGrantConfig | null,
 ): Promise<ReturnType<typeof buildSecretView>[]> {
   const rows = await db
     .select()
@@ -419,6 +508,7 @@ export async function loadSecretViewsForUser(
       shared: slot.shared,
       personal: slot.personal,
       canManageShared,
+      agentGrants,
     }),
   );
 }

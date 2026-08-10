@@ -29,15 +29,40 @@ const contextCard = read('./context-card.tsx');
 const appsCard = read('./apps-card.tsx');
 const column = read('../../session-action-panel-column.tsx');
 
-/** The `fill` branch's literal class list, with the surrounding prose dropped —
- *  these assertions are about what ships to the browser, and the comments in
- *  this file name the very classes they explain. */
-function fillClassList(): string {
-  const marker = 'className={cn(fill && ';
-  const start = panelCard.indexOf(marker);
+/**
+ * `<DisclosureContent>`'s `className` expression: comments dropped, whitespace
+ * collapsed to single spaces.
+ *
+ * This used to anchor on the exact one-line spelling `className={cn(fill && '`.
+ * That is a claim about FORMATTING, and formatting is the one thing about this
+ * file nobody has to preserve — reflowing the `cn()` call across three lines
+ * turned all three assertions below into `indexOf` returning -1, which reads
+ * like "the layout contract is gone" when every class was still exactly where
+ * it belonged. Anchoring on the element and normalising whitespace means only a
+ * real change to the classes can fail these tests.
+ *
+ * Comments come out because the prose in `panel-card.tsx` names the very
+ * classes it explains, so a substring check over the raw region could be
+ * satisfied by a sentence about `flex-1` rather than by `flex-1` shipping.
+ */
+function fillClassNameExpr(): string {
+  const tag = panelCard.indexOf('<DisclosureContent');
+  expect(tag).toBeGreaterThan(-1);
+  const start = panelCard.indexOf('className={cn(', tag);
   expect(start).toBeGreaterThan(-1);
-  const open = panelCard.indexOf("'", start);
-  return panelCard.slice(open, panelCard.indexOf("'", open + 1) + 1);
+  const end = panelCard.indexOf('contentClassName=', start);
+  expect(end).toBeGreaterThan(start);
+
+  return panelCard
+    .slice(start, end)
+    .replace(/^\s*\/\/[^\n]*$/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Only the quoted class strings from that expression — what actually ships. */
+function fillClassList(): string {
+  return [...fillClassNameExpr().matchAll(/'([^']*)'/g)].map((m) => m[1]).join(' ');
 }
 
 describe('the column owns a real height to divide', () => {
@@ -129,6 +154,14 @@ describe('the fill card draws exactly one header divider', () => {
   // not also draw one.
   test('the wrapper above the scroll area carries it', () => {
     expect(fillClassList()).toContain('border-t');
+  });
+
+  // A collapsed card animates its body to zero height, and `overflow-hidden`
+  // clips it — but a border paints on the box itself, so an ungated `border-t`
+  // survives the collapse as a stray hairline under the header with nothing
+  // beneath it. The divider belongs to the open state only.
+  test('and only while the card is open', () => {
+    expect(fillClassNameExpr()).toContain("fill && expanded && 'border-border border-t'");
   });
 
   test("Outputs' own content class does not, or the card would draw two", () => {

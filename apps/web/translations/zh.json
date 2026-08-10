@@ -66,6 +66,11 @@
         "current": "当前语言",
         "select": "选择语言"
       },
+      "accountSettings": {
+        "title": "账户",
+        "description": "管理账单、成员和组织设置",
+        "button": "账户设置"
+      },
       "deleteAccount": {
         "title": "删除账户",
         "description": "永久删除你的账户和所有相关数据",
@@ -320,8 +325,15 @@
         "早安！今天想做什么？",
         "早上好！准备好大干一场了吗？"
       ],
-      "afternoon": ["下午好！需要什么帮助？", "下午好！接下来做什么？"],
-      "evening": ["晚上好！还在加班吗？", "晚上好！今晚在做什么？", "晚上好！开始吧。"],
+      "afternoon": [
+        "下午好！需要什么帮助？",
+        "下午好！接下来做什么？"
+      ],
+      "evening": [
+        "晚上好！还在加班吗？",
+        "晚上好！今晚在做什么？",
+        "晚上好！开始吧。"
+      ],
       "random": [
         "欢迎回来！",
         "嘿！Kortix能为你做什么？",
@@ -7644,7 +7656,6 @@
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrAriaLabelOnboarding0aefa252": "��职进度",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrTitleBookA7b71ab51": "与 Marko 预约通话",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrDescriptionACouple16048a01": "一些简单的细节，以便 Marko 可以定制通话。",
-    "autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428": "沙箱在启动时会选择新的提供程序。要在正在运行的会话中使用它，请从会话列表中重新启动其沙箱。",
     "autoComponentsProjectsProjectProviderModalJsxTextChatGPTPlusPro0deb5530": "ChatGPT 增强版/专业版",
     "autoComponentsProjectsProjectProviderModalJsxTextSignInWitha0c5128c": "使用您的 ChatGPT 订阅登录。我们将登录信息保存为加密的项目机密，以便将来的会话重用它。",
     "autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47": "在浏览器中授权",

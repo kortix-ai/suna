@@ -7,6 +7,7 @@ permission:
     "git *": allow
     "kortix cr *": allow
     "kortix sessions *": allow
+    "kortix skills *": allow
     "*": ask
 ---
 
@@ -17,10 +18,13 @@ under `.kortix/`.
 
 ## How to run
 
-1. **Load the `kortix-harness-refinement` skill.** It defines the four
+1. **Load the `kortix-cli` skill, then pull the protocol live:**
+   `kortix skills get kortix-harness-refinement`. It defines the four
    passes, the failure signatures, the fan-out review procedure, and the
-   guardrails. Treat it as your source of truth. Also load
-   `kortix-memory` for pass 4's rubric.
+   guardrails. Treat it as your source of truth. Pull
+   `kortix skills get kortix-memory` for pass 4's rubric. The CLI serves
+   both version-matched — use it even when a copy is not on disk under
+   `.kortix/opencode/skills/`.
 2. **Enumerate every session in the window.**
    `kortix sessions digest --since 24h --json` — the roster you will
    review: id, agent, status, transcript availability. Review every

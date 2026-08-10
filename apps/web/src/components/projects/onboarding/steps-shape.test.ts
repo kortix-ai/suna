@@ -154,6 +154,19 @@ describe('plan step', () => {
     expect(plan).not.toContain('useUpgradeDialogStore');
   });
 
+  /**
+   * THE `/new` dead-click fix. The gate falls back to the `[id]` route segment
+   * when nobody tells it which project to act on, and `/new` (`app/(app)/new`)
+   * has no such segment — so an inferred project is `null`, `modal` is `null`,
+   * and "Add a key" opens nothing while never calling `onContinue()`. This step
+   * is 5 of 6 and passes no `onSkip` to `StepShell`, so its primary button is
+   * the only control: an inferred id strands the user mid-wizard.
+   */
+  test('tells the gate which project it is acting on instead of letting it infer the route', () => {
+    expect(plan).toContain('projectId');
+    expect(plan).toContain('useModelConnectionGate(flattenModels(providers), { projectId })');
+  });
+
   // The composer enforces model connection later. Blocking here would strand a
   // user who wants to look around before paying.
   test('never gates — Continue carries no disabled condition', () => {

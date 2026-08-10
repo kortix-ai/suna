@@ -27,6 +27,8 @@ ID, and the branch name are the same value. See
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
+| `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
+| `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
 | `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
 | `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
@@ -39,6 +41,19 @@ ID, and the branch name are the same value. See
   `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
   without losing it, call `s.stop()` instead.
 </Callout>
+
+Use the streamed method when the caller displays reload progress:
+
+```ts
+await s.reloadConfigStream({ refresh_repo: false }, (event) => {
+  if (event.type === 'phase') console.log(event.phase);
+});
+```
+
+The phases are `checking-session`, `refreshing-workspace`, `compiling-config`,
+`applying-config`, and `confirming-config`. The server omits
+`refreshing-workspace` when `refresh_repo` is `false`. The
+`applying-config` phase includes the daemon's validated runtime replacement.
 
 Three more read methods round out the handle:
 
@@ -128,7 +143,13 @@ Read the stored secret narrowing and materialized connection bindings.
 
 ```ts
 const scope = await s.scope();
+scope.connector_bindings_configured; // false = inherits the project defaults
 ```
+
+`connector_bindings` is the RESOLVED map, so it looks the same for a session
+that overrode its connectors and one that inherits the project defaults. Read
+`connector_bindings_configured` to tell them apart before rendering the scope or
+sending it back.
 
 Replace one or both scope fields:
 
@@ -145,6 +166,21 @@ Each supplied field replaces its complete previous value. Omit a field to leave
 it unchanged. Connection changes apply to the next tool call.
 Secret removal stops future delivery but cannot remove an already disclosed
 value from model context or an existing process.
+
+Both axes have an explicit way back to the default. They are not the same as an
+empty value:
+
+```ts
+await s.rescope({
+  secrets: null, // inherit the agent's secret grant
+  connector_bindings: null, // drop the override; inherit the project defaults
+});
+```
+
+`secrets: []` and `connector_bindings: {}` are the opposite instruction: an
+explicit "no project secrets" and "no connectors at all", project defaults
+included. A session that sends `{}` where it meant `null` fails closed on every
+alias it did not name.
 
 Read the unified cost record:
 

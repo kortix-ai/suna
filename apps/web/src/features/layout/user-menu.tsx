@@ -1,28 +1,12 @@
 'use client';
 
 import { ReferralModal } from '@/components/referrals/referral-modal';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -33,35 +17,25 @@ import {
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
-import { Monitor } from '@/features/icon/icons/monitor';
-import { Moon } from '@/features/icon/icons/moon';
-import { Sun } from '@/features/icon/icons/sun';
+import {
+  HelpSubmenu,
+  THEME_OPTIONS,
+  ThemeSubmenu,
+  useLogoutFlow,
+} from '@/features/layout/user-menu-shared';
 import { isBillingEnabled } from '@/lib/config';
-import { openExternalRoute } from '@/lib/desktop';
 import { type SettingsTabId } from '@/lib/menu-registry';
-import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
-import { resetClientState } from '@/lib/utils/reset-client-state';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { listAccounts } from '@kortix/sdk';
 import {
-  ArticleIcon,
-  BookOpenIcon,
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadSimple,
-  HeadsetIcon,
-  HouseIcon,
-  LifebuoyIcon,
   SignOutIcon as LogOut,
-  PaperPlaneTiltIcon,
-  QuestionIcon,
-  ScrollIcon,
-  ShieldCheckIcon,
-  StorefrontIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -72,56 +46,9 @@ import { useEffect, useState } from 'react';
 
 export type UserMenuVariant = 'header' | 'sidebar';
 
-type MenuLink = {
-  label: string;
-  href: string;
-  Icon: React.ComponentType<{ className?: string }>;
-  /**
-   * Navigate in place instead of opening a new tab. Only Marketplace: it is
-   * somewhere you go and act — browse, install — so it belongs in the session
-   * you are already in. Everything else under Help is something you read, and
-   * losing your workspace to go read it is the wrong trade.
-   */
-  internal?: boolean;
-};
-
-/**
- * Reference destinations, grouped under Help.
- *
- * Hoisted to module scope so the arrays and their objects are allocated once
- * for the app instead of being rebuilt on every render — `UserMenu` mounts in
- * both the sidebar and the header, so this render path is not rare.
- *
- * Every entry but Marketplace opens in a new tab. These are pages you read, and
- * the person clicking them is mid-session in a workspace — sending them away
- * from it to read the privacy policy costs more than the tab does.
- */
-const HELP_LINKS: MenuLink[] = [
-  { label: 'Help center', href: '/help', Icon: LifebuoyIcon },
-  { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
-  { label: 'Blog', href: '/blog', Icon: ArticleIcon },
-  { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
-  { label: 'Contact', href: '/contact', Icon: PaperPlaneTiltIcon },
-  { label: 'Support', href: '/support', Icon: HeadsetIcon },
-];
-
-/** Kept separate so a divider can hold the legal pages apart from the rest. */
-const LEGAL_LINKS: MenuLink[] = [
-  { label: 'Privacy', href: '/legal?tab=privacy', Icon: ShieldCheckIcon },
-  { label: 'Terms and conditions', href: '/legal/terms', Icon: ScrollIcon },
-];
-
-/**
- * The three theme values `next-themes` accepts, in the order the rest of the
- * product lists them (see the Appearance tab in user settings — same words, same
- * icons, same order). A person who learns the control in one place should not
- * have to re-read it in the other.
- */
-export const THEME_OPTIONS = [
-  { value: 'light', label: 'Light', Icon: Sun },
-  { value: 'dark', label: 'Dark', Icon: Moon },
-  { value: 'system', label: 'System', Icon: Monitor },
-] as const;
+// Re-exported: `THEME_OPTIONS` moved to `user-menu-shared.tsx` when the sidebar
+// grew its own menu, and this stayed its public entry point.
+export { THEME_OPTIONS };
 
 export interface UserMenuUser {
   name: string;
@@ -148,7 +75,6 @@ export function UserMenu({
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
-  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -188,7 +114,7 @@ export function UserMenu({
       setSettingsOpen(true);
     });
 
-  const openLogoutConfirm = () => deferAfterClose(() => setLogoutConfirmOpen(true));
+  const { openConfirm: openLogoutConfirm, dialog: logoutDialog } = useLogoutFlow(deferAfterClose);
 
   /**
    * One Help row.
@@ -207,36 +133,6 @@ export function UserMenu({
    * This is a plain function, not a component, so the rows are not remounted on
    * every render of the menu.
    */
-  const renderMenuLink = ({ label, href, Icon, internal }: MenuLink) =>
-    internal ? (
-      <DropdownMenuItem key={href} onClick={() => deferAfterClose(() => router.push(href))}>
-        <Icon />
-        {label}
-      </DropdownMenuItem>
-    ) : (
-      <DropdownMenuItem key={href} asChild>
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => {
-            if (openExternalRoute(href)) event.preventDefault();
-            setMenuOpen(false);
-          }}
-        >
-          <Icon />
-          {label}
-        </a>
-      </DropdownMenuItem>
-    );
-
-  const performLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    await resetClientState();
-    router.push('/auth');
-  };
-
   const trigger =
     variant === 'header' ? (
       <Button
@@ -254,11 +150,11 @@ export function UserMenu({
       </Button>
     ) : (
       <SidebarMenuButton
-        size="lg"
+        size="sm"
         className={cn(
-          'group/user relative gap-2 px-2.5 py-1',
+          'group/user relative gap-2 p-1',
           // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
-          'relative flex cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-150',
+          'relative flex cursor-pointer items-center gap-2 rounded-md transition-colors duration-150',
           'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
         )}
       >
@@ -266,14 +162,13 @@ export function UserMenu({
           email={user.email}
           name={user.name}
           avatarUrl={user.avatar}
-          size="md"
+          size="sm"
           className="border-border border"
         />
         <div className="flex min-w-0 flex-1 flex-col items-start justify-start space-y-0 text-left leading-tight group-data-[collapsible=icon]:hidden">
           <span className="text-foreground truncate text-sm font-medium tracking-tight">
             {user.name}
           </span>
-          <span className="text-muted-foreground/80 truncate text-xs">{user.email}</span>
         </div>
       </SidebarMenuButton>
     );
@@ -283,7 +178,10 @@ export function UserMenu({
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent
         align={variant === 'sidebar' ? 'start' : 'end'}
-        side={variant === 'sidebar' ? (sidebar?.isMobile ? 'bottom' : 'top') : 'bottom'}
+        // `bottom` for both variants now. The sidebar copy opened upward while
+        // it lived in the FOOTER; it is the control at the TOP of the sidebar
+        // since the merge, where `top` would fly the menu off the viewport.
+        side="bottom"
         sideOffset={variant === 'sidebar' ? 6 : 8}
         className="w-[256px] space-y-0.5 overflow-hidden"
       >
@@ -310,11 +208,6 @@ export function UserMenu({
             <DropdownMenuSeparator />
           </>
         )}
-
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))} size="sm">
-          <HouseIcon />
-          Home
-        </DropdownMenuItem>
 
         {/* Personal settings sits high: it is the item people come here for. The
             account row above goes to the account page — a different
@@ -343,56 +236,9 @@ export function UserMenu({
           </DropdownMenuItem>
         )}
 
-        {/* Theme used to be a segmented control pinned below Log out — the one
-            row in the menu that was not a menu item, sitting under the one row
-            that ends your session. It is a choice between three values, so it is
-            a submenu of three rows like any other, and it sits with Help because
-            both are settings you visit rather than places you go.
+        <ThemeSubmenu />
 
-            The leading icon shows the theme currently in effect, not the value
-            stored: on `system` it tracks what the OS resolved to, which is the
-            only answer to "what am I looking at right now". */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            {resolvedTheme === 'dark' ? <Moon /> : <Sun />}
-            Theme
-          </DropdownMenuSubTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
-              <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
-                {THEME_OPTIONS.map(({ value, label, Icon }) => (
-                  <DropdownMenuRadioItem key={value} value={value}>
-                    {/* RadioItem wraps its children in a single flex-1 span to
-                        push the check to the right edge, so the icon and label
-                        need their own flex row inside it to stay aligned. */}
-                    <span className="flex items-center gap-2">
-                      <Icon />
-                      {label}
-                    </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuPortal>
-        </DropdownMenuSub>
-
-        {/* Every reference and legal page collapses into one submenu, so the top
-            level only carries things you act on rather than eight links. */}
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <QuestionIcon />
-            Help
-          </DropdownMenuSubTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuSubContent className="space-y-0.5" sideOffset={6}>
-              {HELP_LINKS.map(renderMenuLink)}
-
-              <DropdownMenuSeparator />
-
-              {LEGAL_LINKS.map(renderMenuLink)}
-            </DropdownMenuSubContent>
-          </DropdownMenuPortal>
-        </DropdownMenuSub>
+        <HelpSubmenu deferAfterClose={deferAfterClose} onClose={() => setMenuOpen(false)} />
 
         {/* Log out is the only row that ends something, so it gets its own
             group. Nothing sits below it — the last item in a menu is the one a
@@ -425,24 +271,7 @@ export function UserMenu({
         defaultTab={settingsTab}
       />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
-      <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextLogOutOfYour4770ea0c')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextYouLlNeedToee9fad67')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={performLogout}>
-              {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {logoutDialog}
     </>
   );
 }

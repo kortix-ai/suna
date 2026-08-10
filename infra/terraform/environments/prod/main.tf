@@ -45,8 +45,7 @@ locals {
   dns_record_name = replace(var.api_domain, ".kortix.com", "")
   # Cloudflare's published IPv4 edge ranges. Lock the public ALB to these so the
   # origin can only be reached THROUGH Cloudflare — no direct-to-origin bypass of
-  # the WAF / rate limiting. Mirrors the EKS chart inboundCidrs and the
-  # devops/argocd ingress allowlist. Refresh from https://www.cloudflare.com/ips-v4.
+  # the WAF / rate limiting. Refresh from https://www.cloudflare.com/ips-v4.
   cloudflare_ip_ranges = [
     "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
     "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
@@ -101,13 +100,15 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image             = var.api_image
-  container_port    = var.container_port
-  certificate_arn   = module.acm.certificate_arn
-  health_check_path = "/health/ready"
-  environment       = var.api_environment
-  secrets           = var.api_secrets
-  secrets_blob_arn  = data.aws_secretsmanager_secret.env.arn
+  image                   = var.api_image
+  container_port          = var.container_port
+  certificate_arn         = module.acm.certificate_arn
+  health_check_path       = "/health/ready"
+  environment             = var.api_environment
+  secrets                 = var.api_secrets
+  secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
+  ses_send_region         = "us-east-2"
+  ses_send_identity_names = ["kortix.com", "kortix.ai"]
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges

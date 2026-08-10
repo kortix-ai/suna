@@ -8,6 +8,7 @@ import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, removeHost, upsertHost, type Host } from '../api/config.ts';
 import { confirm, prompt, selectFrom } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
+import { openInBrowser } from '../browser.ts';
 import {
   instanceDir as configInstanceDir,
   loadInstanceConfig,
@@ -2578,10 +2579,4 @@ function supabaseJwt(role: string, secret: string): string {
 
 function b64url(value: string): string {
   return Buffer.from(value).toString('base64url');
-}
-
-export function openInBrowser(url: string): void {
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  spawnSync(cmd, args, { stdio: 'ignore' });
 }

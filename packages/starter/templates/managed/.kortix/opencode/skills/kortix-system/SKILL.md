@@ -368,9 +368,11 @@ from trajectory evidence, on two loops:
    and opens a `harness: …` CR against `main`.
 
 Any agent may also invoke the protocol itself when a failure signature
-costs it twice — load `kortix-harness-refinement` for the failure
-signatures, the four passes, and the guardrails (never edit managed
-`kortix-*` skills, never merge your own harness CR, no-op is valid).
+costs it twice — load `kortix-harness-refinement`
+(`kortix skills get kortix-harness-refinement` if it is not on disk)
+for the failure signatures, the four passes, and the guardrails (never
+edit managed `kortix-*` skills, never merge your own harness CR, no-op
+is valid).
 </continual-harness>
 
 <change-requests>

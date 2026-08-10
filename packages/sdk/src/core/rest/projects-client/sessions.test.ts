@@ -18,6 +18,7 @@ import {
   listProjectSessions,
   listSessionPublicShares,
   reloadProjectSessionConfig,
+  reloadProjectSessionConfigStream,
   restartProjectSession,
   revokeSessionPublicShare,
   setProjectSessionScope,
@@ -451,6 +452,99 @@ test('reloadProjectSessionConfig surfaces the 409 code and reason for the confir
   expect(err?.data?.reason).toBe('session is mid-turn');
 });
 
+function reloadStreamResponse(frames: string[], status = 200): Response {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(encoder.encode(frame));
+        controller.close();
+      },
+    }),
+    { status, headers: { 'content-type': 'text/event-stream' } },
+  );
+}
+
+test('reloadProjectSessionConfigStream requests SSE and reports each server phase', async () => {
+  const events: unknown[] = [];
+  const fetchStub = mock(async (_url: unknown, opts: { body?: string; headers?: HeadersInit } = {}) => {
+    expect(JSON.parse(opts.body ?? '{}')).toEqual({ refresh_repo: false });
+    expect(new Headers(opts.headers).get('accept')).toBe('text/event-stream');
+    return reloadStreamResponse([
+      ': heartbeat\n',
+      'data: {"type":"phase","phase":"checking-session"}\n\n',
+      'data: {"type":"phase","phase":"compiling-config"}\n\n',
+      'data: {"type":"phase","phase":"applying-config"}\n\n',
+      'data: {"type":"phase","phase":"confirming-config"}\n\n',
+      'data: {"type":"done","result":{"applied":true,"previous_etag":"a","etag":"b","repo_refreshed":false,"commit_sha":null,"agent_files":"not-requested","detail":"Reloaded"}}\n\n',
+    ]);
+  });
+
+  const result = await reloadProjectSessionConfigStream(
+    'P1',
+    'S1',
+    { refresh_repo: false },
+    (event) => events.push(event),
+    { fetch: fetchStub as unknown as typeof fetch },
+  );
+
+  expect(events).toEqual([
+    { type: 'phase', phase: 'checking-session' },
+    { type: 'phase', phase: 'compiling-config' },
+    { type: 'phase', phase: 'applying-config' },
+    { type: 'phase', phase: 'confirming-config' },
+    {
+      type: 'done',
+      result: {
+        applied: true,
+        previous_etag: 'a',
+        etag: 'b',
+        repo_refreshed: false,
+        commit_sha: null,
+        agent_files: 'not-requested',
+        detail: 'Reloaded',
+      },
+    },
+  ]);
+  expect(result.applied).toBe(true);
+  expect(String(fetchStub.mock.calls[0]?.[0])).toContain('/projects/P1/sessions/S1/reload-stream');
+});
+
+test('reloadProjectSessionConfigStream preserves busy status, code, and reason', async () => {
+  const fetchStub = mock(async () =>
+    reloadStreamResponse([
+      'data: {"type":"error","error":"This session is mid-turn.","code":"SESSION_BUSY","status":409,"reason":"session is mid-turn"}\n\n',
+    ]),
+  );
+
+  const error = await reloadProjectSessionConfigStream(
+    'P1',
+    'S1',
+    {},
+    () => {},
+    { fetch: fetchStub as unknown as typeof fetch },
+  ).then(
+    () => null,
+    (value: unknown) => value as { status?: number; code?: string; data?: { reason?: string } },
+  );
+
+  expect(error?.status).toBe(409);
+  expect(error?.code).toBe('SESSION_BUSY');
+  expect(error?.data?.reason).toBe('session is mid-turn');
+});
+
+test('reloadProjectSessionConfigStream rejects a bare close instead of claiming success', async () => {
+  const fetchStub = mock(async () =>
+    reloadStreamResponse(['data: {"type":"phase","phase":"checking-session"}\n\n']),
+  );
+
+  await expect(
+    reloadProjectSessionConfigStream('P1', 'S1', {}, () => {}, {
+      fetch: fetchStub as unknown as typeof fetch,
+    }),
+  ).rejects.toThrow('Reload stream ended without a result');
+});
+
 test('stopProjectSession POSTs to /stop', async () => {
   nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'stopped' } };
   const result = await stopProjectSession('P1', 'S1');
@@ -468,6 +562,8 @@ test('getProjectSessionScope reads canonical session scope', async () => {
     added_secrets: [],
     dropped_bindings: [],
     retroactive: true,
+    connector_bindings_configured: false,
+    connector_bindings_inherit_unbound: true,
     detail: 'Current session scope.',
   };
   nextResponse = { status: 200, body: scope };
@@ -475,6 +571,35 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
   expect(last().method).toBe('GET');
   expect(result.connector_bindings.gmail).toEqual({ connection_id: 'AUTH-1' });
+  // `connector_bindings` is the RESOLVED map, identical for an inherited and an
+  // overridden session. This flag is the only thing that separates them, so a
+  // client can stop calling an inherited default "nothing selected".
+  expect(result.connector_bindings_configured).toBe(false);
+  expect(result.connector_bindings_inherit_unbound).toBe(true);
+});
+
+test('setProjectSessionScope clears a connector override with null', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: { gmail: { connection_id: 'AUTH-DEFAULT' } },
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+      connector_bindings_configured: false,
+      connector_bindings_inherit_unbound: false,
+      detail: 'Connector access is back to the project defaults.',
+    },
+  };
+  const result = await setProjectSessionScope('P1', 'S1', { connector_bindings: null });
+  expect(last().method).toBe('PUT');
+  // `null` is the REVERT verb. `{}` is its opposite — an explicit "no
+  // connectors at all" — so the two must reach the wire unchanged.
+  expect(last().body).toEqual({ connector_bindings: null });
+  expect(result.connector_bindings_configured).toBe(false);
 });
 
 test('setProjectSessionScope replaces connections with canonical input', async () => {
