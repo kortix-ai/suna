@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
+  CI_DOCKER_COMPOSE_AMD64_SHA256,
+  CI_DOCKER_COMPOSE_VERSION,
   PLATINUM_CI_BUN_VERSION,
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
@@ -11,6 +13,7 @@ import {
   buildPlatinumWarmTemplateRequest,
   buildWorkerScript,
   cleanupPlatinumCiSandboxes,
+  dockerComposeInstallCommand,
   selectOutstandingPlatinumSandboxIds,
   isRetryablePlatinumError,
   observePlatinumSandboxStart,
@@ -40,9 +43,9 @@ describe('Platinum CI worker plan', () => {
   });
 
   test('uses one content-addressed template for one lockfile', () => {
-    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v13');
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v13-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb-base');
+    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v14');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v14-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v11-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -57,6 +60,8 @@ describe('Platinum CI worker plan', () => {
     expect(spec.steps[0]).toEqual({ op: 'kernel_modules', profile: 'container' });
     expect(JSON.stringify(spec.steps)).toContain(`bun@${PLATINUM_CI_BUN_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`pnpm@${PLATINUM_CI_PNPM_VERSION}`);
+    expect(JSON.stringify(spec.steps)).toContain('docker-compose-linux-x86_64');
+    expect(JSON.stringify(spec.steps)).toContain(CI_DOCKER_COMPOSE_AMD64_SHA256);
     expect(JSON.stringify(spec.steps)).not.toContain('postgresql-client');
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
     expect(JSON.stringify(spec.steps)).toContain('playwright install --with-deps chromium');
@@ -85,6 +90,16 @@ describe('Platinum CI worker plan', () => {
     for (const step of spec.steps) {
       if (step.op === 'run') expect(step.cmd).not.toContain('\n');
     }
+  });
+
+  test('installs a pinned Docker Compose plugin in every base template', () => {
+    const command = dockerComposeInstallCommand();
+    expect(CI_DOCKER_COMPOSE_VERSION).toBe('v2.40.3');
+    expect(CI_DOCKER_COMPOSE_AMD64_SHA256).toHaveLength(64);
+    expect(command).toContain(`/download/${CI_DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64`);
+    expect(command).toContain(CI_DOCKER_COMPOSE_AMD64_SHA256);
+    expect(command).toContain('sha256sum -c -');
+    expect(command).toContain('docker compose version');
   });
 
   test('post cleanup selects only the exact CI run sandbox', () => {
