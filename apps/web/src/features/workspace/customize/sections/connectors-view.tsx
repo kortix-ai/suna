@@ -141,22 +141,6 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import {
-  buildEasyConnectConnectorDraft,
-  buildEmailConnectorConnectionSlug,
-  connectionOwnerTypeForStrategy,
-  connectorAuthorizationStrategyForProvider,
-  connectorAuthorizationStrategyIsEditable,
-  connectorAuthorizationUpdateIsPending,
-  connectorConnectionQueryKeys,
-  connectorSetupStatus,
-  connectorSyncErrorForSlug,
-  createOnlyConnectorDraft,
-  type EasyConnectApp,
-  easyConnectUnavailableReason,
-  proposeConnectorConnectionSlug,
-} from './connector-connection-form';
-import { AuthorizationStrategyField, ConnectorConnectionModal } from './connector-connection-modal';
-import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
   createConnectorWithOptionalOAuth2,
