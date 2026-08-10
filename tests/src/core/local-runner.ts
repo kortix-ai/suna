@@ -92,7 +92,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     name: 'browser',
     command: ['bun', 'run', 'test:browser'],
     cwd: 'tests',
-    env: { E2E_BROWSER_WORKERS: '2' },
+    env: { E2E_BROWSER_WORKERS: '4' },
   };
   const packageQuality: LocalTestLane = {
     name: 'package-quality',
@@ -147,19 +147,19 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     };
     const fullBrowser: LocalTestLane = {
       ...browser,
-      env: { E2E_BROWSER_WORKERS: '2' },
+      env: { E2E_BROWSER_WORKERS: '4' },
     };
     const lanes = [fullFlows, runnerUnit, routeCoverage, worktreeUnit, fullBrowser, packageQuality];
     return {
       mode: 'full',
       lanes,
-      // Four REST workers and two browsers contend for the same local API and
-      // database. Keep browser verification after REST. Package quality uses
-      // separate disposable PostgreSQL ports, so it can overlap the browser
-      // lane without sharing product state.
+      // Four REST workers and four browsers contend for the same local API and
+      // database. Keep browser verification after REST. Package quality stays
+      // exclusive because concurrent package workers double both lane times.
       stages: [
         [fullFlows, runnerUnit, routeCoverage, worktreeUnit],
-        [fullBrowser, packageQuality],
+        [fullBrowser],
+        [packageQuality],
       ],
     };
   }
@@ -331,7 +331,7 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
         localWeb = null;
         localStack = null;
         localSupabase = null;
-        console.log('[test] product-stack stopped after browser');
+        console.log('[test] product-stack stopped before package-quality');
       }
     }
   } finally {
