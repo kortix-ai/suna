@@ -25,7 +25,8 @@ import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { ProviderConnect } from '@/features/providers/provider-connect';
+import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
 import { GatewayApiReference } from '@/features/workspace/customize/sections/view/gateway/gateway-api-reference';
 import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
@@ -40,10 +41,10 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
-import type { ActiveTab } from '@/features/workspace/customize/sections/llm-provider/types';
 
 type LlmTab =
   | 'providers'
+  | 'models'
   | 'routing'
   | 'playground'
   | 'overview'
@@ -54,6 +55,7 @@ type LlmTab =
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'providers', label: 'Providers' },
+  { id: 'models', label: 'Models' },
   { id: 'routing', label: 'Routing' },
   { id: 'playground', label: 'Playground' },
   { id: 'overview', label: 'Overview' },
@@ -94,7 +96,7 @@ const TAB_BY_SECTION: Partial<Record<LegacyLlmSubTab, LlmTab>> = {
 };
 
 export function LlmManagementView({ projectId }: { projectId: string }) {
-  const { isOpen: open, activeTab: section, llmProvidersTab } = useSettingsNav();
+  const { isOpen: open, activeTab: section } = useSettingsNav();
   const [tab, setTab] = useState<LlmTab>(
     () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
   );
@@ -169,15 +171,18 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
 
       {/* min-h-0 lets each panel actually shrink inside the flex column so
           overflow-y-auto scrolls instead of clipping tall content. */}
+      {/* JAY-510: the settings-panel path mounts `ProviderConnect` DIRECTLY —
+          no Modal, no dialog, so connecting Anthropic here opens nothing. The
+          modal shell (`ProjectProviderModal`) is only for the model selector
+          and the Secrets tab, which are dialogs by construction. */}
       <TabsContent value="providers" className="min-h-0 overflow-y-auto">
-        <ProjectProviderModal
-          asPanel
-          projectId={projectId}
-          open={open}
-          onOpenChange={() => {}}
-          defaultTab={llmProvidersTab as ActiveTab | undefined}
-          canWrite={canWrite}
-        />
+        <ProviderConnect projectId={projectId} canWrite={canWrite} enabled={open} />
+      </TabsContent>
+      {/* The model-visibility list used to sit one level deeper, inside the
+          provider modal's own "Models" tab. Flattened to a sibling here so it
+          keeps a home now that `ProviderConnect` has no tabs of its own. */}
+      <TabsContent value="models" className="min-h-0 overflow-y-auto">
+        <ModelsTab projectId={projectId} />
       </TabsContent>
       <TabsContent value="overview" className="min-h-0 overflow-y-auto">
         <GatewayOverview projectId={projectId} />

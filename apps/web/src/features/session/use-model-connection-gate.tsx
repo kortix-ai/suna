@@ -17,8 +17,14 @@ import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import { contract, type ModelKey, qk } from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
-export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
-  return tab === 'providers' ? 'catalog' : tab;
+/**
+ * `ProviderModalTab` is the caller-facing vocabulary ('providers' | 'connected'
+ * | 'models'). JAY-510 merged the modal's 'catalog' and 'connected' tabs into
+ * one `providers` surface, so both of those now resolve to it; only 'models'
+ * still names a distinct tab.
+ */
+export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'models' {
+  return tab === 'models' ? 'models' : 'providers';
 }
 
 /**
@@ -52,9 +58,7 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     }).allowed === true;
 
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
-    'catalog',
-  );
+  const [projectModalTab, setProjectModalTab] = useState<'providers' | 'models'>('providers');
 
   const baseModels = useMemo(
     () => (llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix')),

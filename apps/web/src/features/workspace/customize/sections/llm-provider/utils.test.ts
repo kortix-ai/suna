@@ -9,21 +9,16 @@ import {
 } from './utils';
 
 describe('pickInitialTab', () => {
-  test('opens Add provider by default when providers are connected', () => {
-    expect(pickInitialTab(undefined, true)).toBe('catalog');
+  test('opens Providers by default', () => {
+    expect(pickInitialTab(undefined)).toBe('providers');
   });
 
-  test('opens Add provider by default when no providers are connected', () => {
-    expect(pickInitialTab(undefined, false)).toBe('catalog');
+  test('opens Providers when Providers is asked for', () => {
+    expect(pickInitialTab('providers')).toBe('providers');
   });
 
-  test('honors an explicit Connected tab when providers are connected', () => {
-    expect(pickInitialTab('connected', true)).toBe('connected');
-  });
-
-  test('folds unavailable Connected and Models tabs back to Add provider', () => {
-    expect(pickInitialTab('connected', false)).toBe('catalog');
-    expect(pickInitialTab('models', false)).toBe('catalog');
+  test('honors an explicit Models tab', () => {
+    expect(pickInitialTab('models')).toBe('models');
   });
 });
 

@@ -221,7 +221,6 @@ import { useReviewSessionSummary } from '@/features/review-center/hooks/use-revi
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
 import { RelatedProjectsSwitcher } from '@/features/workspace/customize/related-projects-switcher';
-import { LlmManagementView } from '@/features/workspace/customize/sections/gateway-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
@@ -259,6 +258,7 @@ import { GeneralTab } from './tabs/general-tab';
 import { GroupsTab } from './tabs/groups-tab';
 import { IdentityTab } from './tabs/identity-tab';
 import { InstructionsTab } from './tabs/instructions-tab';
+import { ModelsTab } from './tabs/models-tab';
 // Aliased: `@/stores/settings-panel-store` already exports a TYPE named
 // `MembersTab` ('people' | 'invite', the deep-link intent — imported below
 // as `type MembersTab`), which collides with this file's own component
@@ -1127,10 +1127,11 @@ function SettingsTabPane({
       case 'computers':
         return <ComputersView projectId={projectId} />;
       case 'models':
-        // Mirrors the legacy panel's
+        // The gate moved INTO the tab (`models-tab.tsx`), unchanged: it still
+        // mirrors the legacy panel's
         // `if (section.startsWith('llm-') && !llmGatewayEnabled) return null;`
         // — renders nothing (not the placeholder) while disabled.
-        return llmGatewayEnabled ? <LlmManagementView projectId={projectId} /> : null;
+        return <ModelsTab projectId={projectId} llmGatewayEnabled={llmGatewayEnabled} />;
       case 'instructions':
         return <InstructionsTab projectId={projectId} />;
       case 'marketplace':

@@ -61,8 +61,10 @@
  *   writing a third secrets-query, so this file deliberately uses that path
  *   instead of the one literally named in the brief. Disconnecting reuses
  *   `providerDisconnectPlan` from `features/workspace/customize/sections/
- *   llm-provider/utils.ts` (the same plan `ConnectedTab` there uses) rather
- *   than re-deriving which secret names a "codex" disconnect must delete.
+ *   llm-provider/utils.ts` (the same plan `provider-connect.tsx`'s connected
+ *   list uses — it was `llm-provider/connected-tab.tsx`'s before JAY-510
+ *   folded that file into `ProviderConnect`) rather than re-deriving which
+ *   secret names a "codex" disconnect must delete.
  *
  * `ConnectedAccountsTabView` is the pure, props-only half — every prop is
  * optional with a safe default, so it renders under `renderToStaticMarkup`
