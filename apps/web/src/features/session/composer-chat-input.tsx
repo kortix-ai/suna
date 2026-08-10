@@ -57,11 +57,13 @@ export function ComposerChatInput({
   queuedMessages,
   failedQueuedMessages,
   queueInFlightId,
+  queuePaused,
+  queueIsRunning,
+  onSendQueuedMessageNow,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
-  onSendQueuedMessageNow,
   onRetryQueuedMessage,
   onAgentSelectionChange,
 }: {
@@ -96,11 +98,13 @@ export function ComposerChatInput({
   queuedMessages?: SessionChatInputProps['queuedMessages'];
   failedQueuedMessages?: SessionChatInputProps['failedQueuedMessages'];
   queueInFlightId?: SessionChatInputProps['queueInFlightId'];
+  queuePaused?: SessionChatInputProps['queuePaused'];
+  queueIsRunning?: SessionChatInputProps['queueIsRunning'];
+  onSendQueuedMessageNow?: SessionChatInputProps['onSendQueuedMessageNow'];
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  onSendQueuedMessageNow?: (id: string) => void;
   onRetryQueuedMessage?: (id: string) => void;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
@@ -185,11 +189,13 @@ export function ComposerChatInput({
       queuedMessages={queuedMessages}
       failedQueuedMessages={failedQueuedMessages}
       queueInFlightId={queueInFlightId}
+      queuePaused={queuePaused}
+      queueIsRunning={queueIsRunning}
+      onSendQueuedMessageNow={onSendQueuedMessageNow}
       onQueueMessage={onQueueMessage}
       onRemoveQueuedMessage={onRemoveQueuedMessage}
       onEditQueuedMessage={onEditQueuedMessage}
       onReorderQueuedMessage={onReorderQueuedMessage}
-      onSendQueuedMessageNow={onSendQueuedMessageNow}
       onRetryQueuedMessage={onRetryQueuedMessage}
       isBusy={isBusy}
       stopDisabled={stopDisabled}

@@ -3,6 +3,7 @@ import {
   PLATINUM_CI_BUN_VERSION,
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
+  PLATINUM_CI_TEMPLATE_VERSION,
   PLATINUM_CI_WARM_TIMEOUT_MS,
   PlatinumHttpError,
   buildPlatinumTemplateSpec,
@@ -19,6 +20,7 @@ import {
   retryPlatinumOperation,
   selectReusablePlatinumTemplate,
   platinumTemplateName,
+  platinumWarmReadinessTimeoutMs,
   validatePlatinumCiInput,
 } from '../src/core/platinum-ci';
 
@@ -32,10 +34,14 @@ afterEach(() => {
 describe('Platinum CI worker plan', () => {
   test('bounds warm restore readiness so auto mode can fail over quickly', () => {
     expect(PLATINUM_CI_WARM_TIMEOUT_MS).toBe(120_000);
+    expect(platinumWarmReadinessTimeoutMs('restore')).toBe(120_000);
+    expect(platinumWarmReadinessTimeoutMs('cold-boot')).toBe(2_700_000);
+    expect(platinumWarmReadinessTimeoutMs(undefined)).toBe(120_000);
   });
 
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v12-bbbbbbbbbbbbbbbb');
+    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v13');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v13-bbbbbbbbbbbbbbbb');
     expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
@@ -55,7 +61,9 @@ describe('Platinum CI worker plan', () => {
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
     expect(JSON.stringify(spec.steps)).toContain('playwright install --with-deps chromium');
     expect(JSON.stringify(spec.steps)).toContain('git init /workspace/suna');
-    expect(spec.entrypoint).toContain('supabase start --ignore-health-check');
+    expect(spec.entrypoint).toContain(
+      "timeout 2400 sh -c 'until pnpm exec supabase start --ignore-health-check; do sleep 30; done'",
+    );
     expect(spec.entrypoint).not.toContain('docker pull postgres:16-alpine');
     expect(spec.entrypoint).toContain('supabase stop --no-backup');
     expect(spec.entrypoint).toContain('.kortix-ci-warm-ready');

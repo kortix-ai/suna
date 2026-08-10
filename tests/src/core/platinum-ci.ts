@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v12';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v13';
 const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v10';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
@@ -231,7 +231,7 @@ function platinumWarmEntrypoint(): string {
     'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 &',
     "timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'",
     'docker info >/dev/null',
-    'pnpm exec supabase start --ignore-health-check',
+    "timeout 2400 sh -c 'until pnpm exec supabase start --ignore-health-check; do sleep 30; done'",
     'docker image ls -q | sort -u | wc -l > /workspace/.kortix-ci-warm-ready',
     "grep -Eq '^[1-9][0-9]*$' /workspace/.kortix-ci-warm-ready",
     'docker image ls --digests',
@@ -746,8 +746,18 @@ export async function observePlatinumSandboxStart(input: {
   );
 }
 
-export async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
-  const deadline = Date.now() + PLATINUM_CI_WARM_TIMEOUT_MS;
+export function platinumWarmReadinessTimeoutMs(
+  via: PlatinumSandbox['via'],
+): number {
+  return via === 'cold-boot' ? WARM_PREPARE_TIMEOUT_MS : PLATINUM_CI_WARM_TIMEOUT_MS;
+}
+
+export async function waitForWarmSandbox(
+  api: PlatinumApi,
+  sandboxId: string,
+  timeoutMs = PLATINUM_CI_WARM_TIMEOUT_MS,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   let observationFailures = 0;
   while (Date.now() < deadline) {
     try {
@@ -784,7 +794,7 @@ export async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): P
     // The log is optional. The missing marker is the authoritative failure.
   }
   throw new Error(
-    `Platinum sandbox ${sandboxId} did not become warm within ${PLATINUM_CI_WARM_TIMEOUT_MS}ms\n${warmLog.slice(-20_000)}`,
+    `Platinum sandbox ${sandboxId} did not become warm within ${timeoutMs}ms\n${warmLog.slice(-20_000)}`,
   );
 }
 
@@ -1036,7 +1046,7 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
     sandboxCreateDurationMs = Date.now() - createStartedAt;
 
     const warmStartedAt = Date.now();
-    await waitForWarmSandbox(api, sandboxId);
+    await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
     warmPrepareDurationMs = Date.now() - warmStartedAt;
 
     const workerScript = buildWorkerScript(input);

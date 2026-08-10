@@ -103,12 +103,17 @@ export interface SessionChatInputProps {
   failedQueuedMessages?: QueuedMessageView[];
   /** The queued message currently on the wire. Cannot be edited, moved or removed. */
   queueInFlightId?: string | null;
+  /** The queue is held by a stop. Dims the list — never silent. */
+  queuePaused?: boolean;
+  /** The agent is mid-turn, so the per-row send must stop it first. */
+  queueIsRunning?: boolean;
+  /** Send this queued message now, stopping the running turn first if needed. */
+  onSendQueuedMessageNow?: (id: string) => void;
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  /** Stop the running turn and send this queued message immediately. */
-  onSendQueuedMessageNow?: (id: string) => void;
+  /** Put a failed send back in the queue. */
   onRetryQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   /**
@@ -227,11 +232,13 @@ function SessionChatInputImpl({
   queuedMessages,
   failedQueuedMessages,
   queueInFlightId = null,
+  queuePaused,
+  queueIsRunning,
+  onSendQueuedMessageNow,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
-  onSendQueuedMessageNow,
   onRetryQueuedMessage,
   onStop,
   stopDisabled = false,
@@ -862,6 +869,9 @@ function SessionChatInputImpl({
     onQueueMessage,
     queuedMessages,
     queueInFlightId,
+    queuePaused,
+      queueIsRunning,
+    onSendQueuedMessageNow,
     onCommand,
     stagedCommand,
     attachedFiles,
@@ -1138,10 +1148,12 @@ function SessionChatInputImpl({
                 messages={queuedMessages ?? EMPTY_QUEUE}
                 failed={failedQueuedMessages}
                 inFlightId={queueInFlightId}
+                paused={queuePaused}
+                isRunning={queueIsRunning}
+                onSendNow={onSendQueuedMessageNow}
                 onRemove={onRemoveQueuedMessage}
                 onEdit={onEditQueuedMessage}
                 onReorder={onReorderQueuedMessage}
-                onSendNow={onSendQueuedMessageNow}
                 onRetry={onRetryQueuedMessage}
               />
               {replyTo && (
