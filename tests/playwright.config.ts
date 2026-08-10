@@ -27,10 +27,10 @@ export default defineConfig({
   workers,
   reporter: [
     ['list'],
-    ['html', { open: 'never', outputFolder: '../test-results/html' }],
+    ['html', { open: 'never', outputFolder: './test-results/html' }],
     ['./e2e/strict-skip-reporter.ts'],
   ],
-  outputDir: '../test-results/artifacts',
+  outputDir: './test-results/artifacts',
   use: {
     baseURL,
     httpCredentials: environmentProtectionPassword

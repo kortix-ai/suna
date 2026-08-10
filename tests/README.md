@@ -201,6 +201,10 @@ starts and owns the deterministic local stack. Run it directly:
 pnpm test -- --browser-only
 ```
 
+The lane writes its Playwright HTML report to
+`tests/test-results/html/index.html`. CI includes that directory in the browser
+artifact.
+
 The regular browser lane excludes provider-mutating journeys. Set
 `E2E_ENABLE_SANDBOX_TEMPLATE_BUILD=1` only for the dedicated sandbox-template
 journey. That journey creates and deletes its own product snapshot. The
