@@ -1,1 +1,1 @@
-ecs-preview-e2e-v1
+ecs-preview-e2e-v2
