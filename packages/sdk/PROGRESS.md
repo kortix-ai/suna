@@ -30,7 +30,31 @@ The required `tdd` skill is unavailable in this session. This reconciliation
 does not add SDK runtime behavior. Existing compatibility and playground gates
 must remain green.
 
-**Status:** IN PROGRESS.
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2256 pass`, `0 fail`, `10196 expect()` calls
+  across `183` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the
+  deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- `pnpm test -- --full`: all six lanes passed in `268.0s`. The API and CLI lane
+  passed `365/365` flows. The browser lane reported `12 passed`, `7 skipped`, and
+  `0 failed`. Package quality passed every app, package, publish, and migration
+  gate.
+- Managed-model behavior from Main remains covered by `13 pass`, `0 fail`.
+- Workspace architecture coverage reports `85 pass`, `0 fail`. Project exports
+  and routes remain compatibility boundaries. Canonical implementation uses
+  Workspace terminology.
+- Both public-surface snapshots and the release-managed package version remain
+  unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** PR #5480 still needs
+its final push and required GitHub checks. Merge and deployment require separate
+authorization and verification.
 
 ### 2026-08-10 — session `workspace-refactor-stream-reconciliation` claim
 

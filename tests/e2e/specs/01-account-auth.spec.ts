@@ -31,30 +31,47 @@ async function requestEmailAuthentication(page: Page, email: string) {
       (window as typeof window & { __ENV_LOGGED__?: boolean }).__ENV_LOGGED__,
     ),
   );
-  await page.getByLabel("Email").fill(email);
+  const emailInput = page.getByLabel("Email");
+  await emailInput.fill(email);
   const sentAt = new Date();
   const continueButton = page.getByRole("button", {
     name: "Continue",
     exact: true,
   });
   await expect(continueButton).toBeEnabled();
-  let submitted = false;
-  for (let attempt = 1; attempt <= 3 && !submitted; attempt += 1) {
-    const formRequest = page
-      .waitForRequest(
-        (request) =>
-          request.method() === "POST" && new URL(request.url()).pathname === "/auth",
-        { timeout: 2_000 },
-      )
-      .then(() => true)
-      .catch(() => false);
-    await page.getByLabel("Email").press("Enter");
-    submitted = await formRequest;
-    if (!submitted) {
-      await expect(continueButton).toBeEnabled();
-    }
-  }
-  expect(submitted, "the hydrated auth form sends POST /auth").toBe(true);
+
+  // The environment marker is written by a head script before React mounts.
+  // Wait for React to attach the form handler so Enter cannot perform a native
+  // GET navigation and clear the controlled input during cold compilation.
+  await page.locator("form").evaluate((form) => {
+    return new Promise<void>((resolve) => {
+      const hydrated = () =>
+        Object.keys(form).some((key) => {
+          if (!key.startsWith("__reactProps$")) return false;
+          const props = (form as HTMLFormElement & Record<string, unknown>)[key];
+          return Boolean(
+            props &&
+              typeof props === "object" &&
+              "onSubmit" in props &&
+              typeof (props as { onSubmit?: unknown }).onSubmit === "function",
+          );
+        });
+      if (hydrated()) return resolve();
+      const interval = window.setInterval(() => {
+        if (!hydrated()) return;
+        window.clearInterval(interval);
+        resolve();
+      }, 25);
+    });
+  });
+
+  const formRequest = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" && new URL(request.url()).pathname === "/auth",
+    { timeout: 30_000 },
+  );
+  await emailInput.press("Enter");
+  await formRequest;
   await expect(
     page.getByRole("heading", { name: "Check your email" }),
   ).toBeVisible();
