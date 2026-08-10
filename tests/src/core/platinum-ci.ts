@@ -178,6 +178,13 @@ interface WorkerMetadata {
   exitCode: number;
 }
 
+export function providerMetadataIdentifier(value: string, label: string): string {
+  if (!/^[a-z0-9_.:-]{1,128}$/i.test(value)) {
+    throw new Error(`invalid ${label}: ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 export function validatePlatinumCiInput(input: PlatinumCiInput): void {
   if (!input.apiKey) throw new Error('PLATINUM_API_KEY is required');
   if (!/^https:\/\//.test(input.apiUrl)) throw new Error('PLATINUM_API_URL must use https');
@@ -969,10 +976,8 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
 
   let sandboxId = '';
   let sandboxCreateDurationMs = 0;
-  let sandboxVia: WorkerMetadata['sandboxVia'] = 'unknown';
   let warmPrepareDurationMs = 0;
   let workerDurationMs = 0;
-  let exitCode = 1;
   const cleanup = async () => {
     if (!sandboxId) return;
     try {
@@ -1021,7 +1026,7 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
       startedAt: createStartedAt,
       readSandbox: () => api.json<PlatinumSandbox>(`/v1/sandboxes/${created.id}`),
     });
-    sandboxVia = sandbox.via ?? 'unknown';
+    const sandboxVia: WorkerMetadata['sandboxVia'] = sandbox.via ?? 'unknown';
     sandboxCreateDurationMs = Date.now() - createStartedAt;
 
     const warmStartedAt = Date.now();
@@ -1040,14 +1045,14 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
     }
 
     const workerStartedAt = Date.now();
-    exitCode = await streamWorker(api, sandboxId, workerStartedAt);
+    const exitCode = await streamWorker(api, sandboxId, workerStartedAt);
     workerDurationMs = Date.now() - workerStartedAt;
     await downloadArtifacts(api, sandboxId, input.root);
 
     const metadata: WorkerMetadata = {
       provider: 'platinum',
-      sandboxId,
-      templateId: template.id,
+      sandboxId: providerMetadataIdentifier(sandboxId, 'Platinum sandbox ID'),
+      templateId: providerMetadataIdentifier(template.id, 'Platinum template ID'),
       templateName: platinumTemplateName(hash),
       repository: input.repository,
       ref: input.ref,

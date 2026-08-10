@@ -4,6 +4,7 @@ import { localWebUrl } from './local-profile';
 import {
   type LocalStackHandle,
   type LocalSupabaseHandle,
+  assertLoopbackHttpUrl,
   ensureLocalMigrations,
   ensureLocalStack,
   ensureLocalSupabase,
@@ -182,6 +183,7 @@ export async function waitForLocalWeb(
     sleep?: (ms: number) => Promise<void>;
   } = {},
 ): Promise<void> {
+  const checkedWebUrl = assertLoopbackHttpUrl(webUrl, 'local web').toString();
   const timeoutMs = options.timeoutMs ?? 60_000;
   const deadline = performance.now() + timeoutMs;
   const probe =
@@ -189,7 +191,7 @@ export async function waitForLocalWeb(
   const sleep = options.sleep ?? Bun.sleep;
   do {
     try {
-      const response = await probe(webUrl);
+      const response = await probe(checkedWebUrl);
       if (response.ok) return;
     } catch {
       // The dev server can accept connections before its first route compiles.

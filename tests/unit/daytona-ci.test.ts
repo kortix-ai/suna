@@ -17,7 +17,7 @@ import {
   retryDaytonaOperation,
   validateDaytonaCiInput,
 } from '../src/core/daytona-ci';
-import { buildWorkerScript } from '../src/core/platinum-ci';
+import { buildWorkerScript, providerMetadataIdentifier } from '../src/core/platinum-ci';
 
 const sha = 'a'.repeat(40);
 const lockHash = 'b'.repeat(64);
@@ -27,6 +27,16 @@ afterEach(() => {
 });
 
 describe('Daytona CI worker plan', () => {
+  test('accepts bounded provider identifiers and rejects report injection', () => {
+    expect(providerMetadataIdentifier('sandbox:abc-123', 'sandbox ID')).toBe('sandbox:abc-123');
+    expect(() => providerMetadataIdentifier('sandbox\nforged=1', 'sandbox ID')).toThrow(
+      'invalid sandbox ID',
+    );
+    expect(() => providerMetadataIdentifier('x'.repeat(129), 'sandbox ID')).toThrow(
+      'invalid sandbox ID',
+    );
+  });
+
   test('uses one content-addressed warm snapshot for one lockfile', () => {
     expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v3');
     expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v3-bbbbbbbbbbbbbbbb');

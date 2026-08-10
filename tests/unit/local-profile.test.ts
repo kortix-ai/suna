@@ -9,6 +9,8 @@ import {
 } from "../src/core/local-profile";
 import {
   LOCAL_TEST_PROFILE_HEADER,
+  assertLoopbackHttpUrl,
+  hasRequiredLocalSupabaseEnvironment,
   localApiUsesTestProfile,
   localMigrationPlan,
   localTopology,
@@ -119,6 +121,28 @@ describe("ke2e local profile", () => {
       apiUrl: "http://127.0.0.1:22008/v1",
       worktreeName: "feature",
     });
+    expect(() =>
+      localTopology("/repo-feature", {
+        path: "/repo-feature",
+        branch: "feature",
+        ports: { web: 22000, api: 70_000, gateway: 22090 },
+      }),
+    ).toThrow("invalid local API port");
+  });
+
+  it("allows only unauthenticated loopback HTTP health targets", () => {
+    expect(assertLoopbackHttpUrl("http://localhost:24000", "local web").hostname).toBe(
+      "localhost",
+    );
+    expect(() => assertLoopbackHttpUrl("https://localhost:24000", "local web")).toThrow(
+      "must use unauthenticated loopback HTTP",
+    );
+    expect(() => assertLoopbackHttpUrl("http://example.com", "local web")).toThrow(
+      "must use unauthenticated loopback HTTP",
+    );
+    expect(() => assertLoopbackHttpUrl("http://user@127.0.0.1:24000", "local web")).toThrow(
+      "must use unauthenticated loopback HTTP",
+    );
   });
 
   it("parses the Supabase CLI environment without evaluating shell text", () => {
@@ -134,6 +158,23 @@ describe("ke2e local profile", () => {
       JWT_SECRET: "jwt-secret",
       DB_URL: "postgres://local",
     });
+  });
+
+  it("accepts the minimum Supabase services required by the local runner", () => {
+    expect(
+      hasRequiredLocalSupabaseEnvironment({
+        API_URL: "http://127.0.0.1:54321",
+        DB_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+        ANON_KEY: "anon",
+        SERVICE_ROLE_KEY: "service",
+      }),
+    ).toBe(true);
+    expect(
+      hasRequiredLocalSupabaseEnvironment({
+        API_URL: "http://127.0.0.1:54321",
+        DB_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+      }),
+    ).toBe(false);
   });
 
   it("applies pending migrations to the resolved local database", () => {

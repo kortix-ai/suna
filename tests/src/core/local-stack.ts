@@ -42,6 +42,40 @@ export interface LocalMigrationPlan {
   env: Record<string, string>;
 }
 
+function localPort(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) {
+    throw new Error(`invalid local ${label} port: ${String(value)}`);
+  }
+  return value;
+}
+
+export function assertLoopbackHttpUrl(value: string, label: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`invalid ${label} URL: ${value}`);
+  }
+  const hostname = url.hostname.toLowerCase();
+  if (
+    url.protocol !== "http:" ||
+    !["localhost", "127.0.0.1", "[::1]"].includes(hostname) ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    throw new Error(`${label} URL must use unauthenticated loopback HTTP`);
+  }
+  return url;
+}
+
+function localEndpoint(baseUrl: string, label: string, suffix: string): URL {
+  const url = assertLoopbackHttpUrl(baseUrl, label);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}${suffix}`;
+  url.search = "";
+  url.hash = "";
+  return url;
+}
+
 export function localTopology(
   root: string,
   marker: WorktreeMarker | null,
@@ -49,7 +83,11 @@ export function localTopology(
 ): LocalTopology {
   const worktreeName =
     Object.entries(slots).find(([, entry]) => entry.path === root)?.[0] ?? null;
-  const apiPort = marker?.ports.api ?? 8008;
+  const apiPort = localPort(marker?.ports.api ?? 8008, "API");
+  if (marker) {
+    localPort(marker.ports.web, "web");
+    localPort(marker.ports.gateway, "gateway");
+  }
   return {
     root,
     marker,
@@ -102,6 +140,17 @@ export function parseSupabaseEnvironment(
   return parsed;
 }
 
+export function hasRequiredLocalSupabaseEnvironment(
+  environment: LocalSupabaseEnvironment,
+): boolean {
+  return Boolean(
+    environment.API_URL &&
+      environment.DB_URL &&
+      environment.ANON_KEY &&
+      environment.SERVICE_ROLE_KEY,
+  );
+}
+
 export async function readLocalSupabaseEnvironment(
   topology: LocalTopology,
 ): Promise<LocalSupabaseEnvironment> {
@@ -114,10 +163,13 @@ export async function readLocalSupabaseEnvironment(
   });
   const stdout = await new Response(processResult.stdout).text();
   const exitCode = await processResult.exited;
-  if (exitCode !== 0) {
+  const environment = parseSupabaseEnvironment(stdout);
+  // The CLI can return a non-zero status when optional services are stopped.
+  // The local runner needs Auth, Postgres, and their credentials only.
+  if (exitCode !== 0 && !hasRequiredLocalSupabaseEnvironment(environment)) {
     throw new Error("local Supabase is not running");
   }
-  return parseSupabaseEnvironment(stdout);
+  return environment;
 }
 
 function localSupabaseCommand(topology: LocalTopology): string[] {
@@ -223,7 +275,7 @@ export async function ensureLocalMigrations(
 
 export async function localApiHealthy(apiUrl: string): Promise<boolean> {
   try {
-    const response = await fetch(`${apiUrl}/health`, {
+    const response = await fetch(localEndpoint(apiUrl, "local API", "/health"), {
       signal: AbortSignal.timeout(2_000),
     });
     return response.ok;
@@ -237,8 +289,12 @@ export async function localApiUsesTestProfile(
   request: typeof fetch = fetch,
 ): Promise<boolean> {
   try {
-    const origin = apiUrl.replace(/\/v1\/?$/, "");
-    const response = await request(`${origin}/metrics`, {
+    const url = assertLoopbackHttpUrl(apiUrl, "local API");
+    if (!/\/v1\/?$/.test(url.pathname)) return false;
+    url.pathname = `${url.pathname.replace(/\/v1\/?$/, "")}/metrics`;
+    url.search = "";
+    url.hash = "";
+    const response = await request(url, {
       headers: { authorization: `Bearer ${LOCAL_FLOW_INTERNAL_SERVICE_KEY}` },
       signal: AbortSignal.timeout(2_000),
     });
@@ -255,7 +311,7 @@ export async function localGatewayHealthy(
   gatewayUrl: string,
 ): Promise<boolean> {
   try {
-    const response = await fetch(`${gatewayUrl}/health/live`, {
+    const response = await fetch(localEndpoint(gatewayUrl, "local gateway", "/health/live"), {
       signal: AbortSignal.timeout(2_000),
     });
     return response.ok;
@@ -266,7 +322,7 @@ export async function localGatewayHealthy(
 
 export async function localWebHealthy(webUrl: string): Promise<boolean> {
   try {
-    const response = await fetch(webUrl, {
+    const response = await fetch(assertLoopbackHttpUrl(webUrl, "local web"), {
       signal: AbortSignal.timeout(5_000),
     });
     return response.ok;

@@ -7,6 +7,7 @@ import {
   PLATINUM_CI_PNPM_VERSION,
   buildWorkerScript,
   observePlatinumWorker,
+  providerMetadataIdentifier,
 } from './platinum-ci';
 
 export const DAYTONA_CI_SNAPSHOT_VERSION = 'v3';
@@ -770,7 +771,6 @@ export async function runDaytonaCi(input: DaytonaCiInput): Promise<number> {
   console.log(`[daytona-ci] snapshot=${snapshot.name} id=${snapshot.id}`);
 
   let sandbox: DaytonaSandbox | null = null;
-  let exitCode = 1;
   const cleanup = async () => {
     if (!sandbox) return;
     const id = sandbox.id;
@@ -831,7 +831,7 @@ export async function runDaytonaCi(input: DaytonaCiInput): Promise<number> {
       throw new Error(`Daytona worker launch failed: ${launched.result}`);
 
     workerStartedAt = Date.now();
-    exitCode = await observePlatinumWorker({
+    const exitCode = await observePlatinumWorker({
       startedAt: workerStartedAt,
       timeoutMs: WORKER_TIMEOUT_MS,
       pollMs: POLL_MS,
@@ -855,9 +855,9 @@ export async function runDaytonaCi(input: DaytonaCiInput): Promise<number> {
       `${JSON.stringify(
         {
           provider: 'daytona',
-          sandboxId: sandbox.id,
-          snapshotId: snapshot.id,
-          snapshotName: snapshot.name,
+          sandboxId: providerMetadataIdentifier(sandbox.id, 'Daytona sandbox ID'),
+          snapshotId: providerMetadataIdentifier(snapshot.id, 'Daytona snapshot ID'),
+          snapshotName: providerMetadataIdentifier(snapshot.name, 'Daytona snapshot name'),
           repository: input.repository,
           ref: input.ref,
           gitSha: input.sha,
