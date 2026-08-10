@@ -397,9 +397,9 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 `SHIP-8` `kortix ship` outside a git repo or non-Kortix dir → error; not logged in → "run kortix login"; 503 → "managed git not configured; pass --origin <git-url>".
 `SHIP-9` `--no-commit` with dirty tree → error; clean tree + HEAD → skip commit, push only.
 
-### CLI resource commands (project-scoped)
+### CLI resource commands (workspace-scoped)
 
-`CLI-PROJ` `kortix projects ls|info|link|unlink|open|rm` → `GET /projects`, `GET /projects/:id`, `DELETE /projects/:id[?purge=true]` (`--purge` deletes the managed repo; BYO untouched).
+`CLI-PROJ` `kortix workspaces ls|info|link|unlink|open|rm` → `GET /workspaces`, `GET /workspaces/:id`, `DELETE /workspaces/:id[?purge=true]`. The deprecated `kortix projects` aliases keep the legacy `/projects` routes and Project response shape. Canonical `workspaces link` persists both `workspace_id` and deprecated `project_id` so older installed CLIs can read the same `.kortix/link.json`. `--purge` deletes the managed repo; BYO remains untouched.
 `CLI-SESS` `kortix sessions ls|new|info|restart|rm|open` → maps to §7.
 `CLI-SEC` `kortix secrets ls|set|unset` + `kortix env pull|push` → maps to §6 (values write-only).
 `CLI-TRG` `kortix triggers ls|fire|enable|disable|info` → maps to §12.
