@@ -17,9 +17,13 @@
  *   - **A second list.** Failed sends rendered in their own `<ul>` below the
  *     queue, which read as two queues. There is one queue; a failure is a row in
  *     it that needs attention.
- *   - **"Stop & send".** A one-click interrupt of a running turn, sitting in a
- *     hover-revealed strip beside four other icons. Killing the agent mid-task
- *     should not be a thing you can do by aiming slightly wrong.
+ *   - **Four hover-revealed reorder carets.** Two rows' worth of chrome to move
+ *     one row. `ArrowUp`/`ArrowDown` still reorder from a focused row; the
+ *     buttons are gone.
+ *   - **A "Paused — stopped before these sent" bar with its own Resume button.**
+ *     A second way to do what a row's own send button already does, since that
+ *     resumes the queue as it sends. The pause still shows — the list dims —
+ *     but it no longer gets a control of its own.
  *   - **Motion on every row.** `layout` + a spring on enter, exit, and reorder.
  *     A queue changes because the user removed something or the agent consumed
  *     something; both are already visible. Animating them adds a wait to a fact.
@@ -36,7 +40,6 @@ import {
   ArrowClockwiseIcon,
   PaperPlaneTiltIcon,
   PaperclipIcon,
-  PauseIcon,
   StopIcon,
   WarningIcon,
   XIcon,
@@ -69,18 +72,20 @@ export interface QueuedMessagesProps {
   onReorder?: (id: string, toIndex: number) => void;
   onRetry?: (id: string) => void;
   /**
-   * The queue is held by a stop and will not send on its own.
+   * The queue is held by a stop and will not drain on its own.
    *
-   * This has to be on screen. Pressing stop pauses the queue — reasonably, or
-   * the interrupt is followed a beat later by the message you were interrupting
-   * for — but until this existed the pause was completely silent. Messages
-   * queued before a stop sat there indefinitely, and the only thing that freed
-   * them was queueing another message, which nobody would guess. A queue that
-   * has stopped working is the single worst state this component can be in, so
-   * it is the one state that gets its own row.
+   * Dims the list, and switches what the live region announces — "sends when
+   * this turn ends" is a lie while paused, and that lie is what made a stopped
+   * queue look like a broken one.
+   *
+   * The way out is a row's own send button, which resumes the queue as it
+   * sends. That is why there is no separate Resume control: two affordances for
+   * one recovery is exactly the redundancy the rest of this component shed.
+   * The dim is the whole signal, so do not remove it without replacing it —
+   * a paused queue with no indication at all is indistinguishable from a broken
+   * one, which is the bug this prop exists to prevent.
    */
   paused?: boolean;
-  onResume?: () => void;
   /**
    * The agent is mid-turn. Only changes what the per-row send button *is*:
    * an interrupt while a turn runs, a plain send while nothing does.
@@ -315,7 +320,7 @@ function QueuedRow({
       ) : (
         // Hidden until the row is hovered, and until it is focused — a control
         // you can tab to but cannot see is worse than no control at all.
-        <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        <span className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           {onSendNow && (
             <SendNowAction isRunning={isRunning} onClick={() => onSendNow(message.id)} />
           )}
@@ -367,7 +372,6 @@ export function QueuedMessages({
   onReorder,
   onRetry,
   paused = false,
-  onResume,
   isRunning = false,
   onSendNow,
 }: QueuedMessagesProps) {
@@ -396,41 +400,14 @@ export function QueuedMessages({
 
   if (messages.length === 0 && failed.length === 0) return null;
 
-  const showPaused = paused && messages.length > 0;
-
   return (
     <>
       {/* Announced politely: a queue that grows or drains while you are typing
           is a change screen-reader users otherwise have no way to notice. The
           sighted equivalent is the numbers, not a header. */}
       <p className="sr-only" aria-live="polite">
-        {showPaused ? pausedSummaryLabel(messages.length) : queueSummaryLabel(messages.length)}
+        {paused ? pausedSummaryLabel(messages.length) : queueSummaryLabel(messages.length)}
       </p>
-
-      {/* Only rendered while the queue is actually stuck. This is a state plus
-          the way out of it, not a header — the collapsible summary that used to
-          live here was always present and told you nothing you could act on. */}
-      {showPaused && (
-        <div className="flex items-center gap-2 rounded-md border border-dashed px-2.5 py-1.5">
-          <PauseIcon className="text-muted-foreground/60 size-3 shrink-0" weight="fill" />
-          <span className="text-muted-foreground min-w-0 flex-1 text-xs">
-            Paused — stopped before these sent
-          </span>
-          {onResume && (
-            <button
-              type="button"
-              onClick={onResume}
-              className={cn(
-                'text-foreground shrink-0 cursor-pointer rounded-sm px-1.5 py-0.5 text-xs font-medium',
-                'hover:bg-muted-foreground/10 transition-[color,background-color,scale]',
-                'active:scale-[0.96]',
-              )}
-            >
-              Resume
-            </button>
-          )}
-        </div>
-      )}
 
       {/* ONE list. Failures are rows in the queue that need attention, not a
           second queue below it. The cap keeps a long queue from pushing the

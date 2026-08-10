@@ -103,17 +103,17 @@ export interface SessionChatInputProps {
   failedQueuedMessages?: QueuedMessageView[];
   /** The queued message currently on the wire. Cannot be edited, moved or removed. */
   queueInFlightId?: string | null;
-  /** The queue is held by a stop. Rendered, not silent — see QueuedMessages. */
+  /** The queue is held by a stop. Dims the list — never silent. */
   queuePaused?: boolean;
-  onResumeQueue?: () => void;
   /** The agent is mid-turn, so the per-row send must stop it first. */
   queueIsRunning?: boolean;
+  /** Send this queued message now, stopping the running turn first if needed. */
   onSendQueuedMessageNow?: (id: string) => void;
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  /** Stop the running turn and send this queued message immediately. */
+  /** Put a failed send back in the queue. */
   onRetryQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   /**
@@ -233,7 +233,6 @@ function SessionChatInputImpl({
   failedQueuedMessages,
   queueInFlightId = null,
   queuePaused,
-  onResumeQueue,
   queueIsRunning,
   onSendQueuedMessageNow,
   onQueueMessage,
@@ -871,8 +870,7 @@ function SessionChatInputImpl({
     queuedMessages,
     queueInFlightId,
     queuePaused,
-    onResumeQueue,
-    queueIsRunning,
+      queueIsRunning,
     onSendQueuedMessageNow,
     onCommand,
     stagedCommand,
@@ -1151,7 +1149,6 @@ function SessionChatInputImpl({
                 failed={failedQueuedMessages}
                 inFlightId={queueInFlightId}
                 paused={queuePaused}
-                onResume={onResumeQueue}
                 isRunning={queueIsRunning}
                 onSendNow={onSendQueuedMessageNow}
                 onRemove={onRemoveQueuedMessage}

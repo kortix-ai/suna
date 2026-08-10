@@ -4114,7 +4114,6 @@ export function SessionChat({
                 failedQueuedMessages={failedQueuedMessages}
                 queueInFlightId={sessionQueue.inFlightId}
                 queuePaused={queueDrain.paused}
-                onResumeQueue={queueDrain.resume}
                 queueIsRunning={isBusy}
                 onSendQueuedMessageNow={handleQueueSendNow}
                 onQueueMessage={handleQueueMessage}
