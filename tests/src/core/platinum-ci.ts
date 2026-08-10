@@ -124,6 +124,7 @@ export interface PlatinumSandbox {
   via?: 'restore' | 'cold-boot';
   metadata?: Record<string, unknown>;
   errorMessage?: string | null;
+  exposed?: Array<{ port: number; url: string; token?: string; public?: boolean }>;
 }
 
 interface PlatinumSandboxPage {
@@ -356,6 +357,10 @@ export function buildWorkerScript(input: {
   const provider = input.provider ?? 'platinum';
   const command = ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])];
   const testCommand = command.map(shellQuote).join(' ');
+  const prestartSupabase = input.testArgs.includes('--browser-only')
+    ? `pnpm exec supabase start --ignore-health-check
+echo "[${provider}-ci] supabase_prestarted=1"`
+    : '';
   const providerLogs =
     provider === 'daytona'
       ? '/workspace/daytona-bootstrap.log /workspace/daytona-warm.log /workspace/daytona-dockerd.log'
@@ -431,6 +436,7 @@ echo "[${provider}-ci] docker_ready=1"
 docker network inspect bridge --format '{{.Driver}}' | grep -qx bridge
 echo "[${provider}-ci] docker_bridge_ready=1"
 
+${prestartSupabase}
 ${testCommand}
 `;
 }
@@ -439,7 +445,7 @@ export function platinumWorkerLaunchCommand(): string {
   return 'setsid -f /workspace/run-kortix-tests.sh >/workspace/kortix-bootstrap.log 2>&1 </dev/null';
 }
 
-class PlatinumApi {
+export class PlatinumApi {
   readonly base: string;
   readonly headers: Record<string, string>;
 
@@ -629,7 +635,7 @@ async function waitForTemplate(api: PlatinumApi, template: PlatinumTemplate): Pr
   throw new Error(`Platinum template ${template.id} did not become ready within ${TEMPLATE_TIMEOUT_MS}ms`);
 }
 
-async function ensureTemplate(
+export async function ensureTemplate(
   api: PlatinumApi,
   spec: PlatinumTemplateSpec,
 ): Promise<PlatinumTemplate> {
@@ -654,7 +660,7 @@ async function ensureTemplate(
   return waitForTemplate(api, queued);
 }
 
-async function ensureWarmTemplate(
+export async function ensureWarmTemplate(
   api: PlatinumApi,
   base: PlatinumTemplate,
   lockHash: string,
@@ -740,7 +746,7 @@ export async function observePlatinumSandboxStart(input: {
   );
 }
 
-async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
+export async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
   const deadline = Date.now() + PLATINUM_CI_WARM_TIMEOUT_MS;
   let observationFailures = 0;
   while (Date.now() < deadline) {
@@ -782,7 +788,7 @@ async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<
   );
 }
 
-async function exec(
+export async function exec(
   api: PlatinumApi,
   sandboxId: string,
   command: string[],
@@ -798,7 +804,7 @@ async function exec(
   return response.result;
 }
 
-async function stat(
+export async function stat(
   api: PlatinumApi,
   sandboxId: string,
   path: string,
@@ -935,7 +941,7 @@ async function streamWorker(
   });
 }
 
-async function downloadArtifacts(
+export async function downloadArtifacts(
   api: PlatinumApi,
   sandboxId: string,
   root: string,

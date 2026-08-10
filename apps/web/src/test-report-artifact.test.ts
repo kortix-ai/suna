@@ -8,8 +8,14 @@ const playwrightConfig = readFileSync(join(repoRoot, 'tests/playwright.config.ts
 
 describe('frontend browser report artifact contract', () => {
   test('runs browser journeys through the canonical root test worker', () => {
-    expect(workflow).toContain('lane: [core, browser, packages]');
-    expect(workflow).toContain('bun tests/bin/sandbox-ci.ts --browser-only');
+    expect(workflow).toContain('- lane: browser-1');
+    expect(workflow).toContain('- lane: browser-2');
+    expect(workflow).toContain(
+      'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=1/2',
+    );
+    expect(workflow).toContain(
+      'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2',
+    );
   });
 
   test('uploads every generated JSON and HTML report for inspection', () => {

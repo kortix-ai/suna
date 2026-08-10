@@ -369,6 +369,19 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
+- The `preview` label creates one full self-host preview in a persistent warm
+  Platinum sandbox. `auto` uses Daytona only for a Platinum infrastructure
+  failure. The preview has its own PostgreSQL, Supabase, API, gateway, frontend,
+  Mailpit, and HTTPS origin.
+- Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
+  pull request comment links the origin and its `/_tests/` HTML report.
+- A preview head change deletes the sandbox and removes the stale `preview`
+  label. Unlabel, close, and scheduled reconciliation also delete the sandbox.
+- Preview warm images contain dependencies and Docker layers only. They never
+  contain a database or runtime secret.
+- Preview Mailpit handles authentication and invite email. The dedicated
+  preview GitHub App runs the managed repository and CLI push flows. OAuth
+  initiation is the only allowed preview browser exclusion.
 
 ### Product flow source of truth
 

@@ -139,21 +139,34 @@ describe('web ECS migration', () => {
     }
   });
 
-  it('builds preview images without credentials and invalidates approval on new commits', () => {
+  it('builds preview images without credentials and deploys one full self-host sandbox', () => {
     const workflow = read('.github/workflows/deploy-preview.yml');
-    const previewScript = read('infra/scripts/ecs-preview.sh');
-    const previewTerraform = read('infra/terraform/environments/preview/main.tf');
+    const buildJobs = workflow.slice(
+      workflow.indexOf('  build-api:'),
+      workflow.indexOf('  deploy:'),
+    );
 
-    expect(workflow.match(/persist-credentials: false/g)).toHaveLength(3);
-    expect(workflow.match(/push: false/g)).toHaveLength(3);
+    expect(buildJobs.match(/persist-credentials: false/g)).toHaveLength(3);
+    expect(buildJobs.match(/push: false/g)).toHaveLength(3);
+    expect(buildJobs.match(/platforms: linux\/amd64/g)).toHaveLength(3);
     expect(workflow).toContain("github.event.action == 'labeled'");
     expect(workflow).toContain("github.event.action == 'synchronize'");
     expect(workflow).toContain('labels/preview');
-    expect(previewScript).toContain('WEB_SECRET_NAME="kortix-preview-web-env"');
-    expect(previewTerraform).toContain('name = "kortix-preview-web-env"');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts deploy');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts teardown');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts reconcile');
+    expect(workflow).toContain('pnpm test -- --target-full');
+    expect(workflow).toContain('PREVIEW_LOCKFILE_SHA256');
+    expect(workflow).toContain('Test report:');
+    expect(workflow).toContain('deployments: write');
+    expect(workflow).toContain('type: choice');
+    expect(workflow).toContain('- platinum');
+    expect(workflow).toContain('- daytona');
+    expect(workflow).not.toContain('infra/scripts/ecs-preview.sh');
+    expect(workflow).not.toContain('configure-aws-credentials');
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
-    expect(workflow).toContain('"- **Frontend:** https://${web}"');
+    expect(workflow).toContain('**Preview:**');
   });
 
   it('disables Vercel auto-deploys everywhere except staging', () => {
@@ -170,7 +183,7 @@ describe('web ECS migration', () => {
     expect(ignore).toContain('prod deploys only via deploy-prod.yml');
     expect(ignore).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
     expect(ignore).not.toContain('*:main');
-    expect(ignore).toContain('dev and PR previews deploy on ECS only');
+    expect(ignore).toContain('dev deploys on ECS; PR previews deploy in sandboxes');
   });
 
   it('deploys the prod Vercel frontend only after the API serves the release', () => {

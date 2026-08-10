@@ -4,55 +4,119 @@ on:
   pull_request_target:
     branches: [main]
     types: [labeled, unlabeled, synchronize, closed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number with the preview label
+        required: true
+        type: number
+      provider:
+        description: Preview sandbox provider
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - platinum
+          - daytona
   schedule:
     - cron: "17 6 * * *"
 
 concurrency:
-  group: deploy-preview-${{ github.event.pull_request.number }}
+  group: deploy-preview-${{ github.event.pull_request.number || inputs.pr_number || 'reconcile' }}
   cancel-in-progress: false
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   authorize:
     name: Authorize exact preview SHA
     if: >-
-      github.event_name == 'pull_request_target' &&
+      (github.event_name == 'pull_request_target' &&
       github.event.action == 'labeled' &&
       github.event.label.name == 'preview' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository) ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
+    outputs:
+      pr_number: ${{ steps.preview.outputs.pr_number }}
+      sha: ${{ steps.preview.outputs.sha }}
+      ref: ${{ steps.preview.outputs.ref }}
+      lockfile_sha256: ${{ steps.preview.outputs.lockfile_sha256 }}
+      provider: ${{ steps.preview.outputs.provider }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      NUM: ${{ github.event.pull_request.number }}
-      COMMIT: ${{ github.event.pull_request.head.sha }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+      EVENT_SHA: ${{ github.event.pull_request.head.sha }}
+      INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+      INPUT_PROVIDER: ${{ inputs.provider }}
       APPROVER: ${{ github.actor }}
     steps:
       - name: Require writer approval for the current head SHA
+        id: preview
         run: |
           set -euo pipefail
           permission="$(gh api "repos/${REPO}/collaborators/${APPROVER}/permission" --jq .permission)"
           case "$permission" in
-            admin|write) ;;
-            *) echo "::error::${APPROVER} has ${permission} permission; preview approval requires write or admin."; exit 1 ;;
+            admin|maintain|write) ;;
+            *) echo "::error::${APPROVER} has ${permission} permission; preview approval requires write, maintain, or admin."; exit 1 ;;
           esac
-          current="$(gh api "repos/${REPO}/pulls/${NUM}" --jq .head.sha)"
-          [ "$current" = "$COMMIT" ] || {
-            echo "::error::Preview approval is stale. Expected ${COMMIT}; current head is ${current}."
+
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            num="$INPUT_PR_NUMBER"
+            sha="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.sha)"
+            head_repo="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.repo.full_name)"
+            provider="$INPUT_PROVIDER"
+          else
+            num="$EVENT_PR_NUMBER"
+            sha="$EVENT_SHA"
+            head_repo="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.repo.full_name)"
+            provider=auto
+          fi
+
+          [ "$head_repo" = "$REPO" ] || {
+            echo "::error::Preview sandboxes accept same-repository pull requests only."
             exit 1
           }
-          labels="$(gh api "repos/${REPO}/issues/${NUM}/labels" --jq 'map(.name) | join(" ")')"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Pull request head is not a full Git SHA."
+            exit 1
+          }
+          case "$provider" in auto|platinum|daytona) ;; *) exit 1 ;; esac
+
+          current="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.sha)"
+          [ "$current" = "$sha" ] || {
+            echo "::error::Preview approval is stale. Expected ${sha}; current head is ${current}."
+            exit 1
+          }
+          labels="$(gh api "repos/${REPO}/issues/${num}/labels" --jq 'map(.name) | join(" ")')"
           [[ " $labels " == *" preview "* ]] || {
-            echo "::error::The preview label is no longer present."
+            echo "::error::The preview label is not present."
             exit 1
           }
-          echo "${APPROVER} approved exact preview SHA ${COMMIT}."
+
+          lockfile_sha256="$(gh api \
+            -H 'Accept: application/vnd.github.raw+json' \
+            "repos/${REPO}/contents/pnpm-lock.yaml?ref=${sha}" | sha256sum | awk '{print $1}')"
+          [[ "$lockfile_sha256" =~ ^[0-9a-f]{64}$ ]] || {
+            echo "::error::Could not calculate the exact pull request lockfile hash."
+            exit 1
+          }
+
+          {
+            echo "pr_number=$num"
+            echo "sha=$sha"
+            echo "ref=refs/pull/${num}/head"
+            echo "lockfile_sha256=$lockfile_sha256"
+            echo "provider=$provider"
+          } >> "$GITHUB_OUTPUT"
+          echo "${APPROVER} approved preview PR ${num} at ${sha} with provider=${provider}."
 
   build-api:
     name: Build preview API image
@@ -63,7 +127,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
       - uses: docker/setup-buildx-action@v4
@@ -76,12 +140,12 @@ jobs:
           outputs: type=docker,dest=/tmp/preview-api.tar
           build-args: |
             SERVICE=apps/api
-            KORTIX_VERSION=pr-${{ github.event.pull_request.number }}
-            KORTIX_COMMIT=${{ github.event.pull_request.head.sha }}
-          tags: kortix/kortix-api:pr-${{ github.event.pull_request.head.sha }}
+            KORTIX_VERSION=pr-${{ needs.authorize.outputs.pr_number }}
+            KORTIX_COMMIT=${{ needs.authorize.outputs.sha }}
+          tags: kortix/kortix-api:pr-${{ needs.authorize.outputs.sha }}
       - uses: actions/upload-artifact@v7
         with:
-          name: preview-api-${{ github.event.pull_request.head.sha }}
+          name: preview-api-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-api.tar
           if-no-files-found: error
           retention-days: 1
@@ -96,7 +160,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
       - uses: docker/setup-buildx-action@v4
@@ -108,12 +172,12 @@ jobs:
           push: false
           outputs: type=docker,dest=/tmp/preview-gateway.tar
           build-args: |
-            KORTIX_VERSION=pr-${{ github.event.pull_request.number }}
-            KORTIX_COMMIT=${{ github.event.pull_request.head.sha }}
-          tags: kortix/kortix-gateway:pr-${{ github.event.pull_request.head.sha }}
+            KORTIX_VERSION=pr-${{ needs.authorize.outputs.pr_number }}
+            KORTIX_COMMIT=${{ needs.authorize.outputs.sha }}
+          tags: kortix/kortix-gateway:pr-${{ needs.authorize.outputs.sha }}
       - uses: actions/upload-artifact@v7
         with:
-          name: preview-gateway-${{ github.event.pull_request.head.sha }}
+          name: preview-gateway-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-gateway.tar
           if-no-files-found: error
           retention-days: 1
@@ -128,7 +192,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
       - uses: actions/setup-node@v7
@@ -147,8 +211,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
           NEXT_PUBLIC_BILLING_ENABLED: "false"
-          NEXT_PUBLIC_KORTIX_VERSION: pr-${{ github.event.pull_request.number }}
-          NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.event.pull_request.head.sha }}
+          NEXT_PUBLIC_KORTIX_VERSION: pr-${{ needs.authorize.outputs.pr_number }}
+          NEXT_PUBLIC_KORTIX_COMMIT: ${{ needs.authorize.outputs.sha }}
           NEXT_OUTPUT: standalone
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
@@ -158,73 +222,88 @@ jobs:
           platforms: linux/amd64
           push: false
           outputs: type=docker,dest=/tmp/preview-web.tar
-          tags: kortix/kortix-frontend:pr-${{ github.event.pull_request.head.sha }}
+          tags: kortix/kortix-frontend:pr-${{ needs.authorize.outputs.sha }}
       - uses: actions/upload-artifact@v7
         with:
-          name: preview-web-${{ github.event.pull_request.head.sha }}
+          name: preview-web-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-web.tar
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
 
   deploy:
-    name: Publish and deploy preview API and frontend
+    name: Deploy full self-host preview and run end-to-end tests
     needs: [authorize, build-api, build-gateway, build-web]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 100
     permissions:
-      id-token: write
       contents: read
       pull-requests: write
+      deployments: write
     env:
-      AWS_REGION: us-west-2
-      PREVIEW_ROLE: arn:aws:iam::935064898258:role/kortix-gha-preview-deploy
-      NUM: ${{ github.event.pull_request.number }}
-      COMMIT: ${{ github.event.pull_request.head.sha }}
       GH_TOKEN: ${{ github.token }}
-      REPO: ${{ github.repository }}
-      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      APPROVER: ${{ github.actor }}
+      NUM: ${{ needs.authorize.outputs.pr_number }}
+      COMMIT: ${{ needs.authorize.outputs.sha }}
+      PREVIEW_PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
+      PREVIEW_SHA: ${{ needs.authorize.outputs.sha }}
+      PREVIEW_REF: ${{ needs.authorize.outputs.ref }}
+      PREVIEW_LOCKFILE_SHA256: ${{ needs.authorize.outputs.lockfile_sha256 }}
+      PREVIEW_SANDBOX_PROVIDER: ${{ needs.authorize.outputs.provider }}
+      PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
+      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
+      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
+      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
+      KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
+      KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+      KORTIX_GITHUB_APP_ID: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_ID }}
+      KORTIX_GITHUB_APP_PRIVATE_KEY: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_PRIVATE_KEY }}
+      KORTIX_GITHUB_APP_SLUG: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_SLUG }}
+      MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID }}
+      MANAGED_GIT_GITHUB_OWNER: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_OWNER }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
       - name: Revalidate exact preview approval
-        env:
-          APPROVER: ${{ github.actor }}
         run: |
           set -euo pipefail
-          permission="$(gh api "repos/${REPO}/collaborators/${APPROVER}/permission" --jq .permission)"
+          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${APPROVER}/permission" --jq .permission)"
           case "$permission" in
-            admin|write) ;;
-            *) echo "::error::Preview approver no longer has write or admin permission."; exit 1 ;;
+            admin|maintain|write) ;;
+            *) echo "::error::Preview approver no longer has write, maintain, or admin permission."; exit 1 ;;
           esac
-          current="$(gh api "repos/${REPO}/pulls/${NUM}" --jq .head.sha)"
+          current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${NUM}" --jq .head.sha)"
           [ "$current" = "$COMMIT" ] || {
             echo "::error::Approved SHA ${COMMIT} is stale; current head is ${current}."
             exit 1
           }
-          labels="$(gh api "repos/${REPO}/issues/${NUM}/labels" --jq 'map(.name) | join(" ")')"
+          labels="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${NUM}/labels" --jq 'map(.name) | join(" ")')"
           [[ " $labels " == *" preview "* ]] || {
-            echo "::error::The preview label was removed before publication."
+            echo "::error::The preview label was removed before deployment."
             exit 1
           }
       - uses: actions/download-artifact@v8
         with:
-          name: preview-api-${{ github.event.pull_request.head.sha }}
+          name: preview-api-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-api
       - uses: actions/download-artifact@v8
         with:
-          name: preview-gateway-${{ github.event.pull_request.head.sha }}
+          name: preview-gateway-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-gateway
       - uses: actions/download-artifact@v8
         with:
-          name: preview-web-${{ github.event.pull_request.head.sha }}
+          name: preview-web-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-web
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Load and publish fixed preview image tags
+      - name: Publish exact linux/amd64 images
         run: |
           set -euo pipefail
           for archive in \
@@ -241,145 +320,168 @@ jobs:
             "kortix/kortix-api:pr-${COMMIT}" \
             "kortix/kortix-gateway:pr-${COMMIT}" \
             "kortix/kortix-frontend:pr-${COMMIT}"; do
-            docker image inspect "$image" >/dev/null
+            docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image" | grep -qx 'linux/amd64'
             docker push "$image"
           done
-      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
-        with:
-          role-to-assume: ${{ env.PREVIEW_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Deploy isolated Fargate service
-        run: |
-          bash infra/scripts/ecs-preview.sh deploy "$NUM" \
-            "kortix/kortix-api:pr-${COMMIT}" \
-            "kortix/kortix-gateway:pr-${COMMIT}" \
-            "kortix/kortix-frontend:pr-${COMMIT}" \
-            "$COMMIT"
-      - name: Require isolated API and frontend health
+      - name: Create GitHub deployment
+        id: deployment
         run: |
           set -euo pipefail
-          test -n "${WEB_PROTECTION_PASSWORD:-}" || {
-            echo "::error::WEB_PROTECTION_PASSWORD is required for preview verification."
-            exit 1
-          }
-          api_host="pr-${NUM}.preview-api.kortix.com"
-          web_host="pr-${NUM}.preview.kortix.com"
-          for _ in $(seq 1 30); do
-            cookie_jar="$(mktemp)"
-            api_health="$(curl -fsS --max-time 8 "https://${api_host}/v1/health" 2>/dev/null || true)"
-            api_environment="$(printf '%s' "$api_health" | jq -r '.environment // empty' 2>/dev/null || true)"
-            api_commit="$(printf '%s' "$api_health" | jq -r '.commit // empty' 2>/dev/null || true)"
-            web_health="$(curl -fsS --max-time 8 "https://${web_host}/api/health" 2>/dev/null || true)"
-            web_commit="$(printf '%s' "$web_health" | jq -r '.commit // empty' 2>/dev/null || true)"
-            anonymous="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "https://${web_host}/" || true)"
-            wrong="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -u 'kortix:wrong-password' "https://${web_host}/" || true)"
-            protected="$(curl -sS -c "$cookie_jar" -o /dev/null -w '%{http_code}' --max-time 8 -u "kortix:${WEB_PROTECTION_PASSWORD}" "https://${web_host}/" || true)"
-            cookie_only="$(curl -sS -b "$cookie_jar" -o /dev/null -w '%{http_code}' --max-time 8 "https://${web_host}/" || true)"
-            runtime="$(curl -fsS -b "$cookie_jar" --max-time 8 "https://${web_host}/api/runtime-config" 2>/dev/null || true)"
-            rm -f "$cookie_jar"
-            echo "api_environment=${api_environment:-?} api_commit=${api_commit:-?} web_commit=${web_commit:-?} anonymous=${anonymous:-?} wrong=${wrong:-?} protected=${protected:-?} cookie_only=${cookie_only:-?}"
-            if [ "$api_environment" = "preview" ] \
-              && [ "$api_commit" = "$COMMIT" ] \
-              && [ "$web_commit" = "$COMMIT" ] \
-              && [ "$anonymous" = 401 ] \
-              && [ "$wrong" = 401 ] \
-              && { [ "$protected" = 200 ] || [ "$protected" = 307 ] || [ "$protected" = 308 ]; } \
-              && { [ "$cookie_only" = 200 ] || [ "$cookie_only" = 307 ] || [ "$cookie_only" = 308 ]; } \
-              && grep -q "https://${api_host}/v1" <<<"$runtime" \
-              && grep -q "https://${web_host}" <<<"$runtime"; then
-              printf '%s\n' "$api_health" > /tmp/preview-health.json
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "::error::Preview API or frontend did not report commit ${COMMIT} with isolated runtime configuration."
-          exit 1
-      - name: Update sticky status comment
+          id="$(jq -n \
+            --arg ref "$COMMIT" \
+            --arg environment "preview/pr-${NUM}" \
+            '{ref:$ref,environment:$environment,auto_merge:false,required_contexts:[],description:"Ephemeral full-stack sandbox preview"}' | \
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments" --input - --jq .id)"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          jq -n '{state:"in_progress",description:"Building the self-host preview"}' | \
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" --input - >/dev/null
+      - name: Deploy sandbox and run pnpm test -- --target-full
+        id: preview
+        continue-on-error: true
+        run: bun tests/bin/sandbox-preview.ts deploy
+      - name: Publish GitHub deployment result
+        if: always() && steps.deployment.outputs.id != ''
+        env:
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+          PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$PREVIEW_OUTCOME" = success ] && [ -n "$PREVIEW_URL" ]; then
+            state=success
+            description='Full self-host preview and target-full tests passed'
+          else
+            state=failure
+            description='Preview deployment or target-full tests failed'
+          fi
+          jq -n \
+            --arg state "$state" \
+            --arg description "$description" \
+            --arg environment_url "$PREVIEW_URL" \
+            --arg log_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{state:$state,description:$description,environment_url:$environment_url,log_url:$log_url}' | \
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses" --input - >/dev/null
+      - name: Update sticky preview comment
+        if: always()
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+          REPORT_URL: ${{ steps.preview.outputs.report_url }}
+          PROVIDER: ${{ steps.preview.outputs.provider }}
+          SANDBOX_ID: ${{ steps.preview.outputs.sandbox_id }}
+          PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
         run: |
           set -euo pipefail
           marker='<!-- preview-status -->'
-          host="pr-${NUM}.preview-api.kortix.com"
-          web="pr-${NUM}.preview.kortix.com"
-          body="$(printf '%s\n' "$marker" '## Preview environment - live' '' \
-            "- **Backend:** https://${host}" \
-            "- **Health:** https://${host}/v1/health" \
-            "- **Frontend:** https://${web}" '' \
-            '_One isolated Fargate task with API, gateway, and frontend; automatic close/unlabel teardown._')"
-          id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
+          if [ "$PREVIEW_OUTCOME" = success ]; then
+            title='## Preview environment - live and tested'
+            # Markdown needs literal backticks.
+            # shellcheck disable=SC2016
+            result='`pnpm test -- --target-full` passed.'
+          elif [ -n "$PREVIEW_URL" ]; then
+            title='## Preview environment - live; tests failed'
+            result='The sandbox remains available for diagnosis. Open the report and workflow log.'
+          else
+            title='## Preview environment - deployment failed'
+            result='No preview URL was published. Open the workflow log.'
+          fi
+          body="$(printf '%s\n' "$marker" "$title" '' \
+            "- **Preview:** ${PREVIEW_URL:-unavailable}" \
+            "- **Test report:** ${REPORT_URL:-unavailable}" \
+            "- **Provider:** ${PROVIDER:-$PREVIEW_SANDBOX_PROVIDER}" \
+            "- **Sandbox:** ${SANDBOX_ID:-unavailable}" \
+            "- **Commit:** \`${COMMIT}\`" '' \
+            "$result" '' \
+            '_The preview owns PostgreSQL, Supabase, API, gateway, frontend, and Mailpit. OAuth initiation is the only explicit preview exclusion._')"
+          id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${NUM}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           if [ -n "$id" ]; then
-            gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" >/dev/null
           else
-            gh api -X POST "repos/${REPO}/issues/${NUM}/comments" -f body="$body" >/dev/null
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${NUM}/comments" -f body="$body" >/dev/null
           fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: preview-results-pr-${{ needs.authorize.outputs.pr_number }}-${{ needs.authorize.outputs.sha }}
+          path: tests/test-results/**
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Fail when deployment or tests failed
+        if: steps.preview.outcome != 'success'
+        run: exit 1
 
   teardown:
     name: Tear down preview and invalidate stale approval
     if: >-
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action == 'closed' ||
       (github.event.action == 'unlabeled' && github.event.label.name == 'preview') ||
       (github.event.action == 'synchronize' &&
       contains(github.event.pull_request.labels.*.name, 'preview')))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
-      id-token: write
       contents: read
       pull-requests: write
+      deployments: write
     env:
-      AWS_REGION: us-west-2
-      PREVIEW_ROLE: arn:aws:iam::935064898258:role/kortix-gha-preview-deploy
-      NUM: ${{ github.event.pull_request.number }}
       GH_TOKEN: ${{ github.token }}
-      REPO: ${{ github.repository }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      PREVIEW_PR_NUMBER: ${{ github.event.pull_request.number }}
+      PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
+      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
+      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
+      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
-      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
-        with:
-          role-to-assume: ${{ env.PREVIEW_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Delete isolated Fargate resources
-        run: bash infra/scripts/ecs-preview.sh teardown "$NUM"
+          persist-credentials: false
+      - name: Delete the Platinum or Daytona preview sandbox
+        run: bun tests/bin/sandbox-preview.ts teardown
       - name: Remove stale preview approval
         if: github.event.action == 'synchronize'
         run: |
           set -euo pipefail
-          gh api -X DELETE "repos/${REPO}/issues/${NUM}/labels/preview" --silent
-          echo "Removed preview approval after the PR head changed."
-      - name: Mark sticky status comment torn down
+          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PREVIEW_PR_NUMBER}/labels/preview" --silent
+          echo "Removed preview approval after the pull request head changed."
+      - name: Mark GitHub deployment inactive
+        run: |
+          set -euo pipefail
+          id="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=preview/pr-${PREVIEW_PR_NUMBER}&per_page=1" --jq '.[0].id // empty')"
+          [ -z "$id" ] || jq -n '{state:"inactive",description:"Preview sandbox deleted"}' | \
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" --input - >/dev/null
+      - name: Mark sticky preview comment torn down
         run: |
           set -euo pipefail
           marker='<!-- preview-status -->'
-          id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
+          id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PREVIEW_PR_NUMBER}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           body="$(printf '%s\n' "$marker" '## Preview environment - torn down' '' \
-            'The ECS service, two listener rules, two target groups, and task definitions were deleted.')"
-          [ -z "$id" ] || gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
+            'The Platinum or Daytona sandbox and its full self-host data plane were deleted.')"
+          [ -z "$id" ] || gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" >/dev/null
 
   reconcile:
-    name: Reconcile stale preview backends
+    name: Reconcile stale preview sandboxes
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
-      id-token: write
       contents: read
       pull-requests: read
     env:
-      AWS_REGION: us-west-2
-      PREVIEW_ROLE: arn:aws:iam::935064898258:role/kortix-gha-preview-deploy
-      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
-      PREVIEW_MAX_AGE_HOURS: "72"
+      PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
+      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
+      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
+      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: main
-      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
-        with:
-          role-to-assume: ${{ env.PREVIEW_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - run: bash infra/scripts/ecs-preview.sh reconcile 0
+          persist-credentials: false
+      - run: bun tests/bin/sandbox-preview.ts reconcile

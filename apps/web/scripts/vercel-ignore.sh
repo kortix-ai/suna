@@ -7,11 +7,11 @@
 # Two stages run in order:
 #   1. FE-relevance — if a push changed NOTHING that feeds the apps/web build
 #      (only sibling apps / infra / tests / docs), skip it on every branch.
-#   2. Deploy-target — staging and prod deploy real frontend changes. Dev and
-#      per-PR previews run only on ECS and always skip Vercel builds.
+#   2. Deploy-target — staging auto-builds. Production deploys through the
+#      gated workflow. Dev uses ECS. PR previews use Platinum or Daytona.
 #
-# For staging and production, default to BUILD on ANY uncertainty. Dev and
-# per-PR previews default to SKIP because ECS owns those frontend deployments.
+# Staging defaults to BUILD on uncertainty. Dev and PR previews default to SKIP.
+# Production auto-builds always skip because deploy-prod.yml owns that release.
 #
 # WHY THIS EXISTS
 # A backend/infra-only push to `prod` (e.g. a rollback that only flips
@@ -72,5 +72,5 @@ case "${VERCEL_ENV:-}:$REF" in
     exit 1 ;;
 esac
 
-echo "vercel-ignore: dev and PR previews deploy on ECS only — skipping Vercel. ref=$REF"
+echo "vercel-ignore: dev deploys on ECS; PR previews deploy in sandboxes — skipping Vercel. ref=$REF"
 exit 0
