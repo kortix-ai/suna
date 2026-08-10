@@ -32,9 +32,27 @@ Claimed SDK scope:
 The required `tdd` skill is unavailable in this session. The canonical Workspace
 test failed first because `reloadWorkspaceSessionConfigStream` did not exist.
 
-**Status:** IN PROGRESS.
+GREEN:
 
-**SDK package shippable to production: NOT YET.**
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2256 pass`, `0 fail`, `10196 expect()` calls
+  across `183` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the
+  deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- `pnpm test -- --full`: all seven lanes passed in `212.2s`. The browser lane
+  reported `12 passed`, `7 skipped`, and `0 failed`.
+- Focused compatibility verification reported `107 pass`, `0 fail` for API,
+  `95 pass`, `0 fail` for web, `38 pass`, `0 fail` for CLI, and `6 pass`,
+  `0 fail` for SDK architecture.
+- Public Project names and routes remain deprecated compatibility adapters.
+  Canonical implementation, types, functions, identifiers, and routes use
+  Workspace terminology.
+- No published export was removed or renamed. The release-managed package
+  version remains unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ---
 

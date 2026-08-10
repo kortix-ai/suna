@@ -58,7 +58,7 @@ export function PermissionsHelpPopover({
         <section className="space-y-1">
           <h3 className="text-foreground font-semibold">
             {tI18nHardcoded.raw(
-              'autoComponentsIamPermissionsHelpPopoverJsxTextProjectRoles38d48ed3',
+              'autoComponentsIamPermissionsHelpPopoverJsxTextWorkspaceRoles38d48ed3',
             )}
           </h3>
           <p className="text-muted-foreground text-xs">
@@ -99,7 +99,7 @@ export function PermissionsHelpPopover({
             )}
             <strong>Manager</strong>{' '}
             {tI18nHardcoded.raw(
-              'autoComponentsIamPermissionsHelpPopoverJsxTextOnEveryProject7532e737',
+              'autoComponentsIamPermissionsHelpPopoverJsxTextOnEveryWorkspace7532e737',
             )}{' '}
             <strong>Member</strong> first.
           </p>
