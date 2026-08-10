@@ -180,6 +180,18 @@
  * `tabs/members-tab.tsx`'s own header comment for the full accounting of
  * what did and didn't come along.
  *
+ * **Task 21 update.** `instructions` is rewired from the direct
+ * `<CommandsView projectId={projectId} />` mount to the real `InstructionsTab`
+ * (see `tabs/instructions-tab.tsx`) — same behavior, now in the house
+ * container/pure-view shape. The design doc's "agent instructions" half of
+ * this tab does not exist anywhere in the codebase (no project-level
+ * instructions field on `ProjectConfigSummary`, no editor) — see that file's
+ * header comment for the full grep evidence — so this tab renders commands
+ * only, same as before this task. The `/customize/commands` redirect
+ * (`settings-tabs.ts`'s `RENAMED_TABS`) and the `proj-commands` command-
+ * palette entry (`menu-registry.ts:451-459`) both already resolved to this
+ * tab before this task; neither needed a change.
+ *
  * **Every pane must not fetch unless its tab is active** (see this file's
  * plan and `settings-panel.test.tsx`'s "real tab content gating" describe
  * block for the proof): `SettingsTabPane` renders `null` for every tab that
@@ -211,7 +223,6 @@ import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgra
 import { RelatedProjectsSwitcher } from '@/features/workspace/customize/related-projects-switcher';
 import { LlmManagementView } from '@/features/workspace/customize/sections/gateway-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
-import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
@@ -247,6 +258,7 @@ import { ExperimentalTab } from './tabs/experimental-tab';
 import { GeneralTab } from './tabs/general-tab';
 import { GroupsTab } from './tabs/groups-tab';
 import { IdentityTab } from './tabs/identity-tab';
+import { InstructionsTab } from './tabs/instructions-tab';
 // Aliased: `@/stores/settings-panel-store` already exports a TYPE named
 // `MembersTab` ('people' | 'invite', the deep-link intent — imported below
 // as `type MembersTab`), which collides with this file's own component
@@ -1120,7 +1132,7 @@ function SettingsTabPane({
         // — renders nothing (not the placeholder) while disabled.
         return llmGatewayEnabled ? <LlmManagementView projectId={projectId} /> : null;
       case 'instructions':
-        return <CommandsView projectId={projectId} />;
+        return <InstructionsTab projectId={projectId} />;
       case 'marketplace':
         return <MarketplaceView projectId={projectId} />;
       case 'review':

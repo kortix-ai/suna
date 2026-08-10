@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { resolveSettingsOverlayHref } from '@/features/workspace/settings/settings-tabs';
+
 import { getItemsForSurface, type MenuItemDef } from './menu-registry';
 import { WALLPAPERS } from './wallpapers';
 
@@ -90,6 +92,28 @@ describe('project sessions command palette item', () => {
 
     expect(sessionsItem).toBeDefined();
     expect(sessionsItem!.href).toBe('/projects/{projectId}/sessions');
+  });
+});
+
+/**
+ * Task 21 — `proj-commands` (`menu-registry.ts:451-459`) resolves directly to
+ * the Instructions tab (it does not route through the `/customize/commands`
+ * legacy redirect at all). Asserted with `resolveSettingsOverlayHref`, the
+ * exact function the command palette itself calls to decide whether a
+ * clicked href opens the settings overlay and on which tab
+ * (`settings-tabs.ts`), not just a string comparison against the href.
+ */
+describe('project commands (Instructions tab) command palette item', () => {
+  test('resolves to the settings overlay on the instructions tab', () => {
+    const commandsItem = paletteItems.find((item) => item.id === 'proj-commands');
+    const href = commandsItem?.href ?? '';
+
+    expect(commandsItem).toBeDefined();
+    expect(href).toBe('/projects/{projectId}/settings/instructions');
+    expect(resolveSettingsOverlayHref(href.replace('{projectId}', 'p1'))).toEqual({
+      opensOverlay: true,
+      tab: 'instructions',
+    });
   });
 });
 
