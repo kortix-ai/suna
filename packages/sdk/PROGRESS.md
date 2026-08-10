@@ -40,8 +40,15 @@ GREEN:
   deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
 - Runtime and type-level surface snapshots contain every export from both merge
   parents. The set comparison reports `0` removals.
+- `pnpm test -- --full`: all six lanes passed on `6ca083e57e` in `340.5s`.
+  API and CLI passed `368/368` flows. Route coverage passed `820/835` with `15`
+  allowlisted routes and `0` uncovered routes. Browser passed `12` journeys with
+  `7` explicit skips. Package quality passed `2269/2269` SDK tests and every
+  app, package, publish, packed-install, and migration gate. Benchmark:
+  `tests/test-results/local/benchmark-1786403816057.json`.
 
-**Status:** RECONCILED. The exact-head full repository gate and GitHub checks are pending.
+**Status:** RECONCILED AND LOCALLY VERIFIED. The progress-ledger commit needs its
+exact-head full repository gate, push, and required GitHub checks.
 
 **SDK package shippable to production: YES.**
 
