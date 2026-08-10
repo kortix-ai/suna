@@ -16,6 +16,8 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 No **Now** task claimed. This is the user-directed merge of current `origin/main`
 into PR #5480 after Main added billing trial lifecycle and admin account controls.
+The later `16d86c7252` reconciliation also incorporates Main's test-runner,
+gateway error, CLI browser, and security-baseline updates. It changes no SDK file.
 
 Claimed SDK scope:
 
@@ -47,8 +49,9 @@ GREEN:
   app, package, publish, packed-install, and migration gate. Benchmark:
   `tests/test-results/local/benchmark-1786403816057.json`.
 
-**Status:** RECONCILED AND LOCALLY VERIFIED. The progress-ledger commit needs its
-exact-head full repository gate, push, and required GitHub checks.
+**Status:** RECONCILED AND LOCALLY VERIFIED THROUGH `c9133854a3`. The latest
+`origin/main` reconciliation needs its exact-head full repository gate, push,
+and required GitHub checks.
 
 **SDK package shippable to production: YES.**
 
