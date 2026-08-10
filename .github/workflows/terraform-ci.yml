@@ -21,7 +21,13 @@ on:
       - "tests/src/core/sandbox-preview*.ts"
       - "tests/src/core/preview-stack.ts"
   schedule:
-    - cron: "0 7 * * *"
+    # 07:17, not 07:00: re-registered 2026-08-11 because GitHub's scheduler
+    # silently stopped firing this cron after 2026-08-04 (runs list shows zero
+    # schedule events for six days; workflow state was "active" and the file
+    # unchanged). Editing the expression forces re-registration, and an
+    # off-the-hour minute avoids GitHub's documented top-of-hour congestion
+    # drops. The apply-pipeline-health job fails loudly if this dies again.
+    - cron: "17 7 * * *"
   workflow_dispatch:
 
 concurrency:
