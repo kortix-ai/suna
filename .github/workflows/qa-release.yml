@@ -41,7 +41,7 @@ jobs:
       KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
       E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
       KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
-      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
       - name: Require the deployed staging source SHA

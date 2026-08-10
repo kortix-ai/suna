@@ -1,168 +1,88 @@
-# GitOps release pipeline (Argo CD + Argo Rollouts)
+# ECS Fargate release pipeline
 
-The deploy engine for EKS. Argo CD continuously reconciles the cluster to the
-manifests in `infra/k8s/`; Argo Rollouts (Phase 2) drives metric-analyzed
-canaries. This replaces the imperative `helm upgrade` / `aws ecs` deploys.
+Kortix deploys the API, gateway, and frontend through GitHub Actions to Amazon
+ECS Fargate. Terraform owns the persistent networks, load balancers, services,
+autoscaling policies, DNS records, IAM roles, and Secrets Manager resources.
 
-```
-infra/k8s/
-  charts/kortix-api/        # the app chart (Deployment now; Rollout in Phase 2)
-  envs/<env>/values.yaml     # per-env values — image.tag here IS the release
-  argocd/
-    project.yaml             # AppProject "kortix" (scoping)
-    app-of-apps.yaml         # parent app → syncs applications/
-    applications/<env>.yaml  # one Argo Application per env
-```
+The filename remains `GITOPS.md` because existing links use it. Argo CD, EKS,
+Helm, and Kubernetes are not part of the current deployment path. Commit
+`11c1d2dd4d` decommissioned those resources on 2026-08-02.
 
-## How a deploy works
+## Environments
 
-- **Deploy** = a commit/PR that bumps `image.tag` in `infra/k8s/envs/<env>/values.yaml`. Argo CD syncs it onto the cluster.
-- **Rollback** = `git revert` that commit. Argo CD reconciles back.
-- **Drift** (anyone `kubectl edit`s a managed resource) is auto-reverted (`selfHeal: true`).
-- The Applications track a branch per env: **prod → `prod`**, staging → `staging`, dev → `main`.
+| Environment | Source | API | ECS frontend | Vercel frontend |
+| --- | --- | --- | --- | --- |
+| Preview | PR with `preview` label | `pr-<number>.preview-api.kortix.com` | `pr-<number>.preview.kortix.com` | PR-specific Vercel URL |
+| Dev | `main` | `dev-api.kortix.com` | `dev-fe-ecs.kortix.com` | `dev.kortix.com` |
+| Staging | `staging` | `staging-api.kortix.com` | `staging-fe-ecs.kortix.com` | `staging.kortix.com` |
+| Production | `prod` | `api.kortix.com` | `prod-fe-ecs.kortix.com` | `kortix.com` |
 
-## Bootstrap (one time)
+The permanent Vercel hostnames remain active during the ECS frontend migration.
+The `*-fe-ecs.kortix.com` hostnames provide parallel ECS validation.
 
-Argo CD + Rollouts are installed by the platform Terraform
-(`modules/eks/platform` → `helm_release.argo_cd` / `argo_rollouts`). Then:
-
-1. **Connect the repo** (Argo CD needs read access to the private repo). A
-   read-only **deploy key** is added to the repo and its private key registered
-   as an Argo CD repo credential.
-2. **Apply** `project.yaml` + `app-of-apps.yaml`. The app-of-apps syncs
-   `applications/`, which creates the `kortix-prod` Application.
-3. `kortix-prod` **adopts** the already-running kortix-api resources and
-   reconciles them to `envs/prod/values.yaml` (pins the release tag, API-only
-   profile pre-cutover).
-
-**Bootstrap source override:** until these manifests are merged to
-`kortix-ai/suna`, the apps are created against the branch where they live (e.g.
-`--repo https://github.com/lillyboga/suna.git --revision eks-migration`). Once
-merged, drop the override so the committed `kortix-ai/suna` / `prod` source
-takes over.
-
-## Access Argo CD
-
-Quick (no setup):
-
-```bash
-kubectl -n argocd port-forward svc/argo-cd-argocd-server 8080:443   # https://localhost:8080
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d  # admin pw
-argocd app get kortix-prod        # Synced / Healthy
-argocd app history kortix-prod    # releases; `argocd app rollback` or git revert
-```
-
-### Company domain — `ops.kortix.com` (gated)
-
-Argo CD is an admin control plane, so the public URL is **Cloudflare-Access
-gated** and the ALB is **locked to Cloudflare IPs** (so the gate can't be
-bypassed via the raw ALB DNS). Bring it up in this order so it's never reachable
-unauthenticated:
-
-1. **Apply the cert** — `environments/prod-eks/cluster` (adds the `ops.kortix.com`
-   ACM cert; validates via Cloudflare DNS).
-2. **Apply the ingress** — set `argocd_ui_enabled = true` in the `platform`
-   tfvars and apply. The ALB comes up; `ops.kortix.com` does NOT resolve yet.
-3. **Cloudflare Access** (Zero Trust dashboard → Access → Applications → Add):
-   - Type **Self-hosted**, Application domain `ops.kortix.com`.
-   - Policy: **Allow**, Include → *Emails ending in* `@kortix.com` (or a group).
-   - (Optional) shorter session duration for an admin app.
-4. **Add the DNS record** — proxied CNAME `ops.kortix.com` → the Argo CD ALB
-   hostname (`kubectl -n argocd get ingress`). Now it resolves AND is gated.
-5. (Recommended) wire **Argo CD GitHub-org SSO** so logins map to people, then
-   disable the shared `admin` account.
-
-CLI through the gateway uses gRPC-Web: `argocd login ops.kortix.com --grpc-web`.
-
-## Release flow & the GitHub Actions
-
-Promotion keeps one `VERSION`, retag-don't-rebuild, and a review gate at the
-prod boundary:
+## Deployment workflows
 
 | Workflow | Role |
 | --- | --- |
-| `deploy-dev.yml` | On `main`, build/push `dev-<sha8>`, apply dev node-pg-migrate migrations, bump `infra/k8s/envs/dev/values.yaml`, and watch Argo CD roll `kortix-dev`. |
-| `build-staging.yml` / `deploy-staging.yml` / `qa-staging.yml` | On `staging`, build exact `staging-<sha8>` images, deploy the staging runtime, and run the staging e2e lane against staging URLs. |
-| `promote.yml` | Manual dispatch that promotes `staging` by default and opens a reviewed `release/vX.Y.Z` PR into `prod`; it does not tag, release, retag, or deploy. |
-| `deploy-prod.yml` | On the `prod` merge, retag the tested staging image, apply prod node-pg-migrate migrations, cut the GitHub Release, and watch Argo CD roll `kortix-prod`. |
+| `deploy-preview.yml` | Builds PR-specific API, gateway, and frontend images. It deploys an isolated ECS service and a parallel Vercel preview. It verifies both paths and removes resources after unlabel or close. |
+| `deploy-dev.yml` | Builds changed dev images, applies dev migrations, rolls the changed ECS services, and verifies the ECS and Vercel frontend paths. |
+| `build-staging.yml` | Builds immutable staging release-candidate images. |
+| `deploy-staging.yml` | Applies staging migrations, rolls staging ECS services, and verifies the staging targets. |
+| `promote.yml` | Opens a reviewed release PR from staging into `prod`. It does not deploy. |
+| `deploy-prod.yml` | Retags tested staging images, applies production migrations, rolls production ECS services, publishes the release, and verifies the live version. |
+| `rollback-prod.yml` | Rolls selected production ECS services to existing immutable release images. It can also promote the matching Vercel frontend deployment. |
 
-A release = merge the promote PR → `deploy-prod` retags + migrates + publishes →
-Argo CD rolls EKS from the values committed on `prod`. **Rollback = `git revert`**
-the values/release commit (or `argocd app rollback`).
+## Preview lifecycle
 
-**Approval gate:** today the enforced human gate is the reviewed promote PR into
-the protected `prod` branch. If Kortix wants a second runtime approval in Actions,
-create the `production` GitHub Environment and add `environment: production` to
-the `deploy-api` job in `deploy-prod.yml`; otherwise the environment gate does not
-pause the workflow.
+Adding the `preview` label to a pull request starts the preview workflow.
 
-## Canary (Phase 2)
+Only a repository writer or administrator can approve a preview. The label
+approves the exact head SHA. A new commit tears down the old preview and removes
+the label. A writer or administrator must review the new SHA and reapply it.
 
-`rollout.enabled: true` in an env's values turns the Deployment into an Argo
-Rollouts **canary** (10→25→50→100% via `rollout.steps`). With
-`rollout.analysis.enabled: true`, a background AnalysisRun queries **CloudWatch**
-(ALB 5xx-rate + p95 latency over the target group) every minute and **aborts the
-rollout (auto-rollback to stable)** on two consecutive breaches. The Rollouts
-controller reads CloudWatch via its IRSA role (`modules/eks/platform`).
+1. Three unprivileged jobs build fixed-tag API, gateway, and frontend archives.
+   They receive no Docker Hub, AWS, Vercel, or application secrets.
+2. A trusted job publishes the archives without starting their containers.
+3. Terraform creates PR-specific listener rules, target groups, and DNS records.
+4. The workflow deploys one ECS Fargate service for the pull request.
+5. The workflow creates the parallel Vercel preview.
+6. Verification checks the API commit, frontend commit, runtime URLs, password
+   gate, shared parent-domain cookie, and black-box API flows.
+7. One sticky pull-request comment publishes the API, health, ECS frontend, and
+   Vercel frontend URLs.
 
-The analysis needs the ALB's CloudWatch dimensions — set them once from the live
-ALB (stable for the life of the ingress) in `envs/prod/values.yaml`:
+Removing the label or closing the pull request destroys the ECS service, task
+definitions, listener rules, target groups, DNS records, and Vercel branch
+configuration. A daily reconciliation run removes leaked preview resources.
+
+Preview compute is isolated per pull request. Preview database and Supabase
+state are shared with dev.
+
+## Runtime configuration
+
+Each permanent environment stores one JSON environment document in AWS Secrets
+Manager. `infra/scripts/ecs-deploy.sh` injects the document through
+`KORTIX_ENV_JSON`. The frontend uses a separate `kortix-<env>-web-env` secret.
+Preview uses `kortix-preview-web-env`. It excludes Edge Config and Vercel
+credentials.
+
+Preview, dev, and staging use the same `WEB_PROTECTION_USERNAME` and
+`WEB_PROTECTION_PASSWORD` values. The password value is never committed in
+plaintext. It lives in dotenvx-encrypted environment files, GitHub Actions
+secrets, and AWS Secrets Manager.
+
+## Rollback
+
+`rollback-prod.yml` validates that each requested release image exists. It then
+registers new task-definition revisions and rolls the selected ECS services.
+The workflow does not reverse database migrations. Forward-only migrations must
+remain compatible with the selected application version.
+
+Run the workflow with:
 
 ```bash
-ALB=$(kubectl -n kortix-prod get ingress kortix-api -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-# rollout.analysis.lbArnSuffix = app/<alb-name>/<id>   (from the ALB ARN)
-# rollout.analysis.tgArnSuffix = targetgroup/<tg-name>/<id>   (from the target group ARN)
+gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
+  -f version=vX.Y.Z \
+  -f reason="<incident>" \
+  -f confirm="ROLLBACK PROD"
 ```
-
-Watch a canary: `kubectl argo rollouts get rollout kortix-api -n kortix-prod --watch`.
-
-## Branch = environment (why constant merges to main are safe)
-
-```
-PRs merge to main  ─►  DEV only        (dev Argo app tracks `main`)
-                       staging/prod untouched
-
-PR main→staging or targeted PR to staging
-                    └─►  STAGING only  (staging Argo app tracks `staging`)
-                         production untouched
-
-Actions → Promote to Production ─► opens reviewed release PR into `prod`
-   └─ release PR already bumps image.tag in prod's envs/prod/values.yaml
-        (deploy-prod migrates + watches the EKS roll after merge)
-                       └─►  prod Argo app (tracks `prod`) syncs ─► PROD
-```
-
-The **prod Application tracks the `prod` branch** — so nothing on `main` or
-`staging` can touch prod directly. `staging` is the only normal source for a
-production release, but prod moves *only* when someone runs **Promote to
-Production** and the reviewed release PR merges into `prod` with the image/value
-bump.
-
-## GitHub-org SSO + retiring admin
-
-1. **Create a GitHub OAuth App** (org `kortix-ai` → Settings → Developer settings
-   → OAuth Apps → New):
-   - Homepage `https://ops.kortix.com`
-   - Authorization callback `https://ops.kortix.com/api/dex/callback`
-   - copy the **Client ID**, generate a **Client Secret**.
-2. In the `platform` tfvars / env:
-   ```
-   argocd_github_sso_enabled = true
-   argocd_github_client_id   = "<client id>"
-   argocd_admin_team         = "<github team that gets admin>"   # e.g. eng
-   export TF_VAR_argocd_github_client_secret=<client secret>
-   ```
-   `terraform apply`. Org members can now **Log in via GitHub**; the admin team
-   gets admin, everyone else read-only.
-3. **Verify** GitHub login + that your admin team has admin in the UI.
-4. **Only then** retire the shared password: set `argocd_disable_admin = true`
-   and `terraform apply`. (Doing this before step 3 locks you out.)
-
-## Environment profiles
-
-`envs/<env>/values.yaml` sets `env.internalKortixEnv` and `workers.enabled`.
-`workers.enabled: false` forces the leader-elected singleton jobs off (scheduler,
-project maintenance, legacy + suna migration) so a pre-prod/canary that shares
-prod data never runs background work even if it wins the Postgres leader lease.
-At the api.kortix.com cutover, flip prod `workers.enabled: true` here AND disable
-the ECS service in the same change.

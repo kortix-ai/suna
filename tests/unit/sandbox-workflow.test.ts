@@ -52,7 +52,8 @@ describe('sandbox test workflow', () => {
     expect(release).toContain('name: deployed staging API + browser');
     expect(release).toContain('pnpm test -- --target-full');
     expect(release).toContain('RELEASE_SOURCE_SHA');
-    expect(release).toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
+    expect(release).toContain('WEB_PROTECTION_PASSWORD');
+    expect(release).not.toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
     expect(release).toContain('https://staging-api.kortix.com/v1');
     expect(release).toContain('https://staging.kortix.com');
   });

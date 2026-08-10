@@ -2,6 +2,10 @@
 
 Local development and CI use one test command.
 
+`pnpm worktree` owns checkout isolation, ports, dependencies, Supabase topology,
+and the callback tunnel. The root test runner reads `.kortix-worktree.json` and
+uses that lifecycle instead of creating a second worktree abstraction.
+
 ## Test command
 
 - `pnpm test` runs local REST and CLI flows, SDK tests, runner tests, route
@@ -47,7 +51,7 @@ hide a non-zero test result.
 ## Release path
 
 1. Merge development changes to `main`.
-2. `deploy-dev.yml` deploys the merged SHA to dev.
+2. `deploy-dev.yml` deploys the merged API, gateway, and web SHA to ECS dev.
 3. Promote a release candidate to `staging` through a PR.
 4. `build-staging.yml` and `deploy-staging.yml` build and deploy staging.
 5. `qa-staging.yml` runs the three local lanes at the staging SHA in warm
