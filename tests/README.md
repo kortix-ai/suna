@@ -73,6 +73,12 @@ CLI flow with `--require-all`, then runs all configured Playwright journeys
 against `staging.kortix.com` with the Vercel bypass header. A missing external
 capability fails the release gate instead of counting as a pass.
 
+The strict browser lane also runs the Stripe-backed billing journey. It proves
+that the web app starts Team checkout, reads the activated subscription, starts
+a credit purchase, and opens Stripe Billing Portal. The REST `BILL-*` flows own
+cancel, reactivate, upgrade, downgrade, and read-back contracts because those
+actions do not have separate controls in the Kortix web app.
+
 `pnpm test -- --target-smoke` remains the narrow deployed rehearsal. It runs
 only smoke-tagged REST flows and the tagged Playwright smoke.
 
@@ -219,3 +225,21 @@ Keep co-located package tests for pure logic and internal invariants. Do not add
 a second cross-cutting harness, Makefile lane, Pact suite, Testcontainers suite,
 k6 suite, mutation suite, accessibility suite, visual suite, or ad hoc smoke
 script under `tests/`.
+
+## Retired harness audit
+
+The August 2026 consolidation removed the parallel runners below. Unique
+contracts moved into the canonical lanes before deletion.
+
+| Retired path | Canonical disposition |
+| --- | --- |
+| `tests/accessibility` | Axe checks moved to `tests/e2e/specs/00-accessibility.spec.ts`. |
+| `tests/pentest` | Unique transport checks moved to REST flow `SEC-J`. Existing auth and webhook checks stay in `SEC-A` through `SEC-I`. |
+| `tests/migration` shell runner | Four unique disposable-Postgres contracts run from `pnpm test -- --packages-only`. |
+| `tests/e2e/specs/10-production-*` | API behavior moved to REST access, project, session, trigger, and security flows. Browser-visible behavior stays in focused Playwright journeys. |
+| `tests/self-host-e2e/fast` | Co-located `apps/cli/src/self-host/__tests__` contracts run from the package lane. |
+| `tests/self-host-e2e/live` | Removed as opt-in image-orchestration scripts. They never gated changes and duplicated the CLI and API contracts without deterministic fixtures. |
+| Pact, example API, integration, mutation, smoke, and visual suites | Removed because they were placeholders, duplicates, or unmaintained snapshot harnesses. |
+| k6 and session benchmark scripts | Removed from correctness testing. Every root run now writes measured lane timing to the benchmark JSON artifact. |
+| Allure, standalone JUnit, portal, and shell quality wrappers | Removed. The root runner emits its own report and provider workers upload `tests/test-results`. |
+| Infrastructure and security shell wrappers | Removed from `tests/`. Dedicated deployment and security workflows retain their platform-specific scanners. |

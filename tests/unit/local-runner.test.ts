@@ -37,7 +37,8 @@ describe('local test runner', () => {
     ]);
     expect(plan.lanes.at(-1)?.command).toEqual(['bun', 'tests/bin/package-quality.ts']);
     expect(plan.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
-      ['api-cli-flows', 'flow-runner-unit', 'route-coverage', 'worktree-unit', 'browser'],
+      ['api-cli-flows', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      ['browser'],
       ['package-quality'],
     ]);
     expect(plan.stages[0]?.[0]?.command.slice(-2)).toEqual(['--api-workers', '4']);
@@ -95,16 +96,8 @@ describe('local test runner', () => {
     const plan = buildLocalTestPlan(['--target-full']);
 
     expect(plan.mode).toBe('target-full');
-    expect(plan.lanes.map((lane) => lane.name)).toEqual([
-      'target-api-full',
-      'target-browser-full',
-    ]);
-    expect(plan.lanes[0]?.command).toEqual([
-      'bun',
-      'tests/bin/ke2e.ts',
-      'run',
-      '--require-all',
-    ]);
+    expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-api-full', 'target-browser-full']);
+    expect(plan.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'run', '--require-all']);
     expect(plan.lanes[1]).toEqual({
       name: 'target-browser-full',
       command: ['bun', 'run', 'test:browser'],
@@ -114,6 +107,7 @@ describe('local test runner', () => {
         E2E_ENABLE_SDK_ONLY_SESSION: '1',
         E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
         E2E_OAUTH_PROVIDER_INITIATION: '1',
+        E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
       },
     });

@@ -148,6 +148,10 @@ await runWorkspaceTests(['kortix-api'], 1, {
 });
 await runWorkspaceTests(['@kortix/cli', '@kortix/sandbox-agent-server'], 2);
 await runWorkspaceTests(['@kortix/db'], 1);
+// These contracts apply the complete migration history to disposable Postgres
+// containers and verify billing rollups, RPC overloads, and worktree migration
+// behavior. Keep them in the canonical package lane instead of a second runner.
+await run(['bun', 'test', '--max-concurrency', '2', 'tests/migration']);
 await runWorkspaceTests(
   [
     './packages/**',

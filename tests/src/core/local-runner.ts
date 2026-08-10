@@ -21,15 +21,7 @@ export interface LocalTestLane {
 }
 
 export interface LocalTestPlan {
-  mode:
-    | 'core'
-    | 'flows'
-    | 'sdk'
-    | 'browser'
-    | 'packages'
-    | 'target'
-    | 'target-full'
-    | 'full';
+  mode: 'core' | 'flows' | 'sdk' | 'browser' | 'packages' | 'target' | 'target-full' | 'full';
   lanes: LocalTestLane[];
   stages: LocalTestLane[][];
 }
@@ -129,6 +121,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       E2E_ENABLE_SDK_ONLY_SESSION: '1',
       E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
       E2E_OAUTH_PROVIDER_INITIATION: '1',
+      E2E_ENABLE_BILLING_JOURNEY: '1',
       E2E_REQUIRE_ALL_BROWSER: '1',
     },
   };
@@ -160,10 +153,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     return {
       mode: 'full',
       lanes,
-      // Package quality saturates the machine and starts disposable PostgreSQL
-      // containers. Give it an exclusive stage. Browser and four REST workers
-      // can share the already-running product stack without starving either.
-      stages: [[fullFlows, runnerUnit, routeCoverage, worktreeUnit, fullBrowser], [packageQuality]],
+      // Four REST workers and two browsers contend for the same local API and
+      // database. Keep browser verification in its own stage. Package quality
+      // also stays exclusive because it starts disposable PostgreSQL containers.
+      stages: [
+        [fullFlows, runnerUnit, routeCoverage, worktreeUnit],
+        [fullBrowser],
+        [packageQuality],
+      ],
     };
   }
   const lanes = [flows, sdk, runnerUnit, routeCoverage, worktreeUnit];
@@ -230,7 +227,7 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         E2E_BASE_URL: webUrl,
         E2E_API_URL: topology.apiUrl,
         E2E_SUPABASE_URL: supabase.API_URL,
-        E2E_MAILPIT_URL: supabase.MAILPIT_URL ?? "",
+        E2E_MAILPIT_URL: supabase.MAILPIT_URL ?? '',
         E2E_DATABASE_URL: supabase.DB_URL,
         KE2E_DATABASE_URL: supabase.DB_URL,
         DATABASE_URL: supabase.DB_URL,
@@ -244,20 +241,27 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         'KE2E_SUPABASE_ANON_KEY',
         'KE2E_SUPABASE_SERVICE_ROLE_KEY',
         'KE2E_DATABASE_URL',
+        'KE2E_STRIPE_SECRET_KEY',
+        'KE2E_STRIPE_WEBHOOK_SECRET',
         'E2E_AGENTMAIL_API_KEY',
       ] as const;
       const missing = required.filter((name) => !process.env[name]?.trim());
       if (missing.length > 0) {
         throw new Error(`deployed browser suite requires ${missing.join(', ')}`);
       }
+      const targetApiUrl = process.env.KE2E_API_URL ?? '';
+      const targetSupabaseUrl = process.env.KE2E_SUPABASE_URL ?? '';
+      const targetDatabaseUrl = process.env.KE2E_DATABASE_URL ?? '';
+      const targetSupabaseAnonKey = process.env.KE2E_SUPABASE_ANON_KEY ?? '';
+      const targetSupabaseServiceRoleKey = process.env.KE2E_SUPABASE_SERVICE_ROLE_KEY ?? '';
       env = {
         ...env,
-        E2E_API_URL: process.env.KE2E_API_URL!,
-        E2E_SUPABASE_URL: process.env.KE2E_SUPABASE_URL!,
-        E2E_DATABASE_URL: process.env.KE2E_DATABASE_URL!,
-        DATABASE_URL: process.env.KE2E_DATABASE_URL!,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.KE2E_SUPABASE_ANON_KEY!,
-        SUPABASE_SERVICE_ROLE_KEY: process.env.KE2E_SUPABASE_SERVICE_ROLE_KEY!,
+        E2E_API_URL: targetApiUrl,
+        E2E_SUPABASE_URL: targetSupabaseUrl,
+        E2E_DATABASE_URL: targetDatabaseUrl,
+        DATABASE_URL: targetDatabaseUrl,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: targetSupabaseAnonKey,
+        SUPABASE_SERVICE_ROLE_KEY: targetSupabaseServiceRoleKey,
       };
     }
     const child = Bun.spawn(lane.command, {
@@ -320,6 +324,15 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
         `[test] stage=${index + 1}/${plan.stages.length} lanes=${stage.map((lane) => lane.name).join(',')}`,
       );
       results.push(...(await Promise.all(stage.map((lane) => runLane(root, lane)))));
+      if (plan.mode === 'full' && stage.some((lane) => lane.name === 'browser')) {
+        if (localWeb?.started) await localWeb.stop();
+        if (localStack?.started) await localStack.stop();
+        if (localSupabase?.started) await localSupabase.stop();
+        localWeb = null;
+        localStack = null;
+        localSupabase = null;
+        console.log('[test] product-stack stopped before package-quality');
+      }
     }
   } finally {
     if (localWeb?.started) await localWeb.stop();
