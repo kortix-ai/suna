@@ -11,7 +11,6 @@ import {
 } from "../../billing/services/compute-metering";
 import { type SandboxProviderName, config } from "../../config";
 import { workspaceLlmGatewayEnabled } from "../../llm-gateway/enablement";
-import { auth, json } from "../../openapi";
 import { type SandboxStatus, getProvider } from "../../platform/providers";
 import { classifySandboxProvisioningFailure } from "../../platform/services/sandbox-provisioning-error";
 import { db } from "../../shared/db";
