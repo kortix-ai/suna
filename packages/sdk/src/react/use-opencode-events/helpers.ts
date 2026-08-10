@@ -121,5 +121,63 @@ export function refetchKortixSessionMirrors(
   workspaceId: string | null,
 ): void {
   if (!workspaceId) return;
-  void queryClient.refetchQueries({ queryKey: qk.workspace.sessionsScope(workspaceId), type: 'active' });
+  void queryClient.refetchQueries({
+    queryKey: qk.workspace.sessionsScope(workspaceId),
+    type: 'active',
+  });
+}
+
+// Same placeholder predicate the API serializer applies (`lib/opencode-title.ts`)
+// and `session-title-sync.ts`'s `readRealTitle`: OpenCode stamps
+// "New session - <date>" before its summarizer runs, and that is not a title.
+const PLACEHOLDER_RUNTIME_TITLE_RE = /^new (?:session|agent)\b/i;
+
+export function realRuntimeTitle(value: unknown): string | null {
+  const title = typeof value === 'string' ? value.trim() : '';
+  if (!title || PLACEHOLDER_RUNTIME_TITLE_RE.test(title)) return null;
+  return title;
+}
+
+/**
+ * Mirror a runtime title change straight into the cached Kortix session reads
+ * (`name` on the row whose `opencode_session_id` matches), so the sidebar and
+ * tab converge with the header the moment the title event arrives.
+ *
+ * The durable owner is the API read (`serializeSession` prefers the
+ * `opencode_sessions` snapshot root title) — but that snapshot is written
+ * ~20s after the prompt, so the refetch `refetchKortixSessionMirrors` fires
+ * alongside this can beat it and come back with the pre-title name. This
+ * write closes that gap; the next server read reconciles.
+ *
+ * A user rename (`custom_name`) always wins and is never overwritten. Rows
+ * for other conversations, and cache entries that are not session rows
+ * (messages, sandbox slots under the same prefix), pass through untouched.
+ */
+export function patchKortixSessionTitleMirrors(
+  queryClient: QueryClient,
+  workspaceId: string | null,
+  nativeSessionId: string,
+  title: string | null,
+): void {
+  if (!workspaceId || !title) return;
+  const patchRow = (row: unknown): unknown => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    const rec = row as Record<string, unknown>;
+    if (rec.opencode_session_id !== nativeSessionId) return row;
+    if (typeof rec.custom_name === 'string' && rec.custom_name.trim()) return row;
+    if (rec.name === title) return row;
+    return { ...rec, name: title };
+  };
+  queryClient.setQueriesData({ queryKey: qk.workspace.sessionsScope(workspaceId) }, (data: unknown) => {
+    if (Array.isArray(data)) {
+      let changed = false;
+      const next = data.map((row) => {
+        const patched = patchRow(row);
+        if (patched !== row) changed = true;
+        return patched;
+      });
+      return changed ? next : data;
+    }
+    return patchRow(data);
+  });
 }

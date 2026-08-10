@@ -10,7 +10,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { CaretRightIcon as ChevronRight, PlusIcon as Plus } from '@phosphor-icons/react';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { parseProjectCreateOutput } from '@/lib/utils/kortix-tool-output';
 
@@ -21,8 +21,20 @@ export function WorkspaceCreateTool({ part }: ToolProps) {
   const name = (input.name as string) || '';
   const data = useMemo(() => parseProjectCreateOutput(output || ''), [output]);
   const displayName = data?.name || name;
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it; it ran
+  // on every render of a row whose output stopped changing when the call ended.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
 
-  if (isErrorOutput(output)) {
+  const handleOpenWorkspace = useCallback(() => {
+    openTab({
+      id: 'page:/workspace',
+      title: displayName,
+      type: 'page' as any,
+      href: '/workspace',
+    });
+  }, [openTab, displayName]);
+
+  if (errored) {
     return (
       <BasicTool
         icon={<Plus />}
@@ -40,17 +52,7 @@ export function WorkspaceCreateTool({ part }: ToolProps) {
         title: 'Workspace',
         subtitle: displayName,
       }}
-      onClick={
-        navigationEnabled
-          ? () =>
-              openTab({
-                id: 'page:/workspace',
-                title: displayName,
-                type: 'page' as any,
-                href: '/workspace',
-              })
-          : undefined
-      }
+      onClick={navigationEnabled ? handleOpenWorkspace : undefined}
       rightAccessory={navigationEnabled ? <ChevronRight /> : undefined}
     />
   );

@@ -26,6 +26,7 @@ export function computerProfileSpec(input: {
   slug: string;
   name: string;
   tunnelIds: string[];
+  tunnelAccountIds: string[];
   sensitive?: boolean;
 }): ConnectorSpec {
   return {
@@ -46,6 +47,7 @@ export function computerProfileSpec(input: {
     platform: null,
     spec: null,
     tunnelIds: [...new Set(input.tunnelIds)],
+    tunnelAccountIds: [...new Set(input.tunnelAccountIds)],
     auth: {
       type: 'none',
       in: 'header',
@@ -67,6 +69,20 @@ function storedTunnelIds(configValue: unknown): string[] | null {
   }
   if (typeof config.tunnel_id === 'string') return [config.tunnel_id];
   return null;
+}
+
+function storedTunnelAccountIds(configValue: unknown, fallbackAccountId: string): string[] {
+  const config = (configValue ?? {}) as Record<string, unknown>;
+  if (Array.isArray(config.tunnel_account_ids)) {
+    return [
+      ...new Set(
+        config.tunnel_account_ids.filter(
+          (value): value is string => typeof value === 'string' && value.length > 0,
+        ),
+      ),
+    ];
+  }
+  return [fallbackAccountId];
 }
 
 function isExplicitProfile(configValue: unknown): boolean {
@@ -108,6 +124,7 @@ export async function synthesizeComputerConnectors(
         slug: row.slug,
         name: row.name,
         tunnelIds: storedTunnelIds(row.config) ?? [],
+        tunnelAccountIds: storedTunnelAccountIds(row.config, proj.accountId),
         sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
       }),
     )
@@ -135,6 +152,7 @@ export async function synthesizeComputerConnectors(
       slug: COMPUTER_SLUG,
       name: aggregate?.name || computerLabel(),
       tunnelIds,
+      tunnelAccountIds: [proj.accountId],
       sensitive: (aggregate?.config as { sensitive?: unknown } | null)?.sensitive === true,
     }),
   ];

@@ -150,12 +150,12 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
               : 'group cursor-default opacity-70 transition-colors',
           )}
         >
-          <MessageCircle className="text-muted-foreground group-hover:text-foreground/60 mt-0.5 size-3.5 flex-shrink-0 transition-colors" />
+          <MessageCircle className="text-muted-foreground group-hover:text-foreground/60 mt-0.5 size-3.5 shrink-0 transition-colors" />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <span className="text-foreground truncate text-xs font-medium">{s.title}</span>
               {s.summary && s.summary.files > 0 && (
-                <span className="flex flex-shrink-0 items-center gap-1.5 text-xs">
+                <span className="flex shrink-0 items-center gap-1.5 text-xs">
                   <DiffStat additions={s.summary.additions} deletions={s.summary.deletions} />
                   <span className="text-muted-foreground">
                     {s.summary.files} file{s.summary.files !== 1 ? 's' : ''}
@@ -165,12 +165,12 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
             </div>
             <div className="text-muted-foreground flex items-center gap-2 text-xs">
               <span className="truncate font-mono">{s.slug || s.id}</span>
-              <span className="flex-shrink-0">
+              <span className="shrink-0">
                 <SessionTimeLabel timestamp={s.time.updated} />
               </span>
             </div>
           </div>
-          <ExternalLink className="text-muted-foreground/0 group-hover:text-muted-foreground mt-1 size-3 flex-shrink-0 transition-colors" />
+          <ExternalLink className="text-muted-foreground/0 group-hover:text-muted-foreground mt-1 size-3 shrink-0 transition-colors" />
         </button>
       ))}
     </div>

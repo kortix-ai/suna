@@ -22,31 +22,37 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
-  const project = (input.workspace as string) || '';
+  const project = (input.project as string) || '';
 
   const workers = useMemo(() => {
     if (!output) return [];
     const entries: Array<{
       id: string;
       status: string;
-      workspace: string;
+      project: string;
       prompt: string;
     }> = [];
     const re = /\*\*(ses_\S+)\*\*.*?status:\s*(\w+).*?project:\s*(\S+)/gi;
     let m;
     while ((m = re.exec(output)) !== null) {
-      entries.push({ id: m[1], status: m[2], workspace: m[3], prompt: '' });
+      entries.push({ id: m[1], status: m[2], project: m[3], prompt: '' });
     }
     return entries;
   }, [output]);
 
-  const noWorkers = status === 'completed' && workers.length === 0 && !output.includes('ses_');
+  // Both scan the full output — `includes` walks it, `isErrorOutput` trims a
+  // copy of it and runs `JSON.parse`. Neither depends on render state, and the
+  // error branch below is the one taken whenever the regex above finds nothing.
+  const mentionsSession = useMemo(() => output.includes('ses_'), [output]);
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
+
+  const noWorkers = status === 'completed' && workers.length === 0 && !mentionsSession;
 
   return (
     <BasicTool
-      icon={<Layers className="size-3.5 flex-shrink-0" />}
+      icon={<Layers className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Background Sessions',
+        title: 'Background work',
         subtitle: project || 'all workspaces',
         args: workers.length > 0 ? [`${workers.length} workers`] : noWorkers ? ['none'] : [],
       }}
@@ -62,17 +68,17 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
                 tone={
                   w.status === 'running' ? 'info' : w.status === 'complete' ? 'success' : 'neutral'
                 }
-                className="flex-shrink-0"
+                className="shrink-0"
               />
               <span className="text-foreground/70 truncate font-mono text-xs">
                 {w.id.slice(-12)}
               </span>
-              <span className="text-muted-foreground/50 flex-1 truncate text-xs">{w.workspace}</span>
+              <span className="text-muted-foreground/50 flex-1 truncate text-xs">{w.project}</span>
               <span className="text-muted-foreground/40 text-xs">{w.status}</span>
             </div>
           ))}
         </div>
-      ) : isErrorOutput(output) ? (
+      ) : outputIsError ? (
         <ToolOutputFallback output={output} toolName="session_list" />
       ) : output ? (
         <OutputBlock text={output} markdown />

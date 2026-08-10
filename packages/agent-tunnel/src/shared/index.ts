@@ -33,3 +33,11 @@ export type {
 } from './types';
 
 export { TunnelErrorCode, TunnelMethods } from './types';
+export {
+  capabilityForMethod,
+  desktopFeatureForMethod,
+  isTunnelCapability,
+  operationForMethod,
+  validateTunnelPermissionScope,
+} from './permissions';
+export type { PermissionScopeValidationResult } from './permissions';

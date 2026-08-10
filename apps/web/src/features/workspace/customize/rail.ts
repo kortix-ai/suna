@@ -7,13 +7,12 @@ import {
   ChatsIcon as ChatMessages,
   CommandIcon as Command,
   ShippingContainerIcon as Container,
+  FlagIcon,
   GitForkIcon as GitFork,
   TrayIcon as Inbox,
   KeyIcon as KeyRound,
-  FlagIcon,
   GearSixIcon as LucideSettings,
   UsersThreeIcon as LucideUsersRound,
-  MonitorIcon as Monitor,
   StorefrontIcon as Store,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
@@ -30,8 +29,6 @@ export function isRailItemActive(item: RailItem, section: CustomizeSection): boo
   if (item.section === 'llm-management') return section.startsWith('llm-');
   return item.section === section;
 }
-
-export const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
 export const MARKETPLACE_ITEM: RailItem = {
   section: 'marketplace',
@@ -95,7 +92,6 @@ const GROUPS: readonly RailGroup[] = [
 ];
 
 export interface RailFlags {
-  tunnelEnabled: boolean;
   marketplaceEnabled: boolean;
   /**
    * The LLM item follows ENABLED, not merely available. A disabled feature's
@@ -129,7 +125,6 @@ export function railGroups(flags: RailFlags): readonly RailGroup[] {
     if (g.label === 'Connect') {
       const items = [...g.items];
       if (flags.voiceEnabled) items.push(VOICE_ITEM);
-      if (flags.tunnelEnabled) items.push(COMPUTERS_ITEM);
       if (flags.llmGatewayEnabled) items.push(LLM_ITEM);
       return { ...g, items };
     }

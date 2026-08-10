@@ -1,3 +1,9 @@
+import {
+  capabilityForMethod,
+  isTunnelCapability,
+  validateTunnelPermissionScope,
+} from '../../shared/permissions';
+
 /**
  * Permission Guard — local-side permission enforcement (defense in depth).
  *
@@ -23,11 +29,22 @@ export class PermissionGuard {
   syncPermissions(permissions: LocalPermission[]): void {
     this.permissions.clear();
     for (const perm of permissions) {
-      this.permissions.set(perm.permissionId, perm);
+      this.addPermission(perm);
     }
   }
 
   addPermission(permission: LocalPermission): void {
+    if (
+      typeof permission?.permissionId !== 'string' ||
+      !permission.permissionId ||
+      !isTunnelCapability(permission.capability) ||
+      !validateTunnelPermissionScope(permission.capability, permission.scope).valid
+    ) {
+      if (typeof permission?.permissionId === 'string') {
+        this.permissions.delete(permission.permissionId);
+      }
+      return;
+    }
     this.permissions.set(permission.permissionId, permission);
   }
 
@@ -60,6 +77,15 @@ export class PermissionGuard {
     }
 
     return perm;
+  }
+
+  getPermissionForMethod(permissionId: string | undefined, method: string): LocalPermission | null {
+    const permission = this.getPermission(permissionId);
+    const requiredCapability = capabilityForMethod(method);
+    if (!permission || !requiredCapability || permission.capability !== requiredCapability) {
+      return null;
+    }
+    return permission;
   }
 
   clear(): void {

@@ -218,6 +218,107 @@ describe('serializeSession ⇄ WorkspaceSessionSchema', () => {
     expect(parsed.custom_name).toBe('Mine');
   });
 
+  test('runtime snapshot root title wins over the Kortix auto title', () => {
+    const out = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'Fix the login bug on the dashboard',
+          opencode_sessions: [
+            { id: 'ses_child', title: 'Sub-agent work', parent_id: 'ses_abc' },
+            { id: 'ses_abc', title: 'Dashboard Login Repair', parent_id: null },
+          ],
+        },
+      }),
+    );
+    const parsed = WorkspaceSessionSchema.strict().parse(out);
+    expect(parsed.name).toBe('Dashboard Login Repair');
+    expect(parsed.custom_name).toBeNull();
+  });
+
+  test('runtime root is matched by the pinned root id, not list order', () => {
+    const out = serializeSession(
+      sessionRow({
+        opencodeSessionId: 'ses_root',
+        metadata: {
+          name: 'Auto title',
+          opencode_sessions: [
+            { id: 'ses_other', title: 'Wrong Tree Root', parent_id: null },
+            { id: 'ses_root', title: 'Pinned Root Title', parent_id: null },
+          ],
+        },
+      }),
+    );
+    expect(WorkspaceSessionSchema.strict().parse(out).name).toBe('Pinned Root Title');
+  });
+
+  test('a parentless entry stands in when no snapshot entry matches the pin', () => {
+    const out = serializeSession(
+      sessionRow({
+        opencodeSessionId: null,
+        metadata: {
+          name: 'Auto title',
+          opencode_sessions: [
+            { id: 'ses_child', title: 'Child', parent_id: 'ses_root' },
+            { id: 'ses_root', title: 'Tree Root Title', parent_id: null },
+          ],
+        },
+      }),
+    );
+    expect(WorkspaceSessionSchema.strict().parse(out).name).toBe('Tree Root Title');
+  });
+
+  test('placeholder or blank runtime titles fall back to the Kortix auto title', () => {
+    const placeholder = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'Real Kortix Title',
+          opencode_sessions: [
+            { id: 'ses_abc', title: 'New session - 2026-08-09T10:00:00.000Z', parent_id: null },
+          ],
+        },
+      }),
+    );
+    expect(WorkspaceSessionSchema.strict().parse(placeholder).name).toBe('Real Kortix Title');
+
+    const blank = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'Real Kortix Title',
+          opencode_sessions: [{ id: 'ses_abc', title: '   ', parent_id: null }],
+        },
+      }),
+    );
+    expect(WorkspaceSessionSchema.strict().parse(blank).name).toBe('Real Kortix Title');
+  });
+
+  test('custom_name wins over the runtime snapshot title', () => {
+    const out = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'auto',
+          custom_name: 'Mine',
+          opencode_sessions: [{ id: 'ses_abc', title: 'Runtime Title', parent_id: null }],
+        },
+      }),
+    );
+    expect(WorkspaceSessionSchema.strict().parse(out).name).toBe('Mine');
+  });
+
+  test('a viewer without access never reads the runtime snapshot title', () => {
+    const out = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'auto',
+          opencode_sessions: [{ id: 'ses_abc', title: 'Runtime Title', parent_id: null }],
+        },
+      }),
+      { viewerId: 'someone-else', canAccess: false },
+    );
+    const parsed = WorkspaceSessionSchema.strict().parse(out);
+    expect(parsed.name).toBeNull();
+    expect(parsed.opencode_sessions).toEqual([]);
+  });
+
   test("opencode's frozen placeholder reads as untitled, a real title does not", () => {
     const placeholder = WorkspaceSessionSchema.strict().parse(
       serializeSession(sessionRow({ metadata: { name: 'New session - 2026-07-28' } })),

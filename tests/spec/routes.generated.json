@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 828,
+  "count": 829,
   "routes": [
     {
       "method": "GET",
@@ -888,6 +888,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:workspaceId/pipedream/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:workspaceId/policies"
     },
     {
@@ -992,6 +996,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/pipedream/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/workspaces/:workspaceId/policies"
     },
     {
@@ -1029,6 +1037,34 @@
     {
       "method": "GET",
       "path": "/v1/health/ready"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/llm/chat/completions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/health"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/llm/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/models"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/llm/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/llm/v1/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/v1/models"
     },
     {
       "method": "GET",
@@ -2140,6 +2176,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/setup-links/connectors/:token/finalize"
+    },
+    {
+      "method": "POST",
       "path": "/v1/setup-links/connectors/:token/start"
     },
     {
@@ -2149,42 +2189,6 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/bootstrap-owner"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/health"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/install-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/sandbox-providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-complete"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/status"
     },
     {
       "method": "GET",

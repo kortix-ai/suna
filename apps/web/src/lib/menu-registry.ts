@@ -49,7 +49,6 @@ import {
   SquaresFourIcon as LayoutDashboard,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
-  MonitorIcon as Monitor,
   PaletteIcon as Palette,
   SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
@@ -540,19 +539,6 @@ export const menuRegistry: MenuItemDef[] = [
     requiresFlag: 'llm_gateway',
     keywords:
       'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
-  },
-  {
-    id: 'workspace-computers',
-    label: 'Customize · Computers',
-    icon: Monitor,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/workspaces/{workspaceId}/customize/computers',
-    requiresWorkspace: true,
-    requiresFlag: 'agent_tunnel',
-    keywords:
-      'computers tunnel machines connect reverse local devices remote agent access project customize',
   },
   {
     id: 'workspace-review',

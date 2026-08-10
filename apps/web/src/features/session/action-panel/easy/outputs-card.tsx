@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/runtime-files';
 import { getFileIcon } from '@/features/workspace-files';
 import { track } from '@/lib/track';
@@ -63,15 +64,18 @@ function ImageThumb({ path, callID, name }: { path: string; callID: string; name
   useEffect(() => {
     if (src || failed) return;
     let cancelled = false;
-    readFileAsBlob(path)
+    const abortController = new AbortController();
+    readRuntimeFileWithRetry(path, () => readFileAsBlob(path), undefined, abortController.signal)
       .then((blob) => {
+        if (cancelled) return;
         const url = URL.createObjectURL(blob);
         thumbCache.set(cacheKey, url);
-        if (!cancelled) setSrc(url);
+        setSrc(url);
       })
       .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
+      abortController.abort();
     };
   }, [path, cacheKey, src, failed]);
 

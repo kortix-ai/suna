@@ -16,7 +16,7 @@ import { connectors, connectorCalls, projectSessions, projects } from '@kortix/d
  *
  * So the token here is only a POINTER to "which decision is being asked". Every
  * route requires a signed-in Kortix account and re-checks that the account may
- * act on this project (`mayResolveApproval`: a manager, or the session's
+ * act on this workspace (`mayResolveApproval`: a manager, or the session's
  * launcher — never a session-bound/agent credential).
  *
  * This app is READ-ONLY. The decision itself is POSTed by the page to the
@@ -47,7 +47,7 @@ approvalLinksApp.get('/:token', async (c) => {
   const executionId = resolved.payload.eid;
 
   // Membership floor. 404 (not 403) for a non-member: the link should not
-  // confirm that a given project or approval exists to someone outside it.
+  // confirm that a given workspace or approval exists to someone outside it.
   const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -126,12 +126,12 @@ approvalLinksApp.get('/:token', async (c) => {
               error: 'Sign in with a Kortix account to review this approval',
               code: 'APPROVAL_REQUIRES_HUMAN',
             }
-          : { error: 'Only a project manager or the session launcher can resolve this' },
+          : { error: 'Only a workspace manager or the session launcher can resolve this' },
       403,
     );
   }
 
-  const [project] = await db
+  const [workspace] = await db
     .select({ name: projects.name })
     .from(projects)
     .where(eq(projects.workspaceId, workspaceId))
@@ -158,8 +158,10 @@ approvalLinksApp.get('/:token', async (c) => {
 
   return c.json({
     kind: 'approval',
+    workspace_id: workspaceId,
+    workspace_name: workspace?.name ?? 'this workspace',
     project_id: workspaceId,
-    project_name: project?.name ?? 'this project',
+    project_name: workspace?.name ?? 'this workspace',
     execution_id: row.executionId,
     session_id: row.sessionId,
     action: row.actionPath,

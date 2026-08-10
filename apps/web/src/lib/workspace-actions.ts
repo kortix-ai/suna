@@ -71,7 +71,7 @@ export type WorkspaceAction = (typeof WORKSPACE_ACTIONS)[keyof typeof WORKSPACE_
  *   actual Slack connect/disconnect routes assert project.connector.write.
  * - `git` surfaces repository metadata and clone instructions; pushes remain
  *   separately gated by project.gitops.push.
- * - sandbox/settings/marketplace/computers have no dedicated read leaf, so
+ * - sandbox/settings/marketplace have no dedicated read leaf, so
  *   they stay visible on project.read and gate writes on the closest real leaf
  *   the backend asserts (e.g. sandbox rebuild → customize.write, marketplace
  *   install → gitops.push).
@@ -165,10 +165,6 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   // repo and opens a CR — the session itself asserts the real leaves; visibility
   // follows settings (editor+ via customize.write in isCustomizeSectionVisible).
   upgrade: { read: WORKSPACE_ACTIONS.WORKSPACE_READ, write: WORKSPACE_ACTIONS.WORKSPACE_WRITE },
-  computers: {
-    read: WORKSPACE_ACTIONS.WORKSPACE_READ,
-    write: WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE,
-  },
   // Voice — a workspace-level setting (the bot's display name), not a connector;
   // follows the same gate as the sibling channel name route (r4.ts's
   // channels/meet/name uses WORKSPACE_CUSTOMIZE_WRITE, not a connector leaf).

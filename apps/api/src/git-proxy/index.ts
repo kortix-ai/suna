@@ -105,7 +105,7 @@ async function forward(c: any, workspaceId: string, scope: GitScope, suffix: str
 
   const upstream = await resolveWorkspaceUpstream(auth.workspace, scope);
   if (!upstream || !upstream.url) {
-    return c.text('No git upstream is configured for this project', 502);
+    return c.text('No git upstream is configured for this workspace', 502);
   }
 
   const search = new URL(c.req.url).search; // includes leading '?' or ''

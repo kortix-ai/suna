@@ -29,7 +29,6 @@ export type CustomizeSection =
   | 'llm-budgets'
   | 'llm-keys'
   | 'llm-api'
-  | 'computers'
   | 'members'
   | 'schedules'
   | 'webhooks'
@@ -61,7 +60,6 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'llm-budgets',
   'llm-keys',
   'llm-api',
-  'computers',
   'members',
   'schedules',
   'webhooks',
@@ -87,6 +85,7 @@ const GRADUATED: Record<string, (workspaceId: string) => string> = {
   agent: (p) => `/workspaces/${p}/agent`,
   agents: (p) => `/workspaces/${p}/agent`,
   connectors: (p) => `/workspaces/${p}/connectors`,
+  computers: (p) => `/workspaces/${p}/connectors`,
   skills: (p) => `/workspaces/${p}/skills`,
 };
 
@@ -106,7 +105,8 @@ export function parseCustomizeSection(raw: string | null | undefined): Customize
 
 /** Whether an href matching `/customize(/<segment>)?` should open the overlay. */
 export type CustomizeOverlayMatch =
-  { opensOverlay: true; section: CustomizeSection | undefined } | { opensOverlay: false };
+  | { opensOverlay: true; section: CustomizeSection | undefined }
+  | { opensOverlay: false };
 
 /**
  * Decide whether a menu-registry href should open the Customize overlay, and

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { ConnectorSetupLinkInfo, SecretSetupLinkInfo } from './host-boundary';
 
 const originalFetch = globalThis.fetch;
 const requests: Array<{ url: string; init?: RequestInit }> = [];
@@ -20,6 +21,46 @@ afterEach(() => {
 const boundary = await import('./host-boundary');
 
 describe('host boundary transport', () => {
+  test('setup-link types expose canonical Workspace names and legacy Project aliases', () => {
+    const connector: ConnectorSetupLinkInfo = {
+      workspace_name: 'Workspace One',
+      project_name: 'Workspace One',
+      slug: 'github',
+      app: 'github',
+      expires_at: '2026-08-10T00:00:00.000Z',
+    };
+    const secret: SecretSetupLinkInfo = {
+      workspace_name: 'Workspace One',
+      project_name: 'Workspace One',
+      fields: [],
+      expires_at: '2026-08-10T00:00:00.000Z',
+    };
+
+    expect(connector.workspace_name).toBe(connector.project_name);
+    expect(secret.workspace_name).toBe(secret.project_name);
+  });
+
+  test('setup-link readers normalize an older API project_name into workspace_name', async () => {
+    responseFactory = () =>
+      Response.json({
+        project_name: 'Legacy API Workspace',
+        slug: 'github',
+        app: 'github',
+        fields: [],
+        expires_at: '2026-08-10T00:00:00.000Z',
+      });
+
+    const connector = await boundary.getConnectorSetupLink('connector-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+    const secret = await boundary.getSecretSetupLink('secret-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    expect(connector.workspace_name).toBe('Legacy API Workspace');
+    expect(secret.workspace_name).toBe('Legacy API Workspace');
+  });
+
   test('public marketplace reads accept explicit cache options', async () => {
     responseFactory = () => Response.json({ items: [{ id: 'skill-1' }] });
     const result = await boundary.listPublicMarketplaceItems(
@@ -73,6 +114,31 @@ describe('host boundary transport', () => {
       'https://api.example.test/v1/workspaces/workspace%2Fone/sessions/session%2Ftwo/start',
     );
     expect(requests[0]?.init?.method).toBe('POST');
+  });
+
+  test('connector setup-link finalize POSTs anonymously and returns the connected flag', async () => {
+    responseFactory = () => Response.json({ connected: true });
+
+    const result = await boundary.finalizeConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    expect(result).toEqual({ connected: true });
+    expect(requests[0]?.url).toBe(
+      'https://api.example.test/v1/setup-links/connectors/connect-token/finalize',
+    );
+    expect(requests[0]?.init?.method).toBe('POST');
+    expect(requests[0]?.init?.headers).not.toHaveProperty('Authorization');
+  });
+
+  test('connector setup-link finalize reports a still-pending connect as connected:false', async () => {
+    responseFactory = () => Response.json({ connected: false });
+
+    const result = await boundary.finalizeConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    expect(result).toEqual({ connected: false });
   });
 
   test('audit export sends canonical workspace and session reconstruction filters', async () => {

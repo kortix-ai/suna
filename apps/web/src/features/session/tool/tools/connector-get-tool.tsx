@@ -21,6 +21,9 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const output = partOutput(part);
   const name = (input.name as string) || '';
   const data = useMemo(() => parseConnectorGetOutput(output || ''), [output]);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it. Called from the render body it did that on every frame of the stream.
+  const isError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
@@ -57,7 +60,7 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
                   </div>
                 )}
               </>
-            ) : isErrorOutput(output) ? (
+            ) : isError ? (
               <ToolOutputFallback output={output} toolName="connector_get" />
             ) : (
               <OutputBlock text={output} />

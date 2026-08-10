@@ -2,127 +2,45 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  ALL_CATEGORIES,
-  catalogCategoryKeys,
-  resolveActiveCategory,
-} from './connector-categories';
-
-const item = (categories: string[]) => ({ categories });
-
 const code = (src: string) =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const page = code(readFileSync(join(import.meta.dir, '..', 'connectors-page.tsx'), 'utf8'));
 const browse = code(readFileSync(join(import.meta.dir, 'connector-browse.tsx'), 'utf8'));
 
 /**
- * The category filter's state rules.
+ * How the page and the grid agree on which category is open.
  *
- * These exist because of a real bug: the picked category was page state with
- * exactly ONE writer (the dropdown) and no invalidation. It outlived every
- * context that gave it meaning — a tab switch, a search, and the entry set it
- * names — and because Discovery collapses to a flat grid whenever a category
- * is picked, the visible result was "Discovery and All both show one card"
- * with nothing on screen explaining why.
- */
-describe('resolveActiveCategory', () => {
-  const available = ['productivity', 'finance', 'commerce'];
-
-  test('an unfiltered browse stays unfiltered', () => {
-    expect(resolveActiveCategory(ALL_CATEGORIES, available, { searching: false })).toBe(
-      ALL_CATEGORIES,
-    );
-  });
-
-  test('a category that is present is applied', () => {
-    expect(resolveActiveCategory('finance', available, { searching: false })).toBe('finance');
-  });
-
-  // A text search runs server-side across every category, so re-filtering its
-  // results by a category picked beforehand would hide most of what the user
-  // asked for.
-  test('a search overrides any category', () => {
-    expect(resolveActiveCategory('finance', available, { searching: true })).toBe(ALL_CATEGORIES);
-  });
-
-  /**
-   * The silent one. `catalog.entries` changes under the filter — a refetch, or
-   * `useCatalog` flipping source from Easy Connect to Discover once
-   * `workspaceQuery` lands, which swaps the entire category vocabulary. The
-   * dropdown then has no option matching the stored value, so Radix renders
-   * its placeholder ("All categories") while the grid still filtered by it —
-   * `groupIntoSections(...).find(...)` missed, `?? []` swallowed it, and the
-   * page showed an empty catalogue it claimed was unfiltered.
-   */
-  test('a category absent from the current entries degrades to unfiltered', () => {
-    expect(resolveActiveCategory('life-sciences', available, { searching: false })).toBe(
-      ALL_CATEGORIES,
-    );
-  });
-
-  test('an empty catalogue cannot leave a filter applied', () => {
-    expect(resolveActiveCategory('finance', [], { searching: false })).toBe(ALL_CATEGORIES);
-  });
-});
-
-/**
- * One derivation, two consumers. The dropdown's options and the grid's filter
- * used to be two independent `groupIntoSections` calls over the same entries,
- * which is what let them disagree about which categories exist.
- */
-describe('catalogCategoryKeys', () => {
-  test('returns the section keys the grid can actually show', () => {
-    const keys = catalogCategoryKeys(
-      [item(['productivity']), item(['Sales & CRM']), item(['productivity'])],
-      (entry) => entry.categories,
-    );
-    expect(keys).toEqual(['productivity', 'sales-marketing']);
-  });
-
-  test('never offers Popular — it is synthesised, not a queryable bucket', () => {
-    // Picking it would filter the grid to a bucket the API cannot be asked
-    // for, which is the same dead-filter failure by another route.
-    const keys = catalogCategoryKeys([item(['popular']), item(['finance'])], (e) => e.categories);
-    expect(keys).not.toContain('popular');
-    expect(keys).toContain('finance');
-  });
-
-  test('is exactly the set resolveActiveCategory validates against', () => {
-    const entries = [item(['productivity']), item(['finance'])];
-    const keys = catalogCategoryKeys(entries, (e) => e.categories);
-    for (const key of keys) {
-      expect(resolveActiveCategory(key, keys, { searching: false })).toBe(key);
-    }
-  });
-});
-
-/**
- * The rules above are inert unless the components actually read them, and both
- * regressions are one plausible-looking edit away: re-deriving the option list
- * inside the filter control, or taking `category` at face value in the grid.
+ * This file used to also unit-test `resolveActiveCategory` and
+ * `catalogCategoryKeys`, which reconciled a picked category against the
+ * categories present in the loaded pages. Both are deleted: a category is a
+ * server-side filter over the whole catalogue now, so "absent from the entries
+ * on screen" no longer implies "does not exist", and there is no derived
+ * vocabulary for two surfaces to disagree about.
+ *
+ * What remains is the wiring, which is still one plausible-looking edit away
+ * from breaking silently.
  */
 describe('the page wires the filter to one derivation', () => {
-  test('the category vocabulary is derived exactly once', () => {
-    // There is no filter control any more — "View all" opens a category and
-    // Back leaves it — so this list has exactly one consumer:
-    // `resolveActiveCategory`, deciding whether an open category still exists
-    // in the entries on screen. It is still derived in one place, because a
-    // second derivation is what let two surfaces disagree about which
-    // categories exist.
-    expect(page).toContain('const availableCategories = useMemo(');
-    expect(page).toContain('catalogCategoryKeys(catalog.entries');
-    expect(page).toContain('availableCategories={availableCategories}');
+  test('the category vocabulary comes from the API, derived nowhere', () => {
+    // `catalogCategoryKeys(catalog.entries, …)` used to build this list from
+    // the pages that happened to be loaded, so the set of categories the page
+    // offered was a function of how far the user had scrolled. The API now
+    // publishes every category with its true count
+    // (`pipedreamCatalogPage` -> `categories`), so there is nothing to derive
+    // and nothing for two surfaces to disagree about.
+    expect(page).not.toContain('catalogCategoryKeys');
+    expect(page).not.toContain('availableCategories');
     expect(browse.match(/catalogCategoryKeys/g)).toBeNull();
+    expect(browse).toContain('state.categories.find((facet) => facet.key === activeCategory)');
   });
 
-  test('the grid resolves the category instead of trusting it', () => {
-    // `searching ? ALL_CATEGORIES : category` was the old line. It handled the
-    // search case and nothing else — a category absent from the current
-    // entries went straight through and emptied the grid.
-    expect(browse).toContain(
-      'resolveActiveCategory(category, availableCategories, { searching })',
-    );
-    expect(browse).not.toContain('searching ? ALL_CATEGORIES : category');
+  test('a search still overrides an open category', () => {
+    // The one rule `resolveActiveCategory` carried that still applies. The
+    // rest of it — degrading a category absent from the loaded entries — is
+    // obsolete: a category is a server-side filter over the whole catalogue,
+    // so "absent from the entries on screen" no longer means "does not exist".
+    expect(browse).toContain('const activeCategory = searching ? ALL_CATEGORIES : category;');
+    expect(browse).not.toContain('resolveActiveCategory');
   });
 
   test('starting a search clears the category rather than hiding it', () => {

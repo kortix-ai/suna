@@ -196,6 +196,8 @@ export function submitOAuthConsent(
 }
 
 export interface ConnectorSetupLinkInfo {
+  workspace_name: string;
+  /** @deprecated Use `workspace_name`. */
   project_name: string;
   slug: string;
   app: string | null;
@@ -206,7 +208,14 @@ export function getConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
 ): Promise<ConnectorSetupLinkInfo> {
-  return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}`, options);
+  return requestJson<ConnectorSetupLinkInfo>(
+    `/setup-links/connectors/${encodeURIComponent(token)}`,
+    options,
+  ).then((info) => ({
+    ...info,
+    workspace_name: info.workspace_name ?? info.project_name,
+    project_name: info.project_name ?? info.workspace_name,
+  }));
 }
 
 export function startConnectorSetupLink(
@@ -219,7 +228,26 @@ export function startConnectorSetupLink(
   });
 }
 
+/**
+ * Persist the connection the hosted Pipedream page just made, and tell the
+ * session that asked for it. The hosted page cannot call back into us, so the
+ * client that opened it polls this until `connected` is true. Idempotent: a
+ * repeat call on an already-connected connector returns `true` without
+ * re-notifying the session.
+ */
+export function finalizeConnectorSetupLink(
+  token: string,
+  options: HostRequestOptions,
+): Promise<{ connected: boolean }> {
+  return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/finalize`, options, {
+    method: 'POST',
+    body: {},
+  });
+}
+
 export interface SecretSetupLinkInfo {
+  workspace_name: string;
+  /** @deprecated Use `workspace_name`. */
   project_name: string;
   fields: Array<{
     name: string;
@@ -233,7 +261,14 @@ export function getSecretSetupLink(
   token: string,
   options: HostRequestOptions,
 ): Promise<SecretSetupLinkInfo> {
-  return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options);
+  return requestJson<SecretSetupLinkInfo>(
+    `/setup-links/secret/${encodeURIComponent(token)}`,
+    options,
+  ).then((info) => ({
+    ...info,
+    workspace_name: info.workspace_name ?? info.project_name,
+    project_name: info.project_name ?? info.workspace_name,
+  }));
 }
 
 export function submitSecretSetupLink(

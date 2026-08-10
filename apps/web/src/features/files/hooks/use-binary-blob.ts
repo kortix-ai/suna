@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFileAsBlob } from '../api/runtime-files';
-import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
@@ -44,19 +44,26 @@ export function useBinaryBlob(filePath: string | null): {
     queryKey: filePath
       ? binaryBlobKeys.file(serverUrl, filePath)
       : ['runtime-files', 'binary-blob', '__disabled__'],
-    queryFn: async () => {
-      const blob = await readFileAsBlob(filePath!);
-      if (blob.size === 0) {
-        throw new Error('File is empty (0 bytes). It may still be generating — try again in a moment.');
-      }
-      return blob;
-    },
+    queryFn: ({ signal }) =>
+      readRuntimeFileWithRetry(
+        filePath!,
+        async () => {
+          const blob = await readFileAsBlob(filePath!);
+          if (blob.size === 0) {
+            throw new Error(
+              'File is empty (0 bytes). It may still be generating — try again in a moment.',
+            );
+          }
+          return blob;
+        },
+        undefined,
+        signal,
+      ),
     enabled: !!filePath,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: (failureCount, error) => shouldRetryFileRead(filePath, failureCount, error),
-    retryDelay: (attempt) => fileReadRetryDelayMs(attempt, filePath),
+    retry: false,
   });
 
   const cachedBlob = query.data ?? null;
@@ -82,10 +89,13 @@ export function useBinaryBlob(filePath: string | null): {
   }, [cachedBlob]);
 
   // ── Stable return value ──────────────────────────────────────────────
-  return useMemo(() => ({
-    blobUrl,
-    blob: cachedBlob,
-    isLoading: query.isLoading,
-    error: query.error?.message ?? null,
-  }), [blobUrl, cachedBlob, query.isLoading, query.error?.message]);
+  return useMemo(
+    () => ({
+      blobUrl,
+      blob: cachedBlob,
+      isLoading: query.isLoading,
+      error: query.error?.message ?? null,
+    }),
+    [blobUrl, cachedBlob, query.isLoading, query.error?.message],
+  );
 }

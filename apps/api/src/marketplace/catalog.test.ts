@@ -61,6 +61,15 @@ describe('template + agent resolution (decoupled from browse)', () => {
     expect(agent).not.toBeNull();
     expect(agent!.type).toBe('registry:agent');
   });
+
+  test('Workspace starter copy never exposes the legacy Project product noun', async () => {
+    const starter = await getCatalogItemDetail('kortix-projects:starter');
+    expect(starter).not.toBeNull();
+    expect(starter!.description).toContain('workspace');
+    expect(starter!.readme).toContain('workspace');
+    expect(starter!.description).not.toMatch(/\bprojects?\b/i);
+    expect(starter!.readme).not.toMatch(/\bprojects?\b/i);
+  });
 });
 
 describe('selectTemplateItems', () => {

@@ -24,7 +24,7 @@ import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import type { WorkspaceRole } from '../access';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
-import { isPlaceholderOpencodeTitle } from './opencode-title';
+import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeWorkspaceGlyph } from './workspace-glyph';
 import { normalizeWorkspaceIcon } from './workspace-icon';
 import { proxyGitUrl } from './sessions';
@@ -108,6 +108,11 @@ export function serializeSession(
     row.visibility as 'private' | 'project' | 'restricted',
     ctx?.grants ?? [],
   );
+  // The runtime's own root-conversation title (already access-gated: the
+  // snapshot above is [] when canAccess is false). It outranks the generated
+  // auto title so list reads resolve the SAME string the session header shows
+  // live, but never a user rename.
+  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.opencodeSessionId);
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -118,7 +123,7 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     opencode_session_id: row.opencodeSessionId,
-    name: customName ?? autoName,
+    name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
     agent_name: row.agentName,
     status: row.status,

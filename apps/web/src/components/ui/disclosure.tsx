@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import { AnimatePresence, m, MotionConfig, Transition, Variant, Variants } from 'motion/react';
 import * as React from 'react';
-import { createContext, useContext, useEffect, useId, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from 'react';
 
 export type DisclosureContextType = {
   open: boolean;
@@ -32,25 +32,32 @@ function DisclosureProvider({
     setInternalOpenValue(openProp);
   }, [openProp]);
 
-  const toggle = () => {
-    const newOpen = !internalOpenValue;
-    setInternalOpenValue(newOpen);
-    if (onOpenChange) {
-      onOpenChange(newOpen);
-    }
-  };
+  const toggle = useCallback(() => {
+    setInternalOpenValue((current) => {
+      const next = !current;
+      onOpenChange?.(next);
+      return next;
+    });
+  }, [onOpenChange]);
 
-  return (
-    <DisclosureContext.Provider
-      value={{
-        open: internalOpenValue,
-        toggle,
-        variants,
-      }}
-    >
-      {children}
-    </DisclosureContext.Provider>
+  /**
+   * A fresh object here re-rendered every `useDisclosure()` consumer on every
+   * render of this provider, whether or not `open` had changed — and a session
+   * transcript nests two to three disclosures per tool row (the chain step, the
+   * tool's own collapsible, sometimes a group), so the churn multiplied by every
+   * row on screen.
+   *
+   * `toggle` had to become a `useCallback` for this to be worth anything: as a
+   * fresh closure per render it would have invalidated the value object every
+   * time regardless. Reading the previous value through the updater is what lets
+   * it drop `internalOpenValue` from its deps.
+   */
+  const value = useMemo(
+    () => ({ open: internalOpenValue, toggle, variants }),
+    [internalOpenValue, toggle, variants],
   );
+
+  return <DisclosureContext.Provider value={value}>{children}</DisclosureContext.Provider>;
 }
 
 function useDisclosure() {

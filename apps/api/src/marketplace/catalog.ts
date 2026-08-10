@@ -478,15 +478,15 @@ function buildWorkspaceTemplateRegistry(): RegistryItem[] {
   return items;
 }
 
-// The marketplace hero: one synthetic "Kortix Starter" project. Its contents
+// The marketplace hero: one synthetic "Kortix Starter" Workspace item. Its contents
 // (`what's inside`) are every browseable starter skill — resolved typed from the
 // catalog by name — and its files are the whole starter kit (file browser +
-// clone). This is the single project we lead the marketplace with; individual
+// clone). This is the single Workspace we lead the marketplace with; individual
 // starter skills live *inside* it rather than as their own top-level tiles.
 export const STARTER_KIT_ITEM_NAME = "starter";
 export const STARTER_KIT_ITEM_ID = `kortix-projects:${STARTER_KIT_ITEM_NAME}`;
 
-// The second synthetic project: the Use-case pack. One browse tile that groups
+// The second synthetic Workspace item: the Use-case pack. One browse tile that groups
 // every use-case runbook skill + persona agent from the marketplace template
 // layer (`packages/starter/templates/marketplace/runtime/**`) — visible and
 // clonable in the marketplace, but never advertised as Kortix Starter content.
@@ -496,7 +496,7 @@ export const USE_CASE_PACK_TITLE = "Use-case pack";
 
 const STARTER_KIT_README = `# Kortix Starter
 
-The default Kortix project — a general knowledge worker that's ready to do real
+The default Kortix workspace — a general knowledge worker that's ready to do real
 work from the very first message.
 
 It comes preloaded with the core Kortix skill floor: documents (PDF, DOCX,
@@ -506,18 +506,18 @@ deployments, and design foundations. The managed Kortix platform skills
 More skills — research, outreach, and per-role runbooks — are one install away
 in the marketplace.
 
-Everything here is **yours** — plain files in your project's git repo that you
+Everything here is **yours** — plain files in your workspace's git repo that you
 and your agents can read, edit, extend, and land through change requests. Nothing
 is pinned to an upstream, so make it your own.
 
 ## What's inside
 
 Skills, agents, and tools — browse them below. Each one is a real file in the
-project you can open, adapt, and build on.
+workspace you can open, adapt, and build on.
 
 ## Getting started
 
-Create a project from this starter and your first session onboards you: it learns
+Create a workspace from this starter and your first session onboards you: it learns
 what you do, tailors the kit to your work, and gets you one real result fast.
 `;
 
@@ -525,7 +525,7 @@ function buildStarterKitWorkspaceItem(): RegistryItem {
   const registry = buildStarterRegistry();
   // Only skills tagged as part of the starter (the starter-floor layer) belong
   // in "what's inside" — marketplace-layer extras and use-case runbook skills
-  // do not ship in a cloned starter project.
+  // do not ship in a cloned starter workspace.
   const skillNames = (registry.items ?? [])
     .filter(
       (it) =>
@@ -540,7 +540,7 @@ function buildStarterKitWorkspaceItem(): RegistryItem {
     repoFullName: "{{repoFullName}}",
     template: "general-knowledge-worker",
   }).map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content }));
-  // Give the project a proper, curated marketplace README (the base template's
+  // Give the workspace a curated marketplace README (the base template's
   // README is a generic scaffold note) — replace it in place, or add one.
   const readmeIdx = files.findIndex((f) => f.path === "README.md");
   const readmeFile = { path: "README.md", type: "registry:file" as const, content: STARTER_KIT_README };
@@ -551,7 +551,7 @@ function buildStarterKitWorkspaceItem(): RegistryItem {
     type: "registry:project",
     title: "Kortix Starter",
     description:
-      "The default Kortix project — a general knowledge worker preloaded with the core skill floor (documents, slides, spreadsheets, web apps, browser automation, and more), ready to work from the first session.",
+      "The default Kortix workspace — a general knowledge worker preloaded with the core skill floor (documents, slides, spreadsheets, web apps, browser automation, and more), ready to work from the first session.",
     categories: ["project", "starter"],
     registryDependencies: skillNames,
     files,
@@ -569,8 +569,8 @@ agents that run them.
 
 - **Guided (recommended):** each use case installs individually through the
   [use-case pages](https://kortix.com/use-cases) — the wizard wires the agent,
-  its skill, grants, and any scheduled trigger into your project.
-- **Bulk clone:** clone this pack as a project to get every runbook skill under
+  its skill, grants, and any scheduled trigger into your workspace.
+- **Bulk clone:** clone this pack as a workspace to get every runbook skill under
   \`.kortix/opencode/skills/\` and every persona agent file under
   \`.kortix/opencode/agents/\`. Agent files ship undeclared — add the ones you
   want to \`kortix.yaml\`'s \`agents:\` map (grants are deny-by-default) before

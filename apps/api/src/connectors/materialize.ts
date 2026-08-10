@@ -65,6 +65,7 @@ export function connectorConfig(
         // `none` auth so authOf() resolves hasAuth=false.
         return {
           tunnel_ids: spec.tunnelIds ?? (spec.tunnelId ? [spec.tunnelId] : []),
+          tunnel_account_ids: spec.tunnelAccountIds ?? [],
           computer_profile: true,
           auth: { type: 'none', in: 'header', name: null, prefix: null },
         };

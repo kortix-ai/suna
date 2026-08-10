@@ -66,7 +66,7 @@ describe('computerCatalog()', () => {
   });
 
   test('label', () => {
-    expect(computerLabel()).toBe('Computers');
+    expect(computerLabel()).toBe('Computer Tunnel');
   });
 });
 
@@ -96,6 +96,7 @@ const COMPUTER: GatewayConnector = {
   slug: 'studio-computers',
   provider: 'computer',
   tunnelIds: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
+  tunnelAccountIds: ['acct-1', 'personal-account-1'],
   baseUrl: null,
   auth: { type: 'none', in: 'header', name: null, prefix: null },
   hasAuth: false, // no credential — the relay is the credential
@@ -170,6 +171,7 @@ describe('handleCall — computer (tunnel)', () => {
         '11111111-1111-4111-8111-111111111111',
         '22222222-2222-4222-8222-222222222222',
       ],
+      allowedTunnelAccountIds: ['acct-1', 'personal-account-1'],
       selector: '22222222-2222-4222-8222-222222222222',
       method: 'fs.read',
       args: { path: '/tmp/x' },

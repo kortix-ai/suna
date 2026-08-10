@@ -7,6 +7,12 @@ export interface AllowEntry {
 export const uncoveredAllow: AllowEntry[] = [
   {
     method: "POST",
+    path: "/v1/projects/provision-stream",
+    reason:
+      "SSE progress-stream sibling of the flow-covered POST /projects/provision (#6276 /new create page) — same provisioning engine and auth boundary; the JSON sibling carries the contract coverage, and its own source-level guards live in apps/api/src/projects/provision-stream.test.ts",
+  },
+  {
+    method: "POST",
     path: "/v1/platform/boot-timeline",
     reason:
       "sandbox-only telemetry sink called by the in-guest boot relay with a sandbox token; not an end-user API route",

@@ -8,6 +8,7 @@ import {
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { humanizeSearchQuery } from '@/features/session/tool/shared/search-query';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
@@ -21,6 +22,10 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
   const output = partOutput(part);
   const status = partStatus(part);
   const query = (input.query as string) || '';
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it — the
+  // same payload the memo below already parsed once. Once per output, not once
+  // per render.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
 
   const { imageResults, isBatch, batchCount, displayQuery } = useMemo(() => {
     if (!output)
@@ -90,15 +95,20 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
 
   return (
     <BasicTool
-      icon={<ImageIcon className="size-3.5 flex-shrink-0" />}
+      icon={<ImageIcon className="size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">
             {tHardcodedUi.raw('componentsSessionToolRenderers.line4240JsxTextImageSearch')}
           </span>
-          <span className="text-muted-foreground truncate font-mono text-xs">{displayQuery}</span>
+          {/* Humanised at the render site, not at each of the seven places
+              `displayQuery` is assigned — the "N queries" branch carries no
+              operators, so one call covers every path. */}
+          <span className="text-muted-foreground truncate font-mono text-xs">
+            {humanizeSearchQuery(displayQuery)}
+          </span>
           {imageResults.length > 0 && (
-            <span className="text-muted-foreground/60 ml-auto flex-shrink-0 font-mono text-xs whitespace-nowrap">
+            <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-xs whitespace-nowrap">
               {isBatch ? `${batchCount}q, ` : ''}
               {imageResults.length} images
             </span>
@@ -109,7 +119,7 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
       forceOpen={forceOpen}
       locked={locked}
     >
-      {status === 'completed' && isErrorOutput(output) ? (
+      {status === 'completed' && errored ? (
         <ToolOutputFallback output={output} toolName="image_search" />
       ) : imageResults.length > 0 ? (
         <ToolResultCard>

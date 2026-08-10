@@ -227,7 +227,7 @@ export function SidebarRight() {
                                 disabled={isDisabled}
                                 variant="sidebar"
                               >
-                                <Icon className="text-muted-foreground/50 h-4 w-4 flex-shrink-0" />
+                                <Icon className="text-muted-foreground/50 h-4 w-4 shrink-0" />
                                 <span>{label}</span>
                               </Button>
                             );
@@ -265,7 +265,7 @@ export function SidebarRight() {
                                     'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
                                 )}
                               >
-                                <Icon className="h-4 w-4 flex-shrink-0" />
+                                <Icon className="h-4 w-4 shrink-0" />
                                 <span>{item.label}</span>
                               </Button>
                             );
@@ -337,7 +337,7 @@ export function SidebarRight() {
           <div
             data-sidebar="header"
             className={cn(
-              'flex h-[38px] flex-shrink-0 items-center gap-2 overflow-hidden px-3 pt-2',
+              'flex h-[38px] shrink-0 items-center gap-2 overflow-hidden px-3 pt-2',
               state === 'expanded' ? 'justify-between' : 'justify-center',
             )}
           >
@@ -347,7 +347,7 @@ export function SidebarRight() {
               </span>
             )}
             <button
-              className="text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent flex h-7 w-7 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150"
+              className="text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150"
               onClick={toggleSidebar}
               aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
             >
@@ -482,7 +482,7 @@ export function SidebarRight() {
                               variant="sidebar"
                               className="rounded-lg"
                             >
-                              <Icon className="text-muted-foreground/50 h-4 w-4 flex-shrink-0" />
+                              <Icon className="text-muted-foreground/50 h-4 w-4 shrink-0" />
                               <span>{label}</span>
                             </Button>
                           );
@@ -520,7 +520,7 @@ export function SidebarRight() {
                                   'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
                               )}
                             >
-                              <Icon className="text-muted-foreground/50 h-4 w-4 flex-shrink-0" />
+                              <Icon className="text-muted-foreground/50 h-4 w-4 shrink-0" />
                               <span>{item.label}</span>
                             </Button>
                           );

@@ -494,7 +494,7 @@ usageApp.openapi(
     tags: ['usage'],
     summary: 'List session costs for one account',
     description:
-      'Lists every project session, including zero-cost sessions, with LLM and billed ' +
+      'Lists every workspace session, including zero-cost sessions, with LLM and billed ' +
       'compute totals over a date window. LLM cost is windowed on request time ' +
       '(created_at); compute cost is windowed on the billing window start (started_at). ' +
       'Bounds are half-open [from, to) and always UTC; an absent from/to defaults to the ' +
@@ -502,7 +502,7 @@ usageApp.openapi(
       '`reconciliation` covers spend the account cannot attribute to any session in the ' +
       'same window: per-session totals attribute LLM cost by session_id, but ' +
       '`reconciliation` attributes it by the nullable gateway_request_logs.project_id, ' +
-      'because by definition no session_id match exists. A project-scoped ' +
+      'because by definition no session_id match exists. A workspace-scoped ' +
       'reconciliation figure and the per-session table beside it can therefore ' +
       'legitimately disagree.',
     ...auth,

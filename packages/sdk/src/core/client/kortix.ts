@@ -539,6 +539,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         pipedream: {
           listApps: (...a: DropFirst<Parameters<typeof P.listPipedreamApps>>) =>
             P.listPipedreamApps(workspaceId, ...a),
+          /** The browse page: a fixed top slice of each of the largest
+           *  categories, with each category's true total, in one request. */
+          listSections: (...a: DropFirst<Parameters<typeof P.listPipedreamSections>>) =>
+            P.listPipedreamSections(workspaceId, ...a),
           connect: (...a: DropFirst<Parameters<typeof P.pipedreamConnect>>) =>
             P.pipedreamConnect(workspaceId, ...a),
           finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
@@ -940,6 +944,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         pipedream: {
           listApps: (...a: DropFirst<Parameters<typeof W.listPipedreamApps>>) =>
             W.listPipedreamApps(workspaceId, ...a),
+          /** The browse page: a fixed top slice of each of the largest
+           *  categories, with each category's true total, in one request. */
+          listSections: (...a: DropFirst<Parameters<typeof W.listPipedreamSections>>) =>
+            W.listPipedreamSections(workspaceId, ...a),
           connect: (...a: DropFirst<Parameters<typeof W.pipedreamConnect>>) =>
             W.pipedreamConnect(workspaceId, ...a),
           finalize: (...a: DropFirst<Parameters<typeof W.pipedreamFinalize>>) =>

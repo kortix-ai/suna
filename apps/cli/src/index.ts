@@ -27,7 +27,9 @@ import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
+import { runHome } from './commands/home.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
+import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
@@ -155,6 +157,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'sessions',
             args: '<subcommand>',
             blurb: 'List, create, restart workspace sessions',
+          },
+          {
+            name: 'connect',
+            args: '[session-id]',
+            blurb: 'Attach the full OpenCode TUI to a session (bare `kortix` does this too)',
           },
           {
             name: 'chat',
@@ -416,11 +423,21 @@ async function main(argv: string[]): Promise<number> {
     printVersion();
     return 0;
   }
-  // Bare `kortix` and explicit help are the same landing screen. Only the bare
-  // form offers to update: `kortix --help` is what people (and scripts) reach
-  // for to READ something, and it must never block on a question.
-  if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
-    await printLanding({ offerUpdate: argv.length === 0 });
+  // Bare `kortix` on an interactive, logged-in terminal connects you to a
+  // session (pick → boot if needed → full OpenCode TUI). Everywhere else —
+  // non-TTY, logged out — it stays the landing screen, so scripts that shell
+  // out to bare `kortix` for the command list keep working.
+  if (argv.length === 0) {
+    const home = await runHome();
+    if (home !== 'landing') return home;
+    await printLanding({ offerUpdate: true });
+    return 0;
+  }
+  // Explicit help is a landing screen that never blocks: `kortix --help` is
+  // what people (and scripts) reach for to READ something, so no update
+  // question and no interactive picker here.
+  if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
+    await printLanding({ offerUpdate: false });
     return 0;
   }
   if (argv[0] === 'version') {
@@ -510,6 +527,11 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'chat') {
     return runSessionsChat(argv.slice(1));
   }
+  // Top-level aliases for `sessions connect` — the flagship "land me in the
+  // TUI" verb deserves a first-class name (bare `kortix` is its no-args form).
+  if (argv[0] === 'connect' || argv[0] === 'attach') {
+    return runSessionsConnect(argv.slice(1));
+  }
   if (argv[0] === 'files') {
     return runFiles(argv.slice(1));
   }
@@ -594,6 +616,8 @@ const KNOWN_COMMANDS = [
   'workspaces',
   'sessions',
   'chat',
+  'connect',
+  'attach',
   'files',
   'cr',
   'triggers',

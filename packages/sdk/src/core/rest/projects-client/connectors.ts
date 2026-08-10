@@ -67,24 +67,24 @@ export interface ConnectorAttachmentUploadResult {
   expires_at: string;
 }
 
-function connectorGatewayPath(workspaceId: string | undefined, suffix: string): string {
-  return workspaceId
-    ? `/connectors/projects/${encodeURIComponent(workspaceId)}/${suffix}`
+function connectorGatewayPath(projectId: string | undefined, suffix: string): string {
+  return projectId
+    ? `/connectors/projects/${encodeURIComponent(projectId)}/${suffix}`
     : `/connectors/${suffix}`;
 }
 
-export async function getConnectorCatalog(workspaceId?: string): Promise<ConnectorCatalogEntry[]> {
+export async function getConnectorCatalog(projectId?: string): Promise<ConnectorCatalogEntry[]> {
   const result = unwrap(
     await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
-      connectorGatewayPath(workspaceId, 'catalog'),
+      connectorGatewayPath(projectId, 'catalog'),
     ),
   );
   return result.connectors ?? [];
 }
 
-export async function listConnectorTools(workspaceId?: string): Promise<ConnectorTool[]> {
+export async function listConnectorTools(projectId?: string): Promise<ConnectorTool[]> {
   const tools: ConnectorTool[] = [];
-  for (const connector of await getConnectorCatalog(workspaceId)) {
+  for (const connector of await getConnectorCatalog(projectId)) {
     for (const action of connector.actions) {
       tools.push({
         tool: `${connector.slug}.${action.path}`,
@@ -100,7 +100,7 @@ export async function listConnectorTools(workspaceId?: string): Promise<Connecto
 }
 
 export async function searchConnectorTools(
-  workspaceId: string | undefined,
+  projectId: string | undefined,
   query = '',
   options: { limit?: number } = {},
 ): Promise<ConnectorTool[]> {
@@ -108,7 +108,7 @@ export async function searchConnectorTools(
   const tokens = normalized.split(/\s+/).filter(Boolean);
   const exact: ConnectorTool[] = [];
   const tokenMatches: ConnectorTool[] = [];
-  for (const tool of await listConnectorTools(workspaceId)) {
+  for (const tool of await listConnectorTools(projectId)) {
     const haystack = `${tool.tool} ${tool.description}`.toLowerCase();
     if (!normalized || haystack.includes(normalized)) exact.push(tool);
     else if (tokens.every((token) => haystack.includes(token))) tokenMatches.push(tool);
@@ -117,10 +117,10 @@ export async function searchConnectorTools(
 }
 
 export async function describeConnectorTool(
-  workspaceId: string | undefined,
+  projectId: string | undefined,
   tool: string,
 ): Promise<ConnectorTool | null> {
-  return (await listConnectorTools(workspaceId)).find((candidate) => candidate.tool === tool) ?? null;
+  return (await listConnectorTools(projectId)).find((candidate) => candidate.tool === tool) ?? null;
 }
 
 function parseConnectorTool(tool: string): { connector: string; action: string } {
@@ -134,14 +134,14 @@ function parseConnectorTool(tool: string): { connector: string; action: string }
 }
 
 export async function callConnector<T = unknown>(
-  workspaceId: string | undefined,
+  projectId: string | undefined,
   tool: string,
   args: Record<string, unknown> = {},
 ): Promise<ConnectorCallResult<T>> {
   const { connector, action } = parseConnectorTool(tool);
   return unwrap(
     await backendApi.post<ConnectorCallResult<T>>(
-      connectorGatewayPath(workspaceId, 'call'),
+      connectorGatewayPath(projectId, 'call'),
       { connector, action, args },
     ),
   );
@@ -164,7 +164,7 @@ function trimTrailingSlashes(value: string): string {
 }
 
 export async function uploadConnectorAttachment(
-  workspaceId: string | undefined,
+  projectId: string | undefined,
   content: Uint8Array | ArrayBuffer | Blob,
   input: ConnectorAttachmentUploadInput,
 ): Promise<ConnectorAttachmentUploadResult> {
@@ -183,7 +183,7 @@ export async function uploadConnectorAttachment(
   }
 
   const backendUrl = trimTrailingSlashes(platformConfig().backendUrl);
-  const endpoint = connectorGatewayPath(workspaceId, 'attachments');
+  const endpoint = connectorGatewayPath(projectId, 'attachments');
   const response = await authenticatedFetch(
     `${backendUrl}${endpoint}`,
     { method: 'POST', headers, body: content as BodyInit },
@@ -447,9 +447,9 @@ export type ConnectionCredentialInput =
   | { value: string; kind?: 'secret' | 'connection' }
   | { oauth2: OAuth2ClientCredentials };
 
-export async function listConnections(workspaceId: string) {
+export async function listConnections(projectId: string) {
   return unwrap(
-    await backendApi.get<{ connections: Connection[] }>(`/projects/${workspaceId}/connections`),
+    await backendApi.get<{ connections: Connection[] }>(`/projects/${projectId}/connections`),
   );
 }
 
@@ -473,132 +473,132 @@ export interface ConnectionRoster {
  * the connections manage capability. Never returns credentials, and never
  * a peer's private label or metadata (see `ConnectionRoster`).
  */
-export async function listAllConnections(workspaceId: string) {
+export async function listAllConnections(projectId: string) {
   return unwrap(
     await backendApi.get<{ connections: ConnectionRoster[] }>(
-      `/projects/${workspaceId}/connections/all`,
+      `/projects/${projectId}/connections/all`,
     ),
   );
 }
 
 export async function reconcileConnection(
-  workspaceId: string,
+  projectId: string,
   input: ReconcileConnectionInput,
 ) {
-  return unwrap(await backendApi.post<Connection>(`/projects/${workspaceId}/connections`, input));
+  return unwrap(await backendApi.post<Connection>(`/projects/${projectId}/connections`, input));
 }
 
 export async function reconcileMemberConnection(
-  workspaceId: string,
+  projectId: string,
   input: ReconcileMemberConnectionInput,
 ) {
   return unwrap(
-    await backendApi.post<Connection>(`/projects/${workspaceId}/connections/me`, input),
+    await backendApi.post<Connection>(`/projects/${projectId}/connections/me`, input),
   );
 }
 
 export async function updateConnectionCredential(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
   input: ConnectionCredentialInput,
 ) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${workspaceId}/connections/${connectionId}/credential`,
+      `/projects/${projectId}/connections/${connectionId}/credential`,
       input,
     ),
   );
 }
 
 function connectionOAuth2Path(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
   suffix: string,
 ): string {
-  return `/projects/${workspaceId}/connections/${connectionId}/oauth2/${suffix}`;
+  return `/projects/${projectId}/connections/${connectionId}/oauth2/${suffix}`;
 }
 
-export async function ensureProjectConnectorConnection(workspaceId: string, slug: string) {
+export async function ensureProjectConnectorConnection(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{ connection_id: string }>(
-      `/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
+      `/projects/${projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
       {},
     ),
   );
 }
 
 export async function putConnectionOAuth2Application(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
   input: OAuth2ApplicationInput,
 ) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      connectionOAuth2Path(workspaceId, connectionId, 'application'),
+      connectionOAuth2Path(projectId, connectionId, 'application'),
       input,
     ),
   );
 }
 
 export async function getConnectionOAuth2Application(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
 ) {
   return unwrap(
     await backendApi.get<{ application: OAuth2ApplicationView }>(
-      connectionOAuth2Path(workspaceId, connectionId, 'application'),
+      connectionOAuth2Path(projectId, connectionId, 'application'),
     ),
   );
 }
 
 export async function discoverConnectionOAuth2(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
   input: { discovery_url: string },
 ) {
   return unwrap(
     await backendApi.post<{ metadata: Partial<OAuth2ApplicationView> }>(
-      connectionOAuth2Path(workspaceId, connectionId, 'discover'),
+      connectionOAuth2Path(projectId, connectionId, 'discover'),
       input,
     ),
   );
 }
 
 export async function startConnectionOAuth2Authorization(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
   input: OAuth2AuthorizationStartInput,
 ) {
   return unwrap(
     await backendApi.post<OAuth2AuthorizationStartResult>(
-      connectionOAuth2Path(workspaceId, connectionId, 'authorize'),
+      connectionOAuth2Path(projectId, connectionId, 'authorize'),
       input,
     ),
   );
 }
 
 export async function startConnectionOAuth2DeviceAuthorization(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
   input: OAuth2DeviceAuthorizationStartInput,
 ) {
   return unwrap(
     await backendApi.post<OAuth2DeviceAuthorizationStartResult>(
-      connectionOAuth2Path(workspaceId, connectionId, 'device'),
+      connectionOAuth2Path(projectId, connectionId, 'device'),
       input,
     ),
   );
 }
 
 export async function pollConnectionOAuth2DeviceAuthorization(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
   sessionId: string,
 ) {
   return unwrap(
     await backendApi.post<OAuth2ConnectionStatus>(
       connectionOAuth2Path(
-        workspaceId,
+        projectId,
         connectionId,
         `device/${encodeURIComponent(sessionId)}`,
       ),
@@ -608,29 +608,29 @@ export async function pollConnectionOAuth2DeviceAuthorization(
 }
 
 export async function getConnectionOAuth2Status(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
 ) {
   return unwrap(
     await backendApi.get<OAuth2ConnectionStatus>(
-      connectionOAuth2Path(workspaceId, connectionId, 'status'),
+      connectionOAuth2Path(projectId, connectionId, 'status'),
     ),
   );
 }
 
-export async function revokeConnection(workspaceId: string, connectionId: string) {
+export async function revokeConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${workspaceId}/connections/${connectionId}/revoke`,
+      `/projects/${projectId}/connections/${connectionId}/revoke`,
       {},
     ),
   );
 }
 
-export async function activateConnection(workspaceId: string, connectionId: string) {
+export async function activateConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${workspaceId}/connections/${connectionId}/activate`,
+      `/projects/${projectId}/connections/${connectionId}/activate`,
       {},
     ),
   );
@@ -642,17 +642,17 @@ export async function activateConnection(workspaceId: string, connectionId: stri
  * the project (team-shared) and one per member, so this only displaces the
  * previous default within the same scope.
  */
-export async function setDefaultConnection(workspaceId: string, connectionId: string) {
+export async function setDefaultConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${workspaceId}/connections/${connectionId}/default`,
+      `/projects/${projectId}/connections/${connectionId}/default`,
       {},
     ),
   );
 }
 
 export async function pipedreamConnectConnection(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
   input: ConnectionConnectInput = {},
 ) {
@@ -661,36 +661,36 @@ export async function pipedreamConnectConnection(
       token?: string;
       app?: string;
       connectUrl?: string;
-    }>(`/projects/${workspaceId}/connections/${connectionId}/connect`, input),
+    }>(`/projects/${projectId}/connections/${connectionId}/connect`, input),
   );
 }
 
 export async function pipedreamFinalizeConnection(
-  workspaceId: string,
+  projectId: string,
   connectionId: string,
 ) {
   return unwrap(
     await backendApi.post<{ connected: boolean; accountId?: string }>(
-      `/projects/${workspaceId}/connections/${connectionId}/connect/finalize`,
+      `/projects/${projectId}/connections/${connectionId}/connect/finalize`,
       {},
     ),
   );
 }
 
-export async function listConnectors(workspaceId: string) {
+export async function listConnectors(projectId: string) {
   return unwrap(
     // Background read fired at workspace mount (project-home tiles, sidebar
     // setup checklist) — never global-toast; callers render their own state.
-    await backendApi.get<ConnectorsResponse>(`/connectors/projects/${workspaceId}/connectors`, {
+    await backendApi.get<ConnectorsResponse>(`/connectors/projects/${projectId}/connectors`, {
       showErrors: false,
     }),
   );
 }
 
-export async function syncConnectors(workspaceId: string) {
+export async function syncConnectors(projectId: string) {
   return unwrap(
     await backendApi.post<ConnectorSyncResult>(
-      `/connectors/projects/${workspaceId}/connectors/sync`,
+      `/connectors/projects/${projectId}/connectors/sync`,
       {},
     ),
   );
@@ -698,23 +698,23 @@ export async function syncConnectors(workspaceId: string) {
 
 /** `shared` is the only credential mode (`per_user` removed 2026-07-05) — kept
  *  for back-compat callers, restricted to a no-op on the API side. */
-export async function setConnectorCredentialMode(workspaceId: string, slug: string, mode: 'shared') {
+export async function setConnectorCredentialMode(projectId: string, slug: string, mode: 'shared') {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
       { mode },
     ),
   );
 }
 
 export async function setConnectorAuthorizationStrategy(
-  workspaceId: string,
+  projectId: string,
   slug: string,
   authorizationStrategy: ConnectorAuthorizationStrategy,
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/authorization-strategy`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/authorization-strategy`,
       { authorization_strategy: authorizationStrategy },
     ),
   );
@@ -722,10 +722,10 @@ export async function setConnectorAuthorizationStrategy(
 
 /** Toggle a connector's `sensitive` flag — sensitive connectors gate reads too
  *  (every action defaults to require_approval unless a policy opens it). */
-export async function setConnectorSensitive(workspaceId: string, slug: string, sensitive: boolean) {
+export async function setConnectorSensitive(projectId: string, slug: string, sensitive: boolean) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/sensitive`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
       { sensitive },
     ),
   );
@@ -747,7 +747,7 @@ export interface ConnectorEffectivePolicy {
   source: ConnectorPolicySource;
 }
 
-export async function getConnectorPolicies(workspaceId: string, slug: string) {
+export async function getConnectorPolicies(projectId: string, slug: string) {
   return unwrap(
     await backendApi.get<{
       policies: ConnectorPolicyRule[];
@@ -761,18 +761,18 @@ export async function getConnectorPolicies(workspaceId: string, slug: string) {
       /** Project-scope rules, which are evaluated first and win. */
       project_policies?: ConnectorPolicyRule[];
       default_mode?: 'risk' | 'allow_all';
-    }>(`/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/policies`),
+    }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`),
   );
 }
 
 export async function setConnectorPolicies(
-  workspaceId: string,
+  projectId: string,
   slug: string,
   policies: ConnectorPolicyRule[],
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/policies`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
       { policies },
     ),
   );
@@ -780,7 +780,7 @@ export async function setConnectorPolicies(
 
 /**
  * @deprecated Policies apply to a connector, not one connection.
- * Use `getConnectorPolicies(workspaceId, slug)`.
+ * Use `getConnectorPolicies(projectId, slug)`.
  */
 export async function getConnectionPolicies(
   _projectId: string,
@@ -793,7 +793,7 @@ export async function getConnectionPolicies(
 
 /**
  * @deprecated Policies apply to a connector, not one connection.
- * Use `setConnectorPolicies(workspaceId, slug, policies)`.
+ * Use `setConnectorPolicies(projectId, slug, policies)`.
  */
 export async function setConnectionPolicies(
   _projectId: string,
@@ -836,30 +836,30 @@ export interface ConnectorConfig {
   headers: Record<string, string>;
 }
 
-export async function getConnectorConfig(workspaceId: string, slug: string) {
+export async function getConnectorConfig(projectId: string, slug: string) {
   return unwrap(
     await backendApi.get<ConnectorConfig>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/config`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/config`,
     ),
   );
 }
 
-export async function setConnectorName(workspaceId: string, slug: string, name: string) {
+export async function setConnectorName(projectId: string, slug: string, name: string) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/name`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/name`,
       { name },
     ),
   );
 }
 
-export async function pipedreamConnect(workspaceId: string, slug: string) {
+export async function pipedreamConnect(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{
       token?: string;
       app?: string;
       connectUrl?: string;
-    }>(`/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/connect`, {}),
+    }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`, {}),
   );
 }
 
@@ -897,29 +897,29 @@ export interface ConnectorDraftInput {
   headers?: Record<string, string>;
 }
 
-export async function createConnector(workspaceId: string, draft: ConnectorDraftInput) {
+export async function createConnector(projectId: string, draft: ConnectorDraftInput) {
   return unwrap(
     await backendApi.post<{
       ok: boolean;
       sync?: ConnectorSyncResult;
       authDiscovery?: ConnectorAuthDiscovery;
-    }>(`/connectors/projects/${workspaceId}/connectors`, draft),
+    }>(`/connectors/projects/${projectId}/connectors`, draft),
   );
 }
 
-export async function discoverConnectorAuth(workspaceId: string, draft: ConnectorDraftInput) {
+export async function discoverConnectorAuth(projectId: string, draft: ConnectorDraftInput) {
   return unwrap(
     await backendApi.post<ConnectorAuthDiscovery>(
-      `/connectors/projects/${workspaceId}/connectors/auth-discovery`,
+      `/connectors/projects/${projectId}/connectors/auth-discovery`,
       draft,
     ),
   );
 }
 
-export async function deleteConnector(workspaceId: string, slug: string) {
+export async function deleteConnector(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}`,
     ),
   );
 }
@@ -929,27 +929,128 @@ export interface PipedreamApp {
   name: string;
   description: string | null;
   imgSrc: string | null;
-  /** Pipedream is surfaced only as an explicit managed-OAuth alternative. */
-  authType: 'oauth';
+  /**
+   * Pipedream's own auth type — `'oauth'`, `'keys'`, `'none'`, or absent.
+   *
+   * Widened from the `'oauth'` literal. The narrow type described a filter the
+   * API used to apply, not the catalogue: only 659 of Pipedream's 3,238 apps
+   * are OAuth, and requiring it hid every key-based app (SAP, Oracle, Notion
+   * API Key, …) from search. Both kinds connect through the same hosted
+   * Connect Link, so this field is descriptive — nothing branches on it.
+   */
+  authType: string | null;
   categories: string[];
+  /** Whether the app publishes actions. Apps without them are excluded from
+   *  the catalogue: a connector with no actions exposes no agent tools. */
+  hasActions: boolean;
+  hasTriggers: boolean;
+  /** Pipedream's promotion weight. The catalogue's resting sort key. */
+  featuredWeight: number;
 }
 
-export async function listPipedreamApps(workspaceId: string, q?: string, cursor?: string) {
+/** A category facet: the key to filter by, and its true size in the catalogue. */
+export interface PipedreamCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface PipedreamCatalogQuery {
+  q?: string;
+  /**
+   * A `key` from the same response's `categories`.
+   *
+   * Served from the Kortix API's snapshot of the whole catalogue. Pipedream's
+   * own `/apps` endpoint accepts a category parameter and ignores it, so this
+   * filter does not exist upstream and cannot be reproduced client-side from
+   * loaded pages.
+   */
+  category?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface PipedreamCatalogPage {
+  apps: PipedreamApp[];
+  /** Every category with its true count. Empty while `indexReady` is false. */
+  categories: PipedreamCategory[];
+  /** The catalogue's size for this query and category, across every page. */
+  total?: number;
+  nextCursor?: string;
+  hasMore: boolean;
+  /** Whether the answer came from the complete catalogue index. `false` means
+   *  the index is still building, `categories` is empty, and `category` was
+   *  ignored for this page. Absent on API builds that predate the index. */
+  indexReady?: boolean;
+  /**
+   * Apps matching the query that publish no actions, and so are not offered.
+   *
+   * Lets an empty result say why instead of implying the app does not exist:
+   * `q=SAP` matches two real SAP records that expose zero actions. Absent on
+   * API builds that predate the index.
+   */
+  excludedNoActions?: number;
+}
+
+/**
+ * A page of the Pipedream catalogue.
+ *
+ * Accepts either the positional `(q, cursor)` form or an options object. The
+ * positional form is the published signature and keeps working unchanged;
+ * `category` and `limit` are reachable only through the options object.
+ */
+export async function listPipedreamApps(
+  projectId: string,
+  qOrQuery?: string | PipedreamCatalogQuery,
+  cursor?: string,
+) {
+  const query: PipedreamCatalogQuery =
+    typeof qOrQuery === 'string' || qOrQuery === undefined
+      ? { ...(qOrQuery ? { q: qOrQuery } : {}), ...(cursor ? { cursor } : {}) }
+      : qOrQuery;
   const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (cursor) params.set('cursor', cursor);
+  if (query.q) params.set('q', query.q);
+  if (query.category) params.set('category', query.category);
+  if (query.cursor) params.set('cursor', query.cursor);
+  if (query.limit) params.set('limit', String(query.limit));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<PipedreamCatalogPage>(
+      `/connectors/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export interface PipedreamSection {
+  key: string;
+  label: string;
+  /** The category's TRUE size — not `apps.length`. A heading states this. */
+  total: number;
+  apps: PipedreamApp[];
+}
+
+/**
+ * The catalogue browse page: a fixed top slice of each of the largest
+ * categories, in one request.
+ *
+ * One request rather than one per category, and a fixed slice rather than a
+ * client-side bucketing of loaded pages — which is what made browse sections
+ * grow and reflow underneath the reader as pagination continued.
+ */
+export async function listPipedreamSections(
+  projectId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
   const qs = params.toString();
   return unwrap(
     await backendApi.get<{
-      apps: PipedreamApp[];
-      /** The catalogue's size for this query, across every page. Optional
-       *  because API builds before it was forwarded omit it — callers fall
-       *  back to what they have loaded rather than quoting a total they cannot
-       *  back up. */
-      total?: number;
-      nextCursor?: string;
-      hasMore: boolean;
-    }>(`/connectors/projects/${workspaceId}/pipedream/apps${qs ? `?${qs}` : ''}`),
+      sections: PipedreamSection[];
+      categories: PipedreamCategory[];
+      indexReady?: boolean;
+    }>(`/connectors/projects/${projectId}/pipedream/sections${qs ? `?${qs}` : ''}`),
   );
 }
 
@@ -1021,23 +1122,23 @@ export type DiscoverIntegrationsPage = DiscoverConnectorsPage;
 /** @deprecated Use `DiscoverConnectorDetail`. */
 export type DiscoverIntegrationDetail = DiscoverConnectorDetail;
 
-export async function listDiscoverConnectors(workspaceId: string, q?: string, cursor?: string) {
+export async function listDiscoverConnectors(projectId: string, q?: string, cursor?: string) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (cursor) params.set('cursor', cursor);
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverConnectorsPage>(
-      `/connectors/projects/${workspaceId}/discover/connectors${qs ? `?${qs}` : ''}`,
+      `/connectors/projects/${projectId}/discover/connectors${qs ? `?${qs}` : ''}`,
     ),
   );
 }
 
-export async function getDiscoverConnector(workspaceId: string, id: string) {
+export async function getDiscoverConnector(projectId: string, id: string) {
   const params = new URLSearchParams({ id });
   return unwrap(
     await backendApi.get<DiscoverConnectorDetail>(
-      `/connectors/projects/${workspaceId}/discover/connectors/detail?${params.toString()}`,
+      `/connectors/projects/${projectId}/discover/connectors/detail?${params.toString()}`,
     ),
   );
 }
@@ -1061,36 +1162,36 @@ export async function getConnectStatus() {
 }
 
 export async function setConnectorCredential(
-  workspaceId: string,
+  projectId: string,
   slug: string,
   credential: string | ConnectionCredentialInput,
 ) {
   const input = typeof credential === 'string' ? { value: credential } : credential;
   return unwrap(
     await backendApi.put<{ ok: boolean }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/credential`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
     ),
   );
 }
 
 export async function setConnectorSecretBinding(
-  workspaceId: string,
+  projectId: string,
   slug: string,
   secretIdentifier: string | null,
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/secret-binding`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/secret-binding`,
       { secret_identifier: secretIdentifier },
     ),
   );
 }
 
-export async function pipedreamFinalize(workspaceId: string, slug: string) {
+export async function pipedreamFinalize(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{ connected: boolean; accountId?: string }>(
-      `/connectors/projects/${workspaceId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
       {},
     ),
   );

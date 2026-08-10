@@ -1,10 +1,10 @@
 'use client';
 
-import { skipToken, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { sessionTabTitleFromSession } from './session-tab-title';
-import type { WorkspaceSession } from '@kortix/sdk';
+import { listWorkspaceSessions, type WorkspaceSession } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
 /**
@@ -30,15 +30,23 @@ export function SessionTabTitleSync({
   workspaceId: string;
   sessionId: string;
 }) {
-  // A pure READER of the session list the page already loads. `skipToken`
+  // A pure READER of the session list the page already loads. `enabled: false`
   // stops this component from ever issuing a request of its own, while still
   // subscribing to the cache entry — so the optimistic write in the rename
   // mutation (`applySessionRename`) reaches the tab immediately. `select`
   // narrows 64 sessions down to one string, so structural sharing re-renders
   // this component only when the title actually changes.
-  const { data: title } = useQuery<WorkspaceSession[], Error, string | null>({
+  //
+  // The `queryFn` is REQUIRED even though this observer never fetches: a
+  // query's options are last-writer-wins across its observers, so an observer
+  // without a queryFn poisons external fetches on the shared key —
+  // `refetchQueries`/`invalidateQueries` (the SDK's title mirror on
+  // `session.updated`, rename, restart, create) then reject with "No queryFn
+  // was passed" and the sidebar list silently stops syncing.
+  const { data: title } = useQuery({
     queryKey: qk.workspace.sessions(workspaceId),
-    queryFn: skipToken,
+    queryFn: () => listWorkspaceSessions(workspaceId),
+    enabled: false,
     notifyOnChangeProps: ['data'],
     select: (sessions: WorkspaceSession[]) => {
       const session = sessions.find((item) => item.session_id === sessionId);

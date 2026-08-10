@@ -1,6 +1,6 @@
 ---
-title: Computers
-description: A computer connects your own machine to Kortix through a permissioned tunnel.
+title: Computer Tunnel
+description: Connect your machine through the permissioned Kortix Agent Tunnel.
 ---
 
 A computer is your own machine — laptop, desktop, or server — connected to
@@ -9,27 +9,31 @@ sandbox is a disposable cloud machine that Kortix creates for a
 [session](/docs/work/sessions). A computer is a machine you already own, and
 it stays connected across sessions.
 
-This feature is experimental. Before you connect a machine, enable **Agent
-Computer Tunnel** in Customize → Feature flags.
-
 ## Connect a machine
 
-1. Open the Workspace Computers page in the dashboard.
-2. Run the command the page shows you, for example
+1. Add **Computer Tunnel** from the workspace connector catalog.
+2. Run the pairing command shown in the profile, for example
    `npx --yes @kortix/agent-tunnel@latest connect --api-url <url>`.
-3. Approve the connection.
+3. Approve the connection in your browser.
+4. Select the paired machine for the profile.
 
 ## Grant access
 
 You grant access per capability: filesystem, shell, or desktop. You can scope
 each capability to allowed paths, commands, or desktop features. The agent
 gets only what you grant. A call to an ungranted capability creates a
-permission request. You approve or deny each request on the Computers page.
+permission request. Open the machine inside its Computer Tunnel profile to
+approve or deny the request.
+
+An unrestricted shell grant can run any executable available to your user.
+An unrestricted filesystem grant can access any path allowed by the local
+Agent Tunnel config. Grant the smallest path, command, feature, and expiry that
+the task needs.
 
 ## How the agent reaches a computer
 
-Pairing adds a machine to your account fleet. It does not grant Workspace access.
-Add **Computers** from the Workspace [connector](/docs/connect/connectors)
+Pairing adds a machine to your account fleet. It does not grant workspace access.
+Add **Computer Tunnel** from the workspace [connector](/docs/connect/connectors)
 catalog, then select one or more paired machines for that profile.
 
 One profile can contain one machine or a group. You can create multiple profiles
@@ -47,11 +51,20 @@ kortix connectors call studio-computers.fs.read \
   '{"computer":"MacBook-Pro-9.local","path":"/etc/hosts"}'
 ```
 
-A computer has no credential. The live tunnel connection is the credential.
+A computer authenticates with a machine-specific setup token stored locally.
+The API stores only its hash. Remote connections require HTTPS/WSS. Project
+credentials cannot call the raw tunnel API; they must pass the selected
+Computer Tunnel profile, connector grant, and tool policy.
+
 Per-machine filesystem, shell, and desktop access also lives in the tunnel
 permission layer. The connector policy and tunnel permission must both allow a
-call.
+call. The local agent enforces each tunnel permission again. Its configured
+allowed paths and commands are maximum access boundaries that a server grant
+cannot widen.
 
-You configure Computers profiles from the dashboard, not from `kortix.yaml`.
-Use the Computers page to pair, rename, and remove machines. Use a profile's
-Accounts tab to select machines. Use its Tools tab to configure connector policy.
+Computer Use requires a separately installed local `cua-driver`. Agent Tunnel
+does not download, install, or update that executable.
+
+You configure Computer Tunnel profiles from the dashboard, not from
+`kortix.yaml`. Use the profile's Accounts tab to pair, select, inspect, rename,
+and remove machines. Use its Tools tab to configure connector policy.

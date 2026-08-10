@@ -115,7 +115,7 @@ export default function DebugConnectingPage() {
                 >
                   <span
                     className={
-                      'h-1.5 w-1.5 flex-shrink-0 rounded-full transition-colors ' +
+                      'h-1.5 w-1.5 shrink-0 rounded-full transition-colors ' +
                       (variant === v.id
                         ? 'bg-foreground/80'
                         : 'bg-foreground/15')

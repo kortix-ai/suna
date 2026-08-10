@@ -14,8 +14,10 @@
 import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
 import {
   type TunnelCapability,
+  capabilityForMethod,
+  desktopFeatureForMethod,
+  operationForMethod,
   TunnelErrorCode,
-  TunnelMethods,
   TunnelRelayError,
 } from 'agent-tunnel';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -48,17 +50,7 @@ export type TunnelRpcOutcome =
 
 /** Map a tunnel method to its capability (explicit table first, then prefix). */
 export function resolveCapability(method: string): TunnelCapability | null {
-  const mapped = (TunnelMethods as Record<string, string | null>)[method];
-  if (mapped !== undefined) {
-    return mapped as TunnelCapability | null;
-  }
-  const prefix = method.split('.')[0];
-  const prefixMap: Record<string, TunnelCapability> = {
-    fs: 'filesystem',
-    shell: 'shell',
-    desktop: 'desktop',
-  };
-  return prefixMap[prefix] || null;
+  return capabilityForMethod(method);
 }
 
 /**
@@ -70,6 +62,8 @@ export function resolveCapability(method: string): TunnelCapability | null {
  */
 export async function executeTunnelRpc(input: {
   tunnelId: string;
+  /** Physical machine owner. Defaults to the audit/project account. */
+  tunnelOwnerAccountId?: string;
   accountId: string;
   workspaceId?: string | null;
   sessionId?: string | null;
@@ -78,6 +72,7 @@ export async function executeTunnelRpc(input: {
   params: Record<string, unknown>;
 }): Promise<TunnelRpcOutcome> {
   const { tunnelId, accountId, method, params } = input;
+  const permissionOwnerAccountId = input.tunnelOwnerAccountId ?? accountId;
 
   const rpcRateCheck = tunnelRateLimiter.check('rpc', tunnelId);
   if (!rpcRateCheck.allowed) {
@@ -109,12 +104,35 @@ export async function executeTunnelRpc(input: {
     };
   }
 
-  const capPrefix = method.indexOf('.');
-  const operation = capPrefix !== -1 ? method.slice(capPrefix + 1) : method;
+  const [connection] = await db
+    .select({
+      capabilities: tunnelConnections.capabilities,
+      machineInfo: tunnelConnections.machineInfo,
+    })
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, tunnelId))
+    .limit(1);
+  const approvedCapabilities = Array.isArray(connection?.capabilities)
+    ? connection.capabilities
+    : [];
+  const registeredCapabilities = (connection?.machineInfo as Record<string, unknown> | null)
+    ?.registeredCapabilities;
+  const effectiveCapabilities = Array.isArray(registeredCapabilities)
+    ? approvedCapabilities.filter((item) => registeredCapabilities.includes(item))
+    : approvedCapabilities;
+  if (!effectiveCapabilities.includes(capability)) {
+    return {
+      ok: false,
+      kind: 'bad_request',
+      message: `Capability is not registered by the connected Agent Tunnel: ${capability}. Update and reconnect the local agent.`,
+    };
+  }
+
+  const operation = operationForMethod(method);
   const permCheck = await checkPermission(tunnelId, capability, operation, params);
 
   if (!permCheck.allowed) {
-    const permReqRateCheck = tunnelRateLimiter.check('permRequest', accountId);
+    const permReqRateCheck = tunnelRateLimiter.check('permRequest', permissionOwnerAccountId);
     if (!permReqRateCheck.allowed) {
       return {
         ok: false,
@@ -124,21 +142,20 @@ export async function executeTunnelRpc(input: {
       };
     }
 
-    const scopeValidation = validateScopeInput(capability, params);
-    const requestedScope = scopeValidation.valid ? scopeValidation.sanitized || params : params;
+    const requestedScope = requestedScopeForOperation(capability, method, operation, params);
 
     const [request] = await db
       .insert(tunnelPermissionRequests)
       .values({
         tunnelId,
-        accountId,
+        accountId: permissionOwnerAccountId,
         capability,
         requestedScope,
         reason: `Agent requested ${method} — ${permCheck.reason}`,
       })
       .returning();
 
-    notifyPermissionRequest(accountId, request);
+    notifyPermissionRequest(permissionOwnerAccountId, request);
 
     return {
       ok: false,
@@ -164,7 +181,7 @@ export async function executeTunnelRpc(input: {
   try {
     result = await relayRpcToConnectedAgent({
       tunnelId,
-      accountId,
+      accountId: input.tunnelOwnerAccountId ?? accountId,
       method,
       params: {
         ...params,
@@ -218,6 +235,42 @@ export async function executeTunnelRpc(input: {
   return { ok: true, result };
 }
 
+function requestedScopeForOperation(
+  capability: TunnelCapability,
+  method: string,
+  operation: string,
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  let candidate: Record<string, unknown> = {};
+  if (capability === 'filesystem') {
+    candidate = {
+      operations: [operation],
+      ...(typeof params.path === 'string' && params.path.length > 0
+        ? { paths: [params.path] }
+        : {}),
+    };
+  } else if (capability === 'shell') {
+    const command = typeof params.command === 'string' ? params.command.trim() : '';
+    candidate = {
+      ...(command ? { commands: [command] } : {}),
+      ...(typeof params.cwd === 'string' && params.cwd.length > 0
+        ? { workingDir: params.cwd }
+        : {}),
+      ...(typeof params.timeout === 'number' &&
+      Number.isFinite(params.timeout) &&
+      params.timeout > 0
+        ? { maxTimeout: params.timeout }
+        : {}),
+    };
+  } else if (capability === 'desktop') {
+    const feature = desktopFeatureForMethod(method, params);
+    candidate = feature ? { features: [feature] } : {};
+  }
+
+  const validated = validateScopeInput(capability, candidate);
+  return validated.valid ? (validated.sanitized ?? {}) : {};
+}
+
 function estimateBytes(result: unknown): number {
   if (result === null || result === undefined) return 0;
   if (typeof result === 'string') return result.length;
@@ -239,52 +292,84 @@ export interface ComputerMachine {
   platform: string | null;
 }
 
+interface ResolvedComputerMachine extends ComputerMachine {
+  ownerAccountId: string;
+}
+
 /** List assigned account machines with DB-backed online status. Null is legacy all-account access. */
 export async function listAccountComputers(
   accountId: string,
   allowedTunnelIds: readonly string[] | null = null,
-): Promise<ComputerMachine[]> {
+  allowedTunnelAccountIds: readonly string[] | null = null,
+): Promise<ResolvedComputerMachine[]> {
   const allowed = allowedTunnelIds === null ? null : [...new Set(allowedTunnelIds)];
   if (allowed?.length === 0) return [];
+  const allowedAccounts =
+    allowed === null
+      ? [accountId]
+      : [...new Set(allowedTunnelAccountIds?.length ? allowedTunnelAccountIds : [accountId])];
+  if (allowedAccounts.length === 0) return [];
   const rows = await db
     .select()
     .from(tunnelConnections)
     .where(
       allowed
         ? and(
-            eq(tunnelConnections.accountId, accountId),
+            inArray(tunnelConnections.accountId, allowedAccounts),
             inArray(tunnelConnections.tunnelId, allowed),
           )
         : eq(tunnelConnections.accountId, accountId),
     );
   return rows.map((r) => ({
     id: r.tunnelId,
+    ownerAccountId: r.accountId,
     name: r.name,
     online: isTunnelConnectionLive(r),
-    capabilities: Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [],
+    capabilities: (() => {
+      const approved = Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [];
+      const registered = (r.machineInfo as Record<string, unknown> | null)?.registeredCapabilities;
+      return Array.isArray(registered)
+        ? approved.filter((capability) => registered.includes(capability))
+        : approved;
+    })(),
     platform:
       ((r.machineInfo as Record<string, unknown> | null)?.platform as string | null) ?? null,
   }));
 }
 
-type ResolveResult = { ok: true; tunnelId: string } | { ok: false; message: string };
+type ResolveResult =
+  | { ok: true; tunnelId: string; tunnelOwnerAccountId: string }
+  | { ok: false; message: string };
 
 /** Resolve a selector inside one connector profile's already-filtered machine set. */
 async function resolveComputerTunnel(
-  machines: ComputerMachine[],
+  machines: ResolvedComputerMachine[],
   selector: string | null,
 ): Promise<ResolveResult> {
   if (machines.length === 0) {
     return {
       ok: false,
-      message: 'No machines are assigned to this Computers connector profile.',
+      message: 'No machines are assigned to this Computer Tunnel connector profile.',
     };
   }
   if (selector) {
     const byId = machines.find((m) => m.id === selector);
-    if (byId) return { ok: true, tunnelId: byId.id };
+    if (byId) {
+      return {
+        ok: true,
+        tunnelId: byId.id,
+        tunnelOwnerAccountId: byId.ownerAccountId,
+      };
+    }
     const byName = machines.filter((m) => m.name.toLowerCase() === selector.toLowerCase());
-    if (byName.length === 1) return { ok: true, tunnelId: byName[0]!.id };
+    const [byNameMachine] = byName;
+    if (byNameMachine && byName.length === 1) {
+      return {
+        ok: true,
+        tunnelId: byNameMachine.id,
+        tunnelOwnerAccountId: byNameMachine.ownerAccountId,
+      };
+    }
     if (byName.length > 1) {
       return {
         ok: false,
@@ -297,7 +382,14 @@ async function resolveComputerTunnel(
     };
   }
   const online = machines.filter((m) => m.online);
-  if (online.length === 1) return { ok: true, tunnelId: online[0]!.id };
+  const [onlineMachine] = online;
+  if (onlineMachine && online.length === 1) {
+    return {
+      ok: true,
+      tunnelId: onlineMachine.id,
+      tunnelOwnerAccountId: onlineMachine.ownerAccountId,
+    };
+  }
   if (online.length === 0) {
     return {
       ok: false,
@@ -323,7 +415,7 @@ export type ComputerCallOutcome =
   | { ok: false; kind: 'error'; message: string };
 
 /**
- * Execute one Computers connector action. Listing and selection use the same
+ * Execute one Computer Tunnel connector action. Listing and selection use the same
  * server-side allowlist. The DB query also verifies account ownership, so a
  * stale, deleted, unassigned, or cross-account tunnel fails closed.
  */
@@ -334,19 +426,31 @@ export async function executeComputerCall(input: {
   actorUserId?: string | null;
   /** Null is accepted only for legacy aggregate rows and means all account machines. */
   allowedTunnelIds: string[] | null;
+  /** Verified owner accounts stored with an explicit profile. */
+  allowedTunnelAccountIds?: string[] | null;
   selector: string | null;
   method: string;
   args: Record<string, unknown>;
 }): Promise<ComputerCallOutcome> {
-  const machines = await listAccountComputers(input.accountId, input.allowedTunnelIds);
+  const machines = await listAccountComputers(
+    input.accountId,
+    input.allowedTunnelIds,
+    input.allowedTunnelAccountIds,
+  );
   if (input.method === 'list_computers') {
-    return { ok: true, data: { computers: machines } };
+    return {
+      ok: true,
+      data: {
+        computers: machines.map(({ ownerAccountId: _ownerAccountId, ...machine }) => machine),
+      },
+    };
   }
   const resolved = await resolveComputerTunnel(machines, input.selector);
   if (!resolved.ok) return { ok: false, kind: 'no_machine', message: resolved.message };
 
   const outcome = await executeTunnelRpc({
     tunnelId: resolved.tunnelId,
+    tunnelOwnerAccountId: resolved.tunnelOwnerAccountId,
     accountId: input.accountId,
     workspaceId: input.workspaceId,
     sessionId: input.sessionId,

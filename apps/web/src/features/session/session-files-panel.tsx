@@ -105,7 +105,7 @@ export function SessionFilesPanel({
   return (
     <div className="flex h-full flex-col">
       {/* What this is + the one action. */}
-      <div className="border-border/40 flex-shrink-0 space-y-3 border-b p-4">
+      <div className="border-border/40 shrink-0 space-y-3 border-b p-4">
         <div className="space-y-1.5">
           <h3 className="text-foreground text-sm font-medium">
             {tHardcodedUi.raw(
@@ -171,7 +171,7 @@ export function SessionFilesPanel({
                 >
                   <span
                     className={cn(
-                      'w-3 flex-shrink-0 text-center font-mono font-semibold',
+                      'w-3 shrink-0 text-center font-mono font-semibold',
                       badge.cls,
                     )}
                     title={badge.label}

@@ -92,11 +92,11 @@ function humanizePermissionDenial(action: string): string {
 
 const ACTION_VERBS: Record<string, string> = {
   // Workspaces
-  'project.create': 'create projects',
-  'project.write': 'change this project',
-  'project.delete': 'delete projects',
+  'project.create': 'create workspaces',
+  'project.write': 'change this workspace',
+  'project.delete': 'delete workspaces',
   // Workspace members
-  'project.members.manage': 'manage project members',
+  'project.members.manage': 'manage workspace members',
   // Account
   'account.write': 'change account settings',
   'account.delete': 'delete this account',

@@ -10,12 +10,11 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
-import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
+import { FeatureFlagsView } from '@/features/workspace/customize/sections/view/feature-flags-view';
 import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
-import { FeatureFlagsView } from '@/features/workspace/customize/sections/view/feature-flags-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
 import { useIsMobile } from '@/hooks/utils';
@@ -89,7 +88,6 @@ export function CustomizPanel({ workspaceId }: { workspaceId: string }) {
   // One gating primitive for every flag-gated rail item: `useFeatureFlag` reads
   // the SAME `qk.workspace.detail(workspaceId)` entry the `detail` query above
   // already holds, so this adds no fetch. Fail-closed while it resolves.
-  const tunnelEnabled = useFeatureFlag(workspaceId, 'agent_tunnel').enabled;
   const marketplaceEnabled = useFeatureFlag(workspaceId, 'marketplace').enabled;
   const llmGatewayEnabled = useFeatureFlag(workspaceId, 'llm_gateway').enabled;
   const voiceEnabled = useFeatureFlag(workspaceId, 'voice').enabled;
@@ -114,7 +112,6 @@ export function CustomizPanel({ workspaceId }: { workspaceId: string }) {
     // groups drop out so no orphan header renders.
     () =>
       railGroups({
-        tunnelEnabled,
         marketplaceEnabled,
         llmGatewayEnabled,
         voiceEnabled,
@@ -122,14 +119,7 @@ export function CustomizPanel({ workspaceId }: { workspaceId: string }) {
       })
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
-    [
-      tunnelEnabled,
-      marketplaceEnabled,
-      llmGatewayEnabled,
-      voiceEnabled,
-      reviewEnabled,
-      isSectionAllowed,
-    ],
+    [marketplaceEnabled, llmGatewayEnabled, voiceEnabled, reviewEnabled, isSectionAllowed],
   );
   // Upgrades lives in its own pinned footer, but stays in the item universe so
   // deep-links, the mobile tail, and the active-section fallback all still see it.
@@ -406,8 +396,6 @@ function SectionContent({
       return <ChannelsView workspaceId={workspaceId} />;
     case 'voice':
       return <VoiceView workspaceId={workspaceId} />;
-    case 'computers':
-      return <ComputersView workspaceId={workspaceId} />;
     case 'schedules':
       return <ScheduleView workspaceId={workspaceId} type="cron" />;
     case 'webhooks':

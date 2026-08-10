@@ -31,8 +31,10 @@ export interface ProjectSession {
   sandbox_url: string | null;
   opencode_session_id: string | null;
   /**
-   * Resolved display name: the user-set `custom_name` if present, otherwise the
-   * auto title mirrored from OpenCode server-side during project session reads.
+   * Resolved display name. Precedence: the user-set `custom_name`, then the
+   * runtime's own root-conversation title (the `opencode_sessions` snapshot —
+   * the same string the session header shows), then the Kortix-generated
+   * first-prompt title (`metadata.name`).
    */
   name: string | null;
   /**
@@ -399,8 +401,7 @@ export async function getSessionAudit(
   const search = new URLSearchParams();
   if (limit) search.set('limit', String(limit));
   if (options?.cursor) search.set('cursor', options.cursor);
-  if (options?.includeEvents != null)
-    search.set('include_events', String(options.includeEvents));
+  if (options?.includeEvents != null) search.set('include_events', String(options.includeEvents));
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionAudit>(

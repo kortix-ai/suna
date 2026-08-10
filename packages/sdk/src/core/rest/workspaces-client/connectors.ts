@@ -932,27 +932,128 @@ export interface PipedreamApp {
   name: string;
   description: string | null;
   imgSrc: string | null;
-  /** Pipedream is surfaced only as an explicit managed-OAuth alternative. */
-  authType: 'oauth';
+  /**
+   * Pipedream's own auth type — `'oauth'`, `'keys'`, `'none'`, or absent.
+   *
+   * Widened from the `'oauth'` literal. The narrow type described a filter the
+   * API used to apply, not the catalogue: only 659 of Pipedream's 3,238 apps
+   * are OAuth, and requiring it hid every key-based app (SAP, Oracle, Notion
+   * API Key, …) from search. Both kinds connect through the same hosted
+   * Connect Link, so this field is descriptive — nothing branches on it.
+   */
+  authType: string | null;
   categories: string[];
+  /** Whether the app publishes actions. Apps without them are excluded from
+   *  the catalogue: a connector with no actions exposes no agent tools. */
+  hasActions: boolean;
+  hasTriggers: boolean;
+  /** Pipedream's promotion weight. The catalogue's resting sort key. */
+  featuredWeight: number;
 }
 
-export async function listPipedreamApps(workspaceId: string, q?: string, cursor?: string) {
+/** A category facet: the key to filter by, and its true size in the catalogue. */
+export interface PipedreamCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface PipedreamCatalogQuery {
+  q?: string;
+  /**
+   * A `key` from the same response's `categories`.
+   *
+   * Served from the Kortix API's snapshot of the whole catalogue. Pipedream's
+   * own `/apps` endpoint accepts a category parameter and ignores it, so this
+   * filter does not exist upstream and cannot be reproduced client-side from
+   * loaded pages.
+   */
+  category?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface PipedreamCatalogPage {
+  apps: PipedreamApp[];
+  /** Every category with its true count. Empty while `indexReady` is false. */
+  categories: PipedreamCategory[];
+  /** The catalogue's size for this query and category, across every page. */
+  total?: number;
+  nextCursor?: string;
+  hasMore: boolean;
+  /** Whether the answer came from the complete catalogue index. `false` means
+   *  the index is still building, `categories` is empty, and `category` was
+   *  ignored for this page. Absent on API builds that predate the index. */
+  indexReady?: boolean;
+  /**
+   * Apps matching the query that publish no actions, and so are not offered.
+   *
+   * Lets an empty result say why instead of implying the app does not exist:
+   * `q=SAP` matches two real SAP records that expose zero actions. Absent on
+   * API builds that predate the index.
+   */
+  excludedNoActions?: number;
+}
+
+/**
+ * A page of the Pipedream catalogue.
+ *
+ * Accepts either the positional `(q, cursor)` form or an options object. The
+ * positional form is the published signature and keeps working unchanged;
+ * `category` and `limit` are reachable only through the options object.
+ */
+export async function listPipedreamApps(
+  workspaceId: string,
+  qOrQuery?: string | PipedreamCatalogQuery,
+  cursor?: string,
+) {
+  const query: PipedreamCatalogQuery =
+    typeof qOrQuery === 'string' || qOrQuery === undefined
+      ? { ...(qOrQuery ? { q: qOrQuery } : {}), ...(cursor ? { cursor } : {}) }
+      : qOrQuery;
   const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (cursor) params.set('cursor', cursor);
+  if (query.q) params.set('q', query.q);
+  if (query.category) params.set('category', query.category);
+  if (query.cursor) params.set('cursor', query.cursor);
+  if (query.limit) params.set('limit', String(query.limit));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<PipedreamCatalogPage>(
+      `/connectors/workspaces/${workspaceId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export interface PipedreamSection {
+  key: string;
+  label: string;
+  /** The category's TRUE size — not `apps.length`. A heading states this. */
+  total: number;
+  apps: PipedreamApp[];
+}
+
+/**
+ * The catalogue browse page: a fixed top slice of each of the largest
+ * categories, in one request.
+ *
+ * One request rather than one per category, and a fixed slice rather than a
+ * client-side bucketing of loaded pages — which is what made browse sections
+ * grow and reflow underneath the reader as pagination continued.
+ */
+export async function listPipedreamSections(
+  workspaceId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
   const qs = params.toString();
   return unwrap(
     await backendApi.get<{
-      apps: PipedreamApp[];
-      /** The catalogue's size for this query, across every page. Optional
-       *  because API builds before it was forwarded omit it — callers fall
-       *  back to what they have loaded rather than quoting a total they cannot
-       *  back up. */
-      total?: number;
-      nextCursor?: string;
-      hasMore: boolean;
-    }>(`/connectors/workspaces/${workspaceId}/pipedream/apps${qs ? `?${qs}` : ''}`),
+      sections: PipedreamSection[];
+      categories: PipedreamCategory[];
+      indexReady?: boolean;
+    }>(`/connectors/workspaces/${workspaceId}/pipedream/sections${qs ? `?${qs}` : ''}`),
   );
 }
 

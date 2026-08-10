@@ -32,6 +32,13 @@ describe('Workspace user-facing terminology', () => {
     expect(channels).not.toContain("label: 'Project members can join'");
   });
 
+  test('public connector setup completion uses Workspace terminology', () => {
+    const connectorIntake = source('src/components/setup-links/connector-intake.tsx');
+
+    expect(connectorIntake).toContain('is connected to this workspace.');
+    expect(connectorIntake).not.toContain('is connected to this project.');
+  });
+
   test('translated Workspace surfaces do not fall back to localized Project nouns', () => {
     const forbiddenByLocale: Record<string, RegExp> = {
       de: /Projekt/i,

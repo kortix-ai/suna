@@ -52,7 +52,10 @@ interface BasePayload {
 
 export type SetupLinkPayload =
   | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope; sid: string | null })
-  | (BasePayload & { kind: 'connector'; slug: string; app: string | null })
+  /** `sid` is the session that asked for the connector, so the finalize route
+   *  can tell it the credential landed. Tokens minted before it existed decode
+   *  without the field — every read must tolerate `undefined`. */
+  | (BasePayload & { kind: 'connector'; slug: string; app: string | null; sid: string | null })
   /**
    * A human-in-the-loop APPROVAL for one gated connector call.
    *
@@ -84,6 +87,9 @@ type ConnectorSpec = {
   slug: string;
   app?: string | null;
   uid?: string | null;
+  /** The session that requested this connector, so the finalize route can
+   *  notify it when the connection is persisted. */
+  sid?: string | null;
 };
 type ApprovalSpec = {
   kind: 'approval';
@@ -118,7 +124,13 @@ export function mintSetupLink(
       ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'runtime', sid: spec.sid ?? null }
       : spec.kind === 'approval'
         ? { ...base, kind: 'approval', eid: spec.executionId, sid: spec.sessionId ?? null }
-        : { ...base, kind: 'connector', slug: spec.slug, app: spec.app ?? null };
+        : {
+            ...base,
+            kind: 'connector',
+            slug: spec.slug,
+            app: spec.app ?? null,
+            sid: spec.sid ?? null,
+          };
 
   const envelope = encryptWorkspaceSecret(workspaceId, JSON.stringify(payload));
   const token =

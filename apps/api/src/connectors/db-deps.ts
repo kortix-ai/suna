@@ -91,9 +91,10 @@ import {
 } from './manifest-crud';
 import { graphToken } from '../channels/teams-auth';
 import {
-  browsePipedreamApps,
   finalizePipedreamConnection,
   finalizePipedreamConnectionAuthorization,
+  pipedreamCatalogPage,
+  pipedreamCatalogSections,
   pipedreamConfigured,
   pipedreamConnectUrl,
   runPipedreamAction,
@@ -151,6 +152,24 @@ function computerTunnelIds(configValue: unknown, slug: string): string[] | null 
   if (typeof config.tunnel_id === 'string') return [config.tunnel_id];
   // Compatibility for durable sessions bound to the original aggregate row.
   return slug === COMPUTER_SLUG ? null : [];
+}
+
+function computerTunnelAccountIds(
+  configValue: unknown,
+  projectAccountId: string,
+  slug: string,
+): string[] | null {
+  const config = (configValue ?? {}) as Record<string, unknown>;
+  if (Array.isArray(config.tunnel_account_ids)) {
+    return [
+      ...new Set(
+        config.tunnel_account_ids.filter(
+          (value): value is string => typeof value === 'string' && value.length > 0,
+        ),
+      ),
+    ];
+  }
+  return slug === COMPUTER_SLUG && !Array.isArray(config.tunnel_ids) ? null : [projectAccountId];
 }
 
 function isLegacyComputerAggregate(row: {
@@ -432,6 +451,10 @@ function toGatewayConnector(
     platform: channelPlatform(row.config),
     tunnelIds:
       row.providerType === 'computer' ? computerTunnelIds(row.config, row.slug) : undefined,
+    tunnelAccountIds:
+      row.providerType === 'computer'
+        ? computerTunnelAccountIds(row.config, row.accountId, row.slug)
+        : undefined,
     baseUrl: baseUrlOf(row),
     auth,
     headers: headersOf(row),
@@ -608,6 +631,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       sessionId,
       actorUserId,
       allowedTunnelIds,
+      allowedTunnelAccountIds,
       selector,
       method,
       args,
@@ -618,6 +642,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         sessionId,
         actorUserId,
         allowedTunnelIds,
+        allowedTunnelAccountIds,
         selector,
         method,
         args,
@@ -1519,6 +1544,7 @@ async function upsertComputerConnectorProfile(
   workspaceId: string,
   accountId: string,
   draft: Record<string, unknown>,
+  actorUserId?: string,
 ): Promise<ConnectorCrudResult | null> {
   if (draft.provider !== 'computer') return null;
   const slug = typeof draft.slug === 'string' ? draft.slug.trim() : '';
@@ -1549,12 +1575,16 @@ async function upsertComputerConnectorProfile(
       status: 400,
     };
   }
+  const eligibleAccountIds = [...new Set([accountId, actorUserId].filter(Boolean) as string[])];
   const owned = await db
-    .select({ tunnelId: tunnelConnections.tunnelId })
+    .select({
+      tunnelId: tunnelConnections.tunnelId,
+      accountId: tunnelConnections.accountId,
+    })
     .from(tunnelConnections)
     .where(
       and(
-        eq(tunnelConnections.accountId, accountId),
+        inArray(tunnelConnections.accountId, eligibleAccountIds),
         inArray(tunnelConnections.tunnelId, tunnelIds),
         isNotNull(tunnelConnections.lastHeartbeatAt),
       ),
@@ -1562,10 +1592,12 @@ async function upsertComputerConnectorProfile(
   if (owned.length !== tunnelIds.length) {
     return {
       ok: false,
-      error: 'every selected computer must belong to this account and have connected before',
+      error:
+        'One or more selected computers are no longer available. Refresh the list or pair the computer again.',
       status: 400,
     };
   }
+  const tunnelAccountIds = [...new Set(owned.map((row) => row.accountId))];
 
   const [existing] = await db
     .select({
@@ -1602,6 +1634,7 @@ async function upsertComputerConnectorProfile(
       slug,
       name,
       tunnelIds,
+      tunnelAccountIds,
       sensitive: (existing?.config as { sensitive?: unknown } | null)?.sensitive === true,
     }),
   });
@@ -1667,8 +1700,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     invalidateWorkspaceMirror(workspaceId);
     return syncWorkspaceConnectors(workspaceId, accountId, { force: true });
   },
-  createConnector: async (workspaceId, accountId, draft) =>
-    (await upsertComputerConnectorProfile(workspaceId, accountId, draft)) ??
+  createConnector: async (workspaceId, accountId, draft, actorUserId) =>
+    (await upsertComputerConnectorProfile(workspaceId, accountId, draft, actorUserId)) ??
     upsertConnectorInManifest(workspaceId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: async (workspaceId, slug) =>
     (await deleteComputerConnectorProfile(workspaceId, slug)) ??
@@ -1747,11 +1780,12 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     : undefined,
   pipedreamWebhook: pipedreamConfigured()
     ? async (extUserId, sig) => {
-        if (!verifyWebhookSig(extUserId, sig)) return false;
+        const rejected = { ok: false, connected: false } as const;
+        if (!verifyWebhookSig(extUserId, sig)) return rejected;
         const [workspaceId, slug, identityId] = extUserId.split(':');
-        if (!workspaceId || !slug) return false;
+        if (!workspaceId || !slug) return rejected;
         const conn = await loadPipedreamConnector(workspaceId, slug);
-        if (!conn) return false;
+        if (!conn) return rejected;
         if (identityId) {
           const [connection] = await db
             .select({
@@ -1778,7 +1812,10 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
               actingPrincipalIsServiceAccount: false,
             })
           ) {
-            await finalizePipedreamConnectionAuthorization({
+            // Propagate `connected` — a finalize that found no account is NOT
+            // an accepted webhook. Swallowing it here is what let every failed
+            // finalize look like a success at the route.
+            const authorized = await finalizePipedreamConnectionAuthorization({
               workspaceId,
               slug,
               app: conn.app,
@@ -1786,23 +1823,26 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
               connectionId: connection.connectionId,
               createdBy: null,
             });
-            return true;
+            return { ok: true, connected: authorized.connected };
           }
-          return false;
+          return rejected;
         }
-        if (conn.authorizationStrategy !== 'project') return false;
-        await finalizePipedreamConnection({
+        if (conn.authorizationStrategy !== 'project') return rejected;
+        const shared = await finalizePipedreamConnection({
           workspaceId,
           slug,
           app: conn.app,
           connectorId: conn.connectorId,
           userId: null,
         });
-        return true;
+        return { ok: true, connected: shared.connected };
       }
     : undefined,
   listPipedreamApps: pipedreamConfigured()
-    ? (query, cursor) => browsePipedreamApps(query, cursor)
+    ? (input) => pipedreamCatalogPage(input)
+    : undefined,
+  listPipedreamSections: pipedreamConfigured()
+    ? (input) => pipedreamCatalogSections(input)
     : undefined,
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),

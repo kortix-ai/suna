@@ -8,7 +8,7 @@
  *   4. Don't hit blocked paths (configurable)
  */
 
-import { dirname, basename, join, resolve, normalize } from 'path';
+import { dirname, basename, join, resolve, normalize, relative, isAbsolute } from 'path';
 import { realpathSync } from 'fs';
 
 function resolveExistingRoot(path: string): string {
@@ -44,7 +44,7 @@ function assertAllowedResolvedPath(
 ): void {
   for (const blocked of blockedPaths) {
     const normalizedBlocked = resolveExistingRoot(blocked);
-    if (resolved === normalizedBlocked || resolved.startsWith(normalizedBlocked + '/')) {
+    if (isPathInside(resolved, normalizedBlocked)) {
       throw new Error(`Access denied: blocked path "${originalPath}"`);
     }
   }
@@ -52,7 +52,7 @@ function assertAllowedResolvedPath(
   if (allowedPaths.length > 0) {
     const withinAllowed = allowedPaths.some((allowed) => {
       const normalizedAllowed = resolveExistingRoot(allowed);
-      return resolved === normalizedAllowed || resolved.startsWith(normalizedAllowed + '/');
+      return isPathInside(resolved, normalizedAllowed);
     });
 
     if (!withinAllowed) {
@@ -61,11 +61,16 @@ function assertAllowedResolvedPath(
   }
 }
 
+function isPathInside(target: string, root: string): boolean {
+  const child = relative(root, target);
+  return child === '' || (!child.startsWith('..') && !isAbsolute(child));
+}
+
 export function validatePath(
   path: string,
   allowedPaths: string[],
   blockedPaths: string[] = [],
-): void {
+): string {
   if (!path) {
     throw new Error('Path is required');
   }
@@ -73,21 +78,22 @@ export function validatePath(
   const resolved = resolvePathForValidation(path);
 
   assertAllowedResolvedPath(path, resolved, allowedPaths, blockedPaths);
+  return resolved;
 }
 
 export function validateWritePath(
   path: string,
   allowedPaths: string[],
   blockedPaths: string[] = [],
-): void {
-  validatePath(path, allowedPaths, blockedPaths);
+): string {
+  const resolved = validatePath(path, allowedPaths, blockedPaths);
 
   let parent = dirname(normalize(resolve(path)));
   while (parent && parent !== dirname(parent)) {
     try {
       const resolvedParent = realpathSync(parent);
       assertAllowedResolvedPath(path, resolvedParent, allowedPaths, blockedPaths);
-      return;
+      return resolved;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== 'ENOENT') {

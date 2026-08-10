@@ -359,6 +359,7 @@ export {
   type TodoItem,
   type ToolViewModel,
   type WebSearchResultItem,
+  shellExitCode,
   toolViewModel,
 } from './core/turns/view-model';
 

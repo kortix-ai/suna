@@ -35,7 +35,6 @@ describe('Customize information architecture', () => {
 
   test('LLM management remains reachable from the Connect rail group', () => {
     const connect = railGroups({
-      tunnelEnabled: false,
       marketplaceEnabled: false,
       llmGatewayEnabled: true,
       voiceEnabled: false,

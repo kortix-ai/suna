@@ -12,22 +12,23 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { createHash } from 'node:crypto';
 import { eq, and, gt } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
   generateDeviceCode,
-  generateTunnelToken,
+  deriveDeviceSetupToken,
   hashSecretKey,
   verifySecretKey,
   randomAlphanumeric,
 } from '../../shared/crypto';
 import { tunnelRateLimiter } from '../core/rate-limiter';
-import { resolveAccountId } from '../../shared/resolve-account';
 import { config } from '../../config';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
-import { requireUserCredential } from './auth';
+import { getTunnelOwnerContext, requireUserCredential } from './auth';
+import { isValidCapability } from '../core/scope-validator';
 import { reconcileComputerConnectors } from '../../connectors/sync';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
@@ -60,7 +61,12 @@ function clientRateLimitKey(c: any): string {
   const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
   const realIp = c.req.header('x-real-ip')?.trim();
   const cfIp = c.req.header('cf-connecting-ip')?.trim();
-  return forwarded || realIp || cfIp || 'unknown';
+  return cfIp || realIp || forwarded || 'unknown';
+}
+
+function devicePollRateLimitKey(c: any, secret: string): string {
+  const secretId = createHash('sha256').update(secret).digest('hex').slice(0, 16);
+  return `${clientRateLimitKey(c)}:${secretId}`;
 }
 
 function checkDeviceAuthResolutionRateLimit(c: any, endpoint: string) {
@@ -121,18 +127,26 @@ export function createDeviceAuthPublicRouter() {
       const body = await c.req.json().catch(() => ({}));
       const machineHostname = (body.machineHostname as string)?.slice(0, 255) || null;
 
-      // Generate code + secret
-      const deviceCode = generateDeviceCode();
+      // Generate code + secret. The human code has a unique index, so retry
+      // the rare collision instead of returning an internal error.
+      let deviceCode = '';
       const deviceSecret = randomAlphanumeric(32);
       const deviceSecretHash = hashSecretKey(deviceSecret);
       const expiresAt = new Date(Date.now() + DEVICE_AUTH_TTL_MS);
-
-      await db.insert(tunnelDeviceAuthRequests).values({
-        deviceCode,
-        deviceSecretHash,
-        machineHostname,
-        expiresAt,
-      });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        deviceCode = generateDeviceCode();
+        try {
+          await db.insert(tunnelDeviceAuthRequests).values({
+            deviceCode,
+            deviceSecretHash,
+            machineHostname,
+            expiresAt,
+          });
+          break;
+        } catch (error) {
+          if ((error as { code?: string }).code !== '23505' || attempt === 4) throw error;
+        }
+      }
 
       const appUrl = config.FRONTEND_URL || 'http://localhost:3000';
 
@@ -163,6 +177,7 @@ export function createDeviceAuthPublicRouter() {
             status: z.string(),
             tunnelId: z.string().optional(),
             token: z.string().optional(),
+            capabilities: z.array(z.string()).optional(),
           }),
           'Current device-auth status (pending/approved/denied/expired)',
         ),
@@ -173,14 +188,13 @@ export function createDeviceAuthPublicRouter() {
       const code = c.req.param('code');
       const authHeader = c.req.header('Authorization');
       const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-      const querySecret = c.req.query('secret');
-      const secret = bearerSecret || querySecret;
+      const secret = bearerSecret;
 
       if (!secret) {
         return c.json({ error: 'device auth secret required' }, 400);
       }
 
-      const rl = tunnelRateLimiter.check('deviceAuthPoll', code);
+      const rl = tunnelRateLimiter.check('deviceAuthPoll', devicePollRateLimitKey(c, secret));
       if (!rl.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
       }
@@ -199,29 +213,26 @@ export function createDeviceAuthPublicRouter() {
         return c.json({ error: 'Invalid secret' }, 403);
       }
 
+      if (row.expiresAt < new Date()) {
+        return c.json({ status: 'expired' });
+      }
+
       if (row.status === 'denied') {
         return c.json({ status: 'denied' });
       }
 
-      if (row.status === 'approved' && row.tunnelId && row.setupToken) {
-        return c.json({
-          status: 'approved',
-          tunnelId: row.tunnelId,
-          token: row.setupToken,
-        });
-      }
-
       if (row.status === 'approved' && row.tunnelId) {
+        const [connection] = await db
+          .select({ capabilities: tunnelConnections.capabilities })
+          .from(tunnelConnections)
+          .where(eq(tunnelConnections.tunnelId, row.tunnelId))
+          .limit(1);
         return c.json({
           status: 'approved',
           tunnelId: row.tunnelId,
+          token: row.setupToken ?? deriveDeviceSetupToken(row.deviceSecretHash, row.id),
+          capabilities: connection?.capabilities ?? [],
         });
-      }
-
-      // Pending requests expire. Approved requests stay pollable for the CLI
-      // handoff window so retrying or duplicate pollers cannot strand the user.
-      if (row.expiresAt < new Date()) {
-        return c.json({ status: 'expired' });
       }
 
       return c.json({ status: 'pending' });
@@ -319,8 +330,7 @@ export function createDeviceAuthRouter() {
       if (!rl.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
       }
-      const userId = c.get('userId') as string;
-      const accountId = await resolveAccountId(userId);
+      const { accountId } = await getTunnelOwnerContext(c);
       const code = c.req.param('code');
       const body = await c.req.json().catch(() => ({}));
 
@@ -339,51 +349,82 @@ export function createDeviceAuthRouter() {
         return c.json({ error: 'Device auth request not found or expired' }, 404);
       }
 
-      const name = (body.name as string) || row.machineHostname || 'Unnamed';
-      const capabilities = (body.capabilities as string[]) || [];
-
-      // Create tunnel connection (same as POST /connections)
-      const setupToken = generateTunnelToken();
-      const setupTokenHash = hashSecretKey(setupToken);
-
-      const [connection] = await db
-        .insert(tunnelConnections)
-        .values({
-          accountId,
-          name,
-          capabilities,
-          status: 'offline',
-          setupTokenHash,
-        })
-        .returning();
-
-      // Grant the same granular scopes shown in the Computers UI so approval
-      // state and the permission toggles start in sync.
-      if (capabilities.length > 0) {
-        const grants = capabilities.flatMap((cap: string) => {
-          const scopes = DEFAULT_PERMISSION_SCOPES[cap] ?? [{}];
-          return scopes.map((scope) => ({
-            tunnelId: connection.tunnelId,
-            accountId,
-            capability: cap as any,
-            scope,
-            status: 'active' as const,
-          }));
-        });
-        await db.insert(tunnelPermissions).values(grants);
+      const requestedName = typeof body.name === 'string' ? body.name.trim() : '';
+      const name = requestedName || row.machineHostname || 'Unnamed';
+      if (name.length > 255) return c.json({ error: 'name is too long (max 255)' }, 400);
+      const requestedCapabilities = body.capabilities ?? [];
+      if (
+        !Array.isArray(requestedCapabilities) ||
+        !requestedCapabilities.every((capability) => typeof capability === 'string')
+      ) {
+        return c.json({ error: 'capabilities must be an array of strings' }, 400);
+      }
+      const capabilities = [...new Set(requestedCapabilities as string[])];
+      if (
+        capabilities.length !== requestedCapabilities.length ||
+        capabilities.some((capability) => !isValidCapability(capability))
+      ) {
+        return c.json({ error: 'capabilities must contain unique supported capabilities' }, 400);
       }
 
-      // Update device auth row with approval + token
-      await db
-        .update(tunnelDeviceAuthRequests)
-        .set({
-          status: 'approved',
-          accountId,
-          tunnelId: connection.tunnelId,
-          setupToken,
-          updatedAt: new Date(),
-        })
-        .where(eq(tunnelDeviceAuthRequests.id, row.id));
+      // The setup token is derived and returned only during the short device
+      // handoff window. Its plaintext is never persisted in Postgres.
+      const setupToken = deriveDeviceSetupToken(row.deviceSecretHash, row.id);
+      const setupTokenHash = hashSecretKey(setupToken);
+      const connection = await db.transaction(async (tx) => {
+        const [claimed] = await tx
+          .update(tunnelDeviceAuthRequests)
+          .set({ status: 'approved', accountId, updatedAt: new Date() })
+          .where(
+            and(
+              eq(tunnelDeviceAuthRequests.id, row.id),
+              eq(tunnelDeviceAuthRequests.status, 'pending'),
+              gt(tunnelDeviceAuthRequests.expiresAt, new Date()),
+            ),
+          )
+          .returning({ id: tunnelDeviceAuthRequests.id });
+        if (!claimed) return null;
+
+        const [created] = await tx
+          .insert(tunnelConnections)
+          .values({
+            accountId,
+            name,
+            capabilities,
+            status: 'offline',
+            setupTokenHash,
+          })
+          .returning();
+        if (!created) throw new Error('Tunnel connection insert returned no row');
+
+        if (capabilities.length > 0) {
+          const grants = capabilities.flatMap((cap) => {
+            const scopes = DEFAULT_PERMISSION_SCOPES[cap] ?? [];
+            return scopes.map((scope) => ({
+              tunnelId: created.tunnelId,
+              accountId,
+              capability: cap as 'filesystem' | 'shell' | 'desktop',
+              scope,
+              status: 'active' as const,
+            }));
+          });
+          if (grants.length > 0) await tx.insert(tunnelPermissions).values(grants);
+        }
+
+        await tx
+          .update(tunnelDeviceAuthRequests)
+          .set({
+            tunnelId: created.tunnelId,
+            setupToken: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(tunnelDeviceAuthRequests.id, row.id));
+        return created;
+      });
+
+      if (!connection) {
+        return c.json({ error: 'Device auth request was already resolved' }, 409);
+      }
 
       // The WS handshake materializes this machine profile after it proves a
       // real connection. This reconcile also repairs previously-connected rows.

@@ -17,7 +17,9 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { getDirectory } from '@/ui';
 import { TreeStructureIcon as ListTree } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+
+const NO_PATHS: string[] = [];
 
 export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -30,11 +32,19 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const filePaths = useMemo(() => parseFilePaths(output), [output]);
   const hasResults = filePaths && filePaths.length > 0;
-  const isNoResults = !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it. It sat
+  // in the body, so every re-render re-parsed a listing that had not changed.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
+  const isNoResults = !hasResults && status === 'completed' && !!output && !errored;
+
+  const handleFileClick = useCallback(
+    (fp: string) => openFileWithList(fp, filePaths ?? NO_PATHS),
+    [openFileWithList, filePaths],
+  );
 
   return (
     <BasicTool
-      icon={<ListTree className="size-3.5 flex-shrink-0" />}
+      icon={<ListTree className="size-3.5 shrink-0" />}
       trigger={{
         title: 'List',
         subtitle: directory,
@@ -52,7 +62,7 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         <ToolResultCard>
           <InlineFileList
             paths={filePaths}
-            onFileClick={(fp) => openFileWithList(fp, filePaths)}
+            onFileClick={handleFileClick}
             toDisplayPath={toDisplayPath}
             disabled={!navigationEnabled}
           />

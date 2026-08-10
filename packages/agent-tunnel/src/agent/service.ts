@@ -4,10 +4,7 @@ import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 
 export const SERVICE_LABEL = 'ai.kortix.agent-tunnel';
-
-export interface ServiceInstallOptions {
-  keepAwake?: boolean;
-}
+export const DEFAULT_INSTALL_BACKGROUND_SERVICE = true;
 
 export interface ServicePaths {
   configDir: string;
@@ -60,7 +57,9 @@ function currentRunnerParts(): { command: string; args: string[] } {
   if (script && existsSync(script)) {
     return { command: exec, args: [script, 'run', '--service'] };
   }
-  return { command: 'npx', args: ['--yes', '@kortix/agent-tunnel@latest', 'run', '--service'] };
+  throw new Error(
+    'Cannot install the background service because the current Agent Tunnel executable was not found',
+  );
 }
 
 function currentRunnerCommand(): string {
@@ -68,40 +67,18 @@ function currentRunnerCommand(): string {
   return [runner.command, ...runner.args].map(shellQuote).join(' ');
 }
 
-export function buildServiceShellCommand(options: ServiceInstallOptions = {}): string {
-  const runner = currentRunnerCommand();
-  if (!options.keepAwake) return `exec ${runner}`;
-
-  if (platform() === 'darwin') {
-    return `exec /usr/bin/caffeinate -dimsu ${runner}`;
-  }
-
-  if (platform() === 'linux') {
-    return `if command -v systemd-inhibit >/dev/null 2>&1; then exec systemd-inhibit --what=sleep:idle --why='Kortix Agent Tunnel' ${runner}; else exec ${runner}; fi`;
-  }
-
-  return `exec ${runner}`;
+export function buildServiceShellCommand(): string {
+  return `exec ${currentRunnerCommand()}`;
 }
 
 export function renderWindowsPowerShellScript(
-  options: ServiceInstallOptions = {},
   runner = currentRunnerParts(),
 ): string {
-  const keepAwake = options.keepAwake === true;
   const command = powershellQuote(runner.command);
   const args = runner.args.map(powershellQuote).join(' ');
 
   return `$ErrorActionPreference = 'Continue'
-${keepAwake ? `Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class KortixPower {
-  [DllImport("kernel32.dll", SetLastError = true)]
-  public static extern UInt32 SetThreadExecutionState(UInt32 esFlags);
-}
-'@
-[KortixPower]::SetThreadExecutionState(0x80000000 -bor 0x00000001 -bor 0x00000040) | Out-Null
-` : ''}while ($true) {
+while ($true) {
   & ${command}${args ? ` ${args}` : ''}
   Start-Sleep -Seconds 5
 }
@@ -131,6 +108,8 @@ export function renderLaunchdPlist(command: string, paths: ServicePaths = getSer
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>Umask</key>
+  <integer>63</integer>
   <key>StandardOutPath</key>
   <string>${xmlEscape(stdout)}</string>
   <key>StandardErrorPath</key>
@@ -157,6 +136,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+UMask=0077
 ExecStart=/bin/sh -lc ${shellQuote(command)}
 Restart=always
 RestartSec=5
@@ -181,12 +161,12 @@ function launchdTarget(): string {
   return `gui/${uid}`;
 }
 
-export function installService(options: ServiceInstallOptions = {}): ServiceStatus {
+export function installService(): ServiceStatus {
   const paths = getServicePaths();
   mkdirSync(paths.configDir, { recursive: true, mode: 0o700 });
   mkdirSync(paths.logDir, { recursive: true, mode: 0o700 });
 
-  const command = buildServiceShellCommand(options);
+  const command = buildServiceShellCommand();
 
   if (platform() === 'darwin') {
     mkdirSync(dirname(paths.launchdPlist), { recursive: true });
@@ -218,7 +198,7 @@ export function installService(options: ServiceInstallOptions = {}): ServiceStat
   }
 
   if (platform() === 'win32') {
-    writeFileSync(paths.windowsScript, renderWindowsPowerShellScript(options), { mode: 0o600 });
+    writeFileSync(paths.windowsScript, renderWindowsPowerShellScript(), { mode: 0o600 });
     const create = run('schtasks.exe', [
       '/Create',
       '/TN',
