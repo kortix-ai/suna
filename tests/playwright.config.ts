@@ -4,12 +4,18 @@ const baseURL = process.env.E2E_BASE_URL || 'http://localhost:3000';
 const apiURL = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 // Lets CI browser tests pass through Vercel deployment protection (SSO) on staging.
 const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
-const configuredWorkers = Number.parseInt(process.env.E2E_BROWSER_WORKERS ?? '', 10);
-const workers = Number.isFinite(configuredWorkers) && configuredWorkers > 0
-  ? configuredWorkers
-  : process.env.CI
-    ? 2
-    : 4;
+export function resolveBrowserWorkers(value: string | undefined, ci: boolean): number {
+  const configuredWorkers = Number.parseInt(value ?? '', 10);
+  if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
+  // Daytona provides the organization maximum of 12 GiB. Two browsers can
+  // make Next dev compile separate project routes concurrently and kill the
+  // web process. One worker keeps the local black-box stack stable. Deployed
+  // target runs set E2E_BROWSER_WORKERS explicitly.
+  if (ci) return 1;
+  return 4;
+}
+
+const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS, Boolean(process.env.CI));
 
 export default defineConfig({
   testDir: './e2e/specs',

@@ -55,6 +55,9 @@ latency. Manual runs can select either provider or `auto`. Auto tries Platinum
 first. It falls back to Daytona only when Platinum infrastructure throws. A
 non-zero test exit returns directly and does not trigger fallback. Each lane
 has a unique sandbox run ID and artifact.
+The local browser lane uses one Playwright worker in CI. This prevents two cold
+Next.js route compilations from exhausting a 12 GiB Daytona worker. Deployed
+staging browser runs set two workers explicitly.
 Platinum warm restore readiness is capped at 2 minutes. A missing marker or
 unreachable guest after that cap is an infrastructure error and triggers auto
 fallback. Cold template builds keep their separate 45-minute creation budget.

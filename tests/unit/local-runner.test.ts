@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { resolveBrowserWorkers } from '../playwright.config';
 import { buildLocalTestPlan, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
@@ -56,6 +57,12 @@ describe('local test runner', () => {
       command: ['bun', 'run', 'test:browser'],
       cwd: 'tests',
     });
+  });
+
+  it('serializes the local CI browser lane and preserves explicit target concurrency', () => {
+    expect(resolveBrowserWorkers(undefined, true)).toBe(1);
+    expect(resolveBrowserWorkers(undefined, false)).toBe(4);
+    expect(resolveBrowserWorkers('2', true)).toBe(2);
   });
 
   it('runs app and package tests without starting the product stack', () => {

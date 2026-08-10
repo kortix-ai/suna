@@ -79,6 +79,11 @@ parallel. They run `pnpm test`, `pnpm test -- --browser-only`, and
 Daytona to avoid Platinum restore latency. Manual runs can select `auto`,
 `platinum`, or `daytona` with `TEST_SANDBOX_PROVIDER`.
 
+Use one Playwright worker for the local-stack browser lane in CI. A Daytona
+worker has 12 GiB RAM, and concurrent cold Next.js route compilation can kill
+the web process. Keep two workers for deployed staging runs, which set
+`E2E_BROWSER_WORKERS` explicitly.
+
 - Use Daytona for the required PR gate. Use `auto` for manual provider fallback.
 - In `auto`, try Platinum first when its key exists.
 - Fall back to Daytona only when the Platinum runner throws an infrastructure
