@@ -10,13 +10,11 @@ SCRIPT = (ROOT / "infra/scripts/ecs-preview.sh").read_text()
 TERRAFORM = (ROOT / "infra/terraform/environments/preview/main.tf").read_text()
 VARIABLES = (ROOT / "infra/terraform/environments/preview/variables.tf").read_text()
 README = (ROOT / "infra/terraform/environments/preview/README.md").read_text()
-VERCEL_IGNORE = (ROOT / "apps/web/scripts/vercel-ignore.sh").read_text()
 
 
 class PreviewRuntimeContract(unittest.TestCase):
-    def test_deploy_precedes_vercel_wiring_and_requires_exact_health(self):
+    def test_deploy_requires_exact_api_and_frontend_health(self):
         self.assertIn("needs: [authorize, build-api, build-gateway, build-web]", WORKFLOW)
-        self.assertIn("needs: deploy", WORKFLOW)
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", WORKFLOW)
         self.assertIn("pull_request_target:", WORKFLOW)
         self.assertIn("branches: [main]", WORKFLOW)
@@ -24,15 +22,12 @@ class PreviewRuntimeContract(unittest.TestCase):
         self.assertIn('[ "$api_environment" = "preview" ]', WORKFLOW)
         self.assertIn('[ "$api_commit" = "$COMMIT" ]', WORKFLOW)
         self.assertIn('[ "$web_commit" = "$COMMIT" ]', WORKFLOW)
-        self.assertIn("KORTIX_PUBLIC_BACKEND_URL", WORKFLOW)
-        self.assertIn("NEXT_PUBLIC_BACKEND_URL", WORKFLOW)
         self.assertIn("kortix/kortix-frontend:pr-${{ github.event.pull_request.head.sha }}", WORKFLOW)
-        self.assertIn("https://pr-${NUM}.preview.kortix.com", WORKFLOW)
+        self.assertIn('web_host="pr-${NUM}.preview.kortix.com"', WORKFLOW)
         self.assertIn("WEB_PROTECTION_PASSWORD", WORKFLOW)
-        self.assertIn('deployed_sha="$(printf', WORKFLOW)
-        self.assertIn('[ "$state" = "READY" ]', WORKFLOW)
-        self.assertIn('[ "$deployed_sha" = "$COMMIT" ]', WORKFLOW)
-        self.assertIn('.value==$v', WORKFLOW)
+        self.assertIn("cookie_only", WORKFLOW)
+        self.assertNotIn("Vercel", WORKFLOW)
+        self.assertNotIn("VERCEL_", WORKFLOW)
         self.assertNotIn("Argo CD", WORKFLOW)
         self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
 
@@ -52,7 +47,7 @@ class PreviewRuntimeContract(unittest.TestCase):
             self.assertNotIn("DOCKERHUB_", section)
             self.assertNotIn("docker/login-action", section)
             self.assertNotIn("push: true", section)
-        deploy = WORKFLOW.split("  deploy:", 1)[1].split("\n  wire:", 1)[0]
+        deploy = WORKFLOW.split("  deploy:", 1)[1].split("\n  teardown:", 1)[0]
         self.assertIn("docker/login-action@v3", deploy)
         self.assertIn("docker load --input", deploy)
         self.assertIn("docker push", deploy)
@@ -67,10 +62,7 @@ class PreviewRuntimeContract(unittest.TestCase):
         self.assertIn("github.event.action == 'synchronize'", WORKFLOW)
         self.assertIn("gh api -X DELETE", WORKFLOW)
         self.assertIn("labels/preview", WORKFLOW)
-        self.assertIn("KORTIX_PREVIEW_APPROVED_SHA", WORKFLOW)
-        self.assertIn("sha:$s", WORKFLOW)
-        self.assertIn('KORTIX_PREVIEW_APPROVED_SHA}" = "${VERCEL_GIT_COMMIT_SHA', VERCEL_IGNORE)
-        self.assertNotIn("GITHUB_TOKEN", VERCEL_IGNORE)
+        self.assertNotIn("KORTIX_PREVIEW_APPROVED_SHA", WORKFLOW)
 
     def test_close_and_unlabel_run_complete_base_branch_teardown(self):
         self.assertIn("github.event.action == 'closed'", WORKFLOW)
@@ -80,7 +72,7 @@ class PreviewRuntimeContract(unittest.TestCase):
             before_script = section.split("ecs-preview.sh", 1)[0]
             self.assertNotIn("github.event.pull_request.head.sha", before_script)
         self.assertIn("ecs-preview.sh teardown", WORKFLOW)
-        self.assertIn('--arg v "$expected"', WORKFLOW)
+        self.assertNotIn("branch-scoped Vercel", WORKFLOW)
         for command in (
             "aws ecs delete-service",
             "aws elbv2 delete-rule",

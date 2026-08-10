@@ -128,23 +128,167 @@ export function secretDeliveryPresentation(
   return PRESENTATIONS[strategy];
 }
 
+export type NetworkBoundaryAvailability = 'available' | 'project_not_pinned' | 'unsupported';
+
+/**
+ * Network-boundary delivery is injected by the Platinum provider itself, so the
+ * PROJECT has to run on Platinum. A deployment that merely offers Platinum is
+ * not enough: on any other provider nothing injects the header and the secret
+ * is silently dead.
+ */
+export function networkBoundaryAvailability(
+  project?: {
+    available_sandbox_providers?: readonly string[] | null;
+    default_sandbox_provider?: string | null;
+  } | null,
+): NetworkBoundaryAvailability {
+  if (!project?.available_sandbox_providers?.includes('platinum')) return 'unsupported';
+  return project.default_sandbox_provider === 'platinum' ? 'available' : 'project_not_pinned';
+}
+
+/** Why network-boundary delivery cannot run here, and how to fix it. */
+export function networkBoundaryBlockedReason(
+  availability: NetworkBoundaryAvailability,
+): string | null {
+  if (availability === 'available') return null;
+  if (availability === 'unsupported') return 'Not available in this deployment.';
+  return 'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.';
+}
+
 export type SecretDeliveryOption = SecretDeliveryPresentation & {
   strategy: SecretDeliveryStrategy;
   disabled: boolean;
+  /** Why the option cannot be selected. Null when it can. */
+  disabledReason: string | null;
 };
 
 export function secretDeliveryOptions(
   selected: SecretDeliveryStrategy,
   status: SecretDeliveryStatus,
-  networkBoundaryAvailable: boolean,
+  networkBoundary: NetworkBoundaryAvailability,
 ): SecretDeliveryOption[] {
-  return (Object.keys(PRESENTATIONS) as SecretDeliveryStrategy[]).map((strategy) => ({
-    strategy,
-    ...PRESENTATIONS[strategy],
-    disabled:
-      (strategy === 'egress' && !networkBoundaryAvailable) ||
-      (strategy === 'broker' && strategy === selected && status !== 'available'),
-  }));
+  return (Object.keys(PRESENTATIONS) as SecretDeliveryStrategy[]).map((strategy) => {
+    const disabledReason =
+      strategy === 'egress'
+        ? networkBoundaryBlockedReason(networkBoundary)
+        : strategy === 'broker' && strategy === selected && status !== 'available'
+          ? 'Not available in this deployment.'
+          : null;
+    return {
+      strategy,
+      ...PRESENTATIONS[strategy],
+      disabled: disabledReason !== null,
+      disabledReason,
+    };
+  });
+}
+
+export type SecretDeliveryBlockedReason = 'no_agent_grant';
+
+/**
+ * Read the API's per-secret delivery verdict. The field is tri-state: absent or
+ * null means granted, not applicable, OR undetermined — so anything other than
+ * an exact `no_agent_grant` stays silent.
+ */
+export function secretDeliveryBlockedReason(secret: {
+  identifier: string;
+  delivery_blocked_reason?: string | null;
+}): SecretDeliveryBlockedReason | null {
+  return secret.delivery_blocked_reason === 'no_agent_grant' ? 'no_agent_grant' : null;
+}
+
+/**
+ * A runtime secret reaches the sandbox without a grant, and a disabled one goes
+ * nowhere by design. Only broker and egress delivery need a named agent grant.
+ */
+export function shouldWarnMissingAgentGrant(
+  blockedReason: SecretDeliveryBlockedReason | null,
+  strategy: SecretDeliveryStrategy,
+): boolean {
+  if (blockedReason !== 'no_agent_grant') return false;
+  return strategy === 'broker' || strategy === 'egress';
+}
+
+export type MissingAgentGrantNotice = {
+  title: string;
+  body: string;
+  /** kortix.yaml snippet that grants the secret to one agent. */
+  manifest: string;
+};
+
+export function missingAgentGrantNotice(identifier: string): MissingAgentGrantNotice {
+  return {
+    title: 'No agent can receive this secret',
+    body: `List ${identifier} under an agent's secrets in kortix.yaml, then run the session with that agent. "secrets: all" does not grant this delivery mode — only an explicit list does.`,
+    manifest: `kortix_version: 2\nagents:\n  my-agent:\n    secrets: [${identifier}]`,
+  };
+}
+
+export type SecretDeliverySyncFailure = {
+  session_id: string;
+  sandbox_id: string | null;
+  reason: string;
+};
+
+export type SecretDeliverySync = {
+  ok: boolean;
+  targeted: number;
+  synced: number;
+  failed: number;
+  failures: SecretDeliverySyncFailure[];
+};
+
+/**
+ * Read the `delivery_sync` block a secret write returns. The field is additive
+ * and null when no sync ran, so an unrecognized shape reports nothing rather
+ * than guessing at a failure.
+ */
+export function readSecretDeliverySync(result: unknown): SecretDeliverySync | null {
+  if (typeof result !== 'object' || result === null) return null;
+  const sync = (result as { delivery_sync?: unknown }).delivery_sync;
+  if (typeof sync !== 'object' || sync === null) return null;
+  const record = sync as Record<string, unknown>;
+  if (typeof record.ok !== 'boolean') return null;
+  const count = (value: unknown) => (typeof value === 'number' ? value : 0);
+  const rawFailures = Array.isArray(record.failures) ? record.failures : [];
+  return {
+    ok: record.ok,
+    targeted: count(record.targeted),
+    synced: count(record.synced),
+    failed: count(record.failed),
+    failures: rawFailures.flatMap((entry) => {
+      if (typeof entry !== 'object' || entry === null) return [];
+      const failure = entry as Record<string, unknown>;
+      if (typeof failure.reason !== 'string') return [];
+      return [
+        {
+          session_id: typeof failure.session_id === 'string' ? failure.session_id : '',
+          sandbox_id: typeof failure.sandbox_id === 'string' ? failure.sandbox_id : null,
+          reason: failure.reason,
+        },
+      ];
+    }),
+  };
+}
+
+/**
+ * The save succeeded; the running sandboxes did not take the new policy. The
+ * user has to know the difference — the secret looks configured but the live
+ * sessions still use the previous one.
+ */
+export function secretDeliverySyncWarning(
+  identifier: string,
+  result: unknown,
+): { message: string; description: string } | null {
+  const sync = readSecretDeliverySync(result);
+  if (!sync || sync.ok) return null;
+  const count = sync.failed > 0 ? sync.failed : sync.targeted;
+  const scope =
+    count > 0 ? `${count} running session${count === 1 ? '' : 's'}` : 'the running sessions';
+  return {
+    message: `Saved ${identifier}, but it is not applied to ${scope}`,
+    description: sync.failures[0]?.reason ?? 'No failure reason was reported.',
+  };
 }
 
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);

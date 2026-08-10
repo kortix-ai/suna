@@ -1,4 +1,10 @@
-import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
+import type {
+  Project,
+  ProjectSession,
+  Secret,
+  SecretDeliveryBlockedReason,
+  SecretDeliveryStrategy,
+} from '@kortix/api-contract';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -22,6 +28,7 @@ import {
 } from '../../snapshots/error-classify';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import type { ProjectRole } from '../access';
+import type { ProjectConfigSummary } from '../git/types';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
@@ -296,6 +303,69 @@ export function requestAuditContext(c: Context): RequestAuditContext {
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
 /**
+ * The slice of a loaded `ProjectConfigSummary` the agent-grant axis needs. A
+ * `Pick`, so a route hands the whole loaded config straight through.
+ */
+export type SecretAgentGrantConfig = Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'>;
+
+/** Grant membership. Case-insensitive, mirroring `listAdmits` in
+ *  ../../secrets/strategy.ts — a hand-written `secrets:` list in kortix.yaml may
+ *  use any case, and the two answers must agree. */
+function grantAdmits(list: string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+/**
+ * Can any agent receive this secret? Returns the block reason, or null.
+ *
+ * `resolveSecretDelivery` (../../secrets/strategy.ts) hands an `egress`/`broker`
+ * secret to a session only when some agent's `secrets:` list is an explicit
+ * ARRAY naming this IDENTIFIER. `'all'` and an absent list both withhold it as
+ * `agent_grant_unscoped`, so neither counts as a grant here. Matching is by
+ * identifier, never by the env-var `name` — several identifiers may share one
+ * name.
+ *
+ * The tri-state forbids guessing, so read `agent_discovery` for what
+ * `resolveConfigAgents` (../git/config.ts) actually means by it:
+ *
+ *   `opencode`   — the manifest yielded NO agent specs AND NO parse errors, i.e.
+ *                  it declared no `agents:` at all (or there is no manifest).
+ *                  `grantFromLoadedAgents` then resolves to a null grant, which
+ *                  `resolveSecretDelivery` withholds. CERTAIN: no session can
+ *                  ever receive this secret. A native `.opencode` agent does not
+ *                  rescue it — grants come only from manifest specs.
+ *   `declarative`, agents non-empty — the manifest parsed and its declarations
+ *                  are the complete grant set. CERTAIN either way.
+ *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached by
+ *                  a manifest that FAILED to parse (specs empty, errors present)
+ *                  or one whose agents are all disabled. Report null.
+ *
+ * Getting this backwards would be worse than useless in both directions: silent
+ * on the commonest broken setup (no `agents:` block), and crying wolf on a
+ * manifest we merely failed to read.
+ */
+export function secretDeliveryBlockedReason(
+  identifier: string,
+  strategy: SecretDeliveryStrategy,
+  config: SecretAgentGrantConfig | null | undefined,
+): SecretDeliveryBlockedReason | null {
+  if (strategy !== 'egress' && strategy !== 'broker') return null;
+  if (!config) return null;
+  if (config.agent_discovery === 'opencode') return 'no_agent_grant';
+  // Anything other than the two known modes is a config we do not understand —
+  // including a partial object from a caller that resolved only part of it.
+  if (config.agent_discovery !== 'declarative') return null;
+  const agents = config.agents;
+  if (!Array.isArray(agents) || agents.length === 0) return null;
+  const granted = agents.some((agent) => {
+    const env = agent.scope?.env;
+    return Array.isArray(env) && grantAdmits(env, identifier);
+  });
+  return granted ? null : 'no_agent_grant';
+}
+
+/**
  * The view of one project secret (one IDENTIFIER): the shared/project row
  * merged with the requesting member's own private override (used today only by
  * the CODEX_AUTH_JSON per-user provider login), plus which one wins at runtime.
@@ -311,6 +381,9 @@ export function buildSecretView(input: {
   shared?: SecretRow;
   personal?: SecretRow;
   canManageShared: boolean;
+  /** The project's loaded config, for the agent-grant axis. Omit it and every
+   *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
+  agentGrants?: SecretAgentGrantConfig | null;
 }): Secret {
   const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
@@ -383,6 +456,11 @@ export function buildSecretView(input: {
         : strategy === 'denied'
           ? 'disabled'
           : 'unavailable',
+    // Two axes, deliberately not folded together. `delivery_status` answers
+    // "does this deployment support the mode" and stays 'available' on a missing
+    // grant, because the CLI, the SDK and the web chip all key off that meaning.
+    // The grant axis is per-project and lives here.
+    delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
     network_boundary_available: networkBoundaryDeliveryAvailable(),
     egress_policy: deliveryRow?.egressPolicy ?? null,
     strategy_locked: deliveryRow?.strategyLocked ?? false,
@@ -400,6 +478,9 @@ export async function loadSecretViewsForUser(
   projectId: string,
   userId: string,
   canManageShared: boolean,
+  /** The project's loaded config. Callers that have already read it pass it so
+   *  every row reports the agent-grant axis; omitting it reports null. */
+  agentGrants?: SecretAgentGrantConfig | null,
 ): Promise<ReturnType<typeof buildSecretView>[]> {
   const rows = await db
     .select()
@@ -427,6 +508,7 @@ export async function loadSecretViewsForUser(
       shared: slot.shared,
       personal: slot.personal,
       canManageShared,
+      agentGrants,
     }),
   );
 }

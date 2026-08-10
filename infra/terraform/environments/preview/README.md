@@ -43,7 +43,7 @@ endpoint before planning. Pass only its operator-verified CIDR values through
 
 Set `TF_VAR_cloudflare_api_token` only for this apply. Do not commit the token.
 The workflow uses `pull_request_target`. It builds the approved PR SHA in three
-jobs with read-only repository access and no Docker Hub, AWS, Vercel, or
+jobs with read-only repository access and no Docker Hub, AWS, or
 application secrets. Those jobs upload fixed-tag Docker archives. A default-branch
 job loads and publishes the archives without starting their containers. Only that
 job receives deployment credentials. The deployed containers receive preview
@@ -62,11 +62,10 @@ following evidence:
    `environment=preview` and this PR's full commit SHA.
 2. `https://pr-<PR>.preview.kortix.com/api/health` reports the same SHA.
 3. The ECS frontend uses Basic auth and targets only its per-PR API.
-4. The sticky PR comment contains both ECS and Vercel frontend URLs.
-5. The Vercel deployment calls the per-PR backend successfully.
-6. Closing or removing the label deletes the ECS service, two listener rules,
-   two target groups, active task definitions, and owned Vercel variables.
-7. Pushing a new commit tears down the old preview and removes `preview`.
+4. The sticky PR comment contains the ECS frontend URL.
+5. Closing or removing the label deletes the ECS service, two listener rules,
+   two target groups, and active task definitions.
+6. Pushing a new commit tears down the old preview and removes `preview`.
 
 The shared Terraform root remains after per-PR teardown.
 
@@ -94,10 +93,10 @@ DNS record, role, secret, VPC, or certificate.
 2. Apply the reviewed shared-root plan from an operator session.
 3. Have a repository writer or administrator label one disposable internal PR
    with `preview` after reviewing its exact head SHA.
-4. Require exact API SHA, `environment=preview`, Vercel `READY`, exact Vercel
-   commit/branch metadata, and both branch variables targeting its PR backend.
-5. Remove the label. Confirm per-PR ECS, ALB, task-definition, and owned Vercel
-   resources are absent. The workflow rejects a 21st active preview by default.
+4. Require the exact API SHA, `environment=preview`, exact frontend SHA, and
+   per-PR runtime URLs.
+5. Remove the label. Confirm per-PR ECS, ALB, and task-definition resources are
+   absent. The workflow rejects a 21st active preview by default.
 
 The backend containers receive `kortix-preview-env`. That secret contains
 provider and application credentials required by the full preview API. Applying
@@ -115,7 +114,6 @@ PR is closed or no longer has `preview`. It derives the PR number from the stric
 and name.
 
 Before shared-root rollback, remove `preview` from every PR and verify zero
-`kortix-pr-*` services. Restore Vercel branch variables only if their value still
-targets that PR's backend. Then run and review `terraform plan -destroy`. Destroy
+`kortix-pr-*` services. Then run and review `terraform plan -destroy`. Destroy
 only this root; do not remove the shared dev VPC, preview secret, ACM certificate,
 GitHub OIDC provider, state bucket, or lock table.

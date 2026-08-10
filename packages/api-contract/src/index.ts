@@ -857,7 +857,11 @@ export const SessionStartFailureSchema = z
     category: z.enum([
       'provider-capacity',
       'git-auth',
+      // The PROVIDER cannot do network-boundary delivery (e.g. a Daytona box).
       'unsupported-secret-delivery',
+      // The PROJECT's own boundary policy is unusable — two secrets claiming the same
+      // (host, header), or a policy the boundary cannot enforce. Never retryable.
+      'invalid-secret-boundary-policy',
       'sandbox-provider',
     ]),
     message: z.string(),
@@ -979,6 +983,19 @@ export type SecretConsumer = z.infer<typeof SecretConsumerSchema>;
 export const SecretDeliveryStatusSchema = z.enum(['available', 'unavailable', 'disabled']);
 export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
 
+/**
+ * Why a secret reaches no agent, even though the platform supports its delivery
+ * mode. Tri-state, and the distinction is load-bearing:
+ *
+ *   'no_agent_grant' — CERTAIN: no agent in the manifest can receive this secret.
+ *   null / absent    — granted, not applicable, or the server could not tell.
+ *
+ * Never a guess. A warning raised because the manifest failed to load is worse
+ * than no warning, so an unreadable manifest reports null.
+ */
+export const SecretDeliveryBlockedReasonSchema = z.enum(['no_agent_grant']);
+export type SecretDeliveryBlockedReason = z.infer<typeof SecretDeliveryBlockedReasonSchema>;
+
 export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
   z.object({ kind: z.literal('query'), name: z.string() }),
@@ -1059,6 +1076,11 @@ export const SecretSchema = z.object({
   strategy: SecretDeliveryStrategySchema,
   consumer: SecretConsumerSchema.nullable(),
   delivery_status: SecretDeliveryStatusSchema,
+  /** The agent-grant axis of delivery, orthogonal to `delivery_status`.
+   *  `delivery_status` says the deployment supports the mode; this says whether
+   *  any agent may actually receive the secret. See
+   *  `SecretDeliveryBlockedReasonSchema` for the tri-state rule. */
+  delivery_blocked_reason: SecretDeliveryBlockedReasonSchema.nullable().optional(),
   network_boundary_available: z.boolean().optional(),
   egress_policy: SecretEgressPolicySchema.nullable(),
   strategy_locked: z.boolean(),

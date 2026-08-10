@@ -7,12 +7,11 @@
 # Two stages run in order:
 #   1. FE-relevance — if a push changed NOTHING that feeds the apps/web build
 #      (only sibling apps / infra / tests / docs), skip it on every branch.
-#   2. Deploy-target — the permanent environments (main/staging/prod) always
-#      deploy real FE changes; per-PR previews are OPT-IN to save build spend.
+#   2. Deploy-target — staging and prod deploy real frontend changes. Dev and
+#      per-PR previews run only on ECS and always skip Vercel builds.
 #
-# For the permanent environments, default to BUILD on ANY uncertainty — never
-# silently skip a real FE deploy. Per-PR previews invert that: default SKIP.
-# The preview workflow must approve the exact commit SHA.
+# For staging and production, default to BUILD on ANY uncertainty. Dev and
+# per-PR previews default to SKIP because ECS owns those frontend deployments.
 #
 # WHY THIS EXISTS
 # A backend/infra-only push to `prod` (e.g. a rollback that only flips
@@ -57,19 +56,10 @@ fi
 # per-PR previews are OPT-IN (previews on every PR were the bulk of build spend).
 REF="${VERCEL_GIT_COMMIT_REF:-}"
 case "${VERCEL_ENV:-}:$REF" in
-  production:*|*:main|*:staging|*:prod)
+  production:*|*:staging|*:prod)
     echo "vercel-ignore: environment branch (${REF:-$VERCEL_ENV}) — building frontend."
     exit 1 ;;
 esac
 
-# A per-PR / feature-branch preview builds only when the trusted preview
-# workflow stores this exact commit SHA in the branch-scoped Vercel profile.
-# A later commit cannot reuse an earlier approval.
-if [ -n "${KORTIX_PREVIEW_APPROVED_SHA:-}" ] \
-  && [ "${KORTIX_PREVIEW_APPROVED_SHA}" = "${VERCEL_GIT_COMMIT_SHA:-}" ]; then
-  echo "vercel-ignore: exact preview SHA is approved — building opt-in preview."
-  exit 1
-fi
-
-echo "vercel-ignore: exact preview SHA is not approved — skipping. ref=$REF"
+echo "vercel-ignore: dev and PR previews deploy on ECS only — skipping Vercel. ref=$REF"
 exit 0

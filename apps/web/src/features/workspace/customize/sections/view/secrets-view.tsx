@@ -57,7 +57,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -89,14 +89,22 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import {
+  type NetworkBoundaryAvailability,
+  type SecretDeliveryBlockedReason,
   brokerConsumerForSecret,
   buildBrokerPolicy,
   buildNetworkBoundaryPolicy,
   canSaveSecretDelivery,
   connectorBindingChanges,
   connectorBindingOptions,
+  missingAgentGrantNotice,
+  networkBoundaryAvailability,
+  networkBoundaryBlockedReason,
+  secretDeliveryBlockedReason,
   secretDeliveryOptions,
   secretDeliveryPresentation,
+  secretDeliverySyncWarning,
+  shouldWarnMissingAgentGrant,
 } from './secret-delivery';
 import {
   type OptimisticProjectSecretInput,
@@ -132,6 +140,8 @@ interface SecretRow {
   deliveryStatus: SecretDeliveryStatus;
   egressPolicy: SecretEgressPolicy | null;
   requiresRotation: boolean;
+  /** 'no_agent_grant' only when the API is certain. Null covers "unknown" too. */
+  deliveryBlockedReason: SecretDeliveryBlockedReason | null;
 }
 
 type SecretSavePlan = {
@@ -159,9 +169,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
-  const networkBoundaryAvailable = Boolean(
-    projectDetailQuery.data?.project.available_sandbox_providers?.includes('platinum'),
-  );
+  const networkBoundary = networkBoundaryAvailability(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
     queryKey,
@@ -348,7 +356,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 row={dialogRow}
                 connectors={connectorsQuery.data?.connectors ?? []}
                 connectorsLoading={connectorsQuery.isLoading}
-                networkBoundaryAvailable={networkBoundaryAvailable}
+                networkBoundary={networkBoundary}
                 onSaved={refreshSecretsAndProviders}
               />
             </>
@@ -433,6 +441,7 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
     deliveryStatus: item.delivery_status ?? (item.strategy === 'denied' ? 'disabled' : 'available'),
     egressPolicy: item.egress_policy ?? null,
     requiresRotation: Boolean(item.requires_rotation),
+    deliveryBlockedReason: secretDeliveryBlockedReason(item),
   });
 
   const rows: SecretRow[] = [];
@@ -461,6 +470,7 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
       deliveryStatus: 'available',
       egressPolicy: null,
       requiresRotation: false,
+      deliveryBlockedReason: null,
     });
   }
 
@@ -536,6 +546,9 @@ function SecretTableRow({
           {row.requiresRotation && (
             <span className="text-kortix-orange text-[11px] font-medium">Rotation required</span>
           )}
+          {shouldWarnMissingAgentGrant(row.deliveryBlockedReason, row.strategy) && (
+            <span className="text-kortix-orange text-[11px] font-medium">No agent grant</span>
+          )}
         </div>
       </TableCell>
       <TableCell>
@@ -584,7 +597,7 @@ function SecretDialog({
   row,
   connectors,
   connectorsLoading,
-  networkBoundaryAvailable,
+  networkBoundary,
   onSaved,
 }: {
   open: boolean;
@@ -593,7 +606,7 @@ function SecretDialog({
   row: SecretRow | null;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
-  networkBoundaryAvailable: boolean;
+  networkBoundary: NetworkBoundaryAvailability;
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -821,7 +834,14 @@ function SecretDialog({
           cache ? applyProjectSecretResponse(cache, result) : cache,
         );
       }
-      successToast(`Saved ${plan.finalIdentifier}`);
+      // The write can land while the running sandboxes refuse the new policy.
+      // A plain success toast would hide that split outcome.
+      const syncWarning = secretDeliverySyncWarning(plan.finalIdentifier, result);
+      if (syncWarning) {
+        warningToast(syncWarning.message, { description: syncWarning.description });
+      } else {
+        successToast(`Saved ${plan.finalIdentifier}`);
+      }
       resetForm();
       onSaved();
       queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
@@ -866,8 +886,13 @@ function SecretDialog({
   const deliveryOptions = secretDeliveryOptions(
     strategy,
     row?.deliveryStatus ?? 'available',
-    networkBoundaryAvailable,
+    networkBoundary,
   );
+  const networkBoundaryNotice = networkBoundaryBlockedReason(networkBoundary);
+  const grantNotice =
+    row && shouldWarnMissingAgentGrant(row.deliveryBlockedReason, strategy)
+      ? missingAgentGrantNotice(row.identifier)
+      : null;
   const canSave = canSaveSecretDelivery({
     isEdit,
     key,
@@ -991,8 +1016,8 @@ function SecretDialog({
                       value={option.strategy}
                       disabled={option.disabled}
                       description={
-                        option.disabled
-                          ? `${option.description} Not available in this deployment.`
+                        option.disabledReason
+                          ? `${option.description} ${option.disabledReason}`
                           : option.description
                       }
                     >
@@ -1011,6 +1036,19 @@ function SecretDialog({
               </InfoBanner>
             )}
 
+            {grantNotice && (
+              <InfoBanner
+                tone="warning"
+                icon={<DangerTriangleSolid weight="fill" />}
+                title={grantNotice.title}
+              >
+                <span className="block text-pretty">{grantNotice.body}</span>
+                <pre className="border-border bg-muted mt-2 overflow-x-auto rounded-sm border p-2 font-mono text-xs leading-relaxed">
+                  {grantNotice.manifest}
+                </pre>
+              </InfoBanner>
+            )}
+
             {strategy === 'egress' && (
               <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
                 <div className="space-y-1">
@@ -1019,6 +1057,16 @@ function SecretDialog({
                     Platinum adds this value to matching HTTPS requests outside the sandbox.
                   </p>
                 </div>
+
+                {networkBoundaryNotice && (
+                  <InfoBanner
+                    tone="warning"
+                    icon={<DangerTriangleSolid weight="fill" />}
+                    title="Nothing injects this header today"
+                  >
+                    {networkBoundaryNotice}
+                  </InfoBanner>
+                )}
 
                 <InfoBanner tone="neutral" title="Not readable inside the sandbox">
                   The sandbox receives no value, alias, or placeholder. Secret values echoed by an
@@ -1071,7 +1119,9 @@ function SecretDialog({
                     disabled={save.isPending}
                   />
                   <FieldDescription>
-                    Optional. Include {'{{secret}}'} where Platinum inserts the value.
+                    Optional. Include {'{{secret}}'} where Platinum inserts the value. Leave it
+                    blank and the header carries the bare value with no scheme, which most APIs
+                    reject with 401.
                   </FieldDescription>
                 </Field>
               </div>
@@ -1296,7 +1346,9 @@ function SecretDialog({
                           disabled={save.isPending}
                         />
                         <FieldDescription>
-                          Optional. Include {'{{secret}}'} where Kortix inserts the value.
+                          Optional. Include {'{{secret}}'} where Kortix inserts the value. Leave it
+                          blank and the header carries the bare value with no scheme, which most
+                          APIs reject with 401.
                         </FieldDescription>
                       </Field>
                     )}

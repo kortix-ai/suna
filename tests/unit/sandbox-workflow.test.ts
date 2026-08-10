@@ -46,6 +46,20 @@ describe('sandbox test workflow', () => {
     expect(testWorkflow).toContain('if: always()');
   });
 
+  test('keeps reports in workflow artifacts without hosted portal infrastructure', () => {
+    expect(existsSync(resolve(root, 'infra/terraform/environments/qa/main.tf'))).toBe(false);
+    expect(existsSync(resolve(root, 'infra/terraform/modules/qa-portal/main.tf'))).toBe(false);
+
+    const workflowRoot = resolve(root, '.github/workflows');
+    const workflows = readdirSync(workflowRoot)
+      .filter((name) => /\.ya?ml$/.test(name))
+      .map((name) => readFileSync(resolve(workflowRoot, name), 'utf8'))
+      .join('\n');
+
+    expect(workflows).not.toContain('QA_REPORTS_');
+    expect(workflows).not.toContain('qa.kortix.com');
+  });
+
   test('release tests prove every deployed staging flow and browser journey', () => {
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
 

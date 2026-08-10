@@ -165,10 +165,27 @@ and rebinding targets. It reevaluates redirects. It bounds request and response
 sizes. It strips sensitive response headers and never records request bodies,
 response bodies, query values, injected headers, handles, or secret values.
 
+The CLI configures the policy, then sends the request:
+
+```bash
+kortix secrets delivery API_KEY broker \
+  --consumer http-broker \
+  --allow-host api.example.com \
+  --allow-method POST \
+  --allow-path '/v1/*' \
+  --inject-header Authorization \
+  --template 'Bearer {{secret}}'
+
+kortix secrets call API_KEY https://api.example.com/v1/resource \
+  --method POST \
+  --data '{"input":"value"}'
+```
+
 ## Network boundary
 
-Network-boundary delivery is for ordinary sandbox HTTP clients that cannot use
-the explicit broker API. It is narrower than the HTTPS broker:
+Network-boundary delivery serves ordinary sandbox HTTP clients that cannot call
+the explicit broker API. Kortix registers the value with Platinum. Platinum
+injects one header at its own egress edge. It is narrower than the HTTPS broker:
 
 - the project must run the session on Platinum;
 - the agent grant and session allowlist must name the secret explicitly;
@@ -189,21 +206,183 @@ kortix secrets delivery ANTHROPIC_API_KEY egress \
   --template '{{secret}}'
 ```
 
-The CLI exposes this path through:
+### What the guest holds
 
-```bash
-kortix secrets delivery API_KEY broker \
-  --consumer http-broker \
-  --allow-host api.example.com \
-  --allow-method POST \
-  --allow-path '/v1/*' \
-  --inject-header Authorization \
-  --template 'Bearer {{secret}}'
+Nothing. The value, the rendered header, and the binding alias all stay outside
+the sandbox:
 
-kortix secrets call API_KEY https://api.example.com/v1/resource \
-  --method POST \
-  --data '{"input":"value"}'
+- `resolveNetworkBoundaryBindings` (`apps/api/src/secrets/network-boundary.ts`)
+  renders the header value on the API and returns it to the provider adapter.
+- `syncPlatinumNetworkBoundary`
+  (`apps/api/src/secrets/platinum-network-boundary.ts`) writes the write-only
+  replica and attaches it to the sandbox by id. The `alias` field is provider
+  bookkeeping and is sent only to Platinum.
+- The env builder emits no name for an `egress` row, so
+  `KORTIX_PROJECT_SECRET_NAMES` never lists it.
+
+Verified on dev 2026-08-10. Inside a live Platinum session,
+`env | grep -c <IDENTIFIER>` returns `0` while injection works. A policy host
+presents the per-sandbox MITM certificate
+`issuer: O=Platinum; CN=Platinum egress proxy (sandbox sbx_...)`, which the box
+already trusts. A host outside the policy passes through untouched with its own
+origin certificate.
+
+### The three prerequisites
+
+All three must hold. Each one used to fail silently.
+
+| # | Requirement | Where it is set | Result when wrong |
+| --- | --- | --- | --- |
+| 1 | The session runs on Platinum | Customize -> Feature flags -> Sandbox provider | No binding is attached. The request leaves without the header. |
+| 2 | An agent `secrets:` list NAMES the identifier | `kortix.yaml` | `resolveSecretDelivery` withholds the row. No binding. |
+| 3 | The header value template renders what the API expects | Secret editor -> Header value template | The header carries the bare value with no scheme. Upstream returns `401`. |
+
+Requirement 1 is project scope, not deployment scope.
+`networkBoundaryDeliveryAvailable()` reports only that the deployment enables
+Platinum. The web editor therefore gates the option on
+`networkBoundaryAvailability(project)`
+(`apps/web/src/features/workspace/customize/sections/view/secret-delivery.ts`),
+which requires `default_sandbox_provider === 'platinum'`.
+
+Requirement 2 is stricter than every other strategy. `resolveSecretDelivery`
+(`apps/api/src/secrets/strategy.ts`) delivers a non-`runtime` row only when
+`agentGrantEnv` is a `string[]` that contains the identifier:
+
+```ts
+const grant = input.agentGrantEnv ?? null;
+if (Array.isArray(grant)) {
+  if (!listAdmits(grant, input.identifier)) return withheld('agent_grant_excludes');
+} else if (strategy !== 'runtime') {
+  return withheld('agent_grant_unscoped');
+}
 ```
+
+`secrets: all` resolves to the string `'all'`, not an array. It therefore fails
+exactly like an absent grant, with reason `agent_grant_unscoped`. A project with
+no `agents:` block resolves to a null grant and can never deliver an egress
+secret. Membership is by IDENTIFIER, case-insensitive. It is never by env-var
+key: one key can carry several identifiers.
+
+`SecretSchema.delivery_blocked_reason` reports only the certain case. It is
+`'no_agent_grant'` when the manifest loaded and no agent's explicit list names
+the identifier. It is `null` when the row is granted, when the strategy needs no
+grant, or when the manifest could not be read. A warning that fires on an
+unreadable manifest is worse than no warning, so uncertainty always renders as
+`null`.
+
+### Policy shape
+
+`networkBoundaryPolicyError` (`apps/api/src/secrets/network-boundary.ts`)
+accepts only the controls Platinum can enforce. A stored policy must never look
+narrower than the data path that applies it.
+
+| Rejected input | Message |
+| --- | --- |
+| A broker `backend` | `Network-boundary delivery does not accept a broker backend` |
+| `on_no_match` other than `deny` | `Network-boundary delivery must deny unmatched requests` |
+| `tls` other than `terminate` | `Network-boundary delivery requires TLS termination` |
+| A query or JSON-body injection | `Network-boundary delivery supports header injection only` |
+| A wildcard host such as `*.example.com` | `Network-boundary delivery requires exact hosts` |
+| Any `methods` entry | `Network-boundary delivery cannot enforce HTTP method restrictions` |
+| Any `path` | `Network-boundary delivery cannot enforce path restrictions` |
+| A per-rule header or template that differs from the policy default | `Every network-boundary rule must use the same header and template` |
+
+Host matching is exact. `api.example.com` never covers
+`uploads.api.example.com`. List every host explicitly. The API returns `400`
+with `code: 'secret_delivery_policy_invalid'`.
+
+### Destination uniqueness
+
+One `(host, header)` pair per project. `findBoundaryDestinationConflict`
+(`apps/api/src/secrets/network-boundary.ts`) compares a candidate against every
+other egress row. Host and header compare lowercased. The same identifier never
+conflicts with itself. A row with a null policy, or a non-header injection, is
+skipped.
+
+The check runs at save time on `POST /:projectId/secrets` and on
+`PUT /:projectId/secrets/:identifier/strategy`. A collision returns `409`:
+
+```json
+{
+  "error": "BOUNDARY_TEST already injects the \"authorization\" header for postman-echo.com. Two secrets cannot target the same host and header — give STRIPE_API_KEY a different header, or a different host.",
+  "code": "secret_boundary_destination_conflict",
+  "conflict": { "identifier": "BOUNDARY_TEST", "host": "postman-echo.com", "header": "authorization" }
+}
+```
+
+`conflict.identifier` is the secret that already holds the destination. The
+sentence names both: the incumbent first, then the secret being saved.
+
+Two secrets on the same host with DIFFERENT headers are legal. Platinum injects
+both. `resolveNetworkBoundaryBindings` keeps its start-time throw as the last
+line of defense. The save-time check exists so the failure reaches the person
+who caused it, not a session that starts hours later.
+
+### HTTPS only
+
+The proxy needs to terminate TLS to rewrite a header. Plain HTTP to a policy
+host is refused:
+
+```text
+egress to "<host>" is blocked: this sandbox's policy puts a secret in a request
+header for this host, and that requires HTTPS
+```
+
+A test that uses `http://` reads as a network fault. It is a policy refusal.
+
+### Echo blocking is the verification trap
+
+`onEcho` is hardcoded `'block'` in `NetworkBoundarySecretBinding`. When an
+upstream response would return the secret to the guest, the proxy kills the
+connection. The guest sees `curl: (52) Empty reply from server`.
+
+An echo service is therefore the worst possible test target. Success there is a
+dead connection, which is exactly what a broken boundary also produces. One
+probe cannot separate the two. Use two.
+
+| Probe | Target | Correct result | Meaning |
+| --- | --- | --- | --- |
+| Reachability | A policy host endpoint that does NOT echo request headers | `200` | The host is reachable and the proxy passes traffic. |
+| Injection | An endpoint on the same host that DOES echo request headers | `curl: (52) Empty reply from server` | The header was present and the echo guard killed the response. |
+
+A `200` with the secret visible in the body would mean the guard failed. A
+`curl: (52)` on the non-echoing probe means the policy host is unreachable, not
+that injection worked.
+
+### Save-time sync
+
+`POST /:projectId/secrets` and `PUT /:projectId/secrets/:identifier/strategy`
+push the binding to every active sandbox and report the outcome in
+`delivery_sync`:
+
+```ts
+delivery_sync: {
+  ok: boolean;
+  targeted: number;
+  synced: number;
+  failed: number;
+  failures: Array<{ session_id: string; sandbox_id: string | null; reason: string }>;
+} | null
+```
+
+`null` means no sync ran: the row is not an egress secret, or the project has no
+active session. A partial failure returns `ok: false` with one entry per session
+that did not take the binding. The save itself still succeeds; the stored policy
+is the source of truth and the next session start reapplies it.
+
+### File map
+
+| Concern | File |
+| --- | --- |
+| Delivery decision for one row | `apps/api/src/secrets/strategy.ts` |
+| Policy validation, bindings, destination conflicts | `apps/api/src/secrets/network-boundary.ts` |
+| Provider replica, attach, arm, erase | `apps/api/src/secrets/platinum-network-boundary.ts` |
+| Deployment capability flag | `apps/api/src/secrets/network-boundary-availability.ts` |
+| Session grant + allowlist resolution | `apps/api/src/projects/lib/network-secret-boundary.ts` |
+| Provider adapter and teardown | `apps/api/src/platform/providers/platinum.ts` |
+| Save routes | `apps/api/src/projects/routes/r3.ts` |
+| Web editor | `apps/web/src/features/workspace/customize/sections/view/secrets-view.tsx` |
+| CLI | `apps/cli/src/commands/secrets.ts` |
 
 ## Connector credentials
 
@@ -232,7 +411,15 @@ authentication scheme.
 ## Product surfaces
 
 The API, SDK, CLI, and web UI expose `strategy`, `consumer`,
-`delivery_status`, and `requires_rotation`. Values remain write-only.
+`delivery_status`, `delivery_blocked_reason`, and `requires_rotation`. Values
+remain write-only.
+
+`delivery_blocked_reason` is optional and nullable. Its only value today is
+`'no_agent_grant'`. Treat `null` as "granted, not applicable, or unknown", never
+as "blocked".
+
+`POST /:projectId/secrets` and `PUT /:projectId/secrets/:identifier/strategy`
+additionally return `delivery_sync`. No other route returns it.
 
 The web editor provides these choices:
 
@@ -318,7 +505,15 @@ without returning the new value to a client.
 - A generic unsupported broker backend returns `409`.
 - Transparent `egress` returns `409` when Platinum is unavailable.
 - An unenforceable transparent policy returns `400`.
+- Two egress secrets that claim one `(host, header)` pair return `409` with
+  `code: 'secret_boundary_destination_conflict'`.
+- Two egress secrets on one host with different headers are accepted. Both are
+  injected.
 - A granted transparent secret blocks session startup on unsupported providers.
+- Plain HTTP to a policy host is refused by the proxy, not by Kortix.
+- A response that would echo an egress secret is killed by the proxy.
+- A failed push to a running sandbox returns `delivery_sync.ok === false`. The
+  save still succeeds.
 - A stale, expired, or revoked session handle returns `409`.
 - A host, method, or path mismatch returns `403`.
 - A connector binding blocks secret deletion and incompatible strategy changes
@@ -345,7 +540,8 @@ Every change to this control plane must prove these paths:
 
 Platinum network substitution also requires a live provider test. That test
 must prove injection, sandbox non-disclosure, rotation, revocation, and echo
-blocking.
+blocking. Prove injection with the two-probe recipe above. A single probe
+against an echo endpoint cannot distinguish a working boundary from a dead one.
 
 ## Related specifications
 

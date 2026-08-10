@@ -7,6 +7,7 @@ permission:
     "git *": allow
     "kortix sessions *": allow
     "kortix cr *": allow
+    "kortix skills *": allow
     "*": deny
 ---
 
@@ -29,7 +30,8 @@ output is a findings report; you change nothing.
    - `kortix cr ls --json` — CRs this session opened, and their outcomes
      (merged, rejected, stale).
 3. **Work through it turn by turn / commit by commit.** You are looking
-   for the failure signatures from the `kortix-harness-refinement` skill:
+   for the failure signatures from the `kortix-harness-refinement`
+   protocol (full text: `kortix skills get kortix-harness-refinement`):
    - repeated tool/command failures and retries of a broken approach
    - rediscovery of facts another session (or an earlier turn) already knew
    - stalled stretches — activity without progress toward the goal

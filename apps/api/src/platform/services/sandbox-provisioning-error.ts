@@ -2,6 +2,7 @@ export type SandboxProvisioningFailureCategory =
   | 'provider-capacity'
   | 'git-auth'
   | 'unsupported-secret-delivery'
+  | 'invalid-secret-boundary-policy'
   | 'sandbox-provider';
 
 export interface SandboxProvisioningFailure {
@@ -20,6 +21,10 @@ export const SANDBOX_PROVIDER_FAILURE_MESSAGE =
 export const UNSUPPORTED_SECRET_DELIVERY_MESSAGE =
   'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.';
 
+export const INVALID_SECRET_BOUNDARY_POLICY_MESSAGE =
+  "A network-boundary secret in this project has an invalid outbound policy, so no session can start. " +
+  'Two secrets cannot inject the same header for the same host. Fix the secret delivery settings — retrying will not help.';
+
 const CAPACITY_PATTERN =
   /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
 
@@ -28,6 +33,20 @@ const GIT_AUTH_PATTERN =
 
 const UNSUPPORTED_SECRET_DELIVERY_PATTERN =
   /does not support network-boundary secret delivery/i;
+
+/**
+ * The project's own network-boundary config is unusable, so `resolveNetworkBoundaryBindings`
+ * refuses the whole set before any provider is contacted.
+ *
+ * Distinct from `unsupported-secret-delivery`, which is a PROVIDER capability gap. This is a
+ * Kortix-side configuration error, and it used to be indistinguishable from a provider fault:
+ * with no pattern here it fell through to `sandbox-provider`, whose copy blames the provider and
+ * says "Try again" — for a state where retrying can never succeed. Two secrets claiming the same
+ * (host, header) is now rejected at save time, so this classifies the configs that predate that
+ * check, plus the other policy throws (invalid consumer, missing policy, non-exact host).
+ */
+const INVALID_SECRET_BOUNDARY_POLICY_PATTERN =
+  /both target .+ header |Network-boundary secret |Network-boundary delivery |invalid header injection/i;
 
 /**
  * Convert a provider or initialization error into one stable user contract.
@@ -42,6 +61,15 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
     return {
       category: 'unsupported-secret-delivery',
       userMessage: UNSUPPORTED_SECRET_DELIVERY_MESSAGE,
+      isCapacity: false,
+      isGitAuth: false,
+    };
+  }
+
+  if (INVALID_SECRET_BOUNDARY_POLICY_PATTERN.test(rawMessage)) {
+    return {
+      category: 'invalid-secret-boundary-policy',
+      userMessage: INVALID_SECRET_BOUNDARY_POLICY_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
     };

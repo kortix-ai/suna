@@ -25,9 +25,9 @@ function profile(name) {
 }
 
 describe('renderWebEnvironment', () => {
-  test('rewrites canonical profile URLs to isolated ECS frontend URLs', () => {
+  test('uses the canonical Dev host and isolated staging and production ECS hosts', () => {
     expect(renderWebEnvironment('dev', profile('dev')).NEXT_PUBLIC_APP_URL).toBe(
-      'https://dev-fe-ecs.kortix.com',
+      'https://dev.kortix.com',
     );
     expect(renderWebEnvironment('staging', profile('staging')).NEXT_PUBLIC_APP_URL).toBe(
       'https://staging-fe-ecs.kortix.com',

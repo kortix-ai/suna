@@ -20,16 +20,6 @@ import {
 }
 
 import {
-  to = aws_iam_role.qa_portal
-  id = "qa-portal"
-}
-
-import {
-  to = aws_iam_role.qa_publisher
-  id = "kortix-qa-publisher"
-}
-
-import {
   to = aws_iam_role.whatsapp_gateway_instance
   id = "whatsapp-gateway-instance"
 }

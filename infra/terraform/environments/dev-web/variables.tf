@@ -10,7 +10,7 @@ variable "web_image" {
 }
 
 variable "web_certificate_arn" {
-  description = "ACM wildcard certificate covering dev-fe-ecs.kortix.com."
+  description = "ACM wildcard certificate covering dev.kortix.com."
   type        = string
   default     = "arn:aws:acm:us-west-2:935064898258:certificate/d70f1f49-d981-4add-abb6-971bad1f3755"
 }
@@ -27,7 +27,7 @@ variable "cloudflare_api_token" {
 }
 
 variable "manage_dns" {
-  description = "Create only dev-fe-ecs.kortix.com. This stack never manages dev.kortix.com."
+  description = "Manage the canonical dev.kortix.com CNAME for the ECS frontend."
   type        = bool
   default     = true
 }

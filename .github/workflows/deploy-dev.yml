@@ -12,7 +12,7 @@ name: Deploy Dev
 #                   (see infra/cloudflare/workers/api-router).
 #   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest, deployed to
 #                   the dedicated kortix-dev-web ECS Fargate service at
-#                   dev-fe-ecs.kortix.com. dev.kortix.com stays on Vercel.
+#                   dev.kortix.com. Vercel is disabled for main.
 #   - CLI         → 4 cross-compiled binaries published to the mutable
 #                   `dev-latest` GitHub prerelease (default API base dev-api).
 #
@@ -646,7 +646,7 @@ jobs:
             --version "${{ needs.dev-version.outputs.version }}"
 
   publish-web-ecs-dns:
-    name: Publish Dev FE-ECS DNS
+    name: Publish canonical Dev ECS DNS
     needs: [detect-changes, deploy-web-ecs]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -664,7 +664,7 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Point only the isolated FE-ECS hostname at the web ALB
+      - name: Point the canonical Dev hostname at the web ALB
         run: |
           set -euo pipefail
           alb="$(aws elbv2 describe-load-balancers \
@@ -674,7 +674,7 @@ jobs:
           node infra/scripts/sync-web-dns.mjs dev "$alb"
 
   verify-web-dev:
-    name: Verify Dev FE-ECS and Vercel isolation
+    name: Verify canonical Dev frontend on ECS
     needs: [detect-changes, dev-version, publish-web-ecs-dns]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -683,39 +683,41 @@ jobs:
       EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
       WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
     steps:
-      - name: Verify ECS health, protection, runtime configuration, and Vercel isolation
+      - name: Verify ECS health, protection, runtime configuration, and edge headers
         run: |
           set -euo pipefail
           test -n "${WEB_PROTECTION_PASSWORD:-}" || {
             echo "::error::WEB_PROTECTION_PASSWORD is not configured."
             exit 1
           }
-          base=https://dev-fe-ecs.kortix.com
-          canonical=https://dev.kortix.com
+          base=https://dev.kortix.com
           consecutive_matches=0
           for attempt in $(seq 1 40); do
+            cookie_jar="$(mktemp)"
             body="$(curl -fsS --max-time 15 "$base/api/health" || true)"
             commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
             version="$(jq -r '.version // empty' <<<"$body" 2>/dev/null || true)"
             anonymous="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
-            protected="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/" || true)"
-            runtime="$(curl -fsS --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/api/runtime-config" || true)"
-            ecs_headers="$(curl -sS -D - -o /dev/null --max-time 15 "$base/" || true)"
-            canonical_headers="$(curl -sS -D - -o /dev/null --max-time 15 "$canonical/" || true)"
-            ecs_vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$ecs_headers")"
-            canonical_vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$canonical_headers")"
-            echo "(${attempt}/40) commit=${commit:-?} version=${version:-?} anonymous=${anonymous:-?} protected=${protected:-?} ecs_vercel_headers=${ecs_vercel_headers} canonical_vercel_headers=${canonical_vercel_headers}"
+            wrong="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}x" "$base/" || true)"
+            protected="$(curl -sS -c "$cookie_jar" -o /dev/null -w '%{http_code}' --max-time 15 -u "kortix:${WEB_PROTECTION_PASSWORD}" "$base/" || true)"
+            cookie_only="$(curl -sS -b "$cookie_jar" -o /dev/null -w '%{http_code}' --max-time 15 "$base/" || true)"
+            runtime="$(curl -fsS -b "$cookie_jar" --max-time 15 "$base/api/runtime-config" || true)"
+            headers="$(curl -sS -D - -o /dev/null --max-time 15 "$base/" || true)"
+            vercel_headers="$(awk 'BEGIN { IGNORECASE=1 } /^x-vercel-/ { count++ } END { print count + 0 }' <<<"$headers")"
+            rm -f "$cookie_jar"
+            echo "(${attempt}/40) commit=${commit:-?} version=${version:-?} anonymous=${anonymous:-?} wrong=${wrong:-?} protected=${protected:-?} cookie_only=${cookie_only:-?} vercel_headers=${vercel_headers}"
             if [ "$commit" = "$EXPECTED_COMMIT" ] \
               && [ "$version" = "$EXPECTED_VERSION" ] \
               && [ "$anonymous" = 401 ] \
+              && [ "$wrong" = 401 ] \
               && { [ "$protected" = 200 ] || [ "$protected" = 307 ] || [ "$protected" = 308 ]; } \
+              && { [ "$cookie_only" = 200 ] || [ "$cookie_only" = 307 ] || [ "$cookie_only" = 308 ]; } \
               && grep -q 'dev-api.kortix.com' <<<"$runtime" \
-              && grep -q 'dev-fe-ecs.kortix.com' <<<"$runtime" \
-              && [ "$ecs_vercel_headers" = 0 ] \
-              && [ "$canonical_vercel_headers" -gt 0 ]; then
+              && grep -q 'https://dev.kortix.com' <<<"$runtime" \
+              && [ "$vercel_headers" = 0 ]; then
               consecutive_matches=$((consecutive_matches + 1))
               if [ "$consecutive_matches" -ge 4 ]; then
-                echo "Dev FE-ECS served ${EXPECTED_COMMIT} for four consecutive checks. dev.kortix.com remained on Vercel."
+                echo "dev.kortix.com served ${EXPECTED_COMMIT} from ECS for four consecutive checks."
                 exit 0
               fi
             else
@@ -723,7 +725,7 @@ jobs:
             fi
             sleep 20
           done
-          echo "::error::Dev FE-ECS verification or Vercel isolation failed for ${EXPECTED_COMMIT}."
+          echo "::error::Canonical Dev ECS verification failed for ${EXPECTED_COMMIT}."
           exit 1
 
   # ── Move the self-host `:dev` channel tag onto the image that just built ────

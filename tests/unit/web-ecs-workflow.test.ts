@@ -42,24 +42,25 @@ describe('web ECS migration', () => {
     expect(webDeploy).toContain('bash infra/scripts/sync-web-env.sh dev');
     expect(webDeploy).toContain('--service web');
     expect(webDeploy).toContain('${{ needs.build-frontend.outputs.image }}');
-    expect(workflow).toContain('https://dev-fe-ecs.kortix.com');
+    expect(workflow).toContain('base=https://dev.kortix.com');
     expect(workflow).toContain('  publish-web-ecs-dns:');
     expect(workflow).toContain('node infra/scripts/sync-web-dns.mjs dev "$alb"');
     expect(workflow).not.toContain('detach-web-dev-vercel-domain');
-    expect(workflow).not.toContain('cutover-web-dev-dns');
     expect(workflow).not.toContain('detach-vercel-web-domain.mjs');
-    expect(workflow).not.toContain('sync-web-dns.mjs dev canonical');
     expect(workflow).toContain('consecutive_matches=0');
     expect(workflow).toContain('/^x-vercel-/');
-    expect(workflow).toContain('dev.kortix.com remained on Vercel');
+    expect(workflow).toContain('kortix:${WEB_PROTECTION_PASSWORD}x');
+    expect(workflow).toContain('cookie_only=');
+    expect(workflow).toContain('[ "$vercel_headers" = 0 ]');
+    expect(workflow).not.toContain('dev-fe-ecs.kortix.com');
     expect(workflow).toContain('gateway: ${{ steps.outputs.outputs.gateway }}');
     expect(workflow).toContain('cli: ${{ steps.outputs.outputs.cli }}');
     expect(workflow).toContain('gateway=false');
     expect(workflow).toContain('cli=false');
-    expect(workflow).toContain('dev.kortix.com stays on Vercel');
+    expect(workflow).toContain('Vercel is disabled for main');
   });
 
-  it('defines an isolated Dev web service that cannot manage canonical DNS', () => {
+  it('defines the Dev web service and canonical DNS record', () => {
     const terraform = read('infra/terraform/environments/dev-web/main.tf');
     const variables = read('infra/terraform/environments/dev-web/variables.tf');
 
@@ -68,9 +69,9 @@ describe('web ECS migration', () => {
     expect(terraform).toContain('container_name         = "web"');
     expect(terraform).toContain('health_check_path      = "/api/health"');
     expect(terraform).toContain('enable_postgres_egress = false');
-    expect(terraform).toContain('dev-fe-ecs');
-    expect(terraform).not.toContain('name    = "dev"');
-    expect(variables).toContain('This stack never manages dev.kortix.com');
+    expect(terraform).toContain('name    = "dev"');
+    expect(terraform).not.toContain('dev-fe-ecs');
+    expect(variables).toContain('Manage the canonical dev.kortix.com CNAME');
     expect(variables).not.toContain('manage_canonical_dns');
   });
 
@@ -150,6 +151,21 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('labels/preview');
     expect(previewScript).toContain('WEB_SECRET_NAME="kortix-preview-web-env"');
     expect(previewTerraform).toContain('name = "kortix-preview-web-env"');
+    expect(workflow).not.toMatch(/vercel/i);
+    expect(workflow).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
+    expect(workflow).toContain('"- **Frontend:** https://${web}"');
+  });
+
+  it('disables Vercel for Dev and PR previews only', () => {
+    const config = read('apps/web/vercel.json');
+    const ignore = read('apps/web/scripts/vercel-ignore.sh');
+
+    expect(config).toContain('"main": false');
+    expect(config).toContain('"staging": true');
+    expect(config).toContain('"prod": true');
+    expect(ignore).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
+    expect(ignore).not.toContain('*:main');
+    expect(ignore).toContain('dev and PR previews deploy on ECS only');
   });
 
   it('uses Basic auth credentials in QA instead of Vercel bypass headers', () => {
