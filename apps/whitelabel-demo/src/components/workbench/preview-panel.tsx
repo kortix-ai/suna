@@ -50,12 +50,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getApiKey, kortix } from '@/lib/kortix';
 import { getSessionToken } from '@/lib/session';
 import { cn } from '@/lib/utils';
-import type { SessionPublicShare } from '@kortix/sdk';
+import type { WorkspaceSessionPublicShare } from '@kortix/sdk';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that
 // needs no extra ids (private requires an ownerId, so it's omitted here).
 const SHARING_OPTIONS = [
-  { value: 'project', label: 'Everyone in project', intent: { mode: 'project' } as const },
+  { value: 'workspace', label: 'Everyone in workspace', intent: { mode: 'workspace' } as const },
   { value: 'members', label: 'Specific members only', intent: { mode: 'members' } as const },
 ];
 
@@ -66,7 +66,7 @@ function statusVariant(status?: string) {
 }
 
 /** Best-effort copyable URL for a public share, defensively reading its shape. */
-function shareUrl(share: SessionPublicShare): string {
+function shareUrl(share: WorkspaceSessionPublicShare): string {
   const raw: string = share.public_path ?? share.proxy_path ?? share.public_token ?? '';
   if (!raw) return '';
   if (/^https?:\/\//.test(raw)) return raw;
@@ -148,7 +148,7 @@ export function PreviewPanel({
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
-  const [sharingMode, setSharingMode] = useState<string>('project');
+  const [sharingMode, setSharingMode] = useState<string>('workspace');
 
   // Create-share dialog state.
   const [createOpen, setCreateOpen] = useState(false);

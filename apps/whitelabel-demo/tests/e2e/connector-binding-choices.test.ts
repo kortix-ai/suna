@@ -6,7 +6,7 @@ const connection = (over: Record<string, unknown> = {}) =>
   ({
     connection_id: 'p1',
     connector_alias: 'gmail',
-    owner_type: 'project',
+    owner_type: 'workspace',
     owner_id: null,
     label: 'Support',
     status: 'active',
@@ -36,20 +36,20 @@ describe('selectConnectorBindingChoices', () => {
     expect(choice!.unavailable).toBe('private_only');
   });
 
-  test('a revoked project connection is a different ask than a private one', () => {
+  test('a revoked workspace connection is a different ask than a private one', () => {
     const [choice] = selectConnectorBindingChoices([
       connection({ status: 'revoked' }),
     ]);
-    expect(choice!.unavailable).toBe('project_connection_inactive');
+    expect(choice!.unavailable).toBe('workspace_connection_inactive');
   });
 
   test('a bindable connection wins over any unbindable sibling on the same alias', () => {
     const [choice] = selectConnectorBindingChoices([
       connection({ connection_id: 'mine', owner_type: 'member', owner_id: 'u1' }),
-      connection({ connection_id: 'project', label: 'Project inbox' }),
+      connection({ connection_id: 'workspace', label: 'Workspace inbox' }),
     ]);
     expect(choice!.unavailable).toBeNull();
-    expect(choice!.connections.map((c) => c.connectionId)).toEqual(['project']);
+    expect(choice!.connections.map((c) => c.connectionId)).toEqual(['workspace']);
   });
 
   test('no connections is no connectors, not a crash', () => {
@@ -90,12 +90,12 @@ describe('connectorBindingNotice', () => {
     expect(notice.detail).toContain('own accounts');
   });
 
-  test('a revoked project connection asks for a reconnect, not a first-time share', () => {
+  test('a revoked workspace connection asks for a reconnect, not a first-time share', () => {
     const notice = connectorBindingNotice(
-      choiceFor({ unavailable: 'project_connection_inactive' }),
+      choiceFor({ unavailable: 'workspace_connection_inactive' }),
     )!;
     expect(notice.detail).toContain('reconnect');
-    expect(notice.detail).toContain('project');
+    expect(notice.detail).toContain('workspace');
     expect(notice.detail.toLowerCase()).not.toContain('team connection');
   });
 
@@ -104,7 +104,7 @@ describe('connectorBindingNotice', () => {
     // interactive flow that would connect one is refused for it outright
     // (403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY) — so a "connect it yourself"
     // button could only ever lead to that refusal.
-    for (const unavailable of ['private_only', 'project_connection_inactive']) {
+    for (const unavailable of ['private_only', 'workspace_connection_inactive']) {
       expect(
         connectorBindingNotice(choiceFor({ unavailable }))!.selfServiceAction,
       ).toBeNull();
@@ -112,7 +112,7 @@ describe('connectorBindingNotice', () => {
   });
 
   test('no notice ever tells the reader to connect the account themselves', () => {
-    for (const unavailable of ['private_only', 'project_connection_inactive']) {
+    for (const unavailable of ['private_only', 'workspace_connection_inactive']) {
       const notice = connectorBindingNotice(choiceFor({ unavailable }))!;
       expect(`${notice.title} ${notice.detail}`.toLowerCase()).not.toContain(
         'connect your',
@@ -141,7 +141,7 @@ describe('unavailable reason must not mislabel a shared connection (F4)', () => 
     const choices = selectConnectorBindingChoices([
       connection('external', 'revoked'),
     ]);
-    expect(choices[0]?.unavailable).toBe('project_connection_inactive');
+    expect(choices[0]?.unavailable).toBe('workspace_connection_inactive');
   });
 
   test('only a MEMBER-owned connection is genuinely private to one person', () => {
@@ -151,8 +151,8 @@ describe('unavailable reason must not mislabel a shared connection (F4)', () => 
     expect(choices[0]?.unavailable).toBe('private_only');
   });
 
-  test('an active project connection is offered, not reported unavailable', () => {
-    const choices = selectConnectorBindingChoices([connection('project')]);
+  test('an active workspace connection is offered, not reported unavailable', () => {
+    const choices = selectConnectorBindingChoices([connection('workspace')]);
     expect(choices[0]?.unavailable).toBeNull();
     expect(choices[0]?.connections).toHaveLength(1);
   });

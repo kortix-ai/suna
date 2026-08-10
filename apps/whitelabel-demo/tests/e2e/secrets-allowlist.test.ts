@@ -1,4 +1,4 @@
-import type { ProjectSecret } from '@kortix/sdk';
+import type { WorkspaceSecret } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { collidingIdentifiers, keyCollisionGroups } from '../../src/lib/secret-collisions';
 import { secretScope, selectAllowlistableSecrets } from '../../src/lib/secret-scope';
@@ -7,7 +7,7 @@ const secret = (identifier: string, name: string, over: Record<string, unknown> 
   ({
     identifier,
     name,
-    project_id: 'P1',
+    workspace_id: 'P1',
     secret_id: 's1',
     created_by: null,
     created_at: null,
@@ -17,7 +17,7 @@ const secret = (identifier: string, name: string, over: Record<string, unknown> 
     effective_source: 'shared',
     can_manage_shared: true,
     ...over,
-  }) as ProjectSecret;
+  }) as WorkspaceSecret;
 
 describe('selectAllowlistableSecrets', () => {
   test('offers ordinary runtime secrets', () => {

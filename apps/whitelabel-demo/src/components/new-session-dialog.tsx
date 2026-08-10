@@ -4,7 +4,7 @@
  * Start a session with its initial scope chosen up front.
  *
  * The sidebar used to create sessions with nothing but an id, which quietly
- * made "the project default agent, the agent's full secret grant, the default
+ * made "the workspace default agent, the agent's full secret grant, the default
  * connection for every connector" the only session shape this app could
  * produce. This is where that initial choice happens.
  *
@@ -48,7 +48,7 @@ import {
   buildSessionCreateInput,
 } from '@/lib/session-overrides';
 import { generateSessionId } from '@kortix/sdk';
-import { useProjectConfig, useVisibleAgents } from '@kortix/sdk/react';
+import { useWorkspaceConfig, useVisibleAgents } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -117,11 +117,11 @@ function NewSessionForm({
   );
 
   const agents = useVisibleAgents({ workspaceId });
-  const config = useProjectConfig(workspaceId);
+  const config = useWorkspaceConfig(workspaceId);
   const connectors = useConnectorBindingChoices(workspaceId);
   const secrets = useQuery({
     queryKey: qk.secrets(workspaceId),
-    queryFn: () => kortix.project(workspaceId).secrets.list(),
+    queryFn: () => kortix.workspace(workspaceId).secrets.list(),
     retry: false,
   });
 
@@ -134,8 +134,8 @@ function NewSessionForm({
   // Default to NOTHING checked rather than everything.
   //
   // Pre-checking every listed row looks helpful and makes create fail on two
-  // ordinary projects. `GET /secrets` lists rows of every scope, but create
-  // validates the allowlist against runtime-scoped rows only — so a project with
+  // ordinary workspaces. `GET /secrets` lists rows of every scope, but create
+  // validates the allowlist against runtime-scoped rows only — so a workspace with
   // a Teams/Slack install (whose install rows are `scope:'connector'`) gets
   // 404 SECRET_IDENTIFIER_NOT_FOUND. And two identifiers may legally share one
   // env KEY, which is exactly the 409 SECRET_IDENTIFIER_KEY_COLLISION the server
@@ -156,7 +156,7 @@ function NewSessionForm({
   const start = useMutation({
     mutationFn: async () => {
       const sessionId = generateSessionId();
-      await kortix.project(workspaceId).sessions.create(
+      await kortix.workspace(workspaceId).sessions.create(
         buildSessionCreateInput(overrides, {
           sessionId,
         }),
@@ -166,7 +166,7 @@ function NewSessionForm({
     onSuccess: (sessionId) => {
       invalidateSessions(qc, workspaceId);
       onDone();
-      router.push(`/projects/${workspaceId}/sessions/${sessionId}`);
+      router.push(`/workspaces/${workspaceId}/sessions/${sessionId}`);
     },
     onError: (err) => {
       // Each KaaB refusal has a distinct code and a different person who can
@@ -203,7 +203,7 @@ function NewSessionForm({
           />
           {agents.length === 0 && (
             <span className="text-xs text-muted-foreground">
-              This project runs its default agent.
+              This workspace runs its default agent.
             </span>
           )}
         </div>
@@ -256,7 +256,7 @@ function NewSessionForm({
             ))}
             {checked.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                This session will receive no project secrets at all.
+                This session will receive no workspace secrets at all.
               </p>
             )}
           </div>
@@ -269,7 +269,7 @@ function NewSessionForm({
             <Label>Connections</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Which shared account each connector acts as. Sessions started here
-              can only use project connections.
+              can only use workspace connections.
             </p>
           </div>
           <ConnectorBindingFields

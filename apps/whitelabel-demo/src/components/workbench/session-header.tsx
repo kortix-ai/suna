@@ -120,7 +120,7 @@ function SessionActions({
       invalidateSessions(qc, workspaceId);
       setConfirmingDelete(false);
       toast.success('Session deleted');
-      router.push(`/projects/${workspaceId}`);
+      router.push(`/workspaces/${workspaceId}`);
     },
     onError: () => toast.error('Could not delete'),
   });

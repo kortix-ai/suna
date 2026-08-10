@@ -79,7 +79,7 @@ export function sessionCreateFailure(err: unknown): SessionCreateFailure {
         title: 'A selected secret is not available to sessions',
         detail:
           serverText ??
-          'One of the secrets you picked is owned by a connector rather than the project runtime. Deselect it and start again.',
+          'One of the secrets you picked is owned by a connector rather than the workspace runtime. Deselect it and start again.',
         retryable: false,
       };
     case 'SECRET_IDENTIFIER_KEY_COLLISION':

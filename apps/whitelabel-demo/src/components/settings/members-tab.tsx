@@ -18,10 +18,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import type {
-  PendingProjectInvite,
-  ProjectAccessMember,
-  ProjectAccessRequest,
-  ProjectGroupGrant,
+  PendingWorkspaceInvite,
+  WorkspaceAccessMember,
+  WorkspaceAccessRequest,
+  WorkspaceGroupGrant,
 } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Mail, Send, Trash2, Users, X } from 'lucide-react';
@@ -33,7 +33,7 @@ const ROLES: Role[] = ['editor', 'member'];
 
 export function MembersTab({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
-  const base = ['project-access', workspaceId] as const;
+  const base = ['workspace-access', workspaceId] as const;
   const membersKey = base;
   const requestsKey = [...base, 'requests'] as const;
   const pendingKey = [...base, 'pending'] as const;
@@ -41,26 +41,26 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
 
   const access = useQuery({
     queryKey: membersKey,
-    queryFn: () => kortix.project(workspaceId).access.list(),
+    queryFn: () => kortix.workspace(workspaceId).access.list(),
   });
   const requests = useQuery({
     queryKey: requestsKey,
-    queryFn: () => kortix.project(workspaceId).access.requests(),
+    queryFn: () => kortix.workspace(workspaceId).access.requests(),
   });
   const pending = useQuery({
     queryKey: pendingKey,
-    queryFn: () => kortix.project(workspaceId).access.pendingInvites(),
+    queryFn: () => kortix.workspace(workspaceId).access.pendingInvites(),
   });
   const grants = useQuery({
     queryKey: grantsKey,
-    queryFn: () => kortix.project(workspaceId).access.groupGrants(),
+    queryFn: () => kortix.workspace(workspaceId).access.groupGrants(),
   });
 
   const [email, setEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<Role>('member');
 
   const invite = useMutation({
-    mutationFn: () => kortix.project(workspaceId).access.invite(email.trim(), inviteRole),
+    mutationFn: () => kortix.workspace(workspaceId).access.invite(email.trim(), inviteRole),
     onSuccess: () => {
       setEmail('');
       qc.invalidateQueries({ queryKey: membersKey });
@@ -72,7 +72,7 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
 
   const updateRole = useMutation({
     mutationFn: (v: { userId: string; role: Role }) =>
-      kortix.project(workspaceId).access.update(v.userId, v.role),
+      kortix.workspace(workspaceId).access.update(v.userId, v.role),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: membersKey });
       toast.success('Role updated');
@@ -81,7 +81,7 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
   });
 
   const revoke = useMutation({
-    mutationFn: (userId: string) => kortix.project(workspaceId).access.revoke(userId),
+    mutationFn: (userId: string) => kortix.workspace(workspaceId).access.revoke(userId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: membersKey });
       toast.success('Access revoked');
@@ -91,7 +91,7 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
 
   const approve = useMutation({
     mutationFn: (requestId: string) =>
-      kortix.project(workspaceId).access.approveRequest(requestId, 'member'),
+      kortix.workspace(workspaceId).access.approveRequest(requestId, 'member'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: requestsKey });
       qc.invalidateQueries({ queryKey: membersKey });
@@ -101,7 +101,7 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
   });
 
   const reject = useMutation({
-    mutationFn: (requestId: string) => kortix.project(workspaceId).access.rejectRequest(requestId),
+    mutationFn: (requestId: string) => kortix.workspace(workspaceId).access.rejectRequest(requestId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: requestsKey });
       toast.success('Request rejected');
@@ -110,7 +110,7 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
   });
 
   const resendInvite = useMutation({
-    mutationFn: (inviteId: string) => kortix.project(workspaceId).access.resendInvite(inviteId),
+    mutationFn: (inviteId: string) => kortix.workspace(workspaceId).access.resendInvite(inviteId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pendingKey });
       toast.success('Invite resent');
@@ -119,7 +119,7 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
   });
 
   const revokeInvite = useMutation({
-    mutationFn: (inviteId: string) => kortix.project(workspaceId).access.revokeInvite(inviteId),
+    mutationFn: (inviteId: string) => kortix.workspace(workspaceId).access.revokeInvite(inviteId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pendingKey });
       toast.success('Invite revoked');
@@ -127,12 +127,12 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
     onError: () => toast.error('Could not revoke invite'),
   });
 
-  const members: ProjectAccessMember[] = access.data?.members ?? [];
-  const requestItems: ProjectAccessRequest[] = (requests.data?.requests ?? []).filter(
+  const members: WorkspaceAccessMember[] = access.data?.members ?? [];
+  const requestItems: WorkspaceAccessRequest[] = (requests.data?.requests ?? []).filter(
     (r) => r.status === 'pending',
   );
-  const pendingItems: PendingProjectInvite[] = pending.data?.pending ?? [];
-  const grantItems: ProjectGroupGrant[] = grants.data?.grants ?? [];
+  const pendingItems: PendingWorkspaceInvite[] = pending.data?.pending ?? [];
+  const grantItems: WorkspaceGroupGrant[] = grants.data?.grants ?? [];
 
   return (
     <div className="space-y-4">
@@ -190,7 +190,7 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
           )}
           {members.map((m, i) => {
             const userId = String(m.user_id ?? m.email ?? i);
-            const role: Role = (m.effective_project_role ?? m.project_role ?? 'member') as Role;
+            const role: Role = (m.effective_workspace_role ?? m.workspace_role ?? 'member') as Role;
             const implicit = Boolean(m.has_implicit_access);
             return (
               <div key={userId} className="flex items-center justify-between gap-3 px-4 py-3">
@@ -262,7 +262,7 @@ export function MembersTab({ workspaceId }: { workspaceId: string }) {
                 <div className="min-w-0">
                   <div className="truncate text-sm">{p.email ?? 'Invitee'}</div>
                   <div className="text-xs text-muted-foreground">
-                    {p.project_role ?? 'member'}
+                    {p.workspace_role ?? 'member'}
                     {p.invite_expired ? ' · expired' : ''}
                   </div>
                 </div>

@@ -14,7 +14,7 @@ import {
   buildSessionCreateInput,
 } from '../../src/lib/session-overrides';
 
-const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
+const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const REMOVED_ATTRIBUTION_PATTERN = new RegExp(
   `${['end', 'user', 'ref'].join('_')}|${['origin', 'ref'].join('_')}`,
@@ -42,7 +42,7 @@ function renderedAll(ctx: SnippetContext = {}): string {
 
 describe('call snippets never render credentials', () => {
   /**
-   * The exact hazard: `GET /projects/{id}/secrets` returns rows, a screen holds
+   * The exact hazard: `GET /workspaces/{id}/secrets` returns rows, a screen holds
    * one, and a careless snippet builder spreads it into a request body. The
    * builder has to PICK the identifier and the env KEY — which is why
    * `SnippetContext['secret']` has no `value` field at all.
@@ -59,7 +59,7 @@ describe('call snippets never render credentials', () => {
   test('a secret row from the API cannot leak into any snippet', () => {
     // Passed the way a careless caller would pass it — the whole API row.
     const text = renderedAll({
-      workspaceId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       secret: fromSecretsApi as SnippetContext['secret'],
     });
     expect(text).not.toContain(fromSecretsApi.value);
@@ -78,13 +78,13 @@ describe('call snippets never render credentials', () => {
   });
 
   test('the bearer is only ever the placeholder', () => {
-    const text = renderedAll({ workspaceId: PROJECT_ID });
+    const text = renderedAll({ workspaceId: WORKSPACE_ID });
     // Any `Bearer` that is not the placeholder is a real token in a snippet.
     expect(text.match(/Bearer (?!\$KORTIX_API_KEY)\S+/)).toBeNull();
   });
 
   test('every HTTP request carries the placeholder authorization line', () => {
-    for (const snippet of callSnippets({ workspaceId: PROJECT_ID })) {
+    for (const snippet of callSnippets({ workspaceId: WORKSPACE_ID })) {
       if (!isCopyableHttp(snippet.http)) continue;
       expect(renderHttp(snippet.http)).toContain(AUTHORIZATION_HEADER);
     }
@@ -93,7 +93,7 @@ describe('call snippets never render credentials', () => {
 
 describe('attribution data is absent', () => {
   test('no snippet contains an upstream customer attribution field', () => {
-    expect(renderedAll({ workspaceId: PROJECT_ID })).not.toMatch(
+    expect(renderedAll({ workspaceId: WORKSPACE_ID })).not.toMatch(
       REMOVED_ATTRIBUTION_PATTERN,
     );
   });
@@ -115,7 +115,7 @@ describe('the create snippet is the request the dialog would send', () => {
 
   test('the chosen overrides are the ones rendered', () => {
     const snippet = callSnippet('session.create', {
-      workspaceId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: SESSION_ID,
       overrides: {
         agent: 'support',
@@ -139,10 +139,10 @@ describe('the create snippet is the request the dialog would send', () => {
     expect(renderHttp(snippet.http)).toContain(`"session_id": "${SESSION_ID}"`);
   });
 
-  test('the path is the project the screen is on', () => {
-    const snippet = callSnippet('session.create', { workspaceId: PROJECT_ID });
+  test('the path is the workspace the screen is on', () => {
+    const snippet = callSnippet('session.create', { workspaceId: WORKSPACE_ID });
     expect(renderHttp(snippet.http)).toContain(
-      `POST /v1/projects/${PROJECT_ID}/sessions`,
+      `POST /v1/workspaces/${WORKSPACE_ID}/sessions`,
     );
   });
 });
@@ -161,31 +161,31 @@ describe('the other calls', () => {
 
   test('the model change shows both hops and neither spells the runtime field', () => {
     const snippet = callSnippet('session.model', {
-      workspaceId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: SESSION_ID,
       model: 'anthropic/claude-sonnet-4-5',
     });
     expect(snippet.sdk).toContain("changeModel('anthropic/claude-sonnet-4-5')");
     expect(snippet.sdk).toContain('/api/session-model');
     expect(renderHttp(snippet.http)).toContain(
-      `PUT /v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/model`,
+      `PUT /v1/workspaces/${WORKSPACE_ID}/sessions/${SESSION_ID}/model`,
     );
     expect(rendered('session.model').toLowerCase()).not.toContain('opencode');
   });
 
-  test('session costs are read for the current project', () => {
+  test('session costs are read for the current workspace', () => {
     expect(
-      renderHttp(callSnippet('session.costs', { workspaceId: PROJECT_ID }).http),
-    ).toContain(`GET /v1/usage/session-costs?project_id=${PROJECT_ID}`);
+      renderHttp(callSnippet('session.costs', { workspaceId: WORKSPACE_ID }).http),
+    ).toContain(`GET /v1/usage/session-costs?workspace_id=${WORKSPACE_ID}`);
   });
 
   test('an approval resolves by execution id, and carries no widening scope', () => {
     const snippet = callSnippet('approval.resolve', {
-      workspaceId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       executionId: 'exec_42',
     });
     const rendered = renderHttp(snippet.http);
-    expect(rendered).toContain(`POST /v1/projects/${PROJECT_ID}/approvals/exec_42`);
+    expect(rendered).toContain(`POST /v1/workspaces/${WORKSPACE_ID}/approvals/exec_42`);
     expect(rendered).toContain('"decision": "approve"');
     // The documented call must not teach a scope that no longer exists — the
     // decision covers exactly the call that asked for it.
@@ -194,7 +194,7 @@ describe('the other calls', () => {
 
   test('a secret is addressed by identifier', () => {
     const snippet = callSnippet('secret.upsert', {
-      workspaceId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       secret: { identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY' },
     });
     expect(snippet.sdk).toContain('"identifier": "GMAPS-backup"');
@@ -208,7 +208,7 @@ describe('every snippet is complete', () => {
       expect(snippet.sdk.trim().length).toBeGreaterThan(0);
       expect(renderHttp(snippet.http).trim().length).toBeGreaterThan(0);
       expect(snippet.notes.length).toBeGreaterThan(0);
-      // A blank placeholder would render as `/v1/projects//sessions`.
+      // A blank placeholder would render as `/v1/workspaces//sessions`.
       expect(renderHttp(snippet.http)).not.toContain('//sessions');
     }
   });

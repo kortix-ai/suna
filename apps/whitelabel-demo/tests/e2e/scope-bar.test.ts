@@ -1,4 +1,4 @@
-import type { ProjectSecret } from '@kortix/sdk';
+import type { WorkspaceSecret } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
   MISSING_SECRET_NOTE,
@@ -23,7 +23,7 @@ const secret = (
   ({
     identifier,
     name,
-    project_id: 'P1',
+    workspace_id: 'P1',
     secret_id: `s-${identifier}`,
     created_by: null,
     created_at: null,
@@ -33,13 +33,13 @@ const secret = (
     effective_source: 'shared',
     can_manage_shared: true,
     ...over,
-  }) as ProjectSecret;
+  }) as WorkspaceSecret;
 
 const connection = (over: Record<string, unknown> = {}) =>
   ({
     connection_id: 'p1',
     connector_alias: 'gmail',
-    owner_type: 'project',
+    owner_type: 'workspace',
     owner_id: null,
     label: 'Support',
     status: 'active',
@@ -105,7 +105,7 @@ describe('scopeBarSecrets', () => {
     secret('SENTRY', 'SENTRY_DSN'),
   ];
 
-  test('an allowlist splits the project list into allowed and excluded', () => {
+  test('an allowlist splits the workspace list into allowed and excluded', () => {
     const scope = scopeBarSecrets({ secrets: items, allowlist: ['STRIPE'] });
     expect(scope.rows.map((row) => [row.identifier, row.membership])).toEqual([
       ['STRIPE', 'allowed'],
@@ -159,7 +159,7 @@ describe('scopeBarSecrets', () => {
   });
 
   test('an allowlisted identifier that no longer exists is named, not silently dropped', () => {
-    // The allowlist is frozen; the project's secrets are not. A session can
+    // The allowlist is frozen; the workspace's secrets are not. A session can
     // outlive a secret it names, and showing "3 allowed" over a list of two is
     // how that becomes invisible.
     const scope = scopeBarSecrets({
@@ -167,7 +167,7 @@ describe('scopeBarSecrets', () => {
       allowlist: ['STRIPE', 'DELETED'],
     });
     expect(scope.missing).toEqual(['DELETED']);
-    expect(MISSING_SECRET_NOTE).toContain('not a project secret now');
+    expect(MISSING_SECRET_NOTE).toContain('not a workspace secret now');
   });
 
   test('membership labels never call an un-narrowed session "allowed"', () => {
@@ -176,7 +176,7 @@ describe('scopeBarSecrets', () => {
     );
   });
 
-  test('a project with no secrets is an empty list, not a crash', () => {
+  test('a workspace with no secrets is an empty list, not a crash', () => {
     expect(
       scopeBarSecrets({ secrets: undefined, allowlist: undefined }).rows,
     ).toEqual([]);
@@ -274,7 +274,7 @@ describe('scopeBarConnectors', () => {
     expect(row!.notice!.selfServiceAction).toBeNull();
   });
 
-  test('a revoked project connection asks for a reconnect, not a first-time share', () => {
+  test('a revoked workspace connection asks for a reconnect, not a first-time share', () => {
     const choices = selectConnectorBindingChoices([
       connection({ status: 'revoked' }),
     ]);
@@ -314,7 +314,7 @@ describe('scopeBarConnectors', () => {
   });
 
   test('an alias bound to a connection that has since vanished still gets a row', () => {
-    // Dropping it would claim the session runs on the project default, which is
+    // Dropping it would claim the session runs on the workspace default, which is
     // exactly what it does not do — the binding is frozen into the sandbox.
     const { rows } = scopeBarConnectors({
       choices: [],
@@ -327,11 +327,11 @@ describe('scopeBarConnectors', () => {
     expect(rows[0]!.notice).toBeNull();
   });
 
-  test('nothing bound reads as project defaults, and no connectors reads as none', () => {
+  test('nothing bound reads as workspace defaults, and no connectors reads as none', () => {
     const choices = selectConnectorBindingChoices([connection()]);
     expect(
       scopeBarConnectors({ choices, boundConnections: {} }).summary,
-    ).toBe('Project defaults');
+    ).toBe('Workspace defaults');
     expect(
       scopeBarConnectors({ choices: undefined, boundConnections: {} })
         .summary,
@@ -362,7 +362,7 @@ describe('the draft carried into the next session', () => {
   });
 
   test('an un-narrowed session stays un-narrowed — no guessed empty allowlist', () => {
-    // `secrets: []` would boot the next session with NO project secrets, which
+    // `secrets: []` would boot the next session with NO workspace secrets, which
     // is the opposite of what "same scope as this one" means here.
     const body = buildSessionCreateInput(
       { agent: null, secrets: null, bindings: {}, runtimeContext: null },
@@ -387,7 +387,7 @@ describe('hasScopeDraft — when the Apply button may appear', () => {
     expect(hasScopeDraft(null)).toBe(true);
   });
 
-  test('an EMPTY list is a change — "no project secrets at all"', () => {
+  test('an EMPTY list is a change — "no workspace secrets at all"', () => {
     expect(hasScopeDraft([])).toBe(true);
   });
 

@@ -13,7 +13,7 @@
  */
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { isOwner, isValidProjectId } from '@/server/users';
+import { isOwner, isValidWorkspaceId } from '@/server/users';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
@@ -45,7 +45,7 @@ async function scoped(req: NextRequest) {
   const sessionId = url.searchParams.get('sessionId') ?? '';
   // Validate before interpolating into an upstream path, and check ownership
   // before touching anything — both are house rules for this boundary.
-  if (!isValidProjectId(workspaceId) || !UUID.test(sessionId)) {
+  if (!isValidWorkspaceId(workspaceId) || !UUID.test(sessionId)) {
     return { error: Response.json({ error: 'Invalid identifiers' }, { status: 400 }) };
   }
   if (!isOwner(session.userId, workspaceId)) {

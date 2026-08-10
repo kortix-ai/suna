@@ -27,7 +27,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
-import type { ChangeRequest } from '@kortix/sdk';
+import type { WorkspaceChangeRequest } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, GitMerge, GitPullRequest, Plus, RotateCcw, X } from 'lucide-react';
 import { useState } from 'react';
@@ -52,10 +52,10 @@ export function ChangeRequestsView({
 
   const list = useQuery({
     queryKey: ['change-requests', workspaceId],
-    queryFn: () => kortix.project(workspaceId).changeRequests.list(),
+    queryFn: () => kortix.workspace(workspaceId).changeRequests.list(),
   });
 
-  const items: ChangeRequest[] = list.data?.change_requests ?? [];
+  const items: WorkspaceChangeRequest[] = list.data?.change_requests ?? [];
 
   if (selectedCrId) {
     return (
@@ -140,17 +140,17 @@ function ChangeRequestDetail({
 
   const detail = useQuery({
     queryKey: ['change-request', workspaceId, crId],
-    queryFn: () => kortix.project(workspaceId).changeRequests.get(crId),
+    queryFn: () => kortix.workspace(workspaceId).changeRequests.get(crId),
   });
 
   const diff = useQuery({
     queryKey: ['change-request-diff', workspaceId, crId],
-    queryFn: () => kortix.project(workspaceId).changeRequests.diff(crId),
+    queryFn: () => kortix.workspace(workspaceId).changeRequests.diff(crId),
   });
 
   const mergePreview = useQuery({
     queryKey: ['change-request-merge-preview', workspaceId, crId],
-    queryFn: () => kortix.project(workspaceId).changeRequests.mergePreview(crId),
+    queryFn: () => kortix.workspace(workspaceId).changeRequests.mergePreview(crId),
   });
 
   function invalidate() {
@@ -163,7 +163,7 @@ function ChangeRequestDetail({
   }
 
   const merge = useMutation({
-    mutationFn: () => kortix.project(workspaceId).changeRequests.merge(crId),
+    mutationFn: () => kortix.workspace(workspaceId).changeRequests.merge(crId),
     onSuccess: () => {
       toast.success('Change request merged');
       invalidate();
@@ -172,7 +172,7 @@ function ChangeRequestDetail({
   });
 
   const close = useMutation({
-    mutationFn: () => kortix.project(workspaceId).changeRequests.close(crId),
+    mutationFn: () => kortix.workspace(workspaceId).changeRequests.close(crId),
     onSuccess: () => {
       toast.success('Change request closed');
       invalidate();
@@ -181,7 +181,7 @@ function ChangeRequestDetail({
   });
 
   const reopen = useMutation({
-    mutationFn: () => kortix.project(workspaceId).changeRequests.reopen(crId),
+    mutationFn: () => kortix.workspace(workspaceId).changeRequests.reopen(crId),
     onSuccess: () => {
       toast.success('Change request reopened');
       invalidate();
@@ -306,7 +306,7 @@ function OpenChangeRequestDialog({
 
   const openCr = useMutation({
     mutationFn: () =>
-      kortix.project(workspaceId).changeRequests.open({
+      kortix.workspace(workspaceId).changeRequests.open({
         title: title.trim(),
         description: description.trim() || undefined,
         head_ref: headRef.trim(),

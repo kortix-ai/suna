@@ -2,10 +2,10 @@ import type { SessionCostSummary } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { isValidProjectId, listOwnedProjects } from '@/server/users';
+import { isValidWorkspaceId, listOwnedWorkspaces } from '@/server/users';
 import type {
   SessionCostsResponse,
-  SessionCostProject,
+  SessionCostWorkspace,
 } from '@/app/session-costs/contract';
 import type { NextRequest } from 'next/server';
 
@@ -32,7 +32,7 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : 'request failed';
 }
 
-async function listProjectSessionCosts(
+async function listWorkspaceSessionCosts(
   kortix: ReturnType<typeof createScopedKortix>,
   workspaceId: string,
 ): Promise<SessionCostSummary[]> {
@@ -70,16 +70,16 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
 
   const markup = markupMultiplier();
-  const projectIds = listOwnedProjects(session.userId).filter(isValidProjectId);
+  const workspaceIds = listOwnedWorkspaces(session.userId).filter(isValidWorkspaceId);
   const kortix = createScopedKortix({
     backendUrl: upstreamBase(),
     getToken: async () => apiKey,
   });
 
-  const projects: SessionCostProject[] = await Promise.all(
-    projectIds.map(async (workspaceId) => {
+  const workspaces: SessionCostWorkspace[] = await Promise.all(
+    workspaceIds.map(async (workspaceId) => {
       try {
-        const sessions = await listProjectSessionCosts(kortix, workspaceId);
+        const sessions = await listWorkspaceSessionCosts(kortix, workspaceId);
         return {
           workspaceId,
           sessions: sessions.map((sessionCost) => ({
@@ -102,9 +102,9 @@ export async function GET(req: NextRequest) {
     }),
   );
 
-  const totals = projects.reduce(
-    (result, project) => {
-      for (const sessionCost of project.sessions) {
+  const totals = workspaces.reduce(
+    (result, workspace) => {
+      for (const sessionCost of workspace.sessions) {
         result.raw += sessionCost.total_cost;
         result.billed += sessionCost.billed_cost;
       }
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
       raw: round2(totals.raw),
       billed: round2(totals.billed),
     },
-    projects,
+    workspaces,
   };
 
   return Response.json(payload);

@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { SessionAudit } from '@kortix/sdk';
+import type { WorkspaceSessionAudit } from '@kortix/sdk';
 import {
   approvalFailure,
   sessionApprovalsView,
 } from '../../src/components/workbench/approvals-model';
 
-type Action = SessionAudit['actions'][number];
+type Action = WorkspaceSessionAudit['actions'][number];
 
 const action = (over: Partial<Action> = {}): Action => ({
   execution_id: 'exec-1',
@@ -24,7 +24,10 @@ const action = (over: Partial<Action> = {}): Action => ({
   ...over,
 });
 
-const audit = (actions: Action[], over: Partial<SessionAudit> = {}): SessionAudit => ({
+const audit = (
+  actions: Action[],
+  over: Partial<WorkspaceSessionAudit> = {},
+): WorkspaceSessionAudit => ({
   session_id: 'sess-1',
   agent: 'support',
   count: actions.length,
@@ -34,7 +37,7 @@ const audit = (actions: Action[], over: Partial<SessionAudit> = {}): SessionAudi
 
 describe('sessionApprovalsView', () => {
   test('a pending gate surfaces as its fully-qualified tool path', () => {
-    // `slack.send_message` is what a project policy matches on — the bare
+    // `slack.send_message` is what a workspace policy matches on — the bare
     // action name is ambiguous across connectors, so the row must carry both.
     const view = sessionApprovalsView(audit([action()]));
     expect(view.pending).toHaveLength(1);
@@ -108,10 +111,10 @@ describe('approvalFailure', () => {
       // A bare 403 has no code, and the SDK fills `code` with the status text —
       // so the classifier must not read that as a named refusal.
       code: '403',
-      data: { error: 'Only a project manager or the session launcher can resolve this' },
+      data: { error: 'Only a workspace manager or the session launcher can resolve this' },
     });
     expect(failure.kind).toBe('not_permitted');
-    expect(failure.detail).toContain('project manager');
+    expect(failure.detail).toContain('workspace manager');
   });
 
   test('409 reads as already decided, not as a failure to retry', () => {

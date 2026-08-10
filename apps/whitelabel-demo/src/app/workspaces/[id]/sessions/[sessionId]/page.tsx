@@ -1,7 +1,7 @@
 'use client';
 
-import { ProjectShell } from '@/components/project-shell';
-import { ApplicationUserBadge } from '@/components/project-access-panel';
+import { WorkspaceShell } from '@/components/workspace-shell';
+import { ApplicationUserBadge } from '@/components/workspace-access-panel';
 import { SessionApprovals } from '@/components/workbench/approvals-panel';
 import { BootScreen } from '@/components/workbench/boot-screen';
 import { SessionHeader } from '@/components/workbench/session-header';
@@ -11,9 +11,9 @@ import { useParams } from 'next/navigation';
 
 export default function SessionWorkbenchPage() {
   return (
-    <ProjectShell>
+    <WorkspaceShell>
       <Workbench />
-    </ProjectShell>
+    </WorkspaceShell>
   );
 }
 
@@ -23,7 +23,7 @@ function Workbench() {
   const sessionId = String(params.sessionId);
 
   // One hook owns readiness, transport selection, streaming, transcript
-  // projection, interactive requests, and message synchronization.
+  // workspaceion, interactive requests, and message synchronization.
   // The host reads the provider-neutral session state and renders it.
   const session = useSession(workspaceId, sessionId);
 

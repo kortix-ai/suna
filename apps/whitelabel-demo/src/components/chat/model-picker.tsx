@@ -2,7 +2,7 @@
 
 /**
  * Model picker — a controlled, searchable dropdown over a server-side model list
- * (`useProjectModels`). Used identically on the new-session screen and in the
+ * (`useWorkspaceModels`). Used identically on the new-session screen and in the
  * chat composer. `value`/`onChange` are a plain `{ providerID, modelID }` key, so
  * the same picker drives both the start config and per-message selection.
  */

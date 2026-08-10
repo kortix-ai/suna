@@ -12,7 +12,7 @@ export interface SessionCost {
   billed_cost: number;
 }
 
-export interface SessionCostProject {
+export interface SessionCostWorkspace {
   workspaceId: string;
   sessions: SessionCost[];
   error?: string;
@@ -24,5 +24,5 @@ export interface SessionCostsResponse {
     raw: number;
     billed: number;
   };
-  projects: SessionCostProject[];
+  workspaces: SessionCostWorkspace[];
 }

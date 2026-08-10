@@ -3,10 +3,10 @@
  * authenticated wrapper end user is allowed to reach through
  * `app/api/kortix/[...path]/route.ts`.
  *
- * Deny-by-default. This is deliberately NARROWER than what a project-scoped
+ * Deny-by-default. This is deliberately NARROWER than what a workspace-scoped
  * Kortix PAT can do (`apps/api/src/middleware/auth.ts`'s
- * `enforceTokenProjectScope`) — that gate protects ONE project's token from
- * reaching other projects; this one protects an entire Kortix ACCOUNT (the
+ * `enforceTokenWorkspaceScope`) — that gate protects ONE workspace's token from
+ * reaching other workspaces; this one protects an entire Kortix ACCOUNT (the
  * operator's, behind `KORTIX_API_KEY`) from an unbounded number of wrapper end
  * users, so it also blocks account-admin surfaces (members, invites, billing,
  * GitHub App installs, platform/admin) outright — those are the operator's to
@@ -22,12 +22,14 @@ export interface PolicyResult {
   /** Only meaningful when `allow` is false. */
   status: number;
   reason: string;
-  /** `GET /projects` → the proxy should filter the response to owned projects. */
-  filterProjectsList?: boolean;
-  /** `POST /projects/provision` → the proxy should record the new project as owned. */
+  /** `GET /workspaces` → the proxy should filter the response to owned workspaces. */
+  filterWorkspacesList?: boolean;
+  /** `POST /workspaces/provision` → the proxy should record the new workspace as owned. */
   recordProvisionOwner?: boolean;
+  /** Wire key used by the Workspace route or deprecated Project alias. */
+  responseWorkspaceIdKey?: 'workspace_id' | 'project_id';
   /** Owned session `/start` → record its runtime external id for proxy authorization. */
-  recordRuntimeProjectId?: string;
+  recordRuntimeWorkspaceId?: string;
 }
 
 function allow(extra: Partial<PolicyResult> = {}): PolicyResult {
@@ -39,14 +41,37 @@ function deny(status: number, reason: string): PolicyResult {
 }
 
 /**
+ * Keep deprecated Project routes at the wrapper boundary. Authorization below
+ * operates on one canonical Workspace path and never duplicates policy rules.
+ */
+function normalizeWorkspacePath(path: string): {
+  path: string;
+  responseWorkspaceIdKey: 'workspace_id' | 'project_id';
+} {
+  if (path === 'projects' || path.startsWith('projects/')) {
+    return {
+      path: `workspaces${path.slice('projects'.length)}`,
+      responseWorkspaceIdKey: 'project_id',
+    };
+  }
+  if (path === 'connectors/projects' || path.startsWith('connectors/projects/')) {
+    return {
+      path: `connectors/workspaces${path.slice('connectors/projects'.length)}`,
+      responseWorkspaceIdKey: 'project_id',
+    };
+  }
+  return { path, responseWorkspaceIdKey: 'workspace_id' };
+}
+
+/**
  * @param method                     HTTP method (any case).
  * @param path                       Upstream path with the leading `/v1` and any
  *                                   leading/trailing slashes stripped, e.g.
- *                                   `projects/abc123/sessions`, `accounts`,
+ *                                   `workspaces/abc123/sessions`, `accounts`,
  *                                   `p/sb_123/3000/index.html`.
- * @param isOwner                    Predicate: does the caller own this project id?
- * @param resolveProjectIdForSandbox Resolve a `p/{sandboxId}/...` sandbox id to the
- *                                   project id it belongs to (or `null`/`undefined` if
+ * @param isOwner                    Predicate: does the caller own this workspace id?
+ * @param resolveWorkspaceIdForSandbox Resolve a `p/{sandboxId}/...` sandbox id to the
+ *                                   workspace id it belongs to (or `null`/`undefined` if
  *                                   unknown). Required to allow sandbox-proxy traffic —
  *                                   see the `p/` rule below. The caller (the proxy
  *                                   route) is expected to back this with an
@@ -59,9 +84,11 @@ export function evaluatePolicy(
   method: string,
   path: string,
   isOwner: (workspaceId: string) => boolean,
-  resolveProjectIdForSandbox?: (sandboxId: string) => string | null | undefined,
+  resolveWorkspaceIdForSandbox?: (sandboxId: string) => string | null | undefined,
 ): PolicyResult {
-  const p = path.replace(/^\/+/, '').replace(/\/+$/, '');
+  const rawPath = path.replace(/^\/+/, '').replace(/\/+$/, '');
+  const normalized = normalizeWorkspacePath(rawPath);
+  const p = normalized.path;
   const m = method.toUpperCase();
 
   // ── Preview proxy (`/v1/p/...`) ───────────────────────────────────────────
@@ -74,19 +101,19 @@ export function evaluatePolicy(
   // reach `p/{sandboxId}/{port}/...` for ANY sandboxId, not just one the
   // caller owns (HIGH IDOR — any authenticated wrapper user could read/write
   // another tenant's live sandbox by guessing or observing its id). Sandbox
-  // ids are opaque (Daytona's own external id, unrelated to the project id —
+  // ids are opaque (Daytona's own external id, unrelated to the workspace id —
   // see `packages/sdk/src/session/url.ts`), so this now requires the caller
-  // to resolve sandboxId → workspaceId via `resolveProjectIdForSandbox` and
-  // checks that resolved project against `isOwner`, mirroring the
-  // `projects/{id}/...` / `connectors/projects/{id}/...` ownership checks
-  // below. `resolveProjectIdForSandbox` is not wired up here (this module
+  // to resolve sandboxId → workspaceId via `resolveWorkspaceIdForSandbox` and
+  // checks that resolved workspace against `isOwner`, mirroring the
+  // `workspaces/{id}/...` / `connectors/workspaces/{id}/...` ownership checks
+  // below. `resolveWorkspaceIdForSandbox` is not wired up here (this module
   // has no upstream access) — until the caller supplies it, sandbox-proxy
   // traffic fails closed (denied) rather than staying open to every
   // authenticated session.
   const sandboxProxyMatch = p.match(/^p\/([^/]+)\/(\d+)(?:\/.*)?$/);
   if (sandboxProxyMatch) {
     const [, sandboxId] = sandboxProxyMatch;
-    const workspaceId = resolveProjectIdForSandbox?.(sandboxId);
+    const workspaceId = resolveWorkspaceIdForSandbox?.(sandboxId);
     if (!workspaceId || !isOwner(workspaceId)) {
       return deny(403, "You don't have access to this sandbox.");
     }
@@ -97,55 +124,61 @@ export function evaluatePolicy(
   // check above, unchanged from before.
   if (/^p\//.test(p) || p === 'p') return allow();
 
-  // ── Projects: bare collection ─────────────────────────────────────────────
-  if (p === 'projects' && m === 'GET')
-    return allow({ filterProjectsList: true });
-  if (p === 'projects' && m === 'POST') {
+  // ── Workspaces: bare collection ─────────────────────────────────────────────
+  if (p === 'workspaces' && m === 'GET')
+    return allow({
+      filterWorkspacesList: true,
+      responseWorkspaceIdKey: normalized.responseWorkspaceIdKey,
+    });
+  if (p === 'workspaces' && m === 'POST') {
     return deny(
       403,
-      'Use /projects/provision — plain project creation bypasses per-user ownership tracking in wrapper mode.',
+      'Use /workspaces/provision — plain workspace creation bypasses per-user ownership tracking in wrapper mode.',
     );
   }
-  if (p === 'projects/create-repo') {
+  if (p === 'workspaces/create-repo') {
     return deny(
       403,
       'Not used by this app; blocked by default in wrapper mode.',
     );
   }
-  if (p === 'projects/provision' && m === 'POST')
-    return allow({ recordProvisionOwner: true });
+  if (p === 'workspaces/provision' && m === 'POST')
+    return allow({
+      recordProvisionOwner: true,
+      responseWorkspaceIdKey: normalized.responseWorkspaceIdKey,
+    });
 
-  // ── Projects: scoped to one id ────────────────────────────────────────────
-  // Everything the app does once a project exists — detail, sessions,
+  // ── Workspaces: scoped to one id ────────────────────────────────────────────
+  // Everything the app does once a workspace exists — detail, sessions,
   // gateway (cost/logs), secrets, sandbox, llm-catalog, settings — all live
-  // under `projects/{id}/...`. Connector/policy management goes through
-  // `connectors/projects/{id}/...` instead. Both require ownership of `{id}`.
+  // under `workspaces/{id}/...`. Connector/policy management goes through
+  // `connectors/workspaces/{id}/...` instead. Both require ownership of `{id}`.
   const sessionStartMatch = p.match(
-    /^projects\/([^/]+)\/sessions\/[^/]+\/start$/,
+    /^workspaces\/([^/]+)\/sessions\/[^/]+\/start$/,
   );
   if (sessionStartMatch && m === 'POST') {
     const workspaceId = sessionStartMatch[1];
     return isOwner(workspaceId)
-      ? allow({ recordRuntimeProjectId: workspaceId })
-      : deny(403, "You don't have access to this project.");
+      ? allow({ recordRuntimeWorkspaceId: workspaceId })
+      : deny(403, "You don't have access to this workspace.");
   }
 
-  const projMatch = p.match(/^projects\/([^/]+)(?:\/.*)?$/);
+  const projMatch = p.match(/^workspaces\/([^/]+)(?:\/.*)?$/);
   if (projMatch) {
     return isOwner(projMatch[1])
       ? allow()
-      : deny(403, "You don't have access to this project.");
+      : deny(403, "You don't have access to this workspace.");
   }
-  const connectorMatch = p.match(/^connectors\/projects\/([^/]+)(?:\/.*)?$/);
+  const connectorMatch = p.match(/^connectors\/workspaces\/([^/]+)(?:\/.*)?$/);
   if (connectorMatch) {
     return isOwner(connectorMatch[1])
       ? allow()
-      : deny(403, "You don't have access to this project.");
+      : deny(403, "You don't have access to this workspace.");
   }
 
   // ── Accounts: self-identity probe only ────────────────────────────────────
-  // Mirrors the upstream project-scoped-PAT allowlist in
-  // `enforceTokenProjectScope` (`/v1/accounts/me` only). Every other
+  // Mirrors the upstream workspace-scoped-PAT allowlist in
+  // `enforceTokenWorkspaceScope` (`/v1/accounts/me` only). Every other
   // `/accounts*` route — list, create, members, invites, leave, billing — is
   // operator-only account administration and is NOT exposed to wrapper end
   // users. Lumen's own `/account` page is a direct-mode-only surface in
@@ -158,7 +191,7 @@ export function evaluatePolicy(
   // ── Everything else ────────────────────────────────────────────────────────
   // billing/*, platform/* (operator sandbox-fleet admin), transcription,
   // github/* (App installs are account-level) — none of these are used by
-  // this app's UI, and none belong to a single project a user owns. Deny by
+  // this app's UI, and none belong to a single workspace a user owns. Deny by
   // default rather than silently widen the surface later.
   return deny(403, `Route not permitted in wrapper mode: ${m} /${p}`);
 }

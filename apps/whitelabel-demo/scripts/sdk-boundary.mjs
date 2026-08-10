@@ -22,11 +22,11 @@ const ALLOWED_CLIENT_BFF_ROUTES = [
   // the runtime, so the translation stays server-side and the client says `model`.
   '/api/session-model',
   '/api/session-costs',
-  // Lists the ACCOUNT's projects so an operator can adopt one into this demo
-  // user. Gated on LUMEN_ALLOW_PROJECT_IMPORT and off by default — it is the one
-  // place the wrapper's per-end-user project filter is deliberately bypassed, so
+  // Lists the ACCOUNT's workspaces so an operator can adopt one into this demo
+  // user. Gated on LUMEN_ALLOW_WORKSPACE_IMPORT and off by default — it is the one
+  // place the wrapper's per-end-user workspace filter is deliberately bypassed, so
   // it is registered here rather than reached through the generic proxy.
-  '/api/projects/import',
+  '/api/workspaces/import',
 ];
 
 const RULES = [

@@ -5,7 +5,7 @@ Lumen is the complete reference app for `@kortix/sdk`.
 The app has five architecture rules:
 
 1. The browser creates one Kortix client in `src/lib/kortix.ts`.
-2. One `useSession(projectId, sessionId)` hook owns each session workbench.
+2. One `useSession(workspaceId, sessionId)` hook owns each session workbench.
 3. The client does not select or implement a runtime transport.
 4. Server routes own privileged credentials and preview URL resolution.
 5. Only the SDK transport layer sends Kortix backend HTTP requests.
@@ -55,7 +55,7 @@ Wrapper mode reconfigures this same client. It does not create a second client.
 The session route calls one hook:
 
 ```tsx
-const session = useSession(projectId, sessionId);
+const session = useSession(workspaceId, sessionId);
 
 return session.phase !== 'ready' ? (
   <BootScreen
@@ -66,7 +66,7 @@ return session.phase !== 'ready' ? (
 ) : (
   <WorkbenchTabs
     session={session}
-    projectId={projectId}
+    workspaceId={workspaceId}
     sessionId={sessionId}
   />
 );
@@ -84,15 +84,15 @@ The hook exposes the complete workbench contract:
 The host does not mount a second event provider. The host does not resolve a
 provider session identifier.
 
-## Project experiment
+## Workspace experiment
 
-The project settings page reads `project.experimental_features`.
+The workspace settings page reads `workspace.experimental_features`.
 
 It renders each available feature by its server-provided label and description.
 It updates a feature through:
 
 ```ts
-kortix.project(projectId).updateExperimentalFeature(feature.key, enabled);
+kortix.workspace(workspaceId).updateExperimentalFeature(feature.key, enabled);
 ```
 
 The host does not contain hard-coded experiment keys.
@@ -105,11 +105,11 @@ It sends the selected port or localhost URL to `POST /api/preview-url`. The
 server route:
 
 1. Authenticates the caller.
-2. Checks project ownership in wrapper mode.
+2. Checks workspace ownership in wrapper mode.
 3. Creates a request-scoped server SDK client.
 4. Calls `session.ensureReady()`.
 5. Resolves the preview URL through the SDK.
-6. Mints a project-scoped preview token.
+6. Mints a workspace-scoped preview token.
 7. Returns one final authenticated URL.
 
 The response does not expose a standalone token, upstream base URL, or runtime
@@ -138,32 +138,40 @@ Set `KORTIX_API_KEY` to enable wrapper mode.
 - The shared SDK client targets `/api/kortix`.
 - The BFF delegates forwarding to `@kortix/sdk/server`.
 - The SDK substitutes `KORTIX_API_KEY` on upstream requests.
-- `src/server/users.ts` enforces per-user project ownership.
+- `src/server/users.ts` enforces per-user workspace ownership.
 - `src/server/policy.ts` applies a deny-by-default route policy.
 - `src/server/rate-limit.ts` applies per-user limits.
 - `/api/session-costs` applies the configured `COST_MARKUP` to session costs.
 
 The Kortix API key remains server-side.
 
+## Compatibility
+
+Workspace is the canonical application model. The wrapper still accepts the
+deprecated `/v1/projects` and `/v1/connectors/projects` SDK routes at its proxy
+boundary. Browser `/projects/**` routes redirect to `/workspaces/**`.
+`LUMEN_ALLOW_PROJECT_IMPORT` remains a deprecated fallback for
+`LUMEN_ALLOW_WORKSPACE_IMPORT`.
+
 ## Product surfaces
 
 | Route                                 | SDK-backed surface                                                                               |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `/`                                   | Project list and provisioning                                                                    |
-| `/account`                            | Accounts, members, roles, invites, and account projects                                          |
-| `/projects/[id]`                      | Session creation, agent selection, model selection, and templates                                |
-| `/projects/[id]/sessions/[sessionId]` | Chat, files, changes, previews, shares, and session actions                                      |
-| `/projects/[id]/settings`             | General settings, experiments, capabilities, secrets, access, connectors, triggers, and policies |
+| `/`                                   | Workspace list and provisioning                                                                    |
+| `/account`                            | Accounts, members, roles, invites, and account workspaces                                          |
+| `/workspaces/[id]`                      | Session creation, agent selection, model selection, and templates                                |
+| `/workspaces/[id]/sessions/[sessionId]` | Chat, files, changes, previews, shares, and session actions                                      |
+| `/workspaces/[id]/settings`             | General settings, experiments, capabilities, secrets, access, connectors, triggers, and policies |
 | `/session-costs`                      | Wrapper session cost and markup report                                                           |
 
 The app uses the following public SDK groups:
 
 - `kortix.accounts`
-- `kortix.projects`
-- `kortix.project(projectId)`
-- `kortix.session(projectId, sessionId)`
-- `useSession(projectId, sessionId)`
-- Project model, agent, and configuration hooks
+- `kortix.workspaces`
+- `kortix.workspace(workspaceId)`
+- `kortix.session(workspaceId, sessionId)`
+- `useSession(workspaceId, sessionId)`
+- Workspace model, agent, and configuration hooks
 - Headless turn classification and part rendering
 
 ## Auth

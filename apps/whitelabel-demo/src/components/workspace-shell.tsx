@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * The per-project layout: a left rail (back, project name, new session, the live
- * session list, settings) + a main pane. Shared by the project home, the session
- * workbench, and project settings so navigation stays consistent.
+ * The per-workspace layout: a left rail (back, workspace name, new session, the live
+ * session list, settings) + a main pane. Shared by the workspace home, the session
+ * workbench, and workspace settings so navigation stays consistent.
  */
 
 import { NewSessionDialog } from '@/components/new-session-dialog';
@@ -28,28 +28,28 @@ const STATUS_DOT: Record<string, string> = {
   failed: 'bg-destructive',
 };
 
-/** 403/404 from the API — access denied or the project doesn't exist here. */
+/** 403/404 from the API — access denied or the workspace doesn't exist here. */
 function isAccessError(err: unknown): boolean {
   const e = err as { status?: number; message?: string } | undefined;
   if (e?.status === 403 || e?.status === 404) return true;
   return /\b40[34]\b|forbidden|do not have access|not found/i.test(e?.message ?? '');
 }
 
-export function ProjectShell({ children }: { children: React.ReactNode }) {
+export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const workspaceId = String(params.id);
   const activeSessionId = params.sessionId ? String(params.sessionId) : null;
 
-  const project = useQuery({
-    queryKey: qk.project(workspaceId),
-    queryFn: () => kortix.project(workspaceId).get(),
+  const workspace = useQuery({
+    queryKey: qk.workspace(workspaceId),
+    queryFn: () => kortix.workspace(workspaceId).get(),
     // 403/404 never recovers on retry — fail fast instead of spamming.
     retry: (count, err) => !isAccessError(err) && count < 2,
   });
-  const denied = project.isError && isAccessError(project.error);
+  const denied = workspace.isError && isAccessError(workspace.error);
   const sessions = useQuery({
     queryKey: qk.sessions(workspaceId),
-    queryFn: () => kortix.project(workspaceId).sessions.list(),
+    queryFn: () => kortix.workspace(workspaceId).sessions.list(),
     refetchInterval: denied ? false : 5_000,
     enabled: !denied,
     retry: (count, err) => !isAccessError(err) && count < 2,
@@ -64,19 +64,19 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
       <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar">
         <div className="flex items-center gap-2 px-3 py-3">
           <Link href="/">
-            <Button variant="ghost" size="icon" className="size-8" aria-label="All projects">
+            <Button variant="ghost" size="icon" className="size-8" aria-label="All workspaces">
               <ArrowLeft className="size-4" />
             </Button>
           </Link>
           <div className="min-w-0 flex-1">
-            {project.isLoading ? (
+            {workspace.isLoading ? (
               <Skeleton className="h-4 w-28" />
             ) : (
-              <div className="truncate text-sm font-medium">{project.data?.name ?? 'Project'}</div>
+              <div className="truncate text-sm font-medium">{workspace.data?.name ?? 'Workspace'}</div>
             )}
           </div>
-          <Link href={`/projects/${workspaceId}/settings`}>
-            <Button variant="ghost" size="icon" className="size-8" aria-label="Project settings">
+          <Link href={`/workspaces/${workspaceId}/settings`}>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Workspace settings">
               <Settings className="size-4" />
             </Button>
           </Link>
@@ -113,7 +113,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
               return (
                 <Link
                   key={s.session_id}
-                  href={`/projects/${workspaceId}/sessions/${s.session_id}`}
+                  href={`/workspaces/${workspaceId}/sessions/${s.session_id}`}
                   className={cn(
                     'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
                     active
@@ -145,7 +145,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Shown when the API key can't see the project (403/404) — instead of a
+/** Shown when the API key can't see the workspace (403/404) — instead of a
  *  retry-spamming broken shell. */
 function AccessDenied() {
   return (
@@ -154,14 +154,14 @@ function AccessDenied() {
         <div className="grid size-12 place-items-center rounded-full border border-border bg-card">
           <FolderX className="size-5 text-muted-foreground" />
         </div>
-        <h1 className="mt-4 text-lg font-medium">Project not available</h1>
+        <h1 className="mt-4 text-lg font-medium">Workspace not available</h1>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-          This project doesn&apos;t exist, or your API key doesn&apos;t have access to it. Pick one
-          from your projects to continue.
+          This workspace doesn&apos;t exist, or your API key doesn&apos;t have access to it. Pick one
+          from your workspaces to continue.
         </p>
         <Button asChild className="mt-5 gap-2">
           <Link href="/">
-            <ArrowLeft className="size-4" /> All projects
+            <ArrowLeft className="size-4" /> All workspaces
           </Link>
         </Button>
       </div>

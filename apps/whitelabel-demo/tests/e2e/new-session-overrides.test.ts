@@ -24,7 +24,7 @@ const connection = (
 ): MockConnection => ({
   connection_id: 'p1',
   connector_alias: 'slack',
-  owner_type: 'project',
+  owner_type: 'workspace',
   owner_id: null,
   label: 'Support',
   status: 'active',
@@ -44,10 +44,10 @@ describe('starting a session with overrides', () => {
     mock = createMockUpstream(WRAPPER_KEY);
     app = await startApp(wrapperEnv({ KORTIX_UPSTREAM: `${mock.url}/v1` }));
     token = await loginUser(app, uniqueEmail('overrides'), DEMO_PASSWORD);
-    const project = await createTestKortix(app, token).projects.provision({
+    const workspace = await createTestKortix(app, token).workspaces.provision({
       name: 'Overrides',
     });
-    workspaceId = project.project_id;
+    workspaceId = workspace.workspace_id;
     mock.seedConnections(workspaceId, [
       connection({
         connection_id: 'slack_team',
@@ -84,7 +84,7 @@ describe('starting a session with overrides', () => {
   async function lastSessionCreate() {
     const create = mock.requests.filter(
       (r) =>
-        r.method === 'POST' && r.path === `/v1/projects/${workspaceId}/sessions`,
+        r.method === 'POST' && r.path === `/v1/workspaces/${workspaceId}/sessions`,
     );
     expect(create.length).toBe(1);
     return create[0]!.body as Record<string, unknown>;
@@ -94,7 +94,7 @@ describe('starting a session with overrides', () => {
     mock.reset();
     const kortix = createTestKortix(app, token);
     await kortix
-      .project(workspaceId)
+      .workspace(workspaceId)
       .sessions.create(
         buildSessionCreateInput(
           { ...NO_OVERRIDES, secrets: ['STRIPE_KEY'] },
@@ -111,7 +111,7 @@ describe('starting a session with overrides', () => {
     mock.reset();
     const kortix = createTestKortix(app, token);
     await kortix
-      .project(workspaceId)
+      .workspace(workspaceId)
       .sessions.create(
         buildSessionCreateInput(
           { ...NO_OVERRIDES, bindings: { slack: 'slack_team' } },
@@ -129,7 +129,7 @@ describe('starting a session with overrides', () => {
   test('an untouched dialog adds nothing to the create the wrapper already sent', async () => {
     mock.reset();
     const kortix = createTestKortix(app, token);
-    await kortix.project(workspaceId).sessions.create(
+    await kortix.workspace(workspaceId).sessions.create(
       buildSessionCreateInput(NO_OVERRIDES, {
         sessionId: '00000000-0000-4000-8000-00000000a003',
       }),
@@ -140,22 +140,22 @@ describe('starting a session with overrides', () => {
     expect(body.session_id).toBe('00000000-0000-4000-8000-00000000a003');
   });
 
-  test('the mock returns the session collection shape used by the project page', async () => {
+  test('the mock returns the session collection shape used by the workspace page', async () => {
     const sessions = await createTestKortix(app, token)
-      .project(workspaceId)
+      .workspace(workspaceId)
       .sessions.list();
 
     expect(sessions).toEqual([]);
   });
 
-  test('the picker offers the project connection and only the project connection', async () => {
+  test('the picker offers the workspace connection and only the workspace connection', async () => {
     const slack = (await connectorChoices()).find((c) => c.alias === 'slack')!;
     expect(slack.connections.map((c) => c.connectionId)).toEqual([
       'slack_team',
     ]);
   });
 
-  test('an alias with no project connection is offered as "ask a teammate"', async () => {
+  test('an alias with no workspace connection is offered as "ask a teammate"', async () => {
     // The private connection exists upstream; it must never appear as an
     // option, and the alias must not silently vanish either.
     const gmail = (await connectorChoices()).find((c) => c.alias === 'gmail')!;

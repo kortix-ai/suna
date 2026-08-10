@@ -43,12 +43,12 @@ function NotInDirectMode() {
           Wrapper mode only
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          This view uses the wrapper&apos;s project ownership records to select
+          This view uses the wrapper&apos;s workspace ownership records to select
           sessions.
         </p>
         <Button asChild className="mt-5 gap-2">
           <Link href="/">
-            <ArrowLeft className="size-4" /> Back to projects
+            <ArrowLeft className="size-4" /> Back to workspaces
           </Link>
         </Button>
       </Card>
@@ -71,7 +71,7 @@ function SessionCostsDashboard() {
             href="/"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="size-4" /> Back to projects
+            <ArrowLeft className="size-4" /> Back to workspaces
           </Link>
         </div>
       </header>
@@ -125,36 +125,36 @@ function SessionCostsDashboard() {
             <div className="mt-8">
               <CallSnippet
                 id="session.costs"
-                context={{ workspaceId: data.projects[0]?.workspaceId }}
+                context={{ workspaceId: data.workspaces[0]?.workspaceId }}
               />
             </div>
 
-            {data.projects.length === 0 && (
+            {data.workspaces.length === 0 && (
               <Card className="mt-3 p-8 text-center text-sm text-muted-foreground">
-                No projects are available. Session costs appear after a session
+                No workspaces are available. Session costs appear after a session
                 records usage.
               </Card>
             )}
 
-            {data.projects.map((project) => (
+            {data.workspaces.map((workspace) => (
               <Card
-                key={project.workspaceId}
+                key={workspace.workspaceId}
                 className="mt-4 overflow-hidden p-0"
               >
                 <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
                   <span className="truncate font-mono text-xs text-muted-foreground">
-                    {project.workspaceId}
+                    {workspace.workspaceId}
                   </span>
                   <Badge variant="secondary" className="shrink-0">
-                    {project.sessions.length} session
-                    {project.sessions.length === 1 ? '' : 's'}
+                    {workspace.sessions.length} session
+                    {workspace.sessions.length === 1 ? '' : 's'}
                   </Badge>
                 </div>
-                {project.error ? (
+                {workspace.error ? (
                   <p className="px-4 py-4 text-xs text-destructive">
-                    {project.error}
+                    {workspace.error}
                   </p>
-                ) : project.sessions.length === 0 ? (
+                ) : workspace.sessions.length === 0 ? (
                   <p className="px-4 py-4 text-xs text-muted-foreground">
                     No sessions yet.
                   </p>
@@ -175,7 +175,7 @@ function SessionCostsDashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {project.sessions.map((sessionCost) => (
+                        {workspace.sessions.map((sessionCost) => (
                           <tr key={sessionCost.session_id}>
                             <td className="max-w-[10rem] truncate px-4 py-2 font-mono text-xs">
                               {sessionCost.session_id}

@@ -3,7 +3,7 @@ import type { ConnectorBindingChoice } from '@/server/bindable-connections';
 /**
  * What to tell someone about a connector they cannot bind.
  *
- * "Your own account" vs "a project connection" is the thing people
+ * "Your own account" vs "a workspace connection" is the thing people
  * get wrong about connectors in wrapper mode, so the copy names the distinction
  * instead of saying "no connections available".
  *
@@ -25,17 +25,17 @@ export function connectorBindingNotice(
 ): ConnectorBindingNotice | null {
   if (choice.connections.length > 0) return null;
 
-  if (choice.unavailable === 'project_connection_inactive') {
+  if (choice.unavailable === 'workspace_connection_inactive') {
     return {
       title: `${choice.alias} needs reconnecting`,
-      detail: `The project's ${choice.alias} connection is revoked or failing, so it cannot be used. A teammate has to reconnect it. It becomes available here when they do.`,
+      detail: `The workspace's ${choice.alias} connection is revoked or failing, so it cannot be used. A teammate has to reconnect it. It becomes available here when they do.`,
       selfServiceAction: null,
     };
   }
 
   return {
     title: `No shared ${choice.alias} account yet`,
-    detail: `${choice.alias} is only connected to people's own accounts, which sessions started here cannot use. When a teammate shares a ${choice.alias} connection with the project, it appears in this list.`,
+    detail: `${choice.alias} is only connected to people's own accounts, which sessions started here cannot use. When a teammate shares a ${choice.alias} connection with the workspace, it appears in this list.`,
     selfServiceAction: null,
   };
 }

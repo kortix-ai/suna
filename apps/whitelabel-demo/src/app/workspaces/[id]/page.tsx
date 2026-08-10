@@ -8,7 +8,7 @@ import {
   ConnectorBindingFields,
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
-import { ProjectShell } from '@/components/project-shell';
+import { WorkspaceShell } from '@/components/workspace-shell';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -23,8 +23,8 @@ import { invalidateSessions } from '@/lib/query-keys';
 import { generateSessionId, type SandboxTemplate } from '@kortix/sdk';
 import {
   type ModelKey,
-  useProjectConfig,
-  useProjectModels,
+  useWorkspaceConfig,
+  useWorkspaceModels,
   useVisibleAgents,
   writeStartStash,
 } from '@kortix/sdk/react';
@@ -49,7 +49,7 @@ const STARTERS = [
   {
     label: 'Onboard the agent',
     prompt:
-      'Onboard me — ask about my company, what we do, who our customers are, and our goals, then save it to project memory.',
+      'Onboard me — ask about my company, what we do, who our customers are, and our goals, then save it to workspace memory.',
   },
   {
     label: 'Fix a bug',
@@ -61,15 +61,15 @@ const STARTERS = [
   },
 ];
 
-export default function ProjectPage() {
+export default function WorkspacePage() {
   return (
-    <ProjectShell>
-      <ProjectHome />
-    </ProjectShell>
+    <WorkspaceShell>
+      <WorkspaceHome />
+    </WorkspaceShell>
   );
 }
 
-function ProjectHome() {
+function WorkspaceHome() {
   const workspaceId = String(useParams().id);
   const router = useRouter();
   const qc = useQueryClient();
@@ -88,7 +88,7 @@ function ProjectHome() {
   // resolves to server-side anyway.
   const [bindings, setBindings] = useState<Record<string, string>>({});
 
-  // Only project connections are offered: a wrapper has no personal identity
+  // Only workspace connections are offered: a wrapper has no personal identity
   // upstream, so a member's private connection cannot be bound at all. The
   // alias used to be hardcoded here, which meant exactly one connector could
   // ever be bound from this screen.
@@ -98,12 +98,12 @@ function ProjectHome() {
   const [model, setModel] = useState<ModelKey | null>(null);
 
   // Every picker is a server-side fetch — no runtime needed on this screen.
-  const models = useProjectModels(workspaceId);
+  const models = useWorkspaceModels(workspaceId);
   const agents = useVisibleAgents({ workspaceId });
-  const config = useProjectConfig(workspaceId);
+  const config = useWorkspaceConfig(workspaceId);
   const templates = useQuery({
-    queryKey: ['project-sandbox-templates', workspaceId],
-    queryFn: () => kortix.projects.sandboxTemplates(workspaceId),
+    queryKey: ['workspace-sandbox-templates', workspaceId],
+    queryFn: () => kortix.workspaces.sandboxTemplates(workspaceId),
     retry: false,
   });
   // `.sandboxTemplates()` returns `{ items: SandboxTemplate[] }` — this used to
@@ -117,7 +117,7 @@ function ProjectHome() {
       // Template + agent + bindings are create-time; the prompt + model + agent
       // flow into the first message (stashed) so the chosen model applies at
       // start. Unset overrides are omitted by the builder rather than guessed.
-      await kortix.project(workspaceId).sessions.create(
+      await kortix.workspace(workspaceId).sessions.create(
         buildSessionCreateInput(
           { ...NO_OVERRIDES, agent, bindings },
           {
@@ -129,14 +129,14 @@ function ProjectHome() {
       );
       writeStartStash(sessionId, { prompt: text, model, agent });
       kortix
-        .project(workspaceId)
+        .workspace(workspaceId)
         .onboardingComplete(true)
         .catch(() => {});
       return sessionId;
     },
     onSuccess: (sessionId) => {
       invalidateSessions(qc, workspaceId);
-      router.push(`/projects/${workspaceId}/sessions/${sessionId}`);
+      router.push(`/workspaces/${workspaceId}/sessions/${sessionId}`);
     },
     onError: (err: unknown) => {
       // A missing connector is the one create refusal with a real remedy, so it
@@ -171,7 +171,7 @@ function ProjectHome() {
         </div>
 
         {/* Which shared account each connector runs as — every alias the
-            project has connections for, including the ones where the honest
+            workspace has connections for, including the ones where the honest
             answer is "a teammate has to share this first". */}
         {(connectors.data?.connectors.length ?? 0) > 0 && (
           <div className="mb-3 text-left">
@@ -212,7 +212,7 @@ function ProjectHome() {
             rows={3}
             value={prompt}
             disabled={launching}
-            placeholder="e.g. Build a personal portfolio site with a projects gallery…"
+            placeholder="e.g. Build a personal portfolio site with a workspaces gallery…"
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {

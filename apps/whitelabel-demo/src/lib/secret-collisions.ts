@@ -1,11 +1,11 @@
-import type { ProjectSecret } from '@kortix/sdk';
+import type { WorkspaceSecret } from '@kortix/sdk';
 import { isAllowlistable } from './secret-scope';
 
 /**
  * Two secrets, one env KEY — legal to store, fatal to allowlist.
  *
  * A secret is `{ identifier, name (the env KEY), value }`. The identifier is
- * unique per project and is what an agent grant and a session allowlist
+ * unique per workspace and is what an agent grant and a session allowlist
  * reference; the KEY deliberately is NOT unique, so GMAPS-primary and
  * GMAPS-backup can both inject GOOGLE_MAPS_API_KEY. Creating the second one
  * succeeds — and then any session whose allowlist names both is refused with
@@ -30,7 +30,7 @@ export function normalizeSecretKey(name: string): string {
  * Every env KEY claimed by more than one identifier → the identifiers claiming
  * it, sorted. Keyed by the normalized KEY.
  */
-export function keyCollisionGroups(items: ProjectSecret[] | undefined): Map<string, string[]> {
+export function keyCollisionGroups(items: WorkspaceSecret[] | undefined): Map<string, string[]> {
   const byKey = new Map<string, string[]>();
   for (const secret of items ?? []) {
     if (!isAllowlistable(secret)) continue;
@@ -49,7 +49,7 @@ export function keyCollisionGroups(items: ProjectSecret[] | undefined): Map<stri
  * only claimant. What the per-row marker reads.
  */
 export function collidingIdentifiers(
-  items: ProjectSecret[] | undefined,
+  items: WorkspaceSecret[] | undefined,
   identifier: string,
 ): string[] {
   const row = (items ?? []).find((secret) => secret.identifier === identifier);
@@ -67,7 +67,7 @@ export function collidingIdentifiers(
  * claimant, so it is excluded.
  */
 export function pendingKeyCollision(
-  items: ProjectSecret[] | undefined,
+  items: WorkspaceSecret[] | undefined,
   draft: { identifier: string; name: string },
 ): string[] {
   const key = normalizeSecretKey(draft.name);

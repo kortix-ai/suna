@@ -3,7 +3,7 @@
 /**
  * The approval gate, in the session it belongs to.
  *
- * A project policy can mark a connector action `require_approval`; the agent's
+ * A workspace policy can mark a connector action `require_approval`; the agent's
  * turn then ENDS on a pending gate and nothing else happens until a person
  * decides. Until this panel existed the wrapper's operator had no way to see
  * that from Lumen — the session simply looked idle, and the only way to clear
@@ -68,7 +68,7 @@ export function SessionApprovals({
 
   const resolve = useMutation({
     mutationFn: (input: { executionId: string; decision: 'approve' | 'deny' }) =>
-      kortix.project(workspaceId).approvals.resolve(input.executionId, input.decision),
+      kortix.workspace(workspaceId).approvals.resolve(input.executionId, input.decision),
     onMutate: (input) => {
       setFailure(null);
       setDeciding(input.executionId);

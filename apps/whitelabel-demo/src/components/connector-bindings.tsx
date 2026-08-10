@@ -1,11 +1,11 @@
 'use client';
 
 /**
- * "Which account does this session act as?" — for every connector the project
+ * "Which account does this session act as?" — for every connector the workspace
  * has connections for, not one hardcoded alias.
  *
  * Two states, and the difference between them is the thing people get wrong:
- *  - project connections exist → pick one (or leave it on the project default)
+ *  - workspace connections exist → pick one (or leave it on the workspace default)
  *  - none do → say so, and say that a TEAMMATE is the one who can change it.
  *    There is deliberately no "connect it yourself" button; a wrapper has no
  *    personal upstream identity, and the interactive flow that would connect
@@ -27,7 +27,7 @@ import { Users } from 'lucide-react';
 
 const DEFAULT_VALUE = 'default';
 
-/** Every alias the project has connections for, with what may be bound. */
+/** Every alias the workspace has connections for, with what may be bound. */
 export function useConnectorBindingChoices(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: ['connector-binding-choices', workspaceId],
@@ -111,7 +111,7 @@ export function ConnectorBindingFields({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={DEFAULT_VALUE}>Project default</SelectItem>
+                <SelectItem value={DEFAULT_VALUE}>Workspace default</SelectItem>
                 {choice.connections.map((connection) => (
                   <SelectItem
                     key={connection.connectionId}

@@ -44,13 +44,13 @@ describe.skipIf(!hasLiveEnv)('live upstream golden path', () => {
     const token = await loginUser(app, email, DEMO_PASSWORD);
 
     const kortix = createTestKortix(app, token);
-    const project = await kortix.projects.provision({
+    const workspace = await kortix.workspaces.provision({
       name: `E2E Live ${Date.now()}`,
       seed_starter: true,
     });
-    expect(project.project_id).toBeTruthy();
+    expect(workspace.workspace_id).toBeTruthy();
 
-    const detail = await kortix.project(project.project_id).get();
-    expect(detail.project_id).toBe(project.project_id);
+    const detail = await kortix.workspace(workspace.workspace_id).get();
+    expect(detail.workspace_id).toBe(workspace.workspace_id);
   }, 60_000);
 });

@@ -2,7 +2,7 @@
 
 import Loading from '@/components/ui/loading';
 
-import { ProjectShell } from '@/components/project-shell';
+import { WorkspaceShell } from '@/components/workspace-shell';
 import { CapabilitiesTab } from '@/components/settings/capabilities-tab';
 import { ConnectorsTab } from '@/components/settings/connectors-tab';
 import { MembersTab } from '@/components/settings/members-tab';
@@ -20,7 +20,7 @@ import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ExperimentalFeatureView, KortixProject } from '@kortix/sdk';
+import type { ExperimentalFeatureView, KortixWorkspace } from '@kortix/sdk';
 import { ExternalLink, GitBranch } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -45,10 +45,10 @@ const TABS = [
 export default function SettingsPage() {
   const workspaceId = String(useParams().id);
   return (
-    <ProjectShell>
+    <WorkspaceShell>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-2xl px-6 py-8">
-          <h1 className="text-xl font-semibold tracking-tight">Project settings</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Workspace settings</h1>
           <Tabs defaultValue="general" className="mt-6">
             <TabsList className="flex-wrap">
               {TABS.map((t) => (
@@ -81,7 +81,7 @@ export default function SettingsPage() {
           </Tabs>
         </div>
       </div>
-    </ProjectShell>
+    </WorkspaceShell>
   );
 }
 
@@ -89,49 +89,49 @@ function GeneralTab() {
   const workspaceId = String(useParams().id);
   const qc = useQueryClient();
   const router = useRouter();
-  const project = useQuery({
-    queryKey: qk.project(workspaceId),
-    queryFn: () => kortix.project(workspaceId).get(),
+  const workspace = useQuery({
+    queryKey: qk.workspace(workspaceId),
+    queryFn: () => kortix.workspace(workspaceId).get(),
   });
   const detail = useQuery({
-    queryKey: qk.projectDetail(workspaceId),
-    queryFn: () => kortix.project(workspaceId).detail(),
+    queryKey: qk.workspaceDetail(workspaceId),
+    queryFn: () => kortix.workspace(workspaceId).detail(),
   });
   const health = useQuery({
-    queryKey: ['project-sandbox-health', workspaceId],
-    queryFn: () => kortix.project(workspaceId).sandboxHealth(),
+    queryKey: ['workspace-sandbox-health', workspaceId],
+    queryFn: () => kortix.workspace(workspaceId).sandboxHealth(),
     retry: false,
   });
   const catalog = useQuery({
-    queryKey: ['project-llm-catalog', workspaceId],
-    queryFn: () => kortix.project(workspaceId).llmCatalog(),
+    queryKey: ['workspace-llm-catalog', workspaceId],
+    queryFn: () => kortix.workspace(workspaceId).llmCatalog(),
     retry: false,
   });
   const [name, setName] = useState('');
 
   const rename = useMutation({
-    mutationFn: () => kortix.project(workspaceId).update({ name: name.trim() }),
+    mutationFn: () => kortix.workspace(workspaceId).update({ name: name.trim() }),
     onSuccess: (updated) => {
-      qc.setQueryData(qk.project(workspaceId), updated);
-      qc.invalidateQueries({ queryKey: qk.projects });
-      toast.success('Project renamed');
+      qc.setQueryData(qk.workspace(workspaceId), updated);
+      qc.invalidateQueries({ queryKey: qk.workspaces });
+      toast.success('Workspace renamed');
     },
     onError: () => toast.error('Could not rename'),
   });
   const archive = useMutation({
-    mutationFn: () => kortix.project(workspaceId).archive(),
+    mutationFn: () => kortix.workspace(workspaceId).archive(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.projects });
-      toast.success('Project archived');
+      qc.invalidateQueries({ queryKey: qk.workspaces });
+      toast.success('Workspace archived');
       router.push('/');
     },
     onError: () => toast.error('Could not archive'),
   });
 
-  const current = project.data?.name ?? '';
+  const current = workspace.data?.name ?? '';
   const fileCount = detail.data?.file_count;
   const modelCount = catalog.data ? Object.keys(catalog.data.models).length : undefined;
-  // `ProjectSandboxHealth` has no `.status` — this used to read one anyway
+  // `WorkspaceSandboxHealth` has no `.status` — this used to read one anyway
   // (masked by an `as any` cast), so the Runtime stat always fell through to
   // the `isError` branch. Derive the label from the real `ready`/`building`/
   // `latest_failure` fields instead.
@@ -145,7 +145,7 @@ function GeneralTab() {
           ? 'unknown'
           : undefined;
 
-  const p = project.data;
+  const p = workspace.data;
   const repoUrl: string | undefined = p?.repo_url || undefined;
   const repoLabel = repoUrl ? repoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '') : undefined;
   const baseRef: string | undefined = p?.default_branch || undefined;
@@ -153,7 +153,7 @@ function GeneralTab() {
   return (
     <div className="space-y-4">
       <Card className="p-5">
-        <Label htmlFor="name">Project name</Label>
+        <Label htmlFor="name">Workspace name</Label>
         <div className="mt-2 flex gap-2">
           <Input
             id="name"
@@ -184,7 +184,7 @@ function GeneralTab() {
             mono={!!repoUrl}
           />
           {baseRef && <InfoRow label="Default branch" value={baseRef} mono />}
-          <InfoRow label="Project ID" value={workspaceId} mono />
+          <InfoRow label="Workspace ID" value={workspaceId} mono />
           {p?.account_id && <InfoRow label="Account" value={p.account_id} mono />}
           {p?.status && <InfoRow label="Status" value={p.status} />}
           <InfoRow label="Created" value={fmtDate(p?.created_at)} />
@@ -198,13 +198,13 @@ function GeneralTab() {
         <Stat label="Runtime" value={healthState ?? '—'} />
       </Card>
 
-      {p && <ExperimentalFeatures workspaceId={workspaceId} project={p} />}
+      {p && <ExperimentalFeatures workspaceId={workspaceId} workspace={p} />}
 
       <Card className="border-destructive/30 p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-sm font-medium">Archive project</div>
-            <p className="text-xs text-muted-foreground">Hide this project from the dashboard.</p>
+            <div className="text-sm font-medium">Archive workspace</div>
+            <p className="text-xs text-muted-foreground">Hide this workspace from the dashboard.</p>
           </div>
           <Button
             variant="outline"
@@ -222,12 +222,12 @@ function GeneralTab() {
 
 function ExperimentalFeatures({
   workspaceId,
-  project,
+  workspace,
 }: {
   workspaceId: string;
-  project: KortixProject;
+  workspace: KortixWorkspace;
 }) {
-  const features = (project.experimental_features ?? []).filter((feature) => feature.available);
+  const features = (workspace.experimental_features ?? []).filter((feature) => feature.available);
 
   if (features.length === 0) return null;
 
@@ -236,7 +236,7 @@ function ExperimentalFeatures({
       <div className="border-b border-border px-5 py-3">
         <div className="text-sm font-medium">Experimental features</div>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Project-scoped capabilities supplied by the Kortix server.
+          Workspace-scoped capabilities supplied by the Kortix server.
         </p>
       </div>
       <div className="divide-y divide-border">
@@ -258,10 +258,10 @@ function ExperimentalFeatureRow({
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: (enabled: boolean) =>
-      kortix.project(workspaceId).updateExperimentalFeature(feature.key, enabled),
+      kortix.workspace(workspaceId).updateExperimentalFeature(feature.key, enabled),
     onSuccess: (updated) => {
-      qc.setQueryData(qk.project(workspaceId), updated);
-      qc.invalidateQueries({ queryKey: qk.projects });
+      qc.setQueryData(qk.workspace(workspaceId), updated);
+      qc.invalidateQueries({ queryKey: qk.workspaces });
       toast.success(
         `${feature.name} ${updated.experimental?.[feature.key] ? 'enabled' : 'disabled'}`,
       );

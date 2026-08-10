@@ -98,7 +98,7 @@ function NewAccountDialog({ onCreated }: { onCreated: (accountId: string) => voi
         <DialogHeader>
           <DialogTitle>New team account</DialogTitle>
           <DialogDescription>
-            A team account groups projects and members. You can invite teammates after it&apos;s
+            A team account groups workspaces and members. You can invite teammates after it&apos;s
             created.
           </DialogDescription>
         </DialogHeader>

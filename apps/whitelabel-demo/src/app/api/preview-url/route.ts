@@ -5,7 +5,7 @@
  * The client receives one final URL. It does not receive a standalone token,
  * an upstream base URL, or runtime coordinates.
  *
- * Wrapper mode authenticates the Lumen session and checks project ownership.
+ * Wrapper mode authenticates the Lumen session and checks workspace ownership.
  * Direct mode forwards the caller's Kortix token through the server SDK.
  */
 
@@ -13,12 +13,12 @@ import {
   ApiError,
   appendPreviewToken,
   isProxiableLocalhostUrl,
-  type CreatedProjectCliToken,
+  type CreatedWorkspaceCliToken,
 } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { isOwner, isValidProjectId } from '@/server/users';
+import { isOwner, isValidWorkspaceId } from '@/server/users';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -64,7 +64,7 @@ function parseRequest(body: PreviewRequest): {
 } | null {
   const workspaceId = typeof body.workspaceId === 'string' ? body.workspaceId : '';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-  if (!isValidProjectId(workspaceId) || !UUID_RE.test(sessionId)) return null;
+  if (!isValidWorkspaceId(workspaceId) || !UUID_RE.test(sessionId)) return null;
 
   if (typeof body.targetUrl === 'string') {
     const url = body.targetUrl.trim();
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
     const limited = consumeRateLimit(appSession.userId);
     if (!limited.ok) return errorResponse(429, 'Rate limit exceeded');
     if (!isOwner(appSession.userId, input.workspaceId)) {
-      return errorResponse(403, "You don't have access to this project.");
+      return errorResponse(403, "You don't have access to this workspace.");
     }
   }
 
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
   const session = kortix.session(input.workspaceId, input.sessionId);
 
   let previewUrl: string | undefined;
-  let created: CreatedProjectCliToken;
+  let created: CreatedWorkspaceCliToken;
   try {
     await session.ensureReady();
     previewUrl =
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
     if (!previewUrl) return errorResponse(400, 'Could not resolve preview URL');
 
     created = await kortix
-      .project(input.workspaceId)
+      .workspace(input.workspaceId)
       .tokens.create({ name: `lumen-preview-${Date.now()}` });
   } catch (error) {
     const status = error instanceof ApiError && error.status ? error.status : 502;

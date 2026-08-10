@@ -2,7 +2,7 @@
  * Connections this wrapper may bind to a new session, grouped by connector
  * alias.
  *
- * Provider-neutral and pre-filtered: a wrapper can only bind project connections
+ * Provider-neutral and pre-filtered: a wrapper can only bind workspace connections
  * (see `selectBindableConnections`), so the client is never shown an option that
  * would fail at session create. Aliases with NOTHING bindable are still
  * returned, carrying the reason — the client has to be able to say "a teammate
@@ -10,13 +10,13 @@
  *
  * The alias was hardcoded to one connector when this route only served the
  * first-session screen. It is a request parameter now, and optional: a caller
- * that doesn't know which connectors a project has (the new-session dialog)
+ * that doesn't know which connectors a workspace has (the new-session dialog)
  * asks for all of them.
  */
 import { selectConnectorBindingChoices } from '@/server/bindable-connections';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { isOwner, isValidProjectId } from '@/server/users';
+import { isOwner, isValidWorkspaceId } from '@/server/users';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const workspaceId = url.searchParams.get('workspaceId') ?? '';
   const connector = url.searchParams.get('connector') ?? '';
-  if (!isValidProjectId(workspaceId)) {
+  if (!isValidWorkspaceId(workspaceId)) {
     return Response.json({ error: 'Invalid identifiers' }, { status: 400 });
   }
   if (!isOwner(session.userId, workspaceId)) {
@@ -61,14 +61,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await kortix
-      .project(workspaceId)
+      .workspace(workspaceId)
       .connectors.connections.list();
     const connectors = selectConnectorBindingChoices(result.connections).filter(
       (choice) => !connector || choice.alias === connector,
     );
     return Response.json({ connectors });
   } catch {
-    // A project with no connectors is the common case, not an error state.
+    // A workspace with no connectors is the common case, not an error state.
     return Response.json({ connectors: [] });
   }
 }

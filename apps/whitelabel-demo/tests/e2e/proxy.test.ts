@@ -48,7 +48,7 @@ describe('BFF SDK transport', () => {
     mock.reset();
     const kortix = createTestKortix(app, 'invalid-wrapper-session');
 
-    await expect(kortix.projects.list()).rejects.toMatchObject({ status: 401 });
+    await expect(kortix.workspaces.list()).rejects.toMatchObject({ status: 401 });
     expect(mock.requests).toHaveLength(0);
   });
 
@@ -67,9 +67,9 @@ describe('BFF SDK transport', () => {
     mock.reset();
     const name = `Runtime ${'x'.repeat(20_000)}`;
 
-    const project = await kortix.projects.provision({ name });
+    const workspace = await kortix.workspaces.provision({ name });
 
-    expect(project.name).toBe(name);
+    expect(workspace.name).toBe(name);
     expect(mock.requests).toHaveLength(1);
     const upstreamRequest = mock.requests[0]!;
     const expectedBody = JSON.stringify({ seed_starter: true, name });
@@ -84,7 +84,7 @@ describe('BFF SDK transport', () => {
     const kortix = await authenticatedClient('response-encoding');
     mock.reset();
 
-    await kortix.projects.list();
+    await kortix.workspaces.list();
 
     expect(mock.requests).toHaveLength(1);
     expect(mock.requests[0]!.acceptEncoding).toBe('identity');
@@ -92,8 +92,8 @@ describe('BFF SDK transport', () => {
 
   test('SDK session.stream receives unbuffered events and remains open', async () => {
     const kortix = await authenticatedClient('sse');
-    const project = await kortix.projects.provision({ name: 'Runtime SSE' });
-    const session = kortix.session(project.project_id, 'sse-session');
+    const workspace = await kortix.workspaces.provision({ name: 'Runtime SSE' });
+    const session = kortix.session(workspace.workspace_id, 'sse-session');
     await session.start();
     mock.reset();
 

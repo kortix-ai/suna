@@ -1,4 +1,4 @@
-import type { CreateProjectSessionInput } from '@kortix/sdk';
+import type { CreateWorkspaceSessionInput } from '@kortix/sdk';
 
 /**
  * The overrides a new session can be started with, and the exact create body
@@ -12,11 +12,11 @@ import type { CreateProjectSessionInput } from '@kortix/sdk';
  * guessed binding would pin the session to a connection nobody chose.
  */
 
-/** Which project secrets a session may read. `null` = don't narrow at all. */
+/** Which workspace secrets a session may read. `null` = don't narrow at all. */
 export type SecretsAllowlist = string[] | null;
 
 export interface SessionOverrides {
-  /** Agent name; null = the project's default agent. */
+  /** Agent name; null = the workspace's default agent. */
   agent: string | null;
   /** Secret IDENTIFIERS (not env keys — several identifiers can share a key). */
   secrets: SecretsAllowlist;
@@ -49,7 +49,7 @@ export interface SessionCreateExtras {
 export function buildSessionCreateInput(
   overrides: SessionOverrides,
   extras: SessionCreateExtras,
-): CreateProjectSessionInput {
+): CreateWorkspaceSessionInput {
   const aliases = Object.keys(overrides.bindings);
 
   return {
@@ -59,7 +59,7 @@ export function buildSessionCreateInput(
       ? { sandbox_slug: extras.sandboxSlug }
       : {}),
     ...(overrides.agent ? { agent_name: overrides.agent } : {}),
-    // An empty allowlist is a real choice (inject zero project secrets), so the
+    // An empty allowlist is a real choice (inject zero workspace secrets), so the
     // "don't narrow" signal has to be null rather than an empty array.
     ...(overrides.secrets ? { secrets: overrides.secrets } : {}),
     // Omitted entirely when unset, so a session that declines to pass context is
@@ -77,7 +77,7 @@ export function buildSessionCreateInput(
             ]),
           ),
           // Binding ANY alias otherwise switches every other alias off its
-          // project default ("all-or-nothing"). Picking one connection in this
+          // workspace default ("all-or-nothing"). Picking one connection in this
           // dialog must not silently unplug the connectors nobody touched.
           inherit_unbound: true,
         }

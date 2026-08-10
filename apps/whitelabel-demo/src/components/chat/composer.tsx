@@ -10,7 +10,7 @@ type Command = { name: string; description: string | null };
 
 /**
  * Chat composer as a self-contained input card. Enter sends, Shift+Enter
- * newlines. Typing "/" opens a project-command menu (server-side `commands`);
+ * newlines. Typing "/" opens a workspace-command menu (server-side `commands`);
  * picking + sending a "/cmd args" line runs it via `onCommand` instead of
  * sending a text prompt. While the agent is busy the send button stops the run.
  *

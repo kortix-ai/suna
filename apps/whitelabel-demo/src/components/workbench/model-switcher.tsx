@@ -10,7 +10,7 @@ import {
 import { classifyModelChange } from '@/lib/mid-session-change';
 import { qk } from '@/lib/query-keys';
 import { getSessionToken } from '@/lib/session';
-import { useProjectModels } from '@kortix/sdk/react';
+import { useWorkspaceModels } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,7 +32,7 @@ import { toast } from 'sonner';
  */
 export function ModelSwitcher({ workspaceId, sessionId }: { workspaceId: string; sessionId: string }) {
   const qc = useQueryClient();
-  const models = useProjectModels(workspaceId);
+  const models = useWorkspaceModels(workspaceId);
 
   // The switcher reads its OWN current model through the neutral route, so no
   // caller has to touch the runtime-named field to render it.

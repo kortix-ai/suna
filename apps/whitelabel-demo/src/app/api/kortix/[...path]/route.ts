@@ -14,7 +14,7 @@
  *
  * Streaming: the response body passes straight through
  * (`new Response(upstreamRes.body, …)`) for everything except the two routes
- * that need a tiny JSON rewrite (`filterProjectsList`, `recordProvisionOwner`)
+ * that need a tiny JSON rewrite (`filterWorkspacesList`, `recordProvisionOwner`)
  * — those bodies are small one-shot JSON responses. Buffering them is safe.
  * Nothing else is buffered. Long-lived session streams remain active.
  */
@@ -24,10 +24,10 @@ import { buildUpstreamPath } from '@/server/upstream-path';
 import { evaluatePolicy } from '@/server/policy';
 import { consumeRateLimit } from '@/server/rate-limit';
 import {
-  recordRuntimeProject,
-  resolveRuntimeProject,
+  recordRuntimeWorkspace,
+  resolveRuntimeWorkspace,
 } from '@/server/runtime-access';
-import { addOwnedProject, isOwner, listOwnedProjects } from '@/server/users';
+import { addOwnedWorkspace, isOwner, listOwnedWorkspaces } from '@/server/users';
 import { forwardKortixRequest } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
@@ -69,7 +69,7 @@ async function handle(
 
   const { path = [] } = await ctx.params;
   // Next hands back DECODED segments, so `%2F..%2F` arrives as a real `..` and a
-  // naive join lets the POLICY and the UPSTREAM disagree about which project is
+  // naive join lets the POLICY and the UPSTREAM disagree about which workspace is
   // being addressed. Refuse before anything reads the path.
   const built = buildUpstreamPath(path);
   if (!built.ok) return jsonError(400, `Invalid request path: ${built.reason}`);
@@ -79,7 +79,7 @@ async function handle(
     req.method,
     upstreamPath,
     (workspaceId) => isOwner(session.userId, workspaceId),
-    resolveRuntimeProject,
+    resolveRuntimeWorkspace,
   );
   if (!policy.allow) return jsonError(policy.status, policy.reason);
 
@@ -93,9 +93,9 @@ async function handle(
 
   // Buffer only responses that update or filter wrapper ownership state.
   if (
-    policy.filterProjectsList ||
+    policy.filterWorkspacesList ||
     policy.recordProvisionOwner ||
-    policy.recordRuntimeProjectId
+    policy.recordRuntimeWorkspaceId
   ) {
     const text = await upstreamRes.text();
     let body: unknown;
@@ -119,21 +119,25 @@ async function handle(
     }
 
     if (policy.recordProvisionOwner && upstreamRes.ok) {
-      const workspaceId = (body as { project_id?: string } | null)?.project_id;
-      if (workspaceId) addOwnedProject(session.userId, workspaceId);
+      const idKey = policy.responseWorkspaceIdKey ?? 'workspace_id';
+      const workspaceId = (body as Record<string, unknown> | null)?.[idKey];
+      if (typeof workspaceId === 'string') {
+        addOwnedWorkspace(session.userId, workspaceId);
+      }
     }
 
-    if (policy.recordRuntimeProjectId && upstreamRes.ok) {
+    if (policy.recordRuntimeWorkspaceId && upstreamRes.ok) {
       const runtimeId = (body as { sandbox?: { external_id?: string } } | null)
         ?.sandbox?.external_id;
       if (runtimeId)
-        recordRuntimeProject(runtimeId, policy.recordRuntimeProjectId);
+        recordRuntimeWorkspace(runtimeId, policy.recordRuntimeWorkspaceId);
     }
 
-    if (policy.filterProjectsList && Array.isArray(body)) {
-      const owned = new Set(listOwnedProjects(session.userId));
+    if (policy.filterWorkspacesList && Array.isArray(body)) {
+      const owned = new Set(listOwnedWorkspaces(session.userId));
+      const idKey = policy.responseWorkspaceIdKey ?? 'workspace_id';
       body = body.filter((item) =>
-        owned.has((item as { project_id?: string })?.project_id ?? ''),
+        owned.has(String((item as Record<string, unknown>)?.[idKey] ?? '')),
       );
     }
 

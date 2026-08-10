@@ -42,13 +42,13 @@ describe('connectorRequirement', () => {
   test('names every connector the 409 lists, with the strategy that decides the remedy', () => {
     const requirement = connectorRequirement(
       apiError(
-        authorizationRequired([gmailConnection('user'), { ...gmailConnection('project'), slug: 'slack', name: 'Slack' }]),
+        authorizationRequired([gmailConnection('user'), { ...gmailConnection('workspace'), slug: 'slack', name: 'Slack' }]),
       ),
     );
     expect(requirement?.code).toBe('CONNECTOR_CONNECTION_REQUIRED');
     expect(requirement?.connectors).toEqual([
       { alias: 'gmail', name: 'Gmail', strategy: 'user', remedy: 'own_account' },
-      { alias: 'slack', name: 'Slack', strategy: 'project', remedy: 'shared_connection' },
+      { alias: 'slack', name: 'Slack', strategy: 'workspace', remedy: 'shared_connection' },
     ]);
   });
 
@@ -84,7 +84,7 @@ describe('connectorRequirement', () => {
         code: 'CONNECTOR_CONNECTION_REQUIRED',
         message: 'x',
         connectorConnections: [
-          { slug: 'gmail', name: 'Gmail', authorizationStrategy: 'project' },
+          { slug: 'gmail', name: 'Gmail', authorizationStrategy: 'workspace' },
         ],
       }),
     );
@@ -119,7 +119,7 @@ describe('connectorRequirement', () => {
 
   test('an unusable connection entry is dropped, not rendered as a nameless connector', () => {
     const requirement = connectorRequirement(
-      apiError(authorizationRequired([{ name: 'Mystery' }, gmailConnection('project')])),
+      apiError(authorizationRequired([{ name: 'Mystery' }, gmailConnection('workspace')])),
     );
     expect(requirement?.connectors.map((c) => c.alias)).toEqual(['gmail']);
   });
@@ -127,16 +127,16 @@ describe('connectorRequirement', () => {
 
 describe('connectorRemedy', () => {
   const connector = (
-    strategy: 'project' | 'user' | null,
+    strategy: 'workspace' | 'user' | null,
     remedy: RequiredConnector['remedy'],
   ): RequiredConnector => ({ alias: 'gmail', name: 'Gmail', strategy, remedy });
 
-  test('ONLY a shared (project) connector offers a connect link', () => {
+  test('ONLY a shared (workspace) connector offers a connect link', () => {
     // The mint endpoint refuses every other strategy with
     // CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH, so a button anywhere else is a
     // button that cannot work.
     expect(
-      connectorRemedy(connector('project', 'shared_connection'), { wrapperMode: true })
+      connectorRemedy(connector('workspace', 'shared_connection'), { wrapperMode: true })
         .canMintConnectLink,
     ).toBe(true);
     for (const c of [
@@ -185,7 +185,7 @@ describe('connectorRemedy', () => {
 describe('connectorRequirementSummary and the toast that uses it', () => {
   test('both real codes produce a specific, non-retryable create failure', () => {
     for (const body of [
-      authorizationRequired([gmailConnection('project')]),
+      authorizationRequired([gmailConnection('workspace')]),
       {
         code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
         error: 'Required connector "gmail" is unavailable',
@@ -201,7 +201,7 @@ describe('connectorRequirementSummary and the toast that uses it', () => {
 
   test('the toast and the card tell the same story', () => {
     const requirement = connectorRequirement(
-      apiError(authorizationRequired([gmailConnection('project')])),
+      apiError(authorizationRequired([gmailConnection('workspace')])),
     );
     const summary = connectorRequirementSummary(requirement!);
     const copy = connectorRemedy(requirement!.connectors[0], { wrapperMode: null });
@@ -214,7 +214,7 @@ describe('connectorRequirementSummary and the toast that uses it', () => {
       connectorRequirement(
         apiError(
           authorizationRequired([
-            gmailConnection('project'),
+            gmailConnection('workspace'),
             { ...gmailConnection('user'), slug: 'slack', name: 'Slack' },
           ]),
         ),

@@ -26,7 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
-import type { ProjectBranch, ProjectCommit } from '@kortix/sdk';
+import type { WorkspaceBranch, WorkspaceCommit } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, GitBranch, GitCommitHorizontal, Scale } from 'lucide-react';
 import { useState } from 'react';
@@ -46,23 +46,23 @@ export function CommitsView({
   const [comparing, setComparing] = useState(false);
 
   const branches = useQuery({
-    queryKey: ['project-branches', workspaceId],
-    queryFn: () => kortix.project(workspaceId).git.branches(),
+    queryKey: ['workspace-branches', workspaceId],
+    queryFn: () => kortix.workspace(workspaceId).git.branches(),
   });
 
   const commits = useQuery({
-    queryKey: ['project-commits', workspaceId],
-    queryFn: () => kortix.project(workspaceId).git.commits(),
+    queryKey: ['workspace-commits', workspaceId],
+    queryFn: () => kortix.workspace(workspaceId).git.commits(),
   });
 
   const defaultBranch = branches.data?.default_branch;
 
   // "Compare to base": summarize the session branch against the default branch.
   const versionDiff = useQuery({
-    queryKey: ['project-version-diff', workspaceId, defaultBranch, sessionId],
+    queryKey: ['workspace-version-diff', workspaceId, defaultBranch, sessionId],
     enabled: comparing && !!defaultBranch,
     queryFn: () =>
-      kortix.project(workspaceId).git.versionDiff({
+      kortix.workspace(workspaceId).git.versionDiff({
         from: defaultBranch as string,
         into: sessionId,
       }),
@@ -82,14 +82,14 @@ export function CommitsView({
         );
       }
       setMessage('');
-      qc.invalidateQueries({ queryKey: ['project-commits', workspaceId] });
-      qc.invalidateQueries({ queryKey: ['project-branches', workspaceId] });
+      qc.invalidateQueries({ queryKey: ['workspace-commits', workspaceId] });
+      qc.invalidateQueries({ queryKey: ['workspace-branches', workspaceId] });
     },
     onError: () => toast.error('Could not commit session changes'),
   });
 
-  const branchItems: ProjectBranch[] = branches.data?.branches ?? [];
-  const commitItems: ProjectCommit[] = commits.data?.commits ?? [];
+  const branchItems: WorkspaceBranch[] = branches.data?.branches ?? [];
+  const commitItems: WorkspaceCommit[] = commits.data?.commits ?? [];
   const vd = versionDiff.data;
 
   return (
@@ -264,15 +264,15 @@ function CommitDetailDialog({
   onClose: () => void;
 }) {
   const detail = useQuery({
-    queryKey: ['project-commit', workspaceId, sha],
+    queryKey: ['workspace-commit', workspaceId, sha],
     enabled: !!sha,
-    queryFn: () => kortix.project(workspaceId).git.commit(sha as string),
+    queryFn: () => kortix.workspace(workspaceId).git.commit(sha as string),
   });
 
   const diff = useQuery({
-    queryKey: ['project-commit-diff', workspaceId, sha],
+    queryKey: ['workspace-commit-diff', workspaceId, sha],
     enabled: !!sha,
-    queryFn: () => kortix.project(workspaceId).git.commitDiff(sha as string),
+    queryFn: () => kortix.workspace(workspaceId).git.commitDiff(sha as string),
   });
 
   const d = detail.data;

@@ -4,14 +4,14 @@ import Loading from '@/components/ui/loading';
 
 /**
  * FilesPanel — a compact two-pane workspace file browser for the white-label
- * app, driven entirely through the `@kortix/sdk` project facade. It exercises
+ * app, driven entirely through the `@kortix/sdk` workspace facade. It exercises
  * the full `files` surface:
  *
- *   kortix.project(id).files.list(options?)   → the workspace tree (left list)
- *   kortix.project(id).files.search(query, …) → the search input (left list)
- *   kortix.project(id).files.read(path, ref?) → the monospace viewer (right pane)
- *   kortix.project(id).files.history(path, …) → the per-file "History" popover
- *   kortix.project(id).files.archive(ref, …)  → the "Download" button
+ *   kortix.workspace(id).files.list(options?)   → the workspace tree (left list)
+ *   kortix.workspace(id).files.search(query, …) → the search input (left list)
+ *   kortix.workspace(id).files.read(path, ref?) → the monospace viewer (right pane)
+ *   kortix.workspace(id).files.history(path, …) → the per-file "History" popover
+ *   kortix.workspace(id).files.archive(ref, …)  → the "Download" button
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +24,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
-import type { ProjectCommit, ProjectFileEntry, ProjectFileSearchMatch } from '@kortix/sdk';
+import type { WorkspaceCommit, WorkspaceFileEntry, WorkspaceFileSearchMatch } from '@kortix/sdk';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Download,
@@ -65,32 +65,32 @@ export function FilesPanel({ workspaceId }: { workspaceId: string }) {
 
   // .files.list — the workspace tree (shown when not searching).
   const list = useQuery({
-    queryKey: ['project-files', workspaceId, 'list'],
-    queryFn: () => kortix.project(workspaceId).files.list(),
+    queryKey: ['workspace-files', workspaceId, 'list'],
+    queryFn: () => kortix.workspace(workspaceId).files.list(),
   });
 
   // .files.search — filename search, live as you type.
   const search = useQuery({
-    queryKey: ['project-files', workspaceId, 'search', deferredQuery],
-    queryFn: () => kortix.project(workspaceId).files.search(deferredQuery, { limit: 50 }),
+    queryKey: ['workspace-files', workspaceId, 'search', deferredQuery],
+    queryFn: () => kortix.workspace(workspaceId).files.search(deferredQuery, { limit: 50 }),
     enabled: searching,
   });
 
   // .files.read — content for the selected file (right pane).
   const content = useQuery({
-    queryKey: ['project-files', workspaceId, 'content', selected],
-    queryFn: () => kortix.project(workspaceId).files.read(selected as string),
+    queryKey: ['workspace-files', workspaceId, 'content', selected],
+    queryFn: () => kortix.workspace(workspaceId).files.read(selected as string),
     enabled: !!selected,
   });
 
   // .files.archive — download a zip of the whole repo at HEAD.
   const download = useMutation({
-    mutationFn: () => kortix.project(workspaceId).files.archive(DEFAULT_REF),
+    mutationFn: () => kortix.workspace(workspaceId).files.archive(DEFAULT_REF),
     onSuccess: (blob) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `project-${workspaceId}.zip`;
+      a.download = `workspace-${workspaceId}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -100,8 +100,8 @@ export function FilesPanel({ workspaceId }: { workspaceId: string }) {
     onError: () => toast.error('Could not download archive'),
   });
 
-  const listItems: ProjectFileEntry[] = list.data ?? [];
-  const searchItems: ProjectFileSearchMatch[] = search.data?.results ?? [];
+  const listItems: WorkspaceFileEntry[] = list.data ?? [];
+  const searchItems: WorkspaceFileSearchMatch[] = search.data?.results ?? [];
 
   // Normalize the two distinct row shapes (workspace tree vs search match) to
   // the handful of fields the list below actually renders.
@@ -267,12 +267,12 @@ function FileHistory({ workspaceId, path }: { workspaceId: string; path: string 
   const [open, setOpen] = useState(false);
 
   const history = useQuery({
-    queryKey: ['project-files', workspaceId, 'history', path],
-    queryFn: () => kortix.project(workspaceId).files.history(path, { limit: 20 }),
+    queryKey: ['workspace-files', workspaceId, 'history', path],
+    queryFn: () => kortix.workspace(workspaceId).files.history(path, { limit: 20 }),
     enabled: open,
   });
 
-  const commits: ProjectCommit[] = history.data?.commits ?? [];
+  const commits: WorkspaceCommit[] = history.data?.commits ?? [];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

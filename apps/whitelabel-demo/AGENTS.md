@@ -5,7 +5,7 @@ Lumen is the reference implementation for `@kortix/sdk`.
 ## Required architecture
 
 1. `src/lib/kortix.ts` owns the only browser SDK client.
-2. `useSession(projectId, sessionId)` owns the complete workbench session.
+2. `useSession(workspaceId, sessionId)` owns the complete workbench session.
 3. Client code imports only `@kortix/sdk` and `@kortix/sdk/react`.
 4. Client code does not implement runtime transport logic.
 5. Server Kortix calls use `@kortix/sdk/server`.
@@ -29,16 +29,16 @@ rules. Update its tests when a new same-origin application route is intentional.
 Application tests use `createTestKortix()` for Kortix product flows. Raw HTTP
 is limited to application-owned routes such as auth, mode, preview, and usage.
 
-## Project experiments
+## Workspace experiments
 
 The settings page must:
 
-- Read `project.experimental_features`.
+- Read `workspace.experimental_features`.
 - Render only entries with `available === true`.
 - Use each entry's server-provided label and description.
 - Call `updateExperimentalFeature(feature.key, enabled)`.
 
-Do not hard-code project experiment keys in client code.
+Do not hard-code workspace experiment keys in client code.
 
 ## Server boundary
 
@@ -46,7 +46,7 @@ Do not hard-code project experiment keys in client code.
 
 - Use `createScopedKortix()` for request-scoped server SDK calls.
 - Authenticate before parsing or forwarding privileged requests.
-- Check project ownership before wrapper-mode project actions.
+- Check workspace ownership before wrapper-mode workspace actions.
 - Keep `KORTIX_API_KEY` outside all response bodies.
 - Return provider-neutral response fields.
 - Validate identifiers before interpolating them into SDK calls.

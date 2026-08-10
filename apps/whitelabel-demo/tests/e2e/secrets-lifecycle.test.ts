@@ -1,4 +1,4 @@
-import type { ProjectSecret } from '@kortix/sdk';
+import type { WorkspaceSecret } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { pendingKeyCollision } from '../../src/lib/secret-collisions';
 import {
@@ -12,7 +12,7 @@ const secret = (identifier: string, name: string) =>
   ({
     identifier,
     name,
-    project_id: 'P1',
+    workspace_id: 'P1',
     secret_id: 's1',
     created_by: null,
     created_at: null,
@@ -21,7 +21,7 @@ const secret = (identifier: string, name: string) =>
     mine: null,
     effective_source: 'shared',
     can_manage_shared: true,
-  }) as ProjectSecret;
+  }) as WorkspaceSecret;
 
 describe('buildSecretUpsertInput', () => {
   test('a distinct identifier is sent alongside the env KEY, not instead of it', () => {
@@ -91,7 +91,7 @@ describe('secretWriteIntent', () => {
     ).toEqual({ kind: 'retarget', existingKey: 'GOOGLE_MAPS_API_KEY' });
   });
 
-  test('an empty project is always a create', () => {
+  test('an empty workspace is always a create', () => {
     expect(secretWriteIntent(undefined, { identifier: 'A', name: 'A', value: 'v' })).toEqual({
       kind: 'create',
     });

@@ -29,20 +29,20 @@ export function ApplicationUserBadge({ workspaceId }: { workspaceId: string }) {
       <span className="min-w-0 flex-1 truncate">
         Application user{' '}
         <span className="font-mono">{user.data?.userId ?? '…'}</span> — local
-        project ownership controls access.
+        workspace ownership controls access.
       </span>
       <Button asChild size="xs" variant="ghost">
-        <Link href={`/projects/${workspaceId}/sessions`}>Access</Link>
+        <Link href={`/workspaces/${workspaceId}/sessions`}>Access</Link>
       </Button>
     </div>
   );
 }
 
-export function ProjectAccessPanel({ workspaceId }: { workspaceId: string }) {
+export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
   const user = useApplicationUser();
   const sessions = useQuery({
     queryKey: qk.sessions(workspaceId),
-    queryFn: () => kortix.project(workspaceId).sessions.list(),
+    queryFn: () => kortix.workspace(workspaceId).sessions.list(),
     retry: false,
   });
 
@@ -59,7 +59,7 @@ export function ProjectAccessPanel({ workspaceId }: { workspaceId: string }) {
             : (user.data?.userId ?? 'not signed in')}
         </div>
         <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-          The wrapper records this local identity in its project ownership
+          The wrapper records this local identity in its workspace ownership
           store. It does not send the identity as session or cost metadata to
           Kortix.
         </p>
@@ -69,7 +69,7 @@ export function ProjectAccessPanel({ workspaceId }: { workspaceId: string }) {
         <div className="flex items-center gap-2">
           <ShieldCheck className="size-4 shrink-0 text-brand" />
           <span className="text-sm font-medium">
-            Sessions in this owned project
+            Sessions in this owned workspace
           </span>
           <span className="ml-auto font-mono text-sm">
             {sessions.isLoading ? (
@@ -80,8 +80,8 @@ export function ProjectAccessPanel({ workspaceId }: { workspaceId: string }) {
           </span>
         </div>
         <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-          The wrapper checks local project ownership before it forwards the
-          project-scoped session request. The request includes no application
+          The wrapper checks local workspace ownership before it forwards the
+          workspace-scoped session request. The request includes no application
           customer filter.
         </p>
         <div className="mt-1.5">

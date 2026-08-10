@@ -2,9 +2,9 @@
 
 /**
  * The git / changes view for the white-label workbench. A single panel with two
- * tabs — "Commits" (the project's git history + session commit + base compare)
+ * tabs — "Commits" (the workspace's git history + session commit + base compare)
  * and "Change requests" (Kortix's native PR layer). Everything routes through the
- * `@kortix/sdk` facade: `kortix.project(id).git.*`, `.changeRequests.*`, and the
+ * `@kortix/sdk` facade: `kortix.workspace(id).git.*`, `.changeRequests.*`, and the
  * session-scoped `kortix.session(id, sid).commit()`. No raw HTTP.
  *
  * This file is a thin composer: the `Tabs` shell delegating to the extracted

@@ -35,7 +35,7 @@ describe('buildSessionCreateInput', () => {
   });
 
   test('no allowlist means the field is absent, not an empty array', () => {
-    // `secrets: []` would boot a sandbox with no project secrets at all — the
+    // `secrets: []` would boot a sandbox with no workspace secrets at all — the
     // opposite of "leave it alone".
     const input = buildSessionCreateInput(NO_OVERRIDES, {
       sessionId: SESSION_ID,
@@ -67,9 +67,9 @@ describe('buildSessionCreateInput', () => {
     });
   });
 
-  test('binding one alias keeps the project default for every other one', () => {
+  test('binding one alias keeps the workspace default for every other one', () => {
     // Without inherit_unbound, binding ANY alias switches all the others off
-    // their project default — picking one connection would unplug the rest.
+    // their workspace default — picking one connection would unplug the rest.
     const input = buildSessionCreateInput(
       { ...NO_OVERRIDES, bindings: { slack: 'connection_9' } },
       { sessionId: SESSION_ID },

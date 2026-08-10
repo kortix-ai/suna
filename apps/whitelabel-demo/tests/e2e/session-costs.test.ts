@@ -20,10 +20,10 @@ async function provision(
   token: string,
   name: string,
 ): Promise<string> {
-  const project = await createTestKortix(app, token).projects.provision({
+  const workspace = await createTestKortix(app, token).workspaces.provision({
     name,
   });
-  return project.project_id;
+  return workspace.workspace_id;
 }
 
 describe('/api/session-costs', () => {
@@ -42,7 +42,7 @@ describe('/api/session-costs', () => {
     resetUsersStore();
   });
 
-  test('markup math is exact for a single project', async () => {
+  test('markup math is exact for a single workspace', async () => {
     const email = uniqueEmail('cost-single');
     const token = await loginUser(app, email, DEMO_PASSWORD);
     const workspaceId = await provision(app, token, 'Usage Single');
@@ -58,7 +58,7 @@ describe('/api/session-costs', () => {
     const data = (await res.json()) as {
       markup: number;
       totals: { raw: number; billed: number };
-      projects: Array<{
+      workspaces: Array<{
         workspaceId: string;
         sessions: Array<{ billed_cost: number; total_cost: number }>;
       }>;
@@ -75,7 +75,7 @@ describe('/api/session-costs', () => {
     expect(data).not.toHaveProperty('unattributed_cost');
     expect(JSON.stringify(data)).not.toMatch(REMOVED_ATTRIBUTION_PATTERN);
 
-    const proj = data.projects.find((p) => p.workspaceId === workspaceId)!;
+    const proj = data.workspaces.find((p) => p.workspaceId === workspaceId)!;
     expect(proj.sessions.find((s) => s.total_cost === 10)!.billed_cost).toBe(
       15,
     );
@@ -86,12 +86,12 @@ describe('/api/session-costs', () => {
       mock.requests.some(
         (request) =>
           request.path ===
-          `/v1/usage/session-costs?project_id=${workspaceId}&limit=100&offset=0`,
+          `/v1/usage/session-costs?workspace_id=${workspaceId}&limit=100&offset=0`,
       ),
     ).toBe(true);
   });
 
-  test('sums across multiple owned projects', async () => {
+  test('sums across multiple owned workspaces', async () => {
     const email = uniqueEmail('cost-multi');
     const token = await loginUser(app, email, DEMO_PASSWORD);
     const p1 = await provision(app, token, 'Usage Multi 1');
@@ -105,14 +105,14 @@ describe('/api/session-costs', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as {
       totals: { raw: number; billed: number };
-      projects: unknown[];
+      workspaces: unknown[];
     };
-    expect(data.projects).toHaveLength(2);
+    expect(data.workspaces).toHaveLength(2);
     expect(data.totals.raw).toBe(10);
     expect(data.totals.billed).toBe(15); // 10 * 1.5
   });
 
-  test('degrades gracefully when one owned project errors upstream', async () => {
+  test('degrades gracefully when one owned workspace errors upstream', async () => {
     const email = uniqueEmail('cost-degrade');
     const token = await loginUser(app, email, DEMO_PASSWORD);
     const healthy = await provision(app, token, 'Usage Healthy');
@@ -126,15 +126,15 @@ describe('/api/session-costs', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as {
       totals: { raw: number; billed: number };
-      projects: Array<{
+      workspaces: Array<{
         workspaceId: string;
         sessions: unknown[];
         error?: string;
       }>;
     };
 
-    const healthyEntry = data.projects.find((p) => p.workspaceId === healthy)!;
-    const brokenEntry = data.projects.find((p) => p.workspaceId === broken)!;
+    const healthyEntry = data.workspaces.find((p) => p.workspaceId === healthy)!;
+    const brokenEntry = data.workspaces.find((p) => p.workspaceId === broken)!;
     expect(healthyEntry.sessions).toHaveLength(1);
     expect(brokenEntry.sessions).toHaveLength(0);
     expect(brokenEntry.error).toBeTruthy();
