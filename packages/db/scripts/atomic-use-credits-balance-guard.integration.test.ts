@@ -14,11 +14,13 @@
 // So the guard has silently regressed once already, by being bypassed rather
 // than by being edited. Every case below runs the SHIPPED migration text — not a
 // TypeScript re-description of it — against a disposable server.
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { resolve } from 'node:path';
 
 const dockerAvailable =
   Bun.spawnSync(['docker', 'version'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
+
+setDefaultTimeout(60_000);
 
 const container = `kortix-credit-guard-${crypto.randomUUID().slice(0, 8)}`;
 

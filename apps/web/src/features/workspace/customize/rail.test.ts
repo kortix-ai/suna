@@ -5,9 +5,8 @@ import type { RailItem } from './type';
 const item = (section: RailItem['section']): RailItem => ({ section, label: section });
 
 const flags = (overrides: Partial<RailFlags> = {}): RailFlags => ({
-  tunnelEnabled: false,
   marketplaceEnabled: false,
-  llmGatewayAvailable: false,
+  llmGatewayEnabled: false,
   voiceEnabled: false,
   reviewEnabled: false,
   ...overrides,
@@ -61,13 +60,7 @@ describe('railGroups', () => {
 
   test('the base rail carries no flag-gated item', () => {
     const sections = sectionsOf(flags());
-    for (const gated of [
-      'marketplace',
-      'review',
-      'voice',
-      'computers',
-      'llm-management',
-    ] as const) {
+    for (const gated of ['marketplace', 'review', 'voice', 'llm-management'] as const) {
       expect(sections).not.toContain(gated);
     }
   });
@@ -89,13 +82,11 @@ describe('railGroups', () => {
     );
   });
 
-  test('every Connect flag adds its own item independently', () => {
-    const sections = sectionsOf(
-      flags({ voiceEnabled: true, tunnelEnabled: true, llmGatewayAvailable: true }),
-    );
+  test('every remaining Connect flag adds its own item independently', () => {
+    const sections = sectionsOf(flags({ voiceEnabled: true, llmGatewayEnabled: true }));
     expect(sections).toContain('voice');
-    expect(sections).toContain('computers');
     expect(sections).toContain('llm-management');
+    expect(sections).not.toContain('computers');
   });
 
   test('turning every flag on keeps the rail free of duplicates', () => {
@@ -104,8 +95,7 @@ describe('railGroups', () => {
         reviewEnabled: true,
         marketplaceEnabled: true,
         voiceEnabled: true,
-        tunnelEnabled: true,
-        llmGatewayAvailable: true,
+        llmGatewayEnabled: true,
       }),
     );
     expect(new Set(sections).size).toBe(sections.length);
@@ -123,9 +113,8 @@ describe('capability sections', () => {
   test('the rail excludes standalone agents, connectors and skills pages', () => {
     const sections = sectionsOf(
       flags({
-        tunnelEnabled: true,
         marketplaceEnabled: true,
-        llmGatewayAvailable: true,
+        llmGatewayEnabled: true,
         voiceEnabled: true,
         reviewEnabled: true,
       }),

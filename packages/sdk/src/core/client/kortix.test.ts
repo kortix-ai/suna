@@ -14,16 +14,19 @@ beforeEach(() => {
       method: opts.method ?? 'GET',
       body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
     });
-    return new Response(JSON.stringify({
-      ok: true,
-      secrets: [],
-      candidates: [],
-      sessions: [],
-      connector_bindings: {},
-    }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        secrets: [],
+        candidates: [],
+        sessions: [],
+        connector_bindings: {},
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   }) as unknown as typeof fetch;
 });
 
@@ -660,6 +663,14 @@ test('kortix.accounts.audit covers log/export/webhooks CRUD', async () => {
   await kortix.accounts.audit.webhooks.remove('ACC1', 'WH1');
   expect(last().url).toContain('/accounts/ACC1/audit/webhooks/WH1');
   expect(last().method).toBe('DELETE');
+});
+
+test('project(id).audit and session(id).audit expose canonical cursor pagination', async () => {
+  await kortix.project('PID123').audit({ phase: 'completed', cursor: 'CUR1' });
+  expect(last().url).toContain('/projects/PID123/audit?phase=completed&cursor=CUR1');
+
+  await kortix.session('PID123', 'SID456').audit(50, { cursor: '42|EVENT' });
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/audit?limit=50&cursor=42%7CEVENT');
 });
 
 // ── setup links / manifest validate / git token / slack files / meet speak /

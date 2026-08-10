@@ -624,6 +624,8 @@ export function sessionStartFailureFromSandbox(
   const storedCategory =
     rawCategory === 'provider-capacity' ||
     rawCategory === 'git-auth' ||
+    rawCategory === 'unsupported-secret-delivery' ||
+    rawCategory === 'invalid-secret-boundary-policy' ||
     rawCategory === 'sandbox-provider'
       ? rawCategory
       : 'sandbox-provider';
@@ -646,7 +648,14 @@ export function sessionStartFailureFromSandbox(
     (typeof metadata.errorMessage === 'string' && metadata.errorMessage.length > 0
       ? metadata.errorMessage
       : 'The sandbox provider could not start this session. Try again.');
-  return { category, message, retryable: true };
+  // Both secret-delivery categories are configuration states, not transient faults: the identical
+  // input produces the identical failure every time, so offering a retry only wastes the user's time.
+  return {
+    category,
+    message,
+    retryable:
+      category !== 'unsupported-secret-delivery' && category !== 'invalid-secret-boundary-policy',
+  };
 }
 
 async function preserveEstablishedRuntimeOnOpen(

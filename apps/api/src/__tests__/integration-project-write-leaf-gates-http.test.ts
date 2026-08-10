@@ -32,6 +32,10 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'write-leaf-gate-test-project',
     repoUrl: 'https://example.com/write-leaf-gate-test.git',
+    // Flag-gated routes in CASES (review/*, channels/email/*, channels/teams/*)
+    // reject with 403 `feature_disabled` when off. Turn them on so this suite
+    // measures the LEAF gate, not the flag.
+    metadata: { experimental: { review_center: true, agentmail_email: true, teams: true } },
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
@@ -255,7 +259,14 @@ const CASES: WCase[] = [
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {
-    name: 'experimental toggle (customize.write)',
+    name: 'feature-flag toggle (customize.write)',
+    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
+    path: () => `/v1/projects/${PROJECT}/features`, body: {},
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+  },
+  {
+    // The deprecated alias published SDKs still call must gate identically.
+    name: 'feature-flag toggle via the /experimental alias (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/experimental`, body: {},
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],

@@ -26,7 +26,16 @@ import {
 
 const ABORT_PATTERNS = ['operation was aborted', 'aborted', 'abort', 'cancelled', 'canceled'];
 
-function isAbortError(text: string): boolean {
+/**
+ * LAST RESORT ONLY — a substring sniff over arbitrary error prose.
+ *
+ * `'abort'` bare matches any message that merely mentions the word, so a real
+ * failure ("upstream connection aborted", "signal is aborted without reason")
+ * renders as a muted "Interrupted" and the actual error is never shown. Callers
+ * that can determine this properly pass `isAbort` instead; this only covers the
+ * send-failure path, where all we have is a message.
+ */
+function looksLikeAbortText(text: string): boolean {
   const lower = text.toLowerCase();
   return ABORT_PATTERNS.some((p) => lower.includes(p));
 }
@@ -164,6 +173,18 @@ interface TurnErrorDisplayProps {
    * of regexing the message.
    */
   error?: KortixSendError | null;
+  /**
+   * Was this turn ACTUALLY aborted — i.e. is the error's identity `AbortError`?
+   *
+   * Passed by the transcript, which can read the structured error on the
+   * message. `getTurnError` flattens that to a display string and drops the
+   * name, so without this the only signal left is the word "abort" appearing
+   * somewhere in the prose — which mislabels genuine failures as user
+   * interruptions and hides what actually went wrong.
+   *
+   * Undefined means "caller could not tell"; the text sniff is used then.
+   */
+  isAbort?: boolean;
   className?: string;
 }
 
@@ -177,6 +198,7 @@ export function TurnErrorDisplay({
   errorText,
   errorDetails,
   error,
+  isAbort,
   className,
 }: TurnErrorDisplayProps) {
   const text = error ? error.message : errorText;
@@ -190,8 +212,9 @@ export function TurnErrorDisplay({
   // would say the same thing twice, once without the remedy.
   if (error?.kind === 'connector') return null;
 
-  // Abort/cancelled → tiny muted note, no card
-  if (isAbortError(text)) {
+  // Abort/cancelled → tiny muted note, no card. Identity when the caller knows
+  // it, prose only when it does not.
+  if (isAbort ?? looksLikeAbortText(text)) {
     return (
       <Checkpoint className={className}>
         <CheckpointIcon>

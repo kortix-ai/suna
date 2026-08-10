@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 554,
+  "count": 567,
   "routes": [
     {
       "method": "GET",
@@ -187,6 +187,10 @@
       "path": "/v1/accounts/:accountId/audit/export"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/audit/reconcile"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/audit/webhooks"
     },
@@ -201,6 +205,14 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay"
     },
     {
       "method": "GET",
@@ -860,6 +872,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/pipedream/sections"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/policies"
     },
     {
@@ -1180,6 +1196,18 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/apps/:appId/access"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/access-session"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1213,6 +1241,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/audit"
     },
     {
       "method": "GET",
@@ -1457,6 +1489,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/experimental"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/features"
     },
     {
       "method": "GET",
@@ -1772,6 +1808,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/audit/events"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
     },
     {
@@ -1813,6 +1853,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/reload"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reload-stream"
     },
     {
       "method": "POST",
@@ -1955,6 +1999,10 @@
       "path": "/v1/projects/provision"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/provision-stream"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/suna-migration/eligibility"
     },
@@ -2009,6 +2057,10 @@
     {
       "method": "GET",
       "path": "/v1/setup-links/connectors/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup-links/connectors/:token/finalize"
     },
     {
       "method": "POST",

@@ -18,6 +18,7 @@ import { createWsHandlers } from './ws-handler';
 import type { TunnelServerConfig } from '../shared/types';
 
 export interface TunnelServer {
+  port: number;
   app: Hono;
   relay: TunnelRelay;
   heartbeat: HeartbeatManager;
@@ -70,11 +71,23 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
       if (url.pathname === '/ws') {
         const tunnelId = url.searchParams.get('tunnelId');
 
-        if (!tunnelId) {
-          return new Response(JSON.stringify({ error: 'Missing tunnelId' }), {
+        if (!tunnelId || !/^[A-Za-z0-9._:-]{1,128}$/.test(tunnelId)) {
+          return new Response(JSON.stringify({ error: 'Invalid tunnelId' }), {
             status: 400,
             headers: { 'Content-Type': 'application/json' },
           });
+        }
+
+        if (req.headers.has('origin')) {
+          return new Response(
+            JSON.stringify({
+              error: 'Browser tunnel WebSockets are not allowed',
+            }),
+            {
+              status: 403,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
         }
 
         const success = server.upgrade(req, {
@@ -94,7 +107,7 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
         wsHandlers.onOpen(ws.data.tunnelId, ws);
       },
       message(ws: any, message: string | Buffer) {
-        wsHandlers.onMessage(ws.data.tunnelId, message);
+        wsHandlers.onMessage(ws.data.tunnelId, ws, message);
       },
       close(ws: any) {
         wsHandlers.onClose(ws.data.tunnelId, ws);
@@ -102,7 +115,7 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
     },
   });
 
-  console.log(`[agent-tunnel] Server listening on port ${port}`);
+  console.log(`[agent-tunnel] Server listening on port ${bunServer.port}`);
 
   const stop = () => {
     heartbeat.stop();
@@ -110,5 +123,12 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
     bunServer.stop();
   };
 
-  return { app, relay, heartbeat, wsHandlers, stop };
+  return {
+    port: bunServer.port ?? port,
+    app,
+    relay,
+    heartbeat,
+    wsHandlers,
+    stop,
+  };
 }

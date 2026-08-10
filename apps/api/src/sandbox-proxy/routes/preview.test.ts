@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { getRequestContext, runWithContext } from '../../lib/request-context';
 import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
@@ -7,11 +8,33 @@ import {
 import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
   STRIP_FORWARD_HEADERS,
+  bindSandboxRequestContext,
   isProxiedBaseReset,
   longTurnTimeoutResponse,
   secretGrantErrorResponse,
   shouldAutoResumeStoppedSandbox,
 } from './preview';
+
+describe('sandbox proxy audit context', () => {
+  test('binds the resolved account, project, session, and sandbox before the request audit runs', () => {
+    runWithContext('POST', '/v1/p/sbx_external/8000/session/ses/message', () => {
+      bindSandboxRequestContext(
+        {
+          accountId: 'a7100000-0000-4000-a000-000000000001',
+          projectId: 'a7200000-0000-4000-a000-000000000001',
+          sessionId: 'a7300000-0000-4000-a000-000000000001',
+        },
+        'sbx_external',
+      );
+      expect(getRequestContext()).toMatchObject({
+        accountId: 'a7100000-0000-4000-a000-000000000001',
+        projectId: 'a7200000-0000-4000-a000-000000000001',
+        sessionId: 'a7300000-0000-4000-a000-000000000001',
+        sandboxId: 'sbx_external',
+      });
+    });
+  });
+});
 
 // The data-path proxy may only wake a stopped box on explicit user intent.
 // Passive transcript reads must still 503 so cached inventory cannot resurrect
@@ -196,9 +219,7 @@ describe('isProxiedBaseReset', () => {
   });
 
   test('refuses it regardless of where the flag sits in the query', () => {
-    expect(isProxiedBaseReset(8000, '/kortix/refresh', 'restart=0&base=1&base_sha=abc')).toBe(
-      true,
-    );
+    expect(isProxiedBaseReset(8000, '/kortix/refresh', 'restart=0&base=1&base_sha=abc')).toBe(true);
   });
 
   test('leaves an ordinary refresh alone', () => {

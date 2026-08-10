@@ -55,12 +55,12 @@ Subcommands:
   delivery IDENTIFIER STRATEGY      Set runtime, broker, egress, or denied.
     --consumer <service>             Broker consumer: llm-gateway, connector,
                                     automation, or http-broker.
-    --allow-host <host>              Broker host. Repeat for more hosts.
-    --allow-method <method>          Allowed HTTP method. Repeat as needed.
-    --allow-path <path>              Exact path or one trailing /* wildcard.
+    --allow-host <host>              Approved host. Repeat for more hosts.
+    --allow-method <method>          Broker only. Repeat as needed.
+    --allow-path <path>              Broker only. Exact path or trailing /*.
     --inject-header <name>           Inject into one managed header.
-    --inject-query <name>            Inject into one query parameter.
-    --inject-json <path>             Inject into one JSON body field.
+    --inject-query <name>            Broker only. Inject into a query parameter.
+    --inject-json <path>             Broker only. Inject into a JSON body field.
     --template <value>               Header template containing {{secret}}.
     --handle-prefix <prefix>         Optional vendor-shaped sandbox handle.
   call IDENTIFIER URL               Send one policy-bound HTTPS request.
@@ -424,7 +424,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     process.stderr.write(`${status.err('--consumer is only valid for broker delivery.')}\n`);
     return 2;
   }
-  const hasBrokerOptions =
+  const hasHttpPolicyOptions =
     allowedHosts.length > 0 ||
     allowedMethods.length > 0 ||
     allowedPath !== undefined ||
@@ -433,21 +433,15 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     injectJson !== undefined ||
     template !== undefined ||
     handlePrefix !== undefined;
-  if (strategy !== 'broker' && hasBrokerOptions) {
+  if (strategy !== 'broker' && strategy !== 'egress' && hasHttpPolicyOptions) {
     process.stderr.write(
-      `${status.err('Broker policy flags are only valid for broker delivery.')}\n`,
-    );
-    return 2;
-  }
-  if (strategy === 'egress') {
-    process.stderr.write(
-      `${status.err('Transparent egress delivery is unavailable. Use broker delivery.')}\n`,
+      `${status.err('HTTP policy flags are only valid for broker or egress delivery.')}\n`,
     );
     return 2;
   }
 
   let policy: SecretEgressPolicy | undefined;
-  if (strategy === 'broker' && consumer !== 'http_broker' && hasBrokerOptions) {
+  if (strategy === 'broker' && consumer !== 'http_broker' && hasHttpPolicyOptions) {
     process.stderr.write(
       `${status.err(`HTTP policy flags cannot be used with the ${consumer.replace(/_/g, '-')} consumer.`)}\n`,
     );
@@ -492,6 +486,42 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
       tls: 'terminate',
     };
   }
+  if (strategy === 'egress') {
+    const exactHost =
+      /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+    const normalizedHosts = allowedHosts.map((host) => host.trim().toLowerCase());
+    const unsupported =
+      allowedMethods.length > 0 ||
+      allowedPath !== undefined ||
+      injectQuery !== undefined ||
+      injectJson !== undefined ||
+      handlePrefix !== undefined;
+    if (
+      normalizedHosts.length === 0 ||
+      normalizedHosts.some((host) => !exactHost.test(host)) ||
+      !injectHeader ||
+      unsupported
+    ) {
+      process.stderr.write(
+        `${status.err('Network delivery supports exact hosts and header injection only.')}\n`,
+      );
+      return 2;
+    }
+    if (template !== undefined && !template.includes('{{secret}}')) {
+      process.stderr.write(`${status.err('--template must contain {{secret}}.')}\n`);
+      return 2;
+    }
+    policy = {
+      rules: [...new Set(normalizedHosts)].map((host) => ({ host })),
+      inject: {
+        kind: 'header',
+        name: injectHeader,
+        ...(template ? { template } : {}),
+      },
+      on_no_match: 'deny',
+      tls: 'terminate',
+    };
+  }
 
   try {
     const result = await withKortixScope(ctx.auth, () =>
@@ -511,6 +541,10 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     if (strategy === 'runtime') {
       process.stdout.write(
         `  ${C.dim}The value is available to agent code and commands inside the sandbox.${C.reset}\n`,
+      );
+    } else if (strategy === 'egress') {
+      process.stdout.write(
+        `  ${C.dim}Platinum injects the value outside the sandbox for approved hosts only.${C.reset}\n`,
       );
     } else if (result.requires_rotation) {
       process.stdout.write(

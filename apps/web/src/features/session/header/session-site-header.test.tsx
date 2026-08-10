@@ -35,10 +35,15 @@ describe('SessionSiteHeader sidebar toggle', () => {
   });
 });
 
+/**
+ * The rendered name is `headerTitle`, not the `sessionTitle` prop: the prop
+ * carries OPENCODE's own session.title, and the header must show the same name
+ * as the sidebar row (see session-header-title.test.ts).
+ */
 describe('SessionSiteHeader session title', () => {
-  test('renders sessionTitle in the leading cluster, after the home button and before leadingAction', () => {
+  test('renders the session name in the leading cluster, after the home button and before leadingAction', () => {
     const homeButtonIndex = source.indexOf('<HouseIcon');
-    const titleIndex = source.indexOf('{sessionTitle}');
+    const titleIndex = source.indexOf('{headerTitle}');
     const leadingActionIndex = source.lastIndexOf('{leadingAction}');
     expect(titleIndex).toBeGreaterThan(-1);
     expect(titleIndex).toBeGreaterThan(homeButtonIndex);
@@ -48,7 +53,7 @@ describe('SessionSiteHeader session title', () => {
   // Without these, a long title just grows the leading cluster and pushes
   // the trailing cluster (config/dev-tools/⋯) off-screen instead of eliding.
   test('the title element carries min-w-0 and truncate, so a long value shrinks instead of expanding the row', () => {
-    const titleIndex = source.indexOf('{sessionTitle}');
+    const titleIndex = source.indexOf('{headerTitle}');
     const titleTagStart = source.lastIndexOf('<span', titleIndex);
     const titleTag = source.slice(titleTagStart, titleIndex);
     expect(titleTag).toContain('min-w-0');
@@ -65,7 +70,7 @@ describe('SessionSiteHeader session title', () => {
   });
 
   test('renders the title and down caret as a padded dropdown trigger', () => {
-    const titleIndex = source.indexOf('{sessionTitle}');
+    const titleIndex = source.indexOf('{headerTitle}');
     const triggerStart = source.lastIndexOf('<DropdownMenuTrigger', titleIndex);
     const trigger = source.slice(
       triggerStart,
@@ -246,6 +251,8 @@ describe('SessionConfigIndicator wiring', () => {
     expect(mount).toBeTruthy();
     expect(mount).toContain('sessionId={projectSessionId!}');
     expect(mount).not.toContain('sessionId={sessionId}');
+    expect(mount).toContain('chatSessionId={sessionId}');
+    expect(mount).toContain('baseRef={projectSession?.base_ref}');
   });
 
   test('both reload entry points are gated on canShare', () => {
@@ -264,6 +271,7 @@ describe('SessionConfigIndicator wiring', () => {
   test('the ⋯ item and the chip share ONE mutation, so pending state cannot disagree', () => {
     expect(source).toContain('const reloadConfig = useReloadSessionConfig(');
     expect(source).toContain('isPending={reloadConfig.isPending}');
+    expect(source).toContain('phase={reloadConfig.phase}');
     expect(source).toContain('disabled={reloadConfig.isPending}');
   });
 

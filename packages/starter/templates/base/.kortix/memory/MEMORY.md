@@ -7,7 +7,7 @@ requests.
 
 This file is the **index**. It starts mostly empty — agents read it
 first with the `memory` tool and add entries here (or split a topic into
-its own sub-file) as the project grows. The **memory-reflector** agent
+its own sub-file) as the project grows. The **harness-reflector** agent
 keeps it tidy on a schedule.
 
 To work with memory, load the **kortix-memory** skill.

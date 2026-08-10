@@ -171,6 +171,7 @@ function isMainAppHost(host) {
 // stay in sync with DESKTOP_ALLOWED_ROUTES in apps/web/src/middleware.ts.
 const APP_PATH_PREFIXES = [
   '/projects',
+  '/new',
   '/accounts',
   '/invites',
   '/admin',

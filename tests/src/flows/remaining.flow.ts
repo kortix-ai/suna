@@ -138,9 +138,9 @@ flow(
 );
 
 flow("CONN-11", { domain: "connectors", routes: ["POST /v1/connectors/webhook/pipedream"] }, async (ctx) => {
-  await ctx.step("pipedream webhook — bad/unsigned payload → rejected", async () => {
+  await ctx.step("pipedream webhook — bad/unsigned payload rejected, or feature disabled", async () => {
     const r = await ctx.client.as(ctx.P.ANON).post("/v1/connectors/webhook/pipedream", { event: "x" });
-    r.status([200, 400, 401, 404]);
+    r.status([200, 400, 401, 404, 501]);
   });
 });
 

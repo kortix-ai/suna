@@ -1,11 +1,17 @@
 import '../node-ws-polyfill';
 import { loadConfig, type TunnelConfig } from './config';
 import { TunnelAgent } from './agent';
-import { CapabilityRegistry } from './capabilities/index';
-import { createFilesystemCapability } from './capabilities/filesystem';
-import { createShellCapability } from './capabilities/shell';
-import { createDesktopCapability } from './capabilities/desktop';
-import { getServicePaths, getServiceStatus, installService, restartService, startService, stopService, uninstallService } from './service';
+import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
+import {
+  DEFAULT_INSTALL_BACKGROUND_SERVICE,
+  getServicePaths,
+  getServiceStatus,
+  installService,
+  restartService,
+  startService,
+  stopService,
+  uninstallService,
+} from './service';
 import { hostname, platform, arch, release } from 'os';
 import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync, renameSync } from 'fs';
 import { join } from 'path';
@@ -54,8 +60,125 @@ const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 type ConnectMode = {
   background: boolean;
-  keepAwake: boolean;
 };
+
+type ApprovedDeviceCredentials = {
+  tunnelId: string;
+  token: string;
+};
+
+type DeviceAuthChallenge = {
+  deviceCode: string;
+  deviceSecret: string;
+  verificationUrl: string;
+  expiresAt: string;
+  pollIntervalMs: number;
+};
+
+const TUNNEL_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SETUP_TOKEN_PATTERN = /^kortix_tnl_[A-Za-z0-9_-]{32,64}$/;
+
+class InvalidDeviceAuthResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidDeviceAuthResponseError';
+  }
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseApprovedDeviceCredentials(
+  value: Record<string, unknown>,
+): ApprovedDeviceCredentials {
+  const { tunnelId, token } = value;
+  if (typeof tunnelId !== 'string' || !TUNNEL_ID_PATTERN.test(tunnelId)) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid tunnel ID',
+    );
+  }
+  if (typeof token !== 'string' || !SETUP_TOKEN_PATTERN.test(token)) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid setup token',
+    );
+  }
+  return { tunnelId, token };
+}
+
+function parseDeviceAuthChallenge(value: unknown): DeviceAuthChallenge {
+  if (!isJsonRecord(value)) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid challenge',
+    );
+  }
+  const { deviceCode, deviceSecret, verificationUrl, expiresAt, pollIntervalMs } = value;
+  if (typeof deviceCode !== 'string' || !/^[A-Z]{4}-[0-9]{4}$/.test(deviceCode)) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid device code',
+    );
+  }
+  if (typeof deviceSecret !== 'string' || !/^[A-Za-z0-9]{32}$/.test(deviceSecret)) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid device secret',
+    );
+  }
+  if (typeof verificationUrl !== 'string' || verificationUrl.length > 2048) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid verification URL',
+    );
+  }
+  const browserUrl = normalizeBrowserUrl(verificationUrl);
+  if (!browserUrl) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid verification URL',
+    );
+  }
+  const parsedVerificationUrl = new URL(browserUrl);
+  const loopback =
+    parsedVerificationUrl.hostname === 'localhost' ||
+    parsedVerificationUrl.hostname === '127.0.0.1' ||
+    parsedVerificationUrl.hostname === '[::1]' ||
+    parsedVerificationUrl.hostname === '::1';
+  if (
+    parsedVerificationUrl.username ||
+    parsedVerificationUrl.password ||
+    (parsedVerificationUrl.protocol !== 'https:' && !loopback)
+  ) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an unsafe verification URL',
+    );
+  }
+  if (typeof expiresAt !== 'string') {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid expiration',
+    );
+  }
+  const expiresAtMs = Date.parse(expiresAt);
+  const now = Date.now();
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now || expiresAtMs > now + 10 * 60_000) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid expiration',
+    );
+  }
+  if (
+    !Number.isSafeInteger(pollIntervalMs) ||
+    (pollIntervalMs as number) < 250 ||
+    (pollIntervalMs as number) > 10_000
+  ) {
+    throw new InvalidDeviceAuthResponseError(
+      'Authorization server returned an invalid poll interval',
+    );
+  }
+  return {
+    deviceCode,
+    deviceSecret,
+    verificationUrl: browserUrl,
+    expiresAt,
+    pollIntervalMs: pollIntervalMs as number,
+  };
+}
 
 async function printStartup(config: { tunnelId: string; apiUrl: string }, capabilities: string[], version: string): Promise<void> {
   const machine = hostname();
@@ -126,10 +249,12 @@ async function printStartup(config: { tunnelId: string; apiUrl: string }, capabi
 }
 
 function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): void {
-  const registry = new CapabilityRegistry();
-  registry.register(createFilesystemCapability(config));
-  registry.register(createShellCapability(config));
-  registry.register(createDesktopCapability());
+  const registry = createEnabledCapabilityRegistry(config);
+  if (config.enabledCapabilities?.includes('desktop') && !registry.has('desktop')) {
+    console.error(
+      '[agent-tunnel] Computer Use is approved but unavailable: install the trusted cua-driver locally, then restart Agent Tunnel.',
+    );
+  }
 
   if (!options.service) {
     clearScreen();
@@ -161,6 +286,7 @@ function normalizeBrowserUrl(value: string): string | null {
 }
 
 function openBrowser(url: string): void {
+  if (process.env.KORTIX_AGENT_TUNNEL_NO_BROWSER === '1') return;
   const safeUrl = normalizeBrowserUrl(url);
   if (!safeUrl) return;
   try {
@@ -193,10 +319,6 @@ function isTruthyFlag(value: string | undefined): boolean {
   return value === 'true' || value === '1' || value === 'yes';
 }
 
-function isFalseyFlag(value: string | undefined): boolean {
-  return value === 'false' || value === '0' || value === 'no';
-}
-
 function isInteractiveTerminal(): boolean {
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
@@ -212,6 +334,12 @@ async function promptYesNo(question: string, defaultValue: boolean): Promise<boo
       if (['n', 'no'].includes(answer)) return false;
       console.log(`  ${c.yellow}!${c.reset} Please answer yes or no.`);
     }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      process.stdout.write('\n');
+      process.exit(130);
+    }
+    throw error;
   } finally {
     rl.close();
   }
@@ -230,43 +358,44 @@ async function chooseConnectMode(flags: Record<string, string>): Promise<Connect
     isTruthyFlag(flags['no-background']);
 
   if (explicitBackground) {
-    return { background: true, keepAwake: isTruthyFlag(flags['keep-awake']) };
+    return { background: true };
   }
   if (explicitForeground) {
-    return { background: false, keepAwake: false };
+    return { background: false };
   }
   if (!isInteractiveTerminal()) {
-    return { background: false, keepAwake: false };
+    return { background: false };
   }
 
   console.log('');
   console.log(`  ${c.yellow}!${c.reset} ${c.bold}Security note${c.reset}`);
-  console.log(`  ${c.dim}Always-online keeps this computer reachable by approved Kortix agents after this terminal closes.${c.reset}`);
-  console.log(`  ${c.dim}Keep-awake is separate: it also asks the OS to avoid sleep while the tunnel service runs.${c.reset}`);
+  console.log(`  ${c.dim}Background mode starts at login, continues after this terminal closes, and restarts after failures.${c.reset}`);
+  console.log(`  ${c.dim}The computer must remain powered on, awake, and connected to the internet.${c.reset}`);
   console.log('');
 
-  const background = await promptYesNo('  Keep this computer always online in the background?', true);
-  if (!background) return { background: false, keepAwake: false };
-
-  let keepAwake = isTruthyFlag(flags['keep-awake']);
-  if (!keepAwake && !isFalseyFlag(flags['keep-awake'])) {
-    keepAwake = await promptYesNo('  Also keep this computer awake while the tunnel is running?', false);
-  }
-  return { background, keepAwake };
+  const background = await promptYesNo(
+    '  Install the background service now?',
+    DEFAULT_INSTALL_BACKGROUND_SERVICE,
+  );
+  return { background };
 }
 
-function installBackgroundService(mode: ConnectMode): void {
-  const status = installService({ keepAwake: mode.keepAwake });
+function installBackgroundService(): void {
+  const status = installService();
   console.log('');
   console.log(`  ${c.green}●${c.reset} ${c.bold}Background service installed${c.reset}`);
   if (status.path) console.log(`  ${c.dim}${status.path}${c.reset}`);
-  console.log(`  ${c.dim}Always-online: enabled${c.reset}`);
-  console.log(`  ${c.dim}Keep-awake: ${mode.keepAwake ? 'enabled' : 'disabled'}${c.reset}`);
+  console.log(`  ${c.dim}Starts at login and restarts after failures.${c.reset}`);
   if (status.detail) console.log(`  ${c.gray}${status.detail}${c.reset}`);
   console.log('');
 }
 
-function saveCredentials(tunnelId: string, token: string, apiUrl: string): void {
+function saveCredentials(
+  tunnelId: string,
+  token: string,
+  apiUrl: string,
+  enabledCapabilities?: string[],
+): void {
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   try { chmodSync(CONFIG_DIR, 0o700); } catch {}
   let existing: Record<string, unknown> = {};
@@ -274,7 +403,17 @@ function saveCredentials(tunnelId: string, token: string, apiUrl: string): void 
     try { existing = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')); } catch {}
   }
   const tmpFile = join(CONFIG_DIR, `config.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(tmpFile, JSON.stringify({ ...existing, tunnelId, token, apiUrl }, null, 2), { mode: 0o600, flag: 'wx' });
+  const next = {
+    ...existing,
+    tunnelId,
+    token,
+    apiUrl,
+    ...(enabledCapabilities !== undefined ? { enabledCapabilities } : {}),
+  };
+  // The device-auth response passes strict UUID and token-format validation.
+  // The destination is a fixed private file under the current user's home.
+  // lgtm[js/http-to-file-access]
+  writeFileSync(tmpFile, JSON.stringify(next, null, 2), { mode: 0o600, flag: 'wx' });
   try { chmodSync(tmpFile, 0o600); } catch {}
   renameSync(tmpFile, CONFIG_FILE);
   try { chmodSync(CONFIG_FILE, 0o600); } catch {}
@@ -303,14 +442,15 @@ async function commandConnectDeviceAuth(config: TunnelConfig, flags: Record<stri
       console.error(`  ${c.red}✗${c.reset} Failed to create device auth request: ${res.status} ${text.slice(0, 200)}`);
       process.exit(1);
     }
-    const data = await res.json();
-    deviceCode = data.deviceCode;
-    deviceSecret = data.deviceSecret;
-    verificationUrl = data.verificationUrl;
-    expiresAt = data.expiresAt;
-    pollIntervalMs = data.pollIntervalMs || 2000;
+    const challenge = parseDeviceAuthChallenge(await res.json());
+    deviceCode = challenge.deviceCode;
+    deviceSecret = challenge.deviceSecret;
+    verificationUrl = challenge.verificationUrl;
+    expiresAt = challenge.expiresAt;
+    pollIntervalMs = challenge.pollIntervalMs;
   } catch (err) {
-    console.error(`  ${c.red}✗${c.reset} Failed to reach API at ${config.apiUrl}`);
+    const detail = err instanceof InvalidDeviceAuthResponseError ? `: ${err.message}` : '';
+    console.error(`  ${c.red}✗${c.reset} Failed to start device authorization${detail}`);
     process.exit(1);
     return;
   }
@@ -343,28 +483,52 @@ async function commandConnectDeviceAuth(config: TunnelConfig, flags: Record<stri
         headers: { Authorization: `Bearer ${deviceSecret}` },
       });
       if (res.ok) {
-        const data = await res.json();
+        const data: unknown = await res.json();
+
+        if (!isJsonRecord(data) || typeof data.status !== 'string') {
+          throw new InvalidDeviceAuthResponseError(
+            'Authorization server returned an invalid status response',
+          );
+        }
 
         if (data.status === 'approved' && data.tunnelId && data.token) {
+          const credentials = parseApprovedDeviceCredentials(data);
           process.stdout.write('\r' + ' '.repeat(60) + '\r');
           console.log(`  ${c.green}●${c.reset} ${c.bold}Authorized!${c.reset}`);
           console.log('');
 
-          // Save credentials
-          saveCredentials(data.tunnelId, data.token, config.apiUrl);
+          const enabledCapabilities = Array.isArray(data.capabilities)
+            ? [...new Set(data.capabilities)].filter(
+                (capability): capability is string =>
+                  typeof capability === 'string' &&
+                  ['filesystem', 'shell', 'desktop'].includes(capability),
+              )
+            : [];
+
+          // Persist the browser-approved capabilities as a local ceiling. A
+          // later server grant cannot silently enable another capability.
+          saveCredentials(
+            credentials.tunnelId,
+            credentials.token,
+            config.apiUrl,
+            enabledCapabilities,
+          );
           console.log(`  ${c.dim}Credentials saved to ${CONFIG_FILE}${c.reset}`);
+          console.log(
+            `  ${c.dim}Local capabilities: ${enabledCapabilities.join(', ') || 'none'}${c.reset}`,
+          );
           console.log('');
 
           const mode = await chooseConnectMode(flags);
           if (mode.background) {
-            installBackgroundService(mode);
+            installBackgroundService();
             return;
           }
 
           // Connect with received credentials
           const fullConfig = loadConfig({
-            token: data.token,
-            tunnelId: data.tunnelId,
+            token: credentials.token,
+            tunnelId: credentials.tunnelId,
             apiUrl: config.apiUrl,
           });
           startAgent(fullConfig);
@@ -390,7 +554,13 @@ async function commandConnectDeviceAuth(config: TunnelConfig, flags: Record<stri
           process.exit(1);
         }
       }
-    } catch {}
+    } catch (error) {
+      if (error instanceof InvalidDeviceAuthResponseError) {
+        process.stdout.write('\r' + ' '.repeat(60) + '\r');
+        console.error(`  ${c.red}✗${c.reset} ${error.message}`);
+        process.exit(1);
+      }
+    }
 
     await sleep(pollIntervalMs);
   }
@@ -408,7 +578,7 @@ async function commandConnect(flags: Record<string, string>): Promise<void> {
     const mode = await chooseConnectMode(flags);
     if (mode.background) {
       saveCredentials(config.tunnelId, config.token, config.apiUrl);
-      installBackgroundService(mode);
+      installBackgroundService();
       return;
     }
     startAgent(config);
@@ -498,7 +668,7 @@ function commandInstallService(flags: Record<string, string>): void {
     saveCredentials(config.tunnelId, config.token, config.apiUrl);
   }
 
-  const status = installService({ keepAwake: isTruthyFlag(flags['keep-awake']) });
+  const status = installService();
   console.log(JSON.stringify(status, null, 2));
 }
 
@@ -566,9 +736,8 @@ function showHelp(): void {
   console.log(`  ${c.white}--token${c.reset} ${c.dim}<token>${c.reset}       Skip device auth, connect directly`);
   console.log(`  ${c.white}--tunnel-id${c.reset} ${c.dim}<id>${c.reset}     Tunnel ID ${c.dim}(required with --token)${c.reset}`);
   console.log(`  ${c.white}--api-url${c.reset} ${c.dim}<url>${c.reset}       API URL ${c.dim}(default: http://localhost:8080)${c.reset}`);
-  console.log(`  ${c.white}--daemon${c.reset}             With connect: save credentials and install the 24/7 service`);
+  console.log(`  ${c.white}--daemon${c.reset}             With connect: skip the prompt and install the background service`);
   console.log(`  ${c.white}--foreground${c.reset}         With connect: skip prompts and run only in this terminal`);
-  console.log(`  ${c.white}--keep-awake${c.reset}         With service: also ask OS to avoid sleep while tunnel runs`);
   console.log('');
   console.log(`  ${c.dim}Config: ~/.agent-tunnel/config.json${c.reset}`);
   console.log(`  ${c.dim}powered by ${c.cyan}kortix${c.reset}`);
@@ -576,6 +745,11 @@ function showHelp(): void {
 }
 
 const { command, flags } = parseArgs(process.argv);
+
+if (Object.prototype.hasOwnProperty.call(flags, 'keep-awake')) {
+  console.error(`${c.red}${c.bold} error${c.reset} --keep-awake is not supported. Configure sleep behavior in the operating system.`);
+  process.exit(2);
+}
 
 switch (command) {
   case 'connect':

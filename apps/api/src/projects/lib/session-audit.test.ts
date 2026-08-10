@@ -12,6 +12,8 @@ test('sessionCreatedAuditEvent attributes an in-session caller as an agent', () 
       inSession: true,
       origin: 'user',
       invocationSource: 'cli',
+      clientReportedSource: 'cli',
+      callerSessionId: 'parent-session',
       agentName: 'default',
       visibility: 'private',
       sandboxProvider: 'daytona',
@@ -24,11 +26,19 @@ test('sessionCreatedAuditEvent attributes an in-session caller as an agent', () 
     sessionId: 'session-1',
     actorUserId: 'actor-1',
     actorType: 'agent',
-    source: 'cli',
+    authoritativeSource: 'agent',
+    clientReportedSource: 'cli',
+    initiatorActorType: 'agent',
+    initiatorActorId: 'parent-session',
+    delegationDepth: 1,
     outcome: 'success',
     action: 'session.created',
+    phase: 'created',
     resourceType: 'project_session',
     resourceId: 'session-1',
+    sourceLedger: 'project_sessions',
+    sourceRecordId: 'session-1',
+    sourceRevision: 'created',
     metadata: {
       origin: 'user',
       agent_name: 'default',
@@ -59,6 +69,6 @@ test('sessionCreatedAuditEvent preserves channel and service-account attribution
     }),
   ).toMatchObject({
     actorType: 'service_account',
-    source: 'slack',
+    authoritativeSource: 'automation',
   });
 });

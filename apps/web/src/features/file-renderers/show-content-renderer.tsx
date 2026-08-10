@@ -482,7 +482,7 @@ export function ShowContentRenderer({
           rel="noopener noreferrer"
           className="group border-border/30 bg-muted/5 hover:bg-muted/20 flex w-full items-center gap-4 rounded-2xl border p-4 transition-colors"
         >
-          <div className="bg-muted/30 flex size-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg">
+          <div className="bg-muted/30 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg">
             {favicon ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
@@ -508,7 +508,7 @@ export function ShowContentRenderer({
               <div className="text-muted-foreground mt-1 line-clamp-2 text-xs">{description}</div>
             )}
           </div>
-          <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-4 flex-shrink-0 transition-colors" />
+          <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-4 shrink-0 transition-colors" />
         </a>
       </div>
     );
@@ -805,7 +805,7 @@ export function ShowContentRenderer({
     return (
       <div className={cn('px-5 py-4', fill && 'flex h-full items-center')}>
         <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 size-4 flex-shrink-0 text-red-500" />
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-500" />
           <p className="text-foreground text-sm whitespace-pre-wrap">
             <TextWithPaths text={content} />
           </p>

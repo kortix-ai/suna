@@ -322,7 +322,7 @@ const envSchema = z.object({
   ),
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
   // Whether the Teams channel is offered is NOT an operator env var — it is the
-  // per-project `teams` experimental feature (experimental/features.ts).
+  // per-project `teams` feature flag (feature-flags/registry.ts).
   TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
@@ -583,7 +583,8 @@ const envSchema = z.object({
   // Every provider is optional; the transport tries each configured one in
   // EMAIL_PROVIDER_ORDER and falls through on failure. See lib/email/transport.ts.
   EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap'),
-  // AWS SES (SigV4-signed SESv2 HTTP API; IAM user kortix-ses-sender).
+  // AWS SES (SigV4-signed SESv2 HTTP API). ECS uses its task role. Static
+  // credentials remain optional for local and self-hosted deployments.
   AWS_SES_REGION: optStrDefault('us-east-2'),
   AWS_SES_ACCESS_KEY_ID: optStr,
   AWS_SES_SECRET_ACCESS_KEY: optStr,
@@ -593,6 +594,9 @@ const envSchema = z.object({
   // domain is not yet claimed/verified in the Resend team. The intended from
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
+  // Local-only HTTP capture. The deterministic test profile points this at
+  // Supabase Mailpit. Deployed environments leave it unset.
+  MAILPIT_API_URL: optStr,
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
@@ -767,7 +771,17 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (tunnelEnabled && !raw.TUNNEL_SIGNING_SECRET) {
     issues.push({
       var: 'TUNNEL_SIGNING_SECRET',
-      message: 'Required when tunnel is enabled — used for HMAC signing key derivation',
+      message: 'Required when tunnel is enabled — protects device-handoff token derivation',
+      level: 'error',
+    });
+  } else if (
+    tunnelEnabled &&
+    typeof raw.TUNNEL_SIGNING_SECRET === 'string' &&
+    Buffer.byteLength(raw.TUNNEL_SIGNING_SECRET, 'utf8') < 24
+  ) {
+    issues.push({
+      var: 'TUNNEL_SIGNING_SECRET',
+      message: 'Must contain at least 24 bytes of secret material',
       level: 'error',
     });
   }
@@ -1130,6 +1144,7 @@ export const config = {
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,

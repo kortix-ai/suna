@@ -148,6 +148,14 @@ export interface SessionReloadResult {
   reason?: string;
 }
 
+/** Server-observed boundaries emitted by the streamed reload route. */
+export type SessionReloadPhase =
+  | 'checking-session'
+  | 'refreshing-workspace'
+  | 'compiling-config'
+  | 'applying-config'
+  | 'confirming-config';
+
 /**
  * One sentence for the reload, and the only place that decides whether we are
  * allowed to say the agent changed.
@@ -160,9 +168,8 @@ export interface SessionReloadResult {
 /**
  * The sentence appended when the reload STOPPED work someone was waiting on.
  *
- * Marko asked for this on the call: the reload restarts the runtime and "the
- * whole opencode session is going to stop", so the command has to say so and
- * the user has to know they must continue. Until now the turn simply ended —
+ * The reload restarts the runtime, so the command has to report when it ends a
+ * turn. Until now the turn simply ended —
  * cleanly, so nothing spun, but silently, so it looked like the agent gave up.
  *
  * Only appended on a definite `true`. `null` means the box could not tell, and
@@ -358,12 +365,15 @@ export async function reloadSessionConfig(input: {
   refreshRepo?: boolean;
   /** Reload even if a turn is running. It will be ended. */
   force?: boolean;
+  /** Optional live progress sink. The JSON route leaves it unset. */
+  onPhase?: (phase: SessionReloadPhase) => void;
 }): Promise<SessionReloadResult> {
   // Before anything reads the mirror — the base_sha resolve, the compile inside
   // the push, the etag compare. See `invalidateProjectMirror` above: a reload
   // served from a 60s cache can apply the pre-merge config and report success.
   invalidateProjectMirror(input.projectId);
 
+  input.onPhase?.('checking-session');
   const before = await readSandboxConfigState({
     sessionId: input.sessionId,
     includeTurnState: input.force !== true,
@@ -412,6 +422,7 @@ export async function reloadSessionConfig(input: {
   let configDirSynced: boolean | null = null;
   let configDirReason: string | undefined;
   if (input.refreshRepo !== false) {
+    input.onPhase?.('refreshing-workspace');
     const refreshed = await refreshSandboxWorkspace(input.sessionId);
     repoRefreshed = refreshed.ok;
     commitSha = refreshed.commitSha ?? commitSha;
@@ -426,8 +437,10 @@ export async function reloadSessionConfig(input: {
     defaultBranch: input.defaultBranch,
     manifestPath: input.manifestPath,
     baseRef: input.baseRef,
+    onPhase: input.onPhase,
   });
 
+  input.onPhase?.('confirming-config');
   const latest = await latestAgentConfigEtag({
     projectId: input.projectId,
     accountId: input.accountId,

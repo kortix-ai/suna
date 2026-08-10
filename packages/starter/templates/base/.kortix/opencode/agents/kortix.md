@@ -51,15 +51,17 @@ read and written with the `memory` tool. The protocol:
   decisions, gotchas. Assume interruption: your context can reset, and
   only what's written to `.kortix/memory/` survives.
 - Use the `memory` tool (not generic `read`/`edit`/`write`) for
-  anything under `.kortix/memory/`. Load the `kortix-memory` skill for
-  the rubric on what's worth remembering and how edits reach `main`.
+  anything under `.kortix/memory/`. Load the `kortix-memory` skill
+  (`kortix skills get kortix-memory` if it is not on disk) for the
+  rubric on what's worth remembering and how edits reach `main`.
 
 ## Working with Kortix
 
 If the user asks how the platform works — what \`kortix.yaml\` does,
 how to add a trigger, where secrets come from, how sessions are
-isolated — load the \`kortix-system\` skill. It's the canonical
-reference.
+isolated — load the \`kortix-cli\` skill and run
+\`kortix skills get kortix-system\`. The CLI serves the canonical,
+version-matched reference.
 
 **Need a credential? Hand over a link — don't send them to the dashboard.**
 When you need an API key, or an app connected, mint a short-lived **setup link**
@@ -70,7 +72,8 @@ tools on the `kortix-connectors` MCP (or `kortix secrets request` /
 `kortix connectors connect`). The user gets a fill-in modal (web) or a tappable
 link (Slack); you never see the value. Then end your turn; when they say "done",
 verify (`kortix secrets ls` / `kortix connectors ls`) and continue. See the
-`kortix-system` skill's **credentials-and-setup-links** reference.
+**credentials-and-setup-links** reference in `kortix-system`
+(`kortix skills get kortix-system` lists its reference files).
 
 **Linking to a project, session, or dashboard? Use `$KORTIX_FRONTEND_URL`.**
 Never hand a human a URL built from `$KORTIX_API_URL` — that is the API host

@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { Sha256 } from '@aws-crypto/sha256-js';
+import { SignatureV4 } from '@smithy/signature-v4';
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
 const mockConfig = {
   EMAIL_PROVIDER_ORDER: 'ses,resend,mailtrap',
@@ -7,6 +9,7 @@ const mockConfig = {
   AWS_SES_SECRET_ACCESS_KEY: '',
   RESEND_API_KEY: '',
   RESEND_FROM_EMAIL: '',
+  MAILPIT_API_URL: '',
   MAILTRAP_API_TOKEN: '',
   MAILTRAP_FROM_EMAIL: 'noreply@example.test',
   MAILTRAP_FROM_NAME: 'Kortix Test',
@@ -16,9 +19,23 @@ mock.module('../../config', () => ({
   config: mockConfig,
 }));
 
+let providerCredentials = {
+  accessKeyId: 'ASIATASKROLE',
+  secretAccessKey: 'task-secret',
+  sessionToken: 'task-session-token',
+};
+
+mock.module('@aws-sdk/credential-provider-node', () => ({
+  defaultProvider: () => async () => providerCredentials,
+}));
+
 const { configuredEmailProviders, isEmailConfigured, sendEmail } = await import('./transport');
 
 const originalFetch = globalThis.fetch;
+const originalContainerCredentialsRelativeUri = process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
+const originalContainerCredentialsFullUri = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
+const originalWebIdentityTokenFile = process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
+const originalRoleArn = process.env.AWS_ROLE_ARN;
 let calls: Array<{ url: string; init: RequestInit }> = [];
 let responder: (url: string) => Response;
 
@@ -30,7 +47,12 @@ beforeEach(() => {
   mockConfig.AWS_SES_SECRET_ACCESS_KEY = '';
   mockConfig.RESEND_API_KEY = '';
   mockConfig.RESEND_FROM_EMAIL = '';
+  mockConfig.MAILPIT_API_URL = '';
   mockConfig.MAILTRAP_API_TOKEN = '';
+  delete process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
+  delete process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
+  delete process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
+  delete process.env.AWS_ROLE_ARN;
   globalThis.fetch = mock(async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
     return responder(String(url));
@@ -38,7 +60,28 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setSystemTime();
   globalThis.fetch = originalFetch;
+  if (originalContainerCredentialsRelativeUri === undefined) {
+    delete process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
+  } else {
+    process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI = originalContainerCredentialsRelativeUri;
+  }
+  if (originalContainerCredentialsFullUri === undefined) {
+    delete process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
+  } else {
+    process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI = originalContainerCredentialsFullUri;
+  }
+  if (originalWebIdentityTokenFile === undefined) {
+    delete process.env.AWS_WEB_IDENTITY_TOKEN_FILE;
+  } else {
+    process.env.AWS_WEB_IDENTITY_TOKEN_FILE = originalWebIdentityTokenFile;
+  }
+  if (originalRoleArn === undefined) {
+    delete process.env.AWS_ROLE_ARN;
+  } else {
+    process.env.AWS_ROLE_ARN = originalRoleArn;
+  }
 });
 
 const MSG = {
@@ -60,6 +103,28 @@ describe('configuredEmailProviders', () => {
     mockConfig.EMAIL_PROVIDER_ORDER = 'mailtrap,resend,ses';
     expect(configuredEmailProviders()).toEqual(['mailtrap', 'resend']);
   });
+
+  test('recognizes the ECS task-role credential endpoint as SES configuration', () => {
+    process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI = '/v2/credentials/test';
+    expect(configuredEmailProviders()).toEqual(['ses']);
+  });
+
+  test('mailpit leg stores the complete transactional message for local flows', async () => {
+    mockConfig.MAILPIT_API_URL = 'http://127.0.0.1:54324';
+    mockConfig.EMAIL_PROVIDER_ORDER = 'mailpit';
+    const result = await sendEmail(MSG);
+    expect(result).toEqual({ ok: true, provider: 'mailpit', status: 200 });
+    expect(calls[0].url).toBe('http://127.0.0.1:54324/api/v1/send');
+    const payload = JSON.parse(String(calls[0].init.body));
+    expect(payload).toEqual({
+      From: { Email: 'noreply@example.test', Name: 'Kortix Test' },
+      To: [{ Email: 'user@example.test' }],
+      Subject: 'Test',
+      HTML: '<p>hello</p>',
+      Text: '',
+      Tags: ['unit-test'],
+    });
+  });
 });
 
 describe('sendEmail', () => {
@@ -77,13 +142,65 @@ describe('sendEmail', () => {
     expect(calls[0].url).toBe('https://email.us-east-2.amazonaws.com/v2/email/outbound-emails');
     const headers = calls[0].init.headers as Record<string, string>;
     expect(headers.Authorization).toMatch(
-      /^AWS4-HMAC-SHA256 Credential=AKIATEST\/\d{8}\/us-east-2\/ses\/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=[0-9a-f]{64}$/,
+      /^AWS4-HMAC-SHA256 Credential=AKIATEST\/\d{8}\/us-east-2\/ses\/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/,
     );
     expect(headers['X-Amz-Date']).toMatch(/^\d{8}T\d{6}Z$/);
     const payload = JSON.parse(String(calls[0].init.body));
     expect(payload.FromEmailAddress).toBe('Kortix Test <noreply@example.test>');
     expect(payload.Destination.ToAddresses).toEqual(['user@example.test']);
     expect(payload.EmailTags).toEqual([{ Name: 'category', Value: 'unit-test' }]);
+  });
+
+  test('ses leg uses temporary ECS credentials and signs the session token', async () => {
+    const signingDate = new Date('2026-08-09T12:34:56.000Z');
+    setSystemTime(signingDate);
+    process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI = 'http://127.0.0.1/ecs-credentials';
+    providerCredentials = {
+      accessKeyId: 'ASIATASKROLE',
+      secretAccessKey: 'task-secret',
+      sessionToken: 'task-session-token',
+    };
+
+    const result = await sendEmail(MSG);
+    expect(result).toEqual({ ok: true, provider: 'ses', status: 200 });
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://email.us-east-2.amazonaws.com/v2/email/outbound-emails',
+    ]);
+    const headers = calls[0].init.headers as Record<string, string>;
+    expect(headers['X-Amz-Security-Token']).toBe('task-session-token');
+    expect(headers.Authorization).toContain(
+      'SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token',
+    );
+
+    const body = String(calls[0].init.body);
+    const signer = new SignatureV4({
+      credentials: providerCredentials,
+      region: 'us-east-2',
+      service: 'ses',
+      sha256: Sha256,
+    });
+    const independentlySigned = await signer.sign(
+      {
+        method: 'POST',
+        protocol: 'https:',
+        hostname: 'email.us-east-2.amazonaws.com',
+        path: '/v2/email/outbound-emails',
+        headers: {
+          'content-type': 'application/json',
+          host: 'email.us-east-2.amazonaws.com',
+        },
+        body,
+      },
+      { signingDate },
+    );
+    expect(headers.Authorization).toBe(independentlySigned.headers.authorization);
+    expect(headers['X-Amz-Date']).toBe(independentlySigned.headers['x-amz-date']);
+    expect(headers['X-Amz-Content-Sha256']).toBe(
+      independentlySigned.headers['x-amz-content-sha256'],
+    );
+    expect(headers['X-Amz-Security-Token']).toBe(
+      independentlySigned.headers['x-amz-security-token'],
+    );
   });
 
   test('resend leg sends the Resend payload with the category tag', async () => {

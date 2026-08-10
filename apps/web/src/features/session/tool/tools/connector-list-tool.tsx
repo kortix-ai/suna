@@ -20,12 +20,15 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const output = partOutput(part);
   const filter = (input.filter as string) || '';
   const connectors = useMemo(() => parseConnectorListOutput(output || ''), [output]);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it. Called from the render body it did that on every frame of the stream.
+  const isError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
       icon={<Plug className="text-muted-foreground size-3.5" />}
       trigger={{
-        title: 'Connector List',
+        title: 'Connected apps',
         subtitle: filter
           ? `Filter: ${filter}`
           : `${connectors.length} connector${connectors.length !== 1 ? 's' : ''}`,
@@ -40,20 +43,20 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
               key={conn.name}
               className="hover:bg-muted/30 flex items-start gap-2 rounded px-2 py-1 text-xs"
             >
-              <Plug className="text-muted-foreground mt-0.5 size-3.5 flex-shrink-0" />
+              <Plug className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="text-foreground truncate font-medium">{conn.name}</div>
                 {conn.description && (
                   <div className="text-muted-foreground/60">{conn.description}</div>
                 )}
               </div>
-              <Badge variant="outline" className="h-5 flex-shrink-0 py-0 text-xs capitalize">
+              <Badge variant="outline" className="h-5 shrink-0 py-0 text-xs capitalize">
                 {conn.source}
               </Badge>
             </div>
           ))}
         </div>
-      ) : isErrorOutput(output) ? (
+      ) : isError ? (
         <ToolOutputFallback output={output} toolName="connector_list" />
       ) : output ? (
         <div className="text-muted-foreground p-3 text-xs">No connectors found</div>

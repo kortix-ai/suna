@@ -2,7 +2,8 @@
 #
 #   dev-api-ecs-fargate.kortix.com → Cloudflare (proxied, Full strict) → ALB →
 #   ECS Fargate service (autoscaled) in private subnets, egress via NAT.
-#   dev.kortix.com (frontend) stays on Vercel — not managed here.
+#   dev.kortix.com → Cloudflare → a separate ECS Fargate frontend service.
+#   Vercel is disabled for the main branch.
 #
 # This ECS service is the always-warm FALLBACK behind dev-api.kortix.com: that
 # hostname is a Cloudflare Worker (infra/cloudflare/workers/api-router, env=dev)
@@ -108,12 +109,14 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image            = var.api_image
-  container_port   = var.container_port
-  certificate_arn  = one(module.acm[*].certificate_arn)
-  environment      = var.api_environment
-  secrets          = var.api_secrets
-  secrets_blob_arn = data.aws_secretsmanager_secret.env.arn
+  image                   = var.api_image
+  container_port          = var.container_port
+  certificate_arn         = one(module.acm[*].certificate_arn)
+  environment             = var.api_environment
+  secrets                 = var.api_secrets
+  secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
+  ses_send_region         = "us-east-2"
+  ses_send_identity_names = ["kortix.com", "kortix.ai"]
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges

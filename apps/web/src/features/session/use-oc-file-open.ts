@@ -1,5 +1,6 @@
 'use client';
 
+import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import {
   getRuntimePathInfo,
@@ -116,7 +117,9 @@ async function discoverPrefixViaFileApi(absPath: string): Promise<string | null>
   for (let depth = 1; depth <= maxDepth; depth++) {
     const candidate = segments.slice(segments.length - depth).join('/');
     try {
-      const content = await readRuntimeTextFile(candidate);
+      const content = await readRuntimeFileWithRetry(candidate, () =>
+        readRuntimeTextFile(candidate),
+      );
       if (content) {
         // Derive the prefix from the original path minus the working suffix
         const prefix = '/' + segments.slice(0, segments.length - depth).join('/');

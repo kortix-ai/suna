@@ -1,7 +1,7 @@
+import { menuRegistry } from '@/lib/menu-registry';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { menuRegistry } from '@/lib/menu-registry';
 import { railGroups } from './rail';
 
 // The rail lives in rail.ts and the panel that renders it in customize-panel.tsx;
@@ -35,9 +35,8 @@ describe('Customize information architecture', () => {
 
   test('LLM management remains reachable from the Connect rail group', () => {
     const connect = railGroups({
-      tunnelEnabled: false,
       marketplaceEnabled: false,
-      llmGatewayAvailable: true,
+      llmGatewayEnabled: true,
       voiceEnabled: false,
       reviewEnabled: false,
     }).find((g) => g.label === 'Connect');

@@ -25,7 +25,7 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useContext } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 
 export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -40,9 +40,14 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     (streamingInput.filePath as string) ||
     (streamingInput.target_filepath as string) ||
     undefined;
-  const filename = getFilename(filePath) || '';
-  const ext = filename.split('.').pop() || '';
-  const diagnostics = getToolDiagnostics(part, filePath);
+  const { filename, ext } = useMemo(() => {
+    const name = getFilename(filePath) || '';
+    return { filename: name, ext: name.split('.').pop() || '' };
+  }, [filePath]);
+  // Unmemoised this ran on every frame of a COLLAPSED row: `partOutput` plus two
+  // full-string `includes`, and — when the output carries `<file_diagnostics>` —
+  // a global regex, a full split and a per-line regex on top.
+  const diagnostics = useMemo(() => getToolDiagnostics(part, filePath), [part, filePath]);
   const indent = useToolIndent();
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
@@ -63,18 +68,24 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const hasDiff = before !== '' || after !== '';
   const output = partOutput(part);
   const isError = status === 'completed' && isErrorOutput(output);
-  const { openPreview } = useFilePreviewStore();
+  // Selector, not the whole store: an unselected `useFilePreviewStore()` makes
+  // every edit row a subscriber of `isOpen` / `filePath` / `lineNumber`, so
+  // opening ONE preview re-rendered every edit row in the session.
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
+  const handleSubtitleClick = useCallback(() => {
+    if (filePath) openPreview(filePath);
+  }, [filePath, openPreview]);
 
   return (
     <BasicTool
-      icon={<PencilSimpleIcon className="size-3.5 flex-shrink-0" />}
+      icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Edit',
+        title: 'Editing',
         subtitle: isStalePending
           ? undefined
           : filename || (isStalePending ? 'Working...' : undefined),
       }}
-      onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
+      onSubtitleClick={filePath ? handleSubtitleClick : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}

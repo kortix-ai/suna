@@ -24,6 +24,8 @@ import {
 import type { AgentGrant } from '@kortix/db';
 import { SLUG_RE } from '@kortix/manifest-schema';
 import type { Context } from 'hono';
+import { featureDisabledBody } from '../feature-flags/gate';
+import type { FeatureFlagKey } from '../feature-flags/registry';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { isAllowedSourceValidationError } from '../marketplace/catalog';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -182,7 +184,11 @@ interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
-type CrudOutcome = { ok: true; sync?: SyncResult } | { ok: false; error: string; status: number };
+type CrudOutcome =
+  | { ok: true; sync?: SyncResult }
+  // `body` overrides the default `{ error }` envelope when the failure carries a
+  // machine-readable contract (today: the `feature_disabled` 403).
+  | { ok: false; error: string; status: number; body?: Record<string, unknown> };
 
 import {
   type PolicyArgCondition,
@@ -223,6 +229,13 @@ export interface ConnectorRouterDeps {
   listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]>;
   /** Private raw-byte staging used by the MCP attachment transport. */
   attachmentStore?: ConnectorAttachmentStore;
+  /**
+   * Per-project feature-flag state. Injected (not imported) so this router
+   * stays free of the DB import graph and the in-memory e2e keeps driving the
+   * real HTTP layer. Required, not optional: a new deps implementation must
+   * decide what the gated routes see rather than silently opening them.
+   */
+  featureFlagEnabled(projectId: string, key: FeatureFlagKey): Promise<boolean>;
   /** Admin auth: resolve user + verify project access, or null for 401/403. */
   resolveAdmin(
     c: Context,
@@ -248,6 +261,7 @@ export interface ConnectorRouterDeps {
     projectId: string,
     accountId: string,
     draft: Record<string, unknown>,
+    actorUserId?: string,
   ): Promise<CrudOutcome>;
   discoverConnectorAuth?(
     projectId: string,
@@ -328,6 +342,7 @@ export interface ConnectorRouterDeps {
     endpoint: string | null;
     baseUrl: string | null;
     spec: string | null;
+    tunnelIds?: string[];
     auth: {
       type:
         | 'none'
@@ -367,23 +382,55 @@ export interface ConnectorRouterDeps {
     slug: string,
     userId: string,
   ): Promise<{ connected: boolean; accountId?: string } | null>;
-  /** Pipedream webhook: verify sig + finalize. Returns false on bad signature. */
-  pipedreamWebhook?(externalUserId: string, sig: string | null): Promise<boolean>;
-  /** Browse the Pipedream app catalogue (search + paginate). */
-  listPipedreamApps?(
-    query: string | undefined,
-    cursor: string | undefined,
-  ): Promise<{
+  /**
+   * Pipedream webhook: verify sig + finalize. `ok:false` = the signature (or the
+   * connector/authorization binding the id names) did not check out → 401.
+   * `ok:true, connected:false` = the signature was good but Pipedream still
+   * reports no account for that external user id → 503, never a silent 200.
+   */
+  pipedreamWebhook?(
+    externalUserId: string,
+    sig: string | null,
+  ): Promise<{ ok: boolean; connected: boolean }>;
+  /**
+   * A page of the Pipedream catalogue, filtered by query and/or category.
+   *
+   * Category filtering is served from a server-side snapshot of the whole
+   * catalogue — Pipedream's own `/apps` endpoint accepts a category parameter
+   * and ignores it, so it cannot answer this. `indexReady: false` means the
+   * snapshot is still building and `category` was ignored for this page.
+   */
+  listPipedreamApps?(input: {
+    q?: string;
+    category?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<{
     apps: Array<{
       slug: string;
       name: string;
       description: string | null;
       imgSrc: string | null;
-      authType: 'oauth';
+      authType: string | null;
       categories: string[];
+      hasActions: boolean;
+      hasTriggers: boolean;
+      featuredWeight: number;
     }>;
+    categories: Array<{ key: string; label: string; count: number }>;
+    total: number;
     nextCursor?: string;
     hasMore: boolean;
+    indexReady: boolean;
+    excludedNoActions: number;
+  }>;
+
+  /** The browse page: a fixed top slice of each of the largest categories,
+   *  each with the category's true total, in one request. */
+  listPipedreamSections?(input: { perCategory?: number; maxCategories?: number }): Promise<{
+    sections: Array<{ key: string; label: string; total: number; apps: unknown[] }>;
+    categories: Array<{ key: string; label: string; count: number }>;
+    indexReady: boolean;
   }>;
   /** Browse the direct integrations.sh catalogue. */
   listDiscoverConnectors?(input: {
@@ -777,6 +824,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
+      // Flag gate AFTER authz: a non-admin still learns nothing.
+      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
+        return c.json(featureDisabledBody('connectors_api_discover'), 403);
+      }
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
         return c.json(
@@ -837,6 +888,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
+      // Flag gate AFTER authz: a non-admin still learns nothing.
+      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
+        return c.json(featureDisabledBody('connectors_api_discover'), 403);
+      }
       if (!deps.getDiscoverConnector) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
         return c.json(await deps.getDiscoverConnector(c.req.query('id')));
@@ -1094,10 +1149,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         }
       }
       try {
-        const result = await deps.createConnector(projectId, admin.accountId, body);
+        const result = await deps.createConnector(projectId, admin.accountId, body, admin.userId);
         return result.ok
           ? c.json({ ok: true, sync: result.sync, authDiscovery })
-          : c.json({ error: result.error }, result.status as 400 | 409 | 502);
+          : c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);
       } catch (err) {
         const validation = allowedSourceValidationResponse(c, err);
         if (validation) return validation;
@@ -1281,7 +1336,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       ...auth,
       request: {
         params: ProjectParam,
-        query: z.object({ q: z.string().optional(), cursor: z.string().optional() }),
+        query: z.object({
+          q: z.string().optional(),
+          /** A category key from the same response's `categories` facet. */
+          category: z.string().optional(),
+          cursor: z.string().optional(),
+          limit: z.coerce.number().int().positive().max(100).optional(),
+        }),
       },
       responses: {
         200: json(OpaqueSchema, 'Pipedream apps page'),
@@ -1293,10 +1354,52 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.listPipedreamApps) return featureNotSupportedResponse(c, 'pipedream_apps');
-      const result = await deps.listPipedreamApps(
-        c.req.query('q') || undefined,
-        c.req.query('cursor') || undefined,
-      );
+      const limit = Number(c.req.query('limit'));
+      const result = await deps.listPipedreamApps({
+        q: c.req.query('q') || undefined,
+        category: c.req.query('category') || undefined,
+        cursor: c.req.query('cursor') || undefined,
+        ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+      });
+      return c.json(result);
+    },
+  );
+
+  // ── Admin: the browse page, one request ──────────────────────────────────
+  // A fixed top slice of each of the largest categories. Exists so the
+  // Discovery sections are a complete, stable view of each category instead of
+  // a bucketing of whichever pages happened to have loaded — which is what made
+  // sections grow and reflow while the user was reading them.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/pipedream/sections',
+      tags: ['connector'],
+      summary: 'Browse the Pipedream catalogue by category',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({
+          perCategory: z.coerce.number().int().positive().max(24).optional(),
+          maxCategories: z.coerce.number().int().positive().max(40).optional(),
+        }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Pipedream catalogue sections'),
+        ...errors(403, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listPipedreamSections) return featureNotSupportedResponse(c, 'pipedream_apps');
+      const perCategory = Number(c.req.query('perCategory'));
+      const maxCategories = Number(c.req.query('maxCategories'));
+      const result = await deps.listPipedreamSections({
+        ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
+        ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
+      });
       return c.json(result);
     },
   );
@@ -1789,6 +1892,14 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   );
 
   // ── Pipedream webhook (no user auth — HMAC-signed) ────────────────────────
+  //
+  // AUXILIARY redundancy, not the authoritative path. Every surface that starts
+  // a Pipedream connect also calls an explicit finalize afterwards (the web
+  // overlay hits POST .../connect/finalize; the hosted setup-link page hits
+  // POST /v1/setup-links/connectors/:token/finalize). This webhook exists so a
+  // connect that completes while nobody is polling still lands. It performs NO
+  // session notification — the finalize route owns that, because only it knows
+  // which session asked for the connector.
   app.openapi(
     createRoute({
       method: 'post',
@@ -1801,7 +1912,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
       responses: {
         200: json(OkSchema, 'Accepted'),
-        ...errors(400, 401, 501),
+        ...errors(400, 401, 501, 503),
       },
     }),
     // Manual parse kept: webhook tolerates an unparseable body (defaults to {})
@@ -1815,10 +1926,33 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       } catch {
         body = {};
       }
-      const extUserId = typeof body?.external_user_id === 'string' ? body.external_user_id : '';
+      // A real Pipedream CONNECTION_ERROR payload carries no `account`, so
+      // there is no external user id to finalize and nothing to retry. Ack it
+      // (a non-2xx would only look like an outage on their side) and log the
+      // reason so a failing connect is still visible in our logs.
+      if (body?.event === 'CONNECTION_ERROR') {
+        console.warn('[pipedream] connect failed', {
+          error: body?.error ?? null,
+          connectSessionId: body?.connect_session_id ?? null,
+          environment: body?.environment ?? null,
+        });
+        return c.json({ ok: true, ignored: true });
+      }
+      // Pipedream's real CONNECTION_SUCCESS nests the id at `account.external_id`.
+      // `external_user_id` at the top level is the legacy/back-compat shape we
+      // shipped against first — keep accepting it, prefer it when both exist.
+      const extUserId =
+        (typeof body?.external_user_id === 'string' && body.external_user_id) ||
+        (typeof body?.account?.external_id === 'string' && body.account.external_id) ||
+        '';
       if (!extUserId) return c.json({ error: 'missing external_user_id' }, 400);
-      const ok = await deps.pipedreamWebhook(extUserId, sig);
-      return ok ? c.json({ ok: true }) : c.json({ error: 'invalid signature' }, 401);
+      const result = await deps.pipedreamWebhook(extUserId, sig);
+      if (!result.ok) return c.json({ error: 'invalid signature' }, 401);
+      // Signature checked out but Pipedream still reports no account for that
+      // external user id (eventual consistency outlived the bounded retry).
+      // Say so instead of acking a connect that was never persisted.
+      if (!result.connected) return c.json({ error: 'account not yet visible' }, 503);
+      return c.json({ ok: true });
     },
   );
 

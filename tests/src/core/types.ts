@@ -59,7 +59,12 @@ export interface TeamFixture {
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
   /** Create a project owned by this team account. */
-  project(opts?: { name?: string; seed?: boolean; managedGit?: boolean }): Promise<CreatedProject>;
+  project(opts?: {
+    name?: string;
+    seed?: boolean;
+    managedGit?: boolean;
+    metadata?: Record<string, unknown>;
+  }): Promise<CreatedProject>;
 }
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
@@ -76,6 +81,7 @@ export interface Fixtures {
     accountId?: string;
     seed?: boolean;
     managedGit?: boolean;
+    metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
   /**
    * A single shared, READ-ONLY project provisioned once per run and reused — use

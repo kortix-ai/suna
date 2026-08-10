@@ -156,6 +156,7 @@ interface EP {
 }
 
 const ENDPOINTS: EP[] = [
+  { name: 'GET /audit', method: 'GET', path: () => `/v1/projects/${PROJECT}/audit` },
   { name: 'POST /group-grants', method: 'POST', path: () => `/v1/projects/${PROJECT}/group-grants`, body: {} },
   { name: 'PATCH /group-grants/{id}', method: 'PATCH', path: () => `/v1/projects/${PROJECT}/group-grants/${crypto.randomUUID()}`, body: {} },
   { name: 'DELETE /group-grants/{id}', method: 'DELETE', path: () => `/v1/projects/${PROJECT}/group-grants/${crypto.randomUUID()}` },
@@ -201,12 +202,14 @@ describe('HTTP enforcement — project members.manage gates (floor lowered read;
       test('MANAGER (has members.manage) → NOT denied by the leaf gate', async () => {
         const secret = await mint(MANAGER);
         const res = await req(ep.method, ep.path(), secret, ep.body);
+        if (ep.name === 'GET /audit') expect(res.status).toBe(200);
         expect(await deniedByLeaf(res)).toBe(false);
       });
 
       test('custom role [project.read + members.manage], NO project.write → NOT denied (over-gating fixed)', async () => {
         const secret = await mint(CUSTOM);
         const res = await req(ep.method, ep.path(), secret, ep.body);
+        if (ep.name === 'GET /audit') expect(res.status).toBe(200);
         expect(await deniedByLeaf(res)).toBe(false);
       });
     });

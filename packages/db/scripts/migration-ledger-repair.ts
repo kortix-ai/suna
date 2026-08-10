@@ -26,9 +26,26 @@ const SANDBOX_DEADLINE_RENAMES = [
   },
 ] as const;
 
+const APP_ACCESS_RENAMES = [
+  {
+    legacyName: '20260807192000000_add_app_access_control',
+    currentName: '20260807211250000_add_app_access_control',
+    filename: '20260807211250000_add_app_access_control.sql',
+    sha256: '1b02daebaac39a3d28875a0eda09e7d6b41ac44467deaca07d0499f170685ba1',
+  },
+  {
+    legacyName: '20260807192000001_validate_app_access_constraints',
+    currentName: '20260807211250001_validate_app_access_constraints',
+    filename: '20260807211250001_validate_app_access_constraints.sql',
+    sha256: 'eea55922e9601402ed621946151a6afc13c3cd0870d4606d9bfa987c8c43c514',
+  },
+] as const;
+
+const MIGRATION_RENAMES = [...SANDBOX_DEADLINE_RENAMES, ...APP_ACCESS_RENAMES] as const;
+
 const REPAIR_NAMES = [
   CONNECTOR_POLICY_MIGRATION.name,
-  ...SANDBOX_DEADLINE_RENAMES.flatMap(({ legacyName, currentName }) => [legacyName, currentName]),
+  ...MIGRATION_RENAMES.flatMap(({ legacyName, currentName }) => [legacyName, currentName]),
 ];
 
 export interface MigrationLedgerRow {
@@ -38,7 +55,7 @@ export interface MigrationLedgerRow {
 
 export interface MigrationLedgerRepairPlan {
   connectorMigrationIsMissing: boolean;
-  legacyRunOn: Date;
+  legacyRunOn: Date | null;
   renames: Array<{ legacyName: string; currentName: string }>;
 }
 
@@ -46,13 +63,13 @@ export function planMigrationLedgerRepair(
   rows: MigrationLedgerRow[],
 ): MigrationLedgerRepairPlan | null {
   const byName = new Map(rows.map((row) => [row.name, row]));
-  const renames = SANDBOX_DEADLINE_RENAMES.filter(({ legacyName }) => byName.has(legacyName)).map(
+  const renames = MIGRATION_RENAMES.filter(({ legacyName }) => byName.has(legacyName)).map(
     ({ legacyName, currentName }) => ({ legacyName, currentName }),
   );
 
   if (renames.length === 0) return null;
 
-  for (const rename of SANDBOX_DEADLINE_RENAMES) {
+  for (const rename of MIGRATION_RENAMES) {
     if (byName.has(rename.legacyName) && byName.has(rename.currentName)) {
       throw new Error(
         `Migration ledger contains both ${rename.legacyName} and ${rename.currentName}.`,
@@ -69,20 +86,25 @@ export function planMigrationLedgerRepair(
     );
   }
 
-  const legacyRunOn = renames
+  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES
+    .filter(({ legacyName }) => byName.has(legacyName))
     .map(({ legacyName }) => byName.get(legacyName)?.runOn)
-    .filter((runOn): runOn is Date => runOn instanceof Date)
-    .reduce((earliest, runOn) => (runOn < earliest ? runOn : earliest));
+    .filter((runOn): runOn is Date => runOn instanceof Date);
+  const legacyRunOn =
+    deadlineRunOns.length > 0
+      ? deadlineRunOns.reduce((earliest, runOn) => (runOn < earliest ? runOn : earliest))
+      : null;
 
   return {
-    connectorMigrationIsMissing: !byName.has(CONNECTOR_POLICY_MIGRATION.name),
+    connectorMigrationIsMissing:
+      deadlineRunOns.length > 0 && !byName.has(CONNECTOR_POLICY_MIGRATION.name),
     legacyRunOn,
     renames,
   };
 }
 
 function verifyRepairArtifacts(migrationsDir: string): void {
-  const artifacts = [CONNECTOR_POLICY_MIGRATION, ...SANDBOX_DEADLINE_RENAMES];
+  const artifacts = [CONNECTOR_POLICY_MIGRATION, ...MIGRATION_RENAMES];
   for (const artifact of artifacts) {
     const path = join(migrationsDir, artifact.filename);
     const actual = createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -154,16 +176,18 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
       }
     }
 
-    const orderResult = await client.query(
-      `update kortix_migrations.pgmigrations
-          set run_on = $2::timestamptz - interval '1 millisecond'
-        where name = $1`,
-      [CONNECTOR_POLICY_MIGRATION.name, plan.legacyRunOn.toISOString()],
-    );
-    if (orderResult.rowCount !== 1) {
-      throw new Error(
-        `Migration ledger repair could not reorder ${CONNECTOR_POLICY_MIGRATION.name}.`,
+    if (plan.legacyRunOn) {
+      const orderResult = await client.query(
+        `update kortix_migrations.pgmigrations
+            set run_on = $2::timestamptz - interval '1 millisecond'
+          where name = $1`,
+        [CONNECTOR_POLICY_MIGRATION.name, plan.legacyRunOn.toISOString()],
       );
+      if (orderResult.rowCount !== 1) {
+        throw new Error(
+          `Migration ledger repair could not reorder ${CONNECTOR_POLICY_MIGRATION.name}.`,
+        );
+      }
     }
 
     await client.query('commit');

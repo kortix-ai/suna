@@ -352,7 +352,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
         scalar(`SELECT active_since = '${anchored}'::timestamptz
                   FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`),
       ).toBe('t');
-    });
+    }, 15_000);
 
     test('REGRESSION: flipping out and back a hundred times buys nothing', () => {
       reseed('active');

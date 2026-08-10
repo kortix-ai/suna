@@ -18,6 +18,7 @@ import {
   listProjectSessions,
   listSessionPublicShares,
   reloadProjectSessionConfig,
+  reloadProjectSessionConfigStream,
   restartProjectSession,
   revokeSessionPublicShare,
   setProjectSessionScope,
@@ -249,6 +250,18 @@ test('getSessionAudit appends ?limit= only when a limit is given', async () => {
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/audit');
 });
 
+test('getSessionAudit can poll approvals without refetching historical events', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', agent: null, count: 0, actions: [] } };
+  await getSessionAudit('P1', 'S1', 1000, {
+    cursor: '14|event-14',
+    includeEvents: false,
+    showErrors: false,
+  });
+  expect(last().url).toBe(
+    'http://test.local/projects/P1/sessions/S1/audit?limit=1000&cursor=14%7Cevent-14&include_events=false',
+  );
+});
+
 test('getSessionTranscript builds the query string from limit/chars options', async () => {
   nextResponse = {
     status: 200,
@@ -437,6 +450,99 @@ test('reloadProjectSessionConfig surfaces the 409 code and reason for the confir
   );
   expect(err?.code).toBe('SESSION_BUSY');
   expect(err?.data?.reason).toBe('session is mid-turn');
+});
+
+function reloadStreamResponse(frames: string[], status = 200): Response {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(encoder.encode(frame));
+        controller.close();
+      },
+    }),
+    { status, headers: { 'content-type': 'text/event-stream' } },
+  );
+}
+
+test('reloadProjectSessionConfigStream requests SSE and reports each server phase', async () => {
+  const events: unknown[] = [];
+  const fetchStub = mock(async (_url: unknown, opts: { body?: string; headers?: HeadersInit } = {}) => {
+    expect(JSON.parse(opts.body ?? '{}')).toEqual({ refresh_repo: false });
+    expect(new Headers(opts.headers).get('accept')).toBe('text/event-stream');
+    return reloadStreamResponse([
+      ': heartbeat\n',
+      'data: {"type":"phase","phase":"checking-session"}\n\n',
+      'data: {"type":"phase","phase":"compiling-config"}\n\n',
+      'data: {"type":"phase","phase":"applying-config"}\n\n',
+      'data: {"type":"phase","phase":"confirming-config"}\n\n',
+      'data: {"type":"done","result":{"applied":true,"previous_etag":"a","etag":"b","repo_refreshed":false,"commit_sha":null,"agent_files":"not-requested","detail":"Reloaded"}}\n\n',
+    ]);
+  });
+
+  const result = await reloadProjectSessionConfigStream(
+    'P1',
+    'S1',
+    { refresh_repo: false },
+    (event) => events.push(event),
+    { fetch: fetchStub as unknown as typeof fetch },
+  );
+
+  expect(events).toEqual([
+    { type: 'phase', phase: 'checking-session' },
+    { type: 'phase', phase: 'compiling-config' },
+    { type: 'phase', phase: 'applying-config' },
+    { type: 'phase', phase: 'confirming-config' },
+    {
+      type: 'done',
+      result: {
+        applied: true,
+        previous_etag: 'a',
+        etag: 'b',
+        repo_refreshed: false,
+        commit_sha: null,
+        agent_files: 'not-requested',
+        detail: 'Reloaded',
+      },
+    },
+  ]);
+  expect(result.applied).toBe(true);
+  expect(String(fetchStub.mock.calls[0]?.[0])).toContain('/projects/P1/sessions/S1/reload-stream');
+});
+
+test('reloadProjectSessionConfigStream preserves busy status, code, and reason', async () => {
+  const fetchStub = mock(async () =>
+    reloadStreamResponse([
+      'data: {"type":"error","error":"This session is mid-turn.","code":"SESSION_BUSY","status":409,"reason":"session is mid-turn"}\n\n',
+    ]),
+  );
+
+  const error = await reloadProjectSessionConfigStream(
+    'P1',
+    'S1',
+    {},
+    () => {},
+    { fetch: fetchStub as unknown as typeof fetch },
+  ).then(
+    () => null,
+    (value: unknown) => value as { status?: number; code?: string; data?: { reason?: string } },
+  );
+
+  expect(error?.status).toBe(409);
+  expect(error?.code).toBe('SESSION_BUSY');
+  expect(error?.data?.reason).toBe('session is mid-turn');
+});
+
+test('reloadProjectSessionConfigStream rejects a bare close instead of claiming success', async () => {
+  const fetchStub = mock(async () =>
+    reloadStreamResponse(['data: {"type":"phase","phase":"checking-session"}\n\n']),
+  );
+
+  await expect(
+    reloadProjectSessionConfigStream('P1', 'S1', {}, () => {}, {
+      fetch: fetchStub as unknown as typeof fetch,
+    }),
+  ).rejects.toThrow('Reload stream ended without a result');
 });
 
 test('stopProjectSession POSTs to /stop', async () => {

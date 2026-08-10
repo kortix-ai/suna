@@ -7,13 +7,15 @@ export const UPLOADED_FILE_READ_MAX_RETRIES = Math.ceil(
 export function isUploadedWorkspacePath(filePath: string | null | undefined): boolean {
   if (!filePath) return false;
   const normalized = filePath.replace(/^\/+/, '');
-  return normalized === 'workspace/uploads' || normalized.startsWith('workspace/uploads/');
+  return (
+    normalized === 'uploads' ||
+    normalized.startsWith('uploads/') ||
+    normalized === 'workspace/uploads' ||
+    normalized.startsWith('workspace/uploads/')
+  );
 }
 
-export function fileReadRetryDelayMs(
-  attempt: number,
-  filePath?: string | null,
-): number {
+export function fileReadRetryDelayMs(attempt: number, filePath?: string | null): number {
   if (isUploadedWorkspacePath(filePath)) return UPLOADED_FILE_READ_RETRY_DELAY_MS;
   return Math.min(1000 * Math.pow(2, attempt), 5000);
 }
@@ -26,12 +28,19 @@ function isPermanentFileReadFailure(error: unknown): boolean {
   // Prefer a numeric HTTP status when the thrown error carries one: any 4xx
   // except 408/429 is a client error that won't fix itself on retry.
   const status = (error as { status?: unknown } | null)?.status;
-  if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+  if (
+    typeof status === 'number' &&
+    status >= 400 &&
+    status < 500 &&
+    status !== 408 &&
+    status !== 429
+  ) {
     return true;
   }
   const msg = errorMessage(error);
   return (
     msg.includes('404') ||
+    msg.includes('401') ||
     msg.includes('403') ||
     msg.includes('400') ||
     msg.includes('bad request') ||
@@ -41,6 +50,23 @@ function isPermanentFileReadFailure(error: unknown): boolean {
     msg.includes('eisdir') ||
     msg.includes('not found') ||
     msg.includes('access denied') ||
+    msg.includes('forbidden') ||
+    msg.includes('unauthorized') ||
+    msg.includes('unprocessable') ||
+    msg.includes('no such file') ||
+    msg.includes('enoent') ||
+    msg.includes('does not exist') ||
+    msg.includes('path not found')
+  );
+}
+
+function isMissingFileReadFailure(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === 'number') return status === 404;
+  const msg = errorMessage(error);
+  return (
+    msg.includes('404') ||
+    msg.includes('not found') ||
     msg.includes('no such file') ||
     msg.includes('enoent') ||
     msg.includes('does not exist') ||
@@ -54,6 +80,7 @@ export function shouldRetryFileRead(
   error: unknown,
 ): boolean {
   if (isUploadedWorkspacePath(filePath)) {
+    if (isPermanentFileReadFailure(error) && !isMissingFileReadFailure(error)) return false;
     return failureCount < UPLOADED_FILE_READ_MAX_RETRIES;
   }
 

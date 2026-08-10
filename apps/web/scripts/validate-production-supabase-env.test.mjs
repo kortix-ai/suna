@@ -218,7 +218,7 @@ describe('release wiring', () => {
     assert.match(workflow, /frontend-auth-proof:\n/);
     assert.match(
       workflow,
-      /needs: \[version, retag-images, build-cli, deploy-ecs, verify-live-version, frontend-auth-proof\]/,
+      /needs: \[version, retag-images, build-cli, publish-sdk, publish-agent-tunnel, deploy-ecs, verify-live-version, frontend-auth-proof\]/,
     );
     assert.match(
       workflow,

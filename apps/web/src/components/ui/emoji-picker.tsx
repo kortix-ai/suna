@@ -174,7 +174,7 @@ export function EmojiPicker({
       locale="en"
       className={cn('isolate flex h-[368px] w-full flex-col', className)}
     >
-      <div className="p-2">
+      <div className="p-1">
         <InputGroupSearch>
           <InputGroupSearchIcon>
             <MagnifyingGlassIcon />

@@ -313,9 +313,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       call: <T = unknown>(...a: DropFirst<Parameters<typeof P.callConnector<T>>>) =>
         P.callConnector<T>(projectId, ...a),
       /** Upload bytes for use by a later connector call. */
-      uploadAttachment: (
-        ...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>
-      ) => P.uploadConnectorAttachment(projectId, ...a),
+      uploadAttachment: (...a: DropFirst<Parameters<typeof P.uploadConnectorAttachment>>) =>
+        P.uploadConnectorAttachment(projectId, ...a),
     };
   }
 
@@ -343,6 +342,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     return {
       get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
       detail: () => P.getProjectDetail(projectId),
+      /** Canonical project-scoped audit timeline. */
+      audit: (options?: Parameters<typeof P.listProjectAudit>[1]) =>
+        P.listProjectAudit(projectId, options),
       update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
@@ -500,6 +502,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         pipedream: {
           listApps: (...a: DropFirst<Parameters<typeof P.listPipedreamApps>>) =>
             P.listPipedreamApps(projectId, ...a),
+          /** The browse page: a fixed top slice of each of the largest
+           *  categories, with each category's true total, in one request. */
+          listSections: (...a: DropFirst<Parameters<typeof P.listPipedreamSections>>) =>
+            P.listPipedreamSections(projectId, ...a),
           connect: (...a: DropFirst<Parameters<typeof P.pipedreamConnect>>) =>
             P.pipedreamConnect(projectId, ...a),
           finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
@@ -670,7 +676,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
       },
 
-      /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
+      /** Toggle a feature flag (Customize → Feature flags). Pass `enabled: null` to clear the override. */
+      updateFeatureFlag: (...a: DropFirst<Parameters<typeof P.updateFeatureFlag>>) =>
+        P.updateFeatureFlag(projectId, ...a),
+
+      /** @deprecated Renamed to `updateFeatureFlag`. Keeps the legacy `/experimental` wire path for older deployed APIs. */
       updateExperimentalFeature: (
         ...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>
       ) => P.updateExperimentalFeature(projectId, ...a),
@@ -864,7 +874,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           throw new ApiError(
             'Session sandbox has no external_id — cannot resolve its runtime URL',
             {
-            code: 'RUNTIME_UNAVAILABLE',
+              code: 'RUNTIME_UNAVAILABLE',
             },
           );
         }
@@ -941,6 +951,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         forgetReady();
         return P.reloadProjectSessionConfig(projectId, sessionId, input);
       },
+      /** Reload config with server-observed progress events. */
+      reloadConfigStream: (
+        ...args: DropFirst2<Parameters<typeof P.reloadProjectSessionConfigStream>>
+      ) => {
+        forgetReady();
+        return P.reloadProjectSessionConfigStream(projectId, sessionId, ...args);
+      },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),
@@ -954,7 +971,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
       /** Per-session audit trail of connector-gated agent actions. */
-      audit: (limit?: number, options?: { showErrors?: boolean }) =>
+      audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>
         P.getSessionAudit(projectId, sessionId, limit, options),
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>

@@ -43,7 +43,7 @@ variable "container_port" {
 }
 
 variable "container_name" {
-  description = "Name of the single container in the task (also the awslogs stream prefix). 'api' for the API service, 'gateway' for the gateway."
+  description = "Name of the single container in the task and awslogs stream prefix."
   type        = string
   default     = "api"
 }
@@ -168,6 +168,12 @@ variable "alb_ingress_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "enable_postgres_egress" {
+  description = "Permit direct PostgreSQL egress on port 5432. Disable for services such as the web frontend."
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
@@ -182,4 +188,21 @@ variable "secrets_blob_arn" {
   EOT
   type        = string
   default     = ""
+}
+
+variable "ses_send_identity_names" {
+  description = "Verified SES identity names from which this ECS task may send email. Empty disables SES task-role access."
+  type        = list(string)
+  default     = []
+}
+
+variable "ses_send_region" {
+  description = "Region containing ses_send_identity_names. Required when SES task-role access is enabled."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = length(var.ses_send_identity_names) == 0 || length(trimspace(var.ses_send_region)) > 0
+    error_message = "ses_send_region is required when ses_send_identity_names is not empty."
+  }
 }

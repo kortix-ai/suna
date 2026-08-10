@@ -8,6 +8,11 @@ description: "Deploy and operate provider-neutral Kortix Apps through the pre-au
 Kortix Apps turns one source tree or image into an immutable serverless
 deployment with a stable URL. Kortix selects and operates the sandbox provider.
 
+Every current source kind uses the sandbox hosting backend. Do not promise or
+select Cloudflare, Deno Deploy, Vercel, Cloud Run, or another managed hosting
+backend. Those options are deferred architecture. `--provider` selects only a
+supported sandbox provider and should remain omitted unless an operator asks.
+
 ## Preflight
 
 1. Run `pwd` and inspect the intended source directory before deploying.
@@ -188,6 +193,14 @@ If a source build fails, inspect the deployment error and build events. Do not
 hide a server-build failure by claiming the source type passed. You can deploy a
 verified local build as static for immediate delivery, then fix and retest the
 source-build path separately.
+
+`--wait-seconds` bounds deployment polling after a deployment id exists. It does
+not currently bound context resolution, App creation, packing, upload, or the
+deployment-create request. If a command exceeds this duration without printing
+a deployment id, record the last visible phase and inspect `kortix apps ls`.
+Do not attribute that state to provider throttling without a deployment record
+and provider event. Keep blocking deployment as the default; use `--no-wait`
+only when another process owns status tracking.
 
 ## Lifecycle
 

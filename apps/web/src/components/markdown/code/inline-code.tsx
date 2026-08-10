@@ -20,7 +20,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 // ─── Inline code ─────────────────────────────────────────────────────────────
 export const INLINE_CODE =
-  'rounded-sm border border-[0.5px] bg-muted px-1.5 py-[0.08rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card';
+  'rounded border border-[0.4px] bg-muted px-1.5 py-[0.08rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card';
 
 /**
  * A path inside a message, rendered as a door to the file — but only while

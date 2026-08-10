@@ -5,6 +5,16 @@
  */
 import { flow } from '../core/flow';
 
+interface AuditPageBody {
+  events: Array<{ event_id: string }>;
+  next_cursor: string | null;
+}
+
+interface AuditWebhookBody {
+  webhook_id: string;
+  secret?: string;
+}
+
 // ── AUD-1: list audit events ─────────────────────────────────────────────────
 flow('AUD-1', { domain: 'audit', routes: ['GET /v1/accounts/:accountId/audit'] }, async (ctx) => {
   const team = await ctx.fixtures.team({ enterprise: true });
@@ -109,7 +119,7 @@ flow(
           { params: { accountId: team.id } },
         );
       r.status(201).body().exists('$.webhook_id').exists('$.secret');
-      webhookId = r.json<any>().webhook_id;
+      webhookId = r.json<AuditWebhookBody>().webhook_id;
     });
 
     await ctx.step('create with missing url → 400', async () => {
@@ -193,8 +203,8 @@ flow(
 //   - MEMBER (in-team but lacking audit.read + account.write) → 403 — distinct
 //     from NONMEMBER (not in account at all): exercises the role-permission
 //     leaf, not just membership
-//   - limit clamp semantics: 0/negative → 1, non-numeric → default 50,
-//     oversize → MAX_LIMIT 200 (never 400)
+//   - strict limit validation: zero, negative, non-numeric, and values above
+//     MAX_LIMIT are rejected with 400
 //   - cursor pagination round-trip: page 1 → next_cursor → page 2 with no
 //     overlapping event_ids (keyset integrity)
 //   - export headers (X-Audit-Row-Count, Content-Disposition) + schema rejection
@@ -289,45 +299,34 @@ flow(
       r.status(403);
     });
 
-    // ── limit clamp semantics (never 400) ────────────────────────────────
-    // limit=0 / negative → Math.max(raw,1) clamps to 1; non-numeric → default
-    // 50; oversize → Math.min(_,MAX_LIMIT) clamps to 200. None of these 400.
-    await ctx.step('limit=0 → clamps to 1 (200, ≤1 event)', async () => {
+    // ── strict limit validation ──────────────────────────────────────────
+    await ctx.step('limit=0 → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: '0' },
       });
-      r.status(200).body().exists('$.events');
-      const events = r.json<any>().events as unknown[];
-      if (events.length > 1)
-        throw new Error(`limit=0 should clamp to 1, got ${events.length} events`);
+      r.status(400);
     });
-    await ctx.step('limit=-5 → clamps to 1', async () => {
+    await ctx.step('limit=-5 → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: '-5' },
       });
-      r.status(200);
-      const events = r.json<any>().events as unknown[];
-      if (events.length > 1)
-        throw new Error(`limit=-5 should clamp to 1, got ${events.length} events`);
+      r.status(400);
     });
-    await ctx.step('limit=abc → default 50 (200, no 400)', async () => {
+    await ctx.step('limit=abc → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: 'abc' },
       });
-      r.status(200);
+      r.status(400);
     });
-    await ctx.step('limit=99999 → clamps to MAX_LIMIT=200 (no 400)', async () => {
+    await ctx.step('limit=99999 → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         params: { accountId: team.id },
         query: { limit: '99999' },
       });
-      r.status(200);
-      const events = r.json<any>().events as unknown[];
-      if (events.length > 200)
-        throw new Error(`limit=99999 should clamp to 200, got ${events.length} events`);
+      r.status(400);
     });
 
     // ── cursor pagination round-trip (keyset integrity) ──────────────────
@@ -340,7 +339,7 @@ flow(
         query: { limit: '1' },
       });
       p1.status(200);
-      const p1body = p1.json<any>();
+      const p1body = p1.json<AuditPageBody>();
       const cursor = p1body.next_cursor;
       if (typeof cursor !== 'string') return; // no second page — nothing to overlap-check
       const p2 = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
@@ -348,9 +347,9 @@ flow(
         query: { limit: '1', cursor },
       });
       p2.status(200);
-      const p2body = p2.json<any>();
-      const p1ids = new Set((p1body.events as any[]).map((e) => e.event_id));
-      const overlap = (p2body.events as any[]).some((e) => p1ids.has(e.event_id));
+      const p2body = p2.json<AuditPageBody>();
+      const p1ids = new Set(p1body.events.map((event) => event.event_id));
+      const overlap = p2body.events.some((event) => p1ids.has(event.event_id));
       if (overlap) throw new Error('cursor pagination: page 2 overlaps page 1');
     });
 
@@ -428,14 +427,14 @@ flow(
           { params: { accountId: team.id } },
         );
       r.status(201).body().exists('$.webhook_id').exists('$.secret');
-      webhookId = r.json<any>().webhook_id;
+      webhookId = r.json<AuditWebhookBody>().webhook_id;
     });
     await ctx.step('subsequent GET list does NOT reveal secret', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/audit/webhooks', { params: { accountId: team.id } });
       r.status(200).body().exists('$.webhooks');
-      const hooks = r.json<any>().webhooks as any[];
+      const hooks = r.json<{ webhooks: AuditWebhookBody[] }>().webhooks;
       const mine = hooks.find((h) => h.webhook_id === webhookId);
       if (!mine) throw new Error(`webhook ${webhookId} not in list`);
       if (mine.secret !== undefined)
@@ -450,7 +449,8 @@ flow(
           { params: { accountId: team.id, webhookId } },
         );
       r.status(200);
-      if (r.json<any>().secret !== undefined) throw new Error('secret leaked on PATCH response');
+      if (r.json<AuditWebhookBody>().secret !== undefined)
+        throw new Error('secret leaked on PATCH response');
     });
 
     // ── cross-account isolation ──────────────────────────────────────────
@@ -485,16 +485,16 @@ flow(
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/audit/webhooks', { params: { accountId: team.id } });
       r.status(200);
-      const hooks = r.json<any>().webhooks as any[];
+      const hooks = r.json<{ webhooks: AuditWebhookBody[] }>().webhooks;
       if (!hooks.some((h) => h.webhook_id === webhookId))
         throw new Error('teamA webhook missing after cross-account no-ops');
     });
   },
 );
 
-// AUD-FILTER — centralized reconstruction filters. UUID and enum filters reject
-// invalid values. Dates, cursors, and limits retain their established lenient
-// parsing and clamp behavior.
+// AUD-FILTER — centralized reconstruction filters fail closed. Malformed UUIDs,
+// enums, timestamps, cursors, and limits return 400 instead of silently
+// widening the query.
 flow(
   'AUD-FILTER',
   {
@@ -508,15 +508,13 @@ flow(
     const correlationId = ctx.fixtures.name('audit-reconstruction');
 
     await ctx.step('an allowlisted client header attributes the SDK surface', async () => {
-      const action = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId', {
-          params: { projectId: project.id },
-          headers: {
-            'x-correlation-id': correlationId,
-            'x-kortix-client': 'cli',
-          },
-        });
+      const action = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', {
+        params: { projectId: project.id },
+        headers: {
+          'x-correlation-id': correlationId,
+          'x-kortix-client': 'cli',
+        },
+      });
       action.status(200);
 
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
@@ -538,7 +536,8 @@ flow(
       if (
         event.project_id !== project.id ||
         event.actor_type !== 'human' ||
-        event.source !== 'cli' ||
+        event.authoritative_source !== 'human' ||
+        event.client_reported_source !== 'cli' ||
         event.outcome !== 'success' ||
         event.correlation_id !== correlationId ||
         typeof event.request_id !== 'string' ||
@@ -603,43 +602,33 @@ flow(
       r.status(200).body().exists('$.events');
     });
     await ctx.step('cursor pagination param accepted → 200', async () => {
-      // A well-formed cursor "<iso>|<uuid>" is accepted; a malformed one is
-      // silently ignored (buildFilters only pushes the cursor condition when
-      // the timestamp parses AND a lastId is present). Either way → 200.
+      // A well-formed cursor "<iso>|<uuid>" is accepted.
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         ...base,
         query: { cursor: '2020-01-01T00:00:00Z|00000000-0000-4000-a000-000000000000' },
       });
       r.status(200).body().exists('$.events');
     });
-    await ctx.step('limit=0 is clamped to 1 (not 400)', async () => {
-      // Math.max(limitRaw, 1) — a zero/negative limit can't 400; it's clamped up.
+    await ctx.step('limit=0 is rejected → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         ...base,
         query: { limit: '0' },
       });
-      r.status(200);
-      const events = r.json<{ events: unknown[] }>().events;
-      if (events.length > 1)
-        throw new Error(`limit=0 should clamp to 1, got ${events.length} events`);
+      r.status(400);
     });
-    await ctx.step('limit=99999 is clamped to MAX_LIMIT (200), not 400', async () => {
-      // Math.min(limitRaw, MAX_LIMIT=200) — an oversized limit is clamped down.
+    await ctx.step('limit=99999 is rejected → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         ...base,
         query: { limit: '99999' },
       });
-      r.status(200).body().exists('$.events');
+      r.status(400);
     });
-    await ctx.step('malformed since date is silently ignored → 200 (not 400)', async () => {
-      // buildFilters guards Number.isNaN(since.getTime()) — a non-parseable
-      // date adds no condition rather than 400ing. Pins the CURRENT contract;
-      // a future fix that 400s here is a deliberate, visible delta.
+    await ctx.step('malformed since date is rejected → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         ...base,
         query: { since: 'not-a-date' },
       });
-      r.status(200).body().exists('$.events');
+      r.status(400);
     });
     await ctx.step('combined filters (actor + resource_type + q + window) → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
@@ -654,6 +643,103 @@ flow(
         },
       });
       r.status(200).body().exists('$.events');
+    });
+  },
+);
+
+// AUD-6 — centralized v2 project, reconciliation, delivery-ledger, replay, and
+// sandbox-ingestion security contracts.
+flow(
+  'AUD-6',
+  {
+    domain: 'audit',
+    routes: [
+      'GET /v1/projects/:projectId/audit',
+      'POST /v1/accounts/:accountId/audit/reconcile',
+      'GET /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries',
+      'POST /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay',
+      'POST /v1/projects/:projectId/sessions/:sessionId/audit/events',
+      'POST /v1/accounts/:accountId/audit/webhooks',
+      'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let webhookId = '';
+    let deliveryId = '';
+
+    await ctx.step('project-scoped canonical audit page → 200', async () => {
+      const r = await owner.get('/v1/projects/:projectId/audit', {
+        params: { projectId: project.id },
+        query: { limit: '10' },
+      });
+      r.status(200).body().exists('$.events').has('$.next_cursor', null);
+    });
+
+    await ctx.step('create a webhook scoped to reconciliation events', async () => {
+      const r = await owner.post(
+        '/v1/accounts/:accountId/audit/webhooks',
+        {
+          name: ctx.fixtures.name('audit-v2'),
+          url: 'https://example.com/ke2e-audit-v2',
+          action_prefix: 'iam.audit.reconcile',
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().exists('$.webhook_id');
+      webhookId = r.json<{ webhook_id: string }>().webhook_id;
+    });
+
+    await ctx.step('bounded reconciliation → 200 idempotent result', async () => {
+      const r = await owner.post('/v1/accounts/:accountId/audit/reconcile', undefined, {
+        params: { accountId: team.id },
+        query: { limit: '100' },
+      });
+      r.status(200).body().exists('$.inserted').exists('$.complete').exists('$.by_source');
+    });
+
+    await ctx.step('delivery ledger contains the reconciliation event', async () => {
+      const r = await owner.get('/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries', {
+        params: { accountId: team.id, webhookId },
+      });
+      r.status(200).body().exists('$.deliveries');
+      const deliveries = r.json<{ deliveries: Array<{ delivery_id: string }> }>().deliveries;
+      if (deliveries.length === 0) throw new Error('expected a durable audit webhook delivery');
+      const delivery = deliveries[0];
+      if (!delivery) throw new Error('expected a durable audit webhook delivery');
+      deliveryId = delivery.delivery_id;
+    });
+
+    await ctx.step('manual delivery replay returns replayed=true', async () => {
+      const r = await owner.post(
+        '/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay',
+        undefined,
+        { params: { accountId: team.id, webhookId, deliveryId } },
+      );
+      r.status(200).body().has('$.replayed', true);
+    });
+
+    await ctx.step('human auth cannot ingest sandbox OpenCode events → 403', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/audit/events',
+        { events: [] },
+        {
+          params: {
+            projectId: project.id,
+            sessionId: '00000000-0000-4000-a000-000000000001',
+          },
+        },
+      );
+      r.status(403);
+    });
+
+    await ctx.step('delete the test webhook', async () => {
+      const r = await owner.del('/v1/accounts/:accountId/audit/webhooks/:webhookId', {
+        params: { accountId: team.id, webhookId },
+      });
+      r.status(200).body().has('$.deleted', true);
     });
   },
 );

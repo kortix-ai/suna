@@ -81,17 +81,19 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     };
   }, [output, sid]);
 
-  const headerArgs: string[] = [];
-  if (parsed?.hasConversation)
-    headerArgs.push(`${parsed.msgCount} msgs`, `${parsed.toolCount} tools`);
-  if (parsed?.compression) headerArgs.push('compressed');
+  const headerArgs = useMemo(() => {
+    const args: string[] = [];
+    if (parsed?.hasConversation) args.push(`${parsed.msgCount} msgs`, `${parsed.toolCount} tools`);
+    if (parsed?.compression) args.push('compressed');
+    return args;
+  }, [parsed]);
 
   const [showConv, setShowConv] = React.useState(false);
   const [showTodos, setShowTodos] = React.useState(true);
 
   return (
     <BasicTool
-      icon={<BookOpen className="size-3.5 flex-shrink-0" />}
+      icon={<BookOpen className="size-3.5 shrink-0" />}
       trigger={{
         title: parsed?.title ?? 'Session Get',
         subtitle: parsed?.id || sid,
@@ -158,7 +160,7 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                       <div key={i} className="flex items-start gap-2 text-xs">
                         <div
                           className={cn(
-                            'mt-[2px] flex h-3 w-3 flex-shrink-0 items-center justify-center rounded border',
+                            'mt-[2px] flex h-3 w-3 shrink-0 items-center justify-center rounded border',
                             isComplete && cn(STATUS_BG.success, STATUS_BORDER.success),
                             isProgress && STATUS_BORDER.info,
                             !isComplete && !isProgress && 'border-border',

@@ -57,10 +57,6 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-mock.module('../shared/audit-webhooks', () => ({
-  dispatchAuditEvent: () => calls.push('dispatch'),
-}));
-
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
@@ -72,7 +68,7 @@ mock.module('../lib/request-context', () => ({
 const { runAuditedTransaction } = await import('../shared/audit');
 
 describe('runAuditedTransaction', () => {
-  test('dispatches only after the mutation and audit event commit', async () => {
+  test('stores the mutation and canonical audit event in one transaction', async () => {
     calls.length = 0;
     auditFails = false;
 
@@ -89,7 +85,7 @@ describe('runAuditedTransaction', () => {
     );
 
     expect(result).toBe('updated');
-    expect(calls).toEqual(['begin', 'mutation', 'audit', 'commit', 'dispatch']);
+    expect(calls).toEqual(['begin', 'mutation', 'audit', 'commit']);
   });
 
   test('rolls back the mutation when the audit event cannot be stored', async () => {

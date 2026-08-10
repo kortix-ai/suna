@@ -61,6 +61,71 @@ resource "aws_iam_policy" "mfa_self_manage" {
   tags = local.tags
 }
 
+# MFA enforcement — the DENY side of the DCF-67 control. aws_iam_policy
+# .mfa_self_manage above lets a user ENROLL an MFA device; this policy DENIES
+# every action when the caller has NOT authenticated with MFA. Drata DCF-67
+# (testId 88 "MFA on Cloud Infrastructure") checks that MFA is actually
+# ENFORCED, not merely available — without a Deny, a user with no MFA device
+# (e.g. `ino` today) can still act on every permitted resource, which is what
+# the resource-level failure flagged.
+#
+# Standard AWS MFA-enforcement pattern: Effect = Deny, NotAction = the MFA +
+# password + GetSessionToken self-enrollment surface (so a user without MFA
+# can still enroll their first device and mint an MFA'd session), Condition
+# BoolIfExists { aws:MultiFactorAuthPresent = false }. BoolIfExists (not Bool)
+# is deliberate: an unauthenticated STS GetSessionToken call carries no MFA
+# context at all, and BoolIfExists treats a missing key the same as false, so
+# the deny fires for both "MFA present but false" and "MFA context absent".
+#
+# Resource MUST be "*" — this is a deny-all-except-enrollment, so it cannot be
+# scoped to a resource ARN. The Drata Compliance-as-Code scanner (testId 8025
+# "Access Policies Restrict Broad Access") only flags `Resource: "*"` on
+# `Effect: "Allow"` statements (a broad allow); this `Effect: "Deny"` is the
+# opposite and is NOT flagged — verified on PR #6289 (scan
+# 0c4a4878-9b23-4751-a7d0-84d68c6b0050: critical count unchanged from main).
+# The wildcard use is recorded in docs/compliance/IAC-SCANNER-EXCEPTIONS.md
+# under "Not-flagged wildcard policies" so a future scanner change is caught
+# against an explicit baseline. The checkov skip is defensive — checkov runs
+# soft_fail: true in CI so it does not gate, but the comment documents intent.
+resource "aws_iam_policy" "mfa_required" {
+  # checkov:skip=CKV_AWS_111: MFA enforcement requires a deny-all-except-
+  # enrollment statement; Resource must be "*" because the policy denies
+  # across every resource. See docs/compliance/IAC-SCANNER-EXCEPTIONS.md.
+  # checkov:skip=CKV_AWS_290: Deny-only policy; it grants no writes.
+  name = "kortix-mfa-required"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "DenyAllWithoutMFA"
+        Effect = "Deny"
+        NotAction = [
+          "iam:CreateVirtualMFADevice",
+          "iam:DeleteVirtualMFADevice",
+          "iam:EnableMFADevice",
+          "iam:DeactivateMFADevice",
+          "iam:ResyncMFADevice",
+          "iam:ListMFADevices",
+          "iam:ListVirtualMFADevices",
+          "iam:ChangePassword",
+          "iam:GetLoginProfile",
+          "iam:UpdateLoginProfile",
+          "iam:CreateLoginProfile",
+          "iam:DeleteLoginProfile",
+          "sts:GetSessionToken"
+        ]
+        Resource = "*"
+        Condition = {
+          BoolIfExists = {
+            "aws:MultiFactorAuthPresent" = false
+          }
+        }
+      }
+    ]
+  })
+  tags = local.tags
+}
+
 # SES send-only — replaces the inline `ses-send-only` policy that used to hang
 # directly off the `kortix-ses-sender` user (Drata DCF-776 flags inline user
 # policies). Grants send on every SES identity in this account (the Kortix
@@ -84,12 +149,24 @@ resource "aws_iam_policy" "ses_send_only" {
 locals {
   # group => { policies = [arns], members = [usernames] }
   groups = {
-    # Break-glass admins only (named individuals, MFA-enforced). kubet was scoped
-    # down to a live-managed `lightsail` group (lightsail:* — kept out of TF so the
-    # service wildcard isn't re-flagged by the IaC scanner).
+    # Break-glass admins only (named individuals, MFA-enforced). Person
+    # memberships are managed out-of-band (AWS console / aws iam
+    # add-user-to-group) — individual people must not live in version-controlled
+    # IaC (churn + audit noise on every join/leave). kubet was scoped down to a
+    # live-managed `lightsail` group (lightsail:* — kept out of TF so the service
+    # wildcard isn't re-flagged by the IaC scanner).
     administrators = {
-      policies = ["arn:aws:iam::aws:policy/AdministratorAccess", "arn:aws:iam::aws:policy/IAMUserChangePassword"]
-      members  = ["markokraemer", "saumya@kortix.com"]
+      # AdministratorAccess + IAMUserChangePassword for break-glass admins, plus
+      # mfa_required so every console action is denied unless the caller has
+      # authenticated with MFA (DCF-67). The AdministratorAccess Allow is still
+      # gated by the MFA Deny — IAM evaluates Deny before Allow, so an admin
+      # without MFA can do nothing except enroll an MFA device.
+      policies = [
+        "arn:aws:iam::aws:policy/AdministratorAccess",
+        "arn:aws:iam::aws:policy/IAMUserChangePassword",
+        aws_iam_policy.mfa_required.arn
+      ]
+      members = []
     }
     bedrock-limited = {
       policies = ["arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess"]
@@ -123,8 +200,16 @@ locals {
     # self-scoped policy keeps DCF-776 satisfied with no member named in TF.
     # See aws_iam_policy.mfa_self_manage above.
     mfa-self-manage = {
-      policies = [aws_iam_policy.mfa_self_manage.arn]
-      members  = []
+      # Self-service MFA enrollment (Allow side) + MFA enforcement (Deny side).
+      # mfa_self_manage lets a member enroll their own MFA device + manage their
+      # login profile; mfa_required DENIES every other action until they do
+      # (DCF-67). Together: a user with no MFA can do exactly one thing — enroll
+      # an MFA device — and once enrolled, the deny lifts for MFA'd sessions.
+      policies = [
+        aws_iam_policy.mfa_self_manage.arn,
+        aws_iam_policy.mfa_required.arn
+      ]
+      members = []
     }
     # SES send-only for the `kortix-ses-sender` user (was an inline `ses-send-only`
     # policy — DCF-776 requires group-based permissions only). See aws_iam_policy

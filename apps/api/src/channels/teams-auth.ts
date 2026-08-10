@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { resolveExperimentalFeature } from '../experimental/features';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 
 export const BOT_CONNECTOR_SCOPE = 'https://api.botframework.com/.default';
 export const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';
@@ -15,12 +15,12 @@ const tokenCache = new Map<string, CachedToken>();
 
 /**
  * Is the Teams channel offered for THIS project? One gate, one source: the
- * per-project `teams` experimental feature. There is no operator env var — a
- * project turns Teams on in Customize → Settings → Experimental, exactly like
+ * per-project `teams` feature flag. There is no operator env var — a
+ * project turns Teams on in Settings → Feature flags, exactly like
  * `agentmail_email` and `voice`.
  */
 export function teamsChannelEnabled(metadata: unknown): boolean {
-  return resolveExperimentalFeature(metadata, 'teams');
+  return resolveFeatureFlag(metadata, 'teams');
 }
 
 export function teamsConfigured(): boolean {

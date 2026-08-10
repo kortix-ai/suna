@@ -35,6 +35,8 @@ export interface OpencodeTurnError {
 }
 
 type OpencodeEventHandlers = {
+  /** Every parsed OpenCode event, before specialized dispatch. */
+  onEvent?: (event: { type?: string; properties?: unknown }) => void
   onQuestionAsked?: (req: QuestionRequest) => void
   // Fired when an opencode session finishes processing a turn (idle) or dies
   // mid-turn (error). opencode emits these for EVERY session — including
@@ -99,14 +101,16 @@ export function startOpencodeEventLoop(
       const { value, done } = await reader.read()
       if (done) return
       buf += decoder.decode(value, { stream: true })
-      // SSE frames are separated by a blank line.
-      let idx = buf.indexOf('\n\n')
-      while (idx !== -1) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        idx = buf.indexOf('\n\n')
+      // SSE permits LF and CRLF line endings. OpenCode can emit CRLF frames,
+      // including when the delimiter spans reader chunks, so retain the raw
+      // buffer and consume the complete delimiter returned by the match.
+      let boundary = /\r?\n\r?\n/.exec(buf)
+      while (boundary?.index !== undefined) {
+        const frame = buf.slice(0, boundary.index)
+        buf = buf.slice(boundary.index + boundary[0].length)
+        boundary = /\r?\n\r?\n/.exec(buf)
         const dataLines = frame
-          .split('\n')
+          .split(/\r?\n/)
           .filter((l) => l.startsWith('data:'))
           .map((l) => l.slice(5).trim())
           .filter(Boolean)
@@ -197,6 +201,7 @@ export function flattenOpencodeError(e: {
 // Exported for unit testing — maps a raw opencode SSE event to a handler call,
 // including flattening session.error's nested error into OpencodeTurnError.
 export function dispatch(event: { type?: string; properties?: unknown }, handlers: OpencodeEventHandlers): void {
+  handlers.onEvent?.(event)
   if (event.type === 'question.asked' && handlers.onQuestionAsked) {
     const req = event.properties as QuestionRequest
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {

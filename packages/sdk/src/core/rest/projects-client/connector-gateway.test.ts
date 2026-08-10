@@ -225,6 +225,31 @@ test('attachment upload sends raw bytes through the shared token seam', async ()
   expect(calls[0]?.body).toBe(bytes);
 });
 
+test('attachment upload handles an uncontrolled slash-heavy backend URL in linear time', async () => {
+  responseBody = {
+    attachment_id: 'attachment-one',
+    filename: 'chart.png',
+    content_type: 'image/png',
+    content_disposition: 'attachment',
+    content_id: null,
+    size: 1,
+    expires_at: '2026-08-09T00:00:00.000Z',
+  };
+  configureKortix({
+    backendUrl: `http://test.local/${'/'.repeat(40_000)}x/v1`,
+    getToken: async () => 'agent-token',
+  });
+
+  const startedAt = performance.now();
+  await uploadConnectorAttachment(undefined, new Uint8Array([1]), {
+    filename: 'chart.png',
+    contentType: 'image/png',
+  });
+
+  expect(performance.now() - startedAt).toBeLessThan(200);
+  expect(calls[0]?.url.endsWith('/v1/connectors/attachments')).toBe(true);
+});
+
 test('gateway failures use the SDK ApiError with the server reason', async () => {
   responseStatus = 403;
   responseBody = { ok: false, status: 'denied', reason: 'not_shared' };

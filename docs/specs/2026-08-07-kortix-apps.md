@@ -2,7 +2,13 @@
 
 Date: 2026-08-07
 
-Status: implementation contract
+Last verified: 2026-08-08
+
+Status: canonical implementation contract and deferred architecture record
+
+This document is the source of truth for Kortix Apps. Operational documentation
+and system skills must agree with it. Do not create a second architecture or
+deployment report without linking it here and identifying which document wins.
 
 ## Problem
 
@@ -16,13 +22,43 @@ It must scale a runtime to zero, wake it on a public request, preserve a stable
 URL across deployments, and retain enough state to explain every build and
 runtime transition.
 
+## Current decision
+
+The first-release sandbox system remains the only implemented hosting backend.
+Kortix deploys every source kind into a Daytona, Platinum, or E2B sandbox. Local
+Docker is not a supported Apps provider. Provider selection remains a server
+policy unless an operator supplies an explicit preference.
+
+This uniform backend is an accepted first-release tradeoff. It provides one
+runtime contract for static files, framework bundles, Dockerfiles, and OCI
+images. Static Apps pay the cost of building and waking a sandbox, but the
+product does not add a separate edge-static path yet.
+
+The following decisions are binding until this document changes:
+
+1. Keep the current sandbox implementation and improve its reliability.
+2. Keep `kortix apps deploy` blocking by default until the deployment is ready.
+3. Keep `--no-wait` as the explicit asynchronous mode.
+4. Keep Kortix as the control plane for identity, URLs, access, deployments,
+   rollback, provenance, budgets, billing, and lifecycle state.
+5. Keep the Apps UI as an inventory and management surface. It does not create
+   an empty App identity.
+6. Treat Cloudflare, Deno Deploy, Vercel, Cloud Run, and other hosting backends
+   as deferred architecture only. No current CLI, SDK, API, or UI contract
+   promises these backends.
+
 ## Terms
 
 - **App**: mutable product record with a stable hostname and active deployment.
 - **Artifact**: immutable uploaded build context or immutable OCI source.
 - **Deployment**: immutable app version built from one artifact and one spec.
 - **Runtime**: one provider sandbox executing one deployment.
-- **Hosting provider**: adapter that builds and runs a deployment.
+- **Sandbox provider**: Daytona, Platinum, or E2B adapter that builds and runs a
+  sandbox deployment.
+- **Hosting backend**: a future execution class such as sandbox, edge static,
+  managed function, or managed container. The only current value is sandbox.
+- **Transport**: HTTP, SSE, or WebSocket traffic. Do not use this term for a
+  hosting backend.
 
 The product name is **Kortix Apps**. Provider names never appear in a normal App
 specification.
@@ -507,3 +543,156 @@ The release is incomplete until these black-box cases pass:
 22. A policy revision revokes an old cookie without breaking asset requests.
 23. The internal Browser preserves direct App-host navigation and cookies.
 24. A cold start queues at most one current-daemon replacement.
+
+## Verified Dev acceptance: 2026-08-08
+
+The acceptance project was `abdcc557-db9b-4f7d-83d4-c284e4d8d366`. The
+originating session was `6e6a314b-29cd-4523-8ef2-23b1f2cf17d4`. Dev selected
+Platinum for all five deployments.
+
+The Dev database provided the authoritative deployment and event timestamps:
+
+| App                  | Source kind    | Created to ready | Build events | Post-build to activation |
+| -------------------- | -------------- | ---------------: | -----------: | -----------------------: |
+| `pomodoro`           | `static`       |        `49.793s` |    `39.708s` |                 `8.428s` |
+| `markdown-previewer` | `static --spa` |        `49.883s` |    `40.092s` |                 `8.193s` |
+| `pixel-art`          | `bundle --spa` |        `58.469s` |    `49.560s` |                 `7.420s` |
+| `url-shortener`      | `dockerfile`   |        `58.806s` |    `49.729s` |                 `7.616s` |
+| `nginx-hello`        | `oci_image`    |        `55.484s` |    `45.623s` |                 `8.042s` |
+
+`Build events` measures `build_started` to `build_ready`. `Post-build to
+activation` measures `build_ready` to `deployment_activated`. The evidence
+shows provider image construction consumed most deployment time. Runtime
+creation and activation consumed approximately eight seconds. A prior review
+reported the Markdown Previewer as approximately two minutes and attributed
+most time to runtime provisioning. The database does not support either claim.
+
+Live unauthenticated requests produced these results on 2026-08-08:
+
+- `pomodoro`, changed explicitly to `public`: HTTP `200`.
+- `markdown-previewer`, `pixel-art`, `url-shortener`, and `nginx-hello`, left at
+  the default `private` policy: HTTP `401`.
+- The first observed Pomodoro request completed in `7.214s`.
+- The immediately repeated Pomodoro request completed in `2.073s`.
+
+The acceptance exercise also asserted static assets, SPA fallback, Dockerfile
+readiness and application routes, OCI content, and authenticated access-link
+exchange. The exact live rows remain in `kortix.apps`,
+`kortix.app_deployments`, and `kortix.app_deployment_events` on Dev.
+
+### Known CLI deadline gap
+
+Four concurrent CLI deploy commands were observed hanging before any App row
+was created. The evidence does not show per-project serialization or sandbox
+provider throttling. App creation occurs before artifact upload, deployment
+creation, and the deployment worker. The commands therefore did not reach the
+provider deployment path.
+
+`--wait-seconds` currently starts only after the API creates a deployment. It
+does not bound project-context resolution, App creation, archive generation,
+artifact upload, or deployment creation. A command can exceed the configured
+wait duration before deployment polling starts.
+
+Required follow-up behavior:
+
+1. Emit a named CLI phase for context, App identity, packing, upload, queue,
+   build, provisioning, checking, and readiness.
+2. Apply request deadlines to every remote phase.
+3. Add a total command deadline distinct from the deployment polling deadline.
+4. Preserve the blocking default and the stable URL result.
+5. Reproduce concurrent deployment with correlation identifiers before
+   assigning the failure to the API, worker, database, or provider.
+
+Provider Docker-layer caching is not uniform. E2B disables its remote build
+cache because cached COPY layers have produced incomplete images. Platinum and
+Daytona can still have provider-level layer caching. Do not claim that all
+providers rebuild every layer without measuring provider build logs.
+
+## Deferred multi-backend architecture
+
+This section records a future direction. It does not authorize implementation
+or change the current product contract. Revalidate vendor capabilities, limits,
+pricing, and private-origin controls before starting work.
+
+The sandbox-first implementation remains a valid vertical slice because no
+single managed platform satisfies the complete Apps contract. The future
+architecture can add specialized backends without replacing Kortix-owned App
+semantics.
+
+### Control-plane boundary
+
+Kortix continues to own:
+
+- Stable App identity and hostname.
+- Immutable artifacts and deployment versions.
+- Access policy and authenticated App-host sessions.
+- Active-deployment routing and rollback.
+- Actor and originating-session provenance.
+- Budget enforcement, billing, logs, and lifecycle events.
+- Provider selection and capability validation.
+
+Vendor project, deployment, and domain models remain implementation details.
+The CLI and SDK continue to expose Kortix Apps.
+
+### Separate build and hosting
+
+A future refactor must separate two contracts:
+
+1. A build backend accepts source and produces an immutable, content-addressed
+   artifact with logs and provenance.
+2. A hosting backend deploys a compatible artifact and returns a protected
+   origin plus provider release metadata.
+
+The existing `AppHostingProvider` becomes the sandbox backend. Its `appd`,
+control ports, explicit wake, and runtime leases remain sandbox-specific.
+Universal deployment records must not require an `appd` token or sandbox
+ports.
+
+Every hosting backend must declare at least:
+
+- Accepted artifact kinds.
+- Private-origin enforcement.
+- HTTP, SSE, and WebSocket support.
+- Explicit or implicit wake behavior.
+- Explicit, idle-only, or unsupported stop behavior.
+- Request duration and payload limits.
+- CPU, memory, disk, and persistence limits.
+- Logs, deletion, rollback, and usage-metering support.
+
+A backend without enforceable private-origin authorization cannot host a
+non-public App.
+
+### Candidate routing policy
+
+| Workload                                        | Candidate future backend                                              | Current backend |
+| ----------------------------------------------- | --------------------------------------------------------------------- | --------------- |
+| Static files and prebuilt SPAs                  | Shared Cloudflare router plus immutable object storage                | Sandbox         |
+| Compatible JavaScript and TypeScript            | Deno Deploy or Cloudflare Workers                                     | Sandbox         |
+| Next.js and supported web frameworks            | Vercel or compatible managed runtime                                  | Sandbox         |
+| Stateless OCI HTTP services                     | Cloud Run, Vercel Containers, or proven Cloudflare Containers tenancy | Sandbox         |
+| Unrestricted Docker and custom runtime behavior | Daytona or Platinum sandbox                                           | Sandbox         |
+
+Do not create one Cloudflare Worker per App without proving account and
+multi-tenant limits. A shared Kortix Apps Router serving content-addressed
+static artifacts is the preferred edge-static design.
+
+Deno Deploy is a JavaScript optimization, not an arbitrary-Docker backend.
+Managed container platforms must pass the same private-origin, WebSocket,
+payload, timeout, logs, deletion, and cost acceptance suite before selection.
+
+### Deferred delivery order
+
+1. Refactor the existing implementation into a sandbox backend without changing
+   behavior.
+2. Keep durable deployment rows and leases, but run claims in a dedicated
+   worker instead of relying on API-process timers.
+3. Add a shared edge-static proof with private access enforced before object
+   retrieval.
+4. Run one OCI acceptance suite against candidate managed-container backends.
+5. Select a default using measured deployment latency, cold latency, origin
+   security, logs, WebSockets, deletion, rollback, and cost.
+6. Add framework-specific backends only after the general backend contract is
+   stable.
+
+Start this work only when sandbox cost or latency becomes a measured product
+constraint. Until then, improve and operate the current sandbox path.

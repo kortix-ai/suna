@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 
 import { logger } from './logger'
+import { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
+export { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
 
 /**
  * Is opencode mid-turn, and did a turn get orphaned?
@@ -16,8 +18,6 @@ import { logger } from './logger'
  * and for one whose writer died. Distinguishing them is the caller's job:
  * post-respawn, the writer is by definition gone.
  */
-export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
-
 /**
  * The canonical opencode root, or null when nothing is pinned yet.
  *

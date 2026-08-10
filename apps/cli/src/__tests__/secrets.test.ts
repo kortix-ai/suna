@@ -582,6 +582,51 @@ describe('kortix secrets delivery', () => {
     });
   });
 
+  test('configures transparent network delivery for exact hosts and one header', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'egress',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+      '--template',
+      '{{secret}}',
+    ]);
+
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({
+      strategy: 'egress',
+      egress_policy: {
+        rules: [{ host: 'api.anthropic.com' }],
+        inject: { kind: 'header', name: 'x-api-key', template: '{{secret}}' },
+        on_no_match: 'deny',
+        tls: 'terminate',
+      },
+    });
+    expect(stripAnsi(stdout)).toContain('outside the sandbox');
+  });
+
+  test('rejects boundary controls that Platinum cannot enforce', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'egress',
+      '--allow-host',
+      '*.anthropic.com',
+      '--allow-method',
+      'POST',
+      '--inject-query',
+      'key',
+    ]);
+
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('exact hosts and header injection');
+  });
+
   test('configures an LLM gateway consumer without HTTP policy flags', async () => {
     const code = await runSecrets([
       'delivery',
@@ -679,7 +724,7 @@ describe('kortix secrets delivery', () => {
     ]);
     expect(code).toBe(2);
     expect(requests).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain('only valid for broker');
+    expect(stripAnsi(stderr)).toContain('only valid for broker or egress');
   });
 });
 

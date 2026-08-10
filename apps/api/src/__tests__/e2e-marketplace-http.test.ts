@@ -58,7 +58,7 @@ describe('marketplace HTTP contract', () => {
     expect(body.items.find((item) => item.name === 'pty')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'web_search')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'kortix')).toBeUndefined();
-    expect(body.items.find((item) => item.name === 'memory-reflector')).toBeUndefined();
+    expect(body.items.find((item) => item.name === 'harness-reflector')).toBeUndefined();
   });
 
   test('GET /marketplace/items is public read-only', async () => {

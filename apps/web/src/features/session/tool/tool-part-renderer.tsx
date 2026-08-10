@@ -26,7 +26,7 @@ import {
   type ToolPart,
 } from '@/ui';
 import { useTranslations } from 'next-intl';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 interface PermissionPromptInlineProps {
   permission: PermissionRequest;
@@ -98,7 +98,7 @@ interface ToolPartRendererProps {
   disableNavigation?: boolean;
 }
 
-export function ToolPartRenderer({
+function ToolPartRendererImpl({
   part,
   sessionId,
   permission,
@@ -229,3 +229,22 @@ export function ToolPartRenderer({
 
 // Register all tool renderers after ToolPartRenderer is defined (avoids circular imports).
 import '@/features/session/tool/tools/register';
+
+/**
+ * The boundary that stops a settled tool row re-rendering with the stream.
+ *
+ * Everything expensive on a collapsed row lives BELOW this line: `partOutput`'s
+ * regex passes, `getToolDiagnostics`, `parseReadOutput`. The disclosure gate
+ * protects the child's render, but it protects nothing in the parent that
+ * computed the props — so without a boundary here, a fifty-turn transcript
+ * re-parses every tool's output on every SSE frame.
+ *
+ * The default shallow compare is right: `part` objects are replaced, not
+ * mutated, when they change; `onPermissionReply` and `onQuestionReply` are
+ * `useCallback`s; `permission` is either `undefined` or a store object.
+ *
+ * `memo` does not block context propagation, so `ToolSurfaceContext`,
+ * `ToolActivateContext` and `ToolOutcomeContext` still reach the tool.
+ */
+export const ToolPartRenderer = memo(ToolPartRendererImpl);
+ToolPartRenderer.displayName = 'ToolPartRenderer';

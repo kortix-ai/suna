@@ -58,29 +58,29 @@ export const SHOW_BORDER_STYLES: Record<string, string> = {
 export function showTypeIcon(type: string, className = 'size-4') {
   switch (type) {
     case 'image':
-      return <ImageIcon className={cn(className, 'flex-shrink-0')} />;
+      return <ImageIcon className={cn(className, 'shrink-0')} />;
     case 'video':
-      return <Video className={cn(className, 'flex-shrink-0')} />;
+      return <Video className={cn(className, 'shrink-0')} />;
     case 'audio':
-      return <Music className={cn(className, 'flex-shrink-0')} />;
+      return <Music className={cn(className, 'shrink-0')} />;
     case 'code':
-      return <Code2 className={cn(className, 'flex-shrink-0')} />;
+      return <Code2 className={cn(className, 'shrink-0')} />;
     case 'markdown':
-      return <Type className={cn(className, 'flex-shrink-0')} />;
+      return <Type className={cn(className, 'shrink-0')} />;
     case 'html':
-      return <Globe className={cn(className, 'flex-shrink-0')} />;
+      return <Globe className={cn(className, 'shrink-0')} />;
     case 'pdf':
-      return <FileText className={cn(className, 'flex-shrink-0')} />;
+      return <FileText className={cn(className, 'shrink-0')} />;
     case 'url':
-      return <Globe className={cn(className, 'flex-shrink-0')} />;
+      return <Globe className={cn(className, 'shrink-0')} />;
     case 'error':
-      return <AlertTriangle className={cn(className, 'flex-shrink-0')} />;
+      return <AlertTriangle className={cn(className, 'shrink-0')} />;
     case 'file':
-      return <FileIcon className={cn(className, 'flex-shrink-0')} />;
+      return <FileIcon className={cn(className, 'shrink-0')} />;
     case 'text':
-      return <Type className={cn(className, 'flex-shrink-0')} />;
+      return <Type className={cn(className, 'shrink-0')} />;
     default:
-      return <ExternalLink className={cn(className, 'flex-shrink-0')} />;
+      return <ExternalLink className={cn(className, 'shrink-0')} />;
   }
 }
 
