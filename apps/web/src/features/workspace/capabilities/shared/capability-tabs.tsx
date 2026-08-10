@@ -112,7 +112,7 @@ function GlobalRulesControl({ workspaceId }: { workspaceId: string }) {
 }
 
 /**
- * Shared tab bar for /projects/[id]/{agent,connectors,skills}. Lives in
+ * Shared tab bar for /workspaces/[id]/{agent,connectors,skills}. Lives in
  * the `(capabilities)` route group layout so it does not remount when
  * switching tabs. Each trigger wraps a real `next/link` via `asChild`.
  *

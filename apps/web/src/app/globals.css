@@ -918,7 +918,7 @@
   animation: stream-char-reveal 150ms ease-out forwards;
 }
 
-/* Page-enter motion: soft fade-up for standalone pages (/projects). `both`
+/* Page-enter motion: soft fade-up for standalone pages (/workspaces). `both`
    keeps delayed elements hidden until their turn. Stagger delays are capped
    so long lists never feel slow — everything past the sixth child enters
    together. */
@@ -1443,7 +1443,7 @@ html[data-desktop-platform='macos'] {
   --kx-titlebar-controls-width: 0px;
 }
 
-/* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
+/* AppHeader (the breadcrumb bar on standalone pages like /workspaces, /accounts):
    Win/Linux shells clear the OS window controls by reserving space ABOVE the
    header (a blank strip that holds the control cluster). */
 html[data-desktop='true'] .kx-app-header {
@@ -1525,7 +1525,7 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
   padding-left: var(--kx-titlebar-content-left);
 }
 
-/* Files page header (/projects/[id]/files) — the one page header that reaches
+/* Files page header (/workspaces/[id]/files) — the one page header that reaches
    the top of the window with nothing above it, so it shares the title-bar row
    with the OS window controls. No extra vertical space, indent only.
 

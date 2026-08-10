@@ -10,7 +10,7 @@
  * with `fatal: couldn't find remote ref refs/heads/main`
  * (`createRemoteSessionBranch`, ./git/branches.ts).
  *
- * `POST /projects/provision` used to report `201 { status: 'active' }` for
+ * `POST /workspaces/provision` used to report `201 { status: 'active' }` for
  * exactly that repo whenever the caller did not pass `seed_starter: true`, and
  * nothing anywhere recorded whether a seed had been expected. This module
  * closes both halves:

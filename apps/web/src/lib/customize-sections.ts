@@ -1,14 +1,14 @@
 /**
  * Customize section identifiers + helpers.
  *
- * The /projects/[id]/customize page reads its active section from either the
+ * The /workspaces/[id]/customize page reads its active section from either the
  * path segment (`/customize/agents`) or the legacy `?section=` query param.
  * This module keeps the section enum, the default, and a parser in one spot
  * so the page, the sidebar, and any deep-link helpers all agree on the
  * canonical list.
  *
  * Files, Agents, Connectors, and Skills are NOT customize sections — they are
- * standalone `/projects/[id]/<section>` pages (any member can browse Files;
+ * standalone `/workspaces/[id]/<section>` pages (any member can browse Files;
  * Agents/Connectors/Skills gate on their own read leaf — see
  * capabilities/capability-tab-routes.ts). Commands is the one that came BACK:
  * its standalone page was deleted (#6169), so it lives in this overlay and its

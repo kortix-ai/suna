@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { AgentsPage } from '@/features/workspace/capabilities/agents/agents-page';
 
 /**
- * /projects/[id]/agent — the standalone Agents catalog. See
+ * /workspaces/[id]/agent — the standalone Agents catalog. See
  * `features/workspace/capabilities/agents/agents-page.tsx` for the page body.
  */
 export default function WorkspaceAgentPage() {

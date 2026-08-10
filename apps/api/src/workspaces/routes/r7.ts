@@ -304,7 +304,7 @@ function unavailableRequiredConnectorError(
   };
 }
 
-// POST /v1/projects/:workspaceId/sessions/warm
+// POST /v1/workspaces/:workspaceId/sessions/warm
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -432,7 +432,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/sessions/warm/claim
+// POST /v1/workspaces/:workspaceId/sessions/warm/claim
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -521,7 +521,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/group-grants
+// POST /v1/workspaces/:workspaceId/group-grants
 // Attach a group to this workspace at the given role. Idempotent — if the
 // group already has a grant, the role is updated.
 
@@ -615,7 +615,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// PATCH /v1/projects/:workspaceId/group-grants/:groupId
+// PATCH /v1/workspaces/:workspaceId/group-grants/:groupId
 // Change the role on an existing attachment. Returns 404 when there's
 // nothing to change.
 
@@ -684,7 +684,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:workspaceId/group-grants/:groupId
+// DELETE /v1/workspaces/:workspaceId/group-grants/:groupId
 // Detach a group. Members of the group lose access via this grant
 // immediately; any direct project_members row they have is unaffected.
 
@@ -732,7 +732,7 @@ workspaceRoutesApp.openapi(
 
 // Session routes. Invariant: session_id == sandbox_id == git branch name.
 
-// POST /v1/projects/:workspaceId/sessions
+// POST /v1/workspaces/:workspaceId/sessions
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1005,7 +1005,7 @@ workspaceRoutesApp.openapi(
 );
 
 
-// GET /v1/projects/:workspaceId/sessions/:sessionId/transcript
+// GET /v1/workspaces/:workspaceId/sessions/:sessionId/transcript
 // Compact server-side transcript read for project automation. Unlike the raw
 // /v1/p sandbox proxy, this endpoint is callable with workspace-scoped session
 // tokens and strips tool inputs/outputs before returning messages.
@@ -1064,7 +1064,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/audit
+// GET /v1/workspaces/:workspaceId/audit
 // Canonical project slice. It returns the same event contract and cursor as
 // the account log, with project_id bound server-side to the authorized project.
 // This aggregate oversight surface can include private-session metadata, so it
@@ -1287,7 +1287,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/sessions/:sessionId/audit
+// GET /v1/workspaces/:workspaceId/sessions/:sessionId/audit
 // Per-session audit log. `events` is the canonical ordered reconstruction
 // timeline. `actions` preserves the governed connector approval projection.
 // Same visibility gate as the session detail/transcript (project read + the
@@ -1492,7 +1492,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/sessions/:sessionId/voice-transcript
+// GET /v1/workspaces/:workspaceId/sessions/:sessionId/voice-transcript
 // The live-call transcript for a session's voice connector call — every spoken
 // turn (role 'user'/'agent', from voice_call_turns) PLUS every ask_kortix/
 // run_command the worker issued through the voice MCP (role 'tool', recorded
@@ -1585,7 +1585,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/approvals
+// GET /v1/workspaces/:workspaceId/approvals
 // The approval inbox: connector actions a policy gated as `require_approval` that
 // are still awaiting a human decision (status=pending_approval, unresolved).
 // Manager-scoped — this is the workspace-wide oversight surface. A session's own
@@ -1666,7 +1666,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/approvals/needs-input
+// GET /v1/workspaces/:workspaceId/approvals/needs-input
 // Lightweight per-session summary for the sidebar "needs input" indicator: which
 // sessions have a connector call awaiting a human decision, and how many. A
 // project MANAGER sees every session; everyone else sees only the sessions they
@@ -1777,7 +1777,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/approvals/:executionId
+// POST /v1/workspaces/:workspaceId/approvals/:executionId
 // Resolve a pending approval — { decision: 'approve' | 'deny' }. Allowed for a
 // project MANAGER or the LAUNCHER of the session the action belongs to (the two
 // principals a human-in-the-loop approval should recognise). Records who decided
@@ -2017,7 +2017,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// PUT /v1/projects/:workspaceId/sessions/:sessionId/sharing
+// PUT /v1/workspaces/:workspaceId/sessions/:sessionId/sharing
 // Owner or workspace manager sets who can see/open this session
 // (private | project | members). Mirrors connector/secret sharing.
 
@@ -2091,7 +2091,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// PATCH /v1/projects/:workspaceId/sessions/:sessionId
+// PATCH /v1/workspaces/:workspaceId/sessions/:sessionId
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -2227,7 +2227,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:workspaceId/sessions/:sessionId
+// DELETE /v1/workspaces/:workspaceId/sessions/:sessionId
 // Soft delete only. We deliberately keep the remote branch so the user can
 // still merge or recover work.
 
@@ -2285,7 +2285,7 @@ workspaceRoutesApp.openapi(
 // workspace-wide. All three routes gate on project.members.manage (same as the
 // group-grant routes) and thread the acting token so the agent-grant fold fires.
 
-// GET /v1/projects/:workspaceId/resource-grants
+// GET /v1/workspaces/:workspaceId/resource-grants
 // Returns the workspace's grantable resources (for the picker) + every grant,
 // each enriched with a principal label so the UI needn't re-join.
 workspaceRoutesApp.openapi(
@@ -2417,7 +2417,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/resource-grants
+// POST /v1/workspaces/:workspaceId/resource-grants
 // Create/update a grant (idempotent on resource+principal). Validates the
 // resource exists in the workspace and the principal belongs to this account.
 workspaceRoutesApp.openapi(
@@ -2540,7 +2540,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// DELETE /v1/projects/:workspaceId/resource-grants/:grantId
+// DELETE /v1/workspaces/:workspaceId/resource-grants/:grantId
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'delete',
@@ -2648,7 +2648,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/sessions/:sessionId/config
+// GET /v1/workspaces/:workspaceId/sessions/:sessionId/config
 // Is this session running the latest agent config? Compares what the BOX says
 // it spawned with against what the manifest compiles to right now.
 workspaceRoutesApp.openapi(
@@ -2706,7 +2706,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/sessions/:sessionId/reload
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/reload
 // Pull the workspace and recompile the agent config into a RUNNING session.
 workspaceRoutesApp.openapi(
   createRoute({

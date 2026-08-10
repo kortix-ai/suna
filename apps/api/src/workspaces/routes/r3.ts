@@ -354,7 +354,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// PUT /v1/projects/:workspaceId/git-credential
+// PUT /v1/workspaces/:workspaceId/git-credential
 // Stores provider-neutral BYO git credentials as platform credentials, not as
 // user-readable/injectable runtime secrets. The managed GitHub backend mints
 // credentials server-side; this exists for generic future providers such as
@@ -432,7 +432,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/secrets
+// GET /v1/workspaces/:workspaceId/secrets
 // Readable by any project member: returns each secret IDENTIFIER as the
 // per-user view (the shared row + that member's own override, no plaintext)
 // plus the manifest-declared required/optional env KEYS. Every project member
@@ -527,7 +527,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/secrets
+// POST /v1/workspaces/:workspaceId/secrets
 // Upsert a project secret. The response intentionally omits value/value_enc.
 
 workspaceRoutesApp.openapi(
@@ -1223,7 +1223,7 @@ function authExpiresInMs(authJson: string): number | null {
   return null;
 }
 
-// ─── POST /v1/projects/:workspaceId/oauth/:provider/start ────────────────────
+// ─── POST /v1/workspaces/:workspaceId/oauth/:provider/start ────────────────────
 // Kick the device flow in a detached background task; return the challenge.
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1305,7 +1305,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// ─── POST /v1/projects/:workspaceId/oauth/:provider/poll ─────────────────────
+// ─── POST /v1/workspaces/:workspaceId/oauth/:provider/poll ─────────────────────
 // Any replica: read the shared flow row; on success persist the secret.
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1380,7 +1380,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// ─── GET /v1/projects/:workspaceId/oauth ─────────────────────────────────────
+// ─── GET /v1/workspaces/:workspaceId/oauth ─────────────────────────────────────
 // List configured OAuth credentials (derived from the saved project secrets).
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1423,7 +1423,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// ─── DELETE /v1/projects/:workspaceId/oauth/:provider ────────────────────────
+// ─── DELETE /v1/workspaces/:workspaceId/oauth/:provider ────────────────────────
 // Remove an OAuth credential (deletes the backing secret).
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1476,7 +1476,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:workspaceId/secrets/:identifier
+// DELETE /v1/workspaces/:workspaceId/secrets/:identifier
 // `:identifier` addresses the secret's unique IDENTIFIER (defaults to its KEY
 // for the simple/migrated case, so a plain key-name delete keeps working).
 
@@ -1591,7 +1591,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// PUT /v1/projects/:workspaceId/secrets/:name/personal
+// PUT /v1/workspaces/:workspaceId/secrets/:name/personal
 // Any project member sets/updates THEIR OWN per-key override (the "use mine"
 // value) and/or flips whether it's active. Operates only on the caller's row;
 // never touches the shared value or anyone else's override.
@@ -1691,7 +1691,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:workspaceId/secrets/:name/personal
+// DELETE /v1/workspaces/:workspaceId/secrets/:name/personal
 // Remove the caller's own override for this key (falls back to the shared value).
 
 workspaceRoutesApp.openapi(
@@ -1738,7 +1738,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/secrets/sync
+// POST /v1/workspaces/:workspaceId/secrets/sync
 // Force a re-push of all project secrets to all active sandboxes. Use after
 // setting a secret via the intake link or when secrets are missing from a
 // session's environment despite being set in the store.
@@ -1787,7 +1787,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/triggers
+// GET /v1/workspaces/:workspaceId/triggers
 //
 // Lists triggers defined as files in `.opencode/triggers/*.md` on the
 // workspace's default branch, plus any parse errors and runtime state

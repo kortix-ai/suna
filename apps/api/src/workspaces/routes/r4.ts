@@ -1193,7 +1193,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// PATCH /v1/projects/:workspaceId/triggers/:slug
+// PATCH /v1/workspaces/:workspaceId/triggers/:slug
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1289,7 +1289,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// DELETE /v1/projects/:workspaceId/triggers/:slug
+// DELETE /v1/workspaces/:workspaceId/triggers/:slug
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1377,7 +1377,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/channels/slack/mode
+// GET /v1/workspaces/:workspaceId/channels/slack/mode
 // Tells the dashboard whether one-click "Add to Slack" is available (server
 // has SLACK_CLIENT_ID + SECRET + SIGNING_SECRET set) and the pre-signed
 // install URL to redirect the user to.
@@ -1414,7 +1414,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/channels/slack/connect
+// POST /v1/workspaces/:workspaceId/channels/slack/connect
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1499,7 +1499,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// DELETE /v1/projects/:workspaceId/channels/slack/installation
+// DELETE /v1/workspaces/:workspaceId/channels/slack/installation
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -2457,7 +2457,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/channels/slack/file?url=...
+// GET /v1/workspaces/:workspaceId/channels/slack/file?url=...
 // Server-side download proxy: fetch a Slack-hosted file with the bot token
 // (SSRF-guarded to *.slack.com) so the sandbox never holds the token. Backs
 // `slack download` once the token is out of the box (KORTIX-206 Phase C2).
@@ -2491,7 +2491,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/channels/slack/file/upload
+// POST /v1/workspaces/:workspaceId/channels/slack/file/upload
 // Server-side upload proxy: the 3-step external upload, bot token server-side.
 // Backs `slack send --file` once the token is out of the box.
 workspaceRoutesApp.openapi(
@@ -2547,7 +2547,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/channels/slack/bind-thread
+// POST /v1/workspaces/:workspaceId/channels/slack/bind-thread
 // Bind a Slack thread the agent created (e.g. from a webhook/cron run) to its
 // session, so a later human reply in that thread routes back into this session
 // (approval loops, follow-up Q&A). This writes the same `chat_threads` row the
@@ -2656,7 +2656,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// PUT /v1/projects/:workspaceId/channels/meet/name — set the bot's display name.
+// PUT /v1/workspaces/:workspaceId/channels/meet/name — set the bot's display name.
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'put',
@@ -2693,7 +2693,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/llm-catalog
+// GET /v1/workspaces/:workspaceId/llm-catalog
 // Server-side source of truth for the gateway model catalog. The seed daemon
 // fetches it at PARK with a sandbox token so the no-restart warm-fork bakes the
 // full picker into opencode config. The web UI also reads it with normal project
@@ -2772,7 +2772,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/model-picker
+// GET /v1/workspaces/:workspaceId/model-picker
 // UI-specific, connection-aware projection of the runtime catalog. The full
 // /llm-catalog response remains available for sandbox/OpenCode configuration;
 // interactive selectors should use this bounded payload instead.
@@ -2859,7 +2859,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// PUT /v1/projects/:workspaceId/model-enablement  { modelOverrides: {id: boolean} }
+// PUT /v1/workspaces/:workspaceId/model-enablement  { modelOverrides: {id: boolean} }
 // Replace the workspace's EXCEPTIONS to the default model set (the newest model
 // per family). Display-only: it decides what the pickers OFFER, never what the
 // gateway serves. An empty object restores the pure default. Refuses to turn
@@ -2930,7 +2930,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/llm-catalog/providers
+// GET /v1/workspaces/:workspaceId/llm-catalog/providers
 // The PROVIDER-level rows the connect modal needs (id, name, auth-relevant
 // env vars, docs URL) — /llm-catalog above only ever serialized MODEL-level
 // entries (Record<"provider/model", GatewayModel>), so the web connect modal
@@ -3363,8 +3363,8 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET  /v1/projects/:workspaceId/sessions/:sessionId/question
-// POST /v1/projects/:workspaceId/sessions/:sessionId/question
+// GET  /v1/workspaces/:workspaceId/sessions/:sessionId/question
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/question
 //
 // The restore half of park-and-restore. The ask survives its sandbox (see
 // lib/pending-questions.ts); these two close the loop.
@@ -3478,7 +3478,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/triggers/:slug/fire
+// POST /v1/workspaces/:workspaceId/triggers/:slug/fire
 //
 // Manual fire for git-backed triggers. Reads the file, renders the prompt
 // against a synthetic payload, spawns a session. Manage role required.

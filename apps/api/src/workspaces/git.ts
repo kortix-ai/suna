@@ -2,7 +2,7 @@
 //
 // This module was split into focused files under ./git/ with ZERO behavior
 // change. It re-exports the FULL original symbol set so every importer
-// (`./git`, `../git`, `../../projects/git`) is unchanged.
+// (`./git`, `../git`, `../../workspaces/git`) is unchanged.
 //
 //   types    — all exported interfaces/types (pure leaf)
 //   mirror   — shared core: clone/mirror/exec internals + mirror cache +

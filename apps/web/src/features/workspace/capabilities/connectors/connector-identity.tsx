@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
  * How a connector presents itself — its icon tile and its status pill.
  *
  * These two render once per card in the connectors grid, so they sit on the
- * hottest path of `/projects/[id]/connectors`. They used to live in
+ * hottest path of `/workspaces/[id]/connectors`. They used to live in
  * `customize/sections/connectors-view.tsx`, which is ~5,100 lines across 50
  * components and pulls `@pipedream/sdk/browser`, `HighlightedCode`,
  * `PoliciesPanel`, `DiscoverCatalogue` and `ConnectorConnectionModal`. Importing

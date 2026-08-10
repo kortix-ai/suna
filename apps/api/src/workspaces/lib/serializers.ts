@@ -511,7 +511,7 @@ export function serializeGitHubInstallations(
     return {
       ...patInstallation,
       // The PAT is a valid existing-repository import option, but it is not a
-      // GitHub App installation and cannot back POST /projects/create-repo.
+      // GitHub App installation and cannot back POST /workspaces/create-repo.
       // Keep the App install URL visible so the default create flow can offer
       // a real user/org installation alongside the legacy PAT fallback.
       requires_installation: Boolean(installUrl),
@@ -669,5 +669,5 @@ export function isWorkspaceRole(v: unknown): v is WorkspaceGroupGrantRole {
   return typeof v === 'string' && (WORKSPACE_ROLES as readonly string[]).includes(v);
 }
 
-// GET /v1/projects/:workspaceId/group-grants
+// GET /v1/workspaces/:workspaceId/group-grants
 // List every group attached to this workspace, with the role + group name.

@@ -4,7 +4,7 @@
  * The full agent editor — every field of one `agents.<name>` block in a
  * kortix_version 2 manifest (agent-first spec §2.2).
  *
- * Mounted from the /projects/[id]/agent detail modal
+ * Mounted from the /workspaces/[id]/agent detail modal
  * (`capabilities/agents/agent-detail-aside.tsx` + `agents-page.tsx`):
  *   - The aside's <AgentConfigEditor/> renders a compact summary card +
  *     "Edit configuration".

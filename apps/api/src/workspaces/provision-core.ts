@@ -1,5 +1,5 @@
 /**
- * The provisioning core behind `POST /v1/projects/provision`, extracted so a
+ * The provisioning core behind `POST /v1/workspaces/provision`, extracted so a
  * second (streaming) route can share it instead of forking a second copy of
  * "make a repo, insert a row, seed it, roll back on failure". Two
  * implementations of that flow would diverge, and the one that diverges is

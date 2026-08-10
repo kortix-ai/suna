@@ -118,7 +118,7 @@ export async function buildWorkspaceSeedFilesFromItem(input: WorkspaceSeedFilesF
 
 /**
  * Best-effort extraction of a seeded `kortix.yaml`'s top-level `default_agent`
- * from a file list POST /projects/provision is about to push. Used to stamp
+ * from a file list POST /workspaces/provision is about to push. Used to stamp
  * `project.metadata.default_agent` (the read-optimized mirror session creation
  * and the LLM gateway's model-default resolution consult — see
  * projects/lib/sessions.ts and llm-gateway/resolution/default-model.ts) at

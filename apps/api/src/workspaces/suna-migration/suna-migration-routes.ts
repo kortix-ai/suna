@@ -31,7 +31,7 @@ type Row = typeof sunaAccountMigrations.$inferSelect;
 // `countSunaWorkspaces`, an un-LIMITed `count(*)` over the legacy `public.projects`
 // table (the OG Suna dataset, which can be large). A slow/contended DB therefore
 // let the request hang to the client's 30s abort and re-fire:
-//   ApiError — Request timed out after 30s: /projects/suna-migration/eligibility
+//   ApiError — Request timed out after 30s: /workspaces/suna-migration/eligibility
 // Bounding the whole body guarantees the poll always answers fast; a degraded DB
 // renders the button as "not eligible / unknown" instead of paging us. The
 // losing query settles in the background and the next poll re-checks.

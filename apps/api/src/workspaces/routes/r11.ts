@@ -35,7 +35,7 @@ const KINDS = ['change', 'approval', 'output', 'decision', 'batch'] as const;
 const RISKS = ['none', 'low', 'medium', 'high'] as const;
 const SEGMENTS = ['needs_you', 'waiting', 'done'] as const;
 
-// GET /v1/projects/:workspaceId/review/items?segment=&kind=
+// GET /v1/workspaces/:workspaceId/review/items?segment=&kind=
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'get',
@@ -157,7 +157,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/review/items/:reviewItemId
+// GET /v1/workspaces/:workspaceId/review/items/:reviewItemId
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'get',
@@ -193,7 +193,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/review/items  (agent submits output|decision|batch)
+// POST /v1/workspaces/:workspaceId/review/items  (agent submits output|decision|batch)
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'post',
@@ -289,7 +289,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/review/items/:reviewItemId/act
+// POST /v1/workspaces/:workspaceId/review/items/:reviewItemId/act
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'post',
@@ -347,7 +347,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/review/bulk  ({ ids, verdict })
+// POST /v1/workspaces/:workspaceId/review/bulk  ({ ids, verdict })
 workspaceRoutesApp.openapi(
   createRoute({
     method: 'post',

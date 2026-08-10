@@ -115,7 +115,7 @@ export default function WorkspaceStartPage() {
 
       // No project exists AND none may be created here: a member without
       // WORKSPACE_CREATE, the account the user just emptied by deleting their
-      // last project, or the rare cross-site-navigation edge. `/projects` is
+      // last project, or the rare cross-site-navigation edge. `/workspaces` is
       // a redirect back to THIS route (Task 21), so bouncing there would
       // loop forever — render the terminal state inline instead.
       setTerminal(classifyLandingTerminal({ canCreate, suppressed }));
@@ -176,10 +176,10 @@ export default function WorkspaceStartPage() {
 }
 
 /**
- * Failure stays on this route. Falling back to `/projects` would quietly make
+ * Failure stays on this route. Falling back to `/workspaces` would quietly make
  * the list the default destination again, which is exactly what this flow
  * removes — so the recovery is an explicit retry, and the secondary action
- * goes to `/new`, not `/projects`: the list is gone (Task 21), and `/projects`
+ * goes to `/new`, not `/workspaces`: the list is gone (Task 21), and `/workspaces`
  * is now a redirect back to THIS route, which would just re-run the same
  * failing resolve a beat later instead of offering anything new.
  */
@@ -204,7 +204,7 @@ function WorkspaceStartError({ onRetry }: { onRetry: () => void }) {
 
 /**
  * The first frame. Shaped like the workspace page it is about to become — header
- * bar, title, composer — so the swap to `/projects/<id>` reads as the page
+ * bar, title, composer — so the swap to `/workspaces/<id>` reads as the page
  * filling in rather than as a second navigation.
  */
 function WorkspaceStartSkeleton() {

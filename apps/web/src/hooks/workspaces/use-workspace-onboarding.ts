@@ -6,7 +6,7 @@
  * Tracks whether the workspace's guided onboarding wizard has been completed
  * (or explicitly skipped). Persisted server-side in `projects.metadata.
  * onboarding_completed_at` (a single ISO timestamp; presence = completed)
- * via PATCH /v1/projects/:workspaceId/onboarding. No schema migration needed —
+ * via PATCH /v1/workspaces/:workspaceId/onboarding. No schema migration needed —
  * the metadata JSON field already exists and the Workspace serializer exposes it.
  *
  *   status === 'pending'   → first-time, wizard auto-opens

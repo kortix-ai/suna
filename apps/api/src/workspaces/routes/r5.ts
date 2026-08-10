@@ -45,7 +45,7 @@ function isMissingGitPathError(error: unknown): boolean {
   return /^fatal: path '.+' does not exist in '.+'$/m.test(message);
 }
 
-// GET /v1/projects/:workspaceId
+// GET /v1/workspaces/:workspaceId
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -85,7 +85,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/detail
+// GET /v1/workspaces/:workspaceId/detail
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -177,7 +177,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/files
+// GET /v1/workspaces/:workspaceId/files
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -226,7 +226,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/files/archive?path=...&ref=...
+// GET /v1/workspaces/:workspaceId/files/archive?path=...&ref=...
 // Streams a zip archive of the repo (or a subtree) at the given ref.
 
 workspaceRoutesApp.openapi(
@@ -290,7 +290,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/files/content?path=...
+// GET /v1/workspaces/:workspaceId/files/content?path=...
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -418,7 +418,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/files/history?path=...&ref=...&limit=...&skip=...
+// GET /v1/workspaces/:workspaceId/files/history?path=...&ref=...&limit=...&skip=...
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -476,7 +476,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/branches
+// GET /v1/workspaces/:workspaceId/branches
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -516,7 +516,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/commits?ref=...&path=...&limit=...&skip=...
+// GET /v1/workspaces/:workspaceId/commits?ref=...&path=...&limit=...&skip=...
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -554,7 +554,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/commits/:sha
+// GET /v1/workspaces/:workspaceId/commits/:sha
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -589,7 +589,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/commits/:sha/diff?path=...
+// GET /v1/workspaces/:workspaceId/commits/:sha/diff?path=...
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -625,7 +625,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/version-diff?from=<ref>&into=<ref>
+// GET /v1/workspaces/:workspaceId/version-diff?from=<ref>&into=<ref>
 // Lightweight preview used by the "Open change request" dialog so the user
 // can see whether there's anything to merge BEFORE creating the CR. Returns
 // a summary (no patch body) so the dialog can show "X files changed, +Y -Z"
@@ -695,7 +695,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// PATCH /v1/projects/:workspaceId
+// PATCH /v1/workspaces/:workspaceId
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -806,7 +806,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// PATCH /v1/projects/:workspaceId/onboarding
+// PATCH /v1/workspaces/:workspaceId/onboarding
 // Persist whether the workspace's guided onboarding wizard has been completed
 // (or explicitly skipped). Stored in `metadata.onboarding_completed_at` so we
 // avoid a schema migration — the workspaces.metadata jsonb already exists and

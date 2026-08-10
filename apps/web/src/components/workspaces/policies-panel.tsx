@@ -157,7 +157,7 @@ export function PoliciesPanel({ workspaceId }: { workspaceId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   // qk.workspace.executorPolicies — sandbox tool-execution allow/deny rules
-  // (`listWorkspacePolicies`, `/executor/projects/:id/policies`). NOT
+  // (`listWorkspacePolicies`, `/executor/workspaces/:id/policies`). NOT
   // qk.workspace.policies, the unrelated account-IAM role-policy family
   // members-view.tsx reads: both used to share the literal
   // ['project-policies', id] pre-migration, so whichever fetch resolved

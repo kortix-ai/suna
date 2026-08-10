@@ -319,7 +319,7 @@ export interface BulkDeleteSummary {
  * Fold per-session delete outcomes into one honest result.
  *
  * There is no bulk delete endpoint — only
- * `DELETE /projects/:workspaceId/sessions/:sessionId` — so a batch can partially
+ * `DELETE /workspaces/:workspaceId/sessions/:sessionId` — so a batch can partially
  * fail. Reporting "Deleted 7 sessions" while two rows survive is worse than
  * reporting nothing, because the user stops looking.
  */

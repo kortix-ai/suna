@@ -40,8 +40,8 @@ const SOURCE_LABELS: Record<RepositorySource, string> = {
 
 /**
  * `github-create` and `github-import` need a GitHub App installation id and a
- * repository — inputs `POST /projects/provision` does not accept. Those two
- * sources go through `POST /projects/create-repo` and the BYO-repo flow the
+ * repository — inputs `POST /workspaces/provision` does not accept. Those two
+ * sources go through `POST /workspaces/create-repo` and the BYO-repo flow the
  * old create modal drives (`project-create-modal.tsx` `handleLinkGitHub` /
  * `githubCreateMutation`), which is out of scope for this task.
  *

@@ -1108,4 +1108,4 @@ export async function refreshCrTips(input: {
   }
 }
 
-// GET /v1/projects/:workspaceId/change-requests?status=open|merged|closed|all
+// GET /v1/workspaces/:workspaceId/change-requests?status=open|merged|closed|all

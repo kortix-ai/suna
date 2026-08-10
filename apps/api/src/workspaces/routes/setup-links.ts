@@ -27,7 +27,7 @@ function frontendBase(): string {
   return (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
 }
 
-// POST /v1/projects/:workspaceId/secret-requests
+// POST /v1/workspaces/:workspaceId/secret-requests
 // Mint a link the human opens to enter one or more secret VALUES. The agent
 // never sees the value — only the names it requested. Requires manage (the
 // same gate as POST /secrets).
@@ -109,7 +109,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/connect-requests
+// POST /v1/workspaces/:workspaceId/connect-requests
 // Mint a link the human opens to 1-click connect a Pipedream app (Quick
 // Connect). Requires manage. The link is durable for its TTL; the public page
 // mints a FRESH Pipedream connect token each time it's opened so it never

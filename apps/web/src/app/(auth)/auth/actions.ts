@@ -549,7 +549,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   const authEvent = isNewUser ? 'signup' : 'login';
 
   // For new cloud users with no plan yet, land in account management. The
-  // repo-first app surface starts from /projects; the old plan route is not v1.
+  // repo-first app surface starts from /workspaces; the old plan route is not v1.
   const runtimeEnv = getServerPublicEnv();
   const billingEnabled = runtimeEnv.BILLING_ENABLED;
   // `sendEmailCode` already applied this rule when the API could tell us the

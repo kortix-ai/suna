@@ -16,7 +16,7 @@ export interface CapabilityTab {
  * against it, so reordering here moves the landing tab too.
  *
  * The Agents key is singular because a key IS its URL segment
- * (`/projects/<id>/agent`); only the label is plural.
+ * (`/workspaces/<id>/agent`); only the label is plural.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'connectors', label: 'Connectors' },

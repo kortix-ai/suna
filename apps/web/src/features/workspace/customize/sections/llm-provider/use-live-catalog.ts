@@ -23,7 +23,7 @@ export function useLlmProviderCatalogRevision(): number {
 
 /**
  * Fetches the LIVE, server-refreshed provider catalog
- * (`GET /projects/:id/llm-catalog/providers` — runtimeModelCatalog, the same
+ * (`GET /workspaces/:id/llm-catalog/providers` — runtimeModelCatalog, the same
  * 24h-refreshed, atomic-last-known-good source every other gateway endpoint
  * reads) and pushes it over the baked seed via `applyLiveLlmProviderCatalog`.
  * Mount this ONCE near the top of the provider modal (not per-tab) — every

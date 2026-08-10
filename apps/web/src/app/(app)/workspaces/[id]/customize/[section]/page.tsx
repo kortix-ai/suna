@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/customize/[section] — deep-link entry into the Customize
+ * /workspaces/[id]/customize/[section] — deep-link entry into the Customize
  * overlay for a specific section (e.g. `/customize/agents`).
  *
  * Customize is now a full-screen overlay (see customize-store), not a route.

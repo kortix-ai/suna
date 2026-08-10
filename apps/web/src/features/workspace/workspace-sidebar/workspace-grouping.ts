@@ -2,7 +2,7 @@ import type { KortixAccount, KortixWorkspace } from '@kortix/sdk';
 
 /**
  * The switcher menu is the only complete workspace directory in the product —
- * the `/projects` index that used to hold that job is gone. So this grouping is
+ * the `/workspaces` index that used to hold that job is gone. So this grouping is
  * the whole navigation model, not a convenience view, and it must never drop a
  * workspace the user can reach.
  *
@@ -68,7 +68,7 @@ export function groupWorkspacesByAccount({
 /**
  * Filter grouped workspaces by a free-text query.
  *
- * NEVER caps the result. The old switcher sliced to 8 because `/projects` was
+ * NEVER caps the result. The old switcher sliced to 8 because `/workspaces` was
  * the real directory; it is not any more, and a cap here silently hides
  * workspaces a user can otherwise reach. Render cost is handled by
  * virtualisation in the component, not by dropping data here.

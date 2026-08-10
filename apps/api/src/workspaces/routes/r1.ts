@@ -284,7 +284,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects
+// POST /v1/workspaces
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -369,7 +369,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/managed-git/status
+// GET /v1/workspaces/managed-git/status
 // Lets the frontend pre-check whether the managed-git "Create project" path
 // (POST /provision) is usable BEFORE the user hits its 503, so the create UI
 // can disable/annotate that option instead of surfacing a raw server error.
@@ -397,7 +397,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/provision
+// POST /v1/workspaces/provision
 // Managed-git "Create project": provisions a repo on the managed backend +
 // scoped per-workspace push token, optionally seeds the starter (web flow), and
 // registers the workspace.
@@ -440,7 +440,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/provision-stream
+// POST /v1/workspaces/provision-stream
 // Same create as POST /provision, but reports which phase it is in over
 // Server-Sent Events instead of returning a single response at the end.
 //
@@ -544,7 +544,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/git-token
+// POST /v1/workspaces/:workspaceId/git-token
 // Mint a fresh scoped push token for a *managed* project so the CLI
 // can push on a later `kortix ship` without persisting credentials in git config.
 // Returns 409 for BYO projects (they push with the user's own git remote auth).
@@ -617,7 +617,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/git/collaborators
+// POST /v1/workspaces/:workspaceId/git/collaborators
 // Invite a GitHub user as a collaborator on a MANAGED repo — lets the workspace
 // creator pull "their" Kortix-managed repo into their own GitHub account and
 // work on it on github.com directly. Managed repos only (the user already owns
@@ -673,7 +673,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/github/installation?account_id=...
+// GET /v1/workspaces/github/installation?account_id=...
 // Account-scoped GitHub App install state. The client only receives metadata;
 // installation tokens are minted server-side at repo creation time.
 
@@ -709,7 +709,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/github/installations?account_id=...
+// GET /v1/workspaces/github/installations?account_id=...
 // Vercel-style account Git connections surface. A Kortix account can connect
 // multiple GitHub users/orgs and pick the exact installation during import.
 
@@ -791,7 +791,7 @@ async function upsertAccountGitHubInstallation(
   return row;
 }
 
-// POST /v1/projects/github/installations/linkable
+// POST /v1/workspaces/github/installations/linkable
 // The GitHub OAuth token cannot call GET /user/installations. GitHub restricts
 // that route to GitHub App user tokens. Kortix lists this App's installations
 // with the App JWT, then filters them with the authorized user's identity and
@@ -856,7 +856,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/github/installations/link
+// POST /v1/workspaces/github/installations/link
 // This same-origin path links an existing App installation without a GitHub
 // install callback. The API verifies the installation against the App JWT and
 // verifies the authorized GitHub user again before it writes the account row.
@@ -932,7 +932,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/github/installation
+// POST /v1/workspaces/github/installation
 // Called after GitHub redirects back with installation_id + signed state.
 // We fetch installation metadata with the app JWT instead of trusting client
 // supplied owner information.
@@ -1021,7 +1021,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/github/installation?account_id=...
+// DELETE /v1/workspaces/github/installation?account_id=...
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1055,7 +1055,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/github/installations/:installationId?account_id=...
+// DELETE /v1/workspaces/github/installations/:installationId?account_id=...
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1087,6 +1087,6 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/link-repository
+// POST /v1/workspaces/link-repository
 // Import an existing GitHub repo through the account GitHub App installation.
 // This validates repo access up front and stores a typed project_git_connection.

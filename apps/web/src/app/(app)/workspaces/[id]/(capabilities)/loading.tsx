@@ -1,7 +1,7 @@
 import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 
 /**
- * Navigation Suspense boundary for /projects/[id]/{agent,connectors,skills}.
+ * Navigation Suspense boundary for /workspaces/[id]/{agent,connectors,skills}.
  *
  * One file covers all three routes: `(capabilities)` is a route group whose
  * `layout.tsx` renders the shared tab bar around `{children}`; Next scopes

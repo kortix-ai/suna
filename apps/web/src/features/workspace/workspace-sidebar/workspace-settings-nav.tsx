@@ -41,7 +41,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
  * a working row, rather than a link to a page that 403s.
  *
  * Commands is intentionally absent: its standalone capability page was removed,
- * so there is no `/projects/<id>/commands` route to land on. Commands stays
+ * so there is no `/workspaces/<id>/commands` route to land on. Commands stays
  * reachable through the Customize overlay (`/customize/commands` via the
  * `workspace-commands` palette entry and the Settings row).
  */

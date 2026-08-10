@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/customize — deep-link entry into the Customize overlay.
+ * /workspaces/[id]/customize — deep-link entry into the Customize overlay.
  *
  * Customize is now a full-screen overlay (see customize-store), not a route.
  * This page only exists so old links / bookmarks keep working: it opens the

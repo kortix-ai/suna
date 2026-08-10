@@ -80,7 +80,7 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   CustomizeSection,
   { read: WorkspaceAction; write?: WorkspaceAction }
 > = {
-  // No `agents` entry: Agents graduated to /projects/<id>/agent, which gates
+  // No `agents` entry: Agents graduated to /workspaces/<id>/agent, which gates
   // itself on WORKSPACE_AGENT_READ/WRITE directly (workspace-settings-nav's
   // TAB_PREFERENCE and the page's own useWorkspaceCan). This map only covers
   // sections the Customize rail renders — Commands is one of them again, since
@@ -156,7 +156,7 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   settings: { read: WORKSPACE_ACTIONS.WORKSPACE_READ, write: WORKSPACE_ACTIONS.WORKSPACE_WRITE },
   // Feature flags — any member SEES which flags this workspace runs; only
   // project.customize.write may flip one. That is the leaf the API asserts on
-  // `PATCH /projects/:id/features`, so the toggle gates on exactly it.
+  // `PATCH /workspaces/:id/features`, so the toggle gates on exactly it.
   'feature-flags': {
     read: WORKSPACE_ACTIONS.WORKSPACE_READ,
     write: WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE,
@@ -192,7 +192,7 @@ export const CUSTOMIZE_SECTION_READ_ACTIONS: readonly WorkspaceAction[] = Array.
  * (Previously this ALSO required `project.customize.write`, which blanked the
  * whole panel for every read-only / granular role — the bug this fixes.) This
  * is a VISIBILITY layer only; the API re-checks every mutation. Files is NOT
- * here — it's the standalone /projects/[id]/files page, gated on project.file.read.
+ * here — it's the standalone /workspaces/[id]/files page, gated on project.file.read.
  */
 export function isCustomizeSectionVisible(
   s: CustomizeSection,

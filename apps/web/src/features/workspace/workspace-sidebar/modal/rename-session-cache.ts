@@ -17,7 +17,7 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
  * row may have been deleted, or the cache may not be populated yet).
  *
  * `name` mirrors the API's own clear-vs-set rule
- * (`apps/api/src/projects/routes/r7.ts`): an empty string clears the override
+ * (`apps/api/src/workspaces/routes/r7.ts`): an empty string clears the override
  * (`custom_name: null`, reverting to the auto title) rather than storing `''`.
  */
 export function applySessionRename(
@@ -60,9 +60,9 @@ export function beginOptimisticRename(
  * `onSuccess`'s cache write: the rename's authoritative result, merged onto the
  * row that is already cached.
  *
- * MERGED, not replaced. `PATCH /projects/:id/sessions/:id` serializes its
+ * MERGED, not replaced. `PATCH /workspaces/:id/sessions/:id` serializes its
  * response with the viewer's Workspace-management capability
- * (`apps/api/src/projects/routes/r7.ts`) — it passes no `ownerEmail`,
+ * (`apps/api/src/workspaces/routes/r7.ts`) — it passes no `ownerEmail`,
  * `ownerName`, `runtimeStatus` or `deletedAt`, so those come back `null` even
  * though the LIST endpoint resolves and populates them. Writing the response
  * wholesale therefore blanked `owner_email` on a SHARED session — the field

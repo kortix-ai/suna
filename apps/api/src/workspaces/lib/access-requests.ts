@@ -7,7 +7,7 @@ import { lookupEmailsByUserIds } from './access';
 
 function workspaceMembersUrl(workspaceId: string): string {
   const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
-  return `${base}/projects/${workspaceId}/customize/members`;
+  return `${base}/workspaces/${workspaceId}/customize/members`;
 }
 export async function notifyWorkspaceAccessRequestManagers(input: {
   accountId: string;

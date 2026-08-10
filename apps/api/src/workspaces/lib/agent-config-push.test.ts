@@ -104,7 +104,16 @@ mock.module('../secrets', () => ({
 }));
 
 mock.module('../../sandbox-proxy/backend', () => ({
+  buildSandboxUpstreamHeaders: async () => ({}),
+  invalidatePreviewLink: () => {},
+  invalidateSandbox: () => {},
+  loadSandbox: async () => null,
+  markSandboxErrored: async () => {},
+  markSandboxUsed: async () => {},
+  resolveServiceKey: async () => 'svc-key',
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
+  routeSandboxIngress: () => null,
+  wakeSandbox: async () => {},
 }));
 
 mock.module('./network-secret-boundary', () => ({

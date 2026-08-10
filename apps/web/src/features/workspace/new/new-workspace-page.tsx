@@ -73,7 +73,7 @@ const ICON_WIDTH = '2.5rem';
  * This page issues no MUTATING request on mount. Visiting `/new` never
  * creates anything — the only write it ever fires is the one the submit
  * button drives, routed through `useCreateWorkspace` (`use-create-workspace.ts`),
- * which POSTs `/projects/provision` with a stable `idempotency_key`. A page
+ * which POSTs `/workspaces/provision` with a stable `idempotency_key`. A page
  * that creates something because you looked at it is a page nobody can link
  * to safely.
  *
@@ -107,7 +107,7 @@ const ICON_WIDTH = '2.5rem';
  * check to run. This component holds no validation rules of its own; both the
  * charset/length check and the submit gate come from the shared form model.
  *
- * `/new` is also where `/projects` sends an account with zero workspaces
+ * `/new` is also where `/workspaces` sends an account with zero workspaces
  * (Task 8), so a user must never be trapped here — the create-into account
  * picker (or email fallback) sits top-left and a `Log out` control sits
  * top-right, independent of the form below.

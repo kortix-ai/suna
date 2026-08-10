@@ -7,7 +7,7 @@
  * `KNOWN_PROVIDERS`, `parseAllowedProviders`, `KORTIX_MARKUP`,
  * `PLATFORM_FEE_MARKUP`, and `getToolCost` — and `src/snapshots/hash.ts` imports
  * `SANDBOX_VERSION`, which is the exact break that made
- * `bun test src/projects/reaping/` unrunnable.
+ * `bun test src/workspaces/reaping/` unrunnable.
  *
  * Importing the real module here is not an option: it validates env at import
  * time and rejects dotenvx ciphertext outside `dotenvx run`.

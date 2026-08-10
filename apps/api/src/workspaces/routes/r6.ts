@@ -156,7 +156,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:workspaceId
+// DELETE /v1/workspaces/:workspaceId
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -209,7 +209,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/access
+// GET /v1/workspaces/:workspaceId/access
 // Lists every account member and their explicit/effective project access.
 
 workspaceRoutesApp.openapi(
@@ -363,7 +363,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/access-requests
+// POST /v1/workspaces/:workspaceId/access-requests
 // Lets a signed-in user with a project link ask the workspace's managers for
 // access without mounting the normal project shell (which would otherwise fan
 // out into many 403s). Mirrors the Figma-style "Request access" affordance.
@@ -460,7 +460,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/access-requests
+// GET /v1/workspaces/:workspaceId/access-requests
 // Managers review pending "request access" asks from the Members screen.
 
 workspaceRoutesApp.openapi(
@@ -501,7 +501,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/access-requests/:requestId/approve
+// POST /v1/workspaces/:workspaceId/access-requests/:requestId/approve
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -587,7 +587,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/access-requests/:requestId/reject
+// POST /v1/workspaces/:workspaceId/access-requests/:requestId/reject
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -641,8 +641,8 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// PUT /v1/projects/:workspaceId/access/:userId
-// POST /v1/projects/:workspaceId/access/invite
+// PUT /v1/workspaces/:workspaceId/access/:userId
+// POST /v1/workspaces/:workspaceId/access/invite
 // Invite a person to a project by email: looks up their Kortix account, ensures
 // they're an org member (creating a 'member' org row if needed), then grants the
 // project role. Account managers get implicit project access (no explicit grant).
@@ -818,7 +818,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/access/pending-invites
+// GET /v1/workspaces/:workspaceId/access/pending-invites
 // Lists pending account_invitations whose bootstrap_grants target this
 // project. Surfaces the "I invited someone whose email doesn't have a
 // Kortix account yet" intermediate state — without this the UI looks
@@ -908,7 +908,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:workspaceId/access/pending-invites/:inviteId
+// DELETE /v1/workspaces/:workspaceId/access/pending-invites/:inviteId
 // Removes this workspace's bootstrap_grant from a pending invitation. If
 // that was the only grant AND the invitation is the auto-created
 // "member" variety (always how project /access/invite creates them), the
@@ -983,7 +983,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/access/pending-invites/:inviteId/resend
+// POST /v1/workspaces/:workspaceId/access/pending-invites/:inviteId/resend
 // Re-sends the workspace invite email and refreshes the invitation's 14-day
 // expiry. Mirrors the account-level resend, but re-frames the email around
 // this workspace and reads the role from the bootstrap grant for this workspace.
@@ -1143,7 +1143,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:workspaceId/access/:userId
+// DELETE /v1/workspaces/:workspaceId/access/:userId
 
 workspaceRoutesApp.openapi(
   createRoute({

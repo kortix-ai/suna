@@ -1,7 +1,7 @@
 import { WorkspaceFilesSkeleton } from '@/features/workspace/workspace-layout/workspace-files-skeleton';
 
 /**
- * Navigation Suspense boundary for /projects/[id]/files.
+ * Navigation Suspense boundary for /workspaces/[id]/files.
  *
  * Two jobs:
  *  1. Paint Drive chrome the instant the click lands, instead of leaving the

@@ -303,7 +303,7 @@ function AccessGateScreen({
   // Platform-admin escape hatch: flips the client-wide admin-bypass header on,
   // then re-fetches the shared [QUERY_KEY, workspaceId] query so the boundary
   // above renders the actual project. Read-only server-side (see
-  // apps/api/src/projects/lib/access.ts) and audit-logged against the workspace's
+  // apps/api/src/workspaces/lib/access.ts) and audit-logged against the workspace's
   // own account on every use.
   const bypassMutation = useMutation({
     mutationFn: async () => {
@@ -325,7 +325,7 @@ function AccessGateScreen({
   const action = gateAction(state);
   // "Back to workspaces" leaves this workspace (access denied, or the user just
   // left it) — not a browse-the-list escape, so it goes to the latest
-  // project this user has open, never the removed `/projects` list.
+  // project this user has open, never the removed `/workspaces` list.
   const goToWorkspaces = () => router.push(appHome);
   const showAdminBypass = forbidden && !!adminRole?.isAdmin;
 

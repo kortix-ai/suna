@@ -73,7 +73,7 @@ export function modelChangeNeedsLivePush(input: {
   return input.status === 'running';
 }
 
-/** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
+/** The 200 body of `PUT /workspaces/:p/sessions/:s/model`. */
 export interface ModelChangeResult {
   opencode_model: string;
   /** True only when a live sandbox took the new model NOW. */

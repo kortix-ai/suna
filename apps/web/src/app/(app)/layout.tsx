@@ -8,7 +8,7 @@ import { BillingReturnWatcher } from '@/features/billing/billing-return';
  * Its only job is to host behaviour that must not depend on WHICH app route the
  * user happens to be on. Returning from Stripe is the first such case: the
  * handling used to live in the workspaces list page, which forced every checkout
- * `success_url` to point at `/projects` — the one surface that is deliberately
+ * `success_url` to point at `/workspaces` — the one surface that is deliberately
  * never a destination.
  *
  * Keep this thin. Route-specific work belongs in the route.

@@ -30,7 +30,7 @@ const RepositoryBranchesResponseSchema = z.object({
   })),
 }).openapi('RepositoryBranchesResponse');
 
-// GET /v1/projects/github/repositories?account_id=...
+// GET /v1/workspaces/github/repositories?account_id=...
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -128,7 +128,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/github/repository-branches?account_id=...&installation_id=...&repo_full_name=...
+// GET /v1/workspaces/github/repository-branches?account_id=...&installation_id=...&repo_full_name=...
 
 workspaceRoutesApp.openapi(
   createRoute({

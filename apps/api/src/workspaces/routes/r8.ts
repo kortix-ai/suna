@@ -35,7 +35,7 @@ import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
 import { refreshCrTips } from './shared';
 
-// POST /v1/projects/:workspaceId/sessions/:sessionId/start
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
 // missing sandbox, resumes a hibernated/idle one, and resolves the OpenCode pin
 // once reachable — returning a single readiness payload { stage, sandbox,
@@ -115,7 +115,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/sessions/:sessionId/restart
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/restart
 // Reboot the existing sandbox in place via the provider SDK (stop+start) — the
 // box and its disk (repo clone, deps, opencode) are kept, never removed. Only
 // when the session has no sandbox (deleted / never provisioned) do we provision
@@ -168,7 +168,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/sessions/:sessionId/stop
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/stop
 // Manual pause: stops the running sandbox in place (disk kept, same contract as
 // an idle auto-stop) without provisioning anything new. Resumable via /start.
 
@@ -287,7 +287,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/change-requests
+// POST /v1/workspaces/:workspaceId/change-requests
 // Body: { title, description?, head_ref, base_ref?, session_id? }
 
 workspaceRoutesApp.openapi(
@@ -421,7 +421,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/sessions/:sessionId/commit-push
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/commit-push
 // Commits the session sandbox's working-tree changes and pushes them to the
 // session branch — the host-driven path that lets the dashboard open a change
 // request without routing through the agent. Idempotent: a clean tree with
@@ -566,7 +566,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/change-requests/:crId
+// GET /v1/workspaces/:workspaceId/change-requests/:crId
 // Auto-refreshes the cached head/base SHAs against the live git tips so the
 // UI never shows stale "X commits behind" state.
 
@@ -604,7 +604,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// PATCH /v1/projects/:workspaceId/change-requests/:crId
+// PATCH /v1/workspaces/:workspaceId/change-requests/:crId
 // Body: { title?, description? }
 
 workspaceRoutesApp.openapi(
@@ -654,7 +654,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/change-requests/:crId/request-changes
+// POST /v1/workspaces/:workspaceId/change-requests/:crId/request-changes
 // Human "request changes" from the Review Center: persist the feedback on the CR
 // (CRs have no comment table — this is how the ask is remembered + shown back)
 // and deliver it to the agent that opened the change so it revises. Delivery is
@@ -745,7 +745,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/change-requests/:crId/diff
+// GET /v1/workspaces/:workspaceId/change-requests/:crId/diff
 // For open / closed CRs: lives off the live branch tips (three-dot diff).
 // For merged CRs: uses the SHAs captured at merge time, so the diff still
 // renders even though the head branch is now fully reachable from base.
@@ -806,7 +806,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/change-requests/:crId/merge-preview
+// GET /v1/workspaces/:workspaceId/change-requests/:crId/merge-preview
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -851,5 +851,5 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/change-requests/:crId/merge
+// POST /v1/workspaces/:workspaceId/change-requests/:crId/merge
 // Body: { message?: string }

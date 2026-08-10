@@ -187,7 +187,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/change-requests/:crId/close
+// POST /v1/workspaces/:workspaceId/change-requests/:crId/close
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -234,7 +234,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/change-requests/:crId/reopen
+// POST /v1/workspaces/:workspaceId/change-requests/:crId/reopen
 
 workspaceRoutesApp.openapi(
   createRoute({

@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
 /**
- * Why `ensureFirstWorkspace` resolved to null instead of a workspace. `/projects`
+ * Why `ensureFirstWorkspace` resolved to null instead of a workspace. `/workspaces`
  * is a redirect back to `../start/page.tsx` (Task 21) — there is no list
  * surface left to explain any of these to the user, so this route has to say
  * so itself, and the three causes need different words:

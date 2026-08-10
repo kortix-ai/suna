@@ -448,7 +448,7 @@ export function requiredConnectorsForAgent(agentName: string, loaded: LoadedAgen
  *
  * There is no per-workspace flag store yet, so subjectness is:
  *   the platform-wide flag OR `project.metadata.require_declared_agents === true`.
- * New projects stamp the metadata flag at creation (see POST /projects/provision);
+ * New projects stamp the metadata flag at creation (see POST /workspaces/provision);
  * pre-existing projects stay non-subject (and therefore behave exactly as before)
  * until the platform flag flips or they're explicitly migrated.
  */

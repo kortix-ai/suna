@@ -12,8 +12,8 @@
  * like the things you can move to. No account name, no email, no avatar — you
  * already know who you are; what a sidebar has to tell you is where you are.
  *
- * Account settings lives here too: from a project sidebar the account is the
- * parent of the workspace you are in, so `/accounts/:id` (via the project's
+ * Account settings lives here too: from a workspace sidebar the account is the
+ * parent of the workspace you are in, so `/accounts/:id` (via the workspace's
  * `account_id`) is one hop away. The same destination exists in the header
  * `UserMenu` / account switcher.
  *

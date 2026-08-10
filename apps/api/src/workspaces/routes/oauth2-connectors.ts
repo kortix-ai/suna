@@ -49,7 +49,8 @@ function allowedRedirectUri(value: string | undefined, workspaceId: string): str
     'https://staging.kortix.com',
   ]);
   if (!allowedOrigins.has(uri.origin)) throw new Error('redirect URI origin is not allowed');
-  if (!uri.pathname.startsWith(`/projects/${workspaceId}`) && uri.origin !== configuredOrigin) {
+  const workspacePaths = [`/workspaces/${workspaceId}`, `/projects/${workspaceId}`];
+  if (!workspacePaths.some((path) => uri.pathname.startsWith(path)) && uri.origin !== configuredOrigin) {
     throw new Error('redirect URI path is not allowed');
   }
   return uri.href;

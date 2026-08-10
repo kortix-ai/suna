@@ -12,7 +12,7 @@ sessions (his old Suna chats), files archived under `legacy/<slug>/`.
 - **792 files / 571MB** recovered from his **archived** Daytona sandboxes
 - ran via the standalone script: `--plan` (read-only) and `--build` (extract+assemble)
 
-## Pieces (all in `apps/api/src/projects/suna-migration/`)
+## Pieces (all in `apps/api/src/workspaces/suna-migration/`)
 | file | status |
 |---|---|
 | `agentpress-mapper.ts` (+test) | ✅ done, tested — public.messages (OpenAI) → message+parts |
@@ -20,7 +20,7 @@ sessions (his old Suna chats), files archived under `legacy/<slug>/`.
 | `suna-extract.ts` | ✅ done, **ran** — un-archive Daytona + tar /workspace |
 | `suna-push.ts` | ✅ wired — createRepo + push `legacy/<slug>/` + one root kortix.yaml |
 | `suna-migration-runner.ts` | ✅ faithful mirror of legacy runner (lease/heartbeat/phases) |
-| `suna-migration-routes.ts` | ✅ eligibility/start/status, **registered** at `/v1/projects/suna-migration/*` |
+| `suna-migration-routes.ts` | ✅ eligibility/start/status, **registered** at `/v1/workspaces/suna-migration/*` |
 | `suna-migration-phases.ts` | ⚠️ **DRAFT** — extract/repo exercised by the script; `db` phase NOT run e2e |
 | `suna_account_migrations` table + migration | ✅ generated (`…_whole_supernaut.sql`) |
 | script `scripts/migrate-suna-account.ts` | ✅ `--plan` / `--build` / `--push-repo` (dry-run tools) |

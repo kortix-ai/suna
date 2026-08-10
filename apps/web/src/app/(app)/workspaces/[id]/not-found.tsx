@@ -10,7 +10,7 @@ import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state
 import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 /**
- * Dashboard 404 — the not-found boundary for `/projects/[id]/*`.
+ * Dashboard 404 — the not-found boundary for `/workspaces/[id]/*`.
  *
  * Same `<NotFoundCard />` as the marketing 404, but framed by the workspace
  * shell (sidebar + tab bar) so a mistyped project sub-route still feels like
@@ -18,7 +18,7 @@ import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
  * rather than the marketing site.
  *
  * not-found boundaries don't receive route params, so the workspace id is read
- * back off the pathname (`/projects/<id>/…`).
+ * back off the pathname (`/workspaces/<id>/…`).
  */
 export default function WorkspaceNotFound() {
   const tHardcodedUi = useTranslations('hardcodedUi');

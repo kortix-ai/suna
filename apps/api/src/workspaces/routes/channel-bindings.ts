@@ -108,7 +108,7 @@ async function serializeBinding(
   };
 }
 
-// GET /v1/projects/:workspaceId/channels/bindings
+// GET /v1/workspaces/:workspaceId/channels/bindings
 // Every channel bound to this workspace, with the effective agent resolved
 // (explicit binding override || the workspace's declared default) so the UI
 // never has to reimplement chooseEffectiveAgent's precedence.
@@ -167,7 +167,7 @@ const ChannelBindingPatchBody = z.object({
   conversationPolicy: z.enum(CONVERSATION_POLICIES).optional(),
 });
 
-// PATCH /v1/projects/:workspaceId/channels/bindings/:bindingId
+// PATCH /v1/workspaces/:workspaceId/channels/bindings/:bindingId
 workspaceRoutesApp.openapi(
   createRoute({
     method: "patch",

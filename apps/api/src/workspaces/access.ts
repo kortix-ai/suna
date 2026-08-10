@@ -37,7 +37,7 @@ export function effectiveWorkspaceRole(
 
 // ─── Effective access fold ───────────────────────────────────────────────
 //
-// Used by GET /v1/projects/:workspaceId/access to compute each member's
+// Used by GET /v1/workspaces/:workspaceId/access to compute each member's
 // effective access from the three independent sources V2 supports:
 //   - implicit (account owner/admin → Manager on every workspace)
 //   - direct   (explicit project_members row with a project_role)

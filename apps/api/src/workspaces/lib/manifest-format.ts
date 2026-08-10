@@ -1,5 +1,5 @@
 // Pure manifest-format resolution for the raw-string validate endpoint
-// (`POST /projects/:id/manifest/validate`). Deliberately dependency-free
+// (`POST /workspaces/:id/manifest/validate`). Deliberately dependency-free
 // (only `@kortix/manifest-schema`, no config/db) so it unit-tests without
 // env/DB and stays importable in isolation from the heavy route graph.
 import { type ManifestFormat, manifestFormatForPath } from '@kortix/manifest-schema';

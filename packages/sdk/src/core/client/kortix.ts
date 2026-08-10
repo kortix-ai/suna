@@ -6,14 +6,14 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * — never `@opencode-ai/sdk`, never `backendApi`/`authenticatedFetch` directly.
  *
  *   const kortix = createKortix({ getToken });
- *   await kortix.projects.list();
- *   await kortix.project(pid).secrets.upsert({ name, value });
- *   const s = kortix.session(pid, sid);
+ *   await kortix.workspaces.list();
+ *   await kortix.workspace(workspaceId).secrets.upsert({ name, value });
+ *   const s = kortix.session(workspaceId, sessionId);
  *   await s.start();
  *   s.runtime.session.prompt({ sessionID: sid, parts });   // typed opencode, via the SDK
  *
  * REST methods are direct references to the platform client, so they keep their
- * exact types with zero re-typing. The `project()`/`session()` handles bind ids
+ * exact types with zero re-typing. The `workspace()`/`session()` handles bind ids
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from '../files/client';
@@ -226,7 +226,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
    * Account-invite lifecycle reached by invite token alone — accept/decline/
    * describe are called by the invitee (who may not be an account member, or
    * even signed into this account, yet), so they take only `inviteId` and
-   * genuinely don't fit account- or project-scoping.
+   * genuinely don't fit account- or workspace-scoping.
    */
   const accountInvites = {
     describe: W.describeAccountInvite,
@@ -234,7 +234,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     decline: W.declineAccountInvite,
   };
 
-  /** Top-level project operations (not bound to an id). */
+  /** Deprecated top-level Project operations retained for compatibility. */
   const projects = {
     list: P.listProjects,
     listForAccount: P.listProjectsForAccount,
@@ -274,7 +274,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     createSession: W.createWorkspaceSession,
   };
 
-  /** GitHub App installation + repository linking — account-scoped, not project-scoped. */
+  /** GitHub App installation + repository linking — account-scoped, not workspace-scoped. */
   const github = {
     linkRepository: W.linkRepository,
     getInstallation: W.getGitHubInstallation,
@@ -287,20 +287,20 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     deleteInstallation: W.deleteGitHubInstallation,
   };
 
-  /** Public share links for a sandbox port (`/v1/p/share`) — sandbox-scoped, not project-scoped. */
+  /** Public share links for a sandbox port (`/v1/p/share`) — sandbox-scoped, not workspace-scoped. */
   const sandboxShares = {
     list: W.listSandboxShares,
     create: W.createSandboxShare,
     revoke: W.revokeSandboxShare,
   };
 
-  /** Deployment-wide flag: is the easy-connect (Pipedream) provider configured? Not project-scoped. */
+  /** Deployment-wide flag: is the easy-connect (Pipedream) provider configured? Not workspace-scoped. */
   const connectStatus = W.getConnectStatus;
 
   /**
    * Public marketplace catalog browse (`/v1/marketplace/*`) — top-level and
-   * distinct from `project(id).marketplace`, which is install-scoped (commits
-   * an item onto a specific project's branch). This is read-only browsing +
+   * distinct from `workspace(id).marketplace`, which is install-scoped (commits
+   * an item onto a specific workspace's branch). This is read-only browsing +
    * the authed "add a marketplace source" surface.
    */
   const marketplace = {

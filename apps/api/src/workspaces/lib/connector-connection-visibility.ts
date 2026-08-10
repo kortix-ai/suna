@@ -11,7 +11,7 @@
  * Nothing in the session-isolation work touches this, because the escalation
  * never reads a session row — it reads the connector surface directly.
  *
- * `GET /projects/:id/secrets` already solved the same shape: a session-bound
+ * `GET /workspaces/:id/secrets` already solved the same shape: a session-bound
  * token must not ENUMERATE what its session cannot use, or the narrowing that
  * scrubs values from the env still leaks their identity. This is that rule for
  * connectors.

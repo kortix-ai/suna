@@ -68,7 +68,7 @@ export default function WorkspaceIndexPage() {
 
   // `/workspaces/start?q=<prompt>` forwards its query string onto this route
   // unchanged (see `withCurrentQuery` in `../start/page.tsx`), landing here as
-  // `/projects/<id>?q=<prompt>`. Seed the one-shot prefill store — WorkspaceHome
+  // `/workspaces/<id>?q=<prompt>`. Seed the one-shot prefill store — WorkspaceHome
   // already consumes it (workspace-home.tsx) — then strip `q` from the URL so a
   // refresh doesn't re-seed the same prompt. `seededRef` guards against
   // re-seeding on every render once the strip lands.

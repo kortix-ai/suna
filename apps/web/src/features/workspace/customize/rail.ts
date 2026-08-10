@@ -57,7 +57,7 @@ export const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', ico
 
 const GROUPS: readonly RailGroup[] = [
   {
-    // Agents graduated to `/projects/<id>/agent` and is no longer an overlay
+    // Agents graduated to `/workspaces/<id>/agent` and is no longer an overlay
     // section. Commands went the other way — its standalone page was deleted
     // (#6169), so it is Build's one static item again. `customize-panel` drops
     // groups whose items all filter out, so if this ever empties again an

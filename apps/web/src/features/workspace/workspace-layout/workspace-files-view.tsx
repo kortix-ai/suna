@@ -2,7 +2,7 @@
 
 /**
  * Standalone project Files view — the Google-Drive-style browser over the
- * workspace repo. Rendered by the /projects/[id]/files page inside the regular
+ * workspace repo. Rendered by the /workspaces/[id]/files page inside the regular
  * WorkspaceShell (NOT the Customize overlay — Files is a top-level surface any
  * member can open, so it lives outside customization entirely).
  */

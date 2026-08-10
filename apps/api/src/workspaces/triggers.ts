@@ -29,7 +29,7 @@
  *
  * One file, one PR-review surface. Web-UI edits are read-modify-write on
  * this same file — see writeManifestTriggers / deleteManifestTrigger in
- * apps/api/src/projects/index.ts.
+ * apps/api/src/workspaces/index.ts.
  */
 
 import {

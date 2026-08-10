@@ -7,7 +7,7 @@ import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/c
 import { ConnectorsPage } from '@/features/workspace/capabilities/connectors/connectors-page';
 
 /**
- * /projects/[id]/connectors — the standalone Connectors catalog. See
+ * /workspaces/[id]/connectors — the standalone Connectors catalog. See
  * `features/workspace/capabilities/connectors/connectors-page.tsx` for the
  * page body.
  *

@@ -68,7 +68,7 @@ const MODE_FILTERS: ReadonlyArray<{ value: ModeFilter; label: string }> = [
 ];
 
 /**
- * /projects/[id]/agent — the standalone Agents catalog, and the same page body
+ * /workspaces/[id]/agent — the standalone Agents catalog, and the same page body
  * shape as Skills: header + search + filter tabs, a card grid, and a detail
  * modal. It replaces the Customize overlay's master-detail Agents section,
  * which packed a list, a source pane and a settings aside into one fixed

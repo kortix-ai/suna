@@ -147,7 +147,7 @@ function pickBehaviorFields(frontmatter: Record<string, unknown>): Record<string
   return out;
 }
 
-// GET /v1/projects/:workspaceId/agents/:agentName/config
+// GET /v1/workspaces/:workspaceId/agents/:agentName/config
 // The agent's full merged block for editing — governance from kortix.yaml,
 // behavior from the agent's `.md` frontmatter+body. schemaVersion tells the
 // UI whether the full editor applies (2) or it should degrade to the limited
@@ -205,7 +205,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// PUT /v1/projects/:workspaceId/default-agent
+// PUT /v1/workspaces/:workspaceId/default-agent
 // `kortix.yaml.default_agent` is durable truth; project.metadata.default_agent
 // is the read-optimized mirror used by session creation and channel surfaces.
 workspaceRoutesApp.openapi(
@@ -305,7 +305,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// PUT /v1/projects/:workspaceId/agents/:agentName/config
+// PUT /v1/workspaces/:workspaceId/agents/:agentName/config
 // Replace the agent's full block: governance → kortix.yaml (validated via
 // the manifest-schema validator), behavior → the agent's `.md` frontmatter +
 // body (validated via `validateAgentMdFrontmatter`). Both halves are

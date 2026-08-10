@@ -11,7 +11,7 @@ import { AnyObject, workspaceRoutesApp } from '../lib/app';
 import { UUID_V4_REGEX, readBody } from '../lib/serializers';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 
-// GET /v1/projects/:workspaceId/sessions/:sessionId/previews
+// GET /v1/workspaces/:workspaceId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
 // browser/preview tab when it has one; this endpoint is a fallback list.
 
@@ -49,7 +49,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// GET /v1/projects/:workspaceId/sessions/:sessionId/public-shares
+// GET /v1/workspaces/:workspaceId/sessions/:sessionId/public-shares
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -83,7 +83,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/sessions/:sessionId/public-shares
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/public-shares
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -141,7 +141,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// DELETE /v1/projects/:workspaceId/sessions/:sessionId/public-shares/:shareId
+// DELETE /v1/workspaces/:workspaceId/sessions/:sessionId/public-shares/:shareId
 
 workspaceRoutesApp.openapi(
   createRoute({

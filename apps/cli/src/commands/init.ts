@@ -175,7 +175,7 @@ function parseFlags(argv: string[]): InitFlags {
   return f;
 }
 
-function normalizeProjectName(raw: string): string {
+function normalizeWorkspaceName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return 'kortix-workspace';
   return trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-workspace';
@@ -255,15 +255,15 @@ export async function runInit(argv: string[]): Promise<number> {
   // documented post-clone setup path and operates on cwd in place.
   let workspaceName: string;
   if (configureExisting) {
-    workspaceName = normalizeProjectName(basename(process.cwd()));
+    workspaceName = normalizeWorkspaceName(basename(process.cwd()));
   } else if (flags.name) {
-    workspaceName = normalizeProjectName(flags.name);
+    workspaceName = normalizeWorkspaceName(flags.name);
   } else if (flags.yes) {
     process.stderr.write(`kortix init: a workspace name is required — e.g. \`kortix init my-app\`.\n`);
     return 2;
   } else {
     const answer = await prompt(`Workspace name`, 'my-kortix-workspace');
-    workspaceName = normalizeProjectName(answer);
+    workspaceName = normalizeWorkspaceName(answer);
   }
 
   // Create the workspace in a fresh directory next to the shell's cwd. Refuse to

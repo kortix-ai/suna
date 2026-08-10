@@ -44,7 +44,7 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
 ];
 
 /**
- * /projects/[id]/skills — the standalone Skills catalog. Reads
+ * /workspaces/[id]/skills — the standalone Skills catalog. Reads
  * `config.skills` off the same `qk.workspace.detail(id)` query
  * `ConfigEntityView` (Customize) reads, so the two surfaces cannot disagree
  * about what a workspace's skills are.

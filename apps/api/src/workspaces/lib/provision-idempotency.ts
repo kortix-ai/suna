@@ -7,7 +7,7 @@ import { normalizeString, serializeWorkspace } from './serializers';
 import type { WorkspaceRow } from './serializers';
 
 /**
- * Request-level dedupe for POST /v1/projects/provision.
+ * Request-level dedupe for POST /v1/workspaces/provision.
  *
  * THE DEFECT. That route mints a brand-new managed repo on every call, and its
  * only guard was `enforceWorkspaceQuota` — a straight count. On any account whose
@@ -288,7 +288,7 @@ export function describeProvisionedRepo(row: {
  * path hands back a one-shot push credential minted alongside the repo; a
  * later retry is a different request and must not silently mint a second
  * credential as a side effect of a read. A caller that needs to push after a
- * retry asks for one explicitly at `POST /v1/projects/:workspaceId/git-token`,
+ * retry asks for one explicitly at `POST /v1/workspaces/:workspaceId/git-token`,
  * which exists for exactly that.
  *
  * `access` is supplied by the caller rather than assumed. The create path can

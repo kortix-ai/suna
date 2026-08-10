@@ -19,7 +19,7 @@
  * emitted a single LLM usage_event, the oldest 264 hours old.
  *
  * The replacement is one column, `session_sandboxes.deadline_at`, written only
- * by apps/api/src/projects/sandbox-deadline.ts and bounded by a DB CHECK. The
+ * by apps/api/src/workspaces/sandbox-deadline.ts and bounded by a DB CHECK. The
  * decision for a running box is now `deadline_at <= now()`. There is nothing
  * left here to reconstruct.
  */

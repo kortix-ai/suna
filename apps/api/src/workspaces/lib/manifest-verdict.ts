@@ -1,4 +1,4 @@
-// Server-side manifest-version verdict for GET /projects/:id/detail.
+// Server-side manifest-version verdict for GET /workspaces/:id/detail.
 //
 // The manifest declares its own schema version: `kortix_version` is REQUIRED by
 // every published schema (`kortix.v1.schema.json` and

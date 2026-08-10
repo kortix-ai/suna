@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { SkillsPage } from '@/features/workspace/capabilities/skills/skills-page';
 
 /**
- * /projects/[id]/skills — the standalone Skills catalog. See
+ * /workspaces/[id]/skills — the standalone Skills catalog. See
  * `features/workspace/capabilities/skills/skills-page.tsx` for the page body.
  */
 export default function WorkspaceSkillsPage() {

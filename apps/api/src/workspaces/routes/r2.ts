@@ -243,7 +243,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/create-repo
+// POST /v1/workspaces/create-repo
 // Creates a new GitHub repository using the account's GitHub App installation,
 // then registers it as a Kortix project.
 
@@ -440,7 +440,7 @@ workspaceRoutesApp.openapi(
 // `resolveManifestValidateFormat` (lib/manifest-format.ts) for the resolution
 // order (project manifestPath > body `format` > `toml` default).
 
-// POST /v1/projects/:workspaceId/manifest/validate
+// POST /v1/workspaces/:workspaceId/manifest/validate
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -526,7 +526,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/snapshots
+// GET /v1/workspaces/:workspaceId/snapshots
 // Templates + recent build log. Used by the Sandbox panel.
 
 workspaceRoutesApp.openapi(
@@ -579,7 +579,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/sandbox-health
+// GET /v1/workspaces/:workspaceId/sandbox-health
 // Cheap polling endpoint for the sidebar alert. Surfaces the platform default
 // template's live state + the current failed build, if the newest attempt failed.
 //
@@ -705,7 +705,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/snapshots/rebuild
+// POST /v1/workspaces/:workspaceId/snapshots/rebuild
 // Force-rebuild the image for a given template slug (defaults to the platform
 // default). Deletes the existing image on every enabled provider so the routed
 // rebuilds all start from the same current definition. Returns 202.
@@ -800,7 +800,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/snapshots/fix-with-agent
+// POST /v1/workspaces/:workspaceId/snapshots/fix-with-agent
 // Spin up a session pre-seeded with the most recent build failure so an agent
 // can diagnose + fix the Dockerfile and open a change request. Requires a
 // previous successful build to host the fix session.
@@ -964,7 +964,7 @@ workspaceRoutesApp.openapi(
 // Full CRUD over `kortix.sandbox_templates`. Shared/platform rows are read-
 // only. Workspace-scoped rows can be created/edited/deleted from the dashboard.
 
-// GET /v1/projects/:workspaceId/sandbox-templates — same as /sandboxes; thinner
+// GET /v1/workspaces/:workspaceId/sandbox-templates — same as /sandboxes; thinner
 // path for the "templates only" UI surface. We re-use the same serializer.
 
 workspaceRoutesApp.openapi(
@@ -1003,7 +1003,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/sandbox-templates — create a custom template.
+// POST /v1/workspaces/:workspaceId/sandbox-templates — create a custom template.
 
 workspaceRoutesApp.openapi(
   createRoute({
@@ -1222,5 +1222,5 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// POST /v1/projects/:workspaceId/sandbox-templates/:templateId/build — trigger
+// POST /v1/workspaces/:workspaceId/sandbox-templates/:templateId/build — trigger
 // a build (fire-and-forget). Returns 202.

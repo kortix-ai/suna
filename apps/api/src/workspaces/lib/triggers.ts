@@ -1332,7 +1332,7 @@ export function stopWorkspaceTriggerScheduler(): void {
   }
 }
 
-// GET /v1/projects
+// GET /v1/workspaces
 
 export function buildPublicWebhookUrl(workspaceId: string, slug: string): string {
   const root = deriveKortixApiRoot(config.KORTIX_URL);
@@ -1659,7 +1659,7 @@ export function draftToSpec(
  *
  * MUST be kortix_version 2, not KNOWN_SCHEMA_VERSION (which deliberately
  * stays pinned at 1 — see its own doc comment in ../triggers.ts). Every
- * project created through POST /projects/provision (seeded or not) is
+ * project created through POST /workspaces/provision (seeded or not) is
  * stamped `metadata.require_declared_agents: true` and reads/writes
  * through the v2-only agent-config API (`applyAgentBlockV2`/
  * `applyDefaultAgentV2` in ./agent-config-v2.ts hard-refuse a v1
@@ -1868,7 +1868,7 @@ export async function commitManifest(
   );
 }
 
-// POST /v1/projects/:workspaceId/triggers
+// POST /v1/workspaces/:workspaceId/triggers
 //
 // Creates a new trigger file in the workspace repo at
 // `.opencode/triggers/<slug>.md`. The slug is derived from the body's `slug`

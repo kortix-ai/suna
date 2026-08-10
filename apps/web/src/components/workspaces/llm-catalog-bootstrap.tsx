@@ -4,7 +4,7 @@ import { useLiveLlmProviderCatalog } from '@/features/workspace/customize/sectio
 
 /**
  * Renders nothing — fires the live provider-catalog fetch
- * (`GET /projects/:id/llm-catalog/providers`) once per project, as early as
+ * (`GET /workspaces/:id/llm-catalog/providers`) once per project, as early as
  * possible from the workspace layout.
  *
  * Why here and not just inside the provider connect modal: `LLM_PROVIDERS`

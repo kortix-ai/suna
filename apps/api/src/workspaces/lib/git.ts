@@ -936,7 +936,7 @@ export async function resolveWorkspaceGitAuthTokenById(workspaceId: string): Pro
   return (await resolveWorkspaceGitAccessById(workspaceId))?.token ?? null;
 }
 
-// GET /v1/projects/:workspaceId/sandboxes
+// GET /v1/workspaces/:workspaceId/sandboxes
 // Available templates for this workspace: platform default + any `sandbox:`
 // `templates:` entries from kortix.yaml. Each row includes its live Daytona
 // state so the picker can show "ready" / "building" / "missing" at a glance.

@@ -5,7 +5,7 @@
  * and how it is configured.
  *
  * Moved out of the Customize overlay's `agents-view.tsx` when Agents
- * graduated to `/projects/[id]/agent`. "Edit configuration" does not open a
+ * graduated to `/workspaces/[id]/agent`. "Edit configuration" does not open a
  * modal — it calls `onEditConfig`, and the page swaps the editor into the
  * detail modal's source pane (`paneOverride`).
  *

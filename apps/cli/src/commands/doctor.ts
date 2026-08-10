@@ -81,7 +81,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
     return 1;
   }
 
-  // ── 3. Project ──────────────────────────────────────────────────────────
+  // ── 3. Workspace ────────────────────────────────────────────────────────
   let workspace: WorkspaceSummary;
   try {
     workspace = await ctx.client.get<WorkspaceSummary>(`/workspaces/${ctx.workspaceId}`);
