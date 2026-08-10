@@ -915,10 +915,19 @@ export function SettingsPanelShell({
             </FadedScrollArea>
             <div className="flex shrink-0 items-center px-4">
               <ModalClose asChild>
+                {/* `hit-area-2`: this is the MOBILE close control, and `icon-sm`
+                    is `size-7` = 25.76px at this app's `--spacing: 0.23rem`
+                    (globals.css:687) — far under the 40px a thumb wants.
+                    `hit-area-2` expands the target by 7.36px a side to 40.48px
+                    without moving a pixel of layout, matching the number
+                    `project-icon-field.tsx:186` already lands on for its
+                    `size-9` + `hit-area-1`. Safe to expand on all sides here:
+                    the button is the only child of a `px-4` container, so the
+                    grown area stays clear of the scrolling rail beside it. */}
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="text-muted-foreground shrink-0"
+                  className="text-muted-foreground hit-area-2 shrink-0"
                   aria-label="Close"
                 >
                   <Close className="text-foreground size-4 stroke-1" />
