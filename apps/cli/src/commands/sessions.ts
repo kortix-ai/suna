@@ -52,6 +52,10 @@ Subcommands:
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
+                                    --connect attaches the OpenCode TUI as
+                                    soon as it's ready (implies --wait); on an
+                                    interactive terminal without it, you're
+                                    asked whether to connect after creation.
                                     --with-file <local path> (repeatable)
                                     uploads the file to
                                     /workspace/incoming/<name> before the
@@ -209,6 +213,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   const json = takeFlagBool(rest, ['--json']);
   const wait = takeFlagBool(rest, ['--wait']);
+  const connectAfter = takeFlagBool(rest, ['--connect']);
   let projectFlag: string | undefined;
   let promptFlag: string | undefined;
   let hostFlag: string | undefined;
@@ -242,7 +247,7 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsLs(ctxOpts, json);
     case 'new':
     case 'create':
-      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides, withFiles);
+      return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides, withFiles, connectAfter);
     case 'info':
     case 'show':
       return sessionsInfo(rest[0], ctxOpts, json);
@@ -362,6 +367,23 @@ async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
   return 0;
 }
 
+/**
+ * Post-create connect decision for `sessions new`:
+ *  - `--connect`      → attach unconditionally (explicit flag wins everywhere)
+ *  - interactive TTY  → ask (a human just created a session; the next thing
+ *                       they almost always want is to be in it)
+ *  - `--json` / pipe  → never ask, never attach — scripts stay deterministic
+ */
+export function resolveConnectAfterCreate(input: {
+  connect: boolean;
+  json: boolean;
+  tty: boolean;
+}): 'connect' | 'ask' | 'no' {
+  if (input.connect) return 'connect';
+  if (input.json || !input.tty) return 'no';
+  return 'ask';
+}
+
 async function sessionsNew(
   prompt: string | undefined,
   opts: CtxOpts,
@@ -370,6 +392,7 @@ async function sessionsNew(
   agent?: string,
   overrides: SessionOverrides = {},
   withFiles: string[] = [],
+  connectAfter = false,
 ): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -423,9 +446,11 @@ async function sessionsNew(
     return surfaceApiError(err);
   }
 
-  // --wait: drive the same canonical /start lifecycle endpoint the dashboard
-  // polls. Row status alone can say "running" before OpenCode is actually ready.
-  if (wait) {
+  // Drive the same canonical /start lifecycle endpoint the dashboard polls.
+  // Row status alone can say "running" before OpenCode is actually ready.
+  // Shared by --wait (readiness before returning) and the post-create connect
+  // path (attach needs a live runtime).
+  const awaitReadiness = async (): Promise<boolean> => {
     if (!json) {
       process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
     }
@@ -455,7 +480,7 @@ async function sessionsNew(
                 : '';
             process.stderr.write(`${status.err(`Session ${start.stage}${detail}.`)}\n`);
           }
-          return 1;
+          return false;
         }
       } catch (err) {
         if (json) {
@@ -465,11 +490,11 @@ async function sessionsNew(
             `${status.err((err as Error).message || 'Failed while waiting for session readiness')}\n`,
           );
         }
-        return 1;
+        return false;
       }
     }
-    // Loop exhausted without reaching 'ready' — --wait is a hard readiness
-    // gate, so a timeout is a failure (exit 1), not a silent success.
+    // Loop exhausted without reaching 'ready' — readiness is a hard gate, so
+    // a timeout is a failure, not a silent success.
     if (!ready) {
       if (json) {
         emitJson(created);
@@ -478,8 +503,15 @@ async function sessionsNew(
           `${status.err(`Timed out waiting for session readiness after ~5 min (status: ${created.status}).`)}\n`,
         );
       }
-      return 1;
+      return false;
     }
+    return true;
+  };
+
+  let waited = false;
+  if (wait || connectAfter) {
+    if (!(await awaitReadiness())) return 1;
+    waited = true;
   }
 
   // Deliver --with-file uploads, then the deferred prompt.
@@ -526,6 +558,22 @@ async function sessionsNew(
     process.stdout.write(`  ${C.dim}sandbox    ${C.reset}${created.sandbox_url}\n`);
   }
   process.stdout.write('\n');
+
+  const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  const decision = resolveConnectAfterCreate({ connect: connectAfter, json, tty });
+  if (decision !== 'no') {
+    const go =
+      decision === 'connect' ||
+      (await confirm('  Connect to it now?', true, { onEndOfInput: false }));
+    if (go) {
+      if (!waited && !(await awaitReadiness())) return 1;
+      const pins = ['--project', ctx.projectId, ...(opts.hostArg ? ['--host', opts.hostArg] : [])];
+      return runSessionsConnect([created.session_id, ...pins]);
+    }
+    process.stdout.write(
+      `  ${C.dim}Later: ${C.reset}${C.cyan}kortix connect ${shortId(created.session_id)}${C.reset}\n`,
+    );
+  }
   return 0;
 }
 

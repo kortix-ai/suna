@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession } from '../api/types.ts';
 import { buildConnectPickerItems } from '../commands/home.ts';
+import { resolveConnectAfterCreate } from '../commands/sessions.ts';
 
 function session(overrides: Partial<ProjectSession>): ProjectSession {
   return {
@@ -24,6 +25,22 @@ function session(overrides: Partial<ProjectSession>): ProjectSession {
     ...overrides,
   } as ProjectSession;
 }
+
+describe('resolveConnectAfterCreate', () => {
+  test('--connect wins everywhere, including non-TTY and --json', () => {
+    expect(resolveConnectAfterCreate({ connect: true, json: false, tty: true })).toBe('connect');
+    expect(resolveConnectAfterCreate({ connect: true, json: true, tty: false })).toBe('connect');
+  });
+
+  test('interactive terminal without flags asks', () => {
+    expect(resolveConnectAfterCreate({ connect: false, json: false, tty: true })).toBe('ask');
+  });
+
+  test('scripts never get prompted: --json or non-TTY means no', () => {
+    expect(resolveConnectAfterCreate({ connect: false, json: true, tty: true })).toBe('no');
+    expect(resolveConnectAfterCreate({ connect: false, json: false, tty: false })).toBe('no');
+  });
+});
 
 describe('buildConnectPickerItems', () => {
   test('orders running (most recent first), then booting, then dormant, then the new row', () => {

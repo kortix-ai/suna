@@ -503,7 +503,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'env') {
     return runEnv(argv.slice(1));
   }
-  if (argv[0] === 'sessions') {
+  // Singular `session` is a permanent alias — `kortix session new` is typed
+  // often enough that a "did you mean" round-trip is pure friction.
+  if (argv[0] === 'sessions' || argv[0] === 'session') {
     return runSessions(argv.slice(1));
   }
   if (argv[0] === 'chat') {
@@ -596,6 +598,7 @@ const KNOWN_COMMANDS = [
   'accounts',
   'projects',
   'sessions',
+  'session',
   'chat',
   'connect',
   'attach',
