@@ -238,7 +238,11 @@ function TemplateRow({
               {template.slug}
             </Badge>
           </div>
-          <div className="text-muted-foreground truncate text-xs">
+          {/* `tabular-nums`: vCPU / GiB / GiB-disk are three numbers repeated down
+              every template row, so proportional digits make the columns wander
+              between rows. Matches `snapshots-tab.tsx`, the other half of this
+              split, which already pins its timestamps the same way. */}
+          <div className="text-muted-foreground truncate text-xs tabular-nums">
             {sub} &bull; {template.cpu} vCPU &bull; {template.memory_gb} GiB &bull;{' '}
             {template.disk_gb} GiB disk &bull; {sourceTag}
           </div>

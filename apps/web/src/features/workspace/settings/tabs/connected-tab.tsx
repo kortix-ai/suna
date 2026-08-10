@@ -293,7 +293,7 @@ export function ConnectedAccountsTabView({
     );
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-8 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
       {/* 1. GitHub — account-scoped, hidden entirely without account.write.
           Paired with the self-host GitHub App setup card immediately after,
           same order and same gate as page.tsx:579-583. */}

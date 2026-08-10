@@ -278,7 +278,7 @@ export function PreferencesTabView({
   const shortcuts = shortcutList(modifierLabel);
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-8 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
       {/* 1. Theme */}
       <section className="space-y-3">
         <SettingsSectionHeader title="Theme" description="Choose how Kortix looks on this device." />

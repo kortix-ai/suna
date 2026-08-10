@@ -249,7 +249,7 @@ export function ProfileTabView({
   const verified = factors.filter((f) => f.status === 'verified');
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-8 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
       {/* 1. Profile picture */}
       <section className="space-y-4">
         <SettingsSectionHeader

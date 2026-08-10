@@ -219,7 +219,7 @@ export function BillingTabView({
 }: BillingTabViewProps) {
   if (isLoading) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-4 px-6 py-10">
+      <div className="mx-auto w-full max-w-2xl space-y-4 px-6 py-10">
         <Skeleton className="h-32 w-full rounded-md" />
         <Skeleton className="h-32 w-full rounded-md" />
       </div>
@@ -228,14 +228,14 @@ export function BillingTabView({
 
   if (error) {
     return (
-      <div className="mx-auto w-full max-w-lg px-6 py-10">
+      <div className="mx-auto w-full max-w-2xl px-6 py-10">
         <InfoBanner tone="destructive">{error}</InfoBanner>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-8 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
       {showTeamCheckout ? (
         <section className="space-y-4">
           <SettingsSectionHeader
