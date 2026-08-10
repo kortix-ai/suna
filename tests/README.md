@@ -237,6 +237,9 @@ CLI contracts. The browser suite does not claim complete customer-journey
 coverage. A browser journey is incomplete when it skips for a missing provider,
 OAuth, or mutation capability; report that skip explicitly.
 
+Local browser runs use two Playwright workers. Four workers make cold Next.js
+route compilation slower and can exceed the five-minute journey timeout.
+
 The browser lane uses the current worktree web, API, and Supabase ports. It
 starts and owns the deterministic local stack. Run it directly:
 

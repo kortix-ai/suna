@@ -94,7 +94,7 @@ describe('local test runner', () => {
 
   it('uses one CI browser worker and preserves explicit concurrency', () => {
     expect(resolveBrowserWorkers(undefined, true)).toBe(1);
-    expect(resolveBrowserWorkers(undefined, false)).toBe(4);
+    expect(resolveBrowserWorkers(undefined, false)).toBe(2);
     expect(resolveBrowserWorkers('2', true)).toBe(2);
   });
 

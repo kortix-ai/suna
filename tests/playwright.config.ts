@@ -7,10 +7,10 @@ export function resolveBrowserWorkers(value: string | undefined, ci: boolean): n
   const configuredWorkers = Number.parseInt(value ?? '', 10);
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
   // The warm Daytona lane has 6 vCPU and 12 GiB RAM. One worker keeps cold
-  // Next.js route compilation below the guest memory limit. Deployed target
-  // runs can override this independently.
+  // Next.js route compilation below the guest memory limit. Two local workers
+  // keep cold compilation below the full-suite deadline on development Macs.
   if (ci) return 1;
-  return 4;
+  return 2;
 }
 
 const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS, Boolean(process.env.CI));
