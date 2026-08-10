@@ -66,6 +66,11 @@
         "current": "Idioma Actual",
         "select": "Seleccionar Idioma"
       },
+      "accountSettings": {
+        "title": "Cuenta",
+        "description": "Administra facturación, miembros y configuración de la organización",
+        "button": "Configuración de la cuenta"
+      },
       "deleteAccount": {
         "title": "Eliminar Cuenta",
         "description": "Elimina permanentemente tu cuenta y todos los datos asociados",
@@ -320,7 +325,10 @@
         "¡Arriba! ¿Qué vamos a crear?",
         "¡Buen día! ¿Listos para la acción?"
       ],
-      "afternoon": ["¡Buenas tardes! ¿En qué te ayudo?", "¿Qué tal el día? ¿Qué necesitas?"],
+      "afternoon": [
+        "¡Buenas tardes! ¿En qué te ayudo?",
+        "¿Qué tal el día? ¿Qué necesitas?"
+      ],
       "evening": [
         "¡Buenas noches! ¿Trabajando hasta tarde?",
         "¡Hola! ¿En qué andamos esta noche?",

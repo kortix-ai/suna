@@ -169,6 +169,7 @@ export function ConnectorConnectionModal({
   existingSlugs,
   pending,
   authorizationStrategyDisabled = false,
+  unavailableReason = null,
   icon,
   byline,
   summary,
@@ -185,6 +186,16 @@ export function ConnectorConnectionModal({
   existingSlugs: readonly string[];
   pending: boolean;
   authorizationStrategyDisabled?: boolean;
+  /**
+   * Why this app cannot be added, or `null` when it can. Renders in place of
+   * the usual "Adds X to this workspace" line and disables submit.
+   *
+   * The catalogue lists every app Pipedream publishes, including the 1,263 that
+   * expose no actions. Hiding those made them unfindable — `q=Auth0` returned
+   * nothing at all. Listing them means the dead end has to be stated somewhere,
+   * and the point of action is where the user is actually asking the question.
+   */
+  unavailableReason?: string | null;
   /** The app tile — `ConnectorConnectionIcon` over the catalogue record. */
   icon?: React.ReactNode;
   /** e.g. "by Pipedream". */
@@ -234,14 +245,24 @@ export function ConnectorConnectionModal({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (!name.trim() || !slugAvailable || pending) return;
+            if (!name.trim() || !slugAvailable || pending || unavailableReason) return;
             onSubmit({ name, slug, authorizationStrategy });
           }}
         >
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-            <p className="text-muted-foreground text-sm text-pretty">
-              Adds {displayName} to this workspace. You connect an account right after.
-            </p>
+            {unavailableReason ? (
+              <p
+                role="note"
+                data-testid="connection-blocked-reason"
+                className="text-muted-foreground border-border/60 bg-accent/50 rounded-md border px-3 py-2.5 text-sm text-pretty"
+              >
+                {unavailableReason}
+              </p>
+            ) : (
+              <p className="text-muted-foreground text-sm text-pretty">
+                Adds {displayName} to this workspace. You connect an account right after.
+              </p>
+            )}
             <Disclosure
               variant="outline"
               className="overflow-hidden"
@@ -339,7 +360,7 @@ export function ConnectorConnectionModal({
             <Button
               type="submit"
               className="gap-1.5 active:scale-[0.96]"
-              disabled={pending || !name.trim() || !slugAvailable}
+              disabled={pending || !name.trim() || !slugAvailable || Boolean(unavailableReason)}
             >
               {pending ? (
                 <Loading className="size-4 shrink-0" />

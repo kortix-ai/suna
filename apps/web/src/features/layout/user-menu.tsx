@@ -1,28 +1,12 @@
 'use client';
 
 import { ReferralModal } from '@/components/referrals/referral-modal';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -39,36 +23,19 @@ import {
   ThemeSubmenu,
   useLogoutFlow,
 } from '@/features/layout/user-menu-shared';
-import { Monitor } from '@/features/icon/icons/monitor';
-import { Moon } from '@/features/icon/icons/moon';
-import { Sun } from '@/features/icon/icons/sun';
 import { isBillingEnabled } from '@/lib/config';
-import { openExternalRoute } from '@/lib/desktop';
 import { type SettingsTabId } from '@/lib/menu-registry';
-import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
-import { resetClientState } from '@/lib/utils/reset-client-state';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { listAccounts } from '@kortix/sdk';
 import {
-  ArrowsLeftRightIcon,
-  ArticleIcon,
-  BookOpenIcon,
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadSimple,
-  HeadsetIcon,
-  LifebuoyIcon,
   SignOutIcon as LogOut,
-  PaperPlaneTiltIcon,
-  PlusIcon,
-  QuestionIcon,
-  ScrollIcon,
-  ShieldCheckIcon,
-  StorefrontIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -82,7 +49,6 @@ export type UserMenuVariant = 'header' | 'sidebar';
 // Re-exported: `THEME_OPTIONS` moved to `user-menu-shared.tsx` when the sidebar
 // grew its own menu, and this stayed its public entry point.
 export { THEME_OPTIONS };
-
 
 export interface UserMenuUser {
   name: string;
@@ -186,7 +152,7 @@ export function UserMenu({
       <SidebarMenuButton
         size="sm"
         className={cn(
-          'group/user relative gap-2  p-1',
+          'group/user relative gap-2 p-1',
           // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
           'relative flex cursor-pointer items-center gap-2 rounded-md transition-colors duration-150',
           'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',

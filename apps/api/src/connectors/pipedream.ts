@@ -13,7 +13,6 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { upsertCredential, upsertConnectionCredential } from './credentials';
 import type { ExecResult } from './call';
-import { isCatalogApp } from './pipedream-catalog';
 import {
   getCatalogSnapshot,
   type CatalogCategory,
@@ -22,18 +21,9 @@ import {
 import { pageOf, rankApps, type CatalogApp } from './pipedream-search';
 import type { PipedreamActionLike } from './types';
 
-export { isCatalogApp } from './pipedream-catalog';
 export type { CatalogCategory } from './pipedream-index';
 
 const PD_BASE = 'https://api.pipedream.com';
-
-/**
- * Pipedream's catalogue includes internal WORKFLOW UTILITIES (schedule, http,
- * pipedream_utils, formatting, helper_functions, data stores, …) alongside real
- * third-party apps. Discover uses Pipedream only where it adds unique value:
- * managed OAuth. API-key apps connect directly through their real API instead
- * of adding an intermediary. Utilities and native Kortix apps are excluded too.
- */
 
 export function pipedreamConfigured(): boolean {
   return !!(config.PIPEDREAM_CLIENT_ID && config.PIPEDREAM_CLIENT_SECRET && config.PIPEDREAM_WORKSPACE_ID);
@@ -121,16 +111,14 @@ class PipedreamProvider {
   }
 
   /**
-   * One raw page of Pipedream's app catalogue, mapped but **not filtered**.
+   * One raw page of Pipedream's app catalogue, mapped and unfiltered.
    *
-   * Filtering is the caller's job, and there are two callers with different
-   * needs: the catalogue index applies `isCatalogApp` while crawling, and the
-   * icon lookup in `sync.ts` must be able to find an app whose connector
-   * already exists even if it would not be offered in the catalogue today.
+   * Nothing downstream filters it either — see `pipedream-index.ts` for the
+   * three exclusions that used to sit between this and the user, and what each
+   * of them hid.
    *
-   * `hasMore` is driven by Pipedream's cursor, NOT `apps.length` — any filter a
-   * caller applies would otherwise shrink a page below `limit` and stop paging
-   * early.
+   * `hasMore` is driven by Pipedream's cursor, NOT `apps.length`, so a short
+   * page never stops paging early.
    */
   async listApps(query?: string, limit = 48, cursor?: string): Promise<{ apps: PipedreamApp[]; total?: number; nextCursor?: string; hasMore: boolean }> {
     const params = new URLSearchParams();
@@ -418,7 +406,7 @@ export async function pipedreamListAccounts(extUserId: string): Promise<Array<{ 
  *
  * `authType` is a free string, not `'oauth'`. It was narrowed to the literal
  * when the catalogue was OAuth-only, which is the filter that hid 79% of
- * Pipedream's apps — see `pipedream-catalog.ts`. Nothing in `apps/web` or
+ * Pipedream's apps — see `pipedream-index.ts`. Nothing in `apps/web` or
  * `packages/sdk` reads this field to gate behaviour; it is descriptive.
  */
 export type PipedreamApp = CatalogApp;
@@ -436,12 +424,13 @@ const crawlPage: CatalogPageFetcher = async (limit, cursor) => {
  * Browse the Pipedream app catalogue live, one page at a time.
  *
  * The fallback path, used only while the index is still warming, and by
- * `sync.ts` to resolve one app's icon by slug. Applies `isCatalogApp` so a
- * warming page and a warm page offer the same apps.
+ * `sync.ts` to resolve one app's icon by slug. Unfiltered, because the index it
+ * stands in for is unfiltered — a warming pod and a warm pod must offer the
+ * same apps, and any predicate here would make the catalogue quietly shrink
+ * once the crawl landed.
  */
 export async function browsePipedreamApps(query?: string, cursor?: string): Promise<{ apps: PipedreamApp[]; total?: number; nextCursor?: string; hasMore: boolean }> {
-  const page = await getProvider().listApps(query, CATALOG_PAGE_SIZE, cursor);
-  return { ...page, apps: page.apps.filter(isCatalogApp) };
+  return getProvider().listApps(query, CATALOG_PAGE_SIZE, cursor);
 }
 
 /** Resolve one app's icon by exact slug, unfiltered — a connector may already
@@ -467,14 +456,12 @@ export interface PipedreamCatalogPage {
    */
   indexReady: boolean;
   /**
-   * Apps that match the query but publish no actions, and so are not in the
-   * catalogue.
+   * @deprecated Always `0`, and kept only so the field does not vanish from a
+   * published response shape.
    *
-   * Only meaningful while searching, and it exists for exactly one sentence of
-   * copy: `q=SAP` matches `sap_s_4hana_cloud` and `sap_s_4hana_cloud_sandbox`,
-   * both `has_actions: false`. Reporting "No matches for SAP" over that is
-   * wrong twice — the apps exist, and the reason they are absent is one we can
-   * state.
+   * It counted apps a search matched but the catalogue withheld for publishing
+   * no actions. Nothing is withheld any more — those apps are returned, ranked
+   * last in their band and marked on the card. See `pipedream-index.ts`.
    */
   excludedNoActions: number;
 }
@@ -515,10 +502,6 @@ export async function pipedreamCatalogPage(input: {
   const ranked = rankApps(scoped, input.q ?? '');
   const page = pageOf(ranked, input.cursor, limit);
 
-  // Counted only for a search. While browsing, "1,264 apps you cannot use" is
-  // a number with nowhere to go.
-  const excludedNoActions = input.q ? rankApps(snapshot.withoutActions, input.q).length : 0;
-
   return {
     apps: page.items,
     categories: snapshot.categories,
@@ -526,7 +509,7 @@ export async function pipedreamCatalogPage(input: {
     ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     hasMore: page.hasMore,
     indexReady: true,
-    excludedNoActions,
+    excludedNoActions: 0,
   };
 }
 

@@ -66,6 +66,11 @@
         "current": "Aktuelle Sprache",
         "select": "Sprache auswählen"
       },
+      "accountSettings": {
+        "title": "Konto",
+        "description": "Abrechnung, Mitglieder und Organisationseinstellungen verwalten",
+        "button": "Kontoeinstellungen"
+      },
       "deleteAccount": {
         "title": "Konto löschen",
         "description": "Entferne dein Konto und alle zugehörigen Daten dauerhaft",
@@ -320,7 +325,10 @@
         "Moin moin! Was bauen wir heute?",
         "Morgen! Bereit durchzustarten?"
       ],
-      "afternoon": ["Guten Tag! Wie kann ich helfen?", "Na, wie läuft's? Was gibt's zu tun?"],
+      "afternoon": [
+        "Guten Tag! Wie kann ich helfen?",
+        "Na, wie läuft's? Was gibt's zu tun?"
+      ],
       "evening": [
         "Guten Abend! Nachtschicht?",
         "Abend! Woran arbeiten wir heute?",

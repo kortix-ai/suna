@@ -528,7 +528,7 @@ jobs:
           { [ "$cookie_status" = 200 ] || [ "$cookie_status" = 307 ] || [ "$cookie_status" = 308 ]; } || {
             echo "::error::staging ECS frontend shared-cookie status=$cookie_status"; exit 1;
           }
-          grep -E '^(#HttpOnly_)?\.kortix\.com\t' "$cookie_jar" >/dev/null || {
+          grep -E $'^(#HttpOnly_)?\\.kortix\\.com\t' "$cookie_jar" >/dev/null || {
             echo "::error::staging ECS frontend did not set the parent-domain access cookie"; exit 1;
           }
           ecs_health="$(curl -fsS --max-time 20 "$ecs/api/health")"

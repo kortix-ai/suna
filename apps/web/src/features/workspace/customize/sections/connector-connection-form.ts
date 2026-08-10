@@ -16,6 +16,27 @@ export interface EasyConnectApp {
    *  modal simply renders less without them. */
   description?: string | null;
   imgSrc?: string | null;
+  /** Whether the app publishes any action. Only Pipedream sets it; absent means
+   *  "assume it does", which is right for a hand-typed app. */
+  hasActions?: boolean;
+}
+
+/**
+ * Why this app cannot be added, or `null` when it can.
+ *
+ * 1,263 of the 3,230 Pipedream apps (39.1%) publish no actions, so a connector
+ * built on one carries zero agent tools. They used to be withheld from the
+ * catalogue, which made them unreachable by any query including their own exact
+ * name — `q=Auth0` returned nothing, `q=SAP` missed both SAP records. Listing
+ * them means the dead end has to be stated at the point of action instead.
+ *
+ * Shared by all three Pipedream add surfaces — the connectors page, the
+ * Add-connector modal's Easy Connect tab, and the onboarding tools step — so
+ * one of them cannot quietly keep offering the dead end.
+ */
+export function easyConnectUnavailableReason(app: EasyConnectApp | null): string | null {
+  if (!app || app.hasActions !== false) return null;
+  return `${app.name} publishes no actions on Pipedream, so a connector for it would carry no tools an agent could call. It is listed here so you can find it — there is nothing to add yet.`;
 }
 
 export interface EasyConnectConnectionInput {

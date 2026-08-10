@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { createConnectorCatalog } from '../connectors/connector-catalog';
-import { isCatalogApp } from '../connectors/pipedream-catalog';
 
 const INDEX = {
   version: 1,
@@ -210,21 +209,44 @@ describe('Discover integrations.sh catalogue', () => {
 });
 
 describe('Pipedream catalogue membership', () => {
-  test('accepts any auth type, so long as the app has actions', () => {
-    expect(isCatalogApp({ slug: 'github', hasActions: true })).toBe(true);
-    // The regression this predicate was changed to fix: every SAP and Oracle
-    // hit on the live catalogue is `auth_type: "keys"`, and requiring OAuth
-    // made the page report "No matches for SAP" over a catalogue that had it.
-    expect(isCatalogApp({ slug: 'sap_s_4hana_cloud', hasActions: true })).toBe(true);
-    expect(isCatalogApp({ slug: 'oracle_cloud_infrastructure', hasActions: true })).toBe(true);
+  // There is no membership predicate any more. `isCatalogApp` and the two slug
+  // sets behind it are deleted; `crawlCatalog` keeps every record Pipedream
+  // returns. This block asserts the absence, because three separate exclusions
+  // have been added and removed here over time and each one shipped as a
+  // "search is broken" bug report:
+  //
+  //   authType==='oauth'  hid 2,579 of 3,238
+  //   hasActions          hid 1,263 — none reachable by their own exact name
+  //   slug sets           hid 8, incl. Slack (legacy) and Bot for Slack, which
+  //                       is why q=slack reported 10 where Pipedream reports 11
+  //
+  // A capability limit belongs on the card and at the submit, not in a filter
+  // the user cannot see or defeat. See `pipedream-index.ts`.
+  test('no membership predicate is exported any more', async () => {
+    const mod = (await import('../connectors/pipedream')) as Record<string, unknown>;
+    expect(mod.isCatalogApp).toBeUndefined();
   });
 
-  test('rejects apps with no actions — a connector with no tools is a dead end', () => {
-    expect(isCatalogApp({ slug: 'github', hasActions: false })).toBe(false);
-  });
-
-  test('rejects workflow utilities and natively-handled apps', () => {
-    expect(isCatalogApp({ slug: 'schedule', hasActions: true })).toBe(false);
-    expect(isCatalogApp({ slug: 'slack', hasActions: true })).toBe(false);
+  test('the crawl keeps utilities and natively-handled apps', async () => {
+    const { crawlCatalog } = await import('../connectors/pipedream-index');
+    const app = (slug: string, name: string, hasActions = true) => ({
+      slug, name, description: null, imgSrc: null, authType: 'keys',
+      categories: [], hasActions, hasTriggers: false, featuredWeight: 0,
+    });
+    const snapshot = await crawlCatalog(
+      async () => ({
+        apps: [
+          app('github', 'GitHub'),
+          app('schedule', 'Schedule', false),
+          app('slack', 'Slack (legacy)'),
+          app('slack_bot', 'Bot for Slack'),
+          app('sap_s_4hana_cloud', 'SAP S/4HANA Cloud', false),
+        ],
+      }),
+      () => 0,
+    );
+    expect(snapshot.apps.map((a) => a.slug).sort()).toEqual([
+      'github', 'sap_s_4hana_cloud', 'schedule', 'slack', 'slack_bot',
+    ]);
   });
 });

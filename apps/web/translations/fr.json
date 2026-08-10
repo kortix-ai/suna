@@ -66,6 +66,11 @@
         "current": "Langue Actuelle",
         "select": "Sélectionner la Langue"
       },
+      "accountSettings": {
+        "title": "Compte",
+        "description": "Gérer la facturation, les membres et les paramètres de l'organisation",
+        "button": "Paramètres du compte"
+      },
       "deleteAccount": {
         "title": "Supprimer le Compte",
         "description": "Supprime définitivement ton compte et toutes les données associées",

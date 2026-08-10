@@ -66,6 +66,11 @@
         "current": "Lingua corrente",
         "select": "Seleziona lingua"
       },
+      "accountSettings": {
+        "title": "Account",
+        "description": "Gestisci fatturazione, membri e impostazioni dell'organizzazione",
+        "button": "Impostazioni Account"
+      },
       "deleteAccount": {
         "title": "Elimina Account",
         "description": "Rimuovi permanentemente il tuo account e tutti i dati associati",
@@ -320,7 +325,10 @@
         "Sveglia! Cosa costruiamo oggi?",
         "Buongiorno! Pronti a spaccare?"
       ],
-      "afternoon": ["Buon pomeriggio! Come posso aiutare?", "Come va? Cosa c'è da fare?"],
+      "afternoon": [
+        "Buon pomeriggio! Come posso aiutare?",
+        "Come va? Cosa c'è da fare?"
+      ],
       "evening": [
         "Buonasera! Lavoro notturno?",
         "Ciao! Su cosa lavoriamo stasera?",

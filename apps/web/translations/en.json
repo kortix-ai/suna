@@ -66,6 +66,11 @@
         "current": "Current Language",
         "select": "Select Language"
       },
+      "accountSettings": {
+        "title": "Account",
+        "description": "Manage billing, members, and organization settings",
+        "button": "Account Settings"
+      },
       "deleteAccount": {
         "title": "Delete Account",
         "description": "Permanently remove your account and all associated data",
