@@ -3,14 +3,6 @@
 import type { ComponentType } from 'react';
 
 import {
-  matchesSourceFilters,
-  matchesStatusFilters,
-  SESSION_SOURCE_FILTERS,
-  SESSION_STATUS_FILTERS,
-  type SessionSourceFilter,
-  type SessionStatusFilter,
-} from '@/components/workspaces/session-label';
-import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -22,9 +14,25 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  matchesSourceFilters,
+  matchesStatusFilters,
+  SESSION_SOURCE_FILTERS,
+  SESSION_STATUS_FILTERS,
+  type SessionSourceFilter,
+  type SessionStatusFilter,
+} from '@/components/workspaces/session-label';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
-import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
+import {
+  selectGroupMode,
+  selectHiddenSections,
+  selectOrderMode,
+  selectSourceFilters,
+  selectStatusFilters,
+  useSessionFilterStore,
+  type SessionViewSurface,
+} from '@/stores/session-filter-store';
 import type { WorkspaceSession } from '@kortix/sdk';
 import {
   CalendarDotsIcon as CalendarClock,
@@ -35,7 +43,6 @@ import {
 } from '@phosphor-icons/react';
 
 import {
-  DEFAULT_SESSION_GROUP_MODE,
   groupSessions,
   SESSION_GROUP_MODES,
   SESSION_ORDER_MODES,
@@ -187,6 +194,15 @@ export interface SessionFilterMenuProps {
   workspaceId: string;
   sessions: WorkspaceSession[];
   align?: 'start' | 'center' | 'end';
+  /** Defaults to `right`, which is correct for the sidebar's triggers. A
+   *  toolbar trigger at the top of a full-width page passes `bottom` so the
+   *  menu drops under the button instead of relying on collision-flipping. */
+  side?: 'top' | 'right' | 'bottom' | 'left';
+  /** Which list this menu drives. The two surfaces share this component but NOT
+   *  their state — narrowing the sessions page must not narrow the sidebar you
+   *  navigate with. A surface with no choice of its own inherits the sidebar's,
+   *  so the page opens matching the sidebar and diverges on first change. */
+  surface?: SessionViewSurface;
   /** Review-center `needs_you` counts, keyed by session id. Optional and
    *  defaulted to `{}` so existing call sites keep compiling, but a caller
    *  that has the review summary (the sidebar does) should always pass it:
@@ -199,21 +215,15 @@ export function SessionFilterMenu({
   workspaceId,
   sessions,
   align = 'start',
+  side = 'right',
+  surface = 'sidebar',
   reviewCountBySession = {},
 }: SessionFilterMenuProps) {
-  const groupMode = useSessionFilterStore(
-    (s) => s.groupByWorkspace[workspaceId] ?? DEFAULT_SESSION_GROUP_MODE,
-  );
-  const orderMode = useSessionFilterStore((s) => s.orderByWorkspace[workspaceId] ?? 'activity');
-  const statusFilters = useSessionFilterStore(
-    (s) => s.statusFiltersByWorkspace[workspaceId] ?? EMPTY_LIST,
-  );
-  const sourceFilters = useSessionFilterStore(
-    (s) => s.sourceFiltersByWorkspace[workspaceId] ?? EMPTY_LIST,
-  );
-  const hiddenSections = useSessionFilterStore(
-    (s) => s.hiddenSectionsByWorkspace[workspaceId] ?? EMPTY_LIST,
-  );
+  const groupMode = useSessionFilterStore(selectGroupMode(workspaceId, surface));
+  const orderMode = useSessionFilterStore(selectOrderMode(workspaceId, surface));
+  const statusFilters = useSessionFilterStore(selectStatusFilters(workspaceId, surface));
+  const sourceFilters = useSessionFilterStore(selectSourceFilters(workspaceId, surface));
+  const hiddenSections = useSessionFilterStore(selectHiddenSections(workspaceId, surface));
   const setGroupMode = useSessionFilterStore((s) => s.setGroupMode);
   const setOrderMode = useSessionFilterStore((s) => s.setOrderMode);
   const toggleStatusFilter = useSessionFilterStore((s) => s.toggleStatusFilter);
@@ -232,7 +242,7 @@ export function SessionFilterMenu({
   const hasActiveFacets = statusFilters.length > 0 || sourceFilters.length > 0;
 
   return (
-    <DropdownMenuContent align={align} side="right" className="w-56 p-1">
+    <DropdownMenuContent align={align} side={side} className="w-56 p-1">
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <span className="min-w-0 flex-1 truncate">Grouping</span>
@@ -241,7 +251,7 @@ export function SessionFilterMenu({
         <DropdownMenuSubContent className="w-40 p-1">
           <DropdownMenuRadioGroup
             value={groupMode}
-            onValueChange={(value) => setGroupMode(workspaceId, value as SessionGroupMode)}
+            onValueChange={(value) => setGroupMode(workspaceId, value as SessionGroupMode, surface)}
           >
             {SESSION_GROUP_MODES.map((mode) => (
               <DropdownMenuRadioItem
@@ -264,7 +274,7 @@ export function SessionFilterMenu({
         <DropdownMenuSubContent className="w-40 p-1">
           <DropdownMenuRadioGroup
             value={orderMode}
-            onValueChange={(value) => setOrderMode(workspaceId, value as SessionOrderMode)}
+            onValueChange={(value) => setOrderMode(workspaceId, value as SessionOrderMode, surface)}
           >
             {SESSION_ORDER_MODES.map((mode) => (
               <DropdownMenuRadioItem
@@ -289,7 +299,7 @@ export function SessionFilterMenu({
               <DropdownMenuCheckboxItem
                 key={option.id}
                 checked={!hiddenSections.includes(option.id)}
-                onCheckedChange={() => toggleSectionHidden(workspaceId, option.id)}
+                onCheckedChange={() => toggleSectionHidden(workspaceId, option.id, surface)}
                 onSelect={(event) => event.preventDefault()}
               >
                 {option.label}
@@ -312,7 +322,7 @@ export function SessionFilterMenu({
                 // mid-adjustment in — same "stay open" contract as every
                 // checkbox row below.
                 event.preventDefault();
-                resetFilters(workspaceId);
+                resetFilters(workspaceId, surface);
               }}
             >
               Reset
@@ -330,7 +340,7 @@ export function SessionFilterMenu({
                   <DropdownMenuCheckboxItem
                     key={option.value}
                     checked={statusFilters.includes(option.value)}
-                    onCheckedChange={() => toggleStatusFilter(workspaceId, option.value)}
+                    onCheckedChange={() => toggleStatusFilter(workspaceId, option.value, surface)}
                     onSelect={(event) => event.preventDefault()}
                   >
                     <span className="min-w-0 flex-1 truncate">{option.label}</span>
@@ -356,7 +366,7 @@ export function SessionFilterMenu({
                     <DropdownMenuCheckboxItem
                       key={option.value}
                       checked={sourceFilters.includes(option.value)}
-                      onCheckedChange={() => toggleSourceFilter(workspaceId, option.value)}
+                      onCheckedChange={() => toggleSourceFilter(workspaceId, option.value, surface)}
                       onSelect={(event) => event.preventDefault()}
                     >
                       <OptionIcon className="size-4" />
@@ -387,6 +397,7 @@ export function SessionFilterMenu({
               hiddenSections,
               reviewCountBySession,
             ),
+            surface,
           )
         }
       >

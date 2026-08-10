@@ -157,6 +157,36 @@ describe('groupSessions — activity mode', () => {
     expect(grouped.sections.map((s) => s.id)).toEqual(['today', 'yesterday', 'week', 'older']);
   });
 
+  // The reported regression: an 8-day-old session that is still used every day
+  // sat in "Older", because with no conversation snapshot the sidebar dated it
+  // by CREATION. Buckets follow use, not birth.
+  test('an old session used today groups under Today', () => {
+    const grouped = groupSessions(
+      [
+        makeSession({
+          session_id: 'old-but-active',
+          created_at: new Date(2026, 6, 29, 9, 0, 0).toISOString(),
+          metadata: { last_activity_at: new Date(2026, 7, 6, 11, 0, 0).toISOString() },
+        }),
+      ],
+      { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: ACTIVITY_NOW },
+    );
+    expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
+  });
+
+  test('a session created today but never used since stays in Today', () => {
+    const grouped = groupSessions(
+      [
+        makeSession({
+          session_id: 'fresh',
+          created_at: new Date(2026, 7, 6, 9, 0, 0).toISOString(),
+        }),
+      ],
+      { mode: 'activity', order: 'activity', reviewCountBySession: {}, now: ACTIVITY_NOW },
+    );
+    expect(grouped.sections.map((s) => s.id)).toEqual(['today']);
+  });
+
   test('review state does not move a session out of its date bucket', () => {
     const grouped = groupSessions(
       [

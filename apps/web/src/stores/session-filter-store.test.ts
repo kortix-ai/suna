@@ -1,193 +1,191 @@
+/**
+ * The surface contract: the sidebar and the sessions page share this store's
+ * shape and its menu, but not their state — and the page starts out matching
+ * the sidebar rather than at raw defaults.
+ *
+ * Both halves matter and neither is visible from a type signature, so they are
+ * pinned here: inherit until first write, own it forever after.
+ */
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { EMPTY_LIST, useSessionFilterStore } from './session-filter-store';
+import {
+  EMPTY_LIST,
+  selectCollapsedSections,
+  selectGroupMode,
+  selectHiddenSections,
+  selectOrderMode,
+  selectSourceFilters,
+  selectStatusFilters,
+  useSessionFilterStore,
+} from './session-filter-store';
 
-const EMPTY_STATE = {
-  groupByWorkspace: {},
-  orderByWorkspace: {},
-  statusFiltersByWorkspace: {},
-  sourceFiltersByWorkspace: {},
-  hiddenSectionsByWorkspace: {},
-  collapsedSectionsByWorkspace: {},
-};
+const WORKSPACE = 'workspace-1';
+const read = <T>(selector: (s: ReturnType<typeof useSessionFilterStore.getState>) => T): T =>
+  selector(useSessionFilterStore.getState());
 
 beforeEach(() => {
-  useSessionFilterStore.setState(EMPTY_STATE);
-});
-
-describe('toggleStatusFilter', () => {
-  test('adds then removes, never duplicates', () => {
-    const { toggleStatusFilter } = useSessionFilterStore.getState();
-    toggleStatusFilter('p1', 'running');
-    expect(useSessionFilterStore.getState().statusFiltersByWorkspace.p1).toEqual(['running']);
-
-    toggleStatusFilter('p1', 'running');
-    expect(useSessionFilterStore.getState().statusFiltersByWorkspace.p1).toEqual([]);
-
-    toggleStatusFilter('p1', 'running');
-    toggleStatusFilter('p1', 'done');
-    expect(useSessionFilterStore.getState().statusFiltersByWorkspace.p1).toEqual(['running', 'done']);
+  useSessionFilterStore.setState({
+    groupByWorkspace: {},
+    orderByWorkspace: {},
+    statusFiltersByWorkspace: {},
+    sourceFiltersByWorkspace: {},
+    hiddenSectionsByWorkspace: {},
+    collapsedSectionsByWorkspace: {},
   });
 });
 
-describe('toggleSourceFilter', () => {
-  test('adds then removes, never duplicates', () => {
-    const { toggleSourceFilter } = useSessionFilterStore.getState();
-    toggleSourceFilter('p1', 'slack');
-    expect(useSessionFilterStore.getState().sourceFiltersByWorkspace.p1).toEqual(['slack']);
+describe('defaults', () => {
+  test('both surfaces start on the same defaults', () => {
+    expect(read(selectGroupMode(WORKSPACE, 'sidebar'))).toBe('activity');
+    expect(read(selectGroupMode(WORKSPACE, 'page'))).toBe('activity');
+    expect(read(selectOrderMode(WORKSPACE, 'page'))).toBe('activity');
+    expect(read(selectStatusFilters(WORKSPACE, 'page'))).toEqual([]);
+  });
 
-    toggleSourceFilter('p1', 'slack');
-    expect(useSessionFilterStore.getState().sourceFiltersByWorkspace.p1).toEqual([]);
+  test('the surface argument defaults to the sidebar', () => {
+    useSessionFilterStore.getState().setGroupMode(WORKSPACE, 'source');
+    expect(read(selectGroupMode(WORKSPACE))).toBe('source');
+    expect(read(selectGroupMode(WORKSPACE, 'sidebar'))).toBe('source');
   });
 });
 
-describe('toggleSectionHidden', () => {
-  test('adds then removes, never duplicates', () => {
-    const { toggleSectionHidden } = useSessionFilterStore.getState();
-    toggleSectionHidden('p1', 'recent');
-    expect(useSessionFilterStore.getState().hiddenSectionsByWorkspace.p1).toEqual(['recent']);
+describe('the page inherits the sidebar until it chooses for itself', () => {
+  test('a sidebar grouping shows through on the page', () => {
+    useSessionFilterStore.getState().setGroupMode(WORKSPACE, 'source', 'sidebar');
+    expect(read(selectGroupMode(WORKSPACE, 'page'))).toBe('source');
+  });
 
-    toggleSectionHidden('p1', 'recent');
-    expect(useSessionFilterStore.getState().hiddenSectionsByWorkspace.p1).toEqual([]);
+  test('a sidebar filter shows through on the page', () => {
+    useSessionFilterStore.getState().toggleStatusFilter(WORKSPACE, 'failed', 'sidebar');
+    expect(read(selectStatusFilters(WORKSPACE, 'page'))).toEqual(['failed']);
+  });
+
+  test('collapsed sections are the ONE thing the page does not inherit', () => {
+    // Folding "Older" away in the narrow sidebar must not open the full
+    // sessions page with its sections already shut. Every section starts
+    // expanded there.
+    useSessionFilterStore.getState().toggleSectionCollapsed(WORKSPACE, 'older', 'sidebar');
+
+    expect(read(selectCollapsedSections(WORKSPACE, 'sidebar'))).toEqual(['older']);
+    expect(read(selectCollapsedSections(WORKSPACE, 'page'))).toEqual([]);
+  });
+
+  test('a page collapse starts from the page list, not the sidebar list', () => {
+    useSessionFilterStore.getState().toggleSectionCollapsed(WORKSPACE, 'older', 'sidebar');
+    // Collapsing the same section on the page must ADD it there, not toggle the
+    // inherited entry back off and leave the page unchanged.
+    useSessionFilterStore.getState().toggleSectionCollapsed(WORKSPACE, 'older', 'page');
+
+    expect(read(selectCollapsedSections(WORKSPACE, 'page'))).toEqual(['older']);
+    expect(read(selectCollapsedSections(WORKSPACE, 'sidebar'))).toEqual(['older']);
+  });
+
+  test('once the page chooses, it stops following the sidebar', () => {
+    useSessionFilterStore.getState().setGroupMode(WORKSPACE, 'source', 'sidebar');
+    useSessionFilterStore.getState().setGroupMode(WORKSPACE, 'status', 'page');
+
+    expect(read(selectGroupMode(WORKSPACE, 'page'))).toBe('status');
+    expect(read(selectGroupMode(WORKSPACE, 'sidebar'))).toBe('source');
+
+    // A later sidebar change must not reach back into the page.
+    useSessionFilterStore.getState().setGroupMode(WORKSPACE, 'none', 'sidebar');
+    expect(read(selectGroupMode(WORKSPACE, 'page'))).toBe('status');
+  });
+
+  test('a page toggle starts from the INHERITED value, not from empty', () => {
+    useSessionFilterStore.getState().toggleStatusFilter(WORKSPACE, 'failed', 'sidebar');
+    // The page is showing ['failed']; adding 'running' there must yield both,
+    // not drop the inherited one on the floor.
+    useSessionFilterStore.getState().toggleStatusFilter(WORKSPACE, 'running', 'page');
+
+    expect(read(selectStatusFilters(WORKSPACE, 'page'))).toEqual(['failed', 'running']);
+    expect(read(selectStatusFilters(WORKSPACE, 'sidebar'))).toEqual(['failed']);
+  });
+
+  test('an explicit empty on the page is a real answer, not "inherit"', () => {
+    useSessionFilterStore.getState().toggleStatusFilter(WORKSPACE, 'failed', 'sidebar');
+    useSessionFilterStore.getState().resetFilters(WORKSPACE, 'page');
+
+    expect(read(selectStatusFilters(WORKSPACE, 'page'))).toEqual([]);
+    expect(read(selectStatusFilters(WORKSPACE, 'sidebar'))).toEqual(['failed']);
   });
 });
 
-describe('toggleSectionCollapsed', () => {
-  test('adds then removes, never duplicates', () => {
-    const { toggleSectionCollapsed } = useSessionFilterStore.getState();
-    toggleSectionCollapsed('p1', 'recent');
-    expect(useSessionFilterStore.getState().collapsedSectionsByWorkspace.p1).toEqual(['recent']);
+describe('the page never writes into the sidebar', () => {
+  test('filters, sections and collapse all stay on their own surface', () => {
+    const s = useSessionFilterStore.getState();
+    s.toggleSourceFilter(WORKSPACE, 'slack', 'page');
+    s.toggleSectionHidden(WORKSPACE, 'older', 'page');
+    s.collapseAllSections(WORKSPACE, ['today', 'week'], 'page');
+    s.setOrderMode(WORKSPACE, 'name', 'page');
 
-    toggleSectionCollapsed('p1', 'recent');
-    expect(useSessionFilterStore.getState().collapsedSectionsByWorkspace.p1).toEqual([]);
+    expect(read(selectSourceFilters(WORKSPACE, 'sidebar'))).toEqual([]);
+    expect(read(selectHiddenSections(WORKSPACE, 'sidebar'))).toEqual([]);
+    expect(read(selectCollapsedSections(WORKSPACE, 'sidebar'))).toEqual([]);
+    expect(read(selectOrderMode(WORKSPACE, 'sidebar'))).toBe('activity');
+
+    expect(read(selectSourceFilters(WORKSPACE, 'page'))).toEqual(['slack']);
+    expect(read(selectHiddenSections(WORKSPACE, 'page'))).toEqual(['older']);
+    expect(read(selectCollapsedSections(WORKSPACE, 'page'))).toEqual(['today', 'week']);
+    expect(read(selectOrderMode(WORKSPACE, 'page'))).toBe('name');
+  });
+
+  test('two workspaces never bleed into each other on either surface', () => {
+    useSessionFilterStore.getState().setGroupMode(WORKSPACE, 'status', 'page');
+    expect(read(selectGroupMode('workspace-2', 'page'))).toBe('activity');
+    expect(read(selectGroupMode('workspace-2', 'sidebar'))).toBe('activity');
   });
 });
 
-describe('resetFilters', () => {
-  test('clears both facets and leaves grouping/ordering/hidden/collapsed untouched', () => {
-    const state = useSessionFilterStore.getState();
-    state.toggleStatusFilter('p1', 'running');
-    state.toggleSourceFilter('p1', 'slack');
-    state.setGroupMode('p1', 'source');
-    state.setOrderMode('p1', 'name');
-    state.toggleSectionHidden('p1', 'recent');
-    state.toggleSectionCollapsed('p1', 'recent');
-
-    useSessionFilterStore.getState().resetFilters('p1');
-
-    const after = useSessionFilterStore.getState();
-    expect(after.statusFiltersByWorkspace.p1).toEqual([]);
-    expect(after.sourceFiltersByWorkspace.p1).toEqual([]);
-    expect(after.groupByWorkspace.p1).toBe('source');
-    expect(after.orderByWorkspace.p1).toBe('name');
-    expect(after.hiddenSectionsByWorkspace.p1).toEqual(['recent']);
-    expect(after.collapsedSectionsByWorkspace.p1).toEqual(['recent']);
+describe('snapshot stability (zustand v5 compares with Object.is)', () => {
+  test('an unset list selector returns the SAME reference every read', () => {
+    // A selector allocating a fresh [] re-renders forever — the bug EMPTY_LIST
+    // exists to prevent. Both surfaces must be safe.
+    expect(read(selectStatusFilters(WORKSPACE, 'page'))).toBe(
+      read(selectStatusFilters(WORKSPACE, 'page')),
+    );
+    expect(read(selectHiddenSections(WORKSPACE, 'sidebar'))).toBe(
+      read(selectHiddenSections(WORKSPACE, 'sidebar')),
+    );
+    // Including the inherit path, which reads through two lookups.
+    useSessionFilterStore.getState().toggleSourceFilter(WORKSPACE, 'slack', 'sidebar');
+    expect(read(selectSourceFilters(WORKSPACE, 'page'))).toBe(
+      read(selectSourceFilters(WORKSPACE, 'page')),
+    );
   });
 });
 
-describe('collapseAllSections', () => {
-  test('replaces rather than appends', () => {
-    const state = useSessionFilterStore.getState();
-    state.toggleSectionCollapsed('p1', 'existing');
-
-    state.collapseAllSections('p1', ['today', 'yesterday']);
-    expect(useSessionFilterStore.getState().collapsedSectionsByWorkspace.p1).toEqual([
-      'today',
-      'yesterday',
-    ]);
-
-    state.collapseAllSections('p1', []);
-    expect(useSessionFilterStore.getState().collapsedSectionsByWorkspace.p1).toEqual([]);
-  });
-});
-
-describe('setGroupMode / setOrderMode', () => {
-  test('treats activity as the default grouping without persisting a redundant value', () => {
-    const state = useSessionFilterStore.getState();
-    const groupMapRef = state.groupByWorkspace;
-
-    state.setGroupMode('p1', 'activity');
-
-    expect(useSessionFilterStore.getState().groupByWorkspace).toBe(groupMapRef);
+describe('Workspace persistence compatibility', () => {
+  test('uses the canonical Workspace storage key', () => {
+    expect(useSessionFilterStore.persist.getOptions().name).toBe('kortix.workspace-session-view');
   });
 
-  test('no-op guard: setting the same value does not trigger a new object identity', () => {
-    const state = useSessionFilterStore.getState();
-    state.setGroupMode('p1', 'source');
-    const groupMapRef = useSessionFilterStore.getState().groupByWorkspace;
-    state.setGroupMode('p1', 'source');
-    expect(useSessionFilterStore.getState().groupByWorkspace).toBe(groupMapRef);
+  test('migrates legacy Project map names without losing values', async () => {
+    const migrate = useSessionFilterStore.persist.getOptions().migrate;
+    expect(migrate).toBeDefined();
 
-    state.setOrderMode('p1', 'name');
-    const orderMapRef = useSessionFilterStore.getState().orderByWorkspace;
-    state.setOrderMode('p1', 'name');
-    expect(useSessionFilterStore.getState().orderByWorkspace).toBe(orderMapRef);
+    const migrated = (await migrate?.(
+      {
+        groupByProject: { [WORKSPACE]: 'source' },
+        orderByProject: { [WORKSPACE]: 'name' },
+        statusFiltersByProject: { [WORKSPACE]: ['failed'] },
+        sourceFiltersByProject: { [WORKSPACE]: ['slack'] },
+        hiddenSectionsByProject: { [WORKSPACE]: ['older'] },
+        collapsedSectionsByProject: { [WORKSPACE]: ['today'] },
+      },
+      0,
+    )) as ReturnType<typeof useSessionFilterStore.getState>;
+
+    expect(migrated.groupByWorkspace[WORKSPACE]).toBe('source');
+    expect(migrated.orderByWorkspace[WORKSPACE]).toBe('name');
+    expect(migrated.statusFiltersByWorkspace[WORKSPACE]).toEqual(['failed']);
+    expect(migrated.sourceFiltersByWorkspace[WORKSPACE]).toEqual(['slack']);
+    expect(migrated.hiddenSectionsByWorkspace[WORKSPACE]).toEqual(['older']);
+    expect(migrated.collapsedSectionsByWorkspace[WORKSPACE]).toEqual(['today']);
   });
-});
 
-describe('defaults for an unknown workspace', () => {
-  test('reads activity/activity/empty arrays', () => {
-    const state = useSessionFilterStore.getState();
-    expect(state.groupByWorkspace.unknown ?? 'activity').toBe('activity');
-    expect(state.orderByWorkspace.unknown ?? 'activity').toBe('activity');
-    expect(state.statusFiltersByWorkspace.unknown ?? []).toEqual([]);
-    expect(state.sourceFiltersByWorkspace.unknown ?? []).toEqual([]);
-    expect(state.hiddenSectionsByWorkspace.unknown ?? []).toEqual([]);
-    expect(state.collapsedSectionsByWorkspace.unknown ?? []).toEqual([]);
-  });
-});
-
-describe('workspace isolation', () => {
-  test('two different workspaces do not leak into each other', () => {
-    const state = useSessionFilterStore.getState();
-    state.toggleStatusFilter('p1', 'running');
-    state.toggleSourceFilter('p1', 'slack');
-    state.setGroupMode('p1', 'source');
-    state.toggleSectionCollapsed('p1', 'recent');
-
-    const after = useSessionFilterStore.getState();
-    expect(after.statusFiltersByWorkspace.p2 ?? []).toEqual([]);
-    expect(after.sourceFiltersByWorkspace.p2 ?? []).toEqual([]);
-    expect(after.groupByWorkspace.p2 ?? 'activity').toBe('activity');
-    expect(after.collapsedSectionsByWorkspace.p2 ?? []).toEqual([]);
-
-    // p1 unaffected by reading p2
-    expect(after.statusFiltersByWorkspace.p1).toEqual(['running']);
-  });
-});
-
-describe('EMPTY_LIST — infinite-render-loop guard', () => {
-  // Regression: every list selector used a bare `?? []`, allocating a new array
-  // on each read. zustand v5 reads through useSyncExternalStore, which compares
-  // snapshots with Object.is, so the snapshot never matched the previous one and
-  // React looped until "Maximum update depth exceeded". These tests fail if a
-  // future edit reintroduces a fresh literal.
-
-  test('the shared fallback is one stable, frozen reference', () => {
-    expect(EMPTY_LIST).toBe(EMPTY_LIST);
+  test('exports one frozen fallback for absent list state', () => {
     expect(Object.isFrozen(EMPTY_LIST)).toBe(true);
     expect(EMPTY_LIST).toEqual([]);
-  });
-
-  test('a bare [] fallback is NOT reference-stable — this is the bug being guarded', () => {
-    const readWithBareFallback = () =>
-      useSessionFilterStore.getState().statusFiltersByWorkspace.unseen ?? [];
-    // Two reads of the same absent key produce different references.
-    expect(Object.is(readWithBareFallback(), readWithBareFallback())).toBe(false);
-    // The shared constant does not.
-    const readWithSharedFallback = () =>
-      useSessionFilterStore.getState().statusFiltersByWorkspace.unseen ?? EMPTY_LIST;
-    expect(Object.is(readWithSharedFallback(), readWithSharedFallback())).toBe(true);
-  });
-
-  test('every list map returns the identical reference for an absent workspace', () => {
-    const s = useSessionFilterStore.getState();
-    const reads = [
-      s.statusFiltersByWorkspace.nobody ?? EMPTY_LIST,
-      s.sourceFiltersByWorkspace.nobody ?? EMPTY_LIST,
-      s.hiddenSectionsByWorkspace.nobody ?? EMPTY_LIST,
-      s.collapsedSectionsByWorkspace.nobody ?? EMPTY_LIST,
-    ];
-    for (const read of reads) expect(read).toBe(EMPTY_LIST);
   });
 });

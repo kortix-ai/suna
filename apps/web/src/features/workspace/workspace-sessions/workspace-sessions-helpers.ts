@@ -1,150 +1,17 @@
 import type { WorkspaceSession } from '@kortix/sdk';
 
-import { sessionSource, type SessionSourceKind } from '@/components/workspaces/session-label';
+import {
+  matchesSourceFilters,
+  matchesStatusFilters,
+  sessionSource,
+  type SessionSourceFilter,
+  type SessionSourceKind,
+  type SessionStatusFilter,
+} from '@/components/workspaces/session-label';
 import {
   getSessionDisplayTitle,
   sortSessionsByLastActivity,
 } from '@/features/workspace/workspace-sidebar/workspace-session-list-helpers';
-
-export type WorkspaceSessionsFilter =
-  | 'all'
-  | 'active'
-  | 'completed'
-  | 'stopped'
-  | 'failed'
-  | 'chat'
-  | 'slack'
-  | 'telegram'
-  | 'email'
-  | 'schedule'
-  | 'webhook'
-  | 'shared'
-  | 'deleted'
-  | 'inaccessible';
-
-/**
- * The three axes this list filters on. They were previously flattened into one
- * single-select strip, which asserted that "Failed" and "Shared" were
- * alternatives. Grouping keeps selection single but makes the axes legible.
- */
-export type WorkspaceSessionsFilterAxis = 'status' | 'source' | 'access';
-
-export interface WorkspaceSessionsFilterOption {
-  value: WorkspaceSessionsFilter;
-  label: string;
-  axis: WorkspaceSessionsFilterAxis;
-}
-
-export const WORKSPACE_SESSIONS_FILTERS: WorkspaceSessionsFilterOption[] = [
-  { value: 'all', label: 'All', axis: 'status' },
-  { value: 'active', label: 'Active', axis: 'status' },
-  { value: 'completed', label: 'Completed', axis: 'status' },
-  { value: 'stopped', label: 'Stopped', axis: 'status' },
-  { value: 'failed', label: 'Failed', axis: 'status' },
-  { value: 'chat', label: 'Chat', axis: 'source' },
-  { value: 'slack', label: 'Slack', axis: 'source' },
-  { value: 'telegram', label: 'Telegram', axis: 'source' },
-  { value: 'email', label: 'Email', axis: 'source' },
-  { value: 'schedule', label: 'Scheduled', axis: 'source' },
-  { value: 'webhook', label: 'Webhook', axis: 'source' },
-  { value: 'shared', label: 'Shared with you', axis: 'access' },
-  { value: 'deleted', label: 'Deleted', axis: 'access' },
-  { value: 'inaccessible', label: 'Metadata only', axis: 'access' },
-];
-
-const ACTIVE_STATUSES = new Set<WorkspaceSession['status']>([
-  'queued',
-  'branching',
-  'provisioning',
-  'running',
-]);
-
-const SOURCE_FILTERS = new Set<WorkspaceSessionsFilter>([
-  'chat',
-  'slack',
-  'telegram',
-  'email',
-  'schedule',
-  'webhook',
-]);
-
-export function matchesWorkspaceSessionsFilter(
-  session: WorkspaceSession,
-  filter: WorkspaceSessionsFilter,
-): boolean {
-  if (filter === 'all') return true;
-  if (filter === 'active') return ACTIVE_STATUSES.has(session.status);
-  if (SOURCE_FILTERS.has(filter)) return sessionSource(session).kind === filter;
-  if (filter === 'shared') return session.is_owner === false;
-  if (filter === 'deleted') return Boolean(session.deleted_at);
-  if (filter === 'inaccessible') return session.can_access === false;
-  return session.status === filter;
-}
-
-export function workspaceSessionsFilterCounts(
-  sessions: WorkspaceSession[],
-): Record<WorkspaceSessionsFilter, number> {
-  return WORKSPACE_SESSIONS_FILTERS.reduce(
-    (counts, option) => {
-      counts[option.value] = sessions.filter((session) =>
-        matchesWorkspaceSessionsFilter(session, option.value),
-      ).length;
-      return counts;
-    },
-    {} as Record<WorkspaceSessionsFilter, number>,
-  );
-}
-
-export interface WorkspaceSessionsFilterGroup {
-  axis: WorkspaceSessionsFilterAxis;
-  label: string;
-  options: Array<WorkspaceSessionsFilterOption & { count: number }>;
-}
-
-const AXIS_LABELS: Record<WorkspaceSessionsFilterAxis, string> = {
-  status: 'Status',
-  source: 'Source',
-  access: 'Access',
-};
-
-/**
- * Which filters this session set is worth offering, grouped by axis.
- *
- * An option earns a slot only when it matches at least one session — a
- * "Failed 0" entry is a dead end that costs a row to lead nowhere. This mirrors
- * the option-admission rule in `session-filter-menu.tsx`'s faceted resolvers
- * (`components/workspaces/session-label.ts`), the rule the sidebar has always
- * honoured.
- *
- * "All" is never grouped and is always offered. An axis with no surviving
- * option is dropped entirely rather than rendering an empty section header.
- * The currently active filter is always retained, so selecting the last
- * "Failed" session's filter and then deleting it does not strand the menu on a
- * value it no longer lists.
- */
-export function availableWorkspaceSessionsFilters(
-  sessions: WorkspaceSession[],
-  activeFilter: WorkspaceSessionsFilter = 'all',
-): WorkspaceSessionsFilterGroup[] {
-  const counts = workspaceSessionsFilterCounts(sessions);
-
-  return (['status', 'source', 'access'] as const)
-    .map((axis) => ({
-      axis,
-      label: AXIS_LABELS[axis],
-      options: WORKSPACE_SESSIONS_FILTERS.filter(
-        (option) =>
-          option.axis === axis &&
-          option.value !== 'all' &&
-          (counts[option.value] > 0 || option.value === activeFilter),
-      ).map((option) => ({ ...option, count: counts[option.value] })),
-    }))
-    .filter((group) => group.options.length > 0);
-}
-
-export function workspaceSessionsFilterLabel(filter: WorkspaceSessionsFilter): string {
-  return WORKSPACE_SESSIONS_FILTERS.find((option) => option.value === filter)?.label ?? 'All';
-}
 
 export function sessionOwnerLabel(session: WorkspaceSession): string {
   if (session.owner_name) return session.owner_name;
@@ -192,19 +59,52 @@ export function sessionSearchText(session: WorkspaceSession): string {
     .toLocaleLowerCase();
 }
 
+/** Precomputed haystack per session id — see `filterWorkspaceSessions`. */
+export type SessionSearchIndex = ReadonlyMap<string, string>;
+
+/**
+ * Build the search haystack once per session.
+ *
+ * `sessionSearchText` reads 15 fields, resolves the session's source, joins and
+ * lowercases. Doing that inside the filter meant rebuilding it for every
+ * session on every keystroke; on a workspace with a few hundred sessions that is
+ * the single most expensive thing this page does while you type. The caller
+ * memoises this against the session list, so typing only re-runs `includes`.
+ */
+export function buildSessionSearchIndex(sessions: WorkspaceSession[]): SessionSearchIndex {
+  const index = new Map<string, string>();
+  for (const session of sessions) index.set(session.session_id, sessionSearchText(session));
+  return index;
+}
+
+/**
+ * The sessions page's visible set: the sidebar's two multi-select facets ANDed
+ * together, then the page's own free-text search.
+ *
+ * The facets are the SAME predicates the sidebar list applies
+ * (`matchesStatusFilters` / `matchesSourceFilters`), reading the same persisted
+ * store — so a filter set in either surface means the same thing in both. The
+ * ordering inside each section is `groupSessions`' job; this sorts so callers
+ * that skip grouping still get newest-first.
+ */
 export function filterWorkspaceSessions(
   sessions: WorkspaceSession[],
-  filter: WorkspaceSessionsFilter,
+  statusFilters: readonly SessionStatusFilter[],
+  sourceFilters: readonly SessionSourceFilter[],
   query: string,
+  /** Omit and the haystack is computed inline, which is fine for one-off calls
+   *  and for tests; the view always passes its memoised index. */
+  searchIndex?: SessionSearchIndex,
 ): WorkspaceSession[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  return sortSessionsByLastActivity(
-    sessions
-      .filter((session) => matchesWorkspaceSessionsFilter(session, filter))
-      .filter(
-        (session) => !normalizedQuery || sessionSearchText(session).includes(normalizedQuery),
-      ),
-  );
+  const matches = sessions.filter((session) => {
+    if (!matchesStatusFilters(session, statusFilters)) return false;
+    if (!matchesSourceFilters(session, sourceFilters)) return false;
+    if (!normalizedQuery) return true;
+    const haystack = searchIndex?.get(session.session_id) ?? sessionSearchText(session);
+    return haystack.includes(normalizedQuery);
+  });
+  return sortSessionsByLastActivity(matches);
 }
 
 export interface SessionDetailField {
@@ -299,10 +199,7 @@ export function toggleSelection(selected: Set<string>, sessionId: string): Set<s
  * counting rows that are off screen, and `Delete N` would destroy sessions the
  * user cannot see. Selection must never outlive its own visibility.
  */
-export function pruneSelection(
-  selected: Set<string>,
-  visible: WorkspaceSession[],
-): Set<string> {
+export function pruneSelection(selected: Set<string>, visible: WorkspaceSession[]): Set<string> {
   const visibleIds = new Set(visible.map((session) => session.session_id));
   const next = new Set([...selected].filter((id) => visibleIds.has(id)));
   return next.size === selected.size ? selected : next;

@@ -21,6 +21,7 @@ import {
 } from '../../workspaces/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../workspaces/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../workspaces/routes/shared';
+import { recordSessionActivity } from '../../workspaces/session-activity';
 import {
   createExtendThrottle,
   extendSandboxDeadline,
@@ -1031,6 +1032,12 @@ export async function forwardToSandbox(
     if (!claimPromptDelivery(promptDedupeKey)) {
       return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
     }
+    // Stamp only after the dedupe claim succeeds. This database-only write
+    // preserves last-activity ordering even when the sandbox snapshot fails.
+    void recordSessionActivity({
+      sessionId: record.sessionId,
+      workspaceId: record.workspaceId,
+    });
   }
 
   // 2. Forward with auto-wake retry.

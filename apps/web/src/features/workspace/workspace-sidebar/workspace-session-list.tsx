@@ -2,18 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import {
-  directSubsessions,
-  isMetaCoordinatorSession,
-  matchesSourceFilters,
-  matchesStatusFilters,
-  SESSION_DISPLAY_STATUS_LABELS,
-  sessionDisplayStatus,
-  sessionSource,
-  spawnedBySessionId,
-  type SessionDisplayStatus,
-  type SessionSourceKind,
-} from '@/components/workspaces/session-label';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
@@ -28,29 +16,48 @@ import Loading from '@/components/ui/loading';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import {
+  directSubsessions,
+  isMetaCoordinatorSession,
+  matchesSourceFilters,
+  matchesStatusFilters,
+  SESSION_DISPLAY_STATUS_LABELS,
+  sessionDisplayStatus,
+  sessionSource,
+  spawnedBySessionId,
+  type SessionDisplayStatus,
+  type SessionSourceKind,
+} from '@/components/workspaces/session-label';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { RenameSessionModal } from '@/features/workspace/workspace-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/workspace-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/workspace-sidebar/modal/share-session-modal';
+import { SessionFilterMenu } from '@/features/workspace/workspace-sidebar/session-filter-menu';
+import {
+  groupSessions,
+  type SessionSection,
+} from '@/features/workspace/workspace-sidebar/session-grouping';
+import { SessionTitle } from '@/features/workspace/workspace-sidebar/session-title';
 import {
   getSessionDisplayTitle,
   groupSessionsByCoordinator,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
-  shouldPollWorkspaceSessions,
+  workspaceSessionsRefetchInterval,
 } from '@/features/workspace/workspace-sidebar/workspace-session-list-helpers';
-import { SessionFilterMenu } from '@/features/workspace/workspace-sidebar/session-filter-menu';
-import {
-  DEFAULT_SESSION_GROUP_MODE,
-  groupSessions,
-  type SessionSection,
-} from '@/features/workspace/workspace-sidebar/session-grouping';
-import { SessionTitle } from '@/features/workspace/workspace-sidebar/session-title';
 import { cn } from '@/lib/utils';
-import { EMPTY_LIST, useSessionFilterStore } from '@/stores/session-filter-store';
+import {
+  selectCollapsedSections,
+  selectGroupMode,
+  selectHiddenSections,
+  selectOrderMode,
+  selectSourceFilters,
+  selectStatusFilters,
+  useSessionFilterStore,
+} from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
   listWorkspaceSessions,
@@ -162,7 +169,10 @@ export function WorkspaceSessionList({ workspaceId }: WorkspaceSessionListProps)
     queryKey: qk.workspace.sessions(workspaceId),
     queryFn: () => listWorkspaceSessions(workspaceId),
     refetchInterval: (query) =>
-      shouldPollWorkspaceSessions(query.state.data as WorkspaceSession[] | undefined) ? 5_000 : false,
+      workspaceSessionsRefetchInterval({
+        sessions: query.state.data as WorkspaceSession[] | undefined,
+        hasOpenSession: Boolean(activeSessionId),
+      }),
     refetchOnWindowFocus: false,
     ...contract('inventory'),
   });
@@ -175,24 +185,16 @@ export function WorkspaceSessionList({ workspaceId }: WorkspaceSessionListProps)
   const reviewSummary = useReviewSessionSummary(workspaceId, { enabled: reviewEnabled });
 
   // Grouping, ordering, and the two multi-select facets all live in the
-  // persisted session-filter store (keyed by project) — see SessionFilterMenu,
+  // persisted session-filter store (keyed by workspace) — see SessionFilterMenu,
   // which writes to the same store from the nested `⋯` menu.
-  const groupMode = useSessionFilterStore(
-    (s) => s.groupByWorkspace[workspaceId] ?? DEFAULT_SESSION_GROUP_MODE,
-  );
-  const orderMode = useSessionFilterStore((s) => s.orderByWorkspace[workspaceId] ?? 'activity');
-  const statusFilters = useSessionFilterStore(
-    (s) => s.statusFiltersByWorkspace[workspaceId] ?? EMPTY_LIST,
-  );
-  const sourceFilters = useSessionFilterStore(
-    (s) => s.sourceFiltersByWorkspace[workspaceId] ?? EMPTY_LIST,
-  );
-  const hiddenSections = useSessionFilterStore(
-    (s) => s.hiddenSectionsByWorkspace[workspaceId] ?? EMPTY_LIST,
-  );
-  const collapsedSections = useSessionFilterStore(
-    (s) => s.collapsedSectionsByWorkspace[workspaceId] ?? EMPTY_LIST,
-  );
+  // No `surface` argument anywhere here: the sidebar IS the default surface,
+  // and it keeps the bare workspaceId key it has always persisted under.
+  const groupMode = useSessionFilterStore(selectGroupMode(workspaceId));
+  const orderMode = useSessionFilterStore(selectOrderMode(workspaceId));
+  const statusFilters = useSessionFilterStore(selectStatusFilters(workspaceId));
+  const sourceFilters = useSessionFilterStore(selectSourceFilters(workspaceId));
+  const hiddenSections = useSessionFilterStore(selectHiddenSections(workspaceId));
+  const collapsedSections = useSessionFilterStore(selectCollapsedSections(workspaceId));
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
 
   const restartMutation = useMutation({
