@@ -12,6 +12,32 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-10 — session `workspace-refactor-stream-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into PR #5480 after Main added streamed session-config reload.
+
+Claimed SDK scope:
+
+- Keep Workspace as the canonical API, facade, type, function, id, and route.
+- Port streamed reload parsing and transport ownership into the Workspace client.
+- Preserve `reloadProjectSessionConfigStream` and the Project facade method as
+  deprecated compatibility adapters over the canonical transport.
+- Preserve every existing public export and add the canonical Workspace stream
+  function without changing the release-managed package version.
+- Reconcile both public snapshots after reviewing the set diff.
+- Run focused RED/GREEN coverage, SDK typecheck, the complete SDK suite, and
+  packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. The canonical Workspace
+test failed first because `reloadWorkspaceSessionConfigStream` did not exist.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
+---
+
 ### 2026-08-10 — session `workspace-refactor-codeql-cleanup` claim
 
 No **Now** task claimed. This is the final CodeQL cleanup for PR #5480 after
@@ -87,6 +113,43 @@ GREEN:
 
 ---
 
+
+### 2026-08-10 — session `reload-live-status` claim
+
+No **Now** task claimed. This is the user-directed live session-config reload status work.
+
+Claimed SDK scope:
+
+- Add an additive streamed reload method beside the existing JSON method.
+- Preserve the existing reload route, result type, facade methods, and every published name.
+- Report only server-confirmed phases. Do not synthesize time-based progress.
+- Add failing stream parser and error coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work used the required
+RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- Stream coverage failed because `reloadProjectSessionConfigStream` and the
+  `SessionReloadPhase` public type did not exist.
+
+GREEN:
+
+- The API emits five server-observed phases and one terminal `done` or `error`
+  frame. The existing JSON reload route is unchanged.
+- The SDK parses split SSE frames, preserves `ApiError` status and code values,
+  and rejects a stream that closes without a terminal result.
+- Focused session REST suite: `39 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk test`: `1848 pass`, `0 fail`, `7093 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk smoke:install`: packed-install import and construction passed.
+- Public-surface snapshots contain additive reload stream names only. The package
+  version did not change.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ### 2026-08-10 — session `stream-cache-throttle` claim
 

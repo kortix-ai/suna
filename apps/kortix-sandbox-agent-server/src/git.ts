@@ -244,7 +244,7 @@ async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | un
     : rawBase.endsWith('/v1')
       ? rawBase
       : `${rawBase}/v1`
-  const url = `${base}/projects/${encodeURIComponent(cfg.workspaceId)}/git/clone-credential`
+  const url = `${base}/workspaces/${encodeURIComponent(cfg.workspaceId)}/git/clone-credential`
 
   // The control plane is reached over the public internet (KORTIX_API_URL).
   // A bare fetch with no timeout/retry turns one transient blip — or a

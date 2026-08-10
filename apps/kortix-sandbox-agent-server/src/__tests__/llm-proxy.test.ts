@@ -91,11 +91,11 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
       expect(base).toBe('http://127.0.0.1:14320')
       expect(connectorProxyReady()).toBe(true)
 
-      const r1 = await fetchJson(`${base}/v1/projects/p/exec`)
+      const r1 = await fetchJson(`${base}/v1/workspaces/p/exec`)
       expect(r1.auth).toBe('Bearer exec-A')
 
       setConnectorProxyToken('exec-B')
-      const r2 = await fetchJson(`${base}/v1/projects/p/exec`)
+      const r2 = await fetchJson(`${base}/v1/workspaces/p/exec`)
       expect(r2.auth).toBe('Bearer exec-B')
     } finally {
       up.stop()

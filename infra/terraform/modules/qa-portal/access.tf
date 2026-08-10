@@ -3,9 +3,8 @@
 # The report bucket is private and the portal is served by the in-cluster nginx
 # pod behind the ALB, with the qa.kortix.com record proxied through Cloudflare
 # (orange-cloud). This puts Cloudflare Access in front of that hostname so only
-# authenticated Kortix identities can open any report (including the per-PR
-# links posted by qa-pr). Access denies by default; the single allow policy
-# below is the allowlist.
+# authenticated Kortix identities can open every retained report. Access denies
+# by default; the single allow policy below is the allowlist.
 #
 # Prerequisite: an identity provider (Google / GitHub / one-time-PIN) must exist
 # in the Cloudflare Zero Trust account. Access uses whatever IdPs are configured;

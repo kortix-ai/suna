@@ -1,9 +1,16 @@
 // Project sessions — session CRUD, sharing, public shares, preview candidates.
 
-import { backendApi } from '../../http/api-client';
+import { type ApiClientOptions, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { type ConnectorSharing, unwrap } from './shared';
 import type { AuditEvent } from './audit';
+import {
+  requestSessionConfigReloadStream,
+  type SessionReloadPhase,
+  type SessionReloadStreamEvent as GenericSessionReloadStreamEvent,
+} from '../workspaces-client/session-reload-stream';
+
+export type { SessionReloadPhase } from '../workspaces-client/session-reload-stream';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -632,10 +639,17 @@ export interface SessionReloadResult {
     | 'not-applicable'
     | 'not-requested'
     | 'unknown';
+  /** Runtime replacement outcome. Absent when an older API did not report it. */
+  opencode_reload?: 'disposed' | 'restarted' | 'kept-old' | null;
+  /** True when the replacement ended an incomplete turn. */
+  turn_ended?: boolean | null;
   /** Why nothing was applied. Internal wording — map it, don't render it. */
   reason?: string;
   detail: string;
 }
+
+/** One frame from the streamed session-config reload route. */
+export type SessionReloadStreamEvent = GenericSessionReloadStreamEvent<SessionReloadResult>;
 
 /**
  * Recompile the agent config from git and push it into a RUNNING session.
@@ -661,6 +675,34 @@ export async function reloadProjectSessionConfig(
       input,
       { showErrors: false },
     ),
+  );
+}
+
+/**
+ * Reload a running session while reporting server-observed progress.
+ *
+ * This runs the same reload core as {@link reloadProjectSessionConfig}. The
+ * separate route preserves the existing JSON contract used by CLI clients.
+ * The `applying-config` phase includes the daemon's verified runtime swap. The
+ * server cannot observe its internal boot and promotion steps separately, so
+ * this method does not fabricate them.
+ *
+ * Requires a `fetch` implementation with a readable response body. React Native
+ * callers must use {@link reloadProjectSessionConfig} instead.
+ */
+/** @deprecated Use {@link reloadWorkspaceSessionConfigStream}. */
+export function reloadProjectSessionConfigStream(
+  projectId: string,
+  sessionId: string,
+  input: { refresh_repo?: boolean; force?: boolean },
+  onEvent: (event: SessionReloadStreamEvent) => void,
+  options: ApiClientOptions = {},
+): Promise<SessionReloadResult> {
+  return requestSessionConfigReloadStream<SessionReloadResult>(
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload-stream`,
+    input,
+    onEvent,
+    options,
   );
 }
 

@@ -18,6 +18,7 @@ import {
   listWorkspaceSessions,
   listSessionPublicShares,
   reloadWorkspaceSessionConfig,
+  reloadWorkspaceSessionConfigStream,
   restartWorkspaceSession,
   revokeSessionPublicShare,
   setWorkspaceSessionScope,
@@ -449,6 +450,98 @@ test('reloadWorkspaceSessionConfig surfaces the 409 code and reason for the conf
   );
   expect(err?.code).toBe('SESSION_BUSY');
   expect(err?.data?.reason).toBe('session is mid-turn');
+});
+
+function reloadStreamResponse(frames: string[], status = 200): Response {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(encoder.encode(frame));
+        controller.close();
+      },
+    }),
+    { status, headers: { 'content-type': 'text/event-stream' } },
+  );
+}
+
+test('reloadWorkspaceSessionConfigStream requests SSE and reports each server phase', async () => {
+  const events: unknown[] = [];
+  const fetchStub = mock(async (_url: unknown, opts: { body?: string; headers?: HeadersInit } = {}) => {
+    expect(JSON.parse(opts.body ?? '{}')).toEqual({ refresh_repo: false });
+    expect(new Headers(opts.headers).get('accept')).toBe('text/event-stream');
+    return reloadStreamResponse([
+      ': heartbeat\n',
+      'data: {"type":"phase","phase":"checking-session"}\n\n',
+      'data: {"type":"phase","phase":"compiling-config"}\n\n',
+      'data: {"type":"phase","phase":"applying-config"}\n\n',
+      'data: {"type":"phase","phase":"confirming-config"}\n\n',
+      'data: {"type":"done","result":{"applied":true,"previous_etag":"a","etag":"b","repo_refreshed":false,"commit_sha":null,"agent_files":"not-requested","opencode_reload":"restarted","turn_ended":false,"detail":"Reloaded"}}\n\n',
+    ]);
+  });
+
+  const result = await reloadWorkspaceSessionConfigStream(
+    'W1',
+    'S1',
+    { refresh_repo: false },
+    (event) => events.push(event),
+    { fetch: fetchStub as unknown as typeof fetch },
+  );
+
+  expect(events).toHaveLength(5);
+  expect(events.at(-1)).toEqual({
+    type: 'done',
+    result: {
+      applied: true,
+      previous_etag: 'a',
+      etag: 'b',
+      repo_refreshed: false,
+      commit_sha: null,
+      agent_files: 'not-requested',
+      opencode_reload: 'restarted',
+      turn_ended: false,
+      detail: 'Reloaded',
+    },
+  });
+  expect(result.applied).toBe(true);
+  expect(String(fetchStub.mock.calls[0]?.[0])).toContain(
+    '/workspaces/W1/sessions/S1/reload-stream',
+  );
+});
+
+test('reloadWorkspaceSessionConfigStream preserves busy status, code, and reason', async () => {
+  const fetchStub = mock(async () =>
+    reloadStreamResponse([
+      'data: {"type":"error","error":"This session is mid-turn.","code":"SESSION_BUSY","status":409,"reason":"session is mid-turn"}\n\n',
+    ]),
+  );
+
+  const error = await reloadWorkspaceSessionConfigStream(
+    'W1',
+    'S1',
+    {},
+    () => {},
+    { fetch: fetchStub as unknown as typeof fetch },
+  ).then(
+    () => null,
+    (value: unknown) => value as { status?: number; code?: string; data?: { reason?: string } },
+  );
+
+  expect(error?.status).toBe(409);
+  expect(error?.code).toBe('SESSION_BUSY');
+  expect(error?.data?.reason).toBe('session is mid-turn');
+});
+
+test('reloadWorkspaceSessionConfigStream rejects a bare close instead of claiming success', async () => {
+  const fetchStub = mock(async () =>
+    reloadStreamResponse(['data: {"type":"phase","phase":"checking-session"}\n\n']),
+  );
+
+  await expect(
+    reloadWorkspaceSessionConfigStream('W1', 'S1', {}, () => {}, {
+      fetch: fetchStub as unknown as typeof fetch,
+    }),
+  ).rejects.toThrow('Reload stream ended without a result');
 });
 
 test('stopWorkspaceSession POSTs to /stop', async () => {

@@ -850,7 +850,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `SEC-7` A project manager creates a secret setup request. The public link validates its token and writes the submitted value once.
 `SESS-17` A project member reads session previews. Unknown sessions and non-members are rejected.
 `SESS-18` Warm-session creation and claim enforce project access and reject invalid or unavailable warm sessions.
-`SESS-19` Session configuration freshness and reload routes reject anonymous callers and hide unknown projects.
+`SESS-19` Canonical Workspace session configuration freshness, reload, and streamed reload routes reject anonymous callers and hide unknown workspaces. Legacy Project routes preserve the same behavior.
 `SESS-20` The session transcript route returns 404 for an unknown session.
 `SYS-8` Live and ready health aliases return the same service-state contract.
 `SYS-9` Metrics requires internal authorization and router health returns its configured availability state.

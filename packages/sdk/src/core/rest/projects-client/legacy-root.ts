@@ -141,6 +141,7 @@ export {
   getProjectSessionScope,
   listProjectSessions,
   reloadProjectSessionConfig,
+  reloadProjectSessionConfigStream,
   restartProjectSession,
   setProjectSessionModel,
   setProjectSessionScope,

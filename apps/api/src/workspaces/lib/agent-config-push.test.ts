@@ -202,6 +202,18 @@ describe('propagateWorkspaceSecretsToActiveSandboxes', () => {
 });
 
 describe('pushSessionAgentConfigToSandbox', () => {
+  test('reports compilation before the blocking runtime apply starts', async () => {
+    const phases: string[] = [];
+    const result = await pushSessionAgentConfigToSandbox({
+      ...INPUT,
+      baseRef: 'main',
+      onPhase: (phase) => phases.push(phase),
+    });
+
+    expect(result.applied).toBe(true);
+    expect(phases).toEqual(['compiling-config', 'applying-config']);
+  });
+
   test('pushes the freshly compiled config and asks for the opencode restart', async () => {
     // opencode reads its config only at spawn, so the push alone changes
     // nothing — `refreshModels` is what makes the daemon restart it and apply.

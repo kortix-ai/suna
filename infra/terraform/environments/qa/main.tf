@@ -87,9 +87,9 @@ output "access_application_id" {
 }
 
 # ── GitHub Actions OIDC role that publishes QA reports to the bucket ──────────
-# Trusts the kortix-ai/suna main/staging/prod branches (qa-staging) and pull_requests
-# (qa-pr/qa-release per-PR reports). Least privilege: S3 write under reports/*
-# of the QA bucket only. Used as QA_REPORTS_ROLE_ARN in the qa workflows.
+# Trusts the kortix-ai/suna main/staging/prod branches and pull requests.
+# Least privilege: S3 write under reports/* of the QA bucket only. The role is
+# retained with the live report portal until that external state is retired.
 data "aws_iam_policy_document" "qa_publisher_assume" {
   statement {
     effect  = "Allow"

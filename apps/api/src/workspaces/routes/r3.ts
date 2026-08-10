@@ -249,7 +249,7 @@ workspaceRoutesApp.openapi(
 },
 );
 
-// GET /v1/projects/:workspaceId/git/clone-credential
+// GET /v1/workspaces/:workspaceId/git/clone-credential
 // Runtime-only clone credential fetch. A session sandbox calls this endpoint
 // with its sandbox-scoped KORTIX_TOKEN and gets a fresh provider credential
 // just-in-time. Browser sessions must not receive raw Git tokens.

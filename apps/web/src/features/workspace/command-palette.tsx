@@ -23,7 +23,9 @@ import {
 import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import {
   consumePendingCommandPalette,
   OPEN_COMMAND_PALETTE_EVENT,
@@ -36,9 +38,10 @@ import { useNewWorkspaceSession } from '@/hooks/workspaces/use-new-workspace-ses
 import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useWorkspaceFeatureFlags } from '@/lib/use-workspace-feature-flags';
+import { cn } from '@/lib/utils';
+import { useChatSendStore } from '@/stores/chat-send-store';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useWorkspaceSessionTabsStore } from '@/stores/workspace-session-tabs-store';
 import {
@@ -124,28 +127,6 @@ function sanitizeCmdkValue(value: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
-
-const LEGACY_PALETTE_HIDDEN = new Set([
-  'workspace',
-  'dashboard',
-  'scheduled-tasks',
-  'files',
-  'tunnel',
-  'running-services-cmd',
-  'agent-browser-cmd',
-  'internal-browser-cmd',
-  'desktop-cmd',
-  'templates',
-  'changelog',
-  'credits-explained',
-  'secrets-manager',
-  'api-keys',
-  'llm-providers',
-  'open-terminal',
-  'restart-config',
-  'restart-full',
-  'ssh-quick',
-]);
 
 const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   'nav-workspaces': 'workspaces',
@@ -423,6 +404,10 @@ export function CommandPalette() {
     enabled: open && !!workspaceId,
     ...contract('inventory'),
   });
+  const sendToSession = useChatSendStore((state) => state.sendToSession);
+  const currentWorkspaceSession = workspaceSessionsList?.find(
+    (session) => session.session_id === currentSessionId,
+  );
 
   // The registry's `requiresFlag` gate. One primitive (`useFeatureFlag`, via
   // `useWorkspaceFeatureFlags`) decides for every surface, so a palette entry can
@@ -1165,16 +1150,24 @@ export function CommandPalette() {
       .catch((err: unknown) => errorToast(reloadErrorMessage(err)));
   }, [close]);
 
-  const handleRestartFull = useCallback(() => {
+  const handleReconcileSession = useCallback(() => {
+    if (!currentSessionId) return;
     close();
-    systemReload('full')
-      .then((r) =>
-        r.success
-          ? successToast('Workspace pulled and runtime restarted')
-          : errorToast(r.errors[0] ?? 'The sandbox did not confirm the restart'),
+    sendToSession(
+      currentSessionId,
+      buildAgentGitReconciliationPrompt(currentWorkspaceSession?.base_ref),
+    )
+      .then((disposition) =>
+        successToast(
+          disposition === 'queued'
+            ? 'Branch sync queued after the current turn'
+            : 'Asked the agent to sync the branch',
+        ),
       )
-      .catch((err: unknown) => errorToast(reloadErrorMessage(err)));
-  }, [close]);
+      .catch((err: unknown) =>
+        errorToast(err instanceof Error ? err.message : 'Could not reach the agent'),
+      );
+  }, [close, currentSessionId, currentWorkspaceSession?.base_ref, sendToSession]);
 
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
@@ -1194,7 +1187,7 @@ export function CommandPalette() {
       openProviderModal: handleOpenProviderModal,
       generateSSHKey: handleGenerateSSHKey,
       restartConfig: handleRestartConfig,
-      restartFull: handleRestartFull,
+      reconcileSession: handleReconcileSession,
     }),
     [
       handleNewSession,
@@ -1213,7 +1206,7 @@ export function CommandPalette() {
       handleOpenProviderModal,
       handleGenerateSSHKey,
       handleRestartConfig,
-      handleRestartFull,
+      handleReconcileSession,
     ],
   );
 

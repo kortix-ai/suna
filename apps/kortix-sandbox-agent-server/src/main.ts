@@ -394,7 +394,7 @@ async function startSessionRuntime(
       const ctx = sandboxRelayContext(auditRelayToken(process.env))
       if (!ctx) throw new Error('audit relay context is unavailable')
       const response = await fetch(
-        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.workspaceId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+        `${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.workspaceId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
@@ -879,7 +879,12 @@ async function maybeCreateInitialOpencodeSession(
     })
     // A turn interrupted by the restart left a part stuck "running"; finalize it
     // so a client streaming this root sees the turn end instead of spinning.
-    if (existing.lastTurnIncomplete) await abortOpencodeTurn(baseUrl, workspace, sessionId)
+    if (
+      existing.lastTurnIncomplete &&
+      (await confirmTurnOrphaned(baseUrl, workspace, sessionId, existing))
+    ) {
+      await abortOpencodeTurn(baseUrl, workspace, sessionId)
+    }
     bootMark('runtime-session-resume-requested')
   } else {
     logger.info('[boot] creating initial opencode session', {
@@ -963,6 +968,10 @@ export async function finalizeOrphanedTurn(
 ): Promise<boolean> {
   const inspection = await inspectRoot(baseUrl, workspace, sessionId)
   if (!inspection.lastTurnIncomplete) return false
+  // Never abort a turn that is merely still being written — see
+  // confirmTurnOrphaned. This is the difference between closing a turn its
+  // opencode took to the grave and interrupting one that was about to finish.
+  if (!(await confirmTurnOrphaned(baseUrl, workspace, sessionId, inspection))) return false
   await abortOpencodeTurn(baseUrl, workspace, sessionId)
   return true
 }
@@ -1022,7 +1031,14 @@ async function deleteOpencodeSession(baseUrl: string, workspace: string, session
   }
 }
 
-interface ExistingRoot { id: string; hasMessages: boolean; lastTurnIncomplete: boolean }
+interface ExistingRoot {
+  id: string
+  hasMessages: boolean
+  lastTurnIncomplete: boolean
+  /** Carried through so the orphan re-check can tell the same unfinished turn
+   *  from a different one that started since. */
+  lastMessageId: string | null
+}
 
 /**
  * Resolve a usable existing canonical root for this workspace so a restart
@@ -1041,7 +1057,12 @@ async function resolveExistingRoot(baseUrl: string, workspace: string): Promise<
   const chosen = (pinned && roots.find((r) => r.id === pinned)) || pickMostRecentRoot(roots)
   if (!chosen) return null
   const inspection = await inspectRoot(baseUrl, workspace, chosen.id)
-  return { id: chosen.id, hasMessages: inspection.hasMessages, lastTurnIncomplete: inspection.lastTurnIncomplete }
+  return {
+    id: chosen.id,
+    hasMessages: inspection.hasMessages,
+    lastTurnIncomplete: inspection.lastTurnIncomplete,
+    lastMessageId: inspection.lastMessageId,
+  }
 }
 
 interface RootLite { id: string; created: number; updated: number }
@@ -1098,7 +1119,30 @@ function pickMostRecentRoot(roots: RootLite[]): RootLite | null {
   return best
 }
 
-interface RootInspection { hasMessages: boolean; lastTurnIncomplete: boolean }
+interface RootInspection {
+  hasMessages: boolean
+  lastTurnIncomplete: boolean
+  /** Identity of the last message, so a re-check can tell "same turn, still
+   *  unfinished" from "a different turn has since started". */
+  lastMessageId: string | null
+}
+
+/**
+ * How long to let an "incomplete" turn prove itself alive before aborting it.
+ *
+ * `lastTurnIncomplete` is `role === 'assistant' && !time.completed`, which is
+ * equally true of a turn nobody is writing (orphaned by a dead opencode) and
+ * one that is streaming right now. Aborting the second kind ends a healthy turn
+ * and stamps it with an AbortError, which the UI renders as "Interrupted" under
+ * an answer that finished perfectly well.
+ *
+ * The two are separable by waiting: nothing is writing an orphaned turn, so it
+ * stays incomplete forever, while a live one completes in moments. Two seconds
+ * is far longer than the gap between opencode finishing a turn and stamping
+ * `time.completed`, and it costs nothing on the path that matters — a genuinely
+ * orphaned turn is already broken and two seconds later still is.
+ */
+const ORPHAN_SETTLE_MS = 2_000
 
 /** Does the root already have messages (prompt delivered), and is its last turn
  *  an assistant message left incomplete by a crash (no completion time)? */
@@ -1108,15 +1152,52 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
       `${baseUrl}/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`,
       { signal: AbortSignal.timeout(5_000) },
     )
-    if (!res.ok) return { hasMessages: false, lastTurnIncomplete: false }
-    const msgs = (await res.json()) as Array<{ info?: { role?: string; time?: { completed?: number } } }>
-    if (!Array.isArray(msgs) || msgs.length === 0) return { hasMessages: false, lastTurnIncomplete: false }
+    if (!res.ok) return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    const msgs = (await res.json()) as Array<{
+      info?: { id?: string; role?: string; time?: { completed?: number } }
+    }>
+    if (!Array.isArray(msgs) || msgs.length === 0) {
+      return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    }
     const last = msgs[msgs.length - 1]
     const incomplete = last?.info?.role === 'assistant' && !last?.info?.time?.completed
-    return { hasMessages: true, lastTurnIncomplete: Boolean(incomplete) }
+    return {
+      hasMessages: true,
+      lastTurnIncomplete: Boolean(incomplete),
+      lastMessageId: last?.info?.id ?? null,
+    }
   } catch {
-    return { hasMessages: false, lastTurnIncomplete: false }
+    return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
   }
+}
+
+/**
+ * Is the turn actually ORPHANED, or just still being written?
+ *
+ * Look again after a settle window. Nothing is writing an orphaned turn, so it
+ * is still incomplete; a live one has finished, and aborting it would have
+ * ended a healthy answer and labelled it "Interrupted".
+ *
+ * Also refuses when the last message CHANGED — a different turn started in the
+ * meantime, and that one is certainly alive.
+ */
+async function confirmTurnOrphaned(
+  baseUrl: string,
+  workspace: string,
+  sessionId: string,
+  first: RootInspection,
+): Promise<boolean> {
+  await new Promise((r) => setTimeout(r, ORPHAN_SETTLE_MS))
+  const second = await inspectRoot(baseUrl, workspace, sessionId)
+  if (!second.lastTurnIncomplete) {
+    logger.info('[boot] turn completed on its own; not aborting', { sessionId })
+    return false
+  }
+  if (first.lastMessageId && second.lastMessageId !== first.lastMessageId) {
+    logger.info('[boot] a newer turn started; not aborting', { sessionId })
+    return false
+  }
+  return true
 }
 
 /** Finalize an interrupted turn so a streaming client stops spinning. */
@@ -1153,7 +1234,7 @@ async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> 
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!workspaceId || !sessionId || !token || !apiUrl) return
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
-  const url = `${apiRoot}/projects/${encodeURIComponent(workspaceId)}/turn-stream`
+  const url = `${apiRoot}/workspaces/${encodeURIComponent(workspaceId)}/turn-stream`
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -1346,7 +1427,7 @@ async function relayQuestionToApi(
   const ctx = sandboxRelayContext()
   if (!ctx) return
   const { workspaceId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(workspaceId)}/turn-question`
+  const url = `${apiRoot}/workspaces/${encodeURIComponent(workspaceId)}/turn-question`
   logger.info('[opencode-events] relaying question.asked', {
     requestId: req.id, questions: req.questions.length,
   })
@@ -1481,7 +1562,7 @@ export async function relayTurnEndToApi(
   }
 
   const { workspaceId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(workspaceId)}/turn-stream`
+  const url = `${apiRoot}/workspaces/${encodeURIComponent(workspaceId)}/turn-stream`
   const payload = JSON.stringify({
     session_id: sessionId,
     kind: 'end',

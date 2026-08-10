@@ -1166,7 +1166,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/sessions/:sessionId/audit/events
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/audit/events
 // Authenticated sandbox ingestion. The credential is bound to one project and
 // one session. Only redacted summaries and hashes are accepted.
 workspaceRoutesApp.openapi(
@@ -2782,6 +2782,124 @@ workspaceRoutesApp.openapi(
       ...result,
       detail: reloadDetail(result),
     });
+  },
+);
+
+// POST /v1/workspaces/:workspaceId/sessions/:sessionId/reload-stream
+// Same reload as POST /reload. This sibling route preserves the JSON contract
+// used by the CLI while letting web clients render real operation phases.
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/sessions/{sessionId}/reload-stream',
+    tags: ['sessions'],
+    summary: "Reload a running session's agent config with live progress",
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } }, required: false },
+    },
+    responses: {
+      200: {
+        description: 'A text/event-stream ending in one done or error frame',
+        content: { 'text/event-stream': { schema: z.any() } },
+      },
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_SESSION_STOP,
+    );
+    assertAgentScope(c, WORKSPACE_ACTIONS.WORKSPACE_SESSION_STOP);
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    if (!mayChangeSessionModel(visible)) {
+      return c.json(
+        { error: 'Only the session owner or a workspace manager can reload this session' },
+        403,
+      );
+    }
+
+    const body = (await readBody(c)) as { refresh_repo?: unknown; force?: unknown };
+
+    return new Response(
+      new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          let readable = true;
+          const write = (data: unknown) => {
+            if (!readable) return;
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+            } catch {
+              readable = false;
+            }
+          };
+
+          try {
+            const result = await reloadSessionConfig({
+              workspaceId,
+              accountId: loaded.row.accountId,
+              sessionId,
+              repoUrl: loaded.row.repoUrl,
+              defaultBranch: loaded.row.defaultBranch,
+              manifestPath: loaded.row.manifestPath,
+              baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
+              refreshRepo: body?.refresh_repo !== false,
+              force: body?.force === true,
+              onPhase: (phase) => write({ type: 'phase', phase }),
+            });
+
+            if (
+              result.reason === 'session is mid-turn' ||
+              result.reason === 'could not confirm the session is idle'
+            ) {
+              write({
+                type: 'error',
+                error:
+                  result.reason === 'session is mid-turn'
+                    ? 'This session is mid-turn. A reload restarts the runtime and ends it — retry when idle, or pass force: true.'
+                    : 'Could not confirm this session is idle, and a reload restarts the runtime. Retry, or pass force: true.',
+                code: 'SESSION_BUSY',
+                status: 409,
+                reason: result.reason,
+              });
+            } else {
+              write({ type: 'done', result: { ...result, detail: reloadDetail(result) } });
+            }
+          } catch (error) {
+            write({
+              type: 'error',
+              error: error instanceof Error && error.message ? error.message : 'Reload failed',
+            });
+          } finally {
+            if (readable) {
+              try {
+                controller.close();
+              } catch {}
+            }
+          }
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      },
+    ) as any;
   },
 );
 

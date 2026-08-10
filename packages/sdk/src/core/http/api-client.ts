@@ -565,7 +565,10 @@ async function postStream(
   const { timeout = 30000, fetch: fetchImpl = fetch } = options;
   const token = await getSupabaseAccessTokenWithRetry();
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
+  };
   const clientSource = normalizeClientSource(platformConfig().clientSource);
   if (clientSource) headers['X-Kortix-Client'] = clientSource;
   if (adminBypassEnabled) headers['x-kortix-admin-bypass'] = '1';

@@ -2206,7 +2206,7 @@ function agentMailConnectErrorBody(stage: 'inbox_create' | 'webhook_create', err
   };
 }
 
-// POST /v1/projects/:workspaceId/turn-stream
+// POST /v1/workspaces/:workspaceId/turn-stream
 // Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
 // kind=answer finalizes the turn's streamed message with the agent's reply.
 
@@ -3178,7 +3178,7 @@ workspaceRoutesApp.openapi(
   },
 );
 
-// POST /v1/projects/:workspaceId/turn-question
+// POST /v1/workspaces/:workspaceId/turn-question
 // Sandbox-to-apps/api relay for opencode's `question.asked` event. The
 // sandbox subscribes to opencode's SSE stream; when the agent calls the
 // built-in `question` tool, the sandbox relays the QuestionInfo[] here.

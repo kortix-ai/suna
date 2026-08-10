@@ -190,7 +190,7 @@ describe('daemon proxy auth gate', () => {
     ])
   })
 
-  it('fetches clone credentials from the API v1 project endpoint', async () => {
+  it('fetches clone credentials from the API v1 workspace endpoint', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-clone-credential-'))
     const originalFetch = globalThis.fetch
     const requests: Array<{ url: string; init?: RequestInit }> = []
@@ -231,7 +231,7 @@ describe('daemon proxy auth gate', () => {
       // tests in the same process) are unrelated noise.
       const credRequests = requests.filter((r) => r.url.includes('/git/clone-credential'))
       expect(credRequests).toHaveLength(1)
-      expect(credRequests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
+      expect(credRequests[0]!.url).toBe('http://api.local/v1/workspaces/project-123/git/clone-credential')
       // Assert auth on the credential request itself — not requests[0], which
       // can be unrelated background-fetch noise (health probes from a daemon
       // supervisor booted by another test in the same process).

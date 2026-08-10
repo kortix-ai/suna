@@ -11,7 +11,7 @@
  *
  * The whole design turns on ONE thing: `stale` is tri-state. `true` behind,
  * `false` current, and `null` **could not tell** — an unreachable sandbox, or a
- * project with no compiled config to compare against. Collapsing `null` into
+ * workspace with no compiled config to compare against. Collapsing `null` into
  * "up to date" would make this feature actively worse than nothing, because it
  * would answer a question it never asked.
  */
@@ -22,8 +22,9 @@ import { useState } from 'react';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
   getWorkspaceSessionConfigState,
-  reloadWorkspaceSessionConfig,
+  reloadWorkspaceSessionConfigStream,
   type SessionConfigState,
+  type SessionReloadPhase,
   type SessionReloadResult,
   sessionStartKey,
 } from '@kortix/sdk';
@@ -80,7 +81,7 @@ export function sessionConfigNotice(state: SessionConfigState | undefined): Sess
     };
   }
   // `false` is current. `null` is inconclusive: the sandbox is sleeping, the
-  // project has no compiled config, or an older runtime cannot report an etag.
+  // workspace has no compiled config, or an older runtime cannot report an etag.
   // None is an error, and none warrants persistent UI.
   return { kind: 'hidden' };
 }
@@ -151,6 +152,7 @@ export function useSessionConfigFreshness(workspaceId?: string, sessionId?: stri
 
 export function useReloadSessionConfig(workspaceId: string, sessionId: string) {
   const queryClient = useQueryClient();
+  const [phase, setPhase] = useState<SessionReloadPhase | null>(null);
   // Held in state rather than read off `mutation.error`, because `mutate()`
   // CLEARS the previous error before it starts. Derived straight from the
   // mutation, the confirm dialog would unmount on the very click that confirms
@@ -168,14 +170,23 @@ export function useReloadSessionConfig(workspaceId: string, sessionId: string) {
     // start. A reload is cheap to repeat by hand and expensive to repeat by
     // accident.
     retry: false,
-    mutationFn: (vars: { force?: boolean } = {}) =>
+    mutationFn: (vars: { force?: boolean } = {}) => {
+      setPhase(null);
       // This web action is named "Reload config", so it only reloads config.
       // Repository refresh remains an explicit CLI operation. This prevents a
       // low-priority UI action from changing the workspace checkout.
-      reloadWorkspaceSessionConfig(workspaceId, sessionId, {
-        refresh_repo: false,
-        ...(vars.force ? { force: true } : {}),
-      }),
+      return reloadWorkspaceSessionConfigStream(
+        workspaceId,
+        sessionId,
+        {
+          refresh_repo: false,
+          ...(vars.force ? { force: true } : {}),
+        },
+        (event) => {
+          if (event.type === 'phase') setPhase(event.phase);
+        },
+      );
+    },
     onSuccess: (result: SessionReloadResult) => {
       // It landed — whatever refusal opened the dialog is answered.
       setBusyReason(null);
@@ -218,11 +229,14 @@ export function useReloadSessionConfig(workspaceId: string, sessionId: string) {
       const message = error instanceof Error ? error.message.trim() : '';
       errorToast(message || 'Reload failed. Try again in a moment.');
     },
+    onSettled: () => setPhase(null),
   });
 
   return {
     reload: (vars: { force?: boolean } = {}) => mutation.mutate(vars),
     isPending: mutation.isPending,
+    /** The latest server-confirmed boundary reached by the active reload. */
+    phase,
     /** Set when an attempt was refused for a running turn; drives the confirm. */
     busyReason,
     clearBusy: () => setBusyReason(null),

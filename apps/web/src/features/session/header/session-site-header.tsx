@@ -121,8 +121,8 @@ export function SessionSiteHeader({
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  // Lifecycle actions (Share / Restart / Delete) operate on the workspace-level
-  // session, which is only addressable on the `/projects/:id/sessions/:id` route.
+  // Lifecycle actions operate on the canonical Workspace route. The route
+  // matcher also accepts the legacy Project URL while its redirect remains.
   const workspaceRoute = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
   const workspaceId = workspaceRoute?.[1];
   const workspaceSessionId = workspaceRoute?.[2];
@@ -344,8 +344,11 @@ export function SessionSiteHeader({
               <SessionConfigIndicator
                 workspaceId={workspaceId!}
                 sessionId={workspaceSessionId!}
+                chatSessionId={sessionId}
+                baseRef={workspaceSession?.base_ref}
                 reload={reloadConfig.reload}
                 isPending={reloadConfig.isPending}
+                phase={reloadConfig.phase}
                 canReload={canShare}
               />
             )}

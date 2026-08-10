@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 829,
+  "count": 831,
   "routes": [
     {
       "method": "GET",
@@ -1976,6 +1976,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/reload-stream"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:workspaceId/sessions/:sessionId/restart"
     },
     {
@@ -3161,6 +3165,10 @@
     {
       "method": "POST",
       "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/reload"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/reload-stream"
     },
     {
       "method": "POST",

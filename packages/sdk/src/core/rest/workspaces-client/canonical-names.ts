@@ -170,6 +170,7 @@ export {
   getWorkspaceSessionScope,
   listWorkspaceSessions,
   reloadWorkspaceSessionConfig,
+  reloadWorkspaceSessionConfigStream,
   restartWorkspaceSession,
   setWorkspaceSessionModel,
   setWorkspaceSessionScope,

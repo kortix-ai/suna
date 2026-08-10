@@ -46,7 +46,7 @@ describe('sessionConfigNotice', () => {
     ).toEqual({ kind: 'hidden' });
   });
 
-  test('a v1 project is hidden — the concept does not apply, so inventing a problem is wrong', () => {
+  test('a v1 workspace is hidden — the concept does not apply, so inventing a problem is wrong', () => {
     // kortix.toml compiles to nothing. `stale` is null forever for these, and a
     // warning here would be unfixable by design.
     expect(

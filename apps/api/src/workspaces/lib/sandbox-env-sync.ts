@@ -687,6 +687,8 @@ export async function pushSessionAgentConfigToSandbox(input: {
   defaultBranch: string;
   manifestPath?: string | null;
   baseRef?: string | null;
+  /** Reports real operation boundaries to callers that expose progress. */
+  onPhase?: (phase: 'compiling-config' | 'applying-config') => void;
 }): Promise<{
   applied: boolean;
   reason?: string;
@@ -694,6 +696,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
   opencodeTurnEnded?: boolean | null;
 }> {
   try {
+    input.onPhase?.('compiling-config');
     const [session] = await db
       .select({
         agentName: projectSessions.agentName,
@@ -744,6 +747,10 @@ export async function pushSessionAgentConfigToSandbox(input: {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
     });
+    // The daemon call blocks until its verified reload either promotes the new
+    // runtime or keeps the old one. This phase therefore names the whole
+    // apply-and-validate boundary instead of inventing sub-phases we cannot see.
+    input.onPhase?.('applying-config');
     const pushed = await postEnvToDaemon({
       previewUrl: url,
       providerHeaders: headers,

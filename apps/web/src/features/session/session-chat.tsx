@@ -28,7 +28,7 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
-import type { QueueDrainGates } from './message-queue-boundary';
+import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
@@ -743,6 +743,31 @@ function SessionTurnImpl({
     return undefined;
   }, [turn]);
 
+  /**
+   * Was the turn ACTUALLY aborted, as opposed to failing with a message that
+   * happens to contain the word?
+   *
+   * `getTurnError` flattens the structured error to a display string and drops
+   * its `name`, so the banner was left substring-matching "abort" over arbitrary
+   * prose — which renders a genuine failure as a muted "Interrupted" and hides
+   * what really went wrong. The identity is right here on the message; read it.
+   *
+   * Both real producers set `name: 'AbortError'`: opencode's own abort, and the
+   * optimistic patch applied when the user hits Stop.
+   */
+  const turnErrorIsAbort = useMemo(() => {
+    for (const msg of turn.assistantMessages) {
+      const err = (msg.info as { error?: unknown }).error;
+      if (!err || typeof err !== 'object') continue;
+      // Narrow to a string BEFORE comparing — `name` is `unknown` here, and
+      // comparing that to a literal is the inconvertible-types smell CodeQL
+      // flags (and would silently be false for a boxed String or a symbol).
+      const name = (err as { name?: unknown }).name;
+      return typeof name === 'string' && name === 'AbortError';
+    }
+    return false;
+  }, [turn]);
+
   // The gateway's structured fields (provider/suggestion/request_id) for
   // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
   // provider failed and WHAT to do about it instead of only the raw message.
@@ -1164,6 +1189,7 @@ function SessionTurnImpl({
           <TurnErrorDisplay
             errorText={turnError}
             errorDetails={turnErrorDetails}
+            isAbort={turnErrorIsAbort}
             className="mt-2"
           />
         )}
@@ -1439,7 +1465,13 @@ function SessionTurnImpl({
       )}
 
       {/* ── Error (abort / failure banner) ── */}
-      {turnError && <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} />}
+      {turnError && (
+        <TurnErrorDisplay
+          errorText={turnError}
+          errorDetails={turnErrorDetails}
+          isAbort={turnErrorIsAbort}
+        />
+      )}
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
@@ -3125,9 +3157,39 @@ export function SessionChat({
   const registerSender = useChatSendStore((s) => s.registerSender);
   const unregisterSender = useChatSendStore((s) => s.unregisterSender);
   useEffect(() => {
-    registerSender(sessionId, (text: string) => handleSend(text));
+    registerSender(
+      sessionId,
+      async (text: string) => {
+        const shouldQueue = shouldQueueInsteadOfSend({
+          isBusy:
+            isBusy || hasActiveQuestion || hasPendingApproval || pendingPermissions.length > 0,
+          pendingCount: sessionQueue.pending.length,
+          hasInFlight: !!sessionQueue.inFlightId,
+        });
+        if (shouldQueue) {
+          handleQueueMessage(text);
+          return 'queued';
+        }
+        await handleSend(text);
+        return 'sent';
+      },
+      workspaceSessionId ? [workspaceSessionId] : [],
+    );
     return () => unregisterSender(sessionId);
-  }, [sessionId, handleSend, registerSender, unregisterSender]);
+  }, [
+    sessionId,
+    workspaceSessionId,
+    isBusy,
+    hasActiveQuestion,
+    hasPendingApproval,
+    pendingPermissions.length,
+    sessionQueue.pending.length,
+    sessionQueue.inFlightId,
+    handleSend,
+    handleQueueMessage,
+    registerSender,
+    unregisterSender,
+  ]);
 
   // Release queued messages, one per turn, only when the turn actually ended.
   //

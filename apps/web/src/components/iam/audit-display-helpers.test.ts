@@ -72,6 +72,9 @@ describe('audit HTTP route registry', () => {
     expect(
       describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/audit/events`).title,
     ).toBe('Ingested session audit events');
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/reload-stream`).title,
+    ).toBe('Reloaded session agent config');
     expect(describeAuditAction(`POST /v1/projects/${UID}/turn-stream`).title).toBe(
       'Streamed session turn',
     );

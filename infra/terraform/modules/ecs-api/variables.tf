@@ -189,3 +189,20 @@ variable "secrets_blob_arn" {
   type        = string
   default     = ""
 }
+
+variable "ses_send_identity_names" {
+  description = "Verified SES identity names from which this ECS task may send email. Empty disables SES task-role access."
+  type        = list(string)
+  default     = []
+}
+
+variable "ses_send_region" {
+  description = "Region containing ses_send_identity_names. Required when SES task-role access is enabled."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = length(var.ses_send_identity_names) == 0 || length(trimspace(var.ses_send_region)) > 0
+    error_message = "ses_send_region is required when ses_send_identity_names is not empty."
+  }
+}

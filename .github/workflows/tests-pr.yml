@@ -1,8 +1,8 @@
-name: QA - PR
+name: Tests - PR
 
 on:
   pull_request:
-    branches: [main, staging, prod]
+    branches: [main, staging]
   workflow_dispatch:
     inputs:
       provider:
@@ -16,16 +16,16 @@ on:
           - daytona
 
 concurrency:
-  group: qa-pr-${{ github.ref }}
+  group: tests-pr-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   full:
-    name: full local suite
-    uses: ./.github/workflows/test.yml
+    name: all local tests
+    uses: ./.github/workflows/tests.yml
     with:
       mode: full
       provider: ${{ inputs.provider || 'daytona' }}
-      artifact-name: qa-pr-results
+      artifact-name: tests-pr-results
       retention-days: 14
     secrets: inherit

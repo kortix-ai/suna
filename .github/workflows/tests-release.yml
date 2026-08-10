@@ -1,4 +1,4 @@
-name: QA - release gate
+name: Tests - release
 
 on:
   pull_request:
@@ -7,21 +7,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: qa-release-${{ github.ref }}
+  group: tests-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  full-suite:
-    name: full suite + quality gates
-    uses: ./.github/workflows/test.yml
-    with:
-      mode: full
-      artifact-name: release-qa-results
-      retention-days: 90
-    secrets: inherit
-
   deployed-staging:
-    name: deployed staging API + browser
+    name: full suite + quality gates
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -86,7 +77,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: release-qa-deployed-staging
+          name: tests-release-deployed-staging
           path: tests/test-results/**
           if-no-files-found: warn
           retention-days: 90

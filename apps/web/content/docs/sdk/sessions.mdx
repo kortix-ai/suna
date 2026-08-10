@@ -27,6 +27,8 @@ ID, and the branch name are the same value. See
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
+| `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
+| `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
 | `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
 | `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
@@ -39,6 +41,19 @@ ID, and the branch name are the same value. See
   `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
   without losing it, call `s.stop()` instead.
 </Callout>
+
+Use the streamed method when the caller displays reload progress:
+
+```ts
+await s.reloadConfigStream({ refresh_repo: false }, (event) => {
+  if (event.type === 'phase') console.log(event.phase);
+});
+```
+
+The phases are `checking-session`, `refreshing-workspace`, `compiling-config`,
+`applying-config`, and `confirming-config`. The server omits
+`refreshing-workspace` when `refresh_repo` is `false`. The
+`applying-config` phase includes the daemon's validated runtime replacement.
 
 Three more read methods round out the handle:
 

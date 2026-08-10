@@ -95,7 +95,7 @@ describe('SessionSiteHeader session title', () => {
 });
 
 describe('SessionSiteHeader transcript ownership', () => {
-  test('keeps the export modal on the canonical project-session cache scope', () => {
+  test('keeps the export modal on the canonical workspace-session cache scope', () => {
     expect(source).toContain(
       'kortixSessionScope={isWorkspaceSession ? `${workspaceId}/${workspaceSessionId}` : undefined}',
     );
@@ -246,10 +246,12 @@ describe('SessionConfigIndicator wiring', () => {
     expect(mount).toBeTruthy();
     expect(mount).toContain('sessionId={workspaceSessionId!}');
     expect(mount).not.toContain('sessionId={sessionId}');
+    expect(mount).toContain('chatSessionId={sessionId}');
+    expect(mount).toContain('baseRef={workspaceSession?.base_ref}');
   });
 
   test('both reload entry points are gated on canShare', () => {
-    // The route requires session-owner-or-project-manager and 403s otherwise,
+    // The route requires session-owner-or-workspace-manager and 403s otherwise,
     // so an ungated control is a button that only ever fails.
     const mount = source.split('<SessionConfigIndicator')[1]?.split('/>')[0];
     expect(mount).toContain('canReload={canShare}');
@@ -264,6 +266,7 @@ describe('SessionConfigIndicator wiring', () => {
   test('the ⋯ item and the chip share ONE mutation, so pending state cannot disagree', () => {
     expect(source).toContain('const reloadConfig = useReloadSessionConfig(');
     expect(source).toContain('isPending={reloadConfig.isPending}');
+    expect(source).toContain('phase={reloadConfig.phase}');
     expect(source).toContain('disabled={reloadConfig.isPending}');
   });
 

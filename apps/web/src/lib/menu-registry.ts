@@ -45,7 +45,6 @@ import {
   KeyboardIcon as Keyboard,
   KeyIcon as KeyRound,
   StackIcon as Layers,
-  WaveformIcon as Waveform,
   SquaresFourIcon as LayoutDashboard,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
@@ -66,6 +65,7 @@ import {
   UsersIcon as UsersSolid,
   SpeakerHighIcon as Volume2,
   ImagesSquareIcon as WallpaperIcon,
+  WaveformIcon as Waveform,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
@@ -319,19 +319,19 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'restartConfig',
     keywords: 'reload restart config agents skills commands',
+    requiresSession: true,
   },
   {
-    id: 'restart-full',
-    // Says what it does. This maps to the daemon's /kortix/refresh, which pulls
-    // the workspace AND restarts the runtime — "Full" alone did not warn that it
-    // touches the working tree, or that it ends the turn in flight.
-    label: 'Restart: Pull & Restart Runtime',
+    id: 'sync-session-branch',
+    label: 'Ask Agent: Sync Branch & Reload',
     icon: RefreshCw,
     group: 'actions',
     showIn: ['commandPalette'],
     kind: 'action',
-    actionId: 'restartFull',
-    keywords: 'reload restart full services kill nuclear pull refresh workspace',
+    actionId: 'reconcileSession',
+    keywords:
+      'agent sync branch base pull merge conflict resolve reconcile reload restart refresh workspace',
+    requiresSession: true,
   },
 
   // ──────────────────────────────────────────────────────────────────────────

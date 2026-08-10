@@ -12,6 +12,7 @@
 // module mockable with the same global-fetch pattern the existing email tests
 // use.
 import { createHash, createHmac } from 'node:crypto';
+import { defaultProvider } from '@aws-sdk/credential-provider-node';
 
 import { config } from '../../config';
 
@@ -38,7 +39,7 @@ const SEND_TIMEOUT_MS = 10_000;
 function isConfigured(provider: EmailProvider): boolean {
   switch (provider) {
     case 'ses':
-      return !!(config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY);
+      return !!(config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY) || hasAwsWorkloadIdentity();
     case 'resend':
       return !!config.RESEND_API_KEY;
     case 'mailtrap':
@@ -46,6 +47,14 @@ function isConfigured(provider: EmailProvider): boolean {
     case 'mailpit':
       return !!config.MAILPIT_API_URL;
   }
+}
+
+function hasAwsWorkloadIdentity(): boolean {
+  return !!(
+    process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
+    process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ||
+    (process.env.AWS_WEB_IDENTITY_TOKEN_FILE && process.env.AWS_ROLE_ARN)
+  );
 }
 
 /** Providers that will be attempted, in order. Empty = no email delivery. */
@@ -83,6 +92,13 @@ async function sendViaSes(msg: EmailMessage): Promise<EmailSendResult> {
   const host = `email.${region}.amazonaws.com`;
   const path = '/v2/email/outbound-emails';
   const from = resolveFrom(msg);
+  const credentials =
+    config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY
+      ? {
+          accessKeyId: config.AWS_SES_ACCESS_KEY_ID,
+          secretAccessKey: config.AWS_SES_SECRET_ACCESS_KEY,
+        }
+      : await defaultProvider()();
 
   const body = JSON.stringify({
     FromEmailAddress: `${from.name} <${from.email}>`,
@@ -99,13 +115,18 @@ async function sendViaSes(msg: EmailMessage): Promise<EmailSendResult> {
   const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, ''); // YYYYMMDDTHHMMSSZ
   const dateStamp = amzDate.slice(0, 8);
   const payloadHash = sha256Hex(body);
-  const canonicalHeaders = `content-type:application/json\nhost:${host}\nx-amz-date:${amzDate}\n`;
-  const signedHeaders = 'content-type;host;x-amz-date';
+  const securityTokenHeader = credentials.sessionToken
+    ? `x-amz-security-token:${credentials.sessionToken}\n`
+    : '';
+  const canonicalHeaders = `content-type:application/json\nhost:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n${securityTokenHeader}`;
+  const signedHeaders = credentials.sessionToken
+    ? 'content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token'
+    : 'content-type;host;x-amz-content-sha256;x-amz-date';
   const canonicalRequest = `POST\n${path}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
   const scope = `${dateStamp}/${region}/ses/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${sha256Hex(canonicalRequest)}`;
   const signingKey = hmac(
-    hmac(hmac(hmac(`AWS4${config.AWS_SES_SECRET_ACCESS_KEY}`, dateStamp), region), 'ses'),
+    hmac(hmac(hmac(`AWS4${credentials.secretAccessKey}`, dateStamp), region), 'ses'),
     'aws4_request',
   );
   const signature = createHmac('sha256', signingKey).update(stringToSign, 'utf8').digest('hex');
@@ -114,8 +135,10 @@ async function sendViaSes(msg: EmailMessage): Promise<EmailSendResult> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-Amz-Content-Sha256': payloadHash,
       'X-Amz-Date': amzDate,
-      Authorization: `AWS4-HMAC-SHA256 Credential=${config.AWS_SES_ACCESS_KEY_ID}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+      ...(credentials.sessionToken ? { 'X-Amz-Security-Token': credentials.sessionToken } : {}),
+      Authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
     },
     body,
     signal: AbortSignal.timeout(SEND_TIMEOUT_MS),

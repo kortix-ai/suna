@@ -355,7 +355,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
 - GitHub Actions runs core, browser, and package modes in three disposable warm
-  sandboxes through `.github/workflows/test.yml`. The slowest lane defines the
+  sandboxes through `.github/workflows/tests.yml`. The slowest lane defines the
   gate duration. Set `provider` to `platinum`, `daytona`, or `auto`. Auto tries
   Platinum first. It uses Daytona only when Platinum infrastructure throws. A
   non-zero test exit does not trigger fallback.
@@ -365,7 +365,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - Both providers fetch and verify the exact SHA, upload `tests/test-results`,
   and delete the sandbox. The sandbox worker is infrastructure only. Do not add
   CI-only test logic.
-- Release QA also runs `pnpm test -- --target-full` against deployed staging. It blocks
+- Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
@@ -409,7 +409,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - **`prod` = production.** Production moves only through **Promote to Production**,
   which uses `staging` as the source, opens a reviewed release PR into `prod`,
   publishes the release artifacts, and rolls production after merge.
-- If `qa-staging` or a staging runtime check points at `dev.kortix.com` or
+- If a staging runtime check points at `dev.kortix.com` or
   `dev-api.kortix.com`, treat that as a broken staging setup, not a passing
   staging gate.
 

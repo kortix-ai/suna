@@ -1394,6 +1394,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         forgetReady();
         return P.reloadProjectSessionConfig(workspaceId, sessionId, input);
       },
+      /** @deprecated Project compatibility method. Use `workspace(id).session(sid)`. */
+      reloadConfigStream: (
+        ...args: DropFirst2<Parameters<typeof P.reloadProjectSessionConfigStream>>
+      ) => {
+        forgetReady();
+        return P.reloadProjectSessionConfigStream(workspaceId, sessionId, ...args);
+      },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(workspaceId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(workspaceId, sessionId),
@@ -1837,6 +1844,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       reloadConfig: (input?: Parameters<typeof W.reloadWorkspaceSessionConfig>[2]) => {
         forgetReady();
         return W.reloadWorkspaceSessionConfig(workspaceId, sessionId, input);
+      },
+      /** Reload config with server-observed progress events. */
+      reloadConfigStream: (
+        ...args: DropFirst2<Parameters<typeof W.reloadWorkspaceSessionConfigStream>>
+      ) => {
+        forgetReady();
+        return W.reloadWorkspaceSessionConfigStream(workspaceId, sessionId, ...args);
       },
       setSharing: (intent: Parameters<typeof W.setWorkspaceSessionSharing>[2]) =>
         W.setWorkspaceSessionSharing(workspaceId, sessionId, intent),
