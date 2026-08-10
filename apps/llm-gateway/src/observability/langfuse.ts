@@ -1,5 +1,5 @@
-import { Langfuse } from 'langfuse';
 import type { GatewayTrace } from '@kortix/llm-gateway';
+import { Langfuse } from 'langfuse';
 
 export interface LangfuseConfig {
   publicKey: string;
@@ -23,6 +23,13 @@ export function traceToLangfuse(t: GatewayTrace): TracePayloads {
   const startedAt = new Date(t.startedAt);
   const endedAt = new Date(startedAt.getTime() + t.latencyMs);
   const totalTokens = t.usage.promptTokens + t.usage.completionTokens;
+  const attemptFailures = t.attemptFailures ?? [];
+  const failureMetadata = {
+    attemptFailures,
+    failureCount: attemptFailures.length,
+    failureCodes: attemptFailures.map((failure) => String(failure.code)),
+    fallbackRecovered: t.ok && attemptFailures.length > 0,
+  };
 
   return {
     trace: {
@@ -50,6 +57,7 @@ export function traceToLangfuse(t: GatewayTrace): TracePayloads {
         finalCost: t.finalCost,
         errorCode: t.errorCode,
         errorMessage: t.errorMessage,
+        ...failureMetadata,
       },
     },
     generation: {
@@ -79,6 +87,7 @@ export function traceToLangfuse(t: GatewayTrace): TracePayloads {
         candidatesTried: t.candidatesTried,
         upstreamCost: t.upstreamCost,
         finalCost: t.finalCost,
+        ...failureMetadata,
       },
     },
   };

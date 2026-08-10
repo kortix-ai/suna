@@ -67,8 +67,6 @@ export function SessionOverridesComposer({
 }: SessionOverridesComposerProps) {
   const sessionRow = useWorkspaceSession(workspaceId, sessionId, { enabled: Boolean(sessionId) });
   const effort = useReasoningEffortControl(selectedModel, workspaceId);
-  const effortCurrent = effort.current;
-  const effortVisible = effort.visible;
   const currentModel = models.find(
     (candidate) =>
       candidate.providerID === selectedModel?.providerID &&
@@ -92,13 +90,18 @@ export function SessionOverridesComposer({
           disabled={agentLocked}
         />
       ),
+      onReset:
+        !agentLocked && onAgentChange && defaultAgentName
+          ? () => onAgentChange(defaultAgentName)
+          : undefined,
+      resetLabel: 'Reset to workspace default',
     }),
     [agentLocked, agents, defaultAgentName, onAgentChange, selectedAgent],
   );
 
   const modelSlot = useMemo(
     () => ({
-      summary: currentModel?.modelName ?? 'Workspace default',
+      summary: currentModel?.modelName ?? 'Default',
       overridden:
         Boolean(selectedModel) &&
         Boolean(defaultModel) &&
@@ -111,10 +114,16 @@ export function SessionOverridesComposer({
           selectedModel={selectedModel}
           onSelect={onModelChange ?? (() => {})}
           providers={providers}
-          unsetLabel="Workspace default"
+          unsetLabel="Default"
           disabled={!onModelChange}
         />
       ),
+      // Re-selecting the resolved default IS the reset: the store has no
+      // "unset" (set(undefined) re-persists its fallback), and selected ==
+      // default is what clears the override flag.
+      onReset:
+        onModelChange && defaultModel ? () => onModelChange(defaultModel) : undefined,
+      resetLabel: 'Reset to default',
     }),
     [
       currentModel?.modelName,
@@ -129,14 +138,14 @@ export function SessionOverridesComposer({
 
   const effortSlot = useMemo(
     () =>
-      effortVisible
+      effort.visible
         ? {
-            summary: effortCurrent ?? 'Model default',
-            overridden: Boolean(effortCurrent),
+            summary: effort.current ?? 'Model default',
+            overridden: Boolean(effort.current),
             control: <ReasoningEffortSelector model={selectedModel} workspaceId={workspaceId} />,
           }
         : undefined,
-    [effortCurrent, effortVisible, workspaceId, selectedModel],
+    [effort.current, effort.visible, workspaceId, selectedModel],
   );
 
   const sandbox = useMemo(

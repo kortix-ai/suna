@@ -57,6 +57,7 @@ export function createTraceEmitter(
       latencyMs: Date.now() - startMs,
       attempts: fields.attempts ?? 0,
       candidatesTried: fields.candidatesTried ?? [],
+      attemptFailures: fields.attemptFailures ?? [],
       usage: fields.usage ?? EMPTY_USAGE,
       upstreamCost: fields.upstreamCost ?? 0,
       finalCost: fields.finalCost ?? 0,

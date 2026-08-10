@@ -46,11 +46,17 @@ const unavailableCatalog: SessionScopeSelectionCatalog = {
 
 /** An axis whose control the composer already owns, handed in as a slot. */
 export interface SessionOverrideSlot {
-  /** What it resolves to now. "Workspace default" when nothing is overriding it. */
+  /**
+   * What it resolves to now. When nothing overrides the axis this names its
+   * real source ("Agent default", "Workspace default") — never "none".
+   */
   summary: string;
   overridden?: boolean;
   control: ReactNode;
   description?: string;
+  /** Drops the override — hands the axis back to its default. */
+  onReset?: () => void;
+  resetLabel?: string;
 }
 
 export interface SessionOverridesToolbarProps {
@@ -109,9 +115,7 @@ export function SessionOverridesToolbar({
     agentName,
   });
   const committedDraftRef = useRef(onCommittedDraft);
-  useEffect(() => {
-    committedDraftRef.current = onCommittedDraft;
-  }, [onCommittedDraft]);
+  committedDraftRef.current = onCommittedDraft;
 
   const initializationKey = useMemo(() => {
     if (!catalog) return null;
@@ -200,6 +204,8 @@ export function SessionOverridesToolbar({
           agent.description ??
           'The agent that answers your next prompt. It also decides the ceiling for every other axis here — a session can never reach past what its agent is granted.',
         editor: agent.control,
+        onReset: agent.onReset,
+        resetLabel: agent.resetLabel,
       });
     }
     if (model) {
@@ -212,8 +218,10 @@ export function SessionOverridesToolbar({
         overridden: model.overridden,
         description:
           model.description ??
-          'The model this session sends to. Leave it on the workspace default unless this one session needs something else.',
+          'The model this session sends to. Unset, it follows the agent’s model, then the account default — set it here only when this one session needs something else.',
         editor: model.control,
+        onReset: model.onReset,
+        resetLabel: model.resetLabel,
       });
     }
     if (reasoningEffort) {
@@ -226,8 +234,10 @@ export function SessionOverridesToolbar({
         overridden: reasoningEffort.overridden,
         description:
           reasoningEffort.description ??
-          'How much the model reasons before it answers. This value is stored per workspace and per model, so every session in this workspace using this model follows it.',
+          'How much the model reasons before it answers. This one is stored per workspace and per model, so every session in this workspace using this model follows it.',
         editor: reasoningEffort.control,
+        onReset: reasoningEffort.onReset,
+        resetLabel: reasoningEffort.resetLabel,
       });
     }
     list.push({
@@ -239,7 +249,8 @@ export function SessionOverridesToolbar({
         activeCatalog.secrets.status === 'ready' ? sessionSecretsSummary(draft) : 'Unavailable',
       overridden: sessionSecretsAreOverridden(draft),
       description:
-        'Which workspace secrets reach this session. The default is everything this agent is granted; narrowing it here only ever takes access away.',
+        'Which secrets reach this session. The default is the agent’s grant — everything its kortix.yaml allows — and narrowing it here only ever takes access away.',
+      resetLabel: 'Reset to agent default',
       editor: (
         <SessionSecretsEditor
           draft={draft}
@@ -261,7 +272,8 @@ export function SessionOverridesToolbar({
           : 'Unavailable',
       overridden: sessionConnectorsAreOverridden(draft),
       description:
-        'Which connected accounts this session may use. On the workspace default each one resolves to the workspace’s active connection; pick here only to pin this session to something else.',
+        'Which connected accounts this session may use. By default every connector the agent grants resolves to the workspace’s default connection; pick here only to pin this session to something else.',
+      resetLabel: 'Reset to workspace default',
       editor: (
         <SessionConnectorsEditor
           draft={draft}
@@ -276,8 +288,8 @@ export function SessionOverridesToolbar({
       id: 'sandbox',
       name: 'Sandbox',
       icon: Cpu,
-      hint: 'Where it runs',
-      summary: sandbox?.slug ?? 'Workspace default',
+      hint: 'Fixed at session start',
+      summary: sandbox?.slug ?? 'Default template',
       description:
         'The machine image this session runs on. It is chosen when the session is created and cannot be changed afterwards — start a new session to use a different one.',
       readOnly: true,

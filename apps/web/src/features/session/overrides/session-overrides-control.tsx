@@ -14,9 +14,10 @@ import { type ReactNode, useState } from 'react';
  * One overridable axis of a session.
  *
  * `summary` is what the axis is set to RIGHT NOW, and for an axis nobody
- * touched that string is "Workspace default" — never "none". `overridden` is what
- * earns the badge: a session should look inherited until the user deliberately
- * takes it off the default.
+ * touched that string names its real source — "Agent default" for secrets (the
+ * agent's grant), "Workspace default" for connectors (the workspace's default
+ * connections) — never "none". `overridden` is what earns the badge: a session
+ * should look inherited until the user deliberately takes it off the default.
  */
 export interface SessionOverrideRow {
   id: string;
@@ -35,6 +36,8 @@ export interface SessionOverrideRow {
    * catalog can never hide the only way back to the default.
    */
   onReset?: () => void;
+  /** Names where the default comes from — "Reset to agent default" etc. */
+  resetLabel?: string;
   /** Shown instead of the editor when the axis cannot be edited here. */
   readOnly?: boolean;
 }
@@ -47,7 +50,6 @@ export interface SessionOverridesControlProps {
   /** Extra note above the footer — e.g. the non-retroactive secrets warning. */
   notice?: ReactNode;
   onSave: () => void;
-  triggerLabel?: string;
 }
 
 /**
@@ -71,7 +73,7 @@ export function SessionOverridesControlContent({
   saveDisabled = false,
   notice,
   onSave,
-}: Omit<SessionOverridesControlProps, 'triggerLabel'>) {
+}: SessionOverridesControlProps) {
   const [focusedId, setFocusedId] = useState<string | null>(rows[0]?.id ?? null);
   const focused = rows.find((row) => row.id === focusedId) ?? rows[0];
   const controlsDisabled = disabled || saving;
@@ -137,7 +139,11 @@ export function SessionOverridesControlContent({
               </p>
               <div className="mt-3">{focused.editor}</div>
               {focused.overridden && focused.onReset ? (
-                <ResetAxisButton disabled={controlsDisabled} onReset={focused.onReset} />
+                <ResetAxisButton
+                  disabled={controlsDisabled}
+                  onReset={focused.onReset}
+                  label={focused.resetLabel}
+                />
               ) : null}
             </>
           ) : null}
@@ -163,10 +169,18 @@ export function SessionOverridesControlContent({
   );
 }
 
-export function SessionOverridesControl({
-  triggerLabel = 'Session',
-  ...contentProps
-}: SessionOverridesControlProps) {
+export function SessionOverridesControl({ ...contentProps }: SessionOverridesControlProps) {
+  // The trigger stays quiet: an icon like every other toolbar control, in the
+  // same muted tone as the agent/model selectors beside it. It only ever grows
+  // text when an override is actually in force — the one overridden axis's
+  // name, or a count — so the composer says nothing while everything inherits.
+  const overridden = contentProps.rows.filter((row) => row.overridden);
+  const triggerText =
+    overridden.length === 1
+      ? overridden[0].name
+      : overridden.length > 1
+        ? `${overridden.length} overrides`
+        : null;
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -176,9 +190,10 @@ export function SessionOverridesControl({
           size="toolbar"
           disabled={contentProps.disabled || contentProps.saving}
           aria-label="Session overrides"
+          className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
         >
           <SlidersHorizontal className="size-3.5 shrink-0" />
-          {triggerLabel}
+          {triggerText}
         </Button>
       </PopoverTrigger>
       <PopoverContent

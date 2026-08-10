@@ -1,9 +1,9 @@
 import type {
+  AdminConnector,
   Connection,
+  WorkspaceSecret,
   SessionScope,
   SessionScopeInput,
-  WorkspaceAdminConnector,
-  WorkspaceSecret,
 } from '@kortix/sdk';
 
 export interface SessionScopeDraft {
@@ -43,7 +43,7 @@ export interface SessionScopeCatalogGrants {
 
 export interface SessionScopeRawCatalogs {
   secrets: SessionScopeCatalogState<WorkspaceSecret>;
-  connectors: SessionScopeCatalogState<WorkspaceAdminConnector>;
+  connectors: SessionScopeCatalogState<AdminConnector>;
   connections: SessionScopeCatalogState<Connection>;
   grants?: SessionScopeCatalogGrants;
 }
@@ -62,7 +62,7 @@ export interface SessionScopeConnectionOption {
 export interface SessionScopeConnectorOption {
   slug: string;
   name: string;
-  authorization_strategy: WorkspaceAdminConnector['authorizationStrategy'];
+  authorization_strategy: AdminConnector['authorizationStrategy'];
   connections: SessionScopeConnectionOption[];
 }
 
@@ -188,21 +188,28 @@ export function resetSessionConnectorBindings(
   };
 }
 
-/** How an axis reads in the UI. "Workspace default" is the norm, never "none". */
-export const SESSION_SCOPE_INHERITED_LABEL = 'Workspace default';
+/**
+ * How an inherited axis reads in the UI — named for where the default really
+ * comes from, per axis. Secrets: `intersectSecretGrants(grant, null)` returns
+ * the AGENT's grant untouched, so the inherited state is the agent's. Connectors:
+ * the agent's grant gates the set, but each granted alias resolves to the
+ * WORKSPACE's default connection (`resolveWorkspaceDefaultConnectorConnection`).
+ */
+export const SESSION_SCOPE_SECRETS_INHERITED_LABEL = 'Agent default';
+export const SESSION_SCOPE_CONNECTORS_INHERITED_LABEL = 'Workspace default';
 
 export function sessionSecretsSummary(draft: SessionScopeDraft): string {
   if (draft.secrets === undefined) return 'Unchanged';
   // `null` = inherit whatever the agent's grant allows. Calling this "All
   // allowed" overstated it, and calling it "None selected" inverted it.
-  if (draft.secrets === null) return SESSION_SCOPE_INHERITED_LABEL;
+  if (draft.secrets === null) return SESSION_SCOPE_SECRETS_INHERITED_LABEL;
   if (draft.secrets.length === 0) return 'None allowed';
   return `${draft.secrets.length} selected`;
 }
 
 export function sessionConnectorsSummary(draft: SessionScopeDraft): string {
   if (draft.connector_bindings === undefined) return 'Unchanged';
-  if (draft.connector_bindings_inherited === true) return SESSION_SCOPE_INHERITED_LABEL;
+  if (draft.connector_bindings_inherited === true) return SESSION_SCOPE_CONNECTORS_INHERITED_LABEL;
   const bound = Object.keys(draft.connector_bindings);
   // A required-but-unconnected alias is selected too — it has no connection to
   // bind, which is precisely why it is recorded separately.

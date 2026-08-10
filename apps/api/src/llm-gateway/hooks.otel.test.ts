@@ -146,6 +146,65 @@ describe('emitGatewayGenAiSpan', () => {
     expect(attrScalar(span, 'kortix.ok')).toBe(false);
   });
 
+  test('emits the candidate failure chain and fallback outcome attributes', async () => {
+    await emitAndFlush(
+      baseTrace({
+        ok: false,
+        status: 502,
+        attemptFailures: [
+          {
+            attempt: 1,
+            provider: 'openai-codex',
+            routeModel: 'codex/gpt-5.6-sol',
+            resolvedModel: 'gpt-5.6-sol',
+            stage: 'stream_error',
+            status: 400,
+            code: 'context_length_exceeded',
+            message: 'context rejected',
+          },
+          {
+            attempt: 2,
+            provider: 'aster',
+            routeModel: 'glm-5.2',
+            resolvedModel: 'glm-5.2',
+            stage: 'stream_probe',
+            code: 'stream_probe_timeout',
+            message: 'probe timed out',
+          },
+        ],
+      }),
+    );
+
+    const span = lastSpan();
+    expect(attrScalar(span, 'kortix.failure_count')).toBe('2');
+    expect(attrScalar(span, 'kortix.failure_codes')).toBe(
+      'context_length_exceeded,stream_probe_timeout',
+    );
+    expect(attrScalar(span, 'kortix.context_rejected')).toBe(true);
+    expect(attrScalar(span, 'kortix.probe_timeout')).toBe(true);
+    expect(attrScalar(span, 'kortix.fallback_recovered')).toBe(false);
+
+    await emitAndFlush(
+      baseTrace({
+        ok: true,
+        status: 200,
+        attemptFailures: [
+          {
+            attempt: 1,
+            provider: 'primary',
+            routeModel: 'primary/model',
+            resolvedModel: 'model',
+            stage: 'dispatch',
+            status: 429,
+            code: 'rate_limit_exceeded',
+            message: 'rate limited',
+          },
+        ],
+      }),
+    );
+    expect(attrScalar(lastSpan(), 'kortix.fallback_recovered')).toBe(true);
+  });
+
   test('computes the span time window from latencyMs', async () => {
     const before = Date.now();
     await emitAndFlush(baseTrace({ latencyMs: 500 }));

@@ -5,7 +5,7 @@ import type {
   GatewayTrace,
   UsageEvent,
 } from '@kortix/llm-gateway';
-import { assertBillingActive, BillingGateError } from '../billing/services/billing-gate';
+import { BillingGateError, assertBillingActive } from '../billing/services/billing-gate';
 import { deductForLlmUsage, grantCredits } from '../billing/services/credits';
 import { accountMayUseManagedModels, getCachedAccountTier } from '../billing/services/entitlements';
 import { llmPriceMarkup } from '../billing/services/tiers';
@@ -18,17 +18,17 @@ import {
   extendSandboxDeadline,
   llmActivityGrantMs,
 } from '../workspaces/sandbox-deadline';
-import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
+import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { checkBudget } from './budgets';
-import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
-import { resolveGatewayRoute } from './routing';
+import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { resolveGatewayRoute } from './routing';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //
@@ -330,6 +330,8 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
 export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
   if (!isOtelTraceExporterConfigured()) return;
   try {
+    const attemptFailures = trace.attemptFailures ?? [];
+    const failureCodes = attemptFailures.map((failure) => String(failure.code));
     const endTimeMs = Date.now();
     const startTimeMs = endTimeMs - Math.max(0, trace.latencyMs || 0);
     const resolvedModel = trace.resolvedModel || trace.requestedModel;
@@ -356,6 +358,11 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         'kortix.attempts': trace.attempts,
         'kortix.gateway_status': trace.status,
         'kortix.ok': trace.ok,
+        'kortix.failure_count': attemptFailures.length,
+        'kortix.failure_codes': failureCodes.join(','),
+        'kortix.context_rejected': failureCodes.includes('context_length_exceeded'),
+        'kortix.probe_timeout': failureCodes.includes('stream_probe_timeout'),
+        'kortix.fallback_recovered': trace.ok && attemptFailures.length > 0,
         ...(trace.errorCode ? { 'kortix.error_code': trace.errorCode } : {}),
       },
     }).catch((error) => {
@@ -403,7 +410,10 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
     billingMode: trace.billingMode,
     request: trace.request,
     response: trace.response,
-    metadata: trace.metadata,
+    metadata: {
+      ...trace.metadata,
+      ...(trace.attemptFailures?.length ? { attemptFailures: trace.attemptFailures } : {}),
+    },
   });
   // Non-blocking: never let telemetry delay the caller or affect the trace write.
   emitGatewayGenAiSpan(trace);

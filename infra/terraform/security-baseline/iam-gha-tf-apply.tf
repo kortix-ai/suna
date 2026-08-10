@@ -183,6 +183,9 @@ locals {
     "arn:aws:iam::${local.account_id}:role/kortix-*",
     # compliance-monitoring: KortixEc2CpuAlarmReconciler
     "arn:aws:iam::${local.account_id}:role/Kortix*",
+    # compliance-monitoring manages the DrataSNSSubscriptionInspection inline
+    # policy ON Drata's role (first global-apply run 403'd on GetRolePolicy).
+    "arn:aws:iam::${local.account_id}:role/DrataAutopilotRole",
     # legacy-roles.tf
     "arn:aws:iam::${local.account_id}:role/whatsapp-gateway-*",
     "arn:aws:iam::${local.account_id}:role/bedrock-logs",

@@ -1,6 +1,7 @@
 import type {
   AuthedPrincipal,
   AuthorizeResult,
+  GatewayAttemptFailure,
   GatewayConfig,
   GatewayHooks,
   GatewayLogger,
@@ -23,7 +24,19 @@ import {
 } from '../usage';
 import { gatewayErrorBody, gatewayErrorResponse } from './error-response';
 import { type RoutedUpstreamCandidate, runFailover } from './failover';
-import { type StreamProbeResult, probeStream, relayStream } from './streaming';
+import {
+  appendAttemptFailure,
+  errorFrameCode,
+  exhaustedRouteErrorCode,
+  failureChainMessage,
+  failureChainMetadata,
+} from './failure-chain';
+import {
+  type StreamProbeResult,
+  probeStream,
+  relayStream,
+  resolveStreamProbeTimeoutMs,
+} from './streaming';
 import { createTraceEmitter } from './trace';
 
 export interface ChatCompletionRequest {
@@ -237,6 +250,7 @@ export async function handleChatCompletions(
   const startMs = Date.now();
 
   const emit = createTraceEmitter(hooks, logger, requestId, startedAt, startMs);
+  const requestBytes = new TextEncoder().encode(req.rawBody).byteLength;
 
   let lastMark = startMs;
   const lap = (): number => {
@@ -288,7 +302,7 @@ export async function handleChatCompletions(
     );
   };
 
-  step('received', { bytes: req.rawBody.length, hasAuthHeader: Boolean(req.authorization) });
+  step('received', { bytes: requestBytes, hasAuthHeader: Boolean(req.authorization) });
 
   const token = bearer(req.authorization);
   if (!token) {
@@ -342,19 +356,23 @@ export async function handleChatCompletions(
   // default (`maxRequestBytes` unset/0); when configured it turns an upstream
   // that silently drops an over-limit request into an immediate, actionable 413
   // instead of a multi-second retry storm that ends in a generic 502.
-  if (config.maxRequestBytes && req.rawBody.length > config.maxRequestBytes) {
+  if (config.maxRequestBytes && requestBytes > config.maxRequestBytes) {
     refundBillingHold(principal);
-    step('request_too_large', { bytes: req.rawBody.length, limit: config.maxRequestBytes });
+    step('request_too_large', { bytes: requestBytes, limit: config.maxRequestBytes });
     emit({
       ...id,
       status: 413,
       ok: false,
       errorCode: 'request_too_large',
-      errorMessage: `Request body ${req.rawBody.length} bytes exceeds limit ${config.maxRequestBytes}`,
+      errorMessage: `Request body ${requestBytes} bytes exceeds limit ${config.maxRequestBytes}`,
     });
     return gatewayErrorResponse(413, {
-      message: `Request body of ${req.rawBody.length} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
-      code: 'request_too_large', provider: '', requestedModel: '', resolvedModel: '', requestId,
+      message: `Request body of ${requestBytes} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
+      code: 'request_too_large',
+      provider: '',
+      requestedModel: '',
+      resolvedModel: '',
+      requestId,
       suggestion: 'Start a new session or reduce the conversation and attachment size, then retry.',
     });
   }
@@ -608,6 +626,10 @@ export async function handleChatCompletions(
   // (see the error-frame branch below). Surfaced in place of the generic
   // empty-completion 502 when every candidate ends up producing nothing usable.
   let lastErrorFrame: SseErrorFrame | null = null;
+  // Ordered, bounded diagnostics for every candidate rejected before the turn
+  // either succeeds or exhausts its route. This is the source of truth for the
+  // client error envelope and the observability summary.
+  let attemptFailures: GatewayAttemptFailure[] = [];
 
   // Usage from candidates the dispatch loop discarded (empty-completion retries
   // and failed-over attempts) before ever reaching settle(). A "malformed"
@@ -663,33 +685,47 @@ export async function handleChatCompletions(
       // Prefer the real upstream cause (overloaded, request too large, content
       // filter) that a candidate reported over the generic "empty" message that
       // would otherwise bury it.
-      const errorCode = lastErrorFrame ? 'upstream_error' : 'empty_completion';
-      const message = lastErrorFrame
-        ? lastErrorFrame.message
-        : 'All upstream candidates returned an empty completion';
+      const errorCode = exhaustedRouteErrorCode(attemptFailures);
+      const message = failureChainMessage(
+        attemptFailures,
+        'All upstream candidates returned an empty completion',
+        requestId,
+      );
       const status = lastErrorFrame ? statusForErrorFrame(lastErrorFrame) : 502;
       const failedCandidate = [...candidates].reverse().find((candidate) =>
         exhaustedCandidates.has(candidateKey(candidate)),
       );
       const failedDescriptor = failedCandidate?.descriptor;
+      const failureMetadata = failureChainMetadata(attemptFailures, false);
       emit({
         ...id,
         requestedModel,
-        resolvedModel: routedModel,
+        resolvedModel: failedDescriptor?.resolvedModel ?? routedModel,
+        provider: failedDescriptor?.provider ?? tried.at(-1) ?? '',
+        billingMode: failedDescriptor?.billingMode ?? 'none',
         streaming,
         status,
         ok: false,
         errorCode,
         errorMessage: message,
+        attempts,
         candidatesTried: tried,
+        attemptFailures,
         request: capture(payload),
-        metadata: routingMetadata(null),
+        metadata: {
+          ...routingMetadata(null),
+          ...(failureMetadata ? { gatewayFailure: failureMetadata } : {}),
+        },
       });
       return json(
         gatewayErrorBody({
           message,
           code: errorCode,
-          upstreamCode: lastErrorFrame?.code,
+          // Keep both code locations canonical for OpenAI-compatible clients.
+          // OpenCode 1.17.11 reads nested `error.code` from responseBody to
+          // decide whether it must compact after a provider rejection.
+          upstreamCode:
+            errorCode === 'context_length_exceeded' ? errorCode : lastErrorFrame?.code,
           provider: failedDescriptor?.provider ?? tried.at(-1) ?? '',
           requestedModel,
           resolvedModel: failedDescriptor?.resolvedModel ?? routedModel,
@@ -698,6 +734,7 @@ export async function handleChatCompletions(
             status === 401
               ? 'Check the provider credentials, or switch to another model.'
               : 'Retry the request. If the error continues, switch to another model.',
+          attemptFailures,
         }),
         status,
       );
@@ -722,6 +759,7 @@ export async function handleChatCompletions(
       fallbackOn,
       signal: req.signal,
       generationDefaultsForModel,
+      attemptFailures,
     });
 
     if (result.kind === 'response') {
@@ -737,7 +775,9 @@ export async function handleChatCompletions(
       modelsTried: modelsTriedThisRound,
       attempts: attemptsThisRound,
       dispatchedPayload: dispatchedPayloadThisRound,
+      attemptFailures: attemptFailuresThisRound,
     } = result.value;
+    attemptFailures = attemptFailuresThisRound;
     tried = [...tried, ...triedThisRound];
     modelsTried = [...modelsTried, ...modelsTriedThisRound]
       .filter((model, index, all) => all.indexOf(model) === index);
@@ -764,16 +804,42 @@ export async function handleChatCompletions(
       // (a real generation that came back badly shaped) — capture any usage
       // before discarding the body.
       accumulateDiscardedUsage(extractUsageFromJson(data));
-      if (softFailure) lastErrorFrame = softFailure;
-      await registerInvalidCompletion(
-        chosen,
-        softFailure ? 'rate_limit' : 'empty_completion',
-        { streaming: false },
-      );
+      if (softFailure) {
+        lastErrorFrame = softFailure;
+        appendAttemptFailure(attemptFailures, {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          resolvedModel: chosenDescriptor.resolvedModel,
+          stage: 'completion_validation',
+          status: statusForErrorFrame(softFailure),
+          code: errorFrameCode(softFailure),
+          message: softFailure.message,
+        });
+      } else {
+        appendAttemptFailure(attemptFailures, {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          resolvedModel: chosenDescriptor.resolvedModel,
+          stage: 'completion_validation',
+          code: 'empty_completion',
+          message: 'Upstream returned a completion without usable content',
+        });
+      }
+      await registerInvalidCompletion(chosen, softFailure ? 'rate_limit' : 'empty_completion', {
+        streaming: false,
+      });
       continue;
     }
 
     if (!candidateUpstream.body) {
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'completion_validation',
+        code: 'empty_completion',
+        message: 'Upstream returned a streaming response without a body',
+      });
       await registerInvalidCompletion(chosen, 'empty_completion', {
         streaming: true,
         reason: 'no_body',
@@ -781,8 +847,14 @@ export async function handleChatCompletions(
       continue;
     }
 
+    const streamProbeTimeoutMs = resolveStreamProbeTimeoutMs({
+      requestBytes,
+      provider: chosenDescriptor.provider,
+      model: chosenDescriptor.resolvedModel ?? chosenRouteModel,
+      configuredTimeoutMs: config.streamProbeTimeoutMs,
+    });
     const probe = await probeStream(candidateUpstream.body, {
-      inactivityTimeoutMs: config.streamProbeTimeoutMs,
+      inactivityTimeoutMs: streamProbeTimeoutMs,
     });
     if (probe.hasContent) {
       upstream = candidateUpstream;
@@ -795,6 +867,15 @@ export async function handleChatCompletions(
     // transient. Retry a 429 with rate-limit backoff before failover.
     if (probe.errorFrame) {
       lastErrorFrame = probe.errorFrame;
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'stream_error',
+        status: statusForErrorFrame(probe.errorFrame),
+        code: errorFrameCode(probe.errorFrame),
+        message: probe.errorFrame.message,
+      });
       await probe.reader.cancel('upstream completion rejected by gateway').catch(() => undefined);
       // `detail` carries the fields that actually identify WHICH part of the
       // request the upstream rejected (OpenAI-shaped backends: `type`/`param`).
@@ -824,6 +905,14 @@ export async function handleChatCompletions(
     }
     if (probe.readError) {
       lastErrorFrame = probe.readError;
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'stream_probe',
+        code: errorFrameCode(probe.readError),
+        message: probe.readError.message,
+      });
       logger.warn(
         `[llm-gateway] upstream stream read failed during probe from ${chosenDescriptor.provider} ${requestId}: "${probe.readError.message}"`,
       );
@@ -842,6 +931,14 @@ export async function handleChatCompletions(
       const decoded = new TextDecoder().decode(concatChunks(probe.chunks));
       accumulateDiscardedUsage(extractUsageFromSseBuffer(decoded));
     }
+    appendAttemptFailure(attemptFailures, {
+      provider: chosenDescriptor.provider,
+      routeModel: chosenRouteModel,
+      resolvedModel: chosenDescriptor.resolvedModel,
+      stage: 'completion_validation',
+      code: 'empty_completion',
+      message: 'Upstream stream closed before producing usable content',
+    });
     await registerInvalidCompletion(chosen, 'empty_completion', { streaming: true });
   }
 
@@ -864,7 +961,11 @@ export async function handleChatCompletions(
     selectedRouteModel,
   });
 
-  const traceMetadata = routingMetadata(selectedRouteModel);
+  const recoveredFailure = failureChainMetadata(attemptFailures, true);
+  const traceMetadata = {
+    ...routingMetadata(selectedRouteModel),
+    ...(recoveredFailure ? { gatewayFailure: recoveredFailure } : {}),
+  };
 
   const settle = async (
     usage: ExtractedUsage | null,
@@ -992,6 +1093,7 @@ export async function handleChatCompletions(
         : {}),
       attempts,
       candidatesTried: tried,
+      attemptFailures,
       usage: counts,
       upstreamCost,
       finalCost,

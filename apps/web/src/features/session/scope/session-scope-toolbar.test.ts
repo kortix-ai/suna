@@ -45,7 +45,7 @@ const catalog = (
         connections: [
           {
             connection_id: 'connection-mail',
-            label: 'Project mail',
+            label: 'Workspace mail',
             is_default: true,
           },
         ],

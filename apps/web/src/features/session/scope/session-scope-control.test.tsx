@@ -41,7 +41,7 @@ const catalog: SessionScopeSelectionCatalog = {
         connections: [
           {
             connection_id: 'connection-crm',
-            label: 'Project CRM',
+            label: 'Workspace CRM',
             is_default: true,
           },
         ],
@@ -69,7 +69,7 @@ function renderConnectors(draft: SessionScopeDraft, scopeCatalog = catalog) {
 
 describe('session scope editors', () => {
   test('an inherited secrets axis keeps the workspace default checked', () => {
-    // `null` is the INHERITED state, so the box that says "use the project
+    // `null` is the INHERITED state, so the box that says "use the workspace
     // default" is the one that is on. Unchecking a secret is what converts the
     // axis into an explicit allowlist — an override is never created by
     // opening the panel.

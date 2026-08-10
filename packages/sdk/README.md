@@ -474,6 +474,16 @@ Idempotent reads (`GET`/`HEAD`) also absorb transient gateway blips: `502`,
 `503`, and `504` retry up to two times with 250ms → 500ms backoff before an
 `ApiError` is surfaced. Mutations and HTTP `500` responses are never retried.
 
+LLM session retries can carry the gateway's structured failure chain. Use
+`getRetryInfo(status)`. Its optional `details` field contains the final
+`provider`, gateway `code`, `requestId`, and ordered `attemptFailures`. Each
+failure identifies the provider, route model, resolved model, stage, upstream
+status when available, concrete code, and bounded message. Plain legacy retry
+messages remain supported and return `details: undefined`. When OpenCode keeps
+only the HTTP error message, `getRetryMessage(status)` still returns the full
+gateway composite. That message includes the request ID and each candidate's
+provider, resolved model, HTTP status, code, and bounded message.
+
 ## Subpath modules
 
 Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive

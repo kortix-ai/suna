@@ -411,8 +411,8 @@ describe("gateway.chatCompletions", () => {
       rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
     });
     expect(res.status).toBe(502);
-    expect(await res.json()).toMatchObject({
-      message: "boom",
+    const body = await res.json();
+    expect(body).toMatchObject({
       code: "upstream_unreachable",
       upstream_status: 500,
       provider: "openrouter",
@@ -420,6 +420,10 @@ describe("gateway.chatCompletions", () => {
       resolved_model: "x",
       suggestion: "Retry the request. If the error continues, switch to another model.",
     });
+    expect(body.message).toContain(body.request_id);
+    expect(body.message).toContain("openrouter/x");
+    expect(body.message).toContain("HTTP 500");
+    expect(body.message).toContain("boom");
   });
 
   test("reports the last attempted descriptor when every upstream fails", async () => {
@@ -1279,7 +1283,29 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     // Candidate A's empty frame never reaches the client — only B's real content does.
     expect(sseText(text)).toEqual({ content: "real answer", finishReason: "stop" });
     await flush();
-    expect(traces.find((t) => t.ok)?.provider).toBe("b");
+    const recovered = traces.find((t) => t.ok);
+    expect(recovered?.provider).toBe('b');
+    expect(recovered?.attempts).toBe(4);
+    expect(recovered?.candidatesTried).toEqual(['a', 'a', 'a', 'b']);
+    expect(recovered?.attemptFailures).toHaveLength(3);
+    expect(recovered?.attemptFailures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          attempt: 1,
+          provider: 'a',
+          code: 'empty_completion',
+          stage: 'completion_validation',
+        }),
+      ]),
+    );
+    expect(recovered?.metadata).toMatchObject({
+      gatewayFailure: {
+        attemptCount: 3,
+        fallbackRecovered: true,
+        codes: ['empty_completion', 'empty_completion', 'empty_completion'],
+        providers: ['a', 'a', 'a'],
+      },
+    });
   });
 
   test("streaming: every candidate's stream is empty → 502 empty_completion, not a fabricated SSE response", async () => {
@@ -1341,7 +1367,7 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("content-type")).toContain("application/json");
     const body = await res.json();
-    expect(body.message).toBe(rampRateMessage);
+    expect(body.message).toContain(rampRateMessage);
     expect(body.upstream_code).toBe(429);
     expect(calls).toBe(3);
     await flush();
@@ -1349,7 +1375,7 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
       ok: false,
       status: 429,
       errorCode: "upstream_error",
-      errorMessage: rampRateMessage,
+      errorMessage: expect.stringContaining(rampRateMessage),
     });
   });
 
@@ -1403,9 +1429,9 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.code).toBe("upstream_error");
-    expect(body.message).toBe("Overloaded");
+    expect(body.message).toContain("Overloaded");
     expect(body.error).toMatchObject({
-      message: "Overloaded",
+      message: expect.stringContaining("Overloaded"),
       type: "upstream_error",
       code: "overloaded_error",
       provider: "openrouter",
@@ -1456,7 +1482,7 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.code).toBe("upstream_error");
-    expect(body.message).toBe("Incorrect API key provided");
+    expect(body.message).toContain("Incorrect API key provided");
     expect(body.upstream_code).toBe("invalid_api_key");
     expect(calls).toBe(1); // no same-candidate retry storm on a dead key
     await flush();
@@ -1615,7 +1641,7 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
 
     expect(res.status).toBe(429);
     const body = await res.json();
-    expect(body.message).toBe("Rate limit exceeded");
+    expect(body.message).toContain("Rate limit exceeded");
     expect(body.upstream_code).toBe(429);
     await flush();
     expect(traces[0].status).toBe(429);
@@ -1672,15 +1698,15 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     const body = await res.json();
     expect(body.code).toBe("upstream_error");
     // The REAL upstream message reaches the caller, not a generic "Bad Request".
-    expect(body.message).toBe("context length exceeded from messages");
-    expect(body.error.message).toBe("context length exceeded from messages");
+    expect(body.message).toContain("context length exceeded from messages");
+    expect(body.error.message).toContain("context length exceeded from messages");
     expect(body.upstream_code).toBe(400);
     expect(body.suggestion).toContain("switch to another model");
     await flush();
     expect(traces[0].ok).toBe(false);
     expect(traces[0].status).toBe(400);
     expect(traces[0].errorCode).toBe("upstream_error");
-    expect(traces[0].errorMessage).toBe("context length exceeded from messages");
+    expect(traces[0].errorMessage).toContain("context length exceeded from messages");
   });
 
   test("streaming: an error frame from candidate A still fails over to a healthy candidate B", async () => {
@@ -1701,7 +1727,147 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
       finishReason: "stop",
     });
     await flush();
-    expect(traces.find((t) => t.ok)?.provider).toBe("b");
+    const recovered = traces.find((t) => t.ok);
+    expect(recovered?.provider).toBe('b');
+    expect(recovered?.attempts).toBe(2);
+    expect(recovered?.candidatesTried).toEqual(['a', 'b']);
+    expect(recovered?.attemptFailures).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        provider: 'a',
+        code: 'overloaded_error',
+        stage: 'stream_error',
+      }),
+    ]);
+    expect(recovered?.metadata).toMatchObject({
+      gatewayFailure: {
+        attemptCount: 1,
+        fallbackRecovered: true,
+        codes: ['overloaded_error'],
+        providers: ['a'],
+      },
+    });
+  });
+
+  test('streaming: preserves the Codex context rejection and fallback probe timeout as one failure chain', async () => {
+    const codex: UpstreamDescriptor = {
+      ...managed,
+      provider: 'openai-codex',
+      // The handler test starts from the normalized OpenAI-compatible SSE
+      // frame emitted by the transport. Transport-specific Responses parsing
+      // has its own coverage in transports/ai-sdk/ai-sdk.test.ts.
+      kind: 'openai-compat',
+      baseUrl: 'https://chatgpt.test/backend-api/codex',
+      resolvedModel: 'gpt-5.6-sol',
+    };
+    const aster: UpstreamDescriptor = {
+      ...managed,
+      provider: 'aster',
+      baseUrl: 'https://aster.test/v1',
+      resolvedModel: 'glm-5.2',
+    };
+    const { hooks, traces } = makeHooks({
+      resolveRoute: async () => ({
+        policyId: 'platform-default-degrade',
+        primaryModel: 'codex/gpt-5.6-sol',
+        fallbackModels: ['glm-5.2'],
+        fallbackOn: 'any-error',
+      }),
+      resolveUpstream: async (_principal, model) =>
+        model === 'codex/gpt-5.6-sol' ? [codex] : [aster],
+    });
+    const fetchImpl: FetchImpl = async (url) => {
+      if (new URL(url).hostname === 'chatgpt.test') {
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: 'Your input exceeds the context window of this model.',
+              type: 'invalid_request_error',
+              code: 'context_length_exceeded',
+              param: 'input',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    };
+
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry, streamProbeTimeoutMs: 10 },
+      { fetchImpl },
+    ).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody:
+        '{"model":"codex/gpt-5.6-sol","stream":true,"messages":[{"role":"user","content":"large prompt"}]}',
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    // OpenCode 1.17.11 parseAPICallError() recognizes this exact nested code
+    // and converts the failed turn into ContextOverflowError. The processor
+    // then requests automatic compaction instead of applying ordinary retry.
+    expect(body.code).toBe('context_length_exceeded');
+    expect(body.error).toMatchObject({
+      type: 'context_length_exceeded',
+      code: 'context_length_exceeded',
+    });
+    expect(body.upstream_code).toBe('context_length_exceeded');
+    expect(body.message).toContain('openai-codex');
+    expect(body.message).toContain(body.request_id);
+    expect(body.message).toContain('HTTP 400');
+    expect(body.message).toContain('context_length_exceeded');
+    expect(body.message).toContain('aster');
+    expect(body.message).toContain('stream_probe_timeout');
+    expect(body.attempt_failures).toEqual([
+      {
+        attempt: 1,
+        provider: 'openai-codex',
+        route_model: 'codex/gpt-5.6-sol',
+        resolved_model: 'gpt-5.6-sol',
+        stage: 'stream_error',
+        status: 400,
+        code: 'context_length_exceeded',
+        message: 'Your input exceeds the context window of this model.',
+      },
+      {
+        attempt: 2,
+        provider: 'aster',
+        route_model: 'glm-5.2',
+        resolved_model: 'glm-5.2',
+        stage: 'stream_probe',
+        code: 'stream_probe_timeout',
+        message: 'upstream stream probe timeout exceeded (10ms with no bytes)',
+      },
+    ]);
+    expect(body.error.attempt_failures).toEqual(body.attempt_failures);
+
+    await flush();
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({
+      ok: false,
+      status: 502,
+      attempts: 2,
+      provider: 'aster',
+      resolvedModel: 'glm-5.2',
+      candidatesTried: ['openai-codex', 'aster'],
+      attemptFailures: [
+        { provider: 'openai-codex', code: 'context_length_exceeded', status: 400 },
+        { provider: 'aster', code: 'stream_probe_timeout' },
+      ],
+      errorCode: 'context_length_exceeded',
+    });
+    expect(traces[0].metadata).toMatchObject({
+      gatewayFailure: {
+        attemptCount: 2,
+        fallbackRecovered: false,
+        codes: ['context_length_exceeded', 'stream_probe_timeout'],
+      },
+    });
   });
 });
 
@@ -2220,7 +2386,7 @@ describe("gateway error envelope contract", () => {
     });
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.message).toBe("provider socket reset");
+    expect(body.message).toContain("provider socket reset");
     expectErrorContract(body, "upstream_error");
   });
 

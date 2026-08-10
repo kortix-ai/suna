@@ -1,4 +1,4 @@
-import type { WorkspaceAdminConnector, Connection, WorkspaceSecret, SessionScope } from '@kortix/sdk';
+import type { AdminConnector, Connection, WorkspaceSecret, SessionScope } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -47,9 +47,9 @@ const secret = (identifier: string, overrides: Partial<WorkspaceSecret> = {}): W
 
 const connector = (
   slug: string,
-  authorizationStrategy: WorkspaceAdminConnector['authorizationStrategy'],
-  overrides: Partial<WorkspaceAdminConnector> = {},
-): WorkspaceAdminConnector => ({
+  authorizationStrategy: AdminConnector['authorizationStrategy'],
+  overrides: Partial<AdminConnector> = {},
+): AdminConnector => ({
   slug,
   name: slug,
   provider: 'pipedream',
@@ -153,8 +153,10 @@ describe('createSessionScopeDraft', () => {
 });
 
 describe('session scope summaries', () => {
-  test('names an inherited axis the workspace default, never "none"', () => {
-    expect(sessionSecretsSummary({ secrets: null })).toBe('Workspace default');
+  test('names an inherited axis after its real source, never "none"', () => {
+    // Secrets inherit the AGENT's grant; connectors resolve to the WORKSPACE's
+    // default connections. Each axis names where its default actually lives.
+    expect(sessionSecretsSummary({ secrets: null })).toBe('Agent default');
     expect(
       sessionConnectorsSummary({
         connector_bindings: { mail: { connection_id: 'connection-mail-1' } },

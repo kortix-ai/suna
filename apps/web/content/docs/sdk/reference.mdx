@@ -883,9 +883,17 @@ const childMap = childMapByParent(sessions);
 const descendants = allDescendantIds(childMap, sessionId);
 ```
 
-Retry state: `getRetryInfo(sessionStatus)` returns `{ attempt, message, next
-}` when `status.type === 'retry'`, with `message` capped to 60 characters.
-`getRetryMessage(sessionStatus)` returns the full message.
+Retry state: `getRetryInfo(sessionStatus)` returns `{ attempt, message, next,
+details? }` when `status.type === 'retry'`, with `message` capped to 60
+characters. `details` preserves a structured LLM-gateway envelope when present:
+the final provider, gateway code, request ID, suggestion, upstream status, and
+ordered candidate failures. Each candidate failure contains `attempt`,
+`provider`, `routeModel`, `resolvedModel`, `stage`, optional `status`, `code`,
+and `message`. Legacy plain-text retries return `details: undefined`.
+`getRetryMessage(sessionStatus)` returns the full unwrapped message. When
+OpenCode retains only that message, the gateway composite still includes the
+request ID and each candidate's provider, resolved model, HTTP status, code,
+and bounded message.
 
 ### Structural types
 

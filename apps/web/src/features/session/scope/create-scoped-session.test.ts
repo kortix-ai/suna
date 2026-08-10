@@ -154,7 +154,7 @@ describe('createScopedSession', () => {
 
   test('an explicit zero-secrets draft still PUTs [] (deliberate deselect is preserved)', async () => {
     // The flip side of the regression: a user who deliberately deselected every
-    // secret MUST still get `[]` — that is a real, explicit "inject zero project
+    // secret MUST still get `[]` — that is a real, explicit "inject zero workspace
     // secrets", not a no-op. Conflating it with null would silently re-grant a
     // secret the user meant to withhold.
     let replacement: SessionScopeInput | undefined;

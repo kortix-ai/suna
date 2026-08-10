@@ -25,7 +25,7 @@ const rows = (overrides: Partial<SessionOverrideRow>[] = []): SessionOverrideRow
     icon: KeyIcon,
     hint: 'Environment values',
     summary: 'Workspace default',
-    description: 'Which project secrets reach this session.',
+    description: 'Which workspace secrets reach this session.',
     editor: <div>secrets editor</div>,
     ...overrides[1],
   },
@@ -72,12 +72,15 @@ describe('SessionOverridesControlContent', () => {
     // came back empty must not be able to hide the only way back to the
     // default.
     const overridden = render({
-      rows: rows([{ overridden: true, onReset: () => {} }, {}]),
+      rows: rows([{ overridden: true, onReset: () => {}, resetLabel: 'Reset to agent default' }, {}]),
     });
-    const inherited = render({ rows: rows([{ onReset: () => {} }, {}]) });
+    const inherited = render({
+      rows: rows([{ onReset: () => {}, resetLabel: 'Reset to agent default' }, {}]),
+    });
 
-    expect(overridden).toContain('Reset to workspace default');
-    expect(inherited).not.toContain('Reset to workspace default');
+    // The label names where the default actually comes from, per axis.
+    expect(overridden).toContain('Reset to agent default');
+    expect(inherited).not.toContain('Reset to agent default');
   });
 
   test('disables only the save action while a save is impossible', () => {
@@ -94,5 +97,29 @@ describe('SessionOverridesControlContent', () => {
 
     expect(html).toContain('aria-label="Session overrides"');
     expect(html).toContain('type="button"');
+  });
+
+  test('the trigger stays quiet until an override is in force', () => {
+    // Everything inherited: icon only, in the toolbar's muted tone.
+    const quiet = renderToStaticMarkup(
+      <SessionOverridesControl rows={rows()} onSave={() => {}} />,
+    );
+    expect(quiet).toContain('text-muted-foreground');
+    expect(quiet).not.toContain('Session<');
+
+    // Exactly one override: the trigger names the overridden axis.
+    const one = renderToStaticMarkup(
+      <SessionOverridesControl rows={rows([{}, { overridden: true }])} onSave={() => {}} />,
+    );
+    expect(one).toContain('Secrets');
+
+    // Several: a count, not a list.
+    const two = renderToStaticMarkup(
+      <SessionOverridesControl
+        rows={rows([{ overridden: true }, { overridden: true }])}
+        onSave={() => {}}
+      />,
+    );
+    expect(two).toContain('2 overrides');
   });
 });

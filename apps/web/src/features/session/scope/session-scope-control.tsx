@@ -140,9 +140,12 @@ export function setSessionConnectorEnabled(
 export function ResetAxisButton({
   disabled = false,
   onReset,
+  label = 'Reset to default',
 }: {
   disabled?: boolean;
   onReset: () => void;
+  /** Names where the default comes from — "Reset to agent default" etc. */
+  label?: string;
 }) {
   return (
     <Button
@@ -154,7 +157,7 @@ export function ResetAxisButton({
       onClick={onReset}
     >
       <ArrowCounterClockwise className="size-3.5 shrink-0" />
-      Reset to workspace default
+      {label}
     </Button>
   );
 }
@@ -226,7 +229,7 @@ export function SessionSecretsEditor({
 
 /**
  * The connector checklist, plus a connection picker per selected connector.
- * Untouched, it PREVIEWS what the project resolves today — see
+ * Untouched, it PREVIEWS what the workspace resolves today — see
  * `connector_bindings_inherited`. Touching any row turns the preview into an
  * explicit, fail-closed override.
  */
@@ -282,7 +285,7 @@ export function SessionConnectorsEditor({
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="text-foreground truncate">{connector.name}</span>
                     <Badge variant="outline" size="xs">
-                      {connector.authorization_strategy === 'user' ? 'Private' : 'Project'}
+                      {connector.authorization_strategy === 'user' ? 'Private' : 'Workspace'}
                     </Badge>
                     {!hasConnection ? (
                       <span className="text-muted-foreground truncate text-xs font-normal">

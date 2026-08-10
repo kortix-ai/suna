@@ -1450,6 +1450,7 @@ function SessionTurnImpl({
               message={retryMessage}
               attempt={retryInfo.attempt}
               secondsLeft={retrySecondsLeft}
+              details={retryInfo.details}
             />
           )}
           <SessionBusyIndicator
