@@ -398,6 +398,50 @@ describe("gateway.chatCompletions", () => {
     expect(bCalled).toBe(false);
   });
 
+  test("normalizes an OpenRouter numeric 400 context overflow for OpenCode compaction", async () => {
+    const message =
+      "This endpoint's maximum context length is 1050000 tokens. However, you requested about 1550000 tokens (1550000 of text input).";
+    const fetchImpl: FetchImpl = async () =>
+      new Response(JSON.stringify({ error: { message, code: 400 } }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    const { hooks, traces } = makeHooks();
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"oversized"}]}',
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      message,
+      code: "context_length_exceeded",
+      upstream_code: "context_length_exceeded",
+      upstream_status: 400,
+      error: {
+        message,
+        type: "context_length_exceeded",
+        code: "context_length_exceeded",
+      },
+      attempt_failures: [
+        expect.objectContaining({
+          status: 400,
+          code: "context_length_exceeded",
+          message,
+        }),
+      ],
+    });
+    await flush();
+    expect(traces[0]).toMatchObject({
+      status: 400,
+      errorCode: "context_length_exceeded",
+      attemptFailures: [
+        expect.objectContaining({ code: "context_length_exceeded", message }),
+      ],
+    });
+  });
+
   test("returns 502 when all candidates are down", async () => {
     const fetchImpl: FetchImpl = async () =>
       new Response("boom", { status: 500 });
@@ -1696,16 +1740,16 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     // 400, the upstream's real status — NOT a generic 502 "Bad Gateway".
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe("upstream_error");
+    expect(body.code).toBe("context_length_exceeded");
     // The REAL upstream message reaches the caller, not a generic "Bad Request".
     expect(body.message).toContain("context length exceeded from messages");
     expect(body.error.message).toContain("context length exceeded from messages");
-    expect(body.upstream_code).toBe(400);
+    expect(body.upstream_code).toBe("context_length_exceeded");
     expect(body.suggestion).toContain("switch to another model");
     await flush();
     expect(traces[0].ok).toBe(false);
     expect(traces[0].status).toBe(400);
-    expect(traces[0].errorCode).toBe("upstream_error");
+    expect(traces[0].errorCode).toBe("context_length_exceeded");
     expect(traces[0].errorMessage).toContain("context length exceeded from messages");
   });
 

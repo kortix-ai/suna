@@ -142,6 +142,10 @@ capped at 2,000 characters. The full chain is also stored in
 If any exhausted candidate reports `context_length_exceeded`, the top-level
 `code`, nested `error.code`, and nested `error.type` keep that canonical value.
 The HTTP status can remain `502` because the configured route was exhausted.
+The gateway also normalizes message-only overflow responses. For example,
+OpenRouter can return numeric `error.code: 400` with `maximum context length`
+only in `error.message`. This response becomes `context_length_exceeded` while
+the original HTTP status and complete message remain available.
 OpenCode 1.17.11 reads nested `error.code` and converts this response into a
 `ContextOverflowError`. Its session processor then creates an automatic
 compaction turn. A later fallback timeout must not replace this classification.

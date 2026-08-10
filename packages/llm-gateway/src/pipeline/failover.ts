@@ -320,6 +320,10 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           provider: descriptor.provider,
           status: err.status,
         });
+        const clientErrorCode =
+          upstreamError.code === 'context_length_exceeded'
+            ? 'context_length_exceeded'
+            : 'upstream_client_error';
         emit({
           ...trace,
           resolvedModel: descriptor.resolvedModel,
@@ -327,7 +331,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           billingMode: descriptor.billingMode,
           status: err.status,
           ok: false,
-          errorCode: 'upstream_client_error',
+          errorCode: clientErrorCode,
           errorMessage: upstreamError.message,
           attempts,
           candidatesTried: tried,
@@ -339,14 +343,20 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           response: json(
             gatewayErrorBody({
               message: upstreamError.message,
-              code: 'upstream_client_error',
-              upstreamCode: upstreamError.code,
+              code: clientErrorCode,
+              upstreamCode:
+                clientErrorCode === 'context_length_exceeded'
+                  ? clientErrorCode
+                  : upstreamError.code,
               upstreamStatus: err.status,
               provider: descriptor.provider,
               requestedModel: trace.requestedModel ?? '',
               resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
               requestId,
-              suggestion: suggestionFor(err.status),
+              suggestion:
+                clientErrorCode === 'context_length_exceeded'
+                  ? 'Compact the conversation or reduce the input, then retry.'
+                  : suggestionFor(err.status),
               attemptFailures,
             }),
             err.status,

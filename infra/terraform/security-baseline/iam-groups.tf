@@ -254,7 +254,12 @@ resource "aws_iam_user_group_membership" "this" {
 # attach-only. 2026-08-10: the unattached policy was created during the
 # tf-apply-pipeline bootstrap; enforcement deliberately deferred.
 variable "enforce_mfa_for_iam_users" {
-  description = "Attach kortix-mfa-required (deny-all-without-MFA) to the administrators and mfa-self-manage groups (DCF-67). Coordinate with every admin before enabling."
+  description = "Attach kortix-mfa-required (deny-all-without-MFA) to the administrators and mfa-self-manage groups (DCF-67)."
   type        = bool
-  default     = false
+  # ENABLED 2026-08-11 (Marko's call): long-lived access keys no longer work
+  # bare for administrators — mint MFA sessions instead:
+  #   aws sts get-session-token --serial-number arn:aws:iam::935064898258:mfa/<name> --token-code <6 digits>
+  # markokraemer + vkubet have devices enrolled; sofia must enroll on next use
+  # (console login -> IAM -> her user -> enroll MFA; the deny allows exactly that).
+  default = true
 }

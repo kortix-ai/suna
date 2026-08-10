@@ -1,5 +1,9 @@
 import type { GatewayAttemptFailure, GatewayAttemptFailureStage } from '../domain';
-import { extractUpstreamErrorDetail, parseUpstreamErrorBody } from '../http/parse-upstream-error';
+import {
+  extractUpstreamErrorDetail,
+  normalizeUpstreamErrorCode,
+  parseUpstreamErrorBody,
+} from '../http/parse-upstream-error';
 import type { SseErrorFrame } from '../usage';
 
 const MAX_FAILURE_MESSAGE_CHARS = 500;
@@ -52,15 +56,24 @@ export function appendAttemptFailure(
 /** Prefer the provider's semantic code over its numeric transport status. */
 export function errorFrameCode(frame: SseErrorFrame): string | number {
   const upstreamCode = frame.detail?.upstream_code;
-  if (typeof upstreamCode === 'string' || typeof upstreamCode === 'number') return upstreamCode;
+  if (typeof upstreamCode === 'string' || typeof upstreamCode === 'number') {
+    return normalizeUpstreamErrorCode(upstreamCode, frame.message) ?? upstreamCode;
+  }
   const fromData = extractUpstreamErrorDetail(frame.detail?.data);
-  if (typeof fromData?.code === 'string') return fromData.code;
+  if (typeof fromData?.code === 'string' || typeof fromData?.code === 'number') {
+    return normalizeUpstreamErrorCode(fromData.code, fromData.message) ?? fromData.code;
+  }
   const responseBody = frame.detail?.responseBody;
   if (typeof responseBody === 'string') {
     const fromBody = parseUpstreamErrorBody(responseBody);
-    if (typeof fromBody.code === 'string') return fromBody.code;
+    if (typeof fromBody.code === 'string' || typeof fromBody.code === 'number') {
+      return normalizeUpstreamErrorCode(fromBody.code, fromBody.message) ?? fromBody.code;
+    }
   }
-  return frame.code ?? fromData?.code ?? 'upstream_stream_error';
+  return (
+    normalizeUpstreamErrorCode(frame.code ?? fromData?.code, frame.message) ??
+    'upstream_stream_error'
+  );
 }
 
 export function failureChainMessage(

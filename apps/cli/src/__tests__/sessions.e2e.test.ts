@@ -66,9 +66,10 @@ describe('sessions new CLI flow', () => {
     writeFileSync(join(repo, 'README.md'), '# test repo\n', 'utf8');
     git(['add', 'README.md'], repo);
     git(['commit', '-m', 'initial'], repo);
-    git(['-c', 'init.defaultBranch=main', 'init', '--bare', origin]);
+    // Copy the initial repository directly. Repeating a setup push in every
+    // test can wait on Git maintenance locks during the loaded package lane.
+    git(['clone', '--quiet', '--bare', repo, origin]);
     git(['remote', 'add', 'origin', origin], repo);
-    git(['push', '--quiet', 'origin', 'main'], repo);
 
     mkdirSync(join(repo, '.kortix'), { recursive: true });
     writeFileSync(

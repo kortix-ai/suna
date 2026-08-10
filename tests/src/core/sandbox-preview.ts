@@ -112,7 +112,14 @@ bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
 ${compose} pull --policy always frontend kortix-api llm-gateway preview-edge mailpit
-${compose} up -d --wait --wait-timeout 300
+for stack_attempt in 1 2; do
+  if ${compose} up -d --wait --wait-timeout 300; then
+    break
+  fi
+  test "$stack_attempt" -lt 2
+  printf 'stack readiness failed on attempt %s; retrying once after container restarts\n' "$stack_attempt"
+  sleep 10
+done
 
 for _ in $(seq 1 60); do
   health="$(curl -fsS --max-time 5 ${shellQuote(`${origin.origin}/v1/health`)} 2>/dev/null || true)"

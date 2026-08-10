@@ -36,6 +36,7 @@ export interface DaytonaCiInput {
   runId: string;
   runAttempt: string;
   testArgs: string[];
+  skipSdkPackageTests?: boolean;
   root: string;
 }
 

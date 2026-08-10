@@ -351,6 +351,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
   deterministic local stack.
+- Local browser runs use two Playwright workers. CI browser shards use one.
 - `pnpm test -- --packages-only` runs every app/package test and publish check.
 - `pnpm test -- --full` adds browser journeys and every app/package test. It
   starts the deterministic local stack.

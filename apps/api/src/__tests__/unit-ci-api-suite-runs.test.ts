@@ -29,7 +29,9 @@ describe('the kortix-api suite actually runs on pull requests', () => {
     expect(sandboxJob).toContain(
       'browser-2) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2 ;;',
     );
-    expect(sandboxJob).toContain('packages) bun tests/bin/sandbox-ci.ts --packages-only ;;');
+    expect(sandboxJob).toContain('packages)');
+    expect(sandboxJob).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
+    expect(sandboxJob).toContain('bun tests/bin/sandbox-ci.ts --packages-only');
     expect(sandboxJob).toContain('SANDBOX_TEST_SHA:');
     expect(sandboxJob).toContain('SANDBOX_TEST_REF:');
     expect(sandboxJob).toContain('TEST_SANDBOX_PROVIDER:');
@@ -47,7 +49,7 @@ describe('the kortix-api suite actually runs on pull requests', () => {
   test('full mode reaches every package and app test through package-quality', () => {
     expect(packageQuality).toContain("'./packages/**'");
     expect(packageQuality).toContain("'./apps/**'");
-    expect(packageQuality).toContain("KORTIX_TEST_TIMEOUT_MS: '15000'");
+    expect(packageQuality).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
   });
 
   test('the unit suite runs off the committed fake env, not dotenvx', () => {
@@ -65,7 +67,7 @@ describe('the kortix-api suite actually runs on pull requests', () => {
     expect(testScript).toContain('exit 1');
   });
 
-  test('the package timeout preserves declared 15-second load budgets', () => {
+  test('the package timeout preserves each package default outside the loaded package lane', () => {
     expect(testScript).toContain('KORTIX_TEST_TIMEOUT_MS:-15000');
   });
 

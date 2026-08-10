@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
+const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
 
 async function run(
   command: string[],
@@ -129,7 +130,9 @@ async function runWorkspaceTests(
     {
       env: {
         ...process.env,
-        KORTIX_TEST_TIMEOUT_MS: '15000',
+        // The CLI includes an intentional 11-second idle-stream contract.
+        // Concurrent API and agent workers can push it past 15 seconds.
+        KORTIX_TEST_TIMEOUT_MS: '30000',
         ...env,
       },
     },
@@ -176,6 +179,7 @@ await runAll([
       '!@kortix/cli',
       '!@kortix/sandbox-agent-server',
       '!@kortix/db',
+      ...(skipSdkTests ? ['!@kortix/sdk'] : []),
     ],
     2,
   ),

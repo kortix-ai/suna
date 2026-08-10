@@ -132,6 +132,14 @@ export function buildPreviewComposeOverlay(
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
     restart: unless-stopped
+  supabase-auth:
+    environment:
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: "10000"
+      GOTRUE_RATE_LIMIT_SMS_SENT: "10000"
+      GOTRUE_RATE_LIMIT_VERIFY: "10000"
+      GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"
+      GOTRUE_RATE_LIMIT_OTP: "10000"
+      GOTRUE_RATE_LIMIT_ANONYMOUS_USERS: "10000"
   supabase-db:
     ports:
       - "127.0.0.1:15432:5432"
