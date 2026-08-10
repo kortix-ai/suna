@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -136,6 +137,24 @@ export function SessionSiteHeader({
   });
   const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
   const canShare = !!projectSession && projectSession.can_manage_sharing !== false;
+
+  /**
+   * The name shown in the header, matched to the sidebar row.
+   *
+   * `sessionTitle` is OPENCODE's `session.title` — the summary it writes for
+   * itself ("Greeting"). The sidebar shows Kortix's session name ("Just A
+   * Simple Hey"), and a rename only ever touches that one, so the two drifted
+   * apart the moment opencode auto-titled: the same session read as two
+   * different things depending on where you looked.
+   *
+   * Uses the SIDEBAR's helper, not `sessionDisplayLabel`, so the two strings
+   * cannot diverge on the fallback either — they differ for an untitled session
+   * ("New session" vs a branch/id slice).
+   *
+   * Falls back to the prop when there is no project session: the share viewer
+   * and the instant shell render this header without one.
+   */
+  const headerTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
@@ -318,7 +337,7 @@ export function SessionSiteHeader({
                   variant="ghost"
                   className="text-foreground/80 hover:text-foreground data-[state=open]:bg-card group h-auto min-w-0 shrink justify-start gap-3 rounded-md px-2.5 py-1 transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] has-[>svg]:px-2.5"
                 >
-                  <span className="min-w-0 truncate">{sessionTitle}</span>
+                  <span className="min-w-0 truncate">{headerTitle}</span>
                   <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]:rotate-180" />
                 </Button>
               </DropdownMenuTrigger>
@@ -474,7 +493,7 @@ export function SessionSiteHeader({
           <SessionDeleteModal
             projectId={projectId!}
             sessionId={projectSessionId!}
-            sessionLabel={sessionTitle}
+            sessionLabel={headerTitle}
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
             onDeleted={() => router.push(`/projects/${projectId}`)}
