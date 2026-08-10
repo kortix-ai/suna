@@ -126,26 +126,6 @@ resource "aws_iam_policy" "mfa_required" {
   tags = local.tags
 }
 
-# SES send-only — replaces the inline `ses-send-only` policy that used to hang
-# directly off the `kortix-ses-sender` user (Drata DCF-776 flags inline user
-# policies). Grants send on every SES identity in this account (the Kortix
-# verified sending identity is managed out-of-band, so it is referenced by
-# account-scoped ARN rather than a hard-coded identity name).
-resource "aws_iam_policy" "ses_send_only" {
-  name = "kortix-ses-send-only"
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Sid      = "SendEmail", Effect = "Allow",
-        Action   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail", "ses:SendBounce"],
-        Resource = ["arn:aws:ses:*:${local.account_id}:identity/*"]
-      }
-    ]
-  })
-  tags = local.tags
-}
-
 locals {
   # group => { policies = [arns], members = [usernames] }
   groups = {
@@ -209,13 +189,10 @@ locals {
       ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
       members = []
     }
-    # SES send-only for the `kortix-ses-sender` user (was an inline `ses-send-only`
-    # policy — DCF-776 requires group-based permissions only). See aws_iam_policy
-    # .ses_send_only above.
-    ses-senders = {
-      policies = [aws_iam_policy.ses_send_only.arn]
-      members  = ["kortix-ses-sender"]
-    }
+    # ses-senders group RETIRED 2026-08-11: the kortix-ses-sender IAM user and
+    # its static key were deleted after DCF-71 moved email sending to the ECS
+    # task roles (ses_send policy in modules/ecs-api, role-based sends proven
+    # in all three environments).
   }
   # Use the policy index in the instance key. Customer-managed policy ARNs are
   # created in this stack, so deriving a key from the ARN makes the for_each

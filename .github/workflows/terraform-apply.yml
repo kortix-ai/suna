@@ -42,6 +42,14 @@ on:
         description: Terraform root directory, relative to the repository root.
         required: true
         type: string
+      allow_deletes:
+        description: >-
+          Permit planned deletes (reviewed cleanups only — e.g. retiring an IAM
+          group after its user was removed). The guard still prints every
+          delete; it just does not block. Never set on automatic triggers.
+        required: false
+        type: boolean
+        default: false
       aws_region:
         description: Region for the OIDC session and the state backend.
         required: false
@@ -82,6 +90,7 @@ permissions:
 
 env:
   TF_VERSION: 1.15.8
+  ALLOW_DELETES: ${{ inputs.allow_deletes && 'true' || 'false' }}
 
 jobs:
   apply:
@@ -208,6 +217,15 @@ jobs:
             | map({action: .[0], count: length})
           ' "$RUNNER_TEMP/plan.json"
 
+          if [ "$blocked_destructive_changes" != "0" ] && [ "${ALLOW_DELETES}" = "true" ]; then
+            echo "::warning::$TF_ROOT plans $blocked_destructive_changes destructive change(s) — permitted by allow_deletes (reviewed cleanup):"
+            jq -r '
+              .resource_changes[]?
+              | select(.change.actions | index("delete"))
+              | "  \(.address): \(.change.actions | join(","))"
+            ' "$RUNNER_TEMP/plan.json"
+            blocked_destructive_changes=0
+          fi
           if [ "$blocked_destructive_changes" != "0" ]; then
             echo "::error::$TF_ROOT plans $blocked_destructive_changes blocked destructive change(s). Apply it by hand after review."
             jq -r '
