@@ -138,6 +138,20 @@ describe('web ECS migration', () => {
     }
   });
 
+  it('builds preview images without credentials and invalidates approval on new commits', () => {
+    const workflow = read('.github/workflows/deploy-preview.yml');
+    const previewScript = read('infra/scripts/ecs-preview.sh');
+    const previewTerraform = read('infra/terraform/environments/preview/main.tf');
+
+    expect(workflow.match(/persist-credentials: false/g)).toHaveLength(3);
+    expect(workflow.match(/push: false/g)).toHaveLength(3);
+    expect(workflow).toContain("github.event.action == 'labeled'");
+    expect(workflow).toContain("github.event.action == 'synchronize'");
+    expect(workflow).toContain('labels/preview');
+    expect(previewScript).toContain('WEB_SECRET_NAME="kortix-preview-web-env"');
+    expect(previewTerraform).toContain('name = "kortix-preview-web-env"');
+  });
+
   it('uses Basic auth credentials in QA instead of Vercel bypass headers', () => {
     for (const file of [
       'tests/playwright.config.ts',

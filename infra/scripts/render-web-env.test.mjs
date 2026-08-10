@@ -4,9 +4,13 @@ import { renderWebEnvironment } from './render-web-env.mjs';
 
 function profile(name) {
   const host =
-    name === 'dev' ? 'dev.kortix.com' : name === 'staging' ? 'staging.kortix.com' : 'kortix.com';
+    name === 'dev' || name === 'preview'
+      ? 'dev.kortix.com'
+      : name === 'staging'
+        ? 'staging.kortix.com'
+        : 'kortix.com';
   const apiHost =
-    name === 'dev'
+    name === 'dev' || name === 'preview'
       ? 'dev-api.kortix.com'
       : name === 'staging'
         ? 'staging-api.kortix.com'
@@ -34,12 +38,31 @@ describe('renderWebEnvironment', () => {
   });
 
   test('protects dev and staging with the same supplied secret', () => {
-    for (const name of ['dev', 'staging']) {
+    for (const name of ['preview', 'dev', 'staging']) {
       const payload = renderWebEnvironment(name, profile(name));
       expect(payload.WEB_PROTECTION_ENABLED).toBe('true');
       expect(payload.WEB_PROTECTION_PASSWORD).toBe('shared-password');
       expect(payload.BACKEND_URL).toBe(profile(name).NEXT_PUBLIC_BACKEND_URL);
     }
+  });
+
+  test('limits preview to public configuration and the shared protection password', () => {
+    const payload = renderWebEnvironment('preview', {
+      ...profile('preview'),
+      EDGE_CONFIG: 'edge-connection',
+      EDGE_CONFIG_ID: 'edge-id',
+      VERCEL_API_TOKEN: 'edge-write-token',
+      NEXT_PUBLIC_BILLING_ENABLED: 'false',
+      AWS_SECRET_ACCESS_KEY: 'must-not-leak',
+    });
+
+    expect(payload.NEXT_PUBLIC_SUPABASE_URL).toBe('https://preview.supabase.co');
+    expect(payload.NEXT_PUBLIC_BILLING_ENABLED).toBe('false');
+    expect(payload.WEB_PROTECTION_PASSWORD).toBe('shared-password');
+    expect(payload).not.toHaveProperty('EDGE_CONFIG');
+    expect(payload).not.toHaveProperty('EDGE_CONFIG_ID');
+    expect(payload).not.toHaveProperty('VERCEL_API_TOKEN');
+    expect(payload).not.toHaveProperty('AWS_SECRET_ACCESS_KEY');
   });
 
   test('keeps production public and omits the protection password', () => {

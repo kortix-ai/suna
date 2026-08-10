@@ -36,13 +36,19 @@ The `*-fe-ecs.kortix.com` hostnames provide parallel ECS validation.
 
 Adding the `preview` label to a pull request starts the preview workflow.
 
-1. GitHub Actions builds `pr-<number>-<sha8>` API, gateway, and frontend images.
-2. Terraform creates PR-specific listener rules, target groups, and DNS records.
-3. The workflow deploys one ECS Fargate service for the pull request.
-4. The workflow creates the parallel Vercel preview.
-5. Verification checks the API commit, frontend commit, runtime URLs, password
+Only a repository writer or administrator can approve a preview. The label
+approves the exact head SHA. A new commit tears down the old preview and removes
+the label. A writer or administrator must review the new SHA and reapply it.
+
+1. Three unprivileged jobs build fixed-tag API, gateway, and frontend archives.
+   They receive no Docker Hub, AWS, Vercel, or application secrets.
+2. A trusted job publishes the archives without starting their containers.
+3. Terraform creates PR-specific listener rules, target groups, and DNS records.
+4. The workflow deploys one ECS Fargate service for the pull request.
+5. The workflow creates the parallel Vercel preview.
+6. Verification checks the API commit, frontend commit, runtime URLs, password
    gate, shared parent-domain cookie, and black-box API flows.
-6. One sticky pull-request comment publishes the API, health, ECS frontend, and
+7. One sticky pull-request comment publishes the API, health, ECS frontend, and
    Vercel frontend URLs.
 
 Removing the label or closing the pull request destroys the ECS service, task
@@ -57,6 +63,8 @@ state are shared with dev.
 Each permanent environment stores one JSON environment document in AWS Secrets
 Manager. `infra/scripts/ecs-deploy.sh` injects the document through
 `KORTIX_ENV_JSON`. The frontend uses a separate `kortix-<env>-web-env` secret.
+Preview uses `kortix-preview-web-env`. It excludes Edge Config and Vercel
+credentials.
 
 Preview, dev, and staging use the same `WEB_PROTECTION_USERNAME` and
 `WEB_PROTECTION_PASSWORD` values. The password value is never committed in

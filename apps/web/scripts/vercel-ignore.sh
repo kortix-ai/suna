@@ -11,8 +11,8 @@
 #      deploy real FE changes; per-PR previews are OPT-IN to save build spend.
 #
 # For the permanent environments, default to BUILD on ANY uncertainty — never
-# silently skip a real FE deploy. Per-PR previews invert that: default SKIP,
-# build only when explicitly opted in (a "preview" label or a preview/* branch).
+# silently skip a real FE deploy. Per-PR previews invert that: default SKIP.
+# The preview workflow must approve the exact commit SHA.
 #
 # WHY THIS EXISTS
 # A backend/infra-only push to `prod` (e.g. a rollback that only flips
@@ -62,37 +62,14 @@ case "${VERCEL_ENV:-}:$REF" in
     exit 1 ;;
 esac
 
-# A per-PR / feature-branch preview. Build only when explicitly opted in:
-#   • branch named preview/*                       (no secret required), OR
-#   • the preview workflow sets its branch flag     (label-driven deploys), OR
-#   • the PR carries a "preview" label             (needs GITHUB_TOKEN, PR-read).
-case "$REF" in
-  preview/*)
-    echo "vercel-ignore: preview/* branch — building opt-in preview."
-    exit 1 ;;
-esac
-
-if [ "${KORTIX_PREVIEW_ENABLED:-}" = "1" ]; then
-  echo "vercel-ignore: branch-scoped preview flag is enabled — building opt-in preview."
+# A per-PR / feature-branch preview builds only when the trusted preview
+# workflow stores this exact commit SHA in the branch-scoped Vercel profile.
+# A later commit cannot reuse an earlier approval.
+if [ -n "${KORTIX_PREVIEW_APPROVED_SHA:-}" ] \
+  && [ "${KORTIX_PREVIEW_APPROVED_SHA}" = "${VERCEL_GIT_COMMIT_SHA:-}" ]; then
+  echo "vercel-ignore: exact preview SHA is approved — building opt-in preview."
   exit 1
 fi
 
-PR="${VERCEL_GIT_PULL_REQUEST_ID:-}"
-OWNER="${VERCEL_GIT_REPO_OWNER:-kortix-ai}"
-SLUG="${VERCEL_GIT_REPO_SLUG:-suna}"
-if [ -n "$PR" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-  labels="$(curl -fsSL \
-    -H "Authorization: Bearer $GITHUB_TOKEN" \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/$OWNER/$SLUG/issues/$PR/labels" 2>/dev/null)" || labels=""
-  if printf '%s' "$labels" | grep -qE '"name"[[:space:]]*:[[:space:]]*"preview"'; then
-    echo "vercel-ignore: PR #$PR carries the 'preview' label — building opt-in preview."
-    exit 1
-  fi
-  echo "vercel-ignore: PR #$PR has no 'preview' label — skipping preview (add the label + redeploy to build one)."
-  exit 0
-fi
-
-# No way to confirm an opt-in (no PR context or no GITHUB_TOKEN) → skip.
-echo "vercel-ignore: preview not opted-in (no preview/* branch, no 'preview' label check available) — skipping. ref=$REF pr=${PR:-none}"
+echo "vercel-ignore: exact preview SHA is not approved — skipping. ref=$REF"
 exit 0

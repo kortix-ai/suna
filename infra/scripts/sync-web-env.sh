@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-ENVIRONMENT="${1:?environment required: dev|staging|prod}"
+ENVIRONMENT="${1:?environment required: preview|dev|staging|prod}"
 case "$ENVIRONMENT" in
-  dev|staging)
+  preview|dev|staging)
     AWS_REGION="us-west-2"
     ;;
   prod)

@@ -57,7 +57,7 @@ data "aws_secretsmanager_secret" "preview" {
 }
 
 data "aws_secretsmanager_secret" "web" {
-  name = "kortix-dev-web-env"
+  name = "kortix-preview-web-env"
 }
 
 locals {

@@ -3,7 +3,7 @@ name: Deploy Preview (PR)
 on:
   pull_request_target:
     branches: [main]
-    types: [labeled, unlabeled, opened, synchronize, reopened, closed]
+    types: [labeled, unlabeled, synchronize, closed]
   schedule:
     - cron: "17 6 * * *"
 
@@ -16,77 +16,121 @@ permissions:
   pull-requests: write
 
 jobs:
+  authorize:
+    name: Authorize exact preview SHA
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'preview' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      NUM: ${{ github.event.pull_request.number }}
+      COMMIT: ${{ github.event.pull_request.head.sha }}
+      APPROVER: ${{ github.actor }}
+    steps:
+      - name: Require writer approval for the current head SHA
+        run: |
+          set -euo pipefail
+          permission="$(gh api "repos/${REPO}/collaborators/${APPROVER}/permission" --jq .permission)"
+          case "$permission" in
+            admin|write) ;;
+            *) echo "::error::${APPROVER} has ${permission} permission; preview approval requires write or admin."; exit 1 ;;
+          esac
+          current="$(gh api "repos/${REPO}/pulls/${NUM}" --jq .head.sha)"
+          [ "$current" = "$COMMIT" ] || {
+            echo "::error::Preview approval is stale. Expected ${COMMIT}; current head is ${current}."
+            exit 1
+          }
+          labels="$(gh api "repos/${REPO}/issues/${NUM}/labels" --jq 'map(.name) | join(" ")')"
+          [[ " $labels " == *" preview "* ]] || {
+            echo "::error::The preview label is no longer present."
+            exit 1
+          }
+          echo "${APPROVER} approved exact preview SHA ${COMMIT}."
+
   build-api:
     name: Build preview API image
-    if: >-
-      contains(github.event.pull_request.labels.*.name, 'preview') &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(fromJSON('["labeled","opened","synchronize","reopened"]'), github.event.action)
+    needs: authorize
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           submodules: false
-      - run: git submodule sync --recursive && git submodule update --init --recursive
+          persist-credentials: false
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
           platforms: linux/amd64
-          push: true
+          push: false
+          outputs: type=docker,dest=/tmp/preview-api.tar
           build-args: |
             SERVICE=apps/api
             KORTIX_VERSION=pr-${{ github.event.pull_request.number }}
             KORTIX_COMMIT=${{ github.event.pull_request.head.sha }}
           tags: kortix/kortix-api:pr-${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: preview-api-${{ github.event.pull_request.head.sha }}
+          path: /tmp/preview-api.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   build-gateway:
     name: Build preview gateway image
-    if: >-
-      contains(github.event.pull_request.labels.*.name, 'preview') &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(fromJSON('["labeled","opened","synchronize","reopened"]'), github.event.action)
+    needs: authorize
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           submodules: false
+          persist-credentials: false
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
           platforms: linux/amd64
-          push: true
+          push: false
+          outputs: type=docker,dest=/tmp/preview-gateway.tar
           build-args: |
             KORTIX_VERSION=pr-${{ github.event.pull_request.number }}
             KORTIX_COMMIT=${{ github.event.pull_request.head.sha }}
           tags: kortix/kortix-gateway:pr-${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: preview-gateway-${{ github.event.pull_request.head.sha }}
+          path: /tmp/preview-gateway.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   build-web:
     name: Build preview frontend image
-    if: >-
-      contains(github.event.pull_request.labels.*.name, 'preview') &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(fromJSON('["labeled","opened","synchronize","reopened"]'), github.event.action)
+    needs: authorize
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           submodules: false
-      - run: git submodule sync --recursive && git submodule update --init --recursive
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with: { node-version: 22 }
       - run: corepack enable pnpm
@@ -107,25 +151,25 @@ jobs:
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.event.pull_request.head.sha }}
           NEXT_OUTPUT: standalone
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
           platforms: linux/amd64
-          push: true
+          push: false
+          outputs: type=docker,dest=/tmp/preview-web.tar
           tags: kortix/kortix-frontend:pr-${{ github.event.pull_request.head.sha }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: preview-web-${{ github.event.pull_request.head.sha }}
+          path: /tmp/preview-web.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   deploy:
-    name: Deploy preview API and frontend
-    needs: [build-api, build-gateway, build-web]
-    if: >-
-      contains(github.event.pull_request.labels.*.name, 'preview') &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(fromJSON('["labeled","opened","synchronize","reopened"]'), github.event.action)
+    name: Publish and deploy preview API and frontend
+    needs: [authorize, build-api, build-gateway, build-web]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -144,6 +188,62 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
+      - name: Revalidate exact preview approval
+        env:
+          APPROVER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          permission="$(gh api "repos/${REPO}/collaborators/${APPROVER}/permission" --jq .permission)"
+          case "$permission" in
+            admin|write) ;;
+            *) echo "::error::Preview approver no longer has write or admin permission."; exit 1 ;;
+          esac
+          current="$(gh api "repos/${REPO}/pulls/${NUM}" --jq .head.sha)"
+          [ "$current" = "$COMMIT" ] || {
+            echo "::error::Approved SHA ${COMMIT} is stale; current head is ${current}."
+            exit 1
+          }
+          labels="$(gh api "repos/${REPO}/issues/${NUM}/labels" --jq 'map(.name) | join(" ")')"
+          [[ " $labels " == *" preview "* ]] || {
+            echo "::error::The preview label was removed before publication."
+            exit 1
+          }
+      - uses: actions/download-artifact@v8
+        with:
+          name: preview-api-${{ github.event.pull_request.head.sha }}
+          path: /tmp/preview-api
+      - uses: actions/download-artifact@v8
+        with:
+          name: preview-gateway-${{ github.event.pull_request.head.sha }}
+          path: /tmp/preview-gateway
+      - uses: actions/download-artifact@v8
+        with:
+          name: preview-web-${{ github.event.pull_request.head.sha }}
+          path: /tmp/preview-web
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Load and publish fixed preview image tags
+        run: |
+          set -euo pipefail
+          for archive in \
+            /tmp/preview-api/preview-api.tar \
+            /tmp/preview-gateway/preview-gateway.tar \
+            /tmp/preview-web/preview-web.tar; do
+            [ -f "$archive" ] && [ ! -L "$archive" ] && [ -s "$archive" ] || {
+              echo "::error::Missing or invalid image archive: ${archive}"
+              exit 1
+            }
+            docker load --input "$archive"
+          done
+          for image in \
+            "kortix/kortix-api:pr-${COMMIT}" \
+            "kortix/kortix-gateway:pr-${COMMIT}" \
+            "kortix/kortix-frontend:pr-${COMMIT}"; do
+            docker image inspect "$image" >/dev/null
+            docker push "$image"
+          done
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ env.PREVIEW_ROLE }}
@@ -216,15 +316,29 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NUM: ${{ github.event.pull_request.number }}
+      COMMIT: ${{ github.event.pull_request.head.sha }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
       ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
-      PREVIEW_FLAG_KEY: KORTIX_PREVIEW_ENABLED
+      PREVIEW_FLAG_KEY: KORTIX_PREVIEW_APPROVED_SHA
       BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
+      - name: Revalidate exact SHA before Vercel mutation
+        run: |
+          set -euo pipefail
+          current="$(gh api "repos/${REPO}/pulls/${NUM}" --jq .head.sha)"
+          [ "$current" = "$COMMIT" ] || {
+            echo "::error::Approved SHA ${COMMIT} is stale; current head is ${current}."
+            exit 1
+          }
+          labels="$(gh api "repos/${REPO}/issues/${NUM}/labels" --jq 'map(.name) | join(" ")')"
+          [[ " $labels " == *" preview "* ]] || {
+            echo "::error::The preview label was removed before Vercel wiring."
+            exit 1
+          }
       - name: Require Vercel credentials
         run: |
           set -euo pipefail
@@ -234,7 +348,6 @@ jobs:
       - name: Upsert branch-scoped backend URLs and redeploy
         env:
           NUM: ${{ github.event.pull_request.number }}
-          COMMIT: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           auth=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
@@ -243,7 +356,7 @@ jobs:
           for key_value in \
             "NEXT_PUBLIC_BACKEND_URL|${backend}" \
             "KORTIX_PUBLIC_BACKEND_URL|${backend}" \
-            "${PREVIEW_FLAG_KEY}|1"; do
+            "${PREVIEW_FLAG_KEY}|${COMMIT}"; do
             key="${key_value%%|*}"
             value="${key_value#*|}"
             code="$(curl -sS -o "/tmp/env-${key}.json" -w '%{http_code}' -X POST \
@@ -268,8 +381,8 @@ jobs:
           deployment_code="$(curl -sS -o /tmp/vercel-deployment.json -w '%{http_code}' -X POST \
             "${api}/v13/deployments?teamId=${TEAM_ID}&forceNew=1&skipAutoDetectionConfirmation=1" \
             "${auth[@]}" -H 'Content-Type: application/json' \
-            -d "$(jq -n --arg n "$name" --argjson r "$repo_id" --arg b "$BRANCH" \
-              '{name:$n,gitSource:{type:"github",repoId:$r,ref:$b}}')")"
+            -d "$(jq -n --arg n "$name" --argjson r "$repo_id" --arg b "$BRANCH" --arg s "$COMMIT" \
+              '{name:$n,gitSource:{type:"github",repoId:$r,ref:$b,sha:$s}}')")"
           if [ "$deployment_code" != 200 ] && [ "$deployment_code" != 201 ]; then
             jq '{error}' /tmp/vercel-deployment.json
             echo "::error::Vercel deployment creation returned HTTP ${deployment_code}."
@@ -299,7 +412,7 @@ jobs:
           for key_value in \
             "NEXT_PUBLIC_BACKEND_URL|${backend}" \
             "KORTIX_PUBLIC_BACKEND_URL|${backend}" \
-            "${PREVIEW_FLAG_KEY}|1"; do
+            "${PREVIEW_FLAG_KEY}|${COMMIT}"; do
             key="${key_value%%|*}"
             value="${key_value#*|}"
             count="$(printf '%s' "$deployed_envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$value" \
@@ -316,17 +429,19 @@ jobs:
             "- **Health:** https://pr-${NUM}.preview-api.kortix.com/v1/health" \
             "- **ECS frontend:** https://pr-${NUM}.preview.kortix.com" \
             "- **Vercel frontend:** ${frontend}" '' \
-            '_One isolated Fargate task plus a parallel Vercel frontend; automatic close/unlabel teardown._')"
+            '_One isolated Fargate task plus a parallel Vercel frontend; automatic close, unlabel, or new-commit teardown._')"
           id="$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           [ -z "$id" ] || gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null
 
   teardown:
-    name: Tear down preview backend and frontend wiring
+    name: Tear down preview and invalidate stale approval
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action == 'closed' ||
-      (github.event.action == 'unlabeled' && github.event.label.name == 'preview'))
+      (github.event.action == 'unlabeled' && github.event.label.name == 'preview') ||
+      (github.event.action == 'synchronize' &&
+      contains(github.event.pull_request.labels.*.name, 'preview')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -343,7 +458,7 @@ jobs:
       PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
       ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
-      PREVIEW_FLAG_KEY: KORTIX_PREVIEW_ENABLED
+      PREVIEW_FLAG_KEY: KORTIX_PREVIEW_APPROVED_SHA
       BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -367,9 +482,8 @@ jobs:
           backend="https://pr-${NUM}.preview-api.kortix.com/v1"
           deleted=0
           conflicts=0
-          for key in $ENV_KEYS $PREVIEW_FLAG_KEY; do
+          for key in $ENV_KEYS; do
             expected="$backend"
-            [ "$key" != "$PREVIEW_FLAG_KEY" ] || expected=1
             ids="$(printf '%s' "$envs" | jq -r --arg k "$key" --arg b "$BRANCH" \
               --arg v "$expected" '.envs[] | select(.key==$k and .gitBranch==$b and .value==$v) | .id')"
             conflicts="$((conflicts + $(printf '%s' "$envs" | jq --arg k "$key" --arg b "$BRANCH" --arg v "$expected" \
@@ -379,7 +493,19 @@ jobs:
               deleted=$((deleted + 1))
             done
           done
+          approval_ids="$(printf '%s' "$envs" | jq -r --arg k "$PREVIEW_FLAG_KEY" --arg b "$BRANCH" \
+            '.envs[] | select(.key==$k and .gitBranch==$b) | .id')"
+          for id in $approval_ids; do
+            curl -fsS -X DELETE "${api}/v9/projects/${PROJECT_ID}/env/${id}?teamId=${TEAM_ID}" "${auth[@]}" >/dev/null
+            deleted=$((deleted + 1))
+          done
           echo "Deleted ${deleted} Vercel variables owned by PR ${NUM}; preserved ${conflicts} variables with a different backend value."
+      - name: Remove stale preview approval
+        if: github.event.action == 'synchronize'
+        run: |
+          set -euo pipefail
+          gh api -X DELETE "repos/${REPO}/issues/${NUM}/labels/preview" --silent
+          echo "Removed preview approval after the PR head changed."
       - name: Mark sticky status comment torn down
         run: |
           set -euo pipefail

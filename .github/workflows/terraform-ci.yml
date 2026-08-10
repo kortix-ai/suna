@@ -168,4 +168,7 @@ jobs:
           if [ "$code" = "2" ]; then
             echo "::warning title=Drift detected::${{ matrix.root }} has drifted from its Terraform state"
           fi
-          exit $([ "$code" = "1" ] && echo 1 || echo 0)
+          if [ "$code" = "1" ]; then
+            exit 1
+          fi
+          exit 0

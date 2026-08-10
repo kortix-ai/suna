@@ -10,11 +10,12 @@ SCRIPT = (ROOT / "infra/scripts/ecs-preview.sh").read_text()
 TERRAFORM = (ROOT / "infra/terraform/environments/preview/main.tf").read_text()
 VARIABLES = (ROOT / "infra/terraform/environments/preview/variables.tf").read_text()
 README = (ROOT / "infra/terraform/environments/preview/README.md").read_text()
+VERCEL_IGNORE = (ROOT / "apps/web/scripts/vercel-ignore.sh").read_text()
 
 
 class PreviewRuntimeContract(unittest.TestCase):
     def test_deploy_precedes_vercel_wiring_and_requires_exact_health(self):
-        self.assertIn("needs: [build-api, build-gateway, build-web]", WORKFLOW)
+        self.assertIn("needs: [authorize, build-api, build-gateway, build-web]", WORKFLOW)
         self.assertIn("needs: deploy", WORKFLOW)
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", WORKFLOW)
         self.assertIn("pull_request_target:", WORKFLOW)
@@ -34,6 +35,42 @@ class PreviewRuntimeContract(unittest.TestCase):
         self.assertIn('.value==$v', WORKFLOW)
         self.assertNotIn("Argo CD", WORKFLOW)
         self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
+
+    def test_pr_code_builds_without_credentials_and_publish_never_runs_it(self):
+        self.assertEqual(WORKFLOW.count("persist-credentials: false"), 3)
+        self.assertEqual(WORKFLOW.count("push: false"), 3)
+        self.assertEqual(WORKFLOW.count("type=docker,dest=/tmp/preview-"), 3)
+        self.assertEqual(WORKFLOW.count("actions/upload-artifact@v7"), 3)
+        self.assertEqual(WORKFLOW.count("actions/download-artifact@v8"), 3)
+        for build, next_job in (
+            ("build-api:", "build-gateway:"),
+            ("build-gateway:", "build-web:"),
+            ("build-web:", "deploy:"),
+        ):
+            section = WORKFLOW.split(f"  {build}", 1)[1].split(f"\n  {next_job}", 1)[0]
+            self.assertIn("permissions:\n      contents: read", section)
+            self.assertNotIn("DOCKERHUB_", section)
+            self.assertNotIn("docker/login-action", section)
+            self.assertNotIn("push: true", section)
+        deploy = WORKFLOW.split("  deploy:", 1)[1].split("\n  wire:", 1)[0]
+        self.assertIn("docker/login-action@v3", deploy)
+        self.assertIn("docker load --input", deploy)
+        self.assertIn("docker push", deploy)
+        self.assertNotIn("docker run", deploy)
+
+    def test_preview_label_approves_one_exact_sha(self):
+        self.assertIn("github.event.action == 'labeled'", WORKFLOW)
+        self.assertIn("github.event.label.name == 'preview'", WORKFLOW)
+        self.assertIn('case "$permission" in', WORKFLOW)
+        self.assertIn("admin|write)", WORKFLOW)
+        self.assertNotIn("['labeled','opened','synchronize','reopened']", WORKFLOW)
+        self.assertIn("github.event.action == 'synchronize'", WORKFLOW)
+        self.assertIn("gh api -X DELETE", WORKFLOW)
+        self.assertIn("labels/preview", WORKFLOW)
+        self.assertIn("KORTIX_PREVIEW_APPROVED_SHA", WORKFLOW)
+        self.assertIn("sha:$s", WORKFLOW)
+        self.assertIn('KORTIX_PREVIEW_APPROVED_SHA}" = "${VERCEL_GIT_COMMIT_SHA', VERCEL_IGNORE)
+        self.assertNotIn("GITHUB_TOKEN", VERCEL_IGNORE)
 
     def test_close_and_unlabel_run_complete_base_branch_teardown(self):
         self.assertIn("github.event.action == 'closed'", WORKFLOW)
@@ -57,7 +94,7 @@ class PreviewRuntimeContract(unittest.TestCase):
         self.assertIn('HOST="pr-${PR}.preview-api.kortix.com"', SCRIPT)
         self.assertIn('WEB_HOST="pr-${PR}.preview.kortix.com"', SCRIPT)
         self.assertIn('SECRET_NAME="kortix-preview-env"', SCRIPT)
-        self.assertIn('WEB_SECRET_NAME="kortix-dev-web-env"', SCRIPT)
+        self.assertIn('WEB_SECRET_NAME="kortix-preview-web-env"', SCRIPT)
         self.assertIn('{"name": "INTERNAL_KORTIX_ENV", "value": "preview"}', SCRIPT)
         self.assertIn('{"name": "KORTIX_WORKERS_ENABLED", "value": "false"}', SCRIPT)
         self.assertIn('{"name": "KORTIX_SKIP_ENSURE_SCHEMA", "value": "1"}', SCRIPT)
@@ -89,6 +126,7 @@ class PreviewRuntimeContract(unittest.TestCase):
             'domain_name = "*.preview.kortix.com"',
             'resource "aws_lb_listener_certificate" "frontend"',
             'data "aws_secretsmanager_secret" "web"',
+            'name = "kortix-preview-web-env"',
             "proxied = false",
             'name = "kortix-gha-preview-deploy"',
             '"repo:kortix-ai/suna:pull_request"',

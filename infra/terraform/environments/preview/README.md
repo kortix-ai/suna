@@ -10,7 +10,7 @@ The shared resources are:
 - one HTTPS ALB with certificates for `*.preview-api.kortix.com` and `*.preview.kortix.com`;
 - DNS-only wildcard CNAMEs for both preview host families;
 - one dedicated WAF, encrypted ALB access logs, and encrypted task logs;
-- one task execution role that can read only `kortix-preview-env` and `kortix-dev-web-env`;
+- one task execution role that can read only `kortix-preview-env` and `kortix-preview-web-env`;
 - one GitHub OIDC role scoped to per-PR resources in the preview cluster.
 
 `deploy-preview.yml` creates one Fargate Spot service and task definition per
@@ -42,9 +42,18 @@ endpoint before planning. Pass only its operator-verified CIDR values through
 `postgres_egress_cidrs`; the variable rejects `0.0.0.0/0`.
 
 Set `TF_VAR_cloudflare_api_token` only for this apply. Do not commit the token.
-The workflow uses `pull_request_target` and executes lifecycle scripts only from
-the default branch. This prevents a PR from changing code that runs with AWS or
-Vercel credentials. It also means this PR cannot bootstrap its own live preview.
+The workflow uses `pull_request_target`. It builds the approved PR SHA in three
+jobs with read-only repository access and no Docker Hub, AWS, Vercel, or
+application secrets. Those jobs upload fixed-tag Docker archives. A default-branch
+job loads and publishes the archives without starting their containers. Only that
+job receives deployment credentials. The deployed containers receive preview
+runtime secrets after a repository writer or administrator applies `preview` to
+that exact SHA.
+
+A new PR commit triggers teardown and removes `preview`. The new SHA cannot build
+or deploy until a repository writer or administrator reapplies the label. This
+means this PR cannot bootstrap its own live preview before the workflow reaches
+the default branch.
 After this code reaches the default branch through an approved bootstrap, rerun
 `Deploy Preview (PR)` on a labeled PR. A passing bootstrap requires all of the
 following evidence:
@@ -57,6 +66,7 @@ following evidence:
 5. The Vercel deployment calls the per-PR backend successfully.
 6. Closing or removing the label deletes the ECS service, two listener rules,
    two target groups, active task definitions, and owned Vercel variables.
+7. Pushing a new commit tears down the old preview and removes `preview`.
 
 The shared Terraform root remains after per-PR teardown.
 
@@ -82,11 +92,17 @@ DNS record, role, secret, VPC, or certificate.
 
 1. Merge the trusted workflow and script to `main` without enabling a preview.
 2. Apply the reviewed shared-root plan from an operator session.
-3. Label one disposable internal PR with `preview`.
+3. Have a repository writer or administrator label one disposable internal PR
+   with `preview` after reviewing its exact head SHA.
 4. Require exact API SHA, `environment=preview`, Vercel `READY`, exact Vercel
    commit/branch metadata, and both branch variables targeting its PR backend.
 5. Remove the label. Confirm per-PR ECS, ALB, task-definition, and owned Vercel
    resources are absent. The workflow rejects a 21st active preview by default.
+
+The backend containers receive `kortix-preview-env`. That secret contains
+provider and application credentials required by the full preview API. Applying
+`preview` is therefore a security approval for that exact SHA. Do not approve
+code that you do not trust to access the preview data plane and credentials.
 
 ## Reconciliation and rollback
 

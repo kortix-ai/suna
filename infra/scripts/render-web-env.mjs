@@ -1,6 +1,12 @@
 import { pathToFileURL } from 'node:url';
 
 const ENVIRONMENTS = {
+  preview: {
+    canonicalHost: 'dev.kortix.com',
+    ecsHost: 'preview.kortix.com',
+    apiHost: 'dev-api.kortix.com',
+    protected: true,
+  },
   dev: {
     canonicalHost: 'dev.kortix.com',
     ecsHost: 'dev-fe-ecs.kortix.com',
@@ -38,6 +44,8 @@ const OPTIONAL_KEYS = [
   'NEXT_PUBLIC_SENTRY_DSN',
   'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY',
 ];
+
+const PREVIEW_DENIED_KEYS = new Set(['EDGE_CONFIG', 'EDGE_CONFIG_ID', 'VERCEL_API_TOKEN']);
 
 function required(environment, key) {
   const value = environment[key];
@@ -97,7 +105,9 @@ export function renderWebEnvironment(name, environment = process.env) {
     payload.WEB_PROTECTION_PASSWORD = required(environment, 'WEB_PROTECTION_PASSWORD');
   }
 
-  for (const key of OPTIONAL_KEYS) {
+  const optionalKeys =
+    name === 'preview' ? OPTIONAL_KEYS.filter((key) => !PREVIEW_DENIED_KEYS.has(key)) : OPTIONAL_KEYS;
+  for (const key of optionalKeys) {
     const value = environment[key];
     if (value && value !== '-') payload[key] = value;
   }
