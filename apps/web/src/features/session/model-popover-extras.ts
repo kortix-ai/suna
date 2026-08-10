@@ -1,16 +1,18 @@
 /**
  * Show/hide source of truth for the "extras" section inside the model
- * popover — the variant (thinking mode) and reasoning-effort rows that Task
- * 10 folded in below the model list. Pure so it's testable without mounting
- * React or a query client, matching how `model-availability.ts` /
- * `model-grouping.ts` split logic from `model-selector.tsx`'s rendering.
+ * popover. Pure so it's testable without mounting React or a query client,
+ * matching how `model-availability.ts` / `model-grouping.ts` split logic from
+ * `model-selector.tsx`'s rendering.
  *
- * Reasoning-effort's OWN capability gate (does this model expose an effort
- * knob at all) still lives solely in `reasoningEffortValuesFor`
- * (reasoning-effort-selector.ts) — this function only combines that result
- * with the project-scoping requirement to decide whether the row (and the
- * wrapping section) should render. It never re-derives which values a model
- * offers.
+ * This used to decide TWO rows — variant and reasoning effort. Reasoning
+ * effort moved out to its own composer-toolbar control
+ * (`reasoning-effort-selector.tsx`), so the reasoning inputs
+ * (`reasoningEffortValues`, `hasProjectId`) are gone with it: a predicate that
+ * still accepted them would imply the popover can show a row it no longer
+ * has. What remains is one condition, kept as a named function rather than
+ * inlined so the popover's footer keeps a single documented gate and every
+ * non-composer `ModelSelector` call site (which passes no variants) stays
+ * byte-identical.
  */
 export interface ModelExtrasRowsInput {
   /** Named variants the current model/agent offers (opencode's legacy
@@ -20,34 +22,18 @@ export interface ModelExtrasRowsInput {
    *  with no handler (e.g. read-only pickers) never shows the row even if
    *  variants exist. */
   hasVariantHandler: boolean;
-  /** `reasoningEffortValuesFor(wireModel)` for the currently selected model —
-   *  empty when the model has no reasoning-effort knob. */
-  reasoningEffortValues: string[];
-  /** Reasoning effort is a per-project setting; with no project to scope it
-   *  to, there is nothing to show or write. */
-  hasProjectId: boolean;
 }
 
 export interface ModelExtrasRows {
   showVariantRow: boolean;
-  showReasoningEffortRow: boolean;
-  /** Whether the wrapping `border-t` section should render at all. False
-   *  keeps every non-composer `ModelSelector` call site (which never passes
-   *  variants/projectId) byte-identical to before Task 10. */
+  /** Whether the wrapping `border-t` section should render at all. */
   showSection: boolean;
 }
 
 export function computeModelExtrasRows({
   variants,
   hasVariantHandler,
-  reasoningEffortValues,
-  hasProjectId,
 }: ModelExtrasRowsInput): ModelExtrasRows {
   const showVariantRow = variants.length > 0 && hasVariantHandler;
-  const showReasoningEffortRow = hasProjectId && reasoningEffortValues.length > 0;
-  return {
-    showVariantRow,
-    showReasoningEffortRow,
-    showSection: showVariantRow || showReasoningEffortRow,
-  };
+  return { showVariantRow, showSection: showVariantRow };
 }

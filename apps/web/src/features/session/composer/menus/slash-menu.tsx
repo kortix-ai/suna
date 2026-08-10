@@ -66,7 +66,6 @@ function SlashRowIcon({
   return <TerminalWindowIcon className={className} />;
 }
 
-
 /**
  * The `/` palette.
  *
@@ -119,38 +118,54 @@ export function SlashMenu({
     // two read as one object split in two rather than a popover that happens
     // to be nearby. The list's `p-2` (8px) plus the rows' `rounded-lg` (8px)
     // makes that radius concentric: 8 + 8 = 16.
-    <MenuCard className={cn('mb-2 flex max-h-96 w-full rounded-2xl shadow-none')}>
+    <MenuCard className={cn('mb-2 flex max-h-96 h-88 overflow-hidden w-full rounded-lg shadow-none')}>
       <div
         role="listbox"
         aria-label="Commands and actions"
         aria-activedescendant={`slash-row-${selectedIndex}`}
-        className="min-w-0 flex-1 overflow-y-auto p-2"
+        className="min-w-0 flex-1 space-y-2 overflow-y-auto p-2"
       >
         {sections.map((section) => (
           <div key={section.heading}>
-            <MenuSectionHeading>{section.heading}</MenuSectionHeading>
-            {section.rows.map((row) => (
-              <MenuRow
-                key={`${row.type}-${row.name}-${row.index}`}
-                id={`slash-row-${row.index}`}
-                selected={row.index === selectedIndex}
-                onSelect={() => onSelect(row)}
-                // 8px inside the list's 8px padding = the card's 16px corner.
-                className="rounded-lg"
-              >
-                <SlashRowIcon
-                  row={row}
-                  heading={section.heading}
-                  className="text-muted-foreground size-4 shrink-0"
-                />
-                <span className="min-w-0 flex-1 truncate text-sm">{row.name}</span>
-                {row.hint && (
-                  <kbd className="bg-muted text-muted-foreground rounded-sm px-1.5 py-0.5 font-sans text-[0.6875rem]">
-                    {row.hint}
-                  </kbd>
-                )}
-              </MenuRow>
-            ))}
+            {!section.hideHeading && <MenuSectionHeading>{section.heading}</MenuSectionHeading>}
+            <div className="space-y-0.5">
+              {section.rows.map((row) => (
+                <MenuRow
+                  key={`${row.type}-${row.name}-${row.index}`}
+                  id={`slash-row-${row.index}`}
+                  selected={row.index === selectedIndex}
+                  onSelect={() => onSelect(row)}
+                >
+                  <SlashRowIcon
+                    row={row}
+                    heading={section.heading}
+                    className="text-muted-foreground size-4 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm">{row.name}</span>
+                  {/*
+                    The control's current setting — "Switch agent · Orchestrator".
+                    Plain muted text, NOT a `kbd`: a `kbd` means "press this",
+                    and the agent's name is not a key. It also stays before the
+                    hint so the row reads left to right as
+                    what-it-does · what-it-is-now · how-to-trigger.
+
+                    `max-w-[8rem] truncate` because this is host data, not a
+                    fixed label — a long agent name must shorten itself rather
+                    than push the row's own name out of view.
+                  */}
+                  {row.value && (
+                    <span className="text-muted-foreground max-w-[8rem] shrink-0 truncate text-xs">
+                      {row.value}
+                    </span>
+                  )}
+                  {row.hint && (
+                    <kbd className="bg-muted text-muted-foreground rounded-sm px-1.5 py-0.5 font-sans text-[0.6875rem]">
+                      {row.hint}
+                    </kbd>
+                  )}
+                </MenuRow>
+              ))}
+            </div>
           </div>
         ))}
       </div>

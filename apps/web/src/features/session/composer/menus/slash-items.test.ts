@@ -48,13 +48,13 @@ describe('groupCommandsBySource', () => {
     expect(groups[1].commands.map((c) => c.name)).toEqual(['build']);
   });
 
-  test('mixing all three sources renders Skills, MCP, Commands in that fixed order', () => {
+  test('mixing all three sources renders Skills, Commands, MCP in that fixed order', () => {
     const groups = groupCommandsBySource([
       cmd('build'),
       cmd('fetch-issue', 'mcp'),
       cmd('deploy', 'skill'),
     ]);
-    expect(groups.map((g) => g.heading)).toEqual(['Skills', 'MCP', 'Commands']);
+    expect(groups.map((g) => g.heading)).toEqual(['Skills', 'Commands', 'MCP']);
   });
 
   test('a bucket with zero matches is omitted — no empty heading', () => {
@@ -71,8 +71,32 @@ describe('buildSlashSections', () => {
     });
     const indices = sections.flatMap((s) => s.rows.map((r) => r.index));
     expect(indices).toEqual(Array.from({ length: indices.length }, (_, i) => i));
-    // Skills, MCP, Commands, Actions — in that order.
-    expect(sections.map((s) => s.heading)).toEqual(['Skills', 'MCP', 'Commands', 'Actions']);
+    expect(sections.map((s) => s.heading)).toEqual(['Actions', 'Skills', 'Commands', 'MCP']);
+  });
+
+  test('the flat index starts in Actions, so the default selection is the first action', () => {
+    // Actions render first, so index 0 must BE an action. `MenuNavState`
+    // opens at index 0 and `slash-menu.tsx` paints the highlight from the
+    // same number — if the counter were still assigned commands-first while
+    // Actions rendered on top, the highlight would sit on a row the user
+    // cannot see at the position the keyboard thinks it is on.
+    const sections = buildSlashSections({
+      commands: [cmd('build'), cmd('deploy', 'skill')],
+      query: '',
+    });
+    const first = sections[0].rows[0];
+
+    expect(first.index).toBe(0);
+    expect(first.type).toBe('action');
+  });
+
+  test('MCP renders after plain Commands, not between Skills and Commands', () => {
+    const sections = buildSlashSections({
+      commands: [cmd('fetch-issue', 'mcp'), cmd('build'), cmd('deploy', 'skill')],
+      query: '',
+    });
+
+    expect(sections.map((s) => s.heading)).toEqual(['Actions', 'Skills', 'Commands', 'MCP']);
   });
 
   test('an empty query returns every command and every action', () => {
@@ -101,9 +125,18 @@ describe('buildSlashSections', () => {
   });
 
   test('filters actions via the same query, alongside commands', () => {
-    const sections = buildSlashSections({ commands: [cmd('build')], query: 'voice' });
+    // Queried 'voice' against a 'Start voice input' action until that action
+    // was removed from SLASH_ACTIONS, at which point this asserted a label
+    // that no longer existed and could only ever fail. 'scope' now matches
+    // one of each — the "alongside commands" the test name claims — and the
+    // expected order doubles as a check that Actions render before Commands.
+    const sections = buildSlashSections({
+      commands: [cmd('build'), cmd('scope-check')],
+      query: 'scope',
+    });
     const rows = sections.flatMap((s) => s.rows);
-    expect(rows.map((r) => r.name)).toEqual(['Start voice input']);
+
+    expect(rows.map((r) => r.name)).toEqual(['Set scope', 'scope-check']);
   });
 
   test('no commands leaves just the Actions section, indices starting at 0', () => {
@@ -140,5 +173,64 @@ describe('buildSlashSections', () => {
     const rows = sections.flatMap((s) => s.rows);
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe('Set scope');
+  });
+});
+
+describe('buildSlashSections — the Actions section renders without its heading', () => {
+  test('Actions is marked hideHeading; the command sections are not', () => {
+    // Actions render first and are the fixed rows, so a heading above them
+    // would label the top of the list rather than separate anything. The
+    // headings BELOW still separate, which is the job headings are here for.
+    const sections = buildSlashSections({
+      commands: [cmd('build'), cmd('deploy', 'skill')],
+      query: '',
+    });
+    const byHeading = Object.fromEntries(sections.map((s) => [s.heading, s.hideHeading]));
+
+    expect(byHeading.Actions).toBe(true);
+    expect(byHeading.Skills).toBeUndefined();
+    expect(byHeading.Commands).toBeUndefined();
+  });
+
+  test('`heading` stays populated even when hidden', () => {
+    // It is still the React key in `slash-menu.tsx` AND what `SlashRowIcon`
+    // reads to pick a glyph. Blanking it to hide the label would break both.
+    const sections = buildSlashSections({ commands: [], query: '' });
+
+    expect(sections[0].heading).toBe('Actions');
+    expect(sections[0].hideHeading).toBe(true);
+  });
+});
+
+describe('buildSlashSections — an action carries its current value', () => {
+  const withAgent = [
+    { id: 'switch-agent' as const, label: 'Switch agent', description: 'x', value: 'Orchestrator' },
+  ];
+
+  test("the host's value reaches the row, so the palette shows the live agent", () => {
+    const sections = buildSlashSections({ commands: [], actions: withAgent, query: '' });
+
+    expect(sections[0].rows[0].value).toBe('Orchestrator');
+  });
+
+  test('an action with no value leaves the row undefined rather than empty-string', () => {
+    // `slash-menu.tsx` renders on truthiness; an empty string would be
+    // falsy too, but `undefined` is what "this control has no current
+    // setting to show" actually means.
+    const sections = buildSlashSections({
+      commands: [],
+      actions: [{ id: 'attach-file', label: 'Attach file', description: 'x' }],
+      query: '',
+    });
+
+    expect(sections[0].rows[0].value).toBeUndefined();
+  });
+
+  test('value is NOT searched — typing an agent name does not surface Switch agent', () => {
+    // Guards a tempting "improvement": adding `value` to the filter would
+    // make `/orchestrator` rank a composer action above real commands.
+    const sections = buildSlashSections({ commands: [], actions: withAgent, query: 'orchestrator' });
+
+    expect(sections).toEqual([]);
   });
 });

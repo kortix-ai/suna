@@ -34,7 +34,7 @@ export function MenuCard({ className, children }: { className?: string; children
 /** Section label above a group of rows ("Skills", "Agents", "Connectors"). */
 export function MenuSectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-muted-foreground px-2 pt-2 pb-1 text-xs font-medium">{children}</div>
+    <div className="text-muted-foreground px-2 pb-1 text-sm font-medium">{children}</div>
   );
 }
 

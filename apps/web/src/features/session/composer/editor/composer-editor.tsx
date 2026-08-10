@@ -9,9 +9,9 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'rea
 
 import { textToParagraphs } from '../composer-logic';
 import { createMentionSuggestion } from '../menus/mention-controller';
-import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashAction } from '../menus/slash-actions';
 import { SLASH_ACTIONS } from '../menus/slash-actions';
+import { createSlashSuggestion } from '../menus/slash-controller';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
 import { MentionNode } from './mention-node';
@@ -511,33 +511,18 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * it is deliberate to keep it here rather than "fix" it silently —
            * change the `sm:` step if the tablet cap turns out to be wrong.
            */
-          class: 'outline-none min-h-[1.5em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
+          class:
+            'outline-none min-h-[1.5em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
         },
         handleKeyDown,
       },
       onUpdate: handleUpdate,
     });
 
-    // `editable` in the useEditor() options above is honoured ONLY at
-    // construction (fix round 1, Important 1): @tiptap/react's own
-    // per-render resync deliberately overwrites `editable` with the editor's
-    // EXISTING value (`@tiptap/react/dist/index.js`:418-422,
-    // `setOptions({ ...current, editable: this.editor.isEditable })`) and
-    // never calls `setEditable` itself. `setEditable` is the only thing that
-    // actually toggles it after mount.
     useEffect(() => {
       editor?.setEditable(!disabled);
     }, [editor, disabled]);
 
-    // Forces the Placeholder plugin to recompute its decorations (fix round
-    // 1, Important 2). `baseExtensions`'s `getPlaceholder` already reads
-    // `placeholderRef.current` fresh on every recompute, but ProseMirror only
-    // recomputes decorations on a view redraw — a ref mutation with no
-    // dispatched transaction doesn't trigger one by itself. A no-op
-    // transaction (`docChanged: false`) forces exactly that redraw without
-    // touching the document, and does not fire `onUpdate` (its guard is
-    // `transactions.some(tr => tr.docChanged)`), so this can never trip
-    // trackEmptyBoundary.
     useEffect(() => {
       if (!editor || editor.isDestroyed) return;
       editor.view.dispatch(editor.state.tr);
@@ -568,7 +553,10 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     return (
       <EditorContent
         editor={editor}
-        className={cn('kortix-composer-editor w-full text-base sm:text-sm', disabled && 'opacity-50')}
+        className={cn(
+          'kortix-composer-editor w-full text-base sm:text-[15px]',
+          disabled && 'opacity-50',
+        )}
       />
     );
   },

@@ -458,7 +458,7 @@ export function CheckpointDetailDialog({
                 title={`${data.author_name} <${data.author_email}>`}
               >
                 <UserAvatar email={data.author_email} name={data.author_name} size="xs" />
-                <span className="max-w-[120px] truncate">{data.author_name}</span>
+                <span className="max-w-30 truncate">{data.author_name}</span>
               </span>
 
               {/* date chip */}

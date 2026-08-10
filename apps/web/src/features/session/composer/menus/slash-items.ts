@@ -8,6 +8,8 @@ export interface SlashRow {
   name: string;
   description: string;
   hint?: string;
+  /** The control's current setting — see `SlashAction.value`. */
+  value?: string;
   command?: Command;
   action?: SlashAction;
 }
@@ -15,6 +17,17 @@ export interface SlashRow {
 export interface SlashSection {
   heading: string;
   rows: SlashRow[];
+  /**
+   * Render the rows without their heading.
+   *
+   * Only Actions sets this. Its rows are the fixed, always-present ones and
+   * they render first, so a heading above them would be labelling the top of
+   * the list rather than separating anything — the headings below still do
+   * the separating, which is the job headings are here for. `heading` itself
+   * stays populated: it is the React key, and `SlashRowIcon` reads it to pick
+   * a command row's glyph.
+   */
+  hideHeading?: boolean;
 }
 
 type CommandBucket = 'skill' | 'mcp' | 'command';
@@ -25,8 +38,16 @@ const BUCKET_HEADING: Record<CommandBucket, string> = {
   command: 'Commands',
 };
 
-/** Fixed render order: Skills, then MCP, then plain Commands. */
-const BUCKET_ORDER: CommandBucket[] = ['skill', 'mcp', 'command'];
+/**
+ * Fixed render order for the command buckets: Skills, then plain Commands,
+ * then MCP.
+ *
+ * MCP moved from the middle to the end. Skills and Commands are things the
+ * user or the project authored and reaches for by name; MCP rows arrive from
+ * whatever servers happen to be connected and are the least likely to be what
+ * someone opened the palette to find, so they sit furthest from the caret.
+ */
+const BUCKET_ORDER: CommandBucket[] = ['skill', 'command', 'mcp'];
 
 function bucketFor(command: Command): CommandBucket {
   if (command.source === 'skill') return 'skill';
@@ -104,28 +125,48 @@ export function buildSlashSections({
   const filteredCommands = q ? commands.filter((c) => commandMatchesQuery(c, q)) : commands;
   const filteredActions = filterSlashActions(actions, query);
 
+  // Render order: Actions, Skills, Commands, MCP.
+  //
+  // Actions moved from last to first. They are the fixed, always-present rows
+  // (switch model, attach a file, …) — the same six every time, in the same
+  // place — while the command sections below them change with the project and
+  // with what is connected. Putting the stable set at the top is what makes
+  // the palette land in a predictable spot instead of one that shifts as
+  // skills are added.
+  //
+  // `index` is assigned in this order and nowhere else: it is a single flat
+  // counter threaded across every section, and `MenuNavState`'s ↑/↓ wrapping
+  // plus `aria-activedescendant` both read it as "position in the rendered
+  // list". Building the sections in a different order to the one they render
+  // in would desync the highlight from the keyboard.
   let index = 0;
-  const sections: SlashSection[] = groupCommandsBySource(filteredCommands).map((group) => ({
-    heading: group.heading,
-    rows: group.commands.map((command) => ({
-      index: index++,
-      type: 'command' as const,
-      name: command.name || '',
-      description: command.description || '',
-      command,
-    })),
-  }));
+  const sections: SlashSection[] = [];
 
   if (filteredActions.length) {
     sections.push({
       heading: 'Actions',
+      hideHeading: true,
       rows: filteredActions.map((action) => ({
         index: index++,
         type: 'action' as const,
         name: action.label,
         description: action.description,
         hint: action.hint,
+        value: action.value,
         action,
+      })),
+    });
+  }
+
+  for (const group of groupCommandsBySource(filteredCommands)) {
+    sections.push({
+      heading: group.heading,
+      rows: group.commands.map((command) => ({
+        index: index++,
+        type: 'command' as const,
+        name: command.name || '',
+        description: command.description || '',
+        command,
       })),
     });
   }

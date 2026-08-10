@@ -2,15 +2,16 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Agent, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
 import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
 
+import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
+import { ReasoningEffortSelector } from '../reasoning-effort-selector';
 import { VoiceRecorder } from '../voice-recorder';
-import { AgentSelector } from './agent-selector';
 import { SendStopControl } from './send-stop-control';
 import { TokenProgress } from './token-progress';
 
@@ -56,6 +57,22 @@ export interface ComposerToolbarProps {
   modelDefaultControls?: ModelDefaultControls;
   providers?: ProviderListResponse;
   modelRequired: boolean;
+  /**
+   * Lets the composer open the model popover from outside the toolbar — the
+   * `/` palette's "Switch model" and "Set reasoning effort" rows. Both land on
+   * this one control: reasoning effort is a footer row INSIDE the model
+   * popover, not a popover of its own (see `model-selector.tsx`).
+   *
+   * Optional, so a toolbar rendered without them behaves exactly as before,
+   * with `ModelSelector` owning its own open state.
+   */
+  modelMenuOpen?: boolean;
+  onModelMenuOpenChange?: (open: boolean) => void;
+  /** Same, for the reasoning-effort dropdown — the `/` palette's "Set
+   *  reasoning effort" row. A separate pair because it is now a separate
+   *  control, not a section inside the model popover. */
+  reasoningMenuOpen?: boolean;
+  onReasoningMenuOpenChange?: (open: boolean) => void;
 
   variants: string[];
   selectedVariant: string | null;
@@ -100,6 +117,10 @@ export function ComposerToolbar({
   modelDefaultControls,
   providers,
   modelRequired,
+  modelMenuOpen,
+  onModelMenuOpenChange,
+  reasoningMenuOpen,
+  onReasoningMenuOpenChange,
   variants,
   selectedVariant,
   onVariantChange,
@@ -130,36 +151,25 @@ export function ComposerToolbar({
   const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
 
   return (
-    <div className="kortix-composer-toolbar mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
-      {/* LEFT */}
+    <div className="kortix-composer-toolbar flex items-center justify-between gap-1 overflow-visible px-1">
       <div className="flex min-w-0 items-center gap-0 overflow-visible">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onAttachClick}
-              className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
-              aria-label="Attach files"
-            >
-              <Paperclip className="h-4 w-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <p>
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
-            </p>
-          </TooltipContent>
-        </Tooltip>
+        <Hint
+          side="top"
+          label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-base"
+            onClick={onAttachClick}
+            aria-label="Attach files"
+            className="text-muted-foreground rounded-full"
+          >
+            <Paperclip className="size-4 shrink-0" />
+          </Button>
+        </Hint>
 
-        {/* Agent and model sit INLINE, always visible — the composer people
-            already know. An earlier pass hid them behind a "…" popover; that
-            traded one glanceable row for a click and a guess, and these two
-            most-changed controls stopped showing their current value at
-            rest. Variant and reasoning effort now live inside the model
-            popover itself (below the model list) instead of the inline row —
-            see ModelSelector's `variants`/`onVariantChange`/`projectId`
-            props and `model-popover-extras.ts`. */}
-        {showAgent && (
+        {/* {showAgent && (
           <AgentSelector
             agents={agents}
             selectedAgent={selectedAgent}
@@ -167,7 +177,8 @@ export function ComposerToolbar({
             disabled={agentSelectorLocked}
             triggerLabelClassName="max-w-[7rem]"
           />
-        )}
+        )} */}
+
         {showModel && (
           <ModelSelector
             models={models}
@@ -181,19 +192,24 @@ export function ComposerToolbar({
             selectedVariant={selectedVariant}
             onVariantChange={onVariantChange}
             projectId={projectId}
+            open={modelMenuOpen}
+            onOpenChange={onModelMenuOpenChange}
           />
         )}
+
+        {/* Reasoning effort sits BESIDE the model, not inside it. It renders
+            nothing at all unless the selected model exposes an effort knob and
+            there is a project to scope the setting to, so a non-reasoning
+            model leaves the row exactly as it was. */}
+        <ReasoningEffortSelector
+          model={selectedModel}
+          projectId={projectId}
+          open={reasoningMenuOpen}
+          onOpenChange={onReasoningMenuOpenChange}
+        />
       </div>
 
-      {/* RIGHT: ambient token progress, any slot content, voice, send/stop. */}
-      <div className="flex shrink-0 items-center gap-0">
-        {/* Always visible, at every viewport — Task 14, matrix row 18. A
-            `hidden sm:flex` wrapper here removed the ring below 640px, and
-            with it the ONLY route to `SessionContextModal`
-            (`session-chat.tsx`'s `handleContextClick` has exactly one
-            reference), so context usage and compaction were unreachable on a
-            phone. See `token-progress.tsx`'s own doc comment: staying visible
-            is a deliberate earlier decision, not an oversight. */}
+      <div className="flex shrink-0 items-center gap-1.5">
         <TokenProgress
           messages={messages}
           models={models}
@@ -201,7 +217,7 @@ export function ComposerToolbar({
           onContextClick={onContextClick}
         />
 
-        {toolbarSlot}
+        {/* {toolbarSlot} */}
 
         <VoiceRecorder onTranscription={onTranscription} disabled={voiceDisabled} />
 

@@ -1,13 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
+import { useMemo } from 'react';
 
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { MessageWithParts } from '@kortix/sdk/react';
 
+import { Button } from '@/components/ui/button';
 import type { FlatModel } from '../model-flatten';
 
 // ============================================================================
@@ -59,7 +60,12 @@ export function getContextLimit(
   return 200000;
 }
 
-export function TokenProgress({ messages, models, selectedModel, onContextClick }: TokenProgressProps) {
+export function TokenProgress({
+  messages,
+  models,
+  selectedModel,
+  onContextClick,
+}: TokenProgressProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const contextTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
   const contextLimit = useMemo(
@@ -81,16 +87,11 @@ export function TokenProgress({ messages, models, selectedModel, onContextClick 
     <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
-          {/* `data-slot` is this repo's standard stable hook (see
-              components/ui/*). It is what lets composer-toolbar.test.tsx find
-              this control in rendered markup and assert that nothing above it
-              hides it below the `sm` breakpoint — matrix row 18, where a
-              `hidden sm:flex` wrapper made the context modal unreachable on
-              mobile. */}
-          <span data-slot="token-progress" className="relative inline-flex">
-            <button
+          <span data-slot="token-progress" className="relative inline-flex shrink-0">
+            <Button
+              variant="transparent"
+              size="icon"
               type="button"
-              className="flex size-6 cursor-pointer items-center justify-center"
               onPointerDown={(e) => {
                 e.stopPropagation();
               }}
@@ -101,10 +102,10 @@ export function TokenProgress({ messages, models, selectedModel, onContextClick 
             >
               <ProgressRing
                 value={Math.round(ratio * 100)}
-                className="size-5"
+                className="size-[1.3rem]"
                 progressClassName={color}
               />
-            </button>
+            </Button>
           </span>
         </TooltipTrigger>
         <TooltipContent side="top">

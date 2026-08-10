@@ -463,19 +463,18 @@ export function SessionScopeControl({
         <Button
           type="button"
           variant="ghost"
-          size="toolbar"
+          size="icon"
           disabled={contentProps.disabled || contentProps.saving}
           aria-label="Configure session scope"
         >
-          <SlidersHorizontal className="size-3.5 shrink-0" />
-          {triggerLabel}
+          <SlidersHorizontal className="size-4 shrink-0" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         side="top"
-        align="start"
+        align="end"
         sideOffset={8}
-        className="w-[352px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 shadow-md"
+        className="w-88 max-w-[calc(100vw-2rem)] overflow-hidden p-0"
       >
         <SessionScopeControlContent {...contentProps} />
       </PopoverContent>

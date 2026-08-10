@@ -1,8 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
-
+import { Button } from '@/components/ui/button';
 import {
   CommandGroup,
   CommandInput,
@@ -13,14 +11,13 @@ import {
   CommandPopoverTrigger,
 } from '@/components/ui/command';
 import Hint from '@/components/ui/hint';
+import { Kbd } from '@/components/ui/kbd';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
 import { CaretDownIcon, Check, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
-
-// ============================================================================
-// Agent Selector
-// ============================================================================
+import { useTranslations } from 'next-intl';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export function AgentSelector({
   agents,
@@ -33,14 +30,6 @@ export function AgentSelector({
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
-  /**
-   * Overrides the trigger label's `max-w-[100px]` (twMerge picks the last
-   * conflicting utility, so this cleanly replaces rather than stacks).
-   * `AgentSelector` is re-exported from `session-chat-input.tsx` and
-   * imported through that barrel by `schedule-view.tsx` (x2) and
-   * `channels-view.tsx` — none of them pass this, so they keep the 100px
-   * default byte-identical. Only the composer passes `max-w-[7rem]`.
-   */
   triggerLabelClassName?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -54,7 +43,6 @@ export function AgentSelector({
     [agents],
   );
 
-  // Flash highlight when agent changes (e.g. via Tab cycling)
   useEffect(() => {
     if (prevAgentRef.current !== selectedAgent && prevAgentRef.current !== null) {
       setFlash(true);
@@ -68,12 +56,10 @@ export function AgentSelector({
     prevAgentRef.current = selectedAgent;
   }, [selectedAgent]);
 
-  // Reset search when closing
   useEffect(() => {
     if (!open) setSearch('');
   }, [open]);
 
-  // Fuzzy filter
   const filteredPrimary = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return primaryAgents;
@@ -82,9 +68,6 @@ export function AgentSelector({
     );
   }, [primaryAgents, search]);
 
-  // The platform coordinator is not a project agent — it renders in its own
-  // group so the split between platform-owned and repo-declared agents is
-  // visible at a glance.
   const filteredMeta = useMemo(
     () => filteredPrimary.filter((a) => isMetaAgentName(a.name)),
     [filteredPrimary],
@@ -138,9 +121,6 @@ export function AgentSelector({
   };
 
   return (
-    // When locked we keep the trigger hoverable (no native `disabled`, which
-    // would suppress hover) but gate the popover shut, so the tooltip can still
-    // explain WHY the agent can't be switched mid-session.
     <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
       <Hint
         side="top"
@@ -153,41 +133,26 @@ export function AgentSelector({
               }
             </p>
           ) : (
-            <p>
+            <p className="mr-1.5 flex items-center gap-1">
               {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
-              <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">
-                Tab
-              </kbd>
+              <Kbd>Tab</Kbd>
             </p>
           )
         }
       >
         <CommandPopoverTrigger>
-          <button
+          <Button
             type="button"
-            aria-disabled={disabled || undefined}
-            aria-label={tHardcodedUi.raw(
-              'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
-            )}
-            className={cn(
-              'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-[color,background-color,transform] duration-200 active:scale-[0.96]',
-              flash && 'bg-primary/10 text-foreground',
-              open && 'bg-muted text-foreground',
-              disabled &&
-                'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
-            )}
+            variant="ghost"
+            size="sm"
+            className="text-foreground/70 rounded-full"
           >
             {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
             <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>
               {displayName}
             </span>
-            <CaretDownIcon
-              className={cn(
-                'size-3 opacity-50 transition-transform duration-200',
-                open && 'rotate-180',
-              )}
-            />
-          </button>
+            <CaretDownIcon className={cn('size-3', open && 'rotate-180')} />
+          </Button>
         </CommandPopoverTrigger>
       </Hint>
 
@@ -202,7 +167,6 @@ export function AgentSelector({
         />
 
         <CommandList className="max-h-[320px]">
-          {/* Platform coordinator — separated from the project's own agents. */}
           {filteredMeta.length > 0 && (
             <CommandGroup heading="Platform" forceMount>
               {filteredMeta.map((agent) => renderAgentItem(agent, true))}

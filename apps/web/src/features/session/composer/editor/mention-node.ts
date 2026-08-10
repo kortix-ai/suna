@@ -43,7 +43,7 @@ export function chipText(kind: string, label: string): string {
  */
 function chipClass(kind: string): string {
   const base =
-    'rounded-sm border border-[0.5px] bg-muted px-1.5 py-[0.08rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card text-[0.9em] font-medium whitespace-nowrap align-baseline';
+    'rounded-sm border border-[0.5px] bg-muted px-1.5 py-[0.08rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card  font-medium whitespace-nowrap align-baseline text-base sm:text-sm';
   return kind === 'command'
     ? cn(base, 'bg-primary/[0.08] text-foreground dark:bg-primary/[0.08]')
     : cn(base, 'bg-muted text-foreground');

@@ -41,13 +41,24 @@
  * stays discoverable.
  */
 
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
 import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
+import { cn } from '@/lib/utils';
 import { modelKeyToWire } from '@kortix/sdk/react';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
 import type { GatewayProjectRoutingPolicy } from '@kortix/sdk';
 import { useGatewayRoutingPolicy } from '@kortix/sdk/react';
+import { BrainIcon, CaretDownIcon } from '@phosphor-icons/react';
 
 export interface ReasoningEffortModelKey {
   providerID: string;
@@ -143,4 +154,136 @@ export function useReasoningEffortControl(
     wireModel,
     setEffort,
   };
+}
+
+/**
+ * The value `setEffort(null)` means: no project override, let the model decide.
+ * A sentinel is needed because Radix's radio group addresses items by string
+ * and cannot carry `null`.
+ */
+const AUTO = '__auto__';
+
+/** `medium` → `Medium`. The catalog ships lowercase ids; the trigger and the
+ *  menu should not. */
+function label(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+export interface ReasoningEffortSelectorProps {
+  model: ReasoningEffortModelKey | null | undefined;
+  projectId: string | undefined;
+  /**
+   * Controlled open state — omit and the trigger owns it. Supplied by
+   * `composer.tsx` so the `/` palette's "Set reasoning effort" row can open
+   * this directly. Same controlled/uncontrolled rule as `ModelSelector`.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+/**
+ * Reasoning effort as its own composer-toolbar control.
+ *
+ * It previously lived as a chip row folded into the bottom of the model
+ * popover. That put a per-project setting two clicks deep behind a per-message
+ * one, and — because the popover only renders that footer once a model is
+ * selected and the section is non-empty — made it invisible at rest, so
+ * nothing in the composer showed the effort a turn would actually run at. As a
+ * peer of the model pill it states its own value without being opened.
+ *
+ * Renders NOTHING when `visible` is false — the model exposes no effort knob,
+ * or there is no project to scope the setting to. That is the same gate the
+ * folded-in row used, so a model without reasoning never grows a dead control.
+ *
+ * A `DropdownMenu` rather than the `CommandPopover` the model and agent
+ * pickers use: this is a fixed list of four to six values with no search, no
+ * grouping and no empty state, and `DropdownMenuRadioGroup` gives the
+ * single-select semantics — roving focus, typeahead, `aria-checked` — for
+ * free, where the command palette would need them re-implemented.
+ */
+export function ReasoningEffortSelector({
+  model,
+  projectId,
+  open: openProp,
+  onOpenChange,
+}: ReasoningEffortSelectorProps) {
+  const { visible, values, current, canWrite, pending, setEffort } = useReasoningEffortControl(
+    model,
+    projectId,
+  );
+
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : uncontrolledOpen;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlled) setUncontrolledOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange],
+  );
+
+  const onValueChange = useCallback(
+    (next: string) => setEffort(next === AUTO ? null : next),
+    [setEffort],
+  );
+
+  if (!visible) return null;
+
+  const locked = !canWrite;
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <Hint
+        side="top"
+        label={
+          locked
+            ? 'Only project editors can change reasoning effort for this model'
+            : 'Reasoning effort — how much the model thinks before answering'
+        }
+        delayDuration={400}
+      >
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            // `aria-disabled`, not `disabled`: a viewer must still be able to
+            // focus this and read the hint explaining why it is locked.
+            // `disabled` would make it unreachable by keyboard and strip the
+            // hint with it, which is how a permission boundary turns into
+            // "the control is just missing".
+            aria-disabled={locked || pending || undefined}
+            onClick={(e) => {
+              if (locked || pending) e.preventDefault();
+            }}
+            className={cn(
+              'text-foreground/70 gap-1.5 rounded-full',
+              (locked || pending) && 'cursor-not-allowed opacity-60',
+            )}
+          >
+            <BrainIcon className="size-4 shrink-0" />
+            <span className="max-w-[7rem] truncate">{current ? label(current) : 'Auto'}</span>
+            <CaretDownIcon className={cn('size-3 opacity-50', open && 'rotate-180')} />
+          </Button>
+        </DropdownMenuTrigger>
+      </Hint>
+
+      <DropdownMenuContent side="top" align="start" className="min-w-[10rem]">
+        <DropdownMenuRadioGroup value={current ?? AUTO} onValueChange={onValueChange}>
+          {/* Auto is first and always present: it is the only way BACK to the
+              model's own default once an override is set, and without it the
+              control would be a one-way door. */}
+          <DropdownMenuRadioItem value={AUTO} disabled={locked || pending}>
+            Auto
+          </DropdownMenuRadioItem>
+          {values.map((value) => (
+            <DropdownMenuRadioItem key={value} value={value} disabled={locked || pending}>
+              {label(value)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }

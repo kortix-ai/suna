@@ -2055,8 +2055,34 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
    typed, because the plugin drops `is-empty` at that point. */
 .kortix-composer-editor .kortix-slash-trigger.is-empty::after {
   content: attr(data-decoration-content);
+
+  /* Pinned rather than inherited by luck. This text renders immediately
+     beside a real typed character inside a contenteditable, so any drift in
+     size, weight or baseline between the two reads as a rendering bug rather
+     than as a hint. `font: inherit` covers every font-* longhand at once
+     (family, size, weight, style, variant) so a future rule on the editor
+     cannot desync the pseudo-element from the `/` next to it. */
+  font: inherit;
+  vertical-align: baseline;
+  line-height: 1;
+
+  /* The separation the copy cannot provide: CSS collapses leading whitespace
+     in `content`, so `content: " Type to search"` renders as "Type to
+     search" and the hint ends up glued to the slash — "/Type" reads as one
+     word whose first glyph is inexplicably darker than the rest. Padding is
+     the only way to put space there.
+
+     `em`, not `px`: the composer is `text-base` below 640px and `text-sm`
+     above it, so a fixed gap would be proportionally twice as wide on
+     desktop as on mobile. */
+  padding-left: 0.3em;
+
   color: var(--muted-foreground);
   pointer-events: none;
+  /* Belt and braces — pseudo-element content is already unselectable, but the
+     caret sits directly before this inside an editable region and the intent
+     is worth stating. */
+  user-select: none;
 }
 
 /* Fix round 1, Minor: the paused-on-approval placeholder keeps the old
