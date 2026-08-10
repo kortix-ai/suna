@@ -128,9 +128,96 @@ export function createSessionScopeDraft(
   }
   if (!catalog || catalog.connector_connections.status === 'ready') {
     draft.connector_bindings = cloneBindings(scope.connector_bindings);
+    // `scope.connector_bindings` is the SERVER-RESOLVED map, which is identical
+    // for a session that overrode its connectors and one that just inherits the
+    // project defaults. `connector_bindings_configured` is the only thing that
+    // separates them. Without this marker the draft treated the preview as a
+    // user selection, so an untouched Save posted it back as a full
+    // replacement — freezing project defaults into an override, and turning an
+    // empty resolve into an explicit zero-connector session.
+    draft.connector_bindings_inherited = scope.connector_bindings_configured !== true;
     draft.require_connectors = [...(scope.required_connectors ?? [])];
   }
   return draft;
+}
+
+/**
+ * The connections a session inherits today: each granted connector's default
+ * (or only) connection. A PREVIEW of what the server resolves, never a
+ * selection — it is always paired with `connector_bindings_inherited`.
+ */
+function defaultConnectorBindingsPreview(
+  catalog: SessionScopeSelectionCatalog,
+): Record<string, { connection_id: string }> {
+  if (catalog.connector_connections.status !== 'ready') return {};
+  return Object.fromEntries(
+    catalog.connector_connections.items.flatMap((connector) => {
+      const connection =
+        connector.connections.find((candidate) => candidate.is_default) ?? connector.connections[0];
+      return connection ? [[connector.slug, { connection_id: connection.connection_id }]] : [];
+    }),
+  );
+}
+
+/**
+ * Drop a session's secret override. `null` is "inherit the agent's grant" —
+ * the state a session starts in — and is the opposite of `[]`.
+ */
+export function resetSessionSecrets(draft: SessionScopeDraft): SessionScopeDraft {
+  return { ...draft, secrets: null };
+}
+
+/**
+ * Drop a session's connector override and preview the project defaults again.
+ *
+ * The marker is what makes `buildSessionScopeReplacement` send
+ * `connector_bindings: null` — the API's clear verb — when the session actually
+ * holds an override. An override the user cannot switch off is a trap.
+ */
+export function resetSessionConnectorBindings(
+  draft: SessionScopeDraft,
+  catalog: SessionScopeSelectionCatalog,
+): SessionScopeDraft {
+  return {
+    ...draft,
+    connector_bindings: defaultConnectorBindingsPreview(catalog),
+    connector_bindings_inherited: true,
+    // A requirement is an override too: it stops the next turn until the alias
+    // is connected. Resetting the axis clears it with the bindings.
+    require_connectors: [],
+  };
+}
+
+/** How an axis reads in the UI. "Project default" is the norm, never "none". */
+export const SESSION_SCOPE_INHERITED_LABEL = 'Project default';
+
+export function sessionSecretsSummary(draft: SessionScopeDraft): string {
+  if (draft.secrets === undefined) return 'Unchanged';
+  // `null` = inherit whatever the agent's grant allows. Calling this "All
+  // allowed" overstated it, and calling it "None selected" inverted it.
+  if (draft.secrets === null) return SESSION_SCOPE_INHERITED_LABEL;
+  if (draft.secrets.length === 0) return 'None allowed';
+  return `${draft.secrets.length} selected`;
+}
+
+export function sessionConnectorsSummary(draft: SessionScopeDraft): string {
+  if (draft.connector_bindings === undefined) return 'Unchanged';
+  if (draft.connector_bindings_inherited === true) return SESSION_SCOPE_INHERITED_LABEL;
+  const bound = Object.keys(draft.connector_bindings);
+  // A required-but-unconnected alias is selected too — it has no connection to
+  // bind, which is precisely why it is recorded separately.
+  const required = (draft.require_connectors ?? []).filter((alias) => !bound.includes(alias));
+  const count = bound.length + required.length;
+  return count === 0 ? 'None allowed' : `${count} selected`;
+}
+
+/** True when this axis holds an explicit override rather than inheriting. */
+export function sessionSecretsAreOverridden(draft: SessionScopeDraft): boolean {
+  return draft.secrets !== undefined && draft.secrets !== null;
+}
+
+export function sessionConnectorsAreOverridden(draft: SessionScopeDraft): boolean {
+  return draft.connector_bindings !== undefined && draft.connector_bindings_inherited !== true;
 }
 
 export function createNewSessionScopeDraft(
@@ -151,14 +238,7 @@ export function createNewSessionScopeDraft(
     // The inherited marker keeps an untouched session on server-side resolution,
     // which filters stale or disconnected rows. A user change clears the marker
     // and turns the draft into a complete fail-closed replacement.
-    draft.connector_bindings = Object.fromEntries(
-      catalog.connector_connections.items.flatMap((connector) => {
-        const connection =
-          connector.connections.find((candidate) => candidate.is_default) ??
-          connector.connections[0];
-        return connection ? [[connector.slug, { connection_id: connection.connection_id }]] : [];
-      }),
-    );
+    draft.connector_bindings = defaultConnectorBindingsPreview(catalog);
     draft.connector_bindings_inherited = true;
     draft.require_connectors = [];
   }
@@ -183,12 +263,18 @@ export function buildSessionScopeReplacement(
   const connectorBindings = Object.hasOwn(draft, 'connector_bindings')
     ? draft.connector_bindings
     : previousScope?.connector_bindings;
-  if (
-    availability.connector_bindings &&
-    connectorBindings !== undefined &&
-    draft.connector_bindings_inherited !== true
-  ) {
-    replacement.connector_bindings = cloneBindings(connectorBindings);
+  if (availability.connector_bindings) {
+    if (draft.connector_bindings_inherited === true) {
+      // Inheriting. Send the API's clear verb ONLY when the session actually
+      // holds an override — that is the one case with something to undo. With
+      // nothing to undo the key stays out entirely, so an untouched Save cannot
+      // create the override it is trying to avoid.
+      if (previousScope?.connector_bindings_configured === true) {
+        replacement.connector_bindings = null;
+      }
+    } else if (connectorBindings !== undefined) {
+      replacement.connector_bindings = cloneBindings(connectorBindings);
+    }
   }
   const required = Object.hasOwn(draft, 'require_connectors')
     ? draft.require_connectors

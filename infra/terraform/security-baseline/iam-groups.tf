@@ -161,11 +161,10 @@ locals {
       # authenticated with MFA (DCF-67). The AdministratorAccess Allow is still
       # gated by the MFA Deny — IAM evaluates Deny before Allow, so an admin
       # without MFA can do nothing except enroll an MFA device.
-      policies = [
+      policies = concat([
         "arn:aws:iam::aws:policy/AdministratorAccess",
         "arn:aws:iam::aws:policy/IAMUserChangePassword",
-        aws_iam_policy.mfa_required.arn
-      ]
+      ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
       members = []
     }
     bedrock-limited = {
@@ -205,10 +204,9 @@ locals {
       # login profile; mfa_required DENIES every other action until they do
       # (DCF-67). Together: a user with no MFA can do exactly one thing — enroll
       # an MFA device — and once enrolled, the deny lifts for MFA'd sessions.
-      policies = [
+      policies = concat([
         aws_iam_policy.mfa_self_manage.arn,
-        aws_iam_policy.mfa_required.arn
-      ]
+      ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
       members = []
     }
     # SES send-only for the `kortix-ses-sender` user (was an inline `ses-send-only`
@@ -244,4 +242,19 @@ resource "aws_iam_user_group_membership" "this" {
   for_each = local.user_groups
   user     = each.key
   groups   = each.value
+}
+
+# DCF-67 MFA enforcement is an explicit, coordinated flip — NOT an automatic
+# side effect of the apply pipeline. Attaching kortix-mfa-required to the
+# administrators group instantly DENIES every non-MFA API call for its members
+# (sofia, markokraemer, vkubet), which kills long-lived access-key CLI sessions
+# mid-flight. Flip to true only after every admin has switched to MFA-derived
+# sessions (aws sts get-session-token --serial-number <mfa-arn> --token-code,
+# or aws-vault). The policy resource itself is always created so the flip is
+# attach-only. 2026-08-10: the unattached policy was created during the
+# tf-apply-pipeline bootstrap; enforcement deliberately deferred.
+variable "enforce_mfa_for_iam_users" {
+  description = "Attach kortix-mfa-required (deny-all-without-MFA) to the administrators and mfa-self-manage groups (DCF-67). Coordinate with every admin before enabling."
+  type        = bool
+  default     = false
 }

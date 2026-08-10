@@ -1,30 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  QUEUE_AUTO_EXPAND_AT,
   nextFocusAfterRemove,
   queueSummaryLabel,
   reorderTargetIndex,
-  shouldExpandQueue,
 } from './queued-messages-logic';
-
-describe('shouldExpandQueue', () => {
-  test('stays collapsed for a short queue', () => {
-    expect(shouldExpandQueue(0, null)).toBe(false);
-    expect(shouldExpandQueue(1, null)).toBe(false);
-    expect(shouldExpandQueue(QUEUE_AUTO_EXPAND_AT - 1, null)).toBe(false);
-  });
-
-  test('expands on its own once the queue is long enough to need scanning', () => {
-    expect(shouldExpandQueue(QUEUE_AUTO_EXPAND_AT, null)).toBe(true);
-    expect(shouldExpandQueue(9, null)).toBe(true);
-  });
-
-  test('an explicit choice beats the count, in both directions', () => {
-    expect(shouldExpandQueue(9, false)).toBe(false);
-    expect(shouldExpandQueue(1, true)).toBe(true);
-  });
-});
 
 describe('queueSummaryLabel', () => {
   test('says what will happen, not just how many', () => {

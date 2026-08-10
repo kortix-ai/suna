@@ -1,0 +1,67 @@
+name: Terraform Apply Global
+
+# Applies the two ACCOUNT-GLOBAL Terraform roots on every push to `main` that
+# touches them. These are not environment infrastructure — they are the SOC 2
+# controls themselves (CloudTrail, GuardDuty, IAM baseline, WAF, the compliance
+# Lambdas), and a merged-but-unapplied change here is a compliance finding, not
+# a deploy delay.
+#
+# ORDER IS LOAD-BEARING: compliance-monitoring runs FIRST. It owns the WAF web
+# ACL and the monitoring KMS keys and SNS topics that the baseline alerting
+# resources point at, so applying the baseline against a stale monitoring stack
+# can reference a web ACL or topic that does not exist yet.
+#
+# The job is skipped while TF_APPLY_ROLE_ARN_GLOBAL is unset, so this workflow
+# is safe to merge before the role exists. terraform-ci.yml's
+# `apply-pipeline-health` job fails loudly if the variable stays unset — a
+# control that silently never runs is worse than no control.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/terraform/security-baseline/**"
+      - "infra/terraform/compliance-monitoring/**"
+      - ".github/workflows/terraform-apply-global.yml"
+      - ".github/workflows/terraform-apply.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-apply-global
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  compliance-monitoring:
+    name: compliance-monitoring
+    if: vars.TF_APPLY_ROLE_ARN_GLOBAL != ''
+    uses: ./.github/workflows/terraform-apply.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      tf_root: infra/terraform/compliance-monitoring
+      aws_region: us-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
+      github_environment: infra-global
+      trusted_branch: main
+    secrets: inherit
+
+  security-baseline:
+    name: security-baseline
+    needs: compliance-monitoring
+    if: vars.TF_APPLY_ROLE_ARN_GLOBAL != ''
+    uses: ./.github/workflows/terraform-apply.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      tf_root: infra/terraform/security-baseline
+      aws_region: us-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
+      github_environment: infra-global
+      trusted_branch: main
+    secrets: inherit

@@ -6,12 +6,13 @@ import {
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
   buildWorkerScript,
+  dockerComposeInstallCommand,
   observePlatinumWorker,
   providerMetadataIdentifier,
 } from './platinum-ci';
 
-export const DAYTONA_CI_SNAPSHOT_VERSION = 'v3';
-const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v2';
+export const DAYTONA_CI_SNAPSHOT_VERSION = 'v4';
+const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v3';
 
 const POLL_MS = 3_000;
 const SNAPSHOT_TIMEOUT_MS = 45 * 60_000;
@@ -125,6 +126,7 @@ export function buildDaytonaBaseDockerfile(input: {
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 RUN set -eux; apt-get update; apt-get install -y --no-install-recommends ca-certificates curl docker.io git iptables jq kmod postgresql-client procps ripgrep unzip xz-utils; rm -rf /var/lib/apt/lists/*
+RUN set -eux; ${dockerComposeInstallCommand()}
 RUN npm install --global bun@${PLATINUM_CI_BUN_VERSION} && corepack prepare pnpm@${PLATINUM_CI_PNPM_VERSION} --activate
 RUN set -eux; mkdir -p /workspace /root/.cache/ms-playwright; git init /workspace/suna; git -C /workspace/suna remote add origin https://github.com/${input.repository}.git; git -C /workspace/suna fetch --depth=1 origin ${input.cacheSha}; git -C /workspace/suna checkout --detach FETCH_HEAD; test "$(git -C /workspace/suna rev-parse HEAD)" = "${input.cacheSha}"
 RUN set -eux; cd /workspace/suna; corepack enable; pnpm install --frozen-lockfile; pnpm --dir tests exec playwright install --with-deps chromium; rm -rf /workspace/suna/tests/test-results

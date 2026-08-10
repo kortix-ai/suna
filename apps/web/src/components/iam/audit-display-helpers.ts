@@ -149,6 +149,10 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/connectors/projects/:projectId/catalog': 'Viewed connector catalog',
   'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding':
     'Updated connector secret binding',
+  'GET /v1/runtime-assets/manifest': 'Checked sandbox runtime-asset versions',
+  'GET /v1/runtime-assets/cli': 'Downloaded the sandbox CLI',
+  'HEAD /v1/runtime-assets/cli': 'Checked the sandbox CLI',
+  'GET /v1/runtime-assets/managed-skills': 'Downloaded managed skills',
   'POST /v1/router/web-search': 'Searched the web',
   'POST /v1/router/image-search': 'Searched images',
   'POST /v1/router/chat/completions': 'Generated chat completion',

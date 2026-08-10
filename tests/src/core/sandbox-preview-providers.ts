@@ -26,6 +26,7 @@ import {
   exec as execPlatinum,
   observePlatinumSandboxStart,
   observePlatinumWorker,
+  platinumWarmReadinessTimeoutMs,
   stat as statPlatinum,
   waitForWarmSandbox,
 } from './platinum-ci';
@@ -140,6 +141,14 @@ async function replaceExistingPlatinumPreview(
   for (const sandbox of existing) await deletePlatinum(api, sandbox.id);
 }
 
+export function platinumPreviewIdempotencyKey(input: {
+  prNumber: number;
+  sha: string;
+  runId: string;
+}): string {
+  return `kortix-preview-${input.prNumber}-${input.sha}-${input.runId}`;
+}
+
 export async function deployPlatinumPreview(
   input: SandboxPreviewDeploymentInput,
 ): Promise<SandboxPreviewResult> {
@@ -164,7 +173,7 @@ export async function deployPlatinumPreview(
       '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
       {
         method: 'POST',
-        headers: { 'idempotency-key': `kortix-preview-${input.prNumber}-${input.sha}` },
+        headers: { 'idempotency-key': platinumPreviewIdempotencyKey(input) },
         body: JSON.stringify({
           name: previewSandboxName(input.prNumber),
           template: template.id,
@@ -192,7 +201,7 @@ export async function deployPlatinumPreview(
       startedAt,
       readSandbox: () => api.json<PlatinumSandbox>(`/v1/sandboxes/${created.id}`),
     });
-    await waitForWarmSandbox(api, sandboxId);
+    await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
     let previewUrl = sandbox.exposed?.find((item) => item.port === 8080)?.url;
     if (!previewUrl) {
       const exposed = await api.json<{ url: string }>(`/v1/sandboxes/${sandboxId}/expose`, {

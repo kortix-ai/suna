@@ -7,6 +7,7 @@ import {
   runSandboxPreview,
   selectStalePreviewSandboxIds,
 } from '../src/core/sandbox-preview';
+import { platinumPreviewIdempotencyKey } from '../src/core/sandbox-preview-providers';
 
 const input = {
   provider: 'auto' as const,
@@ -18,6 +19,29 @@ const input = {
 describe('provider-neutral preview lifecycle', () => {
   it('uses one stable sandbox name per pull request', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
+  });
+
+  it('uses a new Platinum idempotency key for each deployment run', () => {
+    expect(
+      platinumPreviewIdempotencyKey({
+        prNumber: 6337,
+        sha: 'a'.repeat(40),
+        runId: '31431634153',
+      }),
+    ).toBe(`kortix-preview-6337-${'a'.repeat(40)}-31431634153`);
+    expect(
+      platinumPreviewIdempotencyKey({
+        prNumber: 6337,
+        sha: 'a'.repeat(40),
+        runId: '31428940308',
+      }),
+    ).not.toBe(
+      platinumPreviewIdempotencyKey({
+        prNumber: 6337,
+        sha: 'a'.repeat(40),
+        runId: '31431634153',
+      }),
+    );
   });
 
   it('requires the exact SHA-256 of the pull request lockfile', () => {

@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v12';
-const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v10';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v14';
+const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v11';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
 export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
+export const CI_DOCKER_COMPOSE_VERSION = 'v2.40.3';
+export const CI_DOCKER_COMPOSE_AMD64_SHA256 =
+  'dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372';
 
 const POLL_MS = 3_000;
 const TEMPLATE_TIMEOUT_MS = 45 * 60_000;
@@ -215,6 +218,18 @@ export function platinumBaseTemplateName(lockHash: string): string {
   return `kortix-ci-${PLATINUM_CI_BASE_TEMPLATE_VERSION}-${lockHash.slice(0, 16)}-base`;
 }
 
+export function dockerComposeInstallCommand(): string {
+  const plugin = '/usr/local/lib/docker/cli-plugins/docker-compose';
+  const url = `https://github.com/docker/compose/releases/download/${CI_DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64`;
+  return [
+    'install -d /usr/local/lib/docker/cli-plugins',
+    `curl -fsSL ${url} -o ${plugin}`,
+    `echo '${CI_DOCKER_COMPOSE_AMD64_SHA256}  ${plugin}' | sha256sum -c -`,
+    `chmod 0755 ${plugin}`,
+    'docker compose version',
+  ].join(' && ');
+}
+
 function platinumWarmEntrypoint(): string {
   return [
     'set -eux',
@@ -231,7 +246,7 @@ function platinumWarmEntrypoint(): string {
     'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 &',
     "timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'",
     'docker info >/dev/null',
-    'pnpm exec supabase start --ignore-health-check',
+    "timeout 2400 sh -c 'until pnpm exec supabase start --ignore-health-check; do sleep 30; done'",
     'docker image ls -q | sort -u | wc -l > /workspace/.kortix-ci-warm-ready',
     "grep -Eq '^[1-9][0-9]*$' /workspace/.kortix-ci-warm-ready",
     'docker image ls --digests',
@@ -278,6 +293,7 @@ export function buildPlatinumTemplateSpec(input: {
           'export DEBIAN_FRONTEND=noninteractive',
           'apt-get update',
           'apt-get install -y --no-install-recommends ca-certificates curl docker.io git jq procps ripgrep unzip xz-utils',
+          dockerComposeInstallCommand(),
           'rm -rf /var/lib/apt/lists/*',
           `npm install --global bun@${PLATINUM_CI_BUN_VERSION}`,
           `corepack prepare pnpm@${PLATINUM_CI_PNPM_VERSION} --activate`,
@@ -746,8 +762,18 @@ export async function observePlatinumSandboxStart(input: {
   );
 }
 
-export async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
-  const deadline = Date.now() + PLATINUM_CI_WARM_TIMEOUT_MS;
+export function platinumWarmReadinessTimeoutMs(
+  via: PlatinumSandbox['via'],
+): number {
+  return via === 'cold-boot' ? WARM_PREPARE_TIMEOUT_MS : PLATINUM_CI_WARM_TIMEOUT_MS;
+}
+
+export async function waitForWarmSandbox(
+  api: PlatinumApi,
+  sandboxId: string,
+  timeoutMs = PLATINUM_CI_WARM_TIMEOUT_MS,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   let observationFailures = 0;
   while (Date.now() < deadline) {
     try {
@@ -784,7 +810,7 @@ export async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): P
     // The log is optional. The missing marker is the authoritative failure.
   }
   throw new Error(
-    `Platinum sandbox ${sandboxId} did not become warm within ${PLATINUM_CI_WARM_TIMEOUT_MS}ms\n${warmLog.slice(-20_000)}`,
+    `Platinum sandbox ${sandboxId} did not become warm within ${timeoutMs}ms\n${warmLog.slice(-20_000)}`,
   );
 }
 
@@ -1036,7 +1062,7 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
     sandboxCreateDurationMs = Date.now() - createStartedAt;
 
     const warmStartedAt = Date.now();
-    await waitForWarmSandbox(api, sandboxId);
+    await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
     warmPrepareDurationMs = Date.now() - warmStartedAt;
 
     const workerScript = buildWorkerScript(input);

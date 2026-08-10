@@ -65,7 +65,8 @@ deletion replaces the local Supabase teardown.
 Deployed staging browser runs also set two workers explicitly.
 Platinum warm restore readiness is capped at 2 minutes. A missing marker or
 unreachable guest after that cap is an infrastructure error and triggers auto
-fallback. Cold template builds keep their separate 45-minute creation budget.
+fallback. A sandbox reported as `via=cold-boot` gets 45 minutes to prepare the
+warm image. This cold preparation budget does not weaken the restore cap.
 
 Both providers use a content-addressed warm image. The image name includes the
 `pnpm-lock.yaml` hash. Both images contain pinned Node, Bun, pnpm, Docker,
@@ -149,6 +150,8 @@ The base template requests Platinum's `kernel_modules: container` profile.
 The capture and worker load those modules before they start dockerd. This
 infrastructure does not change test logic.
 
+The capture retries Supabase startup for up to 40 minutes. This absorbs bounded
+registry rate limits while preserving the 45-minute cold preparation budget.
 The capture and fresh local stack use Supabase's `--ignore-health-check` only
 before migrations. This prevents PostgREST from rejecting a new database before
 the `kortix` schema exists. The runner still requires migrations and service

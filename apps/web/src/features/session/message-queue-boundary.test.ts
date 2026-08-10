@@ -4,7 +4,7 @@ import {
   QUEUE_SETTLE_MS,
   canDrainQueue,
   createDrainMachine,
-  rearmDrainMachine,
+  planDrainTick,
   shouldClearPause,
   shouldQueueInsteadOfSend,
   stepDrainMachine,
@@ -62,7 +62,7 @@ describe('canDrainQueue', () => {
 
   test('has no isBusy input at all', () => {
     // `isBusy` in session-chat.tsx is a 300 ms fade timer for the busy
-    // indicator. Reading it as "the turn ended" is root cause 2, so the gate
+    // indicator. Reading it as "the turn ended" is a root cause, so the gate
     // type must not even offer it.
     expect(Object.keys(CLEAR)).not.toContain('isBusy');
   });
@@ -70,9 +70,9 @@ describe('canDrainQueue', () => {
 
 describe('shouldQueueInsteadOfSend', () => {
   test('sends directly on an idle session with an empty queue', () => {
-    expect(
-      shouldQueueInsteadOfSend({ isBusy: false, pendingCount: 0, hasInFlight: false }),
-    ).toBe(false);
+    expect(shouldQueueInsteadOfSend({ isBusy: false, pendingCount: 0, hasInFlight: false })).toBe(
+      false,
+    );
   });
 
   test('queues while the agent is running', () => {
@@ -155,30 +155,6 @@ describe('stepDrainMachine', () => {
     expect(stepDrainMachine(rearmed.machine, CLEAR, 100 + settle * 2, settle).dispatch).toBe(true);
   });
 
-  test('dispatches exactly once per turn — the next needs a new busy period', () => {
-    // Three queued messages must become three turns, not one burst. The old
-    // drain looped `await handleSend` over the whole queue, so items 2..N
-    // landed inside item 1's turn.
-    const busy = stepDrainMachine(createDrainMachine(), { ...CLEAR, isServerBusy: true }, 0, settle);
-    const armed = stepDrainMachine(busy.machine, CLEAR, 100, settle);
-    const first = stepDrainMachine(armed.machine, CLEAR, 100 + settle, settle);
-    expect(first.dispatch).toBe(true);
-
-    // Still idle, much later. Nothing more goes out.
-    let machine = first.machine;
-    for (const now of [settle * 3, settle * 10, settle * 100]) {
-      const next = stepDrainMachine(machine, CLEAR, now, settle);
-      expect(next.dispatch).toBe(false);
-      machine = next.machine;
-    }
-
-    // The dispatched message starts a turn; when that turn ends, the next goes.
-    const busyAgain = stepDrainMachine(machine, { ...CLEAR, isServerBusy: true }, settle * 101, settle);
-    const rearmed = stepDrainMachine(busyAgain.machine, CLEAR, settle * 102, settle);
-    const second = stepDrainMachine(rearmed.machine, CLEAR, settle * 103, settle);
-    expect(second.dispatch).toBe(true);
-  });
-
   test('a queue restored on an idle session still drains', () => {
     // After a reload the session may never have been busy in this tab's
     // lifetime. Requiring a busy period we could not have observed would wedge
@@ -188,22 +164,70 @@ describe('stepDrainMachine', () => {
     expect(stepDrainMachine(armed.machine, CLEAR, settle, settle).dispatch).toBe(true);
   });
 
-  test('rearm lets the queue continue after a send that never went busy', () => {
-    // A send that fails outright never produces a busy period, so without an
-    // explicit rearm the rest of the queue would never move — the exact
-    // lockout that got the queue deleted once already.
-    const busy = stepDrainMachine(createDrainMachine(), { ...CLEAR, isServerBusy: true }, 0, settle);
-    const armed = stepDrainMachine(busy.machine, CLEAR, 100, settle);
-    const dispatched = stepDrainMachine(armed.machine, CLEAR, 100 + settle, settle);
-    expect(dispatched.dispatch).toBe(true);
+  test('the machine carries nothing but the settle clock', () => {
+    // The removed field was `sawBusySinceDispatch`, a latch that refused to
+    // release anything until a NEW busy period had been observed by this tab.
+    // The busy GATE already enforces one-message-per-turn — `beginOptimisticSend`
+    // flips the session busy synchronously inside the send — so the latch only
+    // ever added a way to fail closed: no observed busy period meant the queue
+    // stopped forever.
+    expect(Object.keys(createDrainMachine())).toEqual(['clearSince']);
+  });
 
-    // Without the rearm the machine is waiting for a busy period that the
-    // failed send never produced, so nothing would ever move again.
-    expect(stepDrainMachine(dispatched.machine, CLEAR, settle * 9, settle).dispatch).toBe(false);
+  test('the message behind the head does not follow it into the same turn', () => {
+    // First come, first served: `queue[0]` goes alone, and `queue[1]` waits for
+    // the turn it started. The busy gate is what enforces that, and it closes
+    // synchronously inside the send.
+    const fired = stepDrainMachine(
+      stepDrainMachine(createDrainMachine(), CLEAR, 0, settle).machine,
+      CLEAR,
+      settle,
+      settle,
+    );
+    expect(fired.dispatch).toBe(true);
 
-    const rearmed = stepDrainMachine(rearmDrainMachine(dispatched.machine), CLEAR, settle * 3, settle);
-    expect(rearmed.dispatch).toBe(false);
-    expect(stepDrainMachine(rearmed.machine, CLEAR, settle * 4, settle).dispatch).toBe(true);
+    // The send made the session busy. The next message stays put, however long
+    // the turn runs.
+    let machine = fired.machine;
+    for (const now of [settle + 1, settle * 5, settle * 50]) {
+      const next = stepDrainMachine(machine, { ...CLEAR, isServerBusy: true }, now, settle);
+      expect(next.dispatch).toBe(false);
+      machine = next.machine;
+    }
+
+    // That turn ends. Now — and only now — the new head goes.
+    const armed = stepDrainMachine(machine, CLEAR, settle * 51, settle);
+    expect(armed.dispatch).toBe(false);
+    expect(stepDrainMachine(armed.machine, CLEAR, settle * 52, settle).dispatch).toBe(true);
+  });
+
+  test('a send that never reached the server still leaves a full window behind it', () => {
+    // The one path where the busy gate cannot help: the send threw, so the
+    // session never went busy and every gate stayed clear. Resetting the clock
+    // on dispatch is what stops the whole queue emptying in one burst here.
+    const fired = stepDrainMachine(
+      stepDrainMachine(createDrainMachine(), CLEAR, 0, settle).machine,
+      CLEAR,
+      settle,
+      settle,
+    );
+    expect(fired.dispatch).toBe(true);
+    expect(stepDrainMachine(fired.machine, CLEAR, settle + 1, settle).dispatch).toBe(false);
+  });
+
+  test('a failed send does not lock the rest of the queue out', () => {
+    // The lockout that got the client queue deleted once already: a send that
+    // never made the session busy left the old machine waiting forever for a
+    // turn that never started, and only an explicit `rearmDrainMachine` from a
+    // `catch` could free it. There is no state left to wait on.
+    const fired = stepDrainMachine(
+      stepDrainMachine(createDrainMachine(), CLEAR, 0, settle).machine,
+      CLEAR,
+      settle,
+      settle,
+    );
+    const armed = stepDrainMachine(fired.machine, CLEAR, settle * 2, settle);
+    expect(stepDrainMachine(armed.machine, CLEAR, settle * 3, settle).dispatch).toBe(true);
   });
 
   test('is pure — stepping does not mutate the machine handed in', () => {
@@ -212,5 +236,70 @@ describe('stepDrainMachine', () => {
     stepDrainMachine(machine, CLEAR, 0, settle);
 
     expect(machine).toEqual(snapshot);
+  });
+});
+
+describe('planDrainTick', () => {
+  const settle = QUEUE_SETTLE_MS;
+  const base = { machine: createDrainMachine(), gates: CLEAR, sending: false, settleMs: settle };
+
+  test('does nothing on an empty queue, and does not touch the clock', () => {
+    const armed = { clearSince: 0 };
+    const { machine, action } = planDrainTick({ ...base, machine: armed, pendingCount: 0, now: 0 });
+
+    expect(action).toEqual({ kind: 'idle' });
+    expect(machine).toBe(armed);
+  });
+
+  test('does nothing while a send is already on the wire', () => {
+    // Re-entering here is how the same message got sent twice.
+    const { action } = planDrainTick({
+      ...base,
+      sending: true,
+      pendingCount: 3,
+      now: settle * 10,
+    });
+
+    expect(action).toEqual({ kind: 'idle' });
+  });
+
+  test('waits out the remainder of the settle window, and says how long', () => {
+    // Nothing else re-renders while the gates simply stay clear, so the caller
+    // has to set a timer. An off-by-one here means the queue stalls until the
+    // next unrelated render.
+    const armed = planDrainTick({ ...base, pendingCount: 1, now: 1_000 });
+    expect(armed.action).toEqual({ kind: 'wait', ms: settle });
+
+    const later = planDrainTick({ ...base, machine: armed.machine, pendingCount: 1, now: 1_200 });
+    expect(later.action).toEqual({ kind: 'wait', ms: settle - 200 });
+  });
+
+  test('dispatches once the window has elapsed', () => {
+    const armed = planDrainTick({ ...base, pendingCount: 2, now: 0 });
+    const fired = planDrainTick({ ...base, machine: armed.machine, pendingCount: 2, now: settle });
+
+    expect(fired.action).toEqual({ kind: 'dispatch' });
+  });
+
+  test('does not schedule a timer while a gate is closed', () => {
+    // A closed gate will re-render when it opens. Polling behind it would burn
+    // a timer per tick for as long as the agent runs.
+    const { action } = planDrainTick({
+      ...base,
+      gates: { ...CLEAR, isServerBusy: true },
+      pendingCount: 1,
+      now: 0,
+    });
+
+    expect(action).toEqual({ kind: 'idle' });
+  });
+
+  test('never returns a negative wait', () => {
+    const armed = planDrainTick({ ...base, pendingCount: 1, now: 0 });
+    // A clock that jumped backwards (or a timer that fired late) must not ask
+    // for a negative timeout.
+    const skewed = planDrainTick({ ...base, machine: armed.machine, pendingCount: 1, now: -5_000 });
+
+    expect(skewed.action.kind === 'wait' && skewed.action.ms >= 0).toBe(true);
   });
 });
