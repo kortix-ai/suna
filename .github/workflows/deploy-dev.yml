@@ -69,8 +69,6 @@ jobs:
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
               - 'scripts/ci/cosign-sign-attest.sh'
-              - 'infra/k8s/charts/kortix-api/**'
-              - 'infra/k8s/envs/dev/**'
               - '.github/workflows/deploy-dev.yml'
               - 'supabase/migrations/**' # run by ensureSchema at boot — must redeploy to apply
               - 'pnpm-lock.yaml'
@@ -80,9 +78,6 @@ jobs:
               - 'apps/llm-gateway/**'
               - 'packages/llm-gateway/**'
               - 'packages/shared/**'
-              - 'infra/k8s/charts/kortix-gateway/**'
-              - 'infra/k8s/envs/dev/gateway-values.yaml'
-              - 'infra/k8s/argocd/applications/gateway-dev.yaml'
               - 'infra/scripts/ecs-deploy.sh'
               - '.github/workflows/deploy-dev.yml'
               - 'pnpm-lock.yaml'

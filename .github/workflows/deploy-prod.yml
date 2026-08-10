@@ -1055,7 +1055,7 @@ jobs:
                 ]},
                 { type:"actions", elements: [
                   { type:"button", text:{ type:"plain_text", text:"📦 Release notes", emoji:true }, url:$rel_url },
-                  { type:"button", text:{ type:"plain_text", text:"🚢 Argo CD", emoji:true }, url:"https://ops.kortix.com" },
+                  { type:"button", text:{ type:"plain_text", text:"🩺 API health", emoji:true }, url:"https://api.kortix.com/v1/health" },
                   { type:"button", text:{ type:"plain_text", text:"🔧 Pipeline", emoji:true }, url:$run_url }
                 ]}
               ]

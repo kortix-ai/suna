@@ -35,8 +35,6 @@ env:
   PUBLIC_API_HOST: staging-api.kortix.com
   WEB_HOST: staging.kortix.com
   ECS_WEB_HOST: staging-fe-ecs.kortix.com
-  VALUES: infra/k8s/envs/staging/values.yaml
-  GATEWAY_VALUES: infra/k8s/envs/staging/gateway-values.yaml
 
 jobs:
   preflight:

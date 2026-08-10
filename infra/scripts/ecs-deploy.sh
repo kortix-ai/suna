@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # ecs-deploy.sh — roll a Kortix service onto ECS Fargate with a task-def rendered
-# fresh from Secrets Manager, so the ECS env can never drift from the EKS env.
+# fresh from Secrets Manager, so task-definition revisions cannot drift.
 #
 # The env contract lives in ONE place per environment: the Secrets Manager blob
 # `kortix-<env>-env`. ECS injects the complete JSON document through one stable
@@ -19,11 +19,9 @@
 #              release version (X.Y.Z). Why: prod release images are RETAGGED
 #              staging manifests, so their baked KORTIX_VERSION is the staging
 #              string (e.g. 0.9.109-staging.<sha8>) — without this stamp, ECS
-#              /v1/health reports that instead of the released X.Y.Z while EKS
-#              (which stamps kortixVersion via Helm values) reports the clean
-#              version. The stamp keeps both backends' reported versions
-#              IDENTICAL, which is what lets deploy-prod's verify-live-version
-#              job assert the public endpoint serves the released version.
+#              /v1/health reports that instead of the released X.Y.Z. The stamp
+#              lets deploy-prod assert that the public endpoint serves the
+#              released version.
 #   --dry-run  render + print the task-def override, then exit WITHOUT
 #              registering or rolling anything.
 #   --database-migrated

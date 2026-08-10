@@ -13,20 +13,20 @@ PR opened ─┬─ ci.yml ............. build/typecheck per app + Trivy fs + de
            ├─ codeql.yml ......... SAST (security-and-quality)
            └─ secret-scan.yml .... gitleaks on the PR range
                  │  (all must pass)
-push/merge main ─ deploy-dev.yml ... build image + node-pg-migrate dev DB + GitOps dev roll
+push/merge main ─ deploy-dev.yml ... build images + dev DB migrations + ECS Fargate roll
                  │
 promote/PR staging ─ build-staging.yml . build exact staging images
-                     deploy-staging.yml . node-pg-migrate staging DB + staging GitOps roll
+                     deploy-staging.yml . staging DB migrations + ECS Fargate roll
                      qa-staging.yml ... e2e·visual·a11y (vs deployed target) + migration checks + publish Allure
                  │
 nightly cron ──── qa-nightly.yml .. performance(k6)·DAST(ZAP)·pentest·mutation·chaos·static-security
                  │
 PR staging → prod ─ qa-release.yml .. full suite in sequence + gates (blocking pre-prod)
                  │  promote.yml gates on all-green check-runs
-merge to prod ─── deploy-prod.yml . retag staging→version images, node-pg-migrate prod DB, publish, GitOps prod roll
+merge to prod ─── deploy-prod.yml . retag staging→version images, migrate prod DB, publish, ECS Fargate roll
 ```
 
-Deploy lanes: `deploy-dev.yml` (main→dev, Trivy CRITICAL gate + SBOM + cosign + dev DB migrations + EKS GitOps), `build-staging.yml` / `deploy-staging.yml` / `qa-staging.yml` (staging release-candidate artifacts + staging DB migrations + e2e), `deploy-preview.yml` (PR→Vercel preview), `promote.yml` (opens the reviewed staging→prod release PR), `deploy-prod.yml` (prod DB migrations + EKS GitOps). IaC: `terraform-ci.yml`, `drata-compliance.yml`, `security-scan.yml` (weekly).
+Deploy lanes: `deploy-dev.yml` builds and rolls API, gateway, and frontend ECS services while keeping the Vercel frontend path active. `build-staging.yml`, `deploy-staging.yml`, and `qa-staging.yml` build, deploy, and verify the staging release candidate. `deploy-preview.yml` builds isolated PR-specific API, gateway, and frontend images, deploys one ECS Fargate preview, and creates the parallel Vercel preview. `promote.yml` opens the reviewed staging-to-prod release PR. `deploy-prod.yml` applies prod DB migrations, retags the tested images, deploys ECS Fargate, and publishes the release. IaC runs through `terraform-ci.yml`. Compliance and security schedules run through `drata-compliance.yml` and `security-scan.yml`.
 
 ## Urgent production fixes
 

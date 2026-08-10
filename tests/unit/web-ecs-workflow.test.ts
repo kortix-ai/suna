@@ -117,6 +117,27 @@ describe('web ECS migration', () => {
     expect(prod).toContain('https://kortix.com/api/runtime-config');
     expect(rollback).toContain('kortix/kortix-frontend:${TARGET}');
     expect(rollback).toContain('--service web');
+    expect(rollback).toContain('kortix/kortix-api:${TARGET}');
+    expect(rollback).toContain('kortix/kortix-gateway:${TARGET}');
+    expect(rollback).toContain('--service gateway');
+    expect(rollback).not.toContain('infra/k8s');
+    expect(rollback).not.toContain('Argo CD');
+  });
+
+  it('contains no active Kubernetes deployment paths', () => {
+    for (const file of [
+      '.github/workflows/deploy-dev.yml',
+      '.github/workflows/deploy-staging.yml',
+      '.github/workflows/deploy-prod.yml',
+      '.github/workflows/deploy-preview.yml',
+      '.github/workflows/promote.yml',
+      '.github/workflows/rollback-prod.yml',
+    ]) {
+      const workflow = read(file);
+      expect(workflow).not.toContain('infra/k8s');
+      expect(workflow).not.toContain('Argo CD');
+      expect(workflow).not.toContain('ops.kortix.com');
+    }
   });
 
   it('uses Basic auth credentials in QA instead of Vercel bypass headers', () => {

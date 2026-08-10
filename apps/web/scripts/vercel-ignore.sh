@@ -16,7 +16,7 @@
 #
 # WHY THIS EXISTS
 # A backend/infra-only push to `prod` (e.g. a rollback that only flips
-# infra/k8s image tags) must NOT rebuild + redeploy the frontend. Vercel
+# backend-only deployment metadata must NOT rebuild + redeploy the frontend. Vercel
 # auto-deploys the prod branch on every push, so without this an infra-only
 # push would re-deploy the current FE and CLOBBER a Vercel "instant rollback"
 # of the frontend. A real promote changes FE source (apps/web, packages,

@@ -1,10 +1,14 @@
 # ADR-002: Kyverno over OPA/Gatekeeper for Admission Control
 
-- **Status:** Accepted
+- **Status:** Superseded on 2026-08-02 by the ECS Fargate migration
 - **Date:** 2026-06-20
 - **Deciders:** Platform Engineering
 
 ## Context
+
+This ADR records the former EKS design. Commit `11c1d2dd4d` removed the EKS
+clusters, Kubernetes manifests, Kyverno policies, and Argo CD configuration.
+No current deployment or security control depends on this decision.
 
 The maturity scorecard in `docs/INFRASTRUCTURE_PLAN.md` flags admission control
 as a primary gap: today there is no policy gate enforcing least-privilege pod
