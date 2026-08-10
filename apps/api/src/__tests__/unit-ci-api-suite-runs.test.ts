@@ -5,7 +5,7 @@ import { join } from 'node:path';
 const repoRoot = join(import.meta.dir, '../../../..');
 const read = (rel: string) => readFileSync(join(repoRoot, rel), 'utf8');
 
-const workflow = read('.github/workflows/test.yml');
+const workflow = read('.github/workflows/tests.yml');
 const packageQuality = read('tests/bin/package-quality.ts');
 const testScript = read('apps/api/scripts/test.sh');
 const envTest = read('apps/api/scripts/test.env');

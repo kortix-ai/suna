@@ -1,9 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
-const testWorkflow = readFileSync(resolve(root, '.github/workflows/test.yml'), 'utf8');
+const testWorkflow = readFileSync(resolve(root, '.github/workflows/tests.yml'), 'utf8');
 
 describe('sandbox test workflow', () => {
   test('runs three root lanes at the pull request head SHA', () => {
@@ -32,12 +32,12 @@ describe('sandbox test workflow', () => {
     expect(testWorkflow).toContain('TEST_SANDBOX_PROVIDER: ${{ inputs.provider }}');
     expect(testWorkflow).toContain('bun tests/bin/sandbox-ci-cleanup.ts');
 
-    const qaPr = readFileSync(resolve(root, '.github/workflows/qa-pr.yml'), 'utf8');
-    expect(qaPr).toContain('type: choice');
-    expect(qaPr).toContain('default: daytona');
-    expect(qaPr).toContain("provider: ${{ inputs.provider || 'daytona' }}");
-    expect(qaPr).toContain('- platinum');
-    expect(qaPr).toContain('- daytona');
+    const testsPr = readFileSync(resolve(root, '.github/workflows/tests-pr.yml'), 'utf8');
+    expect(testsPr).toContain('type: choice');
+    expect(testsPr).toContain('default: daytona');
+    expect(testsPr).toContain("provider: ${{ inputs.provider || 'daytona' }}");
+    expect(testsPr).toContain('- platinum');
+    expect(testsPr).toContain('- daytona');
   });
 
   test('uploads results after the worker returns', () => {
@@ -46,10 +46,10 @@ describe('sandbox test workflow', () => {
     expect(testWorkflow).toContain('if: always()');
   });
 
-  test('release QA proves every deployed staging flow and browser journey', () => {
-    const release = readFileSync(resolve(root, '.github/workflows/qa-release.yml'), 'utf8');
+  test('release tests prove every deployed staging flow and browser journey', () => {
+    const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
 
-    expect(release).toContain('name: deployed staging API + browser');
+    expect(release).toContain('name: full suite + quality gates');
     expect(release).toContain('pnpm test -- --target-full');
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
@@ -58,13 +58,39 @@ describe('sandbox test workflow', () => {
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test.each(['qa-pr.yml', 'qa-staging.yml', 'qa-release.yml'])(
-    '%s calls the shared workflow',
-    (name) => {
-      const workflow = readFileSync(resolve(root, '.github/workflows', name), 'utf8');
-      expect(workflow).toContain('uses: ./.github/workflows/test.yml');
-      expect(workflow).toContain('mode: full');
-      expect(workflow).toContain('secrets: inherit');
-    },
-  );
+  test('runs all local tests once before main or staging merges', () => {
+    const testsPr = readFileSync(resolve(root, '.github/workflows/tests-pr.yml'), 'utf8');
+
+    expect(testsPr).toContain('branches: [main, staging]');
+    expect(testsPr).not.toContain('branches: [main, staging, prod]');
+    expect(testsPr).toContain('uses: ./.github/workflows/tests.yml');
+    expect(testsPr).toContain('mode: full');
+    expect(testsPr).toContain('secrets: inherit');
+  });
+
+  test('does not repeat local tests after staging merge or on the production PR', () => {
+    expect(existsSync(resolve(root, '.github/workflows/qa-pr.yml'))).toBe(false);
+    expect(existsSync(resolve(root, '.github/workflows/qa-staging.yml'))).toBe(false);
+    expect(existsSync(resolve(root, '.github/workflows/qa-release.yml'))).toBe(false);
+
+    const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
+    expect(release).not.toContain('uses: ./.github/workflows/tests.yml');
+    expect(release).not.toContain('mode: full');
+  });
+
+  test('has one automatic local-suite caller and one deployed release caller', () => {
+    const workflowRoot = resolve(root, '.github/workflows');
+    const workflows = readdirSync(workflowRoot)
+      .filter((name) => /\.ya?ml$/.test(name))
+      .map((name) => readFileSync(resolve(workflowRoot, name), 'utf8'));
+
+    expect(
+      workflows.filter((workflow) =>
+        workflow.includes('uses: ./.github/workflows/tests.yml'),
+      ),
+    ).toHaveLength(1);
+    expect(
+      workflows.filter((workflow) => workflow.includes('pnpm test -- --target-full')),
+    ).toHaveLength(1);
+  });
 });

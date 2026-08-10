@@ -46,15 +46,17 @@ code.
 
 ## Sandbox CI workers
 
-GitHub Actions uses `.github/workflows/test.yml` for PR, staging, and release
-tests. Full mode starts three warm workers in parallel. The workers run
+GitHub Actions uses `.github/workflows/tests.yml` for local-profile PR tests.
+`tests-pr.yml` calls it once for pull requests into `main` or `staging`. Full
+mode starts three warm workers in parallel. The workers run
 `pnpm test`, `pnpm test -- --browser-only`, and
 `pnpm test -- --packages-only`. Set `provider` to `auto`, `platinum`, or
-`daytona`. Required PR QA uses Daytona directly to avoid Platinum restore
+`daytona`. Automatic PR tests use Daytona directly to avoid Platinum restore
 latency. Manual runs can select either provider or `auto`. Auto tries Platinum
 first. It falls back to Daytona only when Platinum infrastructure throws. A
 non-zero test exit returns directly and does not trigger fallback. Each lane
-has a unique sandbox run ID and artifact.
+has a unique sandbox run ID and artifact. The three lanes are the parallel
+equivalent of `pnpm test -- --full`.
 The local browser lane uses one Playwright worker in CI. This prevents two cold
 Next.js route compilations from exhausting a 12 GiB Daytona worker. Deployed
 staging browser runs set two workers explicitly.
@@ -69,8 +71,9 @@ Each worker fetches the requested ref, verifies the exact SHA, runs an offline
 lockfile install, starts nested Docker, and invokes the unchanged root command.
 Both runners stream logs, download `tests/test-results`, and delete the worker.
 
-Release QA runs `pnpm test -- --target-full` against deployed staging. This mode
-rejects development and production hosts. It requires the API and gateway
+`tests-release.yml` runs `pnpm test -- --target-full` against deployed staging
+for pull requests into `prod`. It does not repeat the local-profile suite.
+This mode rejects development and production hosts. It requires the API and gateway
 health commits to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and
 CLI flow with `--require-all`, then runs all configured Playwright journeys
 against `staging.kortix.com` with the Vercel bypass header. A missing external

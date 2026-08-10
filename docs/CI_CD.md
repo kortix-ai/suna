@@ -23,8 +23,9 @@ See `tests/README.md` for flow authoring and result files.
 
 ## Warm sandbox execution
 
-`.github/workflows/test.yml` is the only test workflow implementation.
-`qa-pr.yml`, `qa-staging.yml`, and `qa-release.yml` call it.
+`.github/workflows/tests.yml` is the only warm-sandbox test implementation.
+`tests-pr.yml` calls it once for pull requests into `main` or `staging`.
+The three parallel lanes equal one `pnpm test -- --full` run.
 
 The workflow starts three workers in parallel. They run core, browser, and
 package modes. The slowest worker defines the gate duration.
@@ -54,15 +55,16 @@ hide a non-zero test result.
 2. `deploy-dev.yml` deploys the merged API, gateway, and web SHA to ECS dev.
 3. Promote a release candidate to `staging` through a PR.
 4. `build-staging.yml` and `deploy-staging.yml` build and deploy staging.
-5. `qa-staging.yml` runs the three local lanes at the staging SHA in warm
-   sandboxes.
-6. Open the reviewed `staging` to `prod` release PR.
-7. `qa-release.yml` runs the three local lanes in warm sandboxes.
-8. Release QA also requires the deployed staging API and gateway to report
+5. Open the reviewed `staging` to `prod` release PR.
+6. `tests-release.yml` requires the deployed staging API and gateway to report
    `RELEASE_SOURCE_SHA`. It runs every configured REST, CLI, and Playwright
    journey against staging. Any excluded API flow fails the gate.
-9. Merge the release PR.
-10. `deploy-prod.yml` publishes and deploys the approved artifact.
+7. Merge the release PR.
+8. `deploy-prod.yml` publishes and deploys the approved artifact.
+
+The staging push does not repeat local-profile tests. The production PR does
+not repeat them either. The staging PR owns local-profile coverage. The
+production PR owns deployed-staging coverage.
 
 Deployment workflows must still prove the deployed SHA and live health. Test
 success does not prove deployment success.

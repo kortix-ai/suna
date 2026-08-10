@@ -73,8 +73,8 @@ module "qa_portal" {
 
 `enable_access = true` (default) puts the portal behind **Cloudflare Access (Zero Trust)**
 on `qa.kortix.com` (which is already proxied through Cloudflare). Access denies by default;
-the one allow policy admits the configured emails / email domains. Every report — including
-the per-PR Allure links `qa-pr` posts — requires authentication.
+the one allow policy admits the configured emails / email domains. Every retained report
+requires authentication.
 
 ```hcl
 module "qa_portal" {
