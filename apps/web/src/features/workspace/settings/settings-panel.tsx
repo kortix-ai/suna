@@ -872,10 +872,18 @@ export function SettingsPanelShell({
           became a two-column grid. */}
       <div className="kx-titlebar-spacer shrink-0" />
 
+      {/* `activationMode="manual"`: Radix defaults to "automatic", which ACTIVATES
+          each tab as arrow keys pass over it. With 28 rail entries and a pane per
+          tab that fetches on mount, arrowing from Profile to the bottom of the
+          rail would mount every pane in between and fire each one's queries — a
+          cost only keyboard users pay, and one no test would catch. WAI-ARIA's
+          own guidance is manual activation whenever selecting a tab has a side
+          effect. Arrow moves focus; Enter/Space selects. */}
       <Tabs
         value={tab}
         onValueChange={(next) => onTabChange(next as SettingsTab)}
         orientation="vertical"
+        activationMode="manual"
         className={cn('min-h-0 flex-1 gap-0', isMobile ? 'flex flex-col' : 'grid grid-cols-[250px_1fr]')}
       >
         {isMobile ? (
