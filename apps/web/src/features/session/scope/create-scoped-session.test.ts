@@ -13,6 +13,8 @@ const scope: SessionScope = {
   added_secrets: [],
   dropped_bindings: [],
   retroactive: true,
+  connector_bindings_configured: false,
+  connector_bindings_inherit_unbound: true,
   detail: 'Current session scope.',
 };
 

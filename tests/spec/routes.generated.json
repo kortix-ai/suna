@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 831,
+  "count": 835,
   "routes": [
     {
       "method": "GET",
@@ -2173,6 +2173,22 @@
     {
       "method": "POST",
       "path": "/v1/router/web-search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/cli"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/runtime-assets/cli"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/managed-skills"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/manifest"
     },
     {
       "method": "GET",

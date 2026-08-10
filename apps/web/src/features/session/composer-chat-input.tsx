@@ -2,8 +2,8 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
-import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -145,18 +145,42 @@ export function ComposerChatInput({
     },
     [selectedAgentName],
   );
+  // Every axis a session can override, in one popover — built from the SAME
+  // agent/model/effort controls this toolbar already renders.
   const sessionScopeToolbar = useMemo(
     () =>
       workspaceId ? (
-        <SessionScopeToolbar
+        <SessionOverridesComposer
           workspaceId={workspaceId}
           sessionId={sessionId}
-          agentName={selectedAgentName ?? undefined}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
+          agents={local.agent.list}
+          selectedAgent={selectedAgentName}
+          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+          agentLocked={!!lockedAgentName}
+          defaultAgentName={workspaceConfig?.open_code_default_agent}
+          models={local.model.list}
+          modelsLoading={providersLoading}
+          selectedModel={local.model.currentKey ?? null}
+          onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
+          providers={providers}
+          defaultModel={local.model.defaults.resolveDefaultFor(selectedAgentName ?? undefined)}
         />
       ) : null,
-    [handleCommittedScope, workspaceId, selectedAgentName, sessionId],
+    [
+      handleCommittedScope,
+      local.agent,
+      local.model,
+      lockedAgentName,
+      workspaceConfig?.open_code_default_agent,
+      workspaceId,
+      providers,
+      providersLoading,
+      selectedAgentName,
+      sessionId,
+    ],
   );
+
   const combinedToolbarSlot = useMemo(
     () =>
       toolbarSlot || sessionScopeToolbar ? (

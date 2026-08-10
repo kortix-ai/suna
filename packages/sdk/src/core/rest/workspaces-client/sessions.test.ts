@@ -561,6 +561,8 @@ test('getWorkspaceSessionScope reads canonical session scope', async () => {
     added_secrets: [],
     dropped_bindings: [],
     retroactive: true,
+    connector_bindings_configured: false,
+    connector_bindings_inherit_unbound: true,
     detail: 'Current session scope.',
   };
   nextResponse = { status: 200, body: scope };
@@ -568,6 +570,31 @@ test('getWorkspaceSessionScope reads canonical session scope', async () => {
   expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/scope');
   expect(last().method).toBe('GET');
   expect(result.connector_bindings.gmail).toEqual({ connection_id: 'AUTH-1' });
+  expect(result.connector_bindings_configured).toBe(false);
+  expect(result.connector_bindings_inherit_unbound).toBe(true);
+});
+
+test('setWorkspaceSessionScope clears a connector override with null', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      secrets_allowlist: null,
+      required_connectors: null,
+      connector_bindings: { gmail: { connection_id: 'AUTH-DEFAULT' } },
+      dropped_secrets: [],
+      added_secrets: [],
+      dropped_bindings: [],
+      retroactive: true,
+      connector_bindings_configured: false,
+      connector_bindings_inherit_unbound: false,
+      detail: 'Connector access is back to the workspace defaults.',
+    },
+  };
+  const result = await setWorkspaceSessionScope('P1', 'S1', { connector_bindings: null });
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/scope');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ connector_bindings: null });
+  expect(result.connector_bindings_configured).toBe(false);
 });
 
 test('setWorkspaceSessionScope replaces connections with canonical input', async () => {

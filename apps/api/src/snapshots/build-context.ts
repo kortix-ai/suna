@@ -34,12 +34,8 @@ import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
-import {
-  getManagedSkillFiles,
-  getStarterFiles,
-  isKortixManagedSkillName,
-} from '@kortix/starter';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
+import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../workspaces/starter';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
@@ -167,16 +163,11 @@ export async function stageAppBuildContext(
  * is what teaches the meta coordinator the `kortix` CLI.
  */
 async function stageManagedSkills(outDir: string): Promise<void> {
-  const SKILLS_PREFIX = '.kortix/opencode/skills/';
-  const files = [
-    ...getManagedSkillFiles(),
-    ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
-  ];
-  for (const file of files) {
-    if (!file.path.startsWith(SKILLS_PREFIX)) continue;
-    const name = file.path.slice(SKILLS_PREFIX.length).split('/')[0];
-    if (!name || !isKortixManagedSkillName(name)) continue;
-    const dest = join(outDir, file.path.slice(SKILLS_PREFIX.length));
+  // Same file set the API serves at GET /v1/runtime-assets/managed-skills, from
+  // one definition — a sandbox that reconciles at runtime must land on the exact
+  // bytes this bake would have produced, not a near-miss.
+  for (const file of managedSkillOverlayFiles()) {
+    const dest = join(outDir, file.path);
     await mkdir(dirname(dest), { recursive: true });
     await writeFileFs(dest, file.content);
   }

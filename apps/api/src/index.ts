@@ -85,6 +85,7 @@ import {
 } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
 import { skillsApp } from './skills';
+import { runtimeAssetsApp } from './runtime-assets';
 import { oauthApp } from './oauth';
 import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
 import {
@@ -837,6 +838,15 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 app.use('/v1/skills', combinedAuth);
 app.use('/v1/skills/*', combinedAuth);
 app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
+
+// /v1/runtime-assets — the sandbox runtime assets THIS deploy was built with:
+// the `kortix` CLI binary it bakes into snapshots and the managed-skill overlay.
+// A live sandbox reconciles against these on every session start/restart/resume,
+// which is what stops an old box from running a CLI that predates the routes it
+// calls. combinedAuth for the same reason as /v1/skills above: the callers are a
+// `kortix_pat_` CLI and the in-sandbox KORTIX_CLI_TOKEN.
+app.use('/v1/runtime-assets/*', combinedAuth);
+app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /managed-skills
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),

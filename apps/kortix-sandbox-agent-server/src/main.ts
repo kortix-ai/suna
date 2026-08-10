@@ -28,6 +28,13 @@ import { relayBootTimelineToApi } from './boot-timeline-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { ensureInjectedManagedSkills } from './injected-skills'
+// Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
+// sandbox talks to. Called at BOTH of `startSessionRuntime`'s readiness exits —
+// which is also the warm-fork adoption path, since `adopt()` ends in
+// `startSessionRuntime` — so every way a session comes up reconciles once.
+// Strictly AFTER `bootMark('opencode-ready')` and never awaited: it adds zero
+// milliseconds to the readiness the API and the frontend poll for.
+import { scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
@@ -478,6 +485,7 @@ async function startSessionRuntime(
       // Persist the in-guest timeline now that this boot is complete — see
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
+      scheduleRuntimeAssetsReconcile(cfg)
       return
     }
   }
@@ -486,6 +494,7 @@ async function startSessionRuntime(
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
     relayBootTimelineToApi(bootState.timeline)
+    scheduleRuntimeAssetsReconcile(cfg)
     // Only start the loop if the initial-session branch didn't already (avoids a
     // duplicate subscription when the initial session was requested but failed).
     if (!loopStarted) startOpencodeEventLoop(opencode, cfg, eventHandlers)

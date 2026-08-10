@@ -331,6 +331,30 @@ async function ensureWorkspaceEnv(
 
 // ── Connectors: guided connect on ship ──────────────────────────────────────
 
+/**
+ * Say so when the connector routes are simply not there.
+ *
+ * Both connector steps below swallow their errors, and correctly so: a transient
+ * reconcile failure does not invalidate a completed git push, and the server's
+ * rotating discovery sweep retries the project anyway. But `404` is not
+ * transient — it means this binary is calling a route the API no longer has, and
+ * no amount of retrying fixes it. That is exactly the failure that went
+ * unnoticed for weeks after `/executor/*` became `/connectors/*`: every sandbox
+ * CLI 404ed on every connector call and printed nothing at all.
+ *
+ * So: surface a 404 and name the fix, keep swallowing everything else. Written
+ * to STDERR so it cannot be mistaken for ship output a script is parsing.
+ */
+function warnIfConnectorRouteMissing(err: unknown): void {
+  if (!(err instanceof ApiError) || err.status !== 404) return;
+  process.stderr.write(
+    `${status.warn('connector routes returned 404 — this `kortix` CLI looks out of date')}\n` +
+      `  ${C.dim}Update it with ${C.reset}${C.cyan}kortix update${C.reset}${C.dim}, then re-run ship. ` +
+      `Connectors were NOT reconciled.${C.reset}\n`,
+  );
+}
+
+
 interface ShipConnector {
   slug: string;
   name: string;
@@ -361,7 +385,8 @@ async function ensureConnectorsConnected(
   try {
     const resp = await client.get<{ connectors: ShipConnector[] }>(`${ex}/connectors`);
     connectors = resp.connectors;
-  } catch {
+  } catch (err) {
+    warnIfConnectorRouteMissing(err);
     return; // don't block the ship over connector setup
   }
   if (connectors.length === 0) return;
@@ -423,9 +448,11 @@ export async function reconcileShippedManifest(
 ): Promise<void> {
   try {
     await client.post(`/connectors/workspaces/${workspaceId}/connectors/sync`);
-  } catch {
+  } catch (err) {
     // A reconcile failure does not invalidate the completed git push.
-    // The rotating server discovery sweep retries the workspace.
+    // The rotating server discovery sweep retries the workspace, except on a
+    // 404, which no retry can fix. See warnIfConnectorRouteMissing.
+    warnIfConnectorRouteMissing(err);
   }
 }
 

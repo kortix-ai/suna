@@ -11,6 +11,7 @@ import {
 } from "../../billing/services/compute-metering";
 import { type SandboxProviderName, config } from "../../config";
 import { workspaceLlmGatewayEnabled } from "../../llm-gateway/enablement";
+import { auth, json } from "../../openapi";
 import { type SandboxStatus, getProvider } from "../../platform/providers";
 import { classifySandboxProvisioningFailure } from "../../platform/services/sandbox-provisioning-error";
 import { db } from "../../shared/db";
@@ -20,6 +21,7 @@ import {
   rehydrateSessionChat,
 } from "../legacy-migration-rehydrate";
 import { withWorkspaceGitAuth } from "../lib/git";
+import { scheduleSandboxRuntimeRefresh } from "../lib/sandbox-runtime-refresh";
 import {
   type WorkspaceRow,
   serializeSessionSandboxConfig,
@@ -212,6 +214,13 @@ export async function resumeStoppedSandbox(row: {
           err,
         ),
       );
+      // A resume wakes the SAME powered-down VM, so the daemon's boot-time
+      // reconcile never re-runs and the box keeps the `kortix` binary its image
+      // was built with. Poke the daemon to re-converge on this deploy's runtime
+      // assets. Detached and after the rows are already active: it must not
+      // extend the wake the user is waiting on. It retries on its own, because
+      // provider-running precedes the guest daemon binding its port.
+      scheduleSandboxRuntimeRefresh(row.sessionId, 'resume');
       return true;
     },
     fail: async (reason) => {

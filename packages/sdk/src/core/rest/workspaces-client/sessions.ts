@@ -724,8 +724,15 @@ export interface SessionScopeInput {
    * secrets untouched.
    */
   secrets?: string[] | null;
-  /** FULL new binding map — REPLACES the previous one. Omit to leave untouched. */
-  connector_bindings?: SessionConnectorBindingsInput;
+  /**
+   * FULL new binding map — REPLACES the previous one. Three distinct states:
+   *
+   * - **omitted** — leave the session's connector scope untouched.
+   * - **`null`** — CLEAR the override. Every granted alias resolves to the
+   *   workspace default again.
+   * - **`{}`** — an explicit zero-connector override.
+   */
+  connector_bindings?: SessionConnectorBindingsInput | null;
   /**
    * FULL new list of connector aliases this session REQUIRES — REPLACES the
    * previous one. Omit to leave untouched.
@@ -745,6 +752,18 @@ export interface SessionScope {
   /** Aliases this session requires, connected or not. See `require_connectors`. */
   required_connectors: string[] | null;
   connector_bindings: SessionConnectorBindings;
+  /**
+   * Whether this session holds its own connector override.
+   *
+   * `connector_bindings` is the resolved map. This flag distinguishes an
+   * explicit selection from the inherited workspace default.
+   */
+  connector_bindings_configured: boolean;
+  /**
+   * Whether an unbound alias falls back to the workspace default while an
+   * override is configured. This behavior applies at session creation.
+   */
+  connector_bindings_inherit_unbound: boolean;
   dropped_secrets: string[];
   added_secrets: string[];
   dropped_bindings: string[];

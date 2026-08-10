@@ -12,6 +12,56 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-10 — session `workspace-refactor-session-overrides-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into PR #5480 after Main added session overrides and sandbox runtime-asset
+refresh.
+
+Claimed SDK scope:
+
+- Keep Workspace as the canonical session-scope contract and transport.
+- Add the new connector-override state fields and null clear verb to the
+  Workspace client.
+- Preserve the published Project session surface and legacy `/projects`
+  transport for compatibility.
+- Preserve every public export and the release-managed package version.
+- Run focused Workspace and Project compatibility tests, SDK typecheck, the
+  complete SDK suite, packed-install smoke, and the full repository gate.
+
+The required `tdd` skill is unavailable in this session.
+
+RED:
+
+- The web typecheck rejected `connector_bindings_configured`,
+  `connector_bindings_inherit_unbound`, and the `null` clear verb because
+  Main added them only to the legacy Project client.
+
+GREEN:
+
+- Focused canonical and compatibility coverage: `85 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and
+  examples.
+- `pnpm --filter @kortix/sdk test`: `2258 pass`, `0 fail`, `10207
+  expect()` calls across `183` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and
+  the deprecated `@kortix/executor-sdk` adapter imported and constructed in
+  Node ESM.
+- `pnpm test -- --full`: all six lanes passed in `221.0s`. The API and CLI
+  lane passed `368/368` flows. Route coverage passed `820/835` with `15`
+  allowlisted and `0` uncovered routes. Browser and package-quality lanes
+  passed.
+- No published export was added, removed, or renamed. The release-managed
+  package version remains unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** The reconciled merge
+still needs its exact-head full gate, push, and required GitHub checks. Merge and
+deployment require separate authorization.
+
 ### 2026-08-10 — session `workspace-refactor-managed-capabilities-reconciliation` claim
 
 No **Now** task claimed. This is the user-directed merge of current `origin/main`
@@ -175,6 +225,42 @@ GREEN:
 
 ---
 
+
+### 2026-08-10 — session `session-overrides-ux` claim
+
+No **Now** task claimed. This is user-directed session-scope correctness work.
+
+Claimed SDK scope:
+
+- `SessionScope` gains `connector_bindings_configured` and
+  `connector_bindings_inherit_unbound`. Both are always emitted by the API.
+- `SessionScopeInput.connector_bindings` widens to accept `null`, the verb that
+  CLEARS a connector override.
+- Additive only. No published name changes. The `version` field is untouched.
+
+The `tdd` skill is unavailable in this session. The required RED → GREEN →
+REFACTOR sequence was followed directly.
+
+RED — `pnpm --filter @kortix/sdk typecheck`:
+
+```
+src/core/rest/projects-client/sessions.test.ts(577,17): error TS2339: Property 'connector_bindings_configured' does not exist on type 'SessionScope'.
+src/core/rest/projects-client/sessions.test.ts(578,17): error TS2339: Property 'connector_bindings_inherit_unbound' does not exist on type 'SessionScope'.
+src/core/rest/projects-client/sessions.test.ts(597,61): error TS2322: Type 'null' is not assignable to type 'SessionConnectorBindingsInput | undefined'.
+src/core/rest/projects-client/sessions.test.ts(602,17): error TS2339: Property 'connector_bindings_configured' does not exist on type 'SessionScope'.
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `1847 pass`, `2 skip`, `0 fail`, 141 files.
+- `pnpm --filter @kortix/sdk smoke:install`: packed-install import + construction passed.
+- Public-surface snapshot unchanged — the change adds fields to existing types,
+  not new export names.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
 
 ### 2026-08-10 — session `reload-live-status` claim
 

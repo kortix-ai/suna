@@ -6,6 +6,10 @@ import {
   buildSessionScopeSelectionCatalog,
   createNewSessionScopeDraft,
   createSessionScopeDraft,
+  resetSessionConnectorBindings,
+  resetSessionSecrets,
+  sessionConnectorsSummary,
+  sessionSecretsSummary,
   type SessionScopeCatalogState,
 } from './session-scope-model';
 
@@ -20,6 +24,8 @@ const scope = (overrides: Partial<SessionScope> = {}): SessionScope => ({
   added_secrets: [],
   dropped_bindings: [],
   retroactive: true,
+  connector_bindings_configured: false,
+  connector_bindings_inherit_unbound: true,
   detail: 'Current session scope.',
   ...overrides,
 });
@@ -122,6 +128,104 @@ describe('createSessionScopeDraft', () => {
         'mail-read': { connection_id: 'connection-mail-1' },
         issues: { connection_id: 'connection-issues-1' },
       },
+      connector_bindings_inherited: true,
+      require_connectors: [],
+    });
+  });
+
+  test('marks connectors inherited when the session holds no override', () => {
+    // The scope read-back returns SERVER-RESOLVED bindings, which look the same
+    // for an inherited session and an overridden one. Without this marker the
+    // draft treated the preview as a user selection and posted it back, so an
+    // untouched Save wrote an override nobody asked for.
+    expect(
+      createSessionScopeDraft(scope({ connector_bindings_configured: false }))
+        .connector_bindings_inherited,
+    ).toBe(true);
+  });
+
+  test('leaves a configured override as an explicit selection', () => {
+    expect(
+      createSessionScopeDraft(scope({ connector_bindings_configured: true }))
+        .connector_bindings_inherited,
+    ).toBe(false);
+  });
+});
+
+describe('session scope summaries', () => {
+  test('names an inherited axis the workspace default, never "none"', () => {
+    expect(sessionSecretsSummary({ secrets: null })).toBe('Workspace default');
+    expect(
+      sessionConnectorsSummary({
+        connector_bindings: { mail: { connection_id: 'connection-mail-1' } },
+        connector_bindings_inherited: true,
+      }),
+    ).toBe('Workspace default');
+  });
+
+  test('names an explicit empty override honestly', () => {
+    // Opposite of the line above: the user deliberately deselected everything.
+    expect(sessionSecretsSummary({ secrets: [] })).toBe('None allowed');
+    expect(
+      sessionConnectorsSummary({ connector_bindings: {}, connector_bindings_inherited: false }),
+    ).toBe('None allowed');
+  });
+
+  test('counts explicit selections, including a required unconnected alias', () => {
+    expect(sessionSecretsSummary({ secrets: ['MAIL_TOKEN', 'ISSUE_TOKEN'] })).toBe('2 selected');
+    expect(
+      sessionConnectorsSummary({
+        connector_bindings: { mail: { connection_id: 'connection-mail-1' } },
+        connector_bindings_inherited: false,
+        require_connectors: ['issues'],
+      }),
+    ).toBe('2 selected');
+  });
+});
+
+describe('resetting an axis to the workspace default', () => {
+  const catalog = () =>
+    buildSessionScopeSelectionCatalog({
+      secrets: ready([secret('MAIL_TOKEN')]),
+      connectors: ready([connector('mail-read', 'workspace')]),
+      connections: ready([
+        connection('connection-mail-default', 'mail-read', 'workspace', { is_default: true }),
+      ]),
+      grants: { secrets: 'all', connectors: 'all' },
+    });
+
+  test('secrets go back to inheriting the agent grant', () => {
+    expect(resetSessionSecrets({ secrets: ['MAIL_TOKEN'] })).toEqual({ secrets: null });
+  });
+
+  test('connectors go back to inherited, previewing the workspace defaults', () => {
+    expect(
+      resetSessionConnectorBindings(
+        {
+          connector_bindings: { 'mail-read': { connection_id: 'hand-picked' } },
+          connector_bindings_inherited: false,
+          require_connectors: ['issues'],
+        },
+        catalog(),
+      ),
+    ).toEqual({
+      connector_bindings: { 'mail-read': { connection_id: 'connection-mail-default' } },
+      connector_bindings_inherited: true,
+      require_connectors: [],
+    });
+  });
+
+  test('a reset on a configured session sends the null clear verb', () => {
+    // An override the user cannot switch off is a trap. `null` is the only
+    // request that removes one; omitting the key would leave it in place.
+    expect(
+      buildSessionScopeReplacement(
+        resetSessionConnectorBindings({ connector_bindings: {} }, catalog()),
+        scope({ connector_bindings_configured: true }),
+      ),
+    ).toEqual({
+      secrets: ['MAIL_TOKEN', 'ISSUE_TOKEN'],
+      connector_bindings: null,
       require_connectors: [],
     });
   });
@@ -281,6 +385,18 @@ describe('buildSessionScopeReplacement', () => {
       },
       require_connectors: [],
     });
+  });
+
+  test('an untouched save on an unconfigured session sends no connector key', () => {
+    // THE regression. An existing session that never overrode its connectors
+    // read back server-resolved bindings, and Save posted them as an explicit
+    // replacement — turning "inherit the workspace defaults" into a frozen
+    // override, and an empty resolve into an explicit zero-connector session.
+    const previous = scope({ connector_bindings_configured: false });
+
+    const replacement = buildSessionScopeReplacement(createSessionScopeDraft(previous), previous);
+
+    expect(Object.hasOwn(replacement, 'connector_bindings')).toBe(false);
   });
 
   test('omits an authoritative axis when its catalog is unavailable', () => {

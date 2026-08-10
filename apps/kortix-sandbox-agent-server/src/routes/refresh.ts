@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 
 import { resolveOpencodeConfigDirRelative, type Config } from '../config'
 import { refreshRepo, syncOpencodeConfigDirToBase, syncWorkspaceToBase } from '../git'
+import { scheduleRuntimeAssetsReconcile } from '../runtime-assets'
 import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
@@ -123,6 +124,14 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         const reload = skipRestart
           ? null
           : await opencode.reloadVerified({ forceFail: c.req.query('verify_fail') === '1' })
+        // Converge the sandbox's `kortix` CLI + managed-skill overlay on this
+        // API. This route is what the platform already calls on warm reuse and
+        // reload, and (since this change) after a restart and a resume — the
+        // three moments a long-lived box comes back up without re-running its
+        // image build. Detached on purpose: the route's callers await its
+        // latency, and a ~100 MB download must never enter that budget. The
+        // reconcile is single-flighted, so a burst of refreshes runs one pass.
+        scheduleRuntimeAssetsReconcile(cfg)
         return c.json({
           // The repo work succeeded either way; `reload.outcome` carries whether
           // the new config actually took. Reporting ok:false here would hide a

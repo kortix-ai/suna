@@ -57,6 +57,14 @@ The kortix-managed `kortix-*` skills — the markdown that tells an agent how Ko
 `SKILL-2` `GET /v1/skills/:name [?full=1]` → auth → 200 `{name,description,body,references:[{path,bytes,content?}]}`; `body` is the complete SKILL.md. `?full=1` inlines every reference file. Unknown/non-managed name → 404. `ANON` → 401.
 `SKILL-3` `GET /v1/skills/:name/file?path=` → auth → 200 `{name,path,content}` for one reference file. Missing `path` → 400; unknown path or traversal attempt → 404 (lookup is exact-match against the in-memory index, not a filesystem read). `ANON` → 401.
 
+### Sandbox runtime assets (`/v1/runtime-assets`, `combinedAuth`)
+
+The `kortix` CLI binary and the managed-skill overlay THIS deploy was built with. A sandbox bakes both at image-build time and then never re-runs that build — restart and resume wake the same VM, and a warm fork adopts a captured disk — so without these routes a box provisioned months ago keeps a months-old CLI forever and 404s the moment a route is renamed. The daemon reconciles against them at every session start, restart, resume, and `POST /kortix/refresh`. Same auth as `/v1/skills`, and for the same reason: the caller is the in-sandbox `KORTIX_CLI_TOKEN`.
+
+`RTA-1` `GET /v1/runtime-assets/manifest` → auth → 200 `{cli_version,cli_sha256,cli_size,managed_skills_hash,managed_skills_count}`. Digests only — a sandbox decides from this alone whether to download anything. The CLI fields are all-null together when the image carries no binary (a checkout that never built `apps/cli/dist/kortix`); the manifest must still serve the skill half. Stable within a deploy. `ANON` → 401.
+`RTA-2` `GET /v1/runtime-assets/managed-skills` → auth → 200 `{hash,files:[{path,content}]}`, `ETag` = the manifest's `managed_skills_hash`, every path inside the `kortix-*` family. `If-None-Match` with the current hash → 304 with no body; a stale hash → 200. `ANON` → 401.
+`RTA-3` `GET|HEAD /v1/runtime-assets/cli` → auth → 200 the Linux binary, `ETag` = the manifest's `cli_sha256`, `Content-Length` = `cli_size`, `X-Kortix-Cli-Sha256` naming the digest the caller must verify. `If-None-Match` with the current digest → 304 with no body — a converged sandbox transfers nothing. No binary in the image → 404. `ANON` → 401.
+
 ---
 
 ## 1. GOLDEN PATH (master flow — init → ship → run → merge)
