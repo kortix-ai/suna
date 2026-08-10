@@ -269,6 +269,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
       - name: Revalidate exact preview approval
         run: |
           set -euo pipefail
@@ -439,6 +440,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
       - name: Delete the Platinum or Daytona preview sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
       - name: Remove stale preview approval
@@ -484,4 +486,5 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
       - run: bun tests/bin/sandbox-preview.ts reconcile

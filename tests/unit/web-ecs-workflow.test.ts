@@ -155,6 +155,7 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts deploy');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts teardown');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts reconcile');
+    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(3);
     expect(workflow).toContain('pnpm test -- --target-full');
     expect(workflow).toContain('PREVIEW_LOCKFILE_SHA256');
     expect(workflow).toContain('Test report:');
