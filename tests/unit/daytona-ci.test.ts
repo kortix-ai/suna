@@ -28,9 +28,9 @@ afterEach(() => {
 
 describe('Daytona CI worker plan', () => {
   test('uses one content-addressed warm snapshot for one lockfile', () => {
-    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v2');
-    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v2-bbbbbbbbbbbbbbbb');
-    expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v1-bbbbbbbbbbbbbbbb-base');
+    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v3');
+    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v3-bbbbbbbbbbbbbbbb');
+    expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v2-bbbbbbbbbbbbbbbb-base');
   });
 
   test('builds the same pinned toolchain and repository cache as Platinum', () => {
@@ -42,6 +42,7 @@ describe('Daytona CI worker plan', () => {
     expect(dockerfile).toContain('node:22.22.0-bookworm@sha256:');
     expect(dockerfile).toContain('docker.io');
     expect(dockerfile).toContain('kmod');
+    expect(dockerfile).toContain('postgresql-client');
     expect(dockerfile).toContain('bun@1.3.14');
     expect(dockerfile).toContain('pnpm@8.11.0');
     expect(dockerfile).toContain(`fetch --depth=1 origin ${sha}`);
