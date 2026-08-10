@@ -14,7 +14,6 @@ import { qk, refreshWorkspaceProviderState } from '@kortix/sdk/react';
 import {
   CaretLeftIcon as ChevronLeft,
   ArrowSquareOutIcon as ExternalLink,
-  InfoIcon as Info,
   ShieldCheckIcon as ShieldCheck,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
@@ -196,12 +195,6 @@ export function ApiKeyConnectForm({
             {error}
           </InfoBanner>
         )}
-
-        <InfoBanner tone="warning" icon={Info}>
-          {tHardcodedUi.raw(
-            'autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428',
-          )}
-        </InfoBanner>
       </form>
 
       <p className="text-muted-foreground flex items-center gap-1.5 px-1 text-xs">
