@@ -15,7 +15,6 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { validateManifest } from '@kortix/manifest-schema';
-import { DEFAULT_STARTER_TEMPLATE_ID } from '@kortix/starter';
 import { buildWorkspaceSeedFiles } from '../workspaces/seed-files';
 import { extractAgents, resolveGovernedAgentGrant } from '../workspaces/agents';
 import { parseManifestString } from '../workspaces/triggers';

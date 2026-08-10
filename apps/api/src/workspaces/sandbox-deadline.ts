@@ -42,7 +42,6 @@ import {
   isTerminalTurnEnd,
   isWarmPoolBox,
   turnGrantMs,
-  turnDeliveryGraceMs,
   warmPoolGrantMs,
 } from './sandbox-deadline-policy';
 

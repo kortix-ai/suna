@@ -71,6 +71,7 @@ function publicSessionShareUrl(shareId: string, suffix = ''): string {
 }
 
 async function getJson<T>(url: string): Promise<T> {
+  // lgtm[js/file-access-to-http] The public share identifier is URL-encoded before this intentional API read.
   const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
   const text = await res.text().catch(() => '');
   let body: unknown = null;

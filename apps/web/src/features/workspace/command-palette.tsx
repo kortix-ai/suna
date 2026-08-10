@@ -70,7 +70,7 @@ import {
   SidebarSimpleIcon as PanelLeftIcon,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -374,7 +374,6 @@ export function CommandPalette() {
   const rawPathname = usePathname();
   const pathname = normalizeAppPathname(rawPathname);
   const params = useParams<{ id?: string; sessionId?: string }>();
-  const queryClient = useQueryClient();
   const openWorkspaceTab = useWorkspaceSessionTabsStore((s) => s.openTab);
   const workspaceId =
     rawPathname?.startsWith('/workspaces/') || rawPathname?.startsWith('/projects/')

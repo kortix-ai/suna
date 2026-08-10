@@ -52,7 +52,6 @@ import { reconcileStoredSessionAgentGrant } from '../workspaces/lib/session-toke
 import { getWorkspaceSecretValueForConsumer } from '../workspaces/secrets';
 import {
   canonicalConnectorAlias,
-  publicConnectorAlias,
   resolveSessionConnectorConnection,
 } from '../workspaces/lib/session-connector-bindings';
 import { validateAccountToken } from '../repositories/account-tokens';

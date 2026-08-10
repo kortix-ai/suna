@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
+import {
+  createDatabaseWorkspace,
+  deleteDatabaseWorkspace,
+} from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
@@ -46,7 +49,7 @@ test.describe('18 — Kortix Apps UI', () => {
     const user = await createAuthUser(email, authOptions);
     const session = await signIn(email, authOptions);
     const env = loadEnv();
-    let projectId: string | null = null;
+    let workspaceId: string | null = null;
     const pageErrors: string[] = [];
     const appsServerErrors: string[] = [];
     const appsCreateRequests: string[] = [];
@@ -54,7 +57,7 @@ test.describe('18 — Kortix Apps UI', () => {
     page.on('response', (response) => {
       if (
         response.status() >= 500 &&
-        response.url().includes('/v1/projects/') &&
+        response.url().includes('/v1/workspaces/') &&
         response.url().includes('/apps')
       ) {
         appsServerErrors.push(
@@ -63,7 +66,7 @@ test.describe('18 — Kortix Apps UI', () => {
       }
     });
     page.on('request', (request) => {
-      if (request.method() === 'POST' && request.url().endsWith(`/v1/projects/${projectId}/apps`)) {
+      if (request.method() === 'POST' && request.url().endsWith(`/v1/workspaces/${workspaceId}/apps`)) {
         appsCreateRequests.push(request.url());
       }
     });
@@ -76,18 +79,18 @@ test.describe('18 — Kortix Apps UI', () => {
       expect(account).toBeTruthy();
       if (!account) throw new Error('test user has no personal account');
 
-      const project = await createDatabaseProject(env, {
+      const workspace = await createDatabaseWorkspace(env, {
         accountId: account.account_id,
         userId: user.id,
         name: `Apps UI ${runId}`,
         appsEnabled: false,
       });
-      projectId = project.id;
+      workspaceId = workspace.id;
 
       await api<Record<string, unknown>>(
         session.access_token,
         'POST',
-        `/projects/${project.id}/apps`,
+        `/workspaces/${workspace.id}/apps`,
         { slug: `blocked-${runId}`, name: 'Blocked App' },
         403,
       );
@@ -102,13 +105,13 @@ test.describe('18 — Kortix Apps UI', () => {
       }) => {
         if (
           request.method() === 'GET' &&
-          request.url().endsWith(`/v1/projects/${project.id}/apps`)
+          request.url().endsWith(`/v1/workspaces/${workspace.id}/apps`)
         ) {
           disabledAppRequests.push(request.url());
         }
       };
       page.on('request', recordDisabledRequest);
-      await page.goto(`/projects/${project.id}/apps`, {
+      await page.goto(`/workspaces/${workspace.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
       await dismissOnboarding(page);
@@ -116,7 +119,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toBeVisible();
       // The gate screen never self-enables: it points at Customize → Feature
       // flags and there is no Enable button on the feature's own page.
-      await expect(page.getByText('is off for this project')).toBeVisible();
+      await expect(page.getByText('is off for this workspace')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Enable Apps' })).toHaveCount(0);
       expect(disabledAppRequests).toEqual([]);
       page.off('request', recordDisabledRequest);
@@ -126,12 +129,12 @@ test.describe('18 — Kortix Apps UI', () => {
       const enabledRequest = page.waitForRequest(
         (request) =>
           request.method() === 'PATCH' &&
-          request.url().endsWith(`/v1/projects/${project.id}/features`),
+          request.url().endsWith(`/v1/workspaces/${workspace.id}/features`),
       );
       const enabledResponse = page.waitForResponse(
         (response) =>
           response.request().method() === 'PATCH' &&
-          response.url().endsWith(`/v1/projects/${project.id}/features`),
+          response.url().endsWith(`/v1/workspaces/${workspace.id}/features`),
       );
       await page.getByRole('switch', { name: 'Apps' }).click();
       expect((await enabledRequest).postDataJSON()).toEqual({
@@ -140,7 +143,7 @@ test.describe('18 — Kortix Apps UI', () => {
       });
       expect((await enabledResponse).status()).toBe(200);
       await page.getByRole('button', { name: 'Back to workspace' }).click();
-      await page.goto(`/projects/${project.id}/apps`, {
+      await page.goto(`/workspaces/${workspace.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
       await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
@@ -148,7 +151,7 @@ test.describe('18 — Kortix Apps UI', () => {
       const seeded = await api<AppResponse>(
         session.access_token,
         'POST',
-        `/projects/${project.id}/apps`,
+        `/workspaces/${workspace.id}/apps`,
         { slug: `seed-${runId}`, name: 'Seed App' },
         201,
       );
@@ -165,9 +168,9 @@ test.describe('18 — Kortix Apps UI', () => {
       const listResponse = page.waitForResponse(
         (response) =>
           response.request().method() === 'GET' &&
-          response.url().endsWith(`/v1/projects/${project.id}/apps`),
+          response.url().endsWith(`/v1/workspaces/${workspace.id}/apps`),
       );
-      await page.goto(`/projects/${project.id}/apps`, {
+      await page.goto(`/workspaces/${workspace.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
       expect((await listResponse).status()).toBe(200);
@@ -235,7 +238,7 @@ test.describe('18 — Kortix Apps UI', () => {
       expect(appsServerErrors).toEqual([]);
       expect(appsCreateRequests).toEqual([]);
     } finally {
-      if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
+      if (workspaceId) await deleteDatabaseWorkspace(env, workspaceId).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
-import { type SQL, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { WorkspaceCostRow } from './cost-rollups';
 import type { CostSort } from './cost-window';

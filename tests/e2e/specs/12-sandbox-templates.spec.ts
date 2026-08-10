@@ -1,17 +1,17 @@
 /**
  * UI e2e for the workspace-less sandbox-templates refactor.
  *
- * Mirrors the auth pattern from `08-accounts-project-access.spec.ts`:
+ * Mirrors the auth pattern from `08-accounts-workspace-access.spec.ts`:
  * provisions a fresh Supabase user via the admin API, signs them in to get a
  * session, then drives the Next dashboard. We verify the Customize → Sandbox
  * panel:
  *
- *   1. Provision a managed-GitHub project for the test user.
+ *   1. Provision a managed-GitHub workspace for the test user.
  *   2. GET /sandboxes — platform default present (API-level smoke).
- *   3. Open the project's Sandbox tab in the browser; assert it renders
+ *   3. Open the workspace's Sandbox tab in the browser; assert it renders
  *      WITHOUT a runtime error (catches the regression where the card crashed
  *      with "Cannot read properties of undefined (reading 'find')").
- *   4. Create a project template and click Rebuild; expect the build API call
+ *   4. Create a workspace template and click Rebuild; expect the build API call
  *      → 202 and no client console error.
  *
  * Designed for the local-dev stack (Next on :3000, API on :8008, Supabase on
@@ -20,7 +20,7 @@
 
 import { randomUUID } from "node:crypto";
 import { type Page, expect, test } from "@playwright/test";
-import { seedDatabaseProject } from "../helpers/database";
+import { seedDatabaseWorkspace } from "../helpers/database";
 import { createApiResultClient } from "../helpers/http";
 import {
   type AuthSession,
@@ -51,8 +51,8 @@ interface TemplateCreateResult {
   slug: string;
 }
 
-async function openSandboxSection(page: Page, projectId: string) {
-  await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
+async function openSandboxSection(page: Page, workspaceId: string) {
+  await page.goto(`/workspaces/${workspaceId}`, { waitUntil: "domcontentloaded" });
   await dismissOnboarding(page);
   await page.getByRole("button", { name: /^Settings/i }).click();
   await expect(page.getByRole("dialog", { name: /Customize/i })).toBeVisible({
@@ -66,7 +66,7 @@ async function openSandboxSection(page: Page, projectId: string) {
   ) {
     await page.getByRole("button", { name: /^Sandbox templates$/i }).click();
   }
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), {
+  await expect(page).toHaveURL(new RegExp(`/workspaces/${workspaceId}$`), {
     timeout: 30_000,
   });
   await expect(sandboxHeading).toBeVisible({ timeout: 30_000 });
@@ -77,7 +77,7 @@ test.describe("12 — Sandbox templates UI", () => {
 
   let user: AuthUser;
   let session: AuthSession;
-  let projectId: string;
+  let workspaceId: string;
   let accountId: string;
   let customTemplateId: string | null = null;
 
@@ -86,7 +86,7 @@ test.describe("12 — Sandbox templates UI", () => {
     const email = `e2e-sbx-${runId}@kortix.test`;
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
-    const projectName = `e2e-ui-tpl-${runId}`;
+    const workspaceName = `e2e-ui-tpl-${runId}`;
     const accounts = await api<AccountSummary[]>(
       session.access_token,
       "GET",
@@ -101,23 +101,23 @@ test.describe("12 — Sandbox templates UI", () => {
     expect(personalAccount?.account_id).toBeTruthy();
     if (!personalAccount) throw new Error("test user has no personal account");
     accountId = personalAccount.account_id;
-    projectId = await seedDatabaseProject({
+    workspaceId = await seedDatabaseWorkspace({
       accountId,
       userId: user.id,
-      name: projectName,
+      name: workspaceName,
     });
   });
 
   test.afterAll(async () => {
-    if (projectId && session) {
+    if (workspaceId && session) {
       if (customTemplateId) {
         await api(
           session.access_token,
           "DELETE",
-          `/projects/${projectId}/sandbox-templates/${customTemplateId}`,
+          `/workspaces/${workspaceId}/sandbox-templates/${customTemplateId}`,
         ).catch(() => {});
       }
-      await api(session.access_token, "DELETE", `/projects/${projectId}`).catch(
+      await api(session.access_token, "DELETE", `/workspaces/${workspaceId}`).catch(
         () => {},
       );
     }
@@ -128,7 +128,7 @@ test.describe("12 — Sandbox templates UI", () => {
     const { status, json } = await api<{
       items: Array<{ slug: string; is_default: boolean; source: string }>;
       default_slug: string | null;
-    }>(session.access_token, "GET", `/projects/${projectId}/sandbox-templates`);
+    }>(session.access_token, "GET", `/workspaces/${workspaceId}/sandbox-templates`);
     expect(status).toBe(200);
     expect(json?.default_slug).toBe("default");
     const platformDefault = json?.items.find(
@@ -151,7 +151,7 @@ test.describe("12 — Sandbox templates UI", () => {
       authOptions,
     );
     await selectAccountForUi(page, accountId);
-    await openSandboxSection(page, projectId);
+    await openSandboxSection(page, workspaceId);
     pageErrors.length = 0;
 
     // Platform default row: "Default" name + "default" slug code chip.
@@ -161,7 +161,7 @@ test.describe("12 — Sandbox templates UI", () => {
       timeout: 60_000,
     });
     await expect(
-      page.getByText(/Platform default · shared by every project/),
+      page.getByText(/Platform default · shared by every workspace/),
     ).toBeVisible();
 
     // Every available provider reports its real launch state. A local stack can
@@ -180,7 +180,7 @@ test.describe("12 — Sandbox templates UI", () => {
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 
-  test("clicking Rebuild on a project template calls the API and does not crash", async ({
+  test("clicking Rebuild on a workspace template calls the API and does not crash", async ({
     page,
   }) => {
     test.skip(
@@ -193,7 +193,7 @@ test.describe("12 — Sandbox templates UI", () => {
     const created = await api<TemplateCreateResult>(
       session.access_token,
       "POST",
-      `/projects/${projectId}/sandbox-templates`,
+      `/workspaces/${workspaceId}/sandbox-templates`,
       {
         slug: customSlug,
         name: "E2E image template",
@@ -214,7 +214,7 @@ test.describe("12 — Sandbox templates UI", () => {
         res
           .url()
           .includes(
-            `/projects/${projectId}/sandbox-templates/${templateId}/build`,
+            `/workspaces/${workspaceId}/sandbox-templates/${templateId}/build`,
           ) &&
         res.request().method() === "POST"
       ) {
@@ -229,7 +229,7 @@ test.describe("12 — Sandbox templates UI", () => {
       authOptions,
     );
     await selectAccountForUi(page, accountId);
-    await openSandboxSection(page, projectId);
+    await openSandboxSection(page, workspaceId);
     pageErrors.length = 0;
 
     const templateRow = page

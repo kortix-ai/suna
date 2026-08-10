@@ -2,8 +2,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { loadEnv } from "../../src/core/env";
 import {
-  createDatabaseProject,
-  deleteDatabaseProject,
+  createDatabaseWorkspace,
+  deleteDatabaseWorkspace,
 } from "../../src/fixtures/database-project";
 import { createApiJsonClient } from "../helpers/http";
 import {
@@ -38,7 +38,7 @@ interface AccountSummary {
 
 /** One entry of the server's self-describing catalog — `buildFeatureFlagCatalog`
  *  in apps/api/src/feature-flags/registry.ts, serialized as
- *  `project.experimental_features`. The UI renders straight from it, so the
+ *  `workspace.experimental_features`. The UI renders straight from it, so the
  *  spec reads its expectations from the same source instead of hard-coding a
  *  flag list that would rot the moment a flag is added. */
 interface FeatureFlagView {
@@ -51,8 +51,8 @@ interface FeatureFlagView {
   overridden: boolean;
 }
 
-interface ProjectResponse {
-  project_id: string;
+interface WorkspaceResponse {
+  workspace_id: string;
   experimental_features: FeatureFlagView[];
 }
 
@@ -69,7 +69,7 @@ async function dismissOnboarding(page: Page): Promise<void> {
     } else {
       const primary = onboarding
         .getByRole("button", {
-          name: /^(Continue|Done|Open project|Start building|Get started)$/i,
+          name: /^(Continue|Done|Open workspace|Start building|Get started)$/i,
         })
         .last();
       if (!(await primary.isVisible().catch(() => false))) break;
@@ -111,19 +111,19 @@ function flagRow(panel: Locator, page: Page, name: string): Locator {
 
 /** The origin line under a flag (`originLabel` in feature-flags-view.tsx). */
 function originLabel(flag: FeatureFlagView): string {
-  if (flag.overridden) return "Overridden for this project";
+  if (flag.overridden) return "Overridden for this workspace";
   return flag.enabled ? "Default on" : "Default off";
 }
 
 test.describe("19 — Feature flags UI", () => {
   // Coverage note: the viewer/read-only case (a member WITHOUT
-  // project.customize.write sees the switches disabled) is NOT covered here.
-  // It needs a second auth user, an account invite, and a custom project role
+  // workspace.customize.write sees the switches disabled) is NOT covered here.
+  // It needs a second auth user, an account invite, and a custom workspace role
   // seeded per run — heavier than the rest of this spec put together. The
   // capability gate itself is unit-covered by the `canWrite` fail-closed logic
   // in feature-flags-view.tsx and enforced server-side by
-  // `assertProjectCapability(PROJECT_CUSTOMIZE_WRITE)` on
-  // `PATCH /projects/:id/features` (apps/api/src/projects/routes/r6.ts).
+  // `assertWorkspaceCapability(WORKSPACE_CUSTOMIZE_WRITE)` on
+  // `PATCH /workspaces/:id/features` (apps/api/src/workspaces/routes/r6.ts).
   test("lists every available flag, toggles one through PATCH /features, and persists it", async ({
     page,
   }) => {
@@ -145,7 +145,7 @@ test.describe("19 — Feature flags UI", () => {
     page.on("request", (request) => {
       if (
         request.method() === "PATCH" &&
-        request.url().endsWith(`/v1/projects/${workspaceId}/experimental`)
+        request.url().endsWith(`/v1/workspaces/${workspaceId}/experimental`)
       ) {
         deprecatedAliasCalls.push(request.url());
       }
@@ -165,18 +165,18 @@ test.describe("19 — Feature flags UI", () => {
       );
       if (!account) throw new Error("the seeded user owns no account");
 
-      const project = await createDatabaseProject(env, {
+      const workspace = await createDatabaseWorkspace(env, {
         accountId: account.account_id,
         userId: user.id,
         name: `Feature flags UI ${runId}`,
       });
-      workspaceId = project.id;
+      workspaceId = workspace.id;
 
       // The server's catalog IS the expectation for what the section renders.
-      const before = await api<ProjectResponse>(
+      const before = await api<WorkspaceResponse>(
         session.access_token,
         "GET",
-        `/projects/${project.id}`,
+        `/workspaces/${workspace.id}`,
       );
       const flags = before.experimental_features.filter((f) => f.available);
       expect(flags.length).toBeGreaterThan(0);
@@ -193,11 +193,11 @@ test.describe("19 — Feature flags UI", () => {
       await installBrowserSessionDirect(
         page,
         session,
-        `/projects/${project.id}`,
+        `/workspaces/${workspace.id}`,
         authOptions,
       );
       await selectAccountForUi(page, account.account_id);
-      await page.goto(`/projects/${project.id}`, {
+      await page.goto(`/workspaces/${workspace.id}`, {
         waitUntil: "domcontentloaded",
       });
       await dismissOnboarding(page);
@@ -225,12 +225,12 @@ test.describe("19 — Feature flags UI", () => {
       const patchRequest = page.waitForRequest(
         (request) =>
           request.method() === "PATCH" &&
-          request.url().endsWith(`/v1/projects/${project.id}/features`),
+          request.url().endsWith(`/v1/workspaces/${workspace.id}/features`),
       );
       const patchResponse = page.waitForResponse(
         (response) =>
           response.request().method() === "PATCH" &&
-          response.url().endsWith(`/v1/projects/${project.id}/features`),
+          response.url().endsWith(`/v1/workspaces/${workspace.id}/features`),
       );
       await panel
         .getByRole("switch", { name: target.name, exact: true })
@@ -246,10 +246,10 @@ test.describe("19 — Feature flags UI", () => {
 
       // The API is the source of truth for persistence, not the optimistic
       // cache write — read it back before trusting the reloaded UI.
-      const after = await api<ProjectResponse>(
+      const after = await api<WorkspaceResponse>(
         session.access_token,
         "GET",
-        `/projects/${project.id}`,
+        `/workspaces/${workspace.id}`,
       );
       const persisted = after.experimental_features.find(
         (f) => f.key === target.key,
@@ -264,14 +264,14 @@ test.describe("19 — Feature flags UI", () => {
         reopened.getByRole("switch", { name: target.name, exact: true }),
       ).toHaveAttribute("aria-checked", "true");
       await expect(
-        targetRow.getByText("Overridden for this project", { exact: true }),
+        targetRow.getByText("Overridden for this workspace", { exact: true }),
       ).toBeVisible();
 
       expect(deprecatedAliasCalls).toEqual([]);
       expect(pageErrors).toEqual([]);
     } finally {
       if (workspaceId)
-        await deleteDatabaseProject(env, workspaceId).catch(() => {});
+        await deleteDatabaseWorkspace(env, workspaceId).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });

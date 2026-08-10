@@ -5,7 +5,6 @@ import { connectors, projectSessions, projectTriggerRuntime, projects } from '@k
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
-import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateWorkspaceMirror } from '../git';

@@ -149,6 +149,7 @@ function legacyProjectEventStream(response: Response): Response {
   const encoder = new TextEncoder();
   let buffer = '';
   const stream = response.body.pipeThrough(
+    // lgtm[js/superfluous-trailing-arguments] WHATWG TransformStream requires its transformer argument.
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         buffer += decoder.decode(chunk, { stream: true });

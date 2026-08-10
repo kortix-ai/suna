@@ -323,7 +323,7 @@ export function CheckpointDetailDialog({
         0,
         files.findIndex((f) => f.path === selectedFile),
       );
-      let next = idx;
+      let next: number;
       if (e.key === 'ArrowDown' || e.key === 'j') next = Math.min(files.length - 1, idx + 1);
       else if (e.key === 'ArrowUp' || e.key === 'k') next = Math.max(0, idx - 1);
       else return;

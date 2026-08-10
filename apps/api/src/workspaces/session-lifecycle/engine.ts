@@ -26,7 +26,6 @@ import {
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
-  enqueueContinueSessionCommand,
   markCommandFailed,
   markCommandQueued,
   markCommandSucceeded,

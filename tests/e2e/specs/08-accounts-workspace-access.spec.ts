@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type Page, expect, test } from "@playwright/test";
-import { runDatabaseSql, seedDatabaseProject } from "../helpers/database";
+import { runDatabaseSql, seedDatabaseWorkspace } from "../helpers/database";
 import {
   authHeaders,
   createApiJsonClient,
@@ -30,7 +30,7 @@ const createdAccountIds = new Set<string>();
 const disposableInboxes = new Set<DisposableInbox>();
 
 type AccountRole = "owner" | "admin" | "member";
-type ProjectRole = "manager" | "editor" | "member";
+type WorkspaceRole = "manager" | "editor" | "member";
 
 interface AccountSummary {
   account_id: string;
@@ -40,23 +40,23 @@ interface AccountSummary {
   account_role: AccountRole;
 }
 
-interface ProjectSummary {
-  project_id: string;
+interface WorkspaceSummary {
+  workspace_id: string;
   account_id: string;
   name: string;
   repo_url: string;
   default_branch: string;
   manifest_path: string;
   status: "active" | "archived";
-  project_role: ProjectRole | null;
-  effective_project_role: ProjectRole | null;
+  workspace_role: WorkspaceRole | null;
+  effective_workspace_role: WorkspaceRole | null;
 }
 
 interface AccountMember {
   user_id: string;
   email: string | null;
   account_role: AccountRole;
-  explicit_project_count?: number;
+  explicit_workspace_count?: number;
 }
 
 interface InviteResult {
@@ -69,31 +69,31 @@ interface InviteResult {
   invite_url?: string;
 }
 
-interface ProjectAccessMember {
+interface WorkspaceAccessMember {
   user_id: string;
   email: string | null;
   account_role: AccountRole;
-  project_role: ProjectRole | null;
-  effective_project_role: ProjectRole | null;
+  workspace_role: WorkspaceRole | null;
+  effective_workspace_role: WorkspaceRole | null;
   has_implicit_access: boolean;
 }
 
-interface ProjectAccessResponse {
-  project_id: string;
+interface WorkspaceAccessResponse {
+  workspace_id: string;
   account_id: string;
   can_manage: boolean;
   viewer_user_id: string;
-  members: ProjectAccessMember[];
+  members: WorkspaceAccessMember[];
 }
 
-async function createProjectForAccessTest(
+async function createWorkspaceForAccessTest(
   token: string,
   accountId: string,
   ownerUserId: string,
   name: string,
   repoUrl: string,
-): Promise<ProjectSummary> {
-  const response = await fetch(`${apiBase}/projects`, {
+): Promise<WorkspaceSummary> {
+  const response = await fetch(`${apiBase}/workspaces`, {
     method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify({
@@ -104,44 +104,44 @@ async function createProjectForAccessTest(
     }),
   });
   const body = await response.text();
-  let project: ProjectSummary;
+  let workspace: WorkspaceSummary;
   if (response.status === 201) {
-    project = JSON.parse(body) as ProjectSummary;
+    workspace = JSON.parse(body) as WorkspaceSummary;
   } else if (
     response.status === 409 &&
     body.includes("GitHub App installation required")
   ) {
-    const projectId = await seedDatabaseProject({
+    const workspaceId = await seedDatabaseWorkspace({
       accountId,
       userId: ownerUserId,
       name,
       repoUrl,
-      projectRole: "manager",
+      workspaceRole: "manager",
     });
-    project = await api<ProjectSummary>(token, "GET", `/projects/${projectId}`);
+    workspace = await api<WorkspaceSummary>(token, "GET", `/workspaces/${workspaceId}`);
   } else {
     throw new Error(
       `Expected 201/409 from ${response.url}, got ${response.status}: ${body}`,
     );
   }
-  await api<ProjectSummary>(
+  await api<WorkspaceSummary>(
     token,
     "PATCH",
-    `/projects/${project.project_id}/onboarding`,
+    `/workspaces/${workspace.workspace_id}/onboarding`,
     {
       completed: true,
     },
   );
-  return project;
+  return workspace;
 }
 
 async function openCustomizeSection(
   page: Page,
-  projectId: string,
+  workspaceId: string,
   section: string,
   heading: RegExp,
 ) {
-  await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`/workspaces/${workspaceId}`, { waitUntil: "domcontentloaded" });
   await dismissOnboarding(page);
   await page.getByRole("button", { name: /^Settings/i }).click();
   const dialog = page.getByRole("dialog", { name: /Customize/i });
@@ -157,7 +157,7 @@ async function openCustomizeSection(
   return dialog;
 }
 
-function byEmail(members: ProjectAccessMember[], email: string) {
+function byEmail(members: WorkspaceAccessMember[], email: string) {
   return members.find(
     (member) => member.email?.toLowerCase() === email.toLowerCase(),
   );
@@ -169,7 +169,7 @@ function toGitHubWebUrl(repoUrl: string): string {
     .replace(/\.git$/, "");
 }
 
-test.describe("08 — Accounts, invites, and project access", () => {
+test.describe("08 — Accounts, invites, and workspace access", () => {
   test.setTimeout(300_000);
 
   test.afterEach(async () => {
@@ -190,7 +190,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     disposableInboxes.clear();
   });
 
-  test("API and web enforce account roles plus project-scoped access", async ({
+  test("API and web enforce account roles plus workspace-scoped access", async ({
     page,
   }) => {
     const pageErrors: string[] = [];
@@ -201,7 +201,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
       const url = response.url();
       if (
         status >= 500 &&
-        (url.includes("/v1/accounts") || url.includes("/v1/projects"))
+        (url.includes("/v1/accounts") || url.includes("/v1/workspaces"))
       ) {
         serverErrors.push(`${status} ${url}`);
       }
@@ -215,7 +215,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     const invitedEmail = inviteInbox.email;
     const uiInvitedEmail = `e2e-ui-invite-${runId}@example.test`;
     const accountName = `E2E Org ${runId}`;
-    const initialProjectName = `E2E Project ${runId}`;
+    const initialWorkspaceName = `E2E Workspace ${runId}`;
 
     const owner = await createAuthUser(ownerEmail, authOptions);
     createdUserIds.add(owner.id);
@@ -289,103 +289,103 @@ test.describe("08 — Accounts, invites, and project access", () => {
       memberAccounts.some((item) => item.account_id === account.account_id),
     ).toBe(true);
 
-    const project = await createProjectForAccessTest(
+    const workspace = await createWorkspaceForAccessTest(
       ownerSession.access_token,
       account.account_id,
       owner.id,
-      initialProjectName,
+      initialWorkspaceName,
       `https://github.com/kortix-ai/e2e-${runId}.git`,
     );
-    expect(project.name).toBe(initialProjectName);
-    expect(project.project_role).toBe("manager");
-    expect(project.effective_project_role).toBe("manager");
-    const projectRepoWebUrl = toGitHubWebUrl(project.repo_url);
+    expect(workspace.name).toBe(initialWorkspaceName);
+    expect(workspace.workspace_role).toBe("manager");
+    expect(workspace.effective_workspace_role).toBe("manager");
+    const workspaceRepoWebUrl = toGitHubWebUrl(workspace.repo_url);
 
-    const ownerProjects = await api<ProjectSummary[]>(
+    const ownerWorkspaces = await api<WorkspaceSummary[]>(
       ownerSession.access_token,
       "GET",
-      `/projects?account_id=${account.account_id}`,
+      `/workspaces?account_id=${account.account_id}`,
     );
-    expect(ownerProjects.map((item) => item.project_id)).toContain(
-      project.project_id,
+    expect(ownerWorkspaces.map((item) => item.workspace_id)).toContain(
+      workspace.workspace_id,
     );
 
-    const memberProjectsBeforeGrant = await api<ProjectSummary[]>(
+    const memberWorkspacesBeforeGrant = await api<WorkspaceSummary[]>(
       memberSession.access_token,
       "GET",
-      `/projects?account_id=${account.account_id}`,
+      `/workspaces?account_id=${account.account_id}`,
     );
-    expect(memberProjectsBeforeGrant).toEqual([]);
+    expect(memberWorkspacesBeforeGrant).toEqual([]);
     expect(
       await apiStatus(
         memberSession.access_token,
         "GET",
-        `/projects/${project.project_id}`,
+        `/workspaces/${workspace.workspace_id}`,
       ),
     ).toBe(403);
     expect(
       await apiStatus(
         memberSession.access_token,
         "POST",
-        `/projects/${project.project_id}/sessions`,
+        `/workspaces/${workspace.workspace_id}/sessions`,
         {},
       ),
     ).toBe(403);
 
-    const accessBeforeGrant = await api<ProjectAccessResponse>(
+    const accessBeforeGrant = await api<WorkspaceAccessResponse>(
       ownerSession.access_token,
       "GET",
-      `/projects/${project.project_id}/access`,
+      `/workspaces/${workspace.workspace_id}/access`,
     );
     expect(accessBeforeGrant.can_manage).toBe(true);
     expect(
-      byEmail(accessBeforeGrant.members, memberEmail)?.project_role,
+      byEmail(accessBeforeGrant.members, memberEmail)?.workspace_role,
     ).toBeNull();
     expect(
-      byEmail(accessBeforeGrant.members, memberEmail)?.effective_project_role,
+      byEmail(accessBeforeGrant.members, memberEmail)?.effective_workspace_role,
     ).toBeNull();
 
-    const memberGrant = await api<ProjectAccessMember>(
+    const memberGrant = await api<WorkspaceAccessMember>(
       ownerSession.access_token,
       "PUT",
-      `/projects/${project.project_id}/access/${member.id}`,
+      `/workspaces/${workspace.workspace_id}/access/${member.id}`,
       { role: "member" },
     );
-    expect(memberGrant.project_role).toBe("member");
-    expect(memberGrant.effective_project_role).toBe("member");
+    expect(memberGrant.workspace_role).toBe("member");
+    expect(memberGrant.effective_workspace_role).toBe("member");
 
-    const memberProjectsAfterGrant = await api<ProjectSummary[]>(
+    const memberWorkspacesAfterGrant = await api<WorkspaceSummary[]>(
       memberSession.access_token,
       "GET",
-      `/projects?account_id=${account.account_id}`,
+      `/workspaces?account_id=${account.account_id}`,
     );
-    expect(memberProjectsAfterGrant.map((item) => item.project_id)).toEqual([
-      project.project_id,
+    expect(memberWorkspacesAfterGrant.map((item) => item.workspace_id)).toEqual([
+      workspace.workspace_id,
     ]);
-    const readableProject = await api<ProjectSummary>(
+    const readableWorkspace = await api<WorkspaceSummary>(
       memberSession.access_token,
       "GET",
-      `/projects/${project.project_id}`,
+      `/workspaces/${workspace.workspace_id}`,
     );
-    expect(readableProject.effective_project_role).toBe("member");
+    expect(readableWorkspace.effective_workspace_role).toBe("member");
     // A plain member is the floor *usable* role: it can start sessions and use the
-    // agent chat (this previously 403'd, which made the floor project role useless).
+    // agent chat (this previously 403'd, which made the floor workspace role useless).
     // It reaches provider validation just like an owner — an invalid provider is a
     // 400, NOT the old role 403 (and avoids actually provisioning a sandbox here).
     expect(
       await apiStatus(
         memberSession.access_token,
         "POST",
-        `/projects/${project.project_id}/sessions`,
+        `/workspaces/${workspace.workspace_id}/sessions`,
         { provider: "justavps" },
       ),
     ).toBe(400);
-    // ...but it still cannot customize the project.
+    // ...but it still cannot customize the workspace.
     expect(
       await apiStatus(
         memberSession.access_token,
         "PATCH",
-        `/projects/${project.project_id}`,
+        `/workspaces/${workspace.workspace_id}`,
         {
           name: "blocked",
         },
@@ -395,13 +395,13 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await api<{ ok: true }>(
       ownerSession.access_token,
       "DELETE",
-      `/projects/${project.project_id}/access/${member.id}`,
+      `/workspaces/${workspace.workspace_id}/access/${member.id}`,
     );
     expect(
       await apiStatus(
         memberSession.access_token,
         "GET",
-        `/projects/${project.project_id}`,
+        `/workspaces/${workspace.workspace_id}`,
       ),
     ).toBe(403);
 
@@ -413,14 +413,14 @@ test.describe("08 — Accounts, invites, and project access", () => {
     );
     expect(promoted.account_role).toBe("admin");
 
-    const adminUpdate = await api<ProjectSummary>(
+    const adminUpdate = await api<WorkspaceSummary>(
       memberSession.access_token,
       "PATCH",
-      `/projects/${project.project_id}`,
-      { name: `${initialProjectName} Admin` },
+      `/workspaces/${workspace.workspace_id}`,
+      { name: `${initialWorkspaceName} Admin` },
     );
-    expect(adminUpdate.effective_project_role).toBe("manager");
-    expect(adminUpdate.name).toBe(`${initialProjectName} Admin`);
+    expect(adminUpdate.effective_workspace_role).toBe("manager");
+    expect(adminUpdate.name).toBe(`${initialWorkspaceName} Admin`);
 
     await api<{ account_role: AccountRole }>(
       ownerSession.access_token,
@@ -432,20 +432,20 @@ test.describe("08 — Accounts, invites, and project access", () => {
       await apiStatus(
         memberSession.access_token,
         "GET",
-        `/projects/${project.project_id}`,
+        `/workspaces/${workspace.workspace_id}`,
       ),
     ).toBe(403);
 
     await installBrowserSessionDirect(
       page,
       ownerSession,
-      `/projects/${project.project_id}`,
+      `/workspaces/${workspace.workspace_id}`,
       authOptions,
     );
     await selectAccountForUi(page, account.account_id);
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${project.project_id}$`),
+      new RegExp(`/workspaces/${workspace.workspace_id}$`),
     );
     await dismissOnboarding(page);
     await expect(
@@ -478,15 +478,15 @@ test.describe("08 — Accounts, invites, and project access", () => {
         'a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]',
       ),
     ).toHaveCount(0);
-    expect(projectRepoWebUrl).toContain("github.com/kortix-ai/");
+    expect(workspaceRepoWebUrl).toContain("github.com/kortix-ai/");
 
     await selectAccountForUi(page, account.account_id);
-    await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    await page.goto("/workspaces", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${project.project_id}$`),
+      new RegExp(`/workspaces/${workspace.workspace_id}$`),
     );
     await expect(
-      page.getByText(`${initialProjectName} Admin`).first(),
+      page.getByText(`${initialWorkspaceName} Admin`).first(),
     ).toBeVisible();
 
     await installBrowserSessionDirect(
@@ -537,7 +537,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await selectAccountForUi(page, account.account_id);
     const settingsDialog = await openCustomizeSection(
       page,
-      project.project_id,
+      workspace.workspace_id,
       "settings",
       /^Settings$/i,
     );
@@ -545,13 +545,13 @@ test.describe("08 — Accounts, invites, and project access", () => {
       name: /View on GitHub/i,
     });
     await expect(githubLink).toBeVisible();
-    await expect(githubLink).toHaveAttribute("href", projectRepoWebUrl);
+    await expect(githubLink).toHaveAttribute("href", workspaceRepoWebUrl);
 
     const membersDialog = await openCustomizeSection(
       page,
-      project.project_id,
+      workspace.workspace_id,
       "members",
-      /Project members/i,
+      /Workspace members/i,
     );
     // Wait for the initial access inventory before submitting a mutation.
     // Otherwise a slow pre-mutation response can overwrite the invalidated query.
@@ -566,7 +566,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
       (response) =>
         response
           .url()
-          .includes(`/v1/projects/${project.project_id}/access/invite`) &&
+          .includes(`/v1/workspaces/${workspace.workspace_id}/access/invite`) &&
         response.request().method() === "POST",
     );
     await membersDialog.getByRole("button", { name: /^Invite$/i }).click();
@@ -580,7 +580,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await expect(memberAccessRow.getByRole("combobox")).toContainText("Member");
 
     // Initialize member auth before persisting the organization. Otherwise the
-    // auth reset clears the selection and the personal account wins /projects.
+    // auth reset clears the selection and the personal account wins /workspaces.
     await installBrowserSessionDirect(
       page,
       memberSession,
@@ -591,24 +591,24 @@ test.describe("08 — Accounts, invites, and project access", () => {
       page.getByRole("heading", { name: "Members", exact: true }),
     ).toBeVisible();
     await selectAccountForUi(page, account.account_id);
-    await page.goto("/projects", { waitUntil: "domcontentloaded" });
+    await page.goto("/workspaces", { waitUntil: "domcontentloaded" });
     await dismissOnboarding(page);
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${project.project_id}$`),
+      new RegExp(`/workspaces/${workspace.workspace_id}$`),
     );
     await expect(
-      page.getByText(`${initialProjectName} Admin`).first(),
+      page.getByText(`${initialWorkspaceName} Admin`).first(),
     ).toBeVisible();
 
     await api<{ ok: true }>(
       ownerSession.access_token,
       "DELETE",
-      `/projects/${project.project_id}/access/${member.id}`,
+      `/workspaces/${workspace.workspace_id}/access/${member.id}`,
     );
-    await page.goto("/projects", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/projects\/start/);
+    await page.goto("/workspaces", { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/workspaces\/start/);
     await expect(page.getByText("No workspace yet")).toBeVisible();
-    await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
+    await expect(page.getByText(`${initialWorkspaceName} Admin`)).toHaveCount(0);
 
     const invitedUser = await createAuthUser(invitedEmail, authOptions);
     createdUserIds.add(invitedUser.id);
@@ -634,7 +634,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
       await page.getByRole("button", { name: "Accept" }).click();
       expect((await acceptAccountInviteResponse).status()).toBe(200);
     }
-    await expect(page).toHaveURL(/\/projects\/start$/);
+    await expect(page).toHaveURL(/\/workspaces\/start$/);
     await page.goto(`/accounts/${account.account_id}`, {
       waitUntil: "domcontentloaded",
     });
@@ -679,7 +679,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await api<{ ok: true }>(
       ownerSession.access_token,
       "DELETE",
-      `/projects/${project.project_id}`,
+      `/workspaces/${workspace.workspace_id}`,
     );
 
     expect(serverErrors).toEqual([]);

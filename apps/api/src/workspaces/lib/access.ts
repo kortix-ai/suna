@@ -10,7 +10,6 @@ import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { setContextField } from '../../lib/request-context';
-import { auth } from '../../openapi';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';

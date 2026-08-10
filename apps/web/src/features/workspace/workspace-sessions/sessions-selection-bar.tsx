@@ -58,7 +58,7 @@ export function SessionsSelectionBar({
             ) : (
               <TrashIcon className="size-3.5 shrink-0" />
             )}
-            Delete {selectedCount > 0 ? selectedCount : ''}
+            Delete {selectedCount}
           </Button>
         )}
 

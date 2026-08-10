@@ -43,7 +43,7 @@ export function WorkspaceProviderModal({
   canWrite = false,
 }: WorkspaceProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { connectedProviders, llmGatewayEnabled, providerStateLoading } = useConnectedProviders(
+  const { connectedProviders, providerStateLoading } = useConnectedProviders(
     workspaceId,
     open || asPanel,
   );

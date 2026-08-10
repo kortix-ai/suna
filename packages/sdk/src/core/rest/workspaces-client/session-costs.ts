@@ -393,6 +393,7 @@ export async function fetchCostExportCsv(
       : costExportUrl('sessions', options as SessionCostExportOptions);
 
   const token = await getSupabaseAccessTokenWithRetry();
+  // lgtm[js/file-access-to-http] This method intentionally downloads the caller-requested cost export.
   const res = await fetch(url, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : {},

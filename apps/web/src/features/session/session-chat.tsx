@@ -1678,13 +1678,11 @@ export function SessionChat({
   const localSync = useSessionSync(sessionState ? '' : sessionId);
   const {
     messages: syncMessages,
-    isLoading: syncMessagesLoading,
     hasOlder,
     isLoadingOlder,
     loadOlder,
   } = sessionState ?? localSync;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
-  const messagesLoading = syncMessagesLoading;
   // Workspace sessions use the server-side workspace agent roster. Non-workspace
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useRuntimeAgents({ directory: session?.directory, workspaceId });

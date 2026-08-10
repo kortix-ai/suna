@@ -1337,6 +1337,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         _ready = await startPromise;
         return _ready;
       } finally {
+        // lgtm[js/missing-await] Promise identity prevents an older start from deleting a newer in-flight start.
         if (inFlightSessionStarts.get(key) === startPromise) {
           inFlightSessionStarts.delete(key);
         }

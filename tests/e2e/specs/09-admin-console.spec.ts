@@ -99,7 +99,7 @@ on conflict (account_id) do update set role = excluded.role;
       await assertAdminRouteClean(page, "/admin", [
         "Admin overview",
         "Accounts",
-        "Projects",
+        "Workspaces",
         "Sandboxes",
         "Maintenance",
       ]);

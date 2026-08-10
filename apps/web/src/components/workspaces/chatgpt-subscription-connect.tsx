@@ -1,9 +1,7 @@
 'use client';
 
 import {
-  WarningCircleIcon as AlertCircle,
   CheckCircleIcon as CheckCircle2,
-  ArrowSquareOutIcon as ExternalLink,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';

@@ -352,11 +352,6 @@ export function DriveExplorer({
     [renameMutation],
   );
 
-  // Upload
-  const handleUpload = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
   /** Upload a batch of files, showing per-file toasts */
   const handleUploadFiles = useCallback(
     async (fileList: FileList | File[]) => {

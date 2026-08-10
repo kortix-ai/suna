@@ -31,11 +31,11 @@
  */
 import { gatewayRequestLogs, projectSessions } from '@kortix/db';
 import { desc, eq, sql } from 'drizzle-orm';
-import { getCostSummary, listCostByProject } from '../src/shared/cost-rollups';
+import { getCostSummary, listCostByWorkspace } from '../src/shared/cost-rollups';
 import { db } from '../src/shared/db';
 import {
   getSessionCostRecord,
-  listProjectGatewaySessionSpend,
+  listWorkspaceGatewaySessionSpend,
   listSessionCosts,
 } from '../src/shared/session-costs';
 
@@ -108,7 +108,7 @@ function describeRejection(error: unknown): string {
 // The query paths the /usage routes can issue, including every optional predicate
 // they pass: project scope on the session list and the summary, owner scope on the
 // list, project scope on the session detail, and session scope on the summary.
-// (`listCostByProject`'s sort is not among them — sortProjectRows orders in memory,
+// (`listCostByWorkspace`'s sort is not among them — sortWorkspaceRows orders in memory,
 // so the two sort cases below exercise one statement, not two.)
 //
 // Asserted rather than trusted: a case list that got trimmed or mis-filtered still
@@ -140,12 +140,12 @@ function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
       () => listSessionCosts({ accountId, workspaceId, ownerId, sort: 'total_desc', ...page }),
     ],
     [
-      'listCostByProject sort=total_desc',
-      () => listCostByProject({ accountId, sort: 'total_desc', ...page }),
+      'listCostByWorkspace sort=total_desc',
+      () => listCostByWorkspace({ accountId, sort: 'total_desc', ...page }),
     ],
     [
-      'listCostByProject sort=name_asc',
-      () => listCostByProject({ accountId, sort: 'name_asc', ...page }),
+      'listCostByWorkspace sort=name_asc',
+      () => listCostByWorkspace({ accountId, sort: 'name_asc', ...page }),
     ],
     ['getCostSummary account-wide', () => getCostSummary({ accountId, window })],
     ['getCostSummary project-scoped', () => getCostSummary({ accountId, workspaceId, window })],
@@ -160,8 +160,8 @@ function buildCases(anchor: Anchor): Array<[string, () => Promise<unknown>]> {
       () => getSessionCostRecord({ accountId, workspaceId, sessionId }),
     ],
     [
-      'listProjectGatewaySessionSpend',
-      () => listProjectGatewaySessionSpend({ accountId, workspaceId, days: 30 }),
+      'listWorkspaceGatewaySessionSpend',
+      () => listWorkspaceGatewaySessionSpend({ accountId, workspaceId, days: 30 }),
     ],
   ];
 }

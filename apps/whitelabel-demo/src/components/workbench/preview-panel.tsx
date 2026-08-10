@@ -49,7 +49,6 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getApiKey, kortix } from '@/lib/kortix';
 import { getSessionToken } from '@/lib/session';
-import { cn } from '@/lib/utils';
 import type { WorkspaceSessionPublicShare } from '@kortix/sdk';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that

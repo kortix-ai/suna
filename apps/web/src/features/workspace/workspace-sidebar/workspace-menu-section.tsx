@@ -48,7 +48,7 @@ export function WorkspaceMenuSection() {
   const [query, setQuery] = useState('');
 
   const activeWorkspaceId =
-    pathname?.startsWith('/workspaces/') || pathname?.startsWith('/workspaces/')
+    pathname?.startsWith('/workspaces/') || pathname?.startsWith('/projects/')
       ? params?.id
       : undefined;
 

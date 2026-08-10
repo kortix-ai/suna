@@ -577,7 +577,6 @@ export function ScheduleView({ workspaceId, type }: { workspaceId: string; type:
   const triggers = allTriggers.filter((t) => t.type === type);
   const parseErrors = triggersQuery.data?.errors ?? [];
   const selectedTrigger = triggers.find((t) => t.slug === selectedId) ?? null;
-  const activeCount = triggers.filter((t) => t.enabled).length;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

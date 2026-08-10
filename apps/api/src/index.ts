@@ -53,7 +53,7 @@ import {
   isDaytonaTransientProviderError,
   primeDaytonaTransientClassifier,
 } from './shared/daytona-transient';
-import { GitOperationError, isGitOperationError } from './workspaces/git/mirror';
+import { isGitOperationError } from './workspaces/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's

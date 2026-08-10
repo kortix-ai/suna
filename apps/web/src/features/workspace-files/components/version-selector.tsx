@@ -36,7 +36,6 @@ export function VersionSelector() {
   const { data, isLoading, error } = useBranches({ enabled: open || activeRef !== '' });
 
   const defaultBranch = data?.default_branch ?? activeRef;
-  const isOnMain = activeRef === defaultBranch;
 
   const filtered = useMemo(() => {
     const branches = data?.branches ?? [];

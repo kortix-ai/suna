@@ -38,6 +38,7 @@ function publicVoiceJoinUrl(token: string): string {
 }
 
 async function getPublicVoiceJson<T>(url: string): Promise<T> {
+  // lgtm[js/file-access-to-http] The public join token is URL-encoded before this intentional API read.
   const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
   const text = await res.text().catch(() => '');
   let body: unknown = null;

@@ -42,7 +42,7 @@ export default function WorkspaceIndexPage() {
     ...contract('config'),
   });
   const workspaceAccountId = workspaceDetail?.workspace?.account_id ?? undefined;
-  const { canRun, isLoading: billingLoading } = useWorkspaceCanRun(workspaceId);
+  const { isLoading: billingLoading } = useWorkspaceCanRun(workspaceId);
   const { data: accountState } = useAccountState({ accountId: workspaceAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 

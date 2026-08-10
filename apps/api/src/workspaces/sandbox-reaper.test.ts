@@ -253,7 +253,6 @@ const {
   reconcileOrphanComputeSessions,
   reapOrphanProviderBoxes,
   reconcileStuckActiveSessions,
-  REAP_BATCH_SIZE,
 } = await import('./sandbox-reaper');
 
 const HOUR = 3_600_000;

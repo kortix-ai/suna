@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import type { User } from '@supabase/supabase-js';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense } from 'react';
 import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 const CommandPalette = lazy(() =>

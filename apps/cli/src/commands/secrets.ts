@@ -179,7 +179,6 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   // required/optional against the key, but list rows by identifier — surfacing
   // two identifiers under one key as two distinct rows (the web does the same).
   const requiredSet = new Set(required);
-  const optionalSet = new Set(optional);
   const itemState = (secret: WorkspaceSecret) => {
     const configured = secret.configured ?? true;
     const effectiveSource = secret.effective_source ?? (configured ? 'shared' : 'none');

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { seedDatabaseProject } from "../helpers/database";
+import { seedDatabaseWorkspace } from "../helpers/database";
 import { createApiResultClient } from "../helpers/http";
 import {
   type AuthSession,
@@ -29,7 +29,7 @@ test.describe("13 — Custom connector OAuth2", () => {
 
   let user: AuthUser;
   let session: AuthSession;
-  let projectId: string;
+  let workspaceId: string;
   let accountId: string;
 
   test.beforeAll(async () => {
@@ -50,7 +50,7 @@ test.describe("13 — Custom connector OAuth2", () => {
     expect(personalAccount?.account_id).toBeTruthy();
     if (!personalAccount) throw new Error("test user has no personal account");
     accountId = personalAccount.account_id;
-    projectId = await seedDatabaseProject({
+    workspaceId = await seedDatabaseWorkspace({
       accountId,
       userId: user.id,
       name: `e2e-connector-oauth-${Date.now()}`,
@@ -58,8 +58,8 @@ test.describe("13 — Custom connector OAuth2", () => {
   });
 
   test.afterAll(async () => {
-    if (projectId && session) {
-      await api(session.access_token, "DELETE", `/projects/${projectId}`).catch(
+    if (workspaceId && session) {
+      await api(session.access_token, "DELETE", `/workspaces/${workspaceId}`).catch(
         () => {},
       );
     }
@@ -79,7 +79,7 @@ test.describe("13 — Custom connector OAuth2", () => {
       authOptions,
     );
     await selectAccountForUi(page, accountId);
-    await page.goto(`/projects/${projectId}`, {
+    await page.goto(`/workspaces/${workspaceId}`, {
       waitUntil: "domcontentloaded",
     });
     await dismissOnboarding(page);
@@ -89,11 +89,11 @@ test.describe("13 — Custom connector OAuth2", () => {
     const connectorsLink = page.getByRole("link", { name: /^Customize$/i });
     await expect(connectorsLink).toHaveAttribute(
       "href",
-      `/projects/${projectId}/connectors`,
+      `/workspaces/${workspaceId}/connectors`,
     );
     await connectorsLink.click();
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${projectId}/connectors$`),
+      new RegExp(`/workspaces/${workspaceId}/connectors$`),
     );
     await page
       .getByRole("button", { name: /^Add a custom connector$/i })

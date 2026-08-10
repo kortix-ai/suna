@@ -9,6 +9,28 @@ function source(relativePath: string): string {
 }
 
 describe('Workspace user-facing terminology', () => {
+  test('English translations do not present the retired Project noun', () => {
+    const messages = JSON.parse(source('translations/en.json')) as Record<string, unknown>;
+    const stableFilesystemPathKey =
+      'hardcodedUi.componentsTunnelScopeEditorsShellScopeEditor.line96JsxAttrPlaceholderHomeUserProjectOptional';
+    const violations: string[] = [];
+    const visit = (value: unknown, path: string): void => {
+      if (typeof value === 'string') {
+        if (path !== stableFilesystemPathKey && /\bprojects?\b/i.test(value)) {
+          violations.push(`${path}: ${value}`);
+        }
+        return;
+      }
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+      for (const [key, child] of Object.entries(value)) {
+        visit(child, path ? `${path}.${key}` : key);
+      }
+    };
+
+    visit(messages, '');
+    expect(violations).toEqual([]);
+  });
+
   test('member management uses Workspace terminology', () => {
     const english = source('translations/en.json');
 
@@ -50,9 +72,7 @@ describe('Workspace user-facing terminology', () => {
       zh: /项目/,
     };
     const stableLegacyValueKeys = [
-      'componentsIamPoliciesTable.line574JsxAttrPlaceholderPrincipalTypeMemberPrincipalIdScopeTypeProject',
       'componentsTunnelScopeEditorsShellScopeEditor.line96JsxAttrPlaceholderHomeUserProjectOptional',
-      'componentsIamPermissionBoundaryCard.line181JsxAttrPlaceholderEGProject',
     ];
 
     for (const [locale, forbidden] of Object.entries(forbiddenByLocale)) {

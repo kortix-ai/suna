@@ -7,7 +7,9 @@ import type { Capabilities, Env } from './env';
 
 export type Capability = keyof Capabilities;
 
-export type ProjectRole = 'user' | 'editor' | 'manager';
+export type WorkspaceRole = 'user' | 'editor' | 'manager';
+/** @deprecated Use WorkspaceRole. */
+export type ProjectRole = WorkspaceRole;
 
 /** A provisioned identity with the data flows assert against. */
 export interface Principal extends Identity {
@@ -39,11 +41,14 @@ export interface Principals {
   accountId: string;
 }
 
-export interface CreatedProject {
+export interface CreatedWorkspace {
   id: string;
   name: string;
   slug?: string;
 }
+
+/** @deprecated Use CreatedWorkspace. */
+export type CreatedProject = CreatedWorkspace;
 
 export interface CreatedSession {
   id: string;

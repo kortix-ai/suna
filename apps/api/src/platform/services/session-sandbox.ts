@@ -52,7 +52,6 @@ import { recordProviderEvent } from './provider-events';
 import type { GitBackedWorkspace } from '../../workspaces/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
-import { readManifest } from '../../workspaces/triggers';
 import { resolveAgentGrant } from '../../workspaces/agents';
 import { workspaceLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';

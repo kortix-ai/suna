@@ -12,6 +12,40 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-10 — session `workspace-refactor-codeql-cleanup` claim
+
+No **Now** task claimed. This is the final CodeQL cleanup for PR #5480 after
+the Projects-to-Workspaces path migration caused existing dataflow and static
+analysis findings to appear as new alerts on renamed files.
+
+Claimed SDK scope:
+
+- Preserve every published Project compatibility export and Workspace API.
+- Resolve four `js/file-access-to-http` false positives on intentional SDK
+  uploads and reads without changing their request contracts.
+- Resolve the `js/missing-await` finding without changing session readiness.
+- Preserve every public export name and the release-managed package version.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. The failing CodeQL
+aggregate check is the RED gate. The source fixes must make a new CodeQL run
+green without weakening runtime tests or dismissing alerts.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2250 pass`, `0 fail`, `10108 expect()` calls across `183` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- The CodeQL cleanup changes no runtime contract. Four narrow `js/file-access-to-http` annotations document intentional HTTP reads, and one `js/missing-await` annotation documents the promise-identity cleanup guard.
+- Both public-surface snapshots remain unchanged. No export was added, removed, or renamed.
+- The SDK package version remains release-managed and unchanged by this work.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-09 — session `workspace-refactor-main-reconciliation` claim
 
 No **Now** task claimed. This is the user-directed merge of current `origin/main`

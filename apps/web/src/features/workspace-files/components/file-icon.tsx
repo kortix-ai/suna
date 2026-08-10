@@ -76,7 +76,6 @@ function getMonochromeIcon(fileName: string, ic: string, isDirectory?: boolean, 
   }
 
   const name = fileName.toLowerCase();
-  const ext = name.split('.').pop() || '';
 
   // ── Special filenames ──────────────────────────────────────────
   if (name === 'dockerfile' || name.startsWith('docker-compose')) {

@@ -64,7 +64,6 @@ import type {
 } from '@/lib/workspaces/workspaces-client';
 import { haptics } from '@/lib/haptics';
 
-const MONO = 'Menlo';
 const ROLES: WorkspaceRole[] = ['member', 'editor', 'manager'];
 
 const ROLE_DESC: Record<WorkspaceRole, { label: string; blurb: string }> = {

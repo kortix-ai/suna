@@ -141,7 +141,6 @@ import {
   removeTriggerFromManifest,
   renderPromptTemplate,
   specToBody,
-  triggersPausedForWorkspace,
   upsertTriggerInManifest,
 } from '../lib/triggers';
 import { childIdleGraceMs, shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';

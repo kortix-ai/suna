@@ -354,7 +354,6 @@ function SecretDetailSheet({
   onClose: () => void;
   isDark: boolean;
 }) {
-  const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<'detail' | 'shared' | 'personal'>('detail');
   const setPersonal = useSetPersonalWorkspaceSecret(workspaceId);

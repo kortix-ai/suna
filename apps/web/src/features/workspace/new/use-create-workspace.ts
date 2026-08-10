@@ -319,7 +319,9 @@ export async function runCreateAttempt(
       const code = (caught as { code?: string } | null | undefined)?.code;
       const canRetry = code === PROVISION_IN_FLIGHT_CODE && attempt < RETRY_DELAY_MS.length;
       if (!canRetry) throw caught;
-      await client.wait(RETRY_DELAY_MS[attempt]!);
+      const retryDelay = RETRY_DELAY_MS[attempt];
+      if (retryDelay === undefined) throw caught;
+      await client.wait(retryDelay);
     }
   }
   // Unreachable: every iteration above either returns or throws.

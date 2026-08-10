@@ -61,7 +61,7 @@ export function parseProjectGetOutput(output: string): ProjectGetData | null {
   const pathMatch = output.match(/\*\*Path:\*\*\s+`([^`]+)`/);
   const descMatch = output.match(/\*\*Description:\*\*\s+(.+)$/m);
   const idMatch = output.match(/\*\*ID:\*\*\s+`([^`]+)`/);
-  const contextMatch = output.match(/\*\*Context:\*\*\s+`([^`]+)`\s*([✓✓])?/);
+  const contextMatch = output.match(/\*\*Context:\*\*\s+`([^`]+)`\s*(✓)?/);
   const contextExists = !!contextMatch?.[2];
   const contextPath = contextMatch?.[1] || '';
 
@@ -101,7 +101,7 @@ export function parseProjectSelectOutput(output: string): ProjectSelectData | nu
   return {
     name: nameMatch[1],
     path: pathMatch?.[1] || '',
-    success: !!nameMatch && output.includes('selected'),
+    success: output.includes('selected'),
   };
 }
 
@@ -122,7 +122,7 @@ export function parseProjectCreateOutput(output: string): ProjectCreateData | nu
     name: nameMatch[1],
     path: pathMatch?.[1] || '',
     id: idMatch?.[1] || '',
-    success: !!nameMatch && !output.toLowerCase().includes('failed'),
+    success: !output.toLowerCase().includes('failed'),
   };
 }
 

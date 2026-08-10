@@ -22,7 +22,6 @@ import {
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import { auth, json } from '../../openapi';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';

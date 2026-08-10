@@ -66,7 +66,7 @@ import {
 import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
 import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import { cn } from '@/lib/utils';
-import { getWorkspace, listWorkspaceAccess } from '@kortix/sdk';
+import { listWorkspaceAccess } from '@kortix/sdk';
 import {
   type Agent,
   contract,

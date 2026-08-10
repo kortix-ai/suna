@@ -1048,7 +1048,6 @@ const nextRuleId = () => `rule-${++policyRuleSeq}`;
 function PoliciesView({ workspaceId }: { workspaceId: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const theme = useThemeColors();
 
   const query = useWorkspacePolicies(workspaceId);

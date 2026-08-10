@@ -93,6 +93,7 @@ export async function fetchWorkspaceArchive(
 
   const token = await getSupabaseAccessTokenWithRetry();
   const url = `${platformConfig().backendUrl || ''}/workspaces/${workspaceId}/files/archive${query}`;
+  // lgtm[js/file-access-to-http] This method intentionally downloads the caller-selected workspace file archive.
   const res = await fetch(url, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : {},

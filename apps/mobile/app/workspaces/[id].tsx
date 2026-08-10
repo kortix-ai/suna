@@ -10,18 +10,14 @@ import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffe
 import {
   View,
   TouchableOpacity,
-  FlatList,
   ScrollView,
   ActivityIndicator,
   Alert,
   Animated,
-  Modal,
-  Platform,
   StyleSheet,
   useWindowDimensions,
   InteractionManager,
 } from 'react-native';
-import { captureScreen } from 'react-native-view-shot';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text } from '@/components/ui/text';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
@@ -37,9 +33,7 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useSessions,
   useCreateSession,
-  useDeleteSession,
   useArchiveSession,
-  useUnarchiveSession,
 } from '@/lib/platform/hooks';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { getAuthToken } from '@/api/config';
@@ -78,7 +72,6 @@ import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { haptics } from '@/lib/haptics';
-import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { PlaceholderPage } from '@/components/session/PlaceholderPage';
 import { UpdatesPage } from '@/components/pages/UpdatesPage';
 import { SSHPage } from '@/components/pages/SSHPage';
@@ -177,9 +170,6 @@ try {
 } catch {
   // Native module not available — screenshots disabled until rebuild
 }
-
-const THEME_PREFERENCE_KEY = '@theme_preference';
-type ThemePreference = 'light' | 'dark' | 'system';
 
 // ─── Animated collapsible wrapper ────────────────────────────────────────────
 
@@ -703,24 +693,6 @@ function WorkspaceSessionListItem({
 }
 
 /**
- * Build a map from parent session ID → array of child session IDs.
- * Ported from childMapByParent() in @kortix/sdk/turns.
- */
-function buildChildMap(sessions: Session[]): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const session of sessions) {
-    if (!session.parentID) continue;
-    const existing = map.get(session.parentID);
-    if (existing) {
-      existing.push(session.id);
-    } else {
-      map.set(session.parentID, [session.id]);
-    }
-  }
-  return map;
-}
-
-/**
  * SessionGroup — renders a session row + its expanded children (recursive for nested trees).
  */
 function SessionGroup({
@@ -913,7 +885,7 @@ export default function WorkspaceSessionScreen() {
     if (workspaceId) useTabStore.getState().setScope(workspaceId);
   }, [workspaceId]);
   const { width: windowWidth } = useWindowDimensions();
-  const { colorScheme, setColorScheme } = useColorScheme();
+  const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
   const {
@@ -958,7 +930,7 @@ export default function WorkspaceSessionScreen() {
     // Workspace view: the global-sandbox setup gate is disabled — the screen
     // renders immediately (web model). Sandboxes are resolved per session.
     return;
-    // eslint-disable-next-line no-unreachable
+    // eslint-disable-next-line no-unreachable -- lgtm[js/unreachable-statement] Legacy setup recovery stays documented but disabled in Workspace mode.
     if (!sandboxUrl) {
       log.log('[Home] Setup check: no sandboxUrl yet');
       return;
@@ -1130,7 +1102,6 @@ export default function WorkspaceSessionScreen() {
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
   const renameSessionSheetRef = useRef<BottomSheetModal>(null);
   const shareSessionSheetRef = useRef<BottomSheetModal>(null);
-  const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   // The sandbox-update badge polls the GLOBAL sandbox (${sandboxUrl}/kortix/health)
   // — a legacy-shell concept that 403s on the repo-first workspace screen (sessions
   // get their own sandboxes). Disabled here; the badge still works on /home.
@@ -1149,8 +1120,6 @@ export default function WorkspaceSessionScreen() {
   const userDisplayName = userEmail.split('@')[0] || 'User';
   const userChalk = useMemo(() => chalkColors(userDisplayName), [userDisplayName]);
   const planLabel = 'Self-Hosted';
-  const sandboxLabel = sandboxId || 'Sandbox';
-  const sandboxHost = sandboxUrl ? sandboxUrl.replace(/^https?:\/\//, '') : undefined;
   // Account menu (web-parity user menu) — same account resolution as the
   // workspaces screen: the store's selection, falling back to the first account.
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -1160,28 +1129,6 @@ export default function WorkspaceSessionScreen() {
     accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ??
     accountsQuery.data?.[0] ??
     null;
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
-        if (!mounted) return;
-        if (saved === 'light' || saved === 'dark' || saved === 'system') {
-          setThemePreference(saved);
-        } else {
-          setThemePreference(colorScheme === 'dark' ? 'dark' : 'light');
-        }
-      } catch {
-        if (mounted) {
-          setThemePreference(colorScheme === 'dark' ? 'dark' : 'light');
-        }
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [colorScheme]);
 
   // Validate persisted tab screenshots (remove stale entries on startup)
   useEffect(() => {
@@ -1199,23 +1146,10 @@ export default function WorkspaceSessionScreen() {
   const openTabIds = useTabStore((s) => s.openTabIds);
   const openPageIds = useTabStore((s) => s.openPageIds);
   const tabStateById = useTabStore((s) => s.tabStateById);
-  const sessionHistory = useTabStore((s) => s.sessionHistory);
-  const historyIndex = useTabStore((s) => s.historyIndex);
   const navigateToSession = useTabStore((s) => s.navigateToSession);
   const closeTab = useTabStore((s) => s.closeTab);
   const closeAllTabs = useTabStore((s) => s.closeAllTabs);
   const setShowTabsOverview = useTabStore((s) => s.setShowTabsOverview);
-
-  const canGoBack = historyIndex > 0;
-  const canGoForward = historyIndex < sessionHistory.length - 1;
-
-  const handleHistoryBack = useCallback(() => {
-    useTabStore.getState().goBack();
-  }, []);
-
-  const handleHistoryForward = useCallback(() => {
-    useTabStore.getState().goForward();
-  }, []);
 
   // Data
   // Repo-first Workspace sessions (web model): GET /workspaces/:id/sessions.
@@ -1249,7 +1183,7 @@ export default function WorkspaceSessionScreen() {
   // OpenCode/Kortix proxy hooks must stay disabled to avoid 403s
   // ("Not authorized to access this sandbox").
   const sessionSandboxUrl = activeSessionId ? sandboxUrl : undefined;
-  const { data: sessions = [], isLoading: sessionsLoading } = useSessions(sessionSandboxUrl);
+  const { data: sessions = [] } = useSessions(sessionSandboxUrl);
   const { data: kortixProjects } = useKortixProjects(sessionSandboxUrl);
   const sortedProjects = useMemo(() => {
     if (!kortixProjects || !Array.isArray(kortixProjects)) return [];
@@ -1259,20 +1193,13 @@ export default function WorkspaceSessionScreen() {
     );
   }, [kortixProjects]);
   const createSession = useCreateSession(sandboxUrl);
-  const deleteSession = useDeleteSession(sandboxUrl);
   const archiveSession = useArchiveSession(sandboxUrl);
-  const unarchiveSession = useUnarchiveSession(sandboxUrl);
 
   // Split sessions into active and archived
   const activeSessions = useMemo(
     () => sessions.filter((s) => !(s.time as any).archived),
     [sessions]
   );
-  const archivedSessions = useMemo(
-    () => sessions.filter((s) => !!(s.time as any).archived),
-    [sessions]
-  );
-
   // Tabs shown as pills in the BottomBar (session tabs + page tabs)
   const bottomBarTabs = useMemo(() => {
     const sessionPills = openTabIds.map((id) => {
@@ -1301,22 +1228,7 @@ export default function WorkspaceSessionScreen() {
 
   // Collapsible state
   const [sessionsExpanded, setSessionsExpanded] = useState(true);
-  const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(false);
-  const [expandedSessionNodes, setExpandedSessionNodes] = useState<Record<string, boolean>>({});
-
-  const toggleSessionExpand = useCallback((sessionId: string) => {
-    setExpandedSessionNodes((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
-  }, []);
-
-  // Build parent→children map and derive the list of top-level (root) sessions.
-  // Child sessions render nested under their parents when the parent is expanded.
-  const { childMap, rootSessions } = useMemo(() => {
-    const map = buildChildMap(activeSessions);
-    const sessionIds = new Set(activeSessions.map((s) => s.id));
-    const roots = activeSessions.filter((s) => !s.parentID || !sessionIds.has(s.parentID));
-    return { childMap: map, rootSessions: roots };
-  }, [activeSessions]);
 
   // Agent/model/variant for dashboard input
   const { data: agents = [] } = useOpenCodeAgents(sessionSandboxUrl);
@@ -1419,14 +1331,6 @@ export default function WorkspaceSessionScreen() {
       }
     },
     [sandboxUrl, createSession, navigateToSession]
-  );
-
-  const handleSessionPress = useCallback(
-    (session: Session) => {
-      navigateToSession(session.id);
-      setDrawerOpen(false);
-    },
-    [navigateToSession]
   );
 
   // Composer prompts awaiting their session's OpenCode root, keyed by session id.
@@ -1810,32 +1714,6 @@ export default function WorkspaceSessionScreen() {
     [archiveSession, navigateToSession]
   );
 
-  const handleUnarchive = useCallback(
-    (sessionId: string) => {
-      unarchiveSession.mutate(sessionId);
-    },
-    [unarchiveSession]
-  );
-
-  const handleDelete = useCallback(
-    (sessionId: string) => {
-      Alert.alert('Delete Session', 'This cannot be undone.', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            if (useTabStore.getState().activeSessionId === sessionId) {
-              navigateToSession(null);
-            }
-            deleteSession.mutate(sessionId);
-          },
-        },
-      ]);
-    },
-    [deleteSession, navigateToSession]
-  );
-
   // Simplified dashboard send flow (ported from web 3f150e0).
   // Single `isSending` guard, `finally` cleanup, parallel session create + fade.
   const [isDashboardSending, setIsDashboardSending] = useState(false);
@@ -1913,71 +1791,6 @@ export default function WorkspaceSessionScreen() {
     setDrawerOpen(false);
     router.push('/(settings)');
   }, [closeUserMenuSheet, router]);
-
-  const handleManageInstances = useCallback(() => {
-    closeUserMenuSheet();
-    setDrawerOpen(false);
-    router.push('/(settings)/instances');
-  }, [closeUserMenuSheet, router]);
-
-  const handleAddInstance = useCallback(() => {
-    closeUserMenuSheet();
-    setDrawerOpen(false);
-    router.push('/(settings)/instances');
-  }, [closeUserMenuSheet, router]);
-
-  const handleOpenChangelog = useCallback(() => {
-    closeUserMenuSheet();
-    setDrawerOpen(false);
-    useTabStore.getState().navigateToPage('page:updates');
-  }, [closeUserMenuSheet]);
-
-  // Theme transition overlay — snapshot + crossfade to mirror web's view-transition blur effect
-  const [themeTransitionUri, setThemeTransitionUri] = useState<string | null>(null);
-  const themeTransitionOpacity = useRef(new Animated.Value(1)).current;
-
-  const handleThemeSelect = useCallback(
-    async (value: ThemePreference) => {
-      if (value === themePreference) return;
-
-      // Capture the current screen so we can crossfade from old theme to new
-      let snapshotUri: string | null = null;
-      try {
-        snapshotUri = await captureScreen({
-          format: 'jpg',
-          quality: 0.8,
-          result: 'tmpfile',
-        });
-      } catch {
-        // Capture failed — fall through to instant switch
-      }
-
-      if (snapshotUri) {
-        themeTransitionOpacity.setValue(1);
-        setThemeTransitionUri(snapshotUri);
-      }
-
-      setThemePreference(value);
-      try {
-        await AsyncStorage.setItem(THEME_PREFERENCE_KEY, value);
-      } catch {}
-      setColorScheme(value === 'system' ? 'system' : value);
-
-      if (snapshotUri) {
-        // Let the new theme paint a frame before fading the snapshot out
-        requestAnimationFrame(() => {
-          Animated.timing(themeTransitionOpacity, {
-            toValue: 0,
-            duration: 400,
-            useNativeDriver: true,
-          }).start(() => {
-            setThemeTransitionUri(null);
-          });
-        });
-      }
-    },
-    [themePreference, setColorScheme, themeTransitionOpacity]
-  );
 
   const handleUserMenuOpen = useCallback(() => {
     setDrawerOpen(false);
@@ -2264,6 +2077,7 @@ export default function WorkspaceSessionScreen() {
   // "Connecting to Workspace" skeleton screen.
   // Includes a restart button that appears after a delay (ported from web 345b805 / a13fd57).
   if (setupState === 'checking') {
+    // lgtm[js/trivial-conditional] This legacy recovery branch is unreachable while Workspace mode fixes isProvisioning to false.
     const phase: 'awaiting-sandbox' | 'provisioning' | 'checking-env' =
       !sandboxUrl && isProvisioning
         ? 'provisioning'
@@ -3286,21 +3100,6 @@ export default function WorkspaceSessionScreen() {
         }}
       />
 
-      {/* Theme transition overlay — crossfade snapshot of previous theme */}
-      {themeTransitionUri && (
-        <Modal visible transparent statusBarTranslucent animationType="none" hardwareAccelerated>
-          <Animated.View
-            style={[StyleSheet.absoluteFillObject, { opacity: themeTransitionOpacity }]}
-            pointerEvents="none">
-            <Animated.Image
-              source={{ uri: themeTransitionUri }}
-              resizeMode="cover"
-              fadeDuration={0}
-              style={StyleSheet.absoluteFillObject}
-            />
-          </Animated.View>
-        </Modal>
-      )}
     </>
   );
 }
