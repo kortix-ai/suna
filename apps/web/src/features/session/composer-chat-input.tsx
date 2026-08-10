@@ -61,7 +61,6 @@ export function ComposerChatInput({
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
-  onSendQueuedMessageNow,
   onRetryQueuedMessage,
   onAgentSelectionChange,
 }: {
@@ -100,7 +99,6 @@ export function ComposerChatInput({
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  onSendQueuedMessageNow?: (id: string) => void;
   onRetryQueuedMessage?: (id: string) => void;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
@@ -189,7 +187,6 @@ export function ComposerChatInput({
       onRemoveQueuedMessage={onRemoveQueuedMessage}
       onEditQueuedMessage={onEditQueuedMessage}
       onReorderQueuedMessage={onReorderQueuedMessage}
-      onSendQueuedMessageNow={onSendQueuedMessageNow}
       onRetryQueuedMessage={onRetryQueuedMessage}
       isBusy={isBusy}
       stopDisabled={stopDisabled}

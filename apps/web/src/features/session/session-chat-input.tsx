@@ -108,7 +108,6 @@ export interface SessionChatInputProps {
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
   /** Stop the running turn and send this queued message immediately. */
-  onSendQueuedMessageNow?: (id: string) => void;
   onRetryQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   /**
@@ -231,7 +230,6 @@ function SessionChatInputImpl({
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
-  onSendQueuedMessageNow,
   onRetryQueuedMessage,
   onStop,
   stopDisabled = false,
@@ -1141,7 +1139,6 @@ function SessionChatInputImpl({
                 onRemove={onRemoveQueuedMessage}
                 onEdit={onEditQueuedMessage}
                 onReorder={onReorderQueuedMessage}
-                onSendNow={onSendQueuedMessageNow}
                 onRetry={onRetryQueuedMessage}
               />
               {replyTo && (

@@ -3279,28 +3279,6 @@ export function SessionChat({
     else abortSession.mutate(sessionId);
   }, [sessionId, sessionState, abortSession, queueDrain]);
 
-  /**
-   * "Stop & send" on a queued message: end the current turn, then send that one.
-   *
-   * The only path that interrupts a running turn, and it is labelled as such in
-   * the composer — automatic draining never does. Waits for the server to
-   * actually report idle rather than guessing with a fixed delay, so the prompt
-   * cannot race the abort it just issued.
-   */
-  const handleQueueSendNow = useCallback(
-    async (id: string) => {
-      const status = useSessionStateStore.getState().sessionStatus[sessionId];
-      const running = status?.type === 'busy' || status?.type === 'retry';
-      if (running) {
-        handleStop();
-        await waitForSessionIdle(sessionId);
-      }
-      queueDrain.resume();
-      await queueDrain.dispatchNow(id);
-    },
-    [sessionId, handleStop, queueDrain],
-  );
-
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
   // 4s cooloff window — resets if you wait too long between presses.
@@ -4117,7 +4095,6 @@ export function SessionChat({
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onEditQueuedMessage={handleEditQueuedMessage}
                 onReorderQueuedMessage={handleReorderQueuedMessage}
-                onSendQueuedMessageNow={handleQueueSendNow}
                 onRetryQueuedMessage={handleRetryQueuedMessage}
                 onStop={handleStop}
                 escCount={escCount}

@@ -60,8 +60,6 @@ export interface MessageQueueDrainControls {
    */
   pause: () => void;
   resume: () => void;
-  /** Send one specific queued message right now, jumping the order. */
-  dispatchNow: (id: string) => Promise<void>;
 }
 
 function errorMessage(cause: unknown): string {
@@ -201,22 +199,5 @@ export function useMessageQueueDrain({
     tickRef.current();
   }, []);
 
-  const dispatchNow = useCallback(
-    async (id: string) => {
-      const queue = useMessageQueueStore.getState().getSessionQueue(sessionId);
-      const target = queue.pending.find((m) => m.id === id);
-      if (!target || target.id === queue.inFlightId) return;
-
-      // Explicit user action, so order yields to intent: move it to the front,
-      // clear the pause the stop button just set, and claim it.
-      pausedRef.current = false;
-      useMessageQueueStore.getState().reorder(sessionId, id, 0);
-      machineRef.current = createDrainMachine();
-      const claimed = useMessageQueueStore.getState().claimNext(sessionId);
-      if (claimed) await dispatchOne(claimed);
-    },
-    [sessionId, dispatchOne],
-  );
-
-  return { pause, resume, dispatchNow };
+  return { pause, resume };
 }

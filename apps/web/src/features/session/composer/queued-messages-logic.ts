@@ -7,19 +7,13 @@
  * by clicking around.
  */
 
-/** Queue length at which the list opens itself, because scanning beats guessing. */
-export const QUEUE_AUTO_EXPAND_AT = 3;
-
 /**
- * @param userToggled the user's explicit choice, or `null` if they have not made one
+ * The screen-reader announcement for the queue.
+ *
+ * Sighted users get the same fact from the numbered rows — `1` sends when this
+ * turn ends, then `2` — which is why there is no visible header saying it. This
+ * string exists so the change is not silent for anyone reading by ear.
  */
-export function shouldExpandQueue(count: number, userToggled: boolean | null): boolean {
-  if (userToggled !== null) return userToggled;
-  return count >= QUEUE_AUTO_EXPAND_AT;
-}
-
-/** Header text. Says what happens next, not just how many are waiting — the
- *  count alone left people unsure whether anything would send at all. */
 export function queueSummaryLabel(count: number): string {
   return `${count} queued · sends when this turn ends`;
 }
