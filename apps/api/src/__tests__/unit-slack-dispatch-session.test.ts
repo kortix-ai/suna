@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import type { ProjectSessionRow } from '../projects/lib/serializers';
-import type { SessionDeliveryOutcome } from '../projects/session-lifecycle';
+import type { WorkspaceSessionRow } from '../workspaces/lib/serializers';
+import type { SessionDeliveryOutcome } from '../workspaces/session-lifecycle';
 
 // Persist the headline invariant of the Slack channel refactor: a known thread
 // maps PERMANENTLY to exactly one session. A follow-up routes into that session
@@ -12,12 +12,12 @@ import type { SessionDeliveryOutcome } from '../projects/session-lifecycle';
 // ─── DB mock: FIFO of query results (same pattern as unit-slack-streams) ──────
 let dbResults: unknown[][] = [];
 let authorizeAllowed = true;
-function fakeSessionRow(sessionId: string): ProjectSessionRow {
+function fakeSessionRow(sessionId: string): WorkspaceSessionRow {
   const now = new Date('2026-01-01T00:00:00Z');
   return {
     sessionId,
     accountId: 'acc-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     branchName: 'session/test',
     baseRef: 'main',
     sandboxProvider: 'daytona',
@@ -58,13 +58,13 @@ mock.module('../iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: authorizeAllowed }),
   assertAuthorized: async () => {},
-  filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+  filterAccessibleWorkspaceResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
   unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
   hasAnyResourceGrants: async () => false,
 }));
 
-const realGit = await import('../projects/git');
-mock.module('../projects/git', () => ({
+const realGit = await import('../workspaces/git');
+mock.module('../workspaces/git', () => ({
   ...realGit,
   readRepoFile: async () => null,
 }));
@@ -76,7 +76,7 @@ let deliverCalls = 0;
 // ─── lifecycle seam: spy on createSession (the "second session") ─────────────
 let createSessionCalls = 0;
 let createSessionInputs: any[] = [];
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../workspaces/session-lifecycle', () => ({
   continueSession: async () => {
     deliverCalls++;
     return deliverOutcome;
@@ -86,7 +86,7 @@ mock.module('../projects/session-lifecycle', () => ({
     createSessionCalls++;
     return { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
   },
-  resolveProjectAutomationActor: async () => 'user-1',
+  resolveWorkspaceAutomationActor: async () => 'user-1',
 }));
 
 // ─── streams: fakes so spawnAgentTurn touches no real Slack/DB here ───────────
@@ -122,14 +122,14 @@ mock.module('../channels/install-store', () => ({
   TELEGRAM_BOT_TOKEN: 'TELEGRAM_BOT_TOKEN',
   TELEGRAM_WEBHOOK_SECRET: 'TELEGRAM_WEBHOOK_SECRET',
   deleteSlackInstall: async () => {},
-  listProjectsForWorkspace: async () => ['proj-1'],
+  listWorkspacesForWorkspace: async () => ['proj-1'],
   loadSlackInstall: async () => null,
-  loadSlackBotUserIdForProject: async () => 'B1',
-  loadSlackSigningSecretForProject: async () => null,
-  loadSlackTeamNameForProject: async () => null,
-  loadSlackTokenForProject: async () => 'xoxb-test',
+  loadSlackBotUserIdForWorkspace: async () => 'B1',
+  loadSlackSigningSecretForWorkspace: async () => null,
+  loadSlackTeamNameForWorkspace: async () => null,
+  loadSlackTokenForWorkspace: async () => 'xoxb-test',
   loadTeamsInstall: async () => null,
-  loadTelegramWebhookSecretForProject: async () => null,
+  loadTelegramWebhookSecretForWorkspace: async () => null,
   saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
 }));
@@ -165,7 +165,7 @@ const originalRequireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;
 
 const envelope = { team_id: 'T1', event: undefined } as any;
 const event = { type: 'app_mention', channel: 'C1', ts: '100.1', user: 'U1', thread_ts: '90.0', text: 'hi' } as any;
-const project = { projectId: 'proj-1', accountId: 'acc-1', defaultBranch: 'main', repoUrl: 'r', name: 'P', manifestPath: 'kortix.yaml' };
+const project = { workspaceId: 'proj-1', accountId: 'acc-1', defaultBranch: 'main', repoUrl: 'r', name: 'P', manifestPath: 'kortix.yaml' };
 
 afterAll(() => {
   config.SLACK_REQUIRE_USER_IDENTITY = originalRequireIdentity;
@@ -193,12 +193,12 @@ beforeEach(() => {
       createSessionCalls++;
       return { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
     },
-    resolveProjectAutomationActor: async () => 'user-1',
+    resolveWorkspaceAutomationActor: async () => 'user-1',
   });
 });
 
-describe('Slack authorization matrix — project access and session visibility', () => {
-  test('linked Slack user without project access gets request-access UX and no session starts', async () => {
+describe('Slack authorization matrix — workspace access and session visibility', () => {
+  test('linked Slack user without workspace access gets request-access UX and no session starts', async () => {
     config.SLACK_REQUIRE_USER_IDENTITY = true;
     dbResults = [
       [project], // project account lookup
@@ -220,7 +220,7 @@ describe('Slack authorization matrix — project access and session visibility',
     expect(ephemerals[0]).toMatchObject({
       channel: 'C1',
       user: 'Uoutsider',
-      text: "You're connected, but don't have access to this project yet.",
+      text: "You're connected, but don't have access to this workspace yet.",
     });
   });
 
@@ -261,7 +261,7 @@ describe('Slack authorization matrix — project access and session visibility',
       [project], // createOrJoinThreadSession project lookup
       [{ eventId: 'claim' }], // claimThreadCreate won
       [], // re-check chat_threads -> none
-      [{ projectId: 'proj-1', agentName: null, opencodeModel: null, conversationPolicy: 'owner_approval' }],
+      [{ workspaceId: 'proj-1', agentName: null, opencodeModel: null, conversationPolicy: 'owner_approval' }],
       [], // remember owner participant
     ];
 
@@ -503,7 +503,7 @@ describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
     } as any;
 
     dbResults = [
-      [], // ensureProjectChannelBinding
+      [], // ensureWorkspaceChannelBinding
       [{ eventId: 'slack:msg:T1:C1:200.1' }], // claimInboundMessage → WON
       [project], // project account lookup before empty-mention help
       [], // resolveSlackActor identity lookup → unlinked
@@ -519,7 +519,7 @@ describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
     });
 
     dbResults = [
-      [], // ensureProjectChannelBinding
+      [], // ensureWorkspaceChannelBinding
       [], // same Slack message delivered again → duplicate suppressed
     ];
     await dispatchSlackEvent('proj-1', bareMention);
@@ -531,7 +531,7 @@ describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
     deliverOutcome = 'delivered';
     // Delivery #1 — claim WON, known thread, delivered into the existing session.
     dbResults = [
-      [], // ensureProjectChannelBinding
+      [], // ensureWorkspaceChannelBinding
       [{ eventId: 'slack:msg:T1:C1:100.1' }], // claimInboundMessage → WON
       [project],
       [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }], // chat_threads lookup (known thread)
@@ -543,7 +543,7 @@ describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
     // Delivery #2 — the SAME message redelivered (fan-out / retry / other replica):
     // a fresh event_id slips past the envelope dedup, but the message claim is lost.
     dbResults = [
-      [], // ensureProjectChannelBinding
+      [], // ensureWorkspaceChannelBinding
       [], // claimInboundMessage → LOST
     ];
     await dispatchSlackEvent('proj-1', mention('100.1'));

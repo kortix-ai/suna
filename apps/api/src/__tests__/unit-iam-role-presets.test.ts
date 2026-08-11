@@ -6,7 +6,7 @@ import {
   USER_PRESET_ACTIONS,
   validateActions,
 } from '../accounts/iam/role-presets';
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
+import { ACCOUNT_ACTIONS, WORKSPACE_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 
 describe('built-in role presets', () => {
   test('exposes the built-ins with "user" as the project floor (no viewer)', () => {
@@ -29,46 +29,46 @@ describe('built-in role presets', () => {
   test('only manager-tier project presets can bind and manage connections', () => {
     const manager = new Set(BUILTIN_BY_ID.get('builtin:manager')?.actions ?? []);
     const editor = new Set(BUILTIN_BY_ID.get('builtin:editor')?.actions ?? []);
-    expect(manager.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(true);
-    expect(manager.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)).toBe(true);
-    expect(editor.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(false);
-    expect(editor.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)).toBe(false);
+    expect(manager.has(WORKSPACE_ACTIONS.WORKSPACE_SESSION_BINDINGS_WRITE)).toBe(true);
+    expect(manager.has(WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_CONNECTIONS_MANAGE)).toBe(true);
+    expect(editor.has(WORKSPACE_ACTIONS.WORKSPACE_SESSION_BINDINGS_WRITE)).toBe(false);
+    expect(editor.has(WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_CONNECTIONS_MANAGE)).toBe(false);
   });
 
   test('User tier = read + run: has session start/stop + trigger.fire, NOT write/config', () => {
     const set = new Set(USER_PRESET_ACTIONS);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_READ)).toBe(true);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_READ)).toBe(true);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_SESSION_START)).toBe(true);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_SESSION_STOP)).toBe(true);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_FIRE)).toBe(true);
     // read leaves yes…
-    expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_READ)).toBe(true);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_AGENT_READ)).toBe(true);
     // …but NO write/config/gitops/members/deploy
-    expect(set.has(PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_WRITE)).toBe(false);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_GITOPS_MERGE)).toBe(false);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(false);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_WRITE)).toBe(false);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE)).toBe(false);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_GITOPS_MERGE)).toBe(false);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_CREATE)).toBe(false);
+    expect(set.has(WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE)).toBe(false);
   });
 });
 
 describe('validateActions', () => {
   test('accepts known actions and dedupes', () => {
     const r = validateActions([
-      PROJECT_ACTIONS.PROJECT_READ,
-      PROJECT_ACTIONS.PROJECT_READ,
-      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE,
     ]);
     expect(r.ok).toBe(true);
     if (r.ok)
       expect(r.actions).toEqual([
-        PROJECT_ACTIONS.PROJECT_READ,
-        PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+        WORKSPACE_ACTIONS.WORKSPACE_READ,
+        WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE,
       ]);
   });
 
   test('rejects an unknown / injected action string', () => {
-    const r = validateActions([PROJECT_ACTIONS.PROJECT_READ, 'project.everything.hax']);
+    const r = validateActions([WORKSPACE_ACTIONS.WORKSPACE_READ, 'project.everything.hax']);
     expect(r.ok).toBe(false);
   });
 
@@ -130,7 +130,7 @@ describe('validateActions — privilege-escalation ceiling', () => {
 describe('validateActions — namespace integrity', () => {
   test('a project role rejects account-scoped actions', () => {
     const r = validateActions(
-      [PROJECT_ACTIONS.PROJECT_READ, ACCOUNT_ACTIONS.AUDIT_READ],
+      [WORKSPACE_ACTIONS.WORKSPACE_READ, ACCOUNT_ACTIONS.AUDIT_READ],
       'project',
     );
     expect(r.ok).toBe(false);
@@ -138,7 +138,7 @@ describe('validateActions — namespace integrity', () => {
 
   test('an account role rejects project-scoped actions', () => {
     const r = validateActions(
-      [ACCOUNT_ACTIONS.AUDIT_READ, PROJECT_ACTIONS.PROJECT_AGENT_WRITE],
+      [ACCOUNT_ACTIONS.AUDIT_READ, WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE],
       'account',
     );
     expect(r.ok).toBe(false);
@@ -146,19 +146,19 @@ describe('validateActions — namespace integrity', () => {
 
   test('project.members.manage + gateway.keys.manage stay delegable in a project role (department lead)', () => {
     const r = validateActions(
-      [PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE],
+      [WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE, WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_KEYS_MANAGE],
       'project',
     );
     expect(r.ok).toBe(true);
   });
 
   test('project.create is account-scoped (lives at account scope) — rejected in a project role', () => {
-    const r = validateActions([ACCOUNT_ACTIONS.PROJECT_CREATE], 'project');
+    const r = validateActions([ACCOUNT_ACTIONS.WORKSPACE_CREATE], 'project');
     expect(r.ok).toBe(false);
   });
 
   test('no resourceType arg → namespace check skipped (back-compat)', () => {
-    const r = validateActions([PROJECT_ACTIONS.PROJECT_READ, ACCOUNT_ACTIONS.AUDIT_READ]);
+    const r = validateActions([WORKSPACE_ACTIONS.WORKSPACE_READ, ACCOUNT_ACTIONS.AUDIT_READ]);
     expect(r.ok).toBe(true);
   });
 });

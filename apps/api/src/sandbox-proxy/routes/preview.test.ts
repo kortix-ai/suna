@@ -4,7 +4,7 @@ import { getRequestContext, runWithContext } from '../../lib/request-context';
 import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
-} from '../../projects/lib/secret-grant';
+} from '../../workspaces/lib/secret-grant';
 import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
   STRIP_FORWARD_HEADERS,
@@ -21,14 +21,14 @@ describe('sandbox proxy audit context', () => {
       bindSandboxRequestContext(
         {
           accountId: 'a7100000-0000-4000-a000-000000000001',
-          projectId: 'a7200000-0000-4000-a000-000000000001',
+          workspaceId: 'a7200000-0000-4000-a000-000000000001',
           sessionId: 'a7300000-0000-4000-a000-000000000001',
         },
         'sbx_external',
       );
       expect(getRequestContext()).toMatchObject({
         accountId: 'a7100000-0000-4000-a000-000000000001',
-        projectId: 'a7200000-0000-4000-a000-000000000001',
+        workspaceId: 'a7200000-0000-4000-a000-000000000001',
         sessionId: 'a7300000-0000-4000-a000-000000000001',
         sandboxId: 'sbx_external',
       });

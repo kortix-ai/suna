@@ -99,7 +99,7 @@ export const product: RoleContent = {
 
   reach: {
     title: 'The places feedback actually lands.',
-    sub: 'Product feedback does not live in one system, which is the entire problem. Connect each source once for the project; the credential is resolved on our side of the wall and never enters the machine.',
+    sub: 'Product feedback does not live in one system, which is the entire problem. Connect each source once for the workspace; the credential is resolved on our side of the wall and never enters the machine.',
     rows: [
       {
         k: 'Linear',
@@ -111,7 +111,7 @@ export const product: RoleContent = {
       },
       {
         k: 'Zendesk, Intercom and the rest of the support stack',
-        v: 'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the project. Support tickets are where the highest-signal feedback is and the lowest-signal summaries get made.',
+        v: 'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the workspace. Support tickets are where the highest-signal feedback is and the lowest-signal summaries get made.',
       },
       {
         k: 'Notion and Google Drive',
@@ -173,7 +173,7 @@ export const product: RoleContent = {
       {
         id: 'creds',
         k: 'Connector credentials never enter the machine',
-        v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.',
+        v: 'The sandbox carries one workspace-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.',
       },
       {
         id: 'memory',

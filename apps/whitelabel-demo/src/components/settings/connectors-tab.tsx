@@ -26,7 +26,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -58,14 +58,14 @@ function statusVariant(status?: string) {
   return 'secondary' as const;
 }
 
-export function ConnectorsTab({ projectId }: { projectId: string }) {
+export function ConnectorsTab({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
-  const key = ['project-connectors', projectId] as const;
+  const key = ['workspace-connectors', workspaceId] as const;
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   const connectors = useQuery({
     queryKey: key,
-    queryFn: () => kortix.project(projectId).connectors.list(),
+    queryFn: () => kortix.workspace(workspaceId).connectors.list(),
   });
 
   const [slug, setSlug] = useState('');
@@ -74,7 +74,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
   const [url, setUrl] = useState('');
 
   const sync = useMutation({
-    mutationFn: () => kortix.project(projectId).connectors.sync(),
+    mutationFn: () => kortix.workspace(workspaceId).connectors.sync(),
     onSuccess: (res) => {
       refresh();
       toast.success(`Synced ${res.synced} connector(s)`);
@@ -84,7 +84,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
 
   const create = useMutation({
     mutationFn: () =>
-      kortix.project(projectId).connectors.create({
+      kortix.workspace(workspaceId).connectors.create({
         slug: slug.trim(),
         name: name.trim() || undefined,
         provider,
@@ -101,7 +101,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
   });
 
   const remove = useMutation({
-    mutationFn: (s: string) => kortix.project(projectId).connectors.remove(s),
+    mutationFn: (s: string) => kortix.workspace(workspaceId).connectors.remove(s),
     onSuccess: () => {
       refresh();
       toast.success('Connector removed');
@@ -109,7 +109,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Could not remove connector'),
   });
 
-  const items: AdminConnector[] = connectors.data?.connectors ?? [];
+  const items: WorkspaceAdminConnector[] = connectors.data?.connectors ?? [];
 
   return (
     <div className="space-y-4">
@@ -224,7 +224,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <ConnectorConfigDialog projectId={projectId} slug={cSlug} />
+                <ConnectorConfigDialog workspaceId={workspaceId} slug={cSlug} />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -245,16 +245,16 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
 }
 
 function ConnectorConfigDialog({
-  projectId,
+  workspaceId,
   slug,
 }: {
-  projectId: string;
+  workspaceId: string;
   slug: string;
 }) {
   const [open, setOpen] = useState(false);
   const config = useQuery({
-    queryKey: ['project-connector-config', projectId, slug],
-    queryFn: () => kortix.project(projectId).connectors.config(slug),
+    queryKey: ['workspace-connector-config', workspaceId, slug],
+    queryFn: () => kortix.workspace(workspaceId).connectors.config(slug),
     enabled: open,
   });
 

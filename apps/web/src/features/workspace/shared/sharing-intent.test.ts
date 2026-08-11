@@ -16,14 +16,14 @@ describe('selectionToIntent', () => {
     });
   });
 
-  test('group-only selection still emits a members intent (not project-wide)', () => {
+  test('group-only selection still emits a members intent (not workspace-wide)', () => {
     const sel: SharingSelection = { mode: 'members', memberIds: [], groupIds: ['g1'] };
     expect(selectionToIntent(sel)).toEqual({ mode: 'members', memberIds: [], groupIds: ['g1'] });
   });
 
   test('project and private ignore the lists', () => {
-    expect(selectionToIntent({ mode: 'project', memberIds: ['u1'], groupIds: ['g1'] })).toEqual({
-      mode: 'project',
+    expect(selectionToIntent({ mode: 'workspace', memberIds: ['u1'], groupIds: ['g1'] })).toEqual({
+      mode: 'workspace',
     });
     expect(selectionToIntent({ mode: 'private', memberIds: [], groupIds: [] })).toEqual({
       mode: 'private',
@@ -44,7 +44,7 @@ describe('intentToSelection', () => {
   });
 
   test('null / project / private normalize to empty lists', () => {
-    expect(intentToSelection(null)).toEqual({ mode: 'project', memberIds: [], groupIds: [] });
+    expect(intentToSelection(null)).toEqual({ mode: 'workspace', memberIds: [], groupIds: [] });
     expect(intentToSelection({ mode: 'private', ownerId: 'x' })).toEqual({
       mode: 'private',
       memberIds: [],
@@ -66,12 +66,12 @@ describe('isSharingComplete', () => {
   });
 
   test('members is incomplete when neither members nor groups are picked', () => {
-    // An empty allow-list would silently collapse to project-wide on save.
+    // An empty allow-list would silently collapse to workspace-wide on save.
     expect(isSharingComplete({ mode: 'members', memberIds: [], groupIds: [] })).toBe(false);
   });
 
   test('project and private are always complete', () => {
-    expect(isSharingComplete({ mode: 'project', memberIds: [], groupIds: [] })).toBe(true);
+    expect(isSharingComplete({ mode: 'workspace', memberIds: [], groupIds: [] })).toBe(true);
     expect(isSharingComplete({ mode: 'private', memberIds: [], groupIds: [] })).toBe(true);
   });
 });

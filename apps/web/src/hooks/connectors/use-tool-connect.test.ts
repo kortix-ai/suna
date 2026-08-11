@@ -36,11 +36,11 @@ describe('requestToolAuthorization', () => {
   test('uses only member connection endpoints for a user-owned connector', async () => {
     const calls: string[] = [];
     const result = await requestToolAuthorization('project-1', input, {
-      connectProject: async () => {
+      connectWorkspace: async () => {
         calls.push('project-connect');
         return {};
       },
-      reconcileMember: async (_projectId, connection) => {
+      reconcileMember: async (_workspaceId, connection) => {
         calls.push(`member-reconcile:${connection.connector_alias}:${connection.label}`);
         return {
           connection_id: 'connection-1',
@@ -53,7 +53,7 @@ describe('requestToolAuthorization', () => {
           metadata: {},
         };
       },
-      connectMember: async (_projectId, connectionId) => {
+      connectMember: async (_workspaceId, connectionId) => {
         calls.push(`member-connect:${connectionId}`);
         return { token: 'token', app: 'notion' };
       },
@@ -70,13 +70,13 @@ describe('requestToolAuthorization', () => {
     ]);
   });
 
-  test('uses the project endpoint for a project-owned connector', async () => {
+  test('uses the workspace endpoint for a workspace-owned connector', async () => {
     const calls: string[] = [];
     const result = await requestToolAuthorization(
       'project-1',
-      { ...input, authorizationStrategy: 'project' },
+      { ...input, authorizationStrategy: 'workspace' },
       {
-        connectProject: async (_projectId, slug) => {
+        connectWorkspace: async (_workspaceId, slug) => {
           calls.push(`project-connect:${slug}`);
           return { token: 'token', app: 'notion' };
         },

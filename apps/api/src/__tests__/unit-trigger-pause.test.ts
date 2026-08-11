@@ -1,17 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
-import { triggersPausedForProject, withTriggersPaused } from '../projects/lib/triggers';
+import { triggersPausedForWorkspace, withTriggersPaused } from '../workspaces/lib/triggers';
 
 describe('server-side per-project trigger kill-switch', () => {
-  test('triggersPausedForProject reads metadata.triggers_paused (default off)', () => {
-    expect(triggersPausedForProject({ triggers_paused: true })).toBe(true);
-    expect(triggersPausedForProject({ triggers_paused: false })).toBe(false);
-    expect(triggersPausedForProject({})).toBe(false);
-    expect(triggersPausedForProject(null)).toBe(false);
-    expect(triggersPausedForProject(undefined)).toBe(false);
-    expect(triggersPausedForProject('nope')).toBe(false);
+  test('triggersPausedForWorkspace reads metadata.triggers_paused (default off)', () => {
+    expect(triggersPausedForWorkspace({ triggers_paused: true })).toBe(true);
+    expect(triggersPausedForWorkspace({ triggers_paused: false })).toBe(false);
+    expect(triggersPausedForWorkspace({})).toBe(false);
+    expect(triggersPausedForWorkspace(null)).toBe(false);
+    expect(triggersPausedForWorkspace(undefined)).toBe(false);
+    expect(triggersPausedForWorkspace('nope')).toBe(false);
     // only strict `true` pauses — a truthy-but-not-true value does not
-    expect(triggersPausedForProject({ triggers_paused: 1 })).toBe(false);
+    expect(triggersPausedForWorkspace({ triggers_paused: 1 })).toBe(false);
   });
 
   test('withTriggersPaused sets/clears the flag, preserving other metadata', () => {
@@ -20,7 +20,7 @@ describe('server-side per-project trigger kill-switch', () => {
     expect(withTriggersPaused(null, true)).toEqual({ triggers_paused: true });
     expect(withTriggersPaused(undefined, false)).toEqual({});
     // round-trips with the reader
-    expect(triggersPausedForProject(withTriggersPaused({}, true))).toBe(true);
-    expect(triggersPausedForProject(withTriggersPaused({ triggers_paused: true }, false))).toBe(false);
+    expect(triggersPausedForWorkspace(withTriggersPaused({}, true))).toBe(true);
+    expect(triggersPausedForWorkspace(withTriggersPaused({ triggers_paused: true }, false))).toBe(false);
   });
 });

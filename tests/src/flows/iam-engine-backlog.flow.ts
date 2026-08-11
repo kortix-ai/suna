@@ -47,7 +47,7 @@ const EFFECTIVE_BATCH = '/v1/accounts/:accountId/iam/members/:userId/effective:b
 const SUPER_ADMIN = '/v1/accounts/:accountId/iam/members/:userId/super-admin';
 const GROUPS = '/v1/accounts/:accountId/iam/groups';
 const GROUP_MEMBERS = '/v1/accounts/:accountId/iam/groups/:groupId/members';
-const PROJECT_GRANTS = '/v1/projects/:projectId/group-grants';
+const PROJECT_GRANTS = '/v1/projects/:workspaceId/group-grants';
 
 // Coverage keys for `meta.routes` — must be `METHOD PATH`, matching the
 // route manifest (spec/routes.generated.json) exactly.
@@ -307,7 +307,7 @@ flow(
           .post(
             PROJECT_GRANTS,
             { group_id: groupId, role: 'manager' },
-            { params: { projectId: project.id } },
+            { params: { workspaceId: project.id } },
           );
         grant.status(201).body().has('$.role', 'manager');
       },
@@ -464,7 +464,7 @@ flow(
         .post(
           PROJECT_GRANTS,
           { group_id: groupId, role: 'manager' },
-          { params: { projectId: projectA.id } },
+          { params: { workspaceId: projectA.id } },
         );
       grant.status(201);
     });

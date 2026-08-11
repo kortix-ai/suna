@@ -10,11 +10,11 @@ const PTKEY = readFileSync('/tmp/ptkey', 'utf8').trim();
 import { or } from 'drizzle-orm';
 const projs = await db.select().from(projects).where(and(eq(projects.accountId, ACC),
   or(like(projects.name, 'e2e%'), like(projects.name, 'cmp-%'), like(projects.name, 'provtest%'), like(projects.name, 'plat-dbg%'), like(projects.name, 'loop-%'), like(projects.name, 'pr-%'), like(projects.name, 'mk3-%'), like(projects.name, 'verify-%'))));
-const pids = projs.map(p => p.projectId);
+const pids = projs.map(p => p.workspaceId);
 console.log(`test projects (e2e*): ${pids.length}`);
 if (!pids.length) process.exit(0);
 
-const sbx = await db.select().from(sessionSandboxes).where(inArray(sessionSandboxes.projectId, pids));
+const sbx = await db.select().from(sessionSandboxes).where(inArray(sessionSandboxes.workspaceId, pids));
 const extIds = [...new Set(sbx.map(s => s.externalId).filter(Boolean))] as string[];
 console.log(`sandboxes=${extIds.length}`);
 

@@ -45,7 +45,7 @@ import { createScopedKortix } from '../src/node/server';
 // ─── config (env) ────────────────────────────────────────────────────────────
 const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
 const upstreamApiKey = process.env.KORTIX_API_KEY; // the wrapper's own kortix_pat_ → origin 'backend'
-const projectId = process.env.KORTIX_PROJECT_ID;
+const workspaceId = process.env.KORTIX_PROJECT_ID;
 const includeOverrides = process.env.KAAB_OVERRIDES !== 'off';
 
 // Which connector/agent/model/secret this wrapper drives — all overridable.
@@ -55,7 +55,7 @@ const AGENT_NAME = process.env.KAAB_AGENT; // undefined → project default agen
 const MODEL = process.env.KAAB_MODEL; // undefined → project/agent default model
 const SECRET_ID = process.env.KAAB_SECRET; // one project-secret identifier to narrow to
 
-if (!upstreamApiKey || !projectId) {
+if (!upstreamApiKey || !workspaceId) {
   console.error('Set KORTIX_API_KEY (a kortix_pat_ from Settings → Tokens) and KORTIX_PROJECT_ID.');
   process.exit(1);
 }
@@ -79,7 +79,7 @@ function clientFor(endUserId: string) {
 
 // ─── step 1: mint the connector definition (once per connector) ──────────────
 async function ensureConnector(kortix: ReturnType<typeof clientFor>): Promise<void> {
-  const project = kortix.project(projectId!);
+  const project = kortix.project(workspaceId!);
   const existing = await project.connectors.list().catch(() => ({ connectors: [] as { slug: string }[] }));
   if (existing.connectors?.some((c) => c.slug === CONNECTOR_SLUG)) return;
 
@@ -109,7 +109,7 @@ async function ensureUserConnection(
   endUserId: string,
   usersOwnCredential: string,
 ): Promise<string | null> {
-  const project = kortix.project(projectId!);
+  const project = kortix.project(workspaceId!);
   try {
     const connection = await project.connectors.connections.reconcile({
       connector_alias: CONNECTOR_SLUG,
@@ -157,7 +157,7 @@ async function startSession(
     // Backend-only secret narrowing. KAAB_OVERRIDES=off omits it.
     ...(includeOverrides && SECRET_ID ? { secrets: [SECRET_ID] } : {}),
   };
-  const session = await kortix.project(projectId!).sessions.create(body);
+  const session = await kortix.project(workspaceId!).sessions.create(body);
   console.error(
     `[session ${session.session_id}] origin=${session.origin ?? '(n/a)'}` +
       ` secrets=${JSON.stringify(session.secrets_allowlist ?? null)}`,
@@ -174,7 +174,7 @@ async function runTurn(
   prompt: string,
   onText: (delta: string) => void,
 ): Promise<void> {
-  const session = kortix.session(projectId!, sessionId);
+  const session = kortix.session(workspaceId!, sessionId);
   // ensureReady() blocks — polling the sandbox cold start (up to ~3 min by
   // default; pass { readyTimeoutMs } to wait longer) — until the runtime is up,
   // THEN we stream, so the stream is connected before the prompt goes out and no

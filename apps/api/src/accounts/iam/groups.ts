@@ -27,6 +27,7 @@ import {
   GroupParams,
   GroupSchema,
   GroupMemberSchema,
+  WorkspaceGrantSchema,
   ProjectGrantSchema,
 } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
@@ -88,7 +89,8 @@ iamRouter.openapi(
         description: g.description,
         source: g.source,
         member_count: g.memberCount,
-        // Number of project_group_grants for this group.
+        // Canonical count plus a deprecated compatibility alias.
+        workspace_count: g.projectCount,
         project_count: g.projectCount,
         created_at: g.createdAt.toISOString(),
         updated_at: g.updatedAt.toISOString(),
@@ -481,21 +483,35 @@ iamRouter.openapi(
 //
 // One read endpoint here so the group detail page can list every project
 // the group is attached to (with role). Per-project CRUD lives under
-// /v1/projects/:projectId/group-grants (already shipped) — those routes
+// /v1/projects/:workspaceId/group-grants (already shipped) — those routes
 // gate on project.members.manage and are the right place to detach a
 // single grant. This endpoint just answers "which projects?" for the
 // group view, gated by GROUP_READ.
 
+for (const grantRoute of [
+  {
+    path: '/{accountId}/iam/groups/{groupId}/workspace-grants',
+    summary: 'List Workspace grants for a group',
+    schema: WorkspaceGrantSchema,
+    canonical: true,
+  },
+  {
+    path: '/{accountId}/iam/groups/{groupId}/project-grants',
+    summary: 'List Project grants for a group (deprecated)',
+    schema: ProjectGrantSchema,
+    canonical: false,
+  },
+] as const) {
 iamRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/iam/groups/{groupId}/project-grants',
+    path: grantRoute.path,
     tags: ['iam'],
-    summary: 'List project grants for a group',
+    summary: grantRoute.summary,
     ...auth,
     request: { params: GroupParams },
     responses: {
-      200: json(z.object({ grants: z.array(ProjectGrantSchema) }), 'Project grants for the group'),
+      200: json(z.object({ grants: z.array(grantRoute.schema) }), 'Workspace grants for the group'),
       ...errors(401, 403, 404),
     },
   }),
@@ -510,15 +526,15 @@ iamRouter.openapi(
 
     const rows = await db
       .select({
-        projectId: projectGroupGrants.projectId,
-        projectName: projects.name,
+        workspaceId: projectGroupGrants.workspaceId,
+        workspaceName: projects.name,
         role: projectGroupGrants.role,
         grantedBy: projectGroupGrants.grantedBy,
         createdAt: projectGroupGrants.createdAt,
         expiresAt: projectGroupGrants.expiresAt,
       })
       .from(projectGroupGrants)
-      .innerJoin(projects, eq(projects.projectId, projectGroupGrants.projectId))
+      .innerJoin(projects, eq(projects.workspaceId, projectGroupGrants.workspaceId))
       .where(
         and(eq(projectGroupGrants.groupId, groupId), eq(projectGroupGrants.accountId, accountId)),
       )
@@ -526,12 +542,13 @@ iamRouter.openapi(
       // a role change. Without ORDER BY, Postgres can return rows in heap
       // order, which moves UPDATEd rows around. See twin query in
       // apps/api/src/projects/index.ts.
-      .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.projectId));
+      .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.workspaceId));
 
     return c.json({
       grants: rows.map((r) => ({
-        project_id: r.projectId,
-        project_name: r.projectName,
+        ...(grantRoute.canonical
+          ? { workspace_id: r.workspaceId, workspace_name: r.workspaceName }
+          : { project_id: r.workspaceId, project_name: r.workspaceName }),
         role: r.role,
         granted_by: r.grantedBy,
         created_at: r.createdAt.toISOString(),
@@ -540,3 +557,4 @@ iamRouter.openapi(
     });
   },
 );
+}

@@ -1,9 +1,9 @@
 /**
  * SessionShareSheet — bottom sheet to set who can see/open a session.
  * Ported from web's ShareSessionModal + SharingPicker:
- * PUT /projects/:id/sessions/:sid/sharing with
- *   { mode: 'project' } | { mode: 'private', ownerId } | { mode: 'members', memberIds }.
- * Members come from the same project-access list the Members page uses.
+ * PUT /workspaces/:id/sessions/:sid/sharing with
+ *   { mode: 'workspace' } | { mode: 'private', ownerId } | { mode: 'members', memberIds }.
+ * Members come from the same Workspace-access list the Members page uses.
  */
 import React, {
   forwardRef,
@@ -29,13 +29,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import {
-  setProjectSessionSharing,
-  type ProjectSession,
+  setWorkspaceSessionSharing,
+  type WorkspaceSession,
   type SessionSharing,
-} from '@/lib/projects/projects-client';
-import { projectKeys, useProjectAccess } from '@/lib/projects/hooks';
+} from '@/lib/workspaces/workspaces-client';
+import { workspaceKeys, useWorkspaceAccess } from '@/lib/workspaces/hooks';
 
-type ShareMode = 'project' | 'private' | 'members';
+type ShareMode = 'workspace' | 'private' | 'members';
 
 const MODE_OPTIONS: Array<{
   mode: ShareMode;
@@ -50,10 +50,10 @@ const MODE_OPTIONS: Array<{
     description: 'Private to you',
   },
   {
-    mode: 'project',
+    mode: 'workspace',
     icon: 'globe-outline',
     label: 'Whole team',
-    description: 'Everyone in this project',
+    description: 'Everyone in this workspace',
   },
   {
     mode: 'members',
@@ -64,12 +64,12 @@ const MODE_OPTIONS: Array<{
 ];
 
 interface SessionShareSheetProps {
-  projectId: string;
-  session: ProjectSession | null;
+  workspaceId: string;
+  session: WorkspaceSession | null;
 }
 
 export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetProps>(
-  function SessionShareSheet({ projectId, session }, ref) {
+  function SessionShareSheet({ workspaceId, session }, ref) {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
     const insets = useSafeAreaInsets();
@@ -82,13 +82,13 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
     // them so saving member changes never silently revokes group access.
     const [groupIds, setGroupIds] = useState<string[]>([]);
     // Only fetch the member list while the sheet is open — this component is
-    // permanently mounted on the project screen (web fetches on dialog open).
+    // permanently mounted on the Workspace screen (web fetches on dialog open).
     const [open, setOpen] = useState(false);
     // Pin the Kortix session id when the sheet opens so Save still works if the
-    // parent briefly clears activeProjectSession while this modal is up.
+    // parent briefly clears the active Workspace session while this modal is up.
     const sessionIdRef = useRef<string | null>(null);
 
-    const access = useProjectAccess(open ? projectId : null);
+    const access = useWorkspaceAccess(open ? workspaceId : null);
     const members = access.data?.members ?? [];
     const viewerUserId = access.data?.viewer_user_id;
 
@@ -131,8 +131,8 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
         setMode('members');
         setMemberIds(sharing.memberIds ?? []);
         setGroupIds(sharing.groupIds ?? []);
-      } else if (sharing?.mode === 'project') {
-        setMode('project');
+      } else if (sharing?.mode === 'workspace') {
+        setMode('workspace');
         setMemberIds([]);
         setGroupIds([]);
       } else {
@@ -149,15 +149,15 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
           throw new Error('No session selected. Close and try again.');
         }
         const intent: SessionSharing =
-          mode === 'project'
-            ? { mode: 'project' }
+          mode === 'workspace'
+            ? { mode: 'workspace' }
             : mode === 'members'
               ? { mode: 'members', memberIds, groupIds }
               : { mode: 'private', ownerId: '' }; // ownerId resolved server-side (web parity)
-        return setProjectSessionSharing(projectId, sessionId, intent);
+        return setWorkspaceSessionSharing(workspaceId, sessionId, intent);
       },
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+        queryClient.invalidateQueries({ queryKey: workspaceKeys.workspaceSessions(workspaceId) });
         haptics.success();
         dismiss();
       },
@@ -302,7 +302,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                 <Text
                   className="text-center font-roobert text-sm"
                   style={{ color: mutedColor, paddingVertical: 24 }}>
-                  No other members in this project yet.
+                  No other members in this workspace yet.
                 </Text>
               ) : (
                 sortedMembers.map((m) => {

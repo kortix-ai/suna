@@ -3,19 +3,19 @@
 import { useTranslations } from 'next-intl';
 /**
  * Visual harness for the unified <SharingPicker> (secrets / connectors /
- * sessions all use it). Auth-free: seeds the project-access query so the member
+ * sessions all use it). Auth-free: seeds the workspace-access query so the member
  * list renders without an API call. Open /debug/sharing.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
-import type { ProjectAccessResponse } from '@kortix/sdk';
+import type { WorkspaceAccessResponse } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
-const DEMO_PROJECT = 'demo';
-const DEMO_ACCESS: ProjectAccessResponse = {
-  project_id: DEMO_PROJECT,
+const DEMO_WORKSPACE = 'demo';
+const DEMO_ACCESS: WorkspaceAccessResponse = {
+  workspace_id: DEMO_WORKSPACE,
   account_id: 'demo-account',
   can_manage: true,
   viewer_user_id: 'u1',
@@ -24,8 +24,8 @@ const DEMO_ACCESS: ProjectAccessResponse = {
       user_id: 'u1',
       email: 'marko@kortix.ai',
       account_role: 'owner',
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      workspace_role: 'editor',
+      effective_workspace_role: 'editor',
       has_implicit_access: true,
       joined_at: '',
       granted_by: null,
@@ -36,8 +36,8 @@ const DEMO_ACCESS: ProjectAccessResponse = {
       user_id: 'u2',
       email: 'marko@softgen.ai',
       account_role: 'member',
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      workspace_role: 'editor',
+      effective_workspace_role: 'editor',
       has_implicit_access: false,
       joined_at: '',
       granted_by: null,
@@ -48,8 +48,8 @@ const DEMO_ACCESS: ProjectAccessResponse = {
       user_id: 'u3',
       email: 'ana@kortix.ai',
       account_role: 'member',
-      project_role: 'member',
-      effective_project_role: 'member',
+      workspace_role: 'member',
+      effective_workspace_role: 'member',
       has_implicit_access: false,
       joined_at: '',
       granted_by: null,
@@ -60,8 +60,8 @@ const DEMO_ACCESS: ProjectAccessResponse = {
       user_id: 'u4',
       email: 'ben.long.email@partner.example.com',
       account_role: 'member',
-      project_role: 'member',
-      effective_project_role: 'member',
+      workspace_role: 'member',
+      effective_workspace_role: 'member',
       has_implicit_access: false,
       joined_at: '',
       granted_by: null,
@@ -72,8 +72,8 @@ const DEMO_ACCESS: ProjectAccessResponse = {
       user_id: 'u5',
       email: 'chen@kortix.ai',
       account_role: 'member',
-      project_role: 'member',
-      effective_project_role: 'member',
+      workspace_role: 'member',
+      effective_workspace_role: 'member',
       has_implicit_access: false,
       joined_at: '',
       granted_by: null,
@@ -84,14 +84,14 @@ const DEMO_ACCESS: ProjectAccessResponse = {
 };
 
 const client = new QueryClient();
-client.setQueryData(qk.project.access(DEMO_PROJECT), DEMO_ACCESS);
+client.setQueryData(qk.workspace.access(DEMO_WORKSPACE), DEMO_ACCESS);
 
 function Panel({ title }: { title: string }) {
   const [value, setValue] = useState<SharingSelection>({ mode: 'members', memberIds: ['u2'], groupIds: [] });
   return (
     <div className="border-border/60 bg-card w-[420px] rounded-2xl border p-5">
       <h2 className="text-foreground mb-3 text-base font-semibold">{title}</h2>
-      <SharingPicker projectId={DEMO_PROJECT} value={value} onChange={setValue} />
+      <SharingPicker workspaceId={DEMO_WORKSPACE} value={value} onChange={setValue} />
       <pre className="bg-muted text-muted-foreground mt-4 rounded-lg px-3 py-2 text-xs">
         {JSON.stringify(value)}
       </pre>

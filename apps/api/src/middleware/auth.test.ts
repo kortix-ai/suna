@@ -11,15 +11,15 @@ import * as realSsoSync from '../iam/sso-sync';
 // the exact shape the security bug needs: a project-scoped PAT for project A
 // hitting project B's sandbox must be 403'd even though both projects (and
 // both sandboxes) belong to the same account.
-const PROJECT_A = 'project-aaa';
-const PROJECT_B = 'project-bbb';
+const WORKSPACE_A = 'project-aaa';
+const WORKSPACE_B = 'project-bbb';
 const SANDBOX_A = 'sandbox-for-a';
 const SANDBOX_B = 'sandbox-for-b';
 const ACCOUNT = 'acct-shared';
 
-const sandboxProjectByOwnSandboxId: Record<string, string> = {
-  [SANDBOX_A]: PROJECT_A,
-  [SANDBOX_B]: PROJECT_B,
+const sandboxWorkspaceByOwnSandboxId: Record<string, string> = {
+  [SANDBOX_A]: WORKSPACE_A,
+  [SANDBOX_B]: WORKSPACE_B,
 };
 
 mock.module('../shared/crypto', () => ({
@@ -35,7 +35,7 @@ mock.module('../repositories/account-tokens', () => ({
         isValid: true,
         userId: 'user-1',
         accountId: ACCOUNT,
-        projectId: PROJECT_A,
+        workspaceId: WORKSPACE_A,
         tokenId: 'tok-a',
       };
     }
@@ -78,8 +78,8 @@ mock.module('../shared/supabase', () => ({
 mock.module('../shared/preview-ownership', () => ({
   ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
-  resolveSandboxProjectId: async (sandboxId: string) =>
-    sandboxProjectByOwnSandboxId[sandboxId] ?? null,
+  resolveSandboxWorkspaceId: async (sandboxId: string) =>
+    sandboxWorkspaceByOwnSandboxId[sandboxId] ?? null,
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -103,14 +103,14 @@ function appWithProbe() {
   app.get('/v1/p/:sandboxId/:port/*', (c) =>
     c.json({
       userId: c.get('userId' as never),
-      tokenProjectId: c.get('tokenProjectId' as never),
+      tokenWorkspaceId: c.get('tokenWorkspaceId' as never),
     }),
   );
-  app.get('/v1/projects/:projectId', (c) =>
-    c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
+  app.get('/v1/projects/:workspaceId', (c) =>
+    c.json({ userId: c.get('userId' as never), workspaceId: c.req.param('workspaceId') }),
   );
-  app.get('/v1/connectors/projects/:projectId/catalog', (c) =>
-    c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
+  app.get('/v1/connectors/projects/:workspaceId/catalog', (c) =>
+    c.json({ userId: c.get('userId' as never), workspaceId: c.req.param('workspaceId') }),
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
   app.get('/v1/skills/:name', (c) => c.json({ ok: true, name: c.req.param('name') }));
@@ -129,7 +129,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.userId).toBe('user-1');
-    expect(body.tokenProjectId).toBe(PROJECT_A);
+    expect(body.tokenWorkspaceId).toBe(WORKSPACE_A);
   });
 
   test("CANNOT reach another project's sandbox (403, cross-project blocked)", async () => {
@@ -139,7 +139,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
 
     expect(res.status).toBe(403);
     expect(await res.text()).toContain(
-      'Project-scoped token cannot access a sandbox outside its project',
+      'Workspace-scoped token cannot access a sandbox outside its project',
     );
   });
 
@@ -157,39 +157,39 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(await res.text()).toContain('Project-scoped token cannot call account-level routes');
+    expect(await res.text()).toContain('Workspace-scoped token cannot call account-level routes');
   });
 
   test('project-scoped PAT still works unchanged on its own /v1/projects/:id/* REST routes', async () => {
-    const res = await appWithProbe().request(`/v1/projects/${PROJECT_A}`, {
+    const res = await appWithProbe().request(`/v1/projects/${WORKSPACE_A}`, {
       headers: { Authorization: 'Bearer kortix_pat_project_a' },
     });
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.projectId).toBe(PROJECT_A);
+    expect(body.workspaceId).toBe(WORKSPACE_A);
   });
 
   test('project-scoped PAT can reach its own canonical /v1/connectors/projects/:id/* routes', async () => {
-    const res = await appWithProbe().request(`/v1/connectors/projects/${PROJECT_A}/catalog`, {
+    const res = await appWithProbe().request(`/v1/connectors/projects/${WORKSPACE_A}/catalog`, {
       headers: { Authorization: 'Bearer kortix_pat_project_a' },
     });
 
     expect(res.status).toBe(200);
-    expect((await res.json()).projectId).toBe(PROJECT_A);
+    expect((await res.json()).workspaceId).toBe(WORKSPACE_A);
   });
 
   test('project-scoped PAT cannot reach another project through connector routes', async () => {
-    const res = await appWithProbe().request(`/v1/connectors/projects/${PROJECT_B}/catalog`, {
+    const res = await appWithProbe().request(`/v1/connectors/projects/${WORKSPACE_B}/catalog`, {
       headers: { Authorization: 'Bearer kortix_pat_project_a' },
     });
 
     expect(res.status).toBe(403);
-    expect(await res.text()).toContain('Project-scoped token cannot access a different project');
+    expect(await res.text()).toContain('Workspace-scoped token cannot access a different project');
   });
 
   // The in-sandbox `KORTIX_CLI_TOKEN` IS a project+session-scoped PAT, and
-  // enforceTokenProjectScope is default-deny. /v1/skills shipped without an
+  // enforceTokenWorkspaceScope is default-deny. /v1/skills shipped without an
   // allowlist entry, so the one caller the system skills exist for — an agent
   // in a sandbox running the `kortix skills get <name>` that every baked image
   // seeds — got a 403. Nothing caught it: the routes' own unit test mounts the
@@ -232,6 +232,6 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.userId).toBe('user-1');
-    expect(body.tokenProjectId).toBeFalsy();
+    expect(body.tokenWorkspaceId).toBeFalsy();
   });
 });

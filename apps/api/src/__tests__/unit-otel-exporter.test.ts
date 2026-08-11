@@ -35,7 +35,7 @@ describe('OTLP trace exporter', () => {
       '/v1/projects/project-1/sessions/session-1',
       async () => {
         setContextField('accountId', 'account-1');
-        setContextField('projectId', 'project-1');
+        setContextField('workspaceId', 'project-1');
         setContextField('sessionId', 'session-1');
         const ok = await emitOtelSpan({
           name: 'GET /v1/projects/project-1/sessions/session-1',

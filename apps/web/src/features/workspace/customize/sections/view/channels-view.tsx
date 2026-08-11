@@ -63,10 +63,10 @@ import {
   useTeamsInstall,
   useTeamsMode,
 } from '@/hooks/channels/use-teams-installations';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import { cn } from '@/lib/utils';
-import { getProject, listProjectAccess } from '@kortix/sdk';
+import { listWorkspaceAccess } from '@kortix/sdk';
 import {
   type Agent,
   contract,
@@ -100,26 +100,26 @@ const SLACK_MANIFEST_STEPS = [
   'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
 ];
 
-export function ChannelsView({ projectId }: { projectId: string | null }) {
+export function ChannelsView({ workspaceId }: { workspaceId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  // This view used to read the flags off the project SUMMARY query
-  // (`qk.project.summary` / `getProject`, whose payload nests them one level
+  // This view used to read the flags off the workspace SUMMARY query
+  // (`qk.workspace.summary` / `getWorkspace`, whose payload nests them one level
   // shallower). It now reads the one gating primitive, which is backed by
-  // `qk.project.detail` — the entry the Customize panel that hosts this view
+  // `qk.workspace.detail` — the entry the Customize panel that hosts this view
   // already holds, so the switch removes a fetch rather than adding one.
   //
   // The LOADING semantics are preserved deliberately: unlike its siblings, this
   // surface WAITS on the flag before painting (`emailFlag.isLoading` feeds
   // `loading` below), so the header action cannot flash the wrong state, and
   // `useEmailInstall` stays unfired until the flag resolves.
-  const emailFlag = useFeatureFlag(projectId, 'agentmail_email');
-  const teamsFlag = useFeatureFlag(projectId, 'teams');
+  const emailFlag = useFeatureFlag(workspaceId, 'agentmail_email');
+  const teamsFlag = useFeatureFlag(workspaceId, 'teams');
   const emailChannelEnabled = emailFlag.enabled;
   const teamsChannelEnabled = teamsFlag.enabled;
-  const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
-  const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
+  const { data: install, isLoading: loadingInstall } = useSlackInstall(workspaceId);
+  const { data: mode, isLoading: loadingMode } = useSlackMode(workspaceId);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
-    emailChannelEnabled ? projectId : null,
+    emailChannelEnabled ? workspaceId : null,
     EMAIL_CONNECTOR_SLUG,
   );
   const loading =
@@ -130,7 +130,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
     (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
+    useWorkspaceCan(workspaceId ?? undefined, WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE).allowed === true;
 
   return (
     <CustomizeSectionWrapper
@@ -139,7 +139,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
         'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db',
       )}
       action={
-        canWrite && projectId && !loading && !install && oauthInstallUrl ? (
+        canWrite && workspaceId && !loading && !install && oauthInstallUrl ? (
           <Button size="sm" variant="secondary" asChild>
             <Link href={oauthInstallUrl} target="_blank" rel="noopener noreferrer">
               {tI18nHardcoded.raw(
@@ -151,7 +151,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
       }
     >
       <div className="space-y-4">
-        {!projectId ? (
+        {!workspaceId ? (
           <InfoBanner tone="neutral">
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220',
@@ -175,7 +175,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                 'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf7c5e4adb',
               )}
             />
-            <BringYourOwnPanel projectId={projectId} inline />
+            <BringYourOwnPanel workspaceId={workspaceId} inline />
           </div>
         ) : (
           <>
@@ -203,20 +203,20 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               </TableHeader>
               <TableBody>
                 <SlackChannelRow
-                  projectId={projectId}
+                  workspaceId={workspaceId}
                   installation={install ?? null}
                   oauthInstallUrl={oauthInstallUrl}
                   canWrite={canWrite}
                 />
                 {emailChannelEnabled ? (
                   <EmailChannelRow
-                    projectId={projectId}
+                    workspaceId={workspaceId}
                     installation={emailInstall ?? null}
                     canWrite={canWrite}
                   />
                 ) : null}
                 {teamsChannelEnabled ? (
-                  <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
+                  <TeamsChannelRow workspaceId={workspaceId} canWrite={canWrite} />
                 ) : null}
               </TableBody>
             </Table>
@@ -239,16 +239,16 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                 </p>
               </InfoBanner>
             ) : oauthInstallUrl ? (
-              <BringYourOwnPanel projectId={projectId} />
+              <BringYourOwnPanel workspaceId={workspaceId} />
             ) : null}
 
             {teamsChannelEnabled ? (
               <div className="border-border/60 border-t pt-6">
-                <TeamsChannelPanel projectId={projectId} />
+                <TeamsChannelPanel workspaceId={workspaceId} />
               </div>
             ) : null}
 
-            {install ? <ChannelBindingsSection projectId={projectId} canWrite={canWrite} /> : null}
+            {install ? <ChannelBindingsSection workspaceId={workspaceId} canWrite={canWrite} /> : null}
           </>
         )}
       </div>
@@ -262,8 +262,8 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
  * the only other way to change these is the in-Slack `/kortix agent|model|policy`
  * commands; this edits the same row through `PATCH …/channels/bindings/:id`.
  */
-function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
-  const bindingsQuery = useChannelBindings(projectId);
+function ChannelBindingsSection({ workspaceId, canWrite }: { workspaceId: string; canWrite: boolean }) {
+  const bindingsQuery = useChannelBindings(workspaceId);
   const bindings = bindingsQuery.data?.bindings ?? [];
 
   if (bindingsQuery.isLoading) {
@@ -281,7 +281,7 @@ function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; ca
       <Label>Channel bindings</Label>
       <p className="text-muted-foreground text-xs">
         Which agent, model, and join policy each connected channel uses. A channel with no override
-        follows the project default.
+        follows the workspace default.
       </p>
       <Table>
         <TableHeader>
@@ -296,9 +296,9 @@ function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; ca
           {bindings.map((b) => (
             <ChannelBindingTableRow
               key={b.bindingId}
-              projectId={projectId}
+              workspaceId={workspaceId}
               binding={b}
-              projectDefaultAgent={bindingsQuery.data?.projectDefaultAgent ?? null}
+              workspaceDefaultAgent={bindingsQuery.data?.workspaceDefaultAgent ?? null}
               canWrite={canWrite}
             />
           ))}
@@ -310,14 +310,14 @@ function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; ca
 
 const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> =
   [
-    { value: 'project_open', label: 'Project members can join' },
+    { value: 'workspace_open', label: 'Workspace members can join' },
     { value: 'owner_only', label: 'Owner only' },
     { value: 'owner_approval', label: 'Owner approval' },
   ];
 
-/** Label for the synthetic agent-picker entry meaning "inherit the project's default agent". */
-function agentDefaultLabel(projectDefaultAgent: string | null): string {
-  return projectDefaultAgent ? `Project default (${projectDefaultAgent})` : 'Project default';
+/** Label for the synthetic agent-picker entry meaning "inherit the workspace's default agent". */
+function agentDefaultLabel(workspaceDefaultAgent: string | null): string {
+  return workspaceDefaultAgent ? `Workspace default (${workspaceDefaultAgent})` : 'Workspace default';
 }
 
 /** Bare model id → the compact form callers below already assume (`kortix/x` → `x`). */
@@ -339,23 +339,23 @@ function describeEffectiveModel(binding: ChannelBinding): string {
       : `${label} (unavailable — using default)`;
   }
   const resolved = binding.effectiveModel.model;
-  return resolved ? `Project default (${stripOpencodeNamespace(resolved)})` : 'Project default';
+  return resolved ? `Workspace default (${stripOpencodeNamespace(resolved)})` : 'Workspace default';
 }
 
 function ChannelBindingTableRow({
-  projectId,
+  workspaceId,
   binding,
-  projectDefaultAgent,
+  workspaceDefaultAgent,
   canWrite,
 }: {
-  projectId: string;
+  workspaceId: string;
   binding: ChannelBinding;
-  projectDefaultAgent: string | null;
+  workspaceDefaultAgent: string | null;
   canWrite: boolean;
 }) {
   const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
+    queryKey: qk.workspace.access(workspaceId),
+    queryFn: () => listWorkspaceAccess(workspaceId),
     ...contract('inventory'),
   });
   // `can_manage` is the coarse project-manage flag; AND it with the real
@@ -364,14 +364,14 @@ function ChannelBindingTableRow({
   const canManage = Boolean(accessQuery.data?.can_manage) && canWrite;
 
   // Same agent source as the chat input / schedules pickers (spec: "use the
-  // same component everywhere"). `projectId` does a server-side fetch of the
+  // same component everywhere"). `workspaceId` does a server-side fetch of the
   // declared manifest agents — no live sandbox/session required, so it works
   // on a settings page with nothing running.
-  const visibleAgents = useVisibleAgents({ projectId });
+  const visibleAgents = useVisibleAgents({ workspaceId });
   const agentSelectorAgents = useMemo<Agent[]>(() => {
     const defaultEntry = {
-      name: agentDefaultLabel(projectDefaultAgent),
-      description: "Falls back to the project's configured default agent.",
+      name: agentDefaultLabel(workspaceDefaultAgent),
+      description: "Falls back to the workspace's configured default agent.",
       mode: 'primary',
       permission: {},
       options: {},
@@ -391,8 +391,8 @@ function ChannelBindingTableRow({
           ]
         : [];
     return [defaultEntry, ...visibleAgents, ...missingCurrent];
-  }, [visibleAgents, projectDefaultAgent, binding.agentName]);
-  const selectedAgentValue = binding.agentName ?? agentDefaultLabel(projectDefaultAgent);
+  }, [visibleAgents, workspaceDefaultAgent, binding.agentName]);
+  const selectedAgentValue = binding.agentName ?? agentDefaultLabel(workspaceDefaultAgent);
 
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
@@ -418,9 +418,9 @@ function ChannelBindingTableRow({
             onSelect={(v) =>
               update.mutate(
                 {
-                  projectId,
+                  workspaceId,
                   bindingId: binding.bindingId,
-                  agentName: !v || v === agentDefaultLabel(projectDefaultAgent) ? null : v,
+                  agentName: !v || v === agentDefaultLabel(workspaceDefaultAgent) ? null : v,
                 },
                 {
                   onSuccess: () => successToast('Channel agent updated'),
@@ -440,11 +440,11 @@ function ChannelBindingTableRow({
                 models={models}
                 providers={providers}
                 selectedModel={selectedModel}
-                unsetLabel="Project default"
+                unsetLabel="Workspace default"
                 onSelect={(m) =>
                   update.mutate(
                     {
-                      projectId,
+                      workspaceId,
                       bindingId: binding.bindingId,
                       opencodeModel: m ? modelKeyToWire(m) : null,
                     },
@@ -472,7 +472,7 @@ function ChannelBindingTableRow({
           onValueChange={(v) =>
             update.mutate(
               {
-                projectId,
+                workspaceId,
                 bindingId: binding.bindingId,
                 conversationPolicy: v as ChannelBinding['conversationPolicy'],
               },
@@ -505,12 +505,12 @@ function errorToastFallback(error: unknown) {
 }
 
 function SlackChannelRow({
-  projectId,
+  workspaceId,
   installation,
   oauthInstallUrl,
   canWrite,
 }: {
-  projectId: string;
+  workspaceId: string;
   installation: SlackInstallation | null;
   oauthInstallUrl: string | null;
   canWrite: boolean;
@@ -564,7 +564,7 @@ function SlackChannelRow({
                 size="sm"
                 disabled={disconnect.isPending}
                 onClick={() =>
-                  disconnect.mutate(projectId, {
+                  disconnect.mutate(workspaceId, {
                     onSuccess: () => setConfirming(false),
                   })
                 }
@@ -596,9 +596,9 @@ function SlackChannelRow({
   );
 }
 
-function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
-  const { data: install } = useTeamsInstall(projectId);
-  const { data: mode } = useTeamsMode(projectId);
+function TeamsChannelRow({ workspaceId, canWrite }: { workspaceId: string; canWrite: boolean }) {
+  const { data: install } = useTeamsInstall(workspaceId);
+  const { data: mode } = useTeamsMode(workspaceId);
   const disconnect = useDisconnectTeams();
   const [confirming, setConfirming] = useState(false);
 
@@ -645,7 +645,7 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
                 size="sm"
                 disabled={disconnect.isPending}
                 onClick={() =>
-                  disconnect.mutate(projectId, {
+                  disconnect.mutate(workspaceId, {
                     onSuccess: () => setConfirming(false),
                   })
                 }
@@ -687,11 +687,11 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
 }
 
 function EmailChannelRow({
-  projectId,
+  workspaceId,
   installation,
   canWrite,
 }: {
-  projectId: string;
+  workspaceId: string;
   installation: EmailInstallation | null;
   canWrite: boolean;
 }) {
@@ -746,7 +746,7 @@ function EmailChannelRow({
                   disabled={disconnect.isPending}
                   onClick={() =>
                     disconnect.mutate(
-                      { projectId, connectorSlug: EMAIL_CONNECTOR_SLUG },
+                      { workspaceId, connectorSlug: EMAIL_CONNECTOR_SLUG },
                       {
                         onSuccess: () => {
                           setConfirming(false);
@@ -789,7 +789,7 @@ function EmailChannelRow({
           </ModalHeader>
           <ModalBody className="max-h-[75vh] overflow-y-auto">
             <EmailConnectForm
-              projectId={projectId}
+              workspaceId={workspaceId}
               connectorSlug={EMAIL_CONNECTOR_SLUG}
               onConnected={() => {
                 setConnectOpen(false);
@@ -826,7 +826,7 @@ function ConnectedDetails() {
   );
 }
 
-function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; inline?: boolean }) {
+function BringYourOwnPanel({ workspaceId, inline = false }: { workspaceId: string; inline?: boolean }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
@@ -835,7 +835,7 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
   const [signingSecret, setSigningSecret] = useState('');
   const [error, setError] = useState<string | null>(null);
   const connect = useConnectSlack();
-  const manifest = useSlackManifest(projectId);
+  const manifest = useSlackManifest(workspaceId);
 
   const manifestText = manifest.data ?? '';
 
@@ -850,7 +850,7 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
     setError(null);
     connect.mutate(
       {
-        projectId,
+        workspaceId,
         bot_token: botToken.trim(),
         signing_secret: signingSecret.trim(),
       },

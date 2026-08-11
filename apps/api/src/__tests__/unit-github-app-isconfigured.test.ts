@@ -32,8 +32,8 @@ mock.module('../platform/services/managed-github-app', () => ({
   },
 }));
 
-const { isGithubAppConfigured } = await import('../projects/github');
-const { githubBackend, managedGithubOwner } = await import('../projects/git-backends/github');
+const { isGithubAppConfigured } = await import('../workspaces/github');
+const { githubBackend, managedGithubOwner } = await import('../workspaces/git-backends/github');
 
 const ENV_KEYS = [
   'KORTIX_GITHUB_APP_ID',

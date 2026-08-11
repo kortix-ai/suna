@@ -32,7 +32,7 @@ describe('sessionScopeRows', () => {
       row('secrets', { secretsAllowlist: null, agentName: 'support' }).value,
     ).toBe('Everything support is granted');
     expect(row('secrets', { secretsAllowlist: [] }).value).toBe(
-      'No project secrets',
+      'No workspace secrets',
     );
   });
 
@@ -55,7 +55,7 @@ describe('sessionScopeRows', () => {
     expect(scoped.detail).toContain('connector access');
     expect(scoped.detail).toContain('Kortix CLI access');
     expect(scoped.detail).toContain('support');
-    expect(row('agent').value).toBe('The project default agent');
+    expect(row('agent').value).toBe('The workspace default agent');
   });
 
   test('the model row carries the control instead of a duplicated value', () => {
@@ -75,11 +75,11 @@ describe('sessionScopeRows', () => {
     ).toBe('slack: Support, gmail: Team inbox');
   });
 
-  test('nothing bound reads as the project default, not as "no connectors"', () => {
+  test('nothing bound reads as the workspace default, not as "no connectors"', () => {
     expect(row('connections').value).toBe(
-      'The project default for every connector',
+      'The workspace default for every connector',
     );
-    expect(row('connections').detail).toContain('project connection');
+    expect(row('connections').detail).toContain('workspace connection');
     expect(row('connections').detail.toLowerCase()).not.toContain(
       'team authorization',
     );

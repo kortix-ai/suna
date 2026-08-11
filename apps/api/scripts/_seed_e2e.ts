@@ -60,9 +60,9 @@ async function waitRuntimeReady(baseUrl: string, timeoutMs = 120_000): Promise<n
   return -1;
 }
 
-async function runSession(projectId: string, label: string) {
+async function runSession(workspaceId: string, label: string) {
   const t0 = now();
-  const ses: any = await (await fetch(`${BASE}/v1/projects/${projectId}/sessions`, {
+  const ses: any = await (await fetch(`${BASE}/v1/projects/${workspaceId}/sessions`, {
     method: 'POST', headers: H, body: JSON.stringify({ branch_already_created: false }),
   })).json();
   if (!ses.session_id) { console.log(`[${label}] SESSION FAILED: ${JSON.stringify(ses).slice(0, 200)}`); return null; }
@@ -76,7 +76,7 @@ async function runSession(projectId: string, label: string) {
   // chat unlocks when it returns a pin. Seeds pre-create the root opencode
   // session, so this should be 'healed' in <500ms (was ~2.2s 'created').
   const tEnsure = now();
-  const ens: any = await (await fetch(`${BASE}/v1/projects/${projectId}/sessions/${ses.session_id}/ensure-opencode`, {
+  const ens: any = await (await fetch(`${BASE}/v1/projects/${workspaceId}/sessions/${ses.session_id}/ensure-opencode`, {
     method: 'POST', headers: H, body: '{}',
   })).json().catch(() => ({}));
   const ensureMs = now() - tEnsure;

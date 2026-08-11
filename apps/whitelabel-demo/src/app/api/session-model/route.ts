@@ -13,7 +13,7 @@
  */
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { isOwner, isValidProjectId } from '@/server/users';
+import { isOwner, isValidWorkspaceId } from '@/server/users';
 import { createScopedKortix } from '@kortix/sdk/server';
 import type { NextRequest } from 'next/server';
 
@@ -41,20 +41,20 @@ async function scoped(req: NextRequest) {
   if (!limited.ok) return { error: Response.json({ error: 'Rate limited' }, { status: 429 }) };
 
   const url = new URL(req.url);
-  const projectId = url.searchParams.get('projectId') ?? '';
+  const workspaceId = url.searchParams.get('workspaceId') ?? '';
   const sessionId = url.searchParams.get('sessionId') ?? '';
   // Validate before interpolating into an upstream path, and check ownership
   // before touching anything — both are house rules for this boundary.
-  if (!isValidProjectId(projectId) || !UUID.test(sessionId)) {
+  if (!isValidWorkspaceId(workspaceId) || !UUID.test(sessionId)) {
     return { error: Response.json({ error: 'Invalid identifiers' }, { status: 400 }) };
   }
-  if (!isOwner(session.userId, projectId)) {
+  if (!isOwner(session.userId, workspaceId)) {
     return { error: Response.json({ error: 'Not found' }, { status: 404 }) };
   }
 
   return {
     kortix: createScopedKortix({ backendUrl: upstreamBase(), getToken: async () => apiKey }),
-    projectId,
+    workspaceId,
     sessionId,
   };
 }
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
   if ('error' in ctx) return ctx.error;
 
   try {
-    const session = await ctx.kortix.session(ctx.projectId, ctx.sessionId).get();
+    const session = await ctx.kortix.session(ctx.workspaceId, ctx.sessionId).get();
     const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
     const model = metadata.opencode_model;
     return Response.json({ model: typeof model === 'string' ? model : null });
@@ -87,7 +87,7 @@ export async function PUT(req: NextRequest) {
   if (!model) return Response.json({ error: 'model is required' }, { status: 400 });
 
   try {
-    const result = await ctx.kortix.session(ctx.projectId, ctx.sessionId).changeModel(model);
+    const result = await ctx.kortix.session(ctx.workspaceId, ctx.sessionId).changeModel(model);
     // `pushFailed` rides through: the write succeeded (hence 200), but a
     // REQUIRED live push may not have. Dropping it here is what made the UI
     // report a half-applied change as saved. See classifyModelChange.

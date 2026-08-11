@@ -24,16 +24,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { CatalogTab } from './catalog-tab';
 import { ConnectedTab } from './connected-tab';
 import { ModelsTab } from './models-tab';
-import type { ActiveTab, CatalogSubview, ProjectProviderModalProps } from './types';
+import type { ActiveTab, CatalogSubview, WorkspaceProviderModalProps } from './types';
 import { useConnectedProviders } from './use-connected-providers';
 import { pickInitialTab } from './utils';
 
-export type { ProjectProviderModalProps } from './types';
+export type { WorkspaceProviderModalProps } from './types';
 
 const CONNECTION_REFRESH_TIMEOUT_MS = 45_000;
 
-export function ProjectProviderModal({
-  projectId,
+export function WorkspaceProviderModal({
+  workspaceId,
   open,
   onOpenChange,
   defaultTab,
@@ -41,10 +41,10 @@ export function ProjectProviderModal({
   asPanel = false,
   allowedTabs,
   canWrite = false,
-}: ProjectProviderModalProps) {
+}: WorkspaceProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { connectedProviders, llmGatewayEnabled, providerStateLoading } = useConnectedProviders(
-    projectId,
+  const { connectedProviders, providerStateLoading } = useConnectedProviders(
+    workspaceId,
     open || asPanel,
   );
   const hasConnections = connectedProviders.length > 0;
@@ -206,7 +206,7 @@ export function ProjectProviderModal({
           <>
             <TabsContent value="connected" className="mt-0">
               <ConnectedTab
-                projectId={projectId}
+                workspaceId={workspaceId}
                 connectedProviders={connectedProviders}
                 search={search}
                 canWrite={canWrite}
@@ -216,7 +216,7 @@ export function ProjectProviderModal({
 
             <TabsContent value="catalog" className="mt-0">
               <CatalogTab
-                projectId={projectId}
+                workspaceId={workspaceId}
                 connectedIds={new Set(connectedProviders.map((p) => p.id))}
                 search={search}
                 subview={subview}
@@ -227,7 +227,7 @@ export function ProjectProviderModal({
             </TabsContent>
 
             <TabsContent value="models" className="mt-0">
-              <ModelsTab projectId={projectId} search={search} />
+              <ModelsTab workspaceId={workspaceId} search={search} />
             </TabsContent>
           </>
         )}

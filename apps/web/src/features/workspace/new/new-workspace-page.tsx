@@ -8,12 +8,12 @@ import { useMemo, useState } from 'react';
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 
-import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
+import { WorkspaceOnboardingWizard } from '@/components/workspaces/workspace-onboarding-wizard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
+import { WorkspaceIconField } from '@/features/workspaces/modal/workspace-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
@@ -73,7 +73,7 @@ const ICON_WIDTH = '2.5rem';
  * This page issues no MUTATING request on mount. Visiting `/new` never
  * creates anything — the only write it ever fires is the one the submit
  * button drives, routed through `useCreateWorkspace` (`use-create-workspace.ts`),
- * which POSTs `/projects/provision` with a stable `idempotency_key`. A page
+ * which POSTs `/workspaces/provision` with a stable `idempotency_key`. A page
  * that creates something because you looked at it is a page nobody can link
  * to safely.
  *
@@ -102,12 +102,12 @@ const ICON_WIDTH = '2.5rem';
  * the button as "the thing you press".
  *
  * There is no slug or URL field. `POST /provision` derives the repo slug as
- * `${baseSlug}-${projectId}` precisely so two workspaces can share a name —
+ * `${baseSlug}-${workspaceId}` precisely so two workspaces can share a name —
  * there is no uniqueness constraint to validate against and no availability
  * check to run. This component holds no validation rules of its own; both the
  * charset/length check and the submit gate come from the shared form model.
  *
- * `/new` is also where `/projects` sends an account with zero workspaces
+ * `/new` is also where `/workspaces` sends an account with zero workspaces
  * (Task 8), so a user must never be trapped here — the create-into account
  * picker (or email fallback) sits top-left and a `Log out` control sits
  * top-right, independent of the form below.
@@ -120,7 +120,7 @@ export function NewWorkspacePage() {
   // Same `useSearchParams()` result the clone param reads — one subscription,
   // two params. Non-null only between "the workspace was created" and "the
   // user finished or skipped onboarding for it".
-  const onboardingProjectId = readOnboardingParam(
+  const onboardingWorkspaceId = readOnboardingParam(
     new URLSearchParams(searchParams?.toString() ?? ''),
   );
 
@@ -144,7 +144,7 @@ export function NewWorkspacePage() {
    * seam. Deriving it here rather than testing both conditions at the JSX also
    * means the two can never drift into a state that renders neither branch.
    */
-  const handingOff = submitting || Boolean(onboardingProjectId);
+  const handingOff = submitting || Boolean(onboardingWorkspaceId);
 
   // Only surface a name error after the field has been left once. Validating
   // on the first keystroke would tell the user "Name is required" while they
@@ -255,7 +255,7 @@ export function NewWorkspacePage() {
           already exists, so the create form has nothing left to say — and on a
           RELOAD the create hook restarts at `status: 'idle'`, so `submitting`
           alone would paint the live form (Name input, `autoFocus`, fully
-          interactive) in the window before `getProjectDetail` settles. A user
+          interactive) in the window before `getWorkspaceDetail` settles. A user
           who reloaded mid-onboarding could type into it, and if `['accounts']`
           resolved first, Enter fired a SECOND `runCreate`.
 
@@ -275,7 +275,7 @@ export function NewWorkspacePage() {
             {/* `state.name` survives the whole handoff — this component is a
                 sibling of the form in the same render, not a route away — so
                 the name shown is the one submitted, never re-fetched. */}
-            <WorkspaceHandoff workspaceName={state.name.trim()} projectId={onboardingProjectId} />
+            <WorkspaceHandoff workspaceName={state.name.trim()} workspaceId={onboardingWorkspaceId} />
           </m.div>
         ) : (
           <m.div
@@ -367,7 +367,7 @@ export function NewWorkspacePage() {
                     inert={!showIcon ? true : undefined}
                     className="overflow-hidden"
                   >
-                    <ProjectIconField
+                    <WorkspaceIconField
                       value={state.icon}
                       onChange={(emoji) => setState((s) => ({ ...s, icon: { emoji } }))}
                       onGlyphChange={(glyph) => setState((s) => ({ ...s, icon: { glyph } }))}
@@ -481,22 +481,26 @@ export function NewWorkspacePage() {
           portal, so whenever it mounts it covers the handoff above — which is
           exactly why the handoff has no "finished" state of its own to render.
 
-          `key` on the project: `index`, `domain` and the survey `answers` are
-          plain `useState` inside the wizard, none keyed on the project, so a
+          `key` on the workspace: `index`, `domain` and the survey `answers` are
+          plain `useState` inside the wizard, none keyed on the workspace, so a
           change of id on a mounted instance would PATCH workspace A's answers
           onto workspace B. */}
-      {onboardingProjectId && (
-        <ProjectOnboardingWizard
-          key={onboardingProjectId}
-          projectId={onboardingProjectId}
-          onCompleted={() => router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)}
-          onSkip={() => router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)}
+      {onboardingWorkspaceId && (
+        <WorkspaceOnboardingWizard
+          key={onboardingWorkspaceId}
+          workspaceId={onboardingWorkspaceId}
+          onCompleted={() =>
+            router.replace(`/workspaces/${encodeURIComponent(onboardingWorkspaceId)}`)
+          }
+          onSkip={() =>
+            router.replace(`/workspaces/${encodeURIComponent(onboardingWorkspaceId)}`)
+          }
         />
       )}
 
       {/* The plan step's "See plans" option calls `openUpgrade()`, which needs a
           mounted `GlobalUpgradeModal` to answer it. The other hosts are
-          `AppProviders` (mounted by `project-shell.tsx` and the share page,
+          `AppProviders` (mounted by `workspace-shell.tsx` and the share page,
           never by `app/(app)/layout.tsx`) and `accounts/[id]/page.tsx`, which
           mounts one bare — the precedent that this mount follows. Neither
           covers `/new`, so billing can be enabled here with no host at all and

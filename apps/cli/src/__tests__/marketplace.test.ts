@@ -200,7 +200,7 @@ describe('kortix marketplace', () => {
   test('starts an agent-driven install session for a marketplace item', async () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      expect(url).toBe('https://api.test/v1/projects/project-1/marketplace/install-session');
+      expect(url).toBe('https://api.test/v1/workspaces/project-1/marketplace/install-session');
       expect(init?.method).toBe('POST');
       expect(JSON.parse(String(init?.body))).toEqual({ id: 'kortix-starter:pdf' });
       return new Response(

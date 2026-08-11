@@ -2,17 +2,17 @@
 
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useProjectConfig } from '@kortix/sdk/react';
+import { useWorkspaceConfig } from '@kortix/sdk/react';
 import { Bot, type LucideIcon, Slash, Sparkles } from 'lucide-react';
 
 /**
- * Read-only view of the project's server-side capabilities — agents, slash
- * commands, and skills — all from `useProjectConfig` (one server fetch, no
+ * Read-only view of the workspace's server-side capabilities — agents, slash
+ * commands, and skills — all from `useWorkspaceConfig` (one server fetch, no
  * runtime). The same source powers the agent picker + the composer's command
  * menu; this tab just makes the full roster visible.
  */
-export function CapabilitiesTab({ projectId }: { projectId: string }) {
-  const config = useProjectConfig(projectId);
+export function CapabilitiesTab({ workspaceId }: { workspaceId: string }) {
+  const config = useWorkspaceConfig(workspaceId);
   if (!config) return <Skeleton className="h-40 rounded-xl" />;
 
   return (

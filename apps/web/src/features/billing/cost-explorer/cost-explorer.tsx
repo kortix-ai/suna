@@ -15,16 +15,16 @@ import {
 import { resolvePreset, type CostRange, type CostRangePreset } from '@/components/ui/date-range-picker';
 import { IconChevronLeft } from '@/components/ui/kortix-icons';
 import { useCostSummary } from '@/hooks/billing/use-cost-explorer';
-import { useSessionCostDetail, useSessionCostProjects } from '@/hooks/billing/use-session-costs';
+import { useSessionCostDetail, useSessionCostWorkspaces } from '@/hooks/billing/use-session-costs';
 import { cn } from '@/lib/utils';
 
 import { CostLevelShell } from './cost-level-shell';
-import { ProjectsLevel } from './projects-level';
+import { WorkspacesLevel } from './workspaces-level';
 import { SessionsLevel } from './sessions-level';
 import { SessionCostDetailContent } from '../session-cost-detail';
 
 /** The whole explorer's default landing preset — matches `DEFAULT_RANGE_PRESET`
- *  in `projects-level.tsx`'s own `onResetRange`. Kept as a second literal
+ *  in `workspaces-level.tsx`'s own `onResetRange`. Kept as a second literal
  *  (not a shared import) because the two callers reset to it independently:
  *  this one decides what the URL omits, that one decides what a "Reset
  *  range" click resolves to. Same value, deliberately un-shared. */
@@ -40,7 +40,7 @@ function isResolvablePreset(value: string): value is Exclude<CostRangePreset, 'c
  *  which level of Project -> Sessions -> Session is showing. */
 export interface ExplorerState {
   range: CostRange;
-  projectId: string | null;
+  workspaceId: string | null;
   sessionId: string | null;
 }
 
@@ -75,7 +75,7 @@ export interface ExplorerState {
  *
  * Guard: a `session` without a `project` is ignored. Level 3 (the session
  * ledger) has no way to resolve its parent breadcrumb crumb without a
- * project id, so a URL edited (or bookmarked) into that half-formed shape
+ * workspace id, so a URL edited (or bookmarked) into that half-formed shape
  * falls back to level 1 instead of rendering broken.
  */
 export function parseExplorerState(params: URLSearchParams, now: Date): ExplorerState {
@@ -91,11 +91,11 @@ export function parseExplorerState(params: URLSearchParams, now: Date): Explorer
     range = resolvePreset(DEFAULT_RANGE_PRESET, now);
   }
 
-  const projectId = params.get('project');
+  const workspaceId = params.get('workspace');
   const rawSessionId = params.get('session');
-  const sessionId = projectId && rawSessionId ? rawSessionId : null;
+  const sessionId = workspaceId && rawSessionId ? rawSessionId : null;
 
-  return { range, projectId, sessionId };
+  return { range, workspaceId, sessionId };
 }
 
 /** A clock reading held still, and the key it was taken for. */
@@ -113,13 +113,13 @@ export interface ClockAnchor {
  * it is a request for a narrower scope of the *same* window. Keying on the
  * whole URL would re-read the clock there, with two costs:
  *
- *  - **The levels would disagree.** The projects table computes Alpha over the
+ *  - **The levels would disagree.** The workspaces table computes Alpha over the
  *    window that was current when it loaded; the sessions level underneath it
  *    would compute Alpha over that window plus however long the user spent
  *    reading. Both are labelled "Last 30 days", and while a session is actively
  *    spending they need not add up. Two screens disagreeing under one label is
  *    the exact defect this explorer exists to remove.
- *  - **Back would never hit cache.** Returning to the projects level would mint
+ *  - **Back would never hit cache.** Returning to the workspaces level would mint
  *    keys nobody has fetched, so Back means skeletons rather than the instant
  *    restore it implies. `staleTime` cannot help — a new key is a new `Query`
  *    with no data in it.
@@ -199,7 +199,7 @@ export function nextClockAnchor(
  *
  * It takes the raw `URLSearchParams` and calls `explorerClockKey` itself rather
  * than accepting a prepared key. A key parameter is a seam a caller can widen
- * — `useExplorerClockAnchor(explorerClockKey(p) + p.get('project'))` type-checks
+ * — `useExplorerClockAnchor(explorerClockKey(p) + p.get('workspace'))` type-checks
  * and silently restores the per-drill-down re-read this exists to prevent.
  * Owning the derivation makes that unrepresentable instead of merely tested.
  *
@@ -244,8 +244,8 @@ export function serializeExplorerState(state: ExplorerState): URLSearchParams {
     }
   }
 
-  if (state.projectId) {
-    params.set('project', state.projectId);
+  if (state.workspaceId) {
+    params.set('workspace', state.workspaceId);
     if (state.sessionId) params.set('session', state.sessionId);
   }
 
@@ -256,10 +256,10 @@ export function serializeExplorerState(state: ExplorerState): URLSearchParams {
  *  `range`/`from`/`to`/`project`/`session` from the previous state can never
  *  survive next to the freshly serialized ones — `serializeExplorerState` is
  *  additive (it only ever sets keys), so something has to delete first. */
-const EXPLORER_PARAM_KEYS = ['range', 'from', 'to', 'project', 'session'] as const;
+const EXPLORER_PARAM_KEYS = ['range', 'from', 'to', 'workspace', 'session'] as const;
 
 export interface ExplorerCrumb {
-  key: 'usage' | 'project' | 'session';
+  key: 'usage' | 'workspace' | 'session';
   label: string;
   /** True for the crumb representing the level currently showing — rendered
    *  as static text, not a click target (there is nothing deeper to clear). */
@@ -279,32 +279,32 @@ export interface ExplorerCrumb {
  */
 export function buildBreadcrumbCrumbs(
   state: ExplorerState,
-  projectLabel: string | null,
+  workspaceLabel: string | null,
 ): ExplorerCrumb[] {
   const crumbs: ExplorerCrumb[] = [
     {
       key: 'usage',
       label: 'Usage',
-      current: state.projectId === null,
-      target: { range: state.range, projectId: null, sessionId: null },
+      current: state.workspaceId === null,
+      target: { range: state.range, workspaceId: null, sessionId: null },
     },
   ];
 
-  if (state.projectId) {
+  if (state.workspaceId) {
     crumbs.push({
-      key: 'project',
-      label: projectLabel ?? state.projectId.slice(0, 9),
+      key: 'workspace',
+      label: workspaceLabel ?? state.workspaceId.slice(0, 9),
       current: state.sessionId === null,
-      target: { range: state.range, projectId: state.projectId, sessionId: null },
+      target: { range: state.range, workspaceId: state.workspaceId, sessionId: null },
     });
   }
 
-  if (state.projectId && state.sessionId) {
+  if (state.workspaceId && state.sessionId) {
     crumbs.push({
       key: 'session',
       label: state.sessionId.slice(0, 9),
       current: true,
-      target: { range: state.range, projectId: state.projectId, sessionId: state.sessionId },
+      target: { range: state.range, workspaceId: state.workspaceId, sessionId: state.sessionId },
     });
   }
 
@@ -343,18 +343,18 @@ export function firstClickableCrumbIndex(crumbs: readonly ExplorerCrumb[]): numb
  * every finalized entry regardless of the selected window.
  */
 function SessionLedgerLevel({
-  projectId,
+  workspaceId,
   sessionId,
   range,
   onRangeChange,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   range: CostRange;
   onRangeChange: (next: CostRange) => void;
 }) {
-  const summaryQuery = useCostSummary({ projectId, sessionId, from: range.from, to: range.to });
-  const detailQuery = useSessionCostDetail({ projectId, sessionId });
+  const summaryQuery = useCostSummary({ workspaceId, sessionId, from: range.from, to: range.to });
+  const detailQuery = useSessionCostDetail({ workspaceId, sessionId });
 
   return (
     <CostLevelShell
@@ -376,7 +376,7 @@ function SessionLedgerLevel({
 
 /**
  * The Project -> Sessions -> Session cost drill-down. Owns no data itself —
- * each level (`ProjectsLevel`, `SessionsLevel`, `SessionLedgerLevel`) fetches
+ * each level (`WorkspacesLevel`, `SessionsLevel`, `SessionLedgerLevel`) fetches
  * its own — this component owns only the URL-addressable state (level +
  * date window) and the breadcrumb that walks it.
  *
@@ -402,9 +402,10 @@ export function CostExplorer() {
   const now = useExplorerClockAnchor(searchParams);
   const state = parseExplorerState(searchParams, now);
 
-  const projectsQuery = useSessionCostProjects();
-  const projectLabel =
-    projectsQuery.data?.find((project) => project.project_id === state.projectId)?.name ?? null;
+  const workspacesQuery = useSessionCostWorkspaces();
+  const workspaceLabel =
+    workspacesQuery.data?.find((workspace) => workspace.workspace_id === state.workspaceId)?.name ??
+    null;
 
   const pushState = (next: ExplorerState) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -415,11 +416,11 @@ export function CostExplorer() {
   };
 
   const handleRangeChange = (range: CostRange) => pushState({ ...state, range });
-  const handleSelectProject = (projectId: string) =>
-    pushState({ range: state.range, projectId, sessionId: null });
+  const handleSelectWorkspace = (workspaceId: string) =>
+    pushState({ range: state.range, workspaceId, sessionId: null });
   const handleSelectSession = (sessionId: string) => pushState({ ...state, sessionId });
 
-  const crumbs = buildBreadcrumbCrumbs(state, projectLabel);
+  const crumbs = buildBreadcrumbCrumbs(state, workspaceLabel);
   const backIndex = firstClickableCrumbIndex(crumbs);
 
   return (
@@ -443,7 +444,7 @@ export function CostExplorer() {
                         pushes are unchanged. A parent crumb was previously
                         plain text with a pointer cursor, which is invisible to
                         anyone not already moving a mouse over it, so "how do I
-                        get back to all the projects" had no answer on screen.
+                        get back to all the workspaces" had no answer on screen.
 
                         Three additions, each covering a different reader:
                         underline-on-hover for the sighted mouse user, a
@@ -472,25 +473,25 @@ export function CostExplorer() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {state.projectId && state.sessionId ? (
+      {state.workspaceId && state.sessionId ? (
         <SessionLedgerLevel
-          projectId={state.projectId}
+          workspaceId={state.workspaceId}
           sessionId={state.sessionId}
           range={state.range}
           onRangeChange={handleRangeChange}
         />
-      ) : state.projectId ? (
+      ) : state.workspaceId ? (
         <SessionsLevel
-          projectId={state.projectId}
+          workspaceId={state.workspaceId}
           range={state.range}
           onRangeChange={handleRangeChange}
           onSelectSession={handleSelectSession}
         />
       ) : (
-        <ProjectsLevel
+        <WorkspacesLevel
           range={state.range}
           onRangeChange={handleRangeChange}
-          onSelectProject={handleSelectProject}
+          onSelectWorkspace={handleSelectWorkspace}
         />
       )}
     </div>

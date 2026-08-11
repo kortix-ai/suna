@@ -158,7 +158,7 @@ export function parseInstalledCallback(url: string): InstalledCallback {
  * Everything to persist the instant the manifest code is exchanged for real
  * App credentials — written immediately (before install even happens) so a
  * mid-flow abort doesn't lose the freshly-minted app. `KORTIX_GITHUB_APP_ID`
- * / `_PRIVATE_KEY` / `_SLUG` are the exact keys `apps/api/src/projects/github.ts`
+ * / `_PRIVATE_KEY` / `_SLUG` are the exact keys `apps/api/src/workspaces/github.ts`
  * reads; client id/secret/webhook secret aren't read by the API today but are
  * kept so the App can be managed later without regenerating it. The state
  * secret backs `KORTIX_GITHUB_APP_STATE_SECRET`-signed install links
@@ -189,7 +189,7 @@ export function buildAppCredentialsEnvPatch(opts: {
 }
 
 /**
- * The keys `apps/api/src/projects/git-backends/github.ts` reads to treat
+ * The keys `apps/api/src/workspaces/git-backends/github.ts` reads to treat
  * managed git as configured via the App path — and the PAT-path keys it
  * clears so a stale token from a prior `configure` run can never silently
  * shadow the App the operator just connected.

@@ -12,9 +12,9 @@ A trigger starts a [session](/docs/work/sessions) with no person present. Use a 
 Kortix supports two trigger types. There is no third type.
 
 - **cron** — runs on a schedule you set.
-- **webhook** — runs when an external service sends a signed request to the project's webhook URL.
+- **webhook** — runs when an external service sends a signed request to the Workspace webhook URL.
 
-You define triggers in the project manifest, `kortix.yaml`. Each trigger holds a prompt that renders as the fired session's first message. Runtime state — such as the last fire time and status — lives outside the manifest, in the database. Firing a trigger does not create a commit.
+You define triggers in the Workspace manifest, `kortix.yaml`. Each trigger holds a prompt that renders as the fired session's first message. Runtime state, such as the last fire time and status, lives outside the manifest in the database. Firing a trigger does not create a commit.
 
 Creating, updating, or deleting a trigger through the API, SDK, or dashboard writes directly to the default branch. It does not go through a [change request](/docs/work/change-requests) (CR). Editing `kortix.yaml` inside a session and running `kortix ship` follows the normal branch and CR flow instead.
 
@@ -41,7 +41,7 @@ kortix triggers add daily-digest --type cron \
 kortix ship
 ```
 
-`kortix ship` commits `kortix.yaml` and pushes it. The schedule goes live once this lands on your project's default branch.
+`kortix ship` commits `kortix.yaml` and pushes it. The schedule goes live after this lands on the Workspace default branch.
 </Step>
 
 <Step>
@@ -69,7 +69,7 @@ A webhook trigger needs a secret. Kortix uses it to check the signature on every
 kortix secrets set WEBHOOK_SECRET=<a-random-value>
 ```
 
-See [Secrets](/docs/project/secrets) for more on secrets.
+See [Secrets](/docs/workspace/secrets) for more on secrets.
 </Step>
 
 <Step>
@@ -95,10 +95,10 @@ kortix ship
 <Step>
 ### Send it a request
 
-Kortix builds the webhook URL from your project id and the trigger's slug:
+Kortix builds the webhook URL from your Workspace id and the trigger slug:
 
 ```
-POST /v1/webhooks/projects/<project-id>/<slug>
+POST /v1/webhooks/workspaces/<workspace-id>/<slug>
 ```
 
 Send a signed `POST` request to this URL from the external service. Kortix checks the signature against `WEBHOOK_SECRET`, then starts a session with the request body available in the prompt. See [Webhook signature](#webhook-signature) below for the exact header and format.
@@ -113,7 +113,7 @@ By default, each fire starts a fresh session on a new branch. A trigger can inst
 ```yaml
 # kortix.yaml
 triggers:
-  - slug: daily-digest # required, lowercase + dashes, unique per project
+  - slug: daily-digest # required, lowercase + dashes, unique per Workspace
     name: Daily digest # optional, defaults to slug
     type: cron # "cron" | "webhook", required
     agent: kortix # optional, defaults to "default"
@@ -127,13 +127,13 @@ triggers:
     prompt: "Summarize {{ body.text }}" # required, template string
 ```
 
-Legacy `kortix.toml` uses the same fields in a different container; see [legacy TOML](/docs/project/legacy-toml).
+Legacy `kortix.toml` uses the same fields in a different container; see [legacy TOML](/docs/workspace/legacy-toml).
 
 ## Fields
 
 | Field | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `slug` | yes | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. |
+| `slug` | yes | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique per Workspace. |
 | `type` | yes | — | `cron` or `webhook`. |
 | `prompt` | yes | — | Template string. Renders as the session's first message. |
 | `name` | no | `slug` | Human label. |
@@ -147,7 +147,7 @@ Legacy `kortix.toml` uses the same fields in a different container; see [legacy 
 | `cron` | one of `cron`/`run_at`, on `type: cron` | — | 6-field expression: second minute hour day month weekday. |
 | `run_at` | one of `cron`/`run_at`, on `type: cron` | — | ISO-8601 timestamp. Fires once, then stays dormant. |
 | `timezone` | no, cron only | `UTC` | IANA name. |
-| `secret_env` | required, webhook only | — | Name of a project secret holding the webhook signing key. |
+| `secret_env` | required, webhook only | — | Name of a Workspace secret holding the webhook signing key. |
 
 A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `secret_env` is rejected — there is no unauthenticated webhook.
 
@@ -160,7 +160,7 @@ A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `
 3. **`reuse`** — re-prompt the most recent non-failed session this trigger previously created. A pinned trigger falls back here too, before falling further.
 4. **`fresh`** — create a new sandbox and branch. This is the default, and the final fallback for every mode. The new session becomes the trigger's session for future `reuse` and `keyed` fires.
 
-Every trigger-fired session is created with project visibility (any project member can see it), not private to whoever configured or fired the trigger.
+Every trigger-fired session uses Workspace visibility. Any Workspace member can see it. It is not private to the member who configured or fired the trigger.
 
 ## Payload templating
 
@@ -180,7 +180,7 @@ Every fire also gets `{{ trigger.slug }}`, `{{ trigger.type }}`, and `{{ trigger
 
 ## Webhook signature
 
-Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the request in this order, with a constant-time comparison:
+Fires on `POST /v1/webhooks/workspaces/{workspaceId}/{slug}`. Kortix checks the request in this order, with a constant-time comparison. The deprecated `/v1/webhooks/projects/{projectId}/{slug}` alias remains available.
 
 1. **HMAC signature** — header `X-Kortix-Signature: sha256=<hmac>` (the `sha256=` prefix is optional) or the GitHub-compatible `X-Hub-Signature-256`. HMAC-SHA256 over the raw request body, using the secret named by `secret_env`.
 2. **Static token**, only when no signature header is present, for senders that cannot HMAC-sign a body. Send the secret as `X-Kortix-Token: <secret>`, `Authorization: Bearer <secret>`, or `Authorization: Basic <base64(user:secret)>` (the password half is the token).
@@ -188,10 +188,10 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 | Status | Meaning |
 | --- | --- |
 | 202 | Signature or token valid. Body is `{ status: "fired" \| "queued" \| "deduped", session_id, ... }`. |
-| 200 | Valid, but skipped — the project is paused, or the delivery did not match `filter`. |
-| 400 | Malformed project ID or slug in the URL. |
+| 200 | Valid, but skipped — the Workspace is paused, or the delivery did not match `filter`. |
+| 400 | Malformed Workspace id or slug in the URL. |
 | 401 | Signature and token both missing or wrong. |
-| 404 | Trigger not found, disabled, not a webhook, or the project is not active. |
+| 404 | Trigger not found, disabled, not a webhook, or the Workspace is not active. |
 | 409 | `secret_env` has no value set. |
 | 500 | Auth passed, but the session failed to fire. |
 
@@ -199,21 +199,21 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 
 | Method + path | Needs | Notes |
 | --- | --- | --- |
-| `GET /v1/projects/{projectId}/triggers` | `project.trigger.read` | Lists triggers, runtime state, and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
-| `POST /v1/projects/{projectId}/triggers` | `project.trigger.create` | Creates a trigger. Commits to the manifest directly. |
-| `PATCH /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.update` | Partial update, merged onto the current entry. |
-| `DELETE /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger's runtime state. |
-| `PATCH /v1/projects/{projectId}/triggers/activation` | `project.trigger.update` | Body `{ paused: boolean }`. See [Pause and resume](#pause-and-resume). |
-| `POST /v1/projects/{projectId}/triggers/{slug}/fire` | `project.trigger.fire` | Manual fire. Any project member can fire a trigger — this permission does not require the editor or manager role. |
-| `POST /v1/webhooks/projects/{projectId}/{slug}` | signature or token | Public URL, gated by the webhook secret. |
+| `GET /v1/workspaces/{workspaceId}/triggers` | `project.trigger.read` | Lists triggers, runtime state, and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
+| `POST /v1/workspaces/{workspaceId}/triggers` | `project.trigger.create` | Creates a trigger. Commits to the manifest directly. |
+| `PATCH /v1/workspaces/{workspaceId}/triggers/{slug}` | `project.trigger.update` | Partial update, merged onto the current entry. |
+| `DELETE /v1/workspaces/{workspaceId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger runtime state. |
+| `PATCH /v1/workspaces/{workspaceId}/triggers/activation` | `project.trigger.update` | Body `{ paused: boolean }`. See [Pause and resume](#pause-and-resume). |
+| `POST /v1/workspaces/{workspaceId}/triggers/{slug}/fire` | `project.trigger.fire` | Manual fire. Any Workspace member can fire a trigger. This permission does not require the editor or manager role. |
+| `POST /v1/webhooks/workspaces/{workspaceId}/{slug}` | signature or token | Public URL, gated by the webhook secret. |
 
 ## Pause and resume
 
-A project-level switch stops every trigger in the project at once, independent of each trigger's own `enabled` field. While paused, the scheduler skips the project and inbound webhooks return `200` with `{ status: "skipped" }` — no session fires. A manual fire still works. Use this when the same repository runs on two control planes (for example, dev and production) so cron does not fire twice. CLI: `kortix triggers pause` and `kortix triggers resume`. See [CLI](/docs/cli) for the full `kortix triggers` command group.
+A Workspace-level switch stops every trigger in the Workspace at once, independent of each trigger `enabled` field. While paused, the scheduler skips the Workspace and inbound webhooks return `200` with `{ status: "skipped" }`. No session fires. A manual fire still works. Use this when the same repository runs on two control planes, such as dev and production, so cron does not fire twice. CLI: `kortix triggers pause` and `kortix triggers resume`. See [CLI](/docs/cli) for the full `kortix triggers` command group.
 
 ## Limits and reliability
 
 - The scheduler polls roughly every second (default 1,000 ms; configurable via `KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`). Cron precision is best-effort to the second, even though the expression has a seconds field.
-- Each project allows 3 triggered sessions provisioning at once, by default. The account's plan-tier active-session cap can also apply. A fire past either limit returns `queued` (`202`) instead of failing, and runs once a slot frees up.
+- Each Workspace allows 3 triggered sessions to provision at once by default. The account plan-tier active-session cap can also apply. A fire past either limit returns `queued` (`202`) instead of failing. It runs after a slot becomes available.
 - A manual or webhook fire has a 45-second timeout. Loading the manifest has a 30-second timeout.
 - A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry. A webhook fire is keyed on the delivery ID header, or a hash of the body and signature when the sender sends no ID.

@@ -5,7 +5,7 @@ import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
-import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
+import { reconcileWorkspaceSecretEnv, type WorkspaceSecretEnvStore } from '../workspace-secret-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_API_KEY',
@@ -118,7 +118,7 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknow
 export function createEnvRouter(
   cfg: Config,
   opencode: Opencode,
-  projectEnv: ProjectEnvStore,
+  workspaceSecretEnv: WorkspaceSecretEnvStore,
   opts: { agentEnvFile?: string } = {},
 ): Hono {
   const router = new Hono()
@@ -163,7 +163,7 @@ export function createEnvRouter(
           return c.json({ error: 'env object is required' }, 400)
         }
 
-        const result = projectEnv.apply({
+        const result = workspaceSecretEnv.apply({
           revision: body.revision,
           env: body.env as Record<string, unknown>,
           names: body.names,
@@ -171,7 +171,7 @@ export function createEnvRouter(
         // PTYs and other daemon children inherit process.env directly. Keep it
         // aligned with the authoritative store so a new child cannot inherit a
         // revoked boot secret before it sources agent-env.sh.
-        reconcileProjectEnv(process.env, projectEnv)
+        reconcileWorkspaceSecretEnv(process.env, workspaceSecretEnv)
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
         const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
         // null when no reload was needed at all; otherwise how it was applied.
@@ -183,7 +183,7 @@ export function createEnvRouter(
         const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
 
         if (result.changed) {
-          logger.info('[env] project env changed; refreshing live agent env file', {
+          logger.info('[env] workspace secret env changed; refreshing live agent env file', {
             revision: result.revision,
             names: result.names.length,
           })
@@ -191,7 +191,7 @@ export function createEnvRouter(
         // Always rewrite the shell artifact, including an identical revision.
         // A warm-fork race can leave agent-env.sh stale while the in-memory
         // store already has the requested revision. A sync replay must repair it.
-        const agentEnvWritten = writeAgentEnvFile(projectEnv, { sh: opts.agentEnvFile })
+        const agentEnvWritten = writeAgentEnvFile(workspaceSecretEnv, { sh: opts.agentEnvFile })
         if (!agentEnvWritten) throw new Error('failed to write live agent env file')
         if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
           // reloadConfig, not restart: opencode re-reads its config file in
@@ -213,17 +213,17 @@ export function createEnvRouter(
           // that merely has one of these secrets.
           //
           // Project secrets (the `result.changedNames` half) shape the opencode
-          // child's PROCESS env at spawn via `mergeProjectEnv` (opencode.ts) —
+          // child's PROCESS env at spawn via `mergeWorkspaceSecretEnv` (opencode.ts) —
           // they are NOT in the config file a dispose re-reads. So any non-empty
           // `changedNames` means opencode's process env is stale and a dispose
           // would report success while the PID kept the old (e.g. 0/47) set. The
-          // only correct reload for a project-secret delta is a full respawn.
+          // only correct reload for a workspace-secret delta is a full respawn.
           // The ~8s cost is the price of correctness; the dispose fast path is
           // preserved for pure model/auth/deny changes that touch no project
           // secret. Revocation is preserved too: `knownNames` is tracked in the
-          // store, so a respawn clears a dropped secret via `mergeProjectEnv`.
-          const projectSecretsMoved = result.changedNames.length > 0
-          const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
+          // store, so a respawn clears a dropped secret via `mergeWorkspaceSecretEnv`.
+          const workspaceSecretsMoved = result.changedNames.length > 0
+          const mustRespawn = workspaceSecretsMoved || requiresRespawn(opencodeEnvNames)
           const applied = await opencode.reloadConfig({ mustRespawn })
           const how = applied.how
           reloadTurnEnded = applied.turnEnded
@@ -233,17 +233,17 @@ export function createEnvRouter(
           // ok:true would report a reload that silently did nothing.
           reloadOutcome = how
           logger.info('[env] config-affecting env changed; applied to opencode', {
-            projectRevision: result.revision,
-            projectEnvChanged: result.changed,
+            workspaceRevision: result.revision,
+            workspaceEnvChanged: result.changed,
             opencodeEnvNames,
             how,
             mustRespawn,
           })
         }
 
-        const applied = projectEnv.snapshot()
+        const applied = workspaceSecretEnv.snapshot()
         const exported = Object.keys(applied.env).length
-        logger.info('[env] project env applied', {
+        logger.info('[env] workspace secret env applied', {
           revision: applied.revision,
           managed: applied.knownNames.length,
           current: applied.names.length,

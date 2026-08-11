@@ -208,7 +208,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
           description={
             !search && canCreate
               ? rbacEnabled
-                ? 'Create a group to bulk-add members to projects.'
+                ? 'Create a group to bulk-add members to workspaces.'
                 : RBAC_UPSELL_MESSAGE
               : undefined
           }
@@ -219,7 +219,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
         <ul className="space-y-2">
           {filtered.map((g) => {
             const memberCount = g.member_count ?? 0;
-            const projectCount = g.project_count ?? 0;
+            const workspaceCount = g.workspace_count ?? 0;
             return (
               <li
                 key={g.group_id}
@@ -250,7 +250,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
                         {memberCount} member{memberCount === 1 ? '' : 's'}
                       </span>
                       <span>
-                        {projectCount} project{projectCount === 1 ? '' : 's'}
+                        {workspaceCount} workspace{workspaceCount === 1 ? '' : 's'}
                       </span>
                     </InlineMeta>
                   </span>

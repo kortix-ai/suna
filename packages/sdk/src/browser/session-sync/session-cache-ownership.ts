@@ -5,7 +5,7 @@
  *
  * Two kinds of owner scope exist, and the difference matters:
  *
- *  - `kortix:<projectId>/<sessionId>` — AUTHORITATIVE. The consumer was told
+ *  - `kortix:<workspaceId>/<sessionId>` — AUTHORITATIVE. The consumer was told
  *    which Kortix session it is reading, so it survives a sandbox replacement
  *    for that session (the transcript is not wiped when the box is re-created).
  *  - `runtime:<sandboxId>` — FALLBACK, for a standalone consumer that was given

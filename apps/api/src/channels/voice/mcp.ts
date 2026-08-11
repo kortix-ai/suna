@@ -3,7 +3,7 @@
  * process — see runtime.ts's file header) calls back INTO Kortix.
  *
  * JSON-RPC 2.0 over streamable HTTP, mounted at
- * /v1/projects/:projectId/sessions/:sessionId/mcp/voice (routes.ts). The
+ * /v1/workspaces/:workspaceId/sessions/:sessionId/mcp/voice (routes.ts). The
  * caller is not a Kortix agent — it is a third-party-hosted worker process
  * holding the per-call `kortix_api_token` HMAC minted in `startCall`
  * (worker-token.ts) and handed to it via private LiveKit dispatch metadata. That token
@@ -50,7 +50,7 @@ export interface RunCommandToolResult {
 }
 
 export interface VoiceMcpContext {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   callId: string;
   /** Fire-and-forget hand-off to the Kortix session. Never awaits the turn. */
@@ -91,7 +91,7 @@ function toolDefinitions() {
     {
       name: 'ask_kortix',
       description:
-        'Hand a request to the Kortix agent for this call. Use for anything needing real project ' +
+        'Hand a request to the Kortix agent for this call. Use for anything needing real workspace ' +
         'knowledge, files, connectors, memory, or actions. Returns the instant the request is ' +
         'queued — NEVER waits for Kortix to finish thinking, which can take minutes. The answer, ' +
         'if any, arrives later as a separate message to speak into the call. ONE request at a ' +
@@ -123,7 +123,7 @@ function toolDefinitions() {
           command: { type: 'string', description: 'Shell command, run via `bash -lc`.' },
           cwd: {
             type: 'string',
-            description: 'Working directory, relative to the project root. Defaults to the project root.',
+            description: 'Working directory, relative to the workspace root. Defaults to the workspace root.',
           },
         },
         required: ['command'],

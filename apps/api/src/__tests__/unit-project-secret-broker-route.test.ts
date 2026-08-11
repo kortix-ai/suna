@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSecrets, projectSessionSecretHandles, projectSessions } from '@kortix/db';
 import { Hono } from 'hono';
-import * as realAccess from '../projects/lib/access';
-import * as realProjectSecrets from '../projects/secrets';
+import * as realAccess from '../workspaces/lib/access';
+import * as realWorkspaceSecrets from '../workspaces/secrets';
 
-const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
+const WORKSPACE_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '55555555-5555-4555-8555-555555555555';
@@ -21,7 +21,7 @@ const FROZEN_POLICY = {
 };
 
 let authType: 'pat' | 'supabase' = 'pat';
-let tokenProjectId: string | undefined = PROJECT_ID;
+let tokenWorkspaceId: string | undefined = WORKSPACE_ID;
 let sessionId: string | undefined = SESSION_ID;
 let agentGrant: Record<string, unknown> | null = {
   agent: 'default',
@@ -73,16 +73,16 @@ const databaseMock = {
 };
 
 mock.module('../shared/db', () => ({ db: databaseMock, hasDatabase: true }));
-mock.module('../projects/lib/access', () => ({
+mock.module('../workspaces/lib/access', () => ({
   ...realAccess,
-  loadProjectForUser: async () => ({
-    row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
+  loadWorkspaceForUser: async () => ({
+    row: { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID },
     userId: USER_ID,
   }),
 }));
-mock.module('../projects/secrets', () => ({
-  ...realProjectSecrets,
-  decryptProjectSecret: (_projectId: string, value: string) => {
+mock.module('../workspaces/secrets', () => ({
+  ...realWorkspaceSecrets,
+  decryptWorkspaceSecret: (_projectId: string, value: string) => {
     decrypted.push(value);
     return value === 'personal-encrypted-value' ? 'personal-secret-value' : 'shared-secret-value';
   },
@@ -116,15 +116,15 @@ mock.module('../secrets/http-broker', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/secret-broker');
+const { workspaceRoutesApp: projectsApp } = await import('../workspaces/lib/app');
+await import('../workspaces/routes/secret-broker');
 
 function buildApp() {
   const app = new Hono<{
     Variables: {
       userId: string;
       authType: 'pat' | 'supabase';
-      tokenProjectId?: string;
+      tokenWorkspaceId?: string;
       sessionId?: string;
       agentGrant?: Record<string, unknown> | null;
     };
@@ -132,7 +132,7 @@ function buildApp() {
   app.use('*', async (c, next) => {
     c.set('userId', USER_ID);
     c.set('authType', authType);
-    if (tokenProjectId) c.set('tokenProjectId', tokenProjectId);
+    if (tokenWorkspaceId) c.set('tokenWorkspaceId', tokenWorkspaceId);
     if (sessionId) c.set('sessionId', sessionId);
     c.set('agentGrant', agentGrant);
     await next();
@@ -142,7 +142,7 @@ function buildApp() {
 }
 
 function brokerRequest() {
-  return buildApp().request(`/v1/projects/${PROJECT_ID}/secrets/PRIMARY/broker`, {
+  return buildApp().request(`/v1/projects/${WORKSPACE_ID}/secrets/PRIMARY/broker`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -153,10 +153,10 @@ function brokerRequest() {
   });
 }
 
-describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
+describe('POST /v1/projects/:workspaceId/secrets/:identifier/broker', () => {
   beforeEach(() => {
     authType = 'pat';
-    tokenProjectId = PROJECT_ID;
+    tokenWorkspaceId = WORKSPACE_ID;
     sessionId = SESSION_ID;
     agentGrant = {
       agent: 'default',

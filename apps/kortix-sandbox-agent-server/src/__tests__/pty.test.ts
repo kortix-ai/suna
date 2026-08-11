@@ -20,7 +20,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     branchFetchDelaySec: 0.25,
     defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
-    projectId: undefined,
+    workspaceId: undefined,
     apiUrl: undefined,
     repoUrl: undefined,
     branchName: undefined,

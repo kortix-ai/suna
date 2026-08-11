@@ -12,7 +12,7 @@ import { create } from 'zustand';
  * replaces the old copy-prompt-to-clipboard hack, which existed only because
  * the panel had no reliable way to reach the chat's sender from outside it.
  *
- * Each sender owns its OpenCode chat id and can register the durable project
+ * Each sender owns its OpenCode chat id and can register the durable workspace
  * session id as an alias. This lets route-level controls reach the active chat
  * without learning the runtime's internal id.
  */

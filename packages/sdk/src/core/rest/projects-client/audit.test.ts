@@ -22,7 +22,7 @@ beforeEach(() => {
 
 test('listAccountAudit sends reconstruction filters', async () => {
   await listAccountAudit('account-1', {
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     sessionId: 'session-1',
     actorType: 'agent',
     source: 'connector',
@@ -54,7 +54,7 @@ test('listAccountAudit sends reconstruction filters', async () => {
 test('exportAccountAudit sends the same reconstruction filters', async () => {
   await exportAccountAudit('account-1', {
     format: 'jsonl',
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     sessionId: 'session-1',
     actorType: 'human',
     source: 'web',

@@ -68,7 +68,7 @@ describe('applyReasoningEffort — the exact PUT-body merge the composer sends',
     expect(next).toEqual({ 'openai/gpt-5.6-sol': { reasoningEffort: 'xhigh', temperature: 0.4 } });
   });
 
-  test('other models in the project config are left completely untouched', () => {
+  test('other models in the workspace config are left completely untouched', () => {
     const next = applyReasoningEffort(
       {
         'anthropic/claude-sonnet-4.6': { reasoningEffort: 'medium' },

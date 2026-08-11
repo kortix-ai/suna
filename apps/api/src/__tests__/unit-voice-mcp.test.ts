@@ -3,7 +3,7 @@ import { handleVoiceMcp, type VoiceMcpContext } from '../channels/voice/mcp';
 
 function ctx(overrides: Partial<VoiceMcpContext> = {}): VoiceMcpContext {
   return {
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     sessionId: 'sess-1',
     callId: 'sess-1',
     askKortix: async () => ({ ok: true }) as const,

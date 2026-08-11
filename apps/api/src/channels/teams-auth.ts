@@ -14,9 +14,9 @@ interface CachedToken {
 const tokenCache = new Map<string, CachedToken>();
 
 /**
- * Is the Teams channel offered for THIS project? One gate, one source: the
- * per-project `teams` feature flag. There is no operator env var — a
- * project turns Teams on in Settings → Feature flags, exactly like
+ * Is the Teams channel offered for this workspace? One gate, one source: the
+ * per-workspace `teams` feature flag. There is no operator env var. A
+ * workspace turns Teams on in Settings → Feature flags, exactly like
  * `agentmail_email` and `voice`.
  */
 export function teamsChannelEnabled(metadata: unknown): boolean {

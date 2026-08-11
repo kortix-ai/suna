@@ -12,9 +12,9 @@ describe('skillScope', () => {
     expect(skillScope('kortix-cli')).toBe('kortix');
     expect(skillScope('kortix-presentation')).toBe('kortix');
   });
-  test('everything else belongs to the project', () => {
-    expect(skillScope('podcast')).toBe('project');
-    expect(skillScope('my-kortix-thing')).toBe('project');
+  test('everything else belongs to the workspace', () => {
+    expect(skillScope('podcast')).toBe('workspace');
+    expect(skillScope('my-kortix-thing')).toBe('workspace');
   });
 });
 
@@ -36,6 +36,6 @@ describe('filterSkills', () => {
     ]);
   });
   test('scope and query compose', () => {
-    expect(filterSkills(all, { scope: 'project', query: 'kortix' })).toHaveLength(0);
+    expect(filterSkills(all, { scope: 'workspace', query: 'kortix' })).toHaveLength(0);
   });
 });

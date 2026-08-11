@@ -43,7 +43,7 @@ describe('agent_grant — real DB round-trip + enforcement', () => {
     const minted = await createAccountToken({
       accountId: proj.account_id,
       userId: crypto.randomUUID(),
-      projectId: proj.project_id,
+      workspaceId: proj.project_id,
       name: 'test-agent-grant-roundtrip',
       agentGrant: grant as any,
     });
@@ -71,7 +71,7 @@ describe('agent_grant — real DB round-trip + enforcement', () => {
     const minted = await createAccountToken({
       accountId: proj.account_id,
       userId: crypto.randomUUID(),
-      projectId: proj.project_id,
+      workspaceId: proj.project_id,
       name: 'test-no-grant',
     });
     const v = await validateAccountToken(minted.secretKey);

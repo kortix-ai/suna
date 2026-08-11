@@ -24,7 +24,7 @@ import Link from 'next/link';
  *
  * Wording matches `project-create-modal.tsx:125-129` (`REPOSITORY_MODE_DESCRIPTIONS`)
  * so the two surfaces never diverge while both exist — "workspace" replaces
- * "project" in the managed line only, the other two already say neither word.
+ * "workspace" in the managed line only, the other two already say neither word.
  */
 const SOURCE_DESCRIPTIONS: Record<RepositorySource, string> = {
   managed: 'Kortix creates and manages a private repository for this workspace.',
@@ -40,8 +40,8 @@ const SOURCE_LABELS: Record<RepositorySource, string> = {
 
 /**
  * `github-create` and `github-import` need a GitHub App installation id and a
- * repository — inputs `POST /projects/provision` does not accept. Those two
- * sources go through `POST /projects/create-repo` and the BYO-repo flow the
+ * repository — inputs `POST /workspaces/provision` does not accept. Those two
+ * sources go through `POST /workspaces/create-repo` and the BYO-repo flow the
  * old create modal drives (`project-create-modal.tsx` `handleLinkGitHub` /
  * `githubCreateMutation`), which is out of scope for this task.
  *

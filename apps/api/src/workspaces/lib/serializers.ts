@@ -1,0 +1,832 @@
+import type {
+  SecretDeliveryBlockedReason,
+  SecretDeliveryStrategy,
+  Workspace,
+  WorkspaceSecret,
+  WorkspaceSession,
+} from "@kortix/api-contract";
+import {
+  type accountGithubInstallations,
+  type projectGitConnections,
+  type projectGitCredentials,
+  projectSecrets,
+  type projectSessions,
+  type projects,
+} from "@kortix/db";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
+import type { Context } from "hono";
+import { normalizeAuditClientSource } from "../../shared/audit-client-source";
+import { type SandboxProviderName, config } from "../../config";
+import { type SecretGrant, visibilityToIntent } from "../../connectors/share";
+import {
+  buildFeatureFlagCatalog,
+  resolveFeatureFlags,
+} from "../../feature-flags/registry";
+import { db } from "../../shared/db";
+import type {
+  listSandboxTemplates,
+  listSnapshotBuilds,
+} from "../../snapshots/builder";
+import {
+  type SnapshotErrorCategory,
+  classifySnapshotError,
+  describeSnapshotError,
+} from "../../snapshots/error-classify";
+import { templateSlugFromBuildSlug } from "../../snapshots/ppwarm-names";
+import type { WorkspaceRole } from "../access";
+import type { WorkspaceConfigSummary } from "../git/types";
+import { type GitHubRepo, isGithubAppConfigured } from "../github";
+import { parseGitHubRepoUrl } from "./git";
+import {
+  isPlaceholderOpencodeTitle,
+  runtimeRootTitleFromSnapshot,
+} from "./opencode-title";
+import { normalizeWorkspaceGlyph } from "./workspace-glyph";
+import { normalizeWorkspaceIcon } from "./workspace-icon";
+import { proxyGitUrl } from "./sessions";
+import { networkBoundaryDeliveryAvailable } from "../../secrets/network-boundary-availability";
+
+export const CODEX_AUTH_JSON_SECRET_NAME = "CODEX_AUTH_JSON";
+
+export type WorkspaceRow = typeof projects.$inferSelect;
+
+export type WorkspaceGitConnectionRow =
+  typeof projectGitConnections.$inferSelect;
+
+export type WorkspaceGitCredentialRow =
+  typeof projectGitCredentials.$inferSelect;
+
+export type WorkspaceSessionRow = typeof projectSessions.$inferSelect;
+
+export type RequestAuditContext = {
+  method: string;
+  path: string;
+  ip: string | null;
+  userAgent: string | null;
+  clientReportedSource?: string | null;
+};
+
+export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
+// Session-status constants live in a dependency-free module so lean callers (the
+// sandbox reaper) can import them without this heavy serializer graph. Re-exported
+// here for the existing import sites. See session-status.ts for the index note.
+export {
+  ACTIVE_SESSION_STATUSES,
+  PROVISIONING_SESSION_STATUSES,
+} from "./session-status";
+
+export const WORKSPACE_GIT_AUTH_SECRET_NAME = "KORTIX_GIT_AUTH_TOKEN";
+
+export function serializeSession(
+  row: WorkspaceSessionRow,
+  ctx?: {
+    /** The grants on this session (for restricted visibility). */
+    grants?: SecretGrant[];
+    /** The viewing user, to compute is_owner / can_manage_sharing. */
+    viewerId?: string;
+    /** Viewer can manage the workspace (account owner/admin, or a workspace editor). */
+    canManageWorkspace?: boolean;
+    /** Resolved email of the session owner, for "shared by X" display. */
+    ownerEmail?: string | null;
+    /** Resolved human or service-account display name. */
+    ownerName?: string | null;
+    /** Whether created_by identifies a human, service account, or stale principal. */
+    ownerType?: "user" | "service_account" | "unknown" | null;
+    /** Whether the viewer may read/open the session, independent of inventory visibility. */
+    canAccess?: boolean;
+    /** Exact state of the backing runtime resource, if one still exists. */
+    runtimeStatus?:
+      "provisioning" | "active" | "stopped" | "error" | "archived" | null;
+    /** Server-managed soft-deletion audit fields. */
+    deletedAt?: string | null;
+    deletedBy?: string | null;
+  },
+): WorkspaceSession {
+  // Computed BEFORE the metadata-derived fields below, because name,
+  // custom_name and opencode_sessions are all derived FROM metadata — redacting
+  // the metadata object alone would still have leaked the OpenCode-synced title
+  // (which summarises the conversation) and the conversation-tree snapshot.
+  const canAccess = ctx?.canAccess ?? true;
+  const opencodeSessions =
+    canAccess && Array.isArray(row.metadata?.opencode_sessions)
+      ? row.metadata.opencode_sessions
+      : [];
+  const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
+  // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
+  // over the auto title (metadata.name) mirrored from OpenCode server-side
+  // during session reads. `name` is the resolved display value;
+  // `custom_name` is exposed separately so clients can tell an override apart
+  // from the auto title.
+  const customName =
+    canAccess && typeof row.metadata?.custom_name === "string"
+      ? row.metadata.custom_name
+      : null;
+  // Historic rows may carry OpenCode's frozen placeholder ("New session - …")
+  // in metadata.name — expose it as untitled so clients fall back to their own
+  // display chain instead of a junk title (heals old rows with no backfill).
+  const rawAutoName =
+    canAccess && typeof row.metadata?.name === "string"
+      ? row.metadata.name
+      : null;
+  const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
+  const sharing = visibilityToIntent(
+    row.visibility as "private" | "project" | "restricted",
+    ctx?.grants ?? [],
+  );
+  // The runtime's own root-conversation title (already access-gated: the
+  // snapshot above is [] when canAccess is false). It outranks the generated
+  // auto title so list reads resolve the SAME string the session header shows
+  // live, but never a user rename.
+  const runtimeTitle = runtimeRootTitleFromSnapshot(
+    opencodeSessions,
+    row.opencodeSessionId,
+  );
+  return {
+    session_id: row.sessionId,
+    account_id: row.accountId,
+    workspace_id: row.workspaceId,
+    branch_name: row.branchName,
+    base_ref: row.baseRef,
+    sandbox_provider: row.sandboxProvider,
+    sandbox_id: row.sandboxId,
+    sandbox_url: row.sandboxUrl,
+    opencode_session_id: row.opencodeSessionId,
+    name: customName ?? runtimeTitle ?? autoName,
+    custom_name: customName,
+    agent_name: row.agentName,
+    status: row.status,
+    error: row.error,
+    // A row the caller cannot ACCESS is still listed (scope=project shows a
+    // manager the whole workspace) but must not carry the session's CONTENT.
+    // metadata holds initial_prompt — the literal text an end-user typed.
+    metadata: canAccess ? (row.metadata ?? {}) : {},
+    opencode_sessions: opencodeSessions,
+    // Ownership + org-visibility (Phase 2 session sharing).
+    created_by: row.createdBy,
+    owner_email: ctx?.ownerEmail ?? null,
+    owner_name: ctx?.ownerName ?? null,
+    owner_type: ctx?.ownerType ?? (row.createdBy ? "unknown" : null),
+    visibility: row.visibility === "project" ? "workspace" : row.visibility,
+    origin: row.origin,
+    secrets_allowlist: canAccess ? (row.secretsAllowlist ?? null) : null,
+    sharing: sharing.mode === "project" ? { mode: "workspace" } : sharing,
+    is_owner: isOwner,
+    can_manage_sharing: isOwner || Boolean(ctx?.canManageWorkspace),
+    can_access: canAccess,
+    runtime_status: ctx?.runtimeStatus ?? null,
+    deleted_at: ctx?.deletedAt ?? null,
+    deleted_by: ctx?.deletedBy ?? null,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Load a session and enforce that the viewer can SEE it (owner, workspace-wide,
+ * or in the allow-list). Returns null for both not-found and not-visible so we
+ * never reveal the existence of a private session. Also reports whether the
+ * viewer may manage its sharing (account owner/admin, or a workspace editor).
+ */
+
+function dashboardBaseUrl(): string {
+  return (config.FRONTEND_URL || "https://kortix.com").replace(/\/+$/, "");
+}
+
+/** True when a GitHub repo-create error is a name collision (HTTP 422). On
+ *  POST /user/repos a 422 is, in practice, always "name already exists". */
+
+export function isRepoNameTakenError(error: unknown): boolean {
+  const m = ((error as Error)?.message ?? "").toLowerCase();
+  return (
+    m.includes("already exists") ||
+    m.includes("name already") ||
+    m.includes("(422)")
+  );
+}
+
+export function serializeWorkspace(
+  row: WorkspaceRow,
+  access?: {
+    workspaceRole: WorkspaceRole | null;
+    effectiveRole: WorkspaceRole;
+  },
+): Workspace {
+  return {
+    workspace_id: row.workspaceId,
+    account_id: row.accountId,
+    name: row.name,
+    repo_url: row.repoUrl,
+    // Universal client-facing git origin. When the proxy is enabled, runtime
+    // clients (CLI `ship`, web) clone/push this with a Kortix token instead of
+    // the real host URL. Falls back to repo_url so callers can always use it.
+    git_origin_url: config.KORTIX_GIT_PROXY
+      ? proxyGitUrl(row.workspaceId)
+      : row.repoUrl,
+    default_branch: row.defaultBranch,
+    manifest_path: row.manifestPath,
+    status: row.status,
+    metadata: row.metadata ?? {},
+    // Per-workspace emoji, stored in metadata (no migration — same mechanism as
+    // default_sandbox_provider below and metadata.onboarding_completed_at).
+    // Re-validated on read so a value written before the validator existed, or
+    // written directly to the DB, can never reach the UI unchecked.
+    icon: normalizeWorkspaceIcon(
+      (row.metadata as Record<string, unknown> | null | undefined)?.icon,
+    ),
+    icon_glyph: normalizeWorkspaceGlyph(
+      (row.metadata as Record<string, unknown> | null | undefined)?.icon_glyph,
+    ),
+    last_opened_at: row.lastOpenedAt?.toISOString() ?? null,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+    workspace_role: access?.workspaceRole ?? null,
+    effective_workspace_role: access?.effectiveRole ?? null,
+    dashboard_url: `${dashboardBaseUrl()}/workspaces/${row.workspaceId}`,
+    // Feature flags (Settings → Feature flags) — `experimental` is the effective
+    // on/off map; `experimental_features` is the self-describing catalog the UI
+    // renders from. Both wire names are historical and STABLE; do not rename
+    // them. SoT = ../../feature-flags/registry.
+    experimental: resolveFeatureFlags(row.metadata),
+    experimental_features: buildFeatureFlagCatalog(row.metadata),
+    // Per-workspace sandbox-provider override (Customize → Settings). `default_sandbox_provider`
+    // is the current pin (null = follow the platform default/distribution);
+    // `available_sandbox_providers` is the enabled set the picker offers
+    // (ALLOWED ∩ has-API-key) — the web client renders + validates against the SAME
+    // set the backend enforces, without a separate (billing-gated) providers route.
+    // Surface the pin only when it's still USABLE (allowed + key) — mirrors the
+    // create path (which ignores a disabled/removed pin and falls back), so the
+    // picker never shows a value with no matching option.
+    default_sandbox_provider: ((): SandboxProviderName | null => {
+      const pin = (row.metadata as Record<string, unknown> | null | undefined)
+        ?.default_sandbox_provider;
+      if (
+        typeof pin !== "string" ||
+        !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
+      ) {
+        return null;
+      }
+
+      const provider = pin as SandboxProviderName;
+      return config.isProviderEnabled(provider) ? provider : null;
+    })(),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) =>
+      config.isProviderEnabled(p),
+    ),
+  };
+}
+
+export function serializeWorkspaceGitConnection(
+  row: WorkspaceGitConnectionRow | null,
+) {
+  if (!row) return null;
+  return {
+    connection_id: row.connectionId,
+    account_id: row.accountId,
+    workspace_id: row.workspaceId,
+    provider: row.provider,
+    repo_url: row.repoUrl,
+    repo_owner: row.repoOwner,
+    repo_name: row.repoName,
+    external_repo_id: row.externalRepoId,
+    default_branch: row.defaultBranch,
+    auth_method: row.authMethod,
+    installation_id: row.installationId,
+    credential_ref: row.credentialRef,
+    permissions: row.permissions ?? {},
+    visibility: row.visibility,
+    webhook_id: row.webhookId,
+    status: row.status,
+    last_validated_at: row.lastValidatedAt?.toISOString() ?? null,
+    last_error_code: row.lastErrorCode,
+    last_error_message: row.lastErrorMessage,
+    metadata: row.metadata ?? {},
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+export function serializeGitHubRepo(repo: GitHubRepo) {
+  return {
+    id: String(repo.id),
+    name: repo.name,
+    full_name: repo.full_name,
+    private: repo.private,
+    html_url: repo.html_url,
+    clone_url: repo.clone_url,
+    ssh_url: repo.ssh_url,
+    default_branch: repo.default_branch,
+    description: repo.description,
+  };
+}
+
+function clientIp(c: Context) {
+  return (
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+    c.req.header("x-real-ip") ||
+    null
+  );
+}
+
+export function requestAuditContext(c: Context): RequestAuditContext {
+  return {
+    method: c.req.method,
+    path: c.req.path,
+    ip: clientIp(c),
+    userAgent: c.req.header("user-agent") || null,
+    clientReportedSource: normalizeAuditClientSource(
+      c.req.header("x-kortix-client"),
+    ),
+  };
+}
+
+export type SecretRow = typeof projectSecrets.$inferSelect;
+
+/**
+ * The slice of a loaded `WorkspaceConfigSummary` the agent-grant axis needs. A
+ * `Pick`, so a route hands the whole loaded config straight through.
+ */
+export type SecretAgentGrantConfig = Pick<
+  WorkspaceConfigSummary,
+  "agent_discovery" | "agents"
+>;
+
+/** Grant membership. Case-insensitive, mirroring `listAdmits` in
+ *  ../../secrets/strategy.ts — a hand-written `secrets:` list in kortix.yaml may
+ *  use any case, and the two answers must agree. */
+function grantAdmits(list: string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+/**
+ * Can any agent receive this secret? Returns the block reason, or null.
+ *
+ * `resolveSecretDelivery` (../../secrets/strategy.ts) hands an `egress`/`broker`
+ * secret to a session only when some agent's `secrets:` list is an explicit
+ * ARRAY naming this IDENTIFIER. `'all'` and an absent list both withhold it as
+ * `agent_grant_unscoped`, so neither counts as a grant here. Matching is by
+ * identifier, never by the env-var `name` — several identifiers may share one
+ * name.
+ *
+ * The tri-state forbids guessing, so read `agent_discovery` for what
+ * `resolveConfigAgents` (../git/config.ts) actually means by it:
+ *
+ *   `opencode`   — the manifest yielded NO agent specs AND NO parse errors, i.e.
+ *                  it declared no `agents:` at all (or there is no manifest).
+ *                  `grantFromLoadedAgents` then resolves to a null grant, which
+ *                  `resolveSecretDelivery` withholds. CERTAIN: no session can
+ *                  ever receive this secret. A native `.opencode` agent does not
+ *                  rescue it — grants come only from manifest specs.
+ *   `declarative`, agents non-empty — the manifest parsed and its declarations
+ *                  are the complete grant set. CERTAIN either way.
+ *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached by
+ *                  a manifest that FAILED to parse (specs empty, errors present)
+ *                  or one whose agents are all disabled. Report null.
+ *
+ * Getting this backwards would be worse than useless in both directions: silent
+ * on the commonest broken setup (no `agents:` block), and crying wolf on a
+ * manifest we merely failed to read.
+ */
+export function secretDeliveryBlockedReason(
+  identifier: string,
+  strategy: SecretDeliveryStrategy,
+  config: SecretAgentGrantConfig | null | undefined,
+): SecretDeliveryBlockedReason | null {
+  if (strategy !== "egress" && strategy !== "broker") return null;
+  if (!config) return null;
+  if (config.agent_discovery === "opencode") return "no_agent_grant";
+  // Anything other than the two known modes is a config we do not understand —
+  // including a partial object from a caller that resolved only part of it.
+  if (config.agent_discovery !== "declarative") return null;
+  const agents = config.agents;
+  if (!Array.isArray(agents) || agents.length === 0) return null;
+  const granted = agents.some((agent) => {
+    const env = agent.scope?.env;
+    return Array.isArray(env) && grantAdmits(env, identifier);
+  });
+  return granted ? null : "no_agent_grant";
+}
+
+/**
+ * The view of one workspace secret (one IDENTIFIER): the shared workspace row
+ * merged with the requesting member's own private override (used today only by
+ * the CODEX_AUTH_JSON per-user provider login), plus which one wins at runtime.
+ * Authorization is centralized on the agent grant (by identifier — see
+ * agentMayUseEnv); every workspace member with read access sees every secret —
+ * there is no per-secret member/group sharing and no resource-side agent
+ * allow-list.
+ */
+
+export function buildSecretView(input: {
+  identifier: string;
+  name: string;
+  shared?: SecretRow;
+  personal?: SecretRow;
+  canManageShared: boolean;
+  /** The workspace's loaded config, for the agent-grant axis. Omit it and every
+   *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
+  agentGrants?: SecretAgentGrantConfig | null;
+}): WorkspaceSecret {
+  const { identifier, name, shared, personal, canManageShared } = input;
+  const system = isSystemWorkspaceSecretName(name);
+  const isGitAuth = name === WORKSPACE_GIT_AUTH_SECRET_NAME;
+  const mineActive = Boolean(personal?.active);
+  const effectiveSource: "mine" | "shared" | "none" =
+    personal && mineActive ? "mine" : shared ? "shared" : "none";
+  const deliveryRow = shared ?? personal;
+  const strategy = deliveryRow?.strategy ?? "runtime";
+  const requiresRotation =
+    strategy !== "runtime" &&
+    (!deliveryRow?.rotatedAt || deliveryRow.rotatedAt < deliveryRow.updatedAt);
+  const backend = deliveryRow?.egressPolicy?.backend;
+  const legacyConsumer =
+    strategy === "runtime"
+      ? "sandbox"
+      : strategy === "denied"
+        ? null
+        : strategy === "egress"
+          ? "network"
+          : backend === "llm_gateway"
+            ? "llm_gateway"
+            : backend === "connector"
+              ? "connector"
+              : backend === "git_proxy"
+                ? "git_proxy"
+                : backend === "kortix_fetch"
+                  ? "http_broker"
+                  : null;
+  const storedConsumer =
+    strategy === "denied"
+      ? null
+      : deliveryRow?.scope === "connector"
+        ? "connector"
+        : (deliveryRow?.consumer ?? legacyConsumer);
+  const consumer = storedConsumer;
+  return {
+    identifier,
+    name,
+    workspace_id: (shared ?? personal)!.workspaceId,
+    secret_id: shared?.secretId ?? null,
+    created_by: shared?.createdBy ?? null,
+    created_at:
+      (shared?.createdAt ?? personal?.createdAt)?.toISOString() ?? null,
+    updated_at:
+      (shared?.updatedAt ?? personal?.updatedAt)?.toISOString() ?? null,
+    system,
+    readonly: system,
+    purpose: isGitAuth ? "git_auth" : null,
+    can_rotate: isGitAuth,
+    managed_by: isGitAuth ? "project_secret" : null,
+    // Is a shared workspace value set at all.
+    configured: Boolean(shared),
+    // MY private override (value never returned), and whether I'm using it.
+    mine: personal
+      ? {
+          active: personal.active,
+          updated_at: personal.updatedAt.toISOString(),
+        }
+      : null,
+    // What actually gets injected into my sessions for this identifier.
+    effective_source: effectiveSource,
+    // Members manage only their own override; editors also manage the shared row.
+    can_manage_shared: canManageShared && !system,
+    strategy,
+    consumer,
+    delivery_status:
+      (strategy === "runtime" && consumer === "sandbox") ||
+      (strategy === "broker" && consumer === "llm_gateway") ||
+      (strategy === "broker" && consumer === "git_proxy") ||
+      (strategy === "broker" &&
+        consumer === "http_broker" &&
+        backend === "kortix_fetch") ||
+      (strategy === "egress" &&
+        consumer === "network" &&
+        networkBoundaryDeliveryAvailable()) ||
+      consumer === "connector"
+        ? "available"
+        : strategy === "denied"
+          ? "disabled"
+          : "unavailable",
+    // Two axes, deliberately not folded together. `delivery_status` answers
+    // "does this deployment support the mode" and stays 'available' on a missing
+    // grant, because the CLI, the SDK and the web chip all key off that meaning.
+    // The grant axis is per-workspace and lives here.
+    delivery_blocked_reason: secretDeliveryBlockedReason(
+      identifier,
+      strategy,
+      input.agentGrants,
+    ),
+    network_boundary_available: networkBoundaryDeliveryAvailable(),
+    egress_policy: deliveryRow?.egressPolicy ?? null,
+    strategy_locked: deliveryRow?.strategyLocked ?? false,
+    last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
+    requires_rotation: requiresRotation,
+  };
+}
+
+/**
+ * Load every secret IDENTIFIER in a workspace as the per-user view (shared + my
+ * own override merged). Used by the secrets list + returned after a write.
+ */
+
+export async function loadSecretViewsForUser(
+  workspaceId: string,
+  userId: string,
+  canManageShared: boolean,
+  /** The workspace's loaded config. Callers that have already read it pass it so
+   *  every row reports the agent-grant axis; omitting it reports null. */
+  agentGrants?: SecretAgentGrantConfig | null,
+): Promise<ReturnType<typeof buildSecretView>[]> {
+  const rows = await db
+    .select()
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.workspaceId, workspaceId),
+        or(
+          isNull(projectSecrets.ownerUserId),
+          eq(projectSecrets.ownerUserId, userId),
+        ),
+      ),
+    )
+    .orderBy(desc(projectSecrets.updatedAt));
+
+  const byIdentifier = new Map<
+    string,
+    { shared?: SecretRow; personal?: SecretRow }
+  >();
+  for (const row of rows) {
+    const slot = byIdentifier.get(row.identifier) ?? {};
+    if (row.ownerUserId === null) slot.shared = row;
+    else slot.personal = row;
+    byIdentifier.set(row.identifier, slot);
+  }
+
+  return [...byIdentifier.entries()].map(([identifier, slot]) =>
+    buildSecretView({
+      identifier,
+      name: (slot.shared ?? slot.personal)!.name,
+      shared: slot.shared,
+      personal: slot.personal,
+      canManageShared,
+      agentGrants,
+    }),
+  );
+}
+
+export function isSystemWorkspaceSecretName(name: string): boolean {
+  return name.toUpperCase().startsWith("KORTIX_");
+}
+
+export function serializeSessionSandboxConfig(
+  configValue: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const config = { ...(configValue ?? {}) };
+  delete config.serviceKey;
+  return config;
+}
+
+export function serializeGitHubInstallation(
+  row: typeof accountGithubInstallations.$inferSelect | null,
+  accountId: string,
+  installUrl: string | null,
+) {
+  const installed = Boolean(row);
+  const metadata = normalizeJsonObject(row?.metadata);
+  // GitHub backing is App-only: a per-account App installation is required
+  // whenever the App is configured and this account hasn't installed it yet.
+  const requiresInstallation = isGithubAppConfigured() && !installed;
+  return {
+    account_id: accountId,
+    installation_row_id: row?.installationRowId ?? null,
+    installed,
+    configured: isGithubAppConfigured(),
+    requires_installation: requiresInstallation,
+    install_url: installed ? null : installUrl,
+    installation_id: row?.installationId ?? null,
+    owner_login: row?.ownerLogin ?? null,
+    owner_type: row?.ownerType ?? null,
+    repository_selection: row?.repositorySelection ?? null,
+    permissions: row?.permissions ?? {},
+    installation_url: normalizeString(metadata.html_url),
+    updated_at: row?.updatedAt.toISOString() ?? null,
+  };
+}
+
+/**
+ * Sentinel `installation_id` for the managed-git PAT backend ("Use a token"
+ * self-host setup, platform/routes/github-app.ts POST /pat) when an account
+ * has no real GitHub App installation. Real installation ids are GitHub's own
+ * numeric ids, so this string can never collide with one. Lets the
+ * Import-repo UI — which only understands the "installations" shape — pick
+ * the PAT the same way it picks a real App install, instead of needing a
+ * parallel UI/API surface just for the token backend. GET /github/repositories
+ * and POST /link-repository both recognize this id and route to the PAT.
+ */
+export const PAT_MANAGED_GIT_INSTALLATION_ID = "pat";
+
+export function serializeGitHubInstallations(
+  rows: Array<typeof accountGithubInstallations.$inferSelect>,
+  accountId: string,
+  installUrl: string | null,
+  /** Owner of the account-level managed-git PAT, when this account has no
+   *  real App installation but the server has a working token configured —
+   *  see the route handlers in routes/r1.ts. */
+  patFallbackOwner?: string | null,
+) {
+  if (rows.length === 0 && patFallbackOwner) {
+    const patInstallation = {
+      account_id: accountId,
+      installation_row_id: null,
+      installed: true,
+      configured: true,
+      requires_installation: false,
+      install_url: null,
+      installation_id: PAT_MANAGED_GIT_INSTALLATION_ID,
+      owner_login: patFallbackOwner,
+      owner_type: null,
+      repository_selection: "all",
+      permissions: {},
+      installation_url: null,
+      updated_at: null,
+    };
+    return {
+      ...patInstallation,
+      // The PAT is a valid existing-repository import option, but it is not a
+      // GitHub App installation and cannot back POST /workspaces/create-repo.
+      // Keep the App install URL visible so the default create flow can offer
+      // a real user/org installation alongside the legacy PAT fallback.
+      requires_installation: Boolean(installUrl),
+      install_url: installUrl,
+      installations: [patInstallation],
+    };
+  }
+
+  const primary = rows[0] ?? null;
+  const base = serializeGitHubInstallation(primary, accountId, installUrl);
+  return {
+    ...base,
+    installed: rows.length > 0,
+    requires_installation: isGithubAppConfigured() && rows.length === 0,
+    install_url: installUrl,
+    installations: rows.map((row) =>
+      serializeGitHubInstallation(row, accountId, null),
+    ),
+  };
+}
+
+export function normalizeString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function normalizeBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return null;
+}
+
+export function isPlainObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function normalizeJsonObject(value: unknown): Record<string, unknown> {
+  return isPlainObject(value) ? value : {};
+}
+
+export function normalizeRepoUrl(value: unknown): string | null {
+  const repoUrl = normalizeString(value);
+  if (!repoUrl) return null;
+  const normalized = repoUrl.replace(/\/+$/, "");
+  if (/^http:\/\//i.test(normalized)) {
+    throw new Error("repo_url must use HTTPS or git@github.com SSH");
+  }
+  if (!parseGitHubRepoUrl(normalized)) {
+    throw new Error("repo_url must be a GitHub repository URL");
+  }
+  return normalized;
+}
+
+export function hasOwn(body: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(body, key);
+}
+
+export function deriveKortixApiRoot(kortixUrl: string): string {
+  return (kortixUrl || "https://api.kortix.com")
+    .replace(/\/+$/, "")
+    .replace(/\/v1\/router$/, "")
+    .replace(/\/v1$/, "");
+}
+
+// Display cap for user-supplied workspace names. Well under the workspaces.name
+// varchar(255) column so every write path (provision, GitHub link, PAT link)
+// fits the schema even after a linked repo's derived name is substituted.
+export const WORKSPACE_NAME_MAX_LENGTH = 120;
+
+export function clampWorkspaceName(name: string): string {
+  return name.length > WORKSPACE_NAME_MAX_LENGTH
+    ? name.slice(0, WORKSPACE_NAME_MAX_LENGTH).trimEnd()
+    : name;
+}
+
+export function deriveWorkspaceName(repoUrl: string): string {
+  const cleaned = repoUrl.replace(/\/+$/, "").replace(/\.git$/, "");
+  const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
+  if (!tail) return "Untitled Workspace";
+  return tail
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export async function readBody(c: Context) {
+  try {
+    return await c.req.json<Record<string, unknown>>();
+  } catch {
+    return {};
+  }
+}
+
+export function serializeBuildSummary(
+  b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number],
+) {
+  // errorCategory is a free-form column; older rows predate the classifier.
+  const category = (b.errorCategory ??
+    (b.error
+      ? classifySnapshotError(b.error)
+      : null)) as SnapshotErrorCategory | null;
+  return {
+    build_id: b.buildId,
+    slug: b.slug,
+    /**
+     * The TEMPLATE this build was for. `slug` may be a build-log pseudo-slug
+     * (`default-warm`) that names no template; clients that want to act on a build
+     * — rebuild it, boot a session on it — must use this, never `slug`.
+     */
+    template_slug: templateSlugFromBuildSlug(b.slug),
+    snapshot_name: b.snapshotName,
+    content_hash: b.contentHash,
+    status: b.status,
+    error: b.error,
+    error_category: category,
+    /**
+     * Whether an in-sandbox agent could plausibly fix this by editing the repo.
+     * Server-derived so the UI can't drift from what the API will accept: infra
+     * failures (quota, provider, timeout) are not repo-editable, and a fix session
+     * can't even boot when the snapshot it needs is the thing that failed.
+     */
+    fixable_by_agent: category
+      ? describeSnapshotError(category).fixableByAgent
+      : false,
+    source: b.source,
+    provider: b.provider,
+    started_at: b.startedAt.toISOString(),
+    finished_at: b.finishedAt?.toISOString() ?? null,
+  };
+}
+
+export function serializeTemplate(
+  t: Awaited<ReturnType<typeof listSandboxTemplates>>[number],
+) {
+  return {
+    template_id: t.templateId,
+    slug: t.slug,
+    name: t.name,
+    is_default: t.isDefault,
+    source: t.source,
+    provider: t.provider,
+    has_dockerfile: t.hasDockerfile,
+    has_image: t.hasImage,
+    image: t.image,
+    dockerfile_path: t.dockerfilePath,
+    entrypoint: t.entrypoint,
+    cpu: t.cpu,
+    memory_gb: t.memoryGb,
+    disk_gb: t.diskGb,
+    snapshot_name: t.snapshotName,
+    content_hash: t.contentHash,
+    built_from_commit: t.builtFromCommit,
+    daytona_state: t.daytonaState,
+    provider_state: t.providerState,
+    ready: t.ready,
+    ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
+  };
+}
+
+const WORKSPACE_ROLES = ["editor", "member"] as const;
+
+export type WorkspaceGroupGrantRole = (typeof WORKSPACE_ROLES)[number];
+
+export function isWorkspaceRole(v: unknown): v is WorkspaceGroupGrantRole {
+  return (
+    typeof v === "string" && (WORKSPACE_ROLES as readonly string[]).includes(v)
+  );
+}
+
+// GET /v1/workspaces/:workspaceId/group-grants
+// List every group attached to this workspace, with the role + group name.

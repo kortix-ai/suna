@@ -53,7 +53,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
       icon={<Layers className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Background work',
-        subtitle: project || 'all projects',
+        subtitle: project || 'all workspaces',
         args: workers.length > 0 ? [`${workers.length} workers`] : noWorkers ? ['none'] : [],
       }}
       defaultOpen={defaultOpen}

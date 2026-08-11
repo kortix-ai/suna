@@ -39,7 +39,7 @@ export const CLI_CONNECTOR_RUNTIME_FILES = [
   // is the guard that catches it).
   'src/api/sdk.ts',
   'src/api/sandbox-env.ts',
-  'src/project-link.ts',
+  'src/workspace-link.ts',
 ] as const;
 
 const CLI_RUNTIME_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;

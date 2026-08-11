@@ -83,9 +83,9 @@ voiceJoinPublicApp.openapi(
  * cookie, no PAT: whoever holds the link is in the call and can hear all of
  * this being said anyway.
  *
- * Deliberately NOT a project- or session-scoped read. `resolveJoinLink`
+ * Deliberately NOT a workspace- or session-scoped read. `resolveJoinLink`
  * returns the call id, and that call id is the ONLY thing that reaches
- * `readTurns` — the caller never names a call, a session or a project, so
+ * `readTurns` — the caller never names a call, a session or a workspace, so
  * there is no id for an anonymous caller to swap for someone else's. The
  * project id the link resolves to is not echoed back either; the page has no
  * use for it and it is not this visitor's to learn.

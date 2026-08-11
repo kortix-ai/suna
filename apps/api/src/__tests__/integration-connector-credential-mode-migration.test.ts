@@ -26,7 +26,7 @@ const CONNECTOR_IDS = [CONN_SHARED_ALREADY, CONN_PER_USER_WITH_SHARED, CONN_PER_
 const CONSTRAINT_NAME = 'connectors_credential_mode_shared_only';
 const LEGACY_CREDENTIAL_INDEX = 'idx_connection_credentials_legacy_connector_unique';
 
-let projectId = '';
+let workspaceId = '';
 let accountId = '';
 let memberUserId = '';
 let seeded = false;
@@ -90,7 +90,7 @@ beforeAll(async () => {
     console.warn('[integration] no project in local DB — skipping credential-mode migration test');
     return;
   }
-  projectId = proj.project_id;
+  workspaceId = proj.project_id;
   accountId = proj.account_id;
   memberUserId = accountId; // any real uuid works as the "member" for this fixture
 
@@ -109,7 +109,7 @@ beforeAll(async () => {
       {
         connectorId: CONN_SHARED_ALREADY,
         accountId,
-        projectId,
+        workspaceId,
         slug: 'migration-test-shared',
         name: 'Migration Test Shared',
         providerType: 'pipedream',
@@ -118,7 +118,7 @@ beforeAll(async () => {
       {
         connectorId: CONN_PER_USER_WITH_SHARED,
         accountId,
-        projectId,
+        workspaceId,
         slug: 'migration-test-peruser-with-shared',
         name: 'Migration Test PerUser w/ shared',
         providerType: 'pipedream',
@@ -127,7 +127,7 @@ beforeAll(async () => {
       {
         connectorId: CONN_PER_USER_NO_SHARED,
         accountId,
-        projectId,
+        workspaceId,
         slug: 'migration-test-peruser-no-shared',
         name: 'Migration Test PerUser no shared',
         providerType: 'pipedream',

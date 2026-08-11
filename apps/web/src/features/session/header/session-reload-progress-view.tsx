@@ -2,7 +2,7 @@ import Loading from '@/components/ui/loading';
 import {
   RELOAD_PROGRESS_STEPS,
   reloadProgressPosition,
-} from '@/hooks/projects/session-reload-progress';
+} from '@/hooks/workspaces/session-reload-progress';
 import type { SessionReloadPhase } from '@kortix/sdk';
 import { CheckIcon } from '@phosphor-icons/react';
 
@@ -19,7 +19,7 @@ export function SessionReloadProgressView({ phase }: { phase: SessionReloadPhase
           >
             <span className="flex size-4 shrink-0 items-center justify-center">
               {position === 'complete' ? (
-                <CheckIcon className="text-kortix-green size-3.5" weight="bold" />
+                <CheckIcon className="text-kortix-green size-3.5" />
               ) : position === 'current' ? (
                 <Loading className="text-foreground size-3.5" />
               ) : (

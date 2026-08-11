@@ -2,10 +2,10 @@ import { lt } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
+import { workspaceFeatureFlagEnabled } from '../../feature-flags/for-workspace';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
-import { resolveConversationProject } from './binding';
+import { resolveConversationWorkspace } from './binding';
 import { buildWelcomeCard } from './cards';
 import { handleTeamsCommand, parseTeamsCommand } from './commands';
 import { createOrJoinTeamsConversationSession } from './session';
@@ -52,11 +52,11 @@ export async function handleTeamsConversationUpdate(activity: TeamsActivity): Pr
   if (!tenantId || !conversationId || !activity.serviceUrl) return;
   if (await alreadyHandled(`welcome:${conversationId}`)) return;
 
-  const projectId = await resolveConversationProject(tenantId, conversationId);
-  if (!projectId) return;
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) return;
+  const workspaceId = await resolveConversationWorkspace(tenantId, conversationId);
+  if (!workspaceId) return;
+  if (!(await workspaceFeatureFlagEnabled(workspaceId, 'teams'))) return;
 
-  const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
+  const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/workspaces/${workspaceId}`;
   await sendCard(
     {
       serviceUrl: activity.serviceUrl,
@@ -64,7 +64,7 @@ export async function handleTeamsConversationUpdate(activity: TeamsActivity): Pr
       botId: activity.recipient?.id,
       fromId: activity.from?.id,
       tenantId,
-      projectId,
+      workspaceId,
     },
     buildWelcomeCard({ projectUrl }),
   );
@@ -86,27 +86,27 @@ export async function handleTeamsActivity(activity: TeamsActivity): Promise<void
   if (await alreadyHandled(activity.id!)) return;
 
   const conversationId = activity.conversation!.id!;
-  const projectId = await resolveConversationProject(tenantId, conversationId);
-  if (!projectId) {
-    console.warn('[teams-webhook] no project installed for tenant', { tenantId });
+  const workspaceId = await resolveConversationWorkspace(tenantId, conversationId);
+  if (!workspaceId) {
+    console.warn('[teams-webhook] no workspace installed for tenant', { tenantId });
     return;
   }
-  // Per-project gate — the `teams` feature flag. This is the only
+  // Per-Workspace gate — the `teams` feature flag. This is the only
   // enforcement point for the shared multi-tenant webhook, which cannot know
-  // the project before this line.
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) {
-    console.warn('[teams-webhook] teams feature is off for project — ignoring', { projectId });
+  // the workspace before this line.
+  if (!(await workspaceFeatureFlagEnabled(workspaceId, 'teams'))) {
+    console.warn('[teams-webhook] teams feature is off for workspace — ignoring', { workspaceId });
     return;
   }
 
   const command = parseTeamsCommand(activity.text);
   if (command) {
-    await handleTeamsCommand({ command, activity, tenantId, projectId });
+    await handleTeamsCommand({ command, activity, tenantId, workspaceId });
     await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
     return;
   }
 
-  await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity });
+  await createOrJoinTeamsConversationSession({ workspaceId, tenantId, conversationId, activity });
 
   await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
 }

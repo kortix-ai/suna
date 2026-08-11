@@ -10,7 +10,7 @@ export function automaticMaintenanceConfig(): MaintenanceConfig {
 }
 
 export function isMaintenanceProductRoute(pathname: string): boolean {
-  return ['/projects', '/accounts', '/invites'].some(
+  return ['/workspaces', '/projects', '/accounts', '/invites'].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }

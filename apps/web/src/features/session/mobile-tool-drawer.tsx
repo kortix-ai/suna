@@ -43,12 +43,12 @@ const TOOL_META: Record<QuickView, { label: string; Icon: Icon }> = {
 
 export function MobileToolDrawer({
   sessionId,
-  projectId,
-  projectSessionId,
+  workspaceId,
+  workspaceSessionId,
 }: {
   sessionId: string;
-  projectId?: string;
-  projectSessionId?: string;
+  workspaceId?: string;
+  workspaceSessionId?: string;
 }) {
   const view = useKortixComputerStore((s) => s.mobileToolView);
   const closeMobileTool = useKortixComputerStore((s) => s.closeMobileTool);
@@ -71,24 +71,24 @@ export function MobileToolDrawer({
         </DrawerHeader>
         <div className="min-h-0 flex-1 overflow-hidden">
           {view === 'terminal' && (
-            <SessionTerminalPanel sessionId={sessionId} projectSessionId={projectSessionId} />
+            <SessionTerminalPanel sessionId={sessionId} workspaceSessionId={workspaceSessionId} />
           )}
           {view === 'browser' && (
             <BrowserPanel
               tabId={sessionPreviewTabId(sessionId)}
-              projectId={projectId}
-              projectSessionId={projectSessionId}
+              workspaceId={workspaceId}
+              workspaceSessionId={workspaceSessionId}
             />
           )}
           {view === 'files' && (
             <SessionFilesExplorer
               chatSessionId={sessionId}
-              projectId={projectId}
-              projectSessionId={projectSessionId}
+              workspaceId={workspaceId}
+              workspaceSessionId={workspaceSessionId}
             />
           )}
           {view === 'audit' && (
-            <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />
+            <SessionAuditPanel workspaceId={workspaceId} workspaceSessionId={workspaceSessionId} />
           )}
         </div>
       </DrawerContent>

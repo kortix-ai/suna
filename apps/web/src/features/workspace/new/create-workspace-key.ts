@@ -1,18 +1,18 @@
 /**
  * A stable `idempotency_key` for one create attempt on `/new`.
  *
- * `POST /v1/projects/provision` mints a brand-new managed repo per call, so a
+ * `POST /v1/workspaces/provision` mints a brand-new managed repo per call, so a
  * reload, a second tab, or a retry after a lost response used to create a real
  * duplicate workspace with its own upstream repo. The key is what stops that.
  *
- * Per the API contract in `apps/api/src/projects/routes/r1.ts`, the key
+ * Per the API contract in `apps/api/src/workspaces/routes/r1.ts`, the key
  * identifies the ATTEMPT, not the payload — the same key with a different name
  * returns the FIRST project and silently ignores the new payload. So the
  * fingerprint passed in by the caller must include everything that makes a
  * create *distinct*, and the key must be reused only across retries of the
  * same create.
  *
- * The TTL matches `PROVISION_ATTEMPT_TTL_MS` in `lib/onboarding/ensure-first-project.ts`
+ * The TTL matches `PROVISION_ATTEMPT_TTL_MS` in `lib/onboarding/ensure-first-workspace.ts`
  * and is chosen against the slowest provision this repo documents — a snapshot
  * build of up to ~9 min. At 6x that ceiling the bound can never expire a key
  * while the attempt it identifies could still be committing.

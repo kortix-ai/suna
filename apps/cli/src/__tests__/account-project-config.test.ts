@@ -7,9 +7,11 @@ import {
   activeAccount,
   clearDefaultProject,
   defaultProject,
+  defaultWorkspace,
   loadConfig,
   setActiveAccount,
   setDefaultProject,
+  setDefaultWorkspace,
 } from '../api/config.ts';
 import { resolveProjectId, saveLink } from '../project-link.ts';
 import { renderContext, renderHostNotice } from '../host-notice.ts';
@@ -20,6 +22,7 @@ const ENV_KEYS = [
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
+  'KORTIX_WORKSPACE_ID',
   'BASH_ENV',
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
@@ -97,6 +100,33 @@ describe('config: account + default-project state', () => {
     expect(clearDefaultProject()).toBe(false);
   });
 
+  test('canonical Workspace storage migrates legacy Workspace config', () => {
+    writeConfig({
+      test: loggedInHost({
+        default_project: { project_id: 'proj_a', account_id: 'account_1', name: 'Alpha' },
+      }),
+    });
+
+    expect(defaultWorkspace()).toEqual({
+      workspace_id: 'proj_a',
+      account_id: 'account_1',
+      name: 'Alpha',
+    });
+
+    setDefaultWorkspace({
+      workspace_id: 'workspace_b',
+      account_id: 'account_1',
+      name: 'Beta',
+    });
+    const onDisk = JSON.parse(readFileSync(process.env.KORTIX_CONFIG_FILE!, 'utf8'));
+    expect(onDisk.hosts.test.default_workspace).toEqual({
+      workspace_id: 'workspace_b',
+      account_id: 'account_1',
+      name: 'Beta',
+    });
+    expect(onDisk.hosts.test.default_project).toBeUndefined();
+  });
+
   test('switching to a different account drops a now-foreign default project', () => {
     writeConfig({
       test: loggedInHost({
@@ -111,7 +141,11 @@ describe('config: account + default-project state', () => {
   test('switching to the SAME account keeps the default project', () => {
     writeConfig({
       test: loggedInHost({
-        default_project: { project_id: 'proj_a', account_id: 'account_1', name: 'Alpha' },
+        default_project: {
+          project_id: 'proj_a',
+          account_id: 'account_1',
+          name: 'Alpha',
+        },
       }),
     });
     setActiveAccount({ id: 'account_1', slug: 'one', name: 'One' });
@@ -140,6 +174,15 @@ describe('resolveProjectId fallback order', () => {
     expect(resolveProjectId('explicit')).toBe('explicit');
     process.env.KORTIX_PROJECT_ID = 'env_proj';
     expect(resolveProjectId()).toBe('env_proj');
+  });
+
+  test('KORTIX_WORKSPACE_ID is canonical and outranks KORTIX_PROJECT_ID', () => {
+    writeConfig({ test: loggedInHost() });
+    process.chdir(tmp);
+    process.env.KORTIX_PROJECT_ID = 'legacy-project';
+    process.env.KORTIX_WORKSPACE_ID = 'canonical-workspace';
+
+    expect(resolveProjectId()).toBe('canonical-workspace');
   });
 
   test('a directory link outranks the default project', () => {
@@ -174,11 +217,11 @@ describe('renderContext + host notice', () => {
     expect(out).toContain('test');
     expect(out).toContain('account');
     expect(out).toContain('Kortix');
-    expect(out).toContain('project');
+    expect(out).toContain('workspace');
     expect(out).toContain('Alpha');
     expect(out).toContain('(default)');
     // A bound default project points at the switch verb.
-    expect(out).toContain('switch with `kortix projects use`');
+    expect(out).toContain('switch with `kortix workspaces use`');
   });
 
   test('a directory-linked project does not show the default-project switch hint', () => {
@@ -205,7 +248,7 @@ describe('renderContext + host notice', () => {
     process.chdir(tmp);
     const out = stripAnsi(renderContext());
     expect(out).toContain('kortix accounts use');
-    expect(out).toContain('kortix projects use');
+    expect(out).toContain('kortix workspaces use');
   });
 
   test('breadcrumb renders the full host -> account -> project -> session path when signed in', () => {
@@ -223,7 +266,7 @@ describe('renderContext + host notice', () => {
     expect(out).toContain('▸ kortix hosts use');
     // Every level is present, top-down.
     expect(out).toContain('account');
-    expect(out).toContain('project');
+    expect(out).toContain('workspace');
     expect(out).toContain('session');
     // The session leaf is empty (no persisted active session) and offers a verb.
     expect(out).toContain('open one: kortix chat');
@@ -270,7 +313,7 @@ describe('renderContext + host notice', () => {
     const notice = stripAnsi(renderHostNotice(['whoami']) ?? '');
     expect(notice).toContain('host test');
     expect(notice).toContain('account Kortix');
-    expect(notice).toContain('project Alpha');
+    expect(notice).toContain('workspace Alpha');
     expect(notice).toContain('(default)');
   });
 
@@ -295,7 +338,7 @@ describe('renderContext + host notice', () => {
     const notice = stripAnsi(renderHostNotice(['env', 'pull']) ?? '');
     expect(notice).toContain('host customdev');
     expect(notice).toContain('https://dev-api.kortix.com');
-    expect(notice).toContain('project proj_lin');
+    expect(notice).toContain('workspace proj_lin');
     expect(notice).not.toContain('host cloud');
   });
 
@@ -311,6 +354,6 @@ describe('renderContext + host notice', () => {
     const notice = stripAnsi(renderHostNotice(['whoami', '--host', 'cloud']) ?? '');
     expect(notice).toContain('host cloud');
     expect(notice).not.toContain('account Kortix');
-    expect(notice).not.toContain('project Alpha');
+    expect(notice).not.toContain('workspace Alpha');
   });
 });

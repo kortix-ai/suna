@@ -11,7 +11,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
  * server-side only. See docs/specs/connector.md §5–6.
  */
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { decryptWorkspaceSecret, encryptWorkspaceSecret } from '../workspaces/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import {
@@ -32,7 +32,7 @@ interface CredentialRow {
   credentialId: string;
   kind: string;
   valueEnc: string;
-  projectId: string;
+  workspaceId: string;
 }
 
 interface OAuth2CredentialRuntime {
@@ -45,7 +45,7 @@ async function resolveCredentialRow(
 ): Promise<string | null> {
   if (row.kind !== 'oauth2_client_credentials' && row.kind !== 'oauth2_delegated') {
     try {
-      return decryptProjectSecret(row.projectId, row.valueEnc);
+      return decryptWorkspaceSecret(row.workspaceId, row.valueEnc);
     } catch {
       return null;
     }
@@ -65,7 +65,7 @@ async function resolveCredentialRow(
     if (!current) return null;
     let value: string;
     try {
-      value = decryptProjectSecret(row.projectId, current.valueEnc);
+      value = decryptWorkspaceSecret(row.workspaceId, current.valueEnc);
     } catch {
       return null;
     }
@@ -83,7 +83,7 @@ async function resolveCredentialRow(
       await tx
         .update(connectionCredentials)
         .set({
-          valueEnc: encryptProjectSecret(row.projectId, resolved.updatedValue),
+          valueEnc: encryptWorkspaceSecret(row.workspaceId, resolved.updatedValue),
           updatedAt: new Date(),
         })
         .where(eq(connectionCredentials.credentialId, row.credentialId));
@@ -104,7 +104,7 @@ export async function resolveCredentialValue(
       credentialId: connectionCredentials.credentialId,
       kind: connectionCredentials.kind,
       valueEnc: connectionCredentials.valueEnc,
-      projectId: connectors.projectId,
+      workspaceId: connectors.workspaceId,
     })
     .from(connectionCredentials)
     .innerJoin(
@@ -169,7 +169,7 @@ export async function connectorIdsWithSharedCredentials(
         isNull(connectionCredentials.userId),
         or(
           isNull(connectionCredentials.connectionId),
-          // "The default" here means the PROJECT's shared default. Defaults are
+          // "The default" here means the WORKSPACE's shared default. Defaults are
           // per-owner now (a member may mark one of their own connections
           // default), so this must exclude member/external rows or a personal
           // connection would count as the connector being team-connected.
@@ -191,7 +191,7 @@ async function defaultConnectionIdForConnector(connectorId: string): Promise<str
       and(
         eq(connectorConnections.connectorId, connectorId),
         eq(connectorConnections.isDefault, true),
-        // The PROJECT's shared default (per-owner defaults now exist).
+        // The WORKSPACE's shared default (per-owner defaults now exist).
         eq(connectorConnections.ownerType, 'project'),
       ),
     )
@@ -211,7 +211,7 @@ export async function resolveConnectionCredentialValue(
       credentialId: connectionCredentials.credentialId,
       kind: connectionCredentials.kind,
       valueEnc: connectionCredentials.valueEnc,
-      projectId: connectors.projectId,
+      workspaceId: connectors.workspaceId,
     })
     .from(connectionCredentials)
     .innerJoin(
@@ -247,7 +247,7 @@ export async function connectionCredentialExists(input: {
 }
 
 export async function upsertConnectionCredential(input: {
-  projectId: string;
+  workspaceId: string;
   connectorId: string;
   connectionId: string;
   value: string;
@@ -261,12 +261,12 @@ export async function upsertConnectionCredential(input: {
       and(
         eq(connectorConnections.connectionId, input.connectionId),
         eq(connectorConnections.connectorId, input.connectorId),
-        eq(connectorConnections.projectId, input.projectId),
+        eq(connectorConnections.workspaceId, input.workspaceId),
       ),
     )
     .limit(1);
   if (!connection) throw new Error('Connection not found');
-  const valueEnc = encryptProjectSecret(input.projectId, input.value);
+  const valueEnc = encryptWorkspaceSecret(input.workspaceId, input.value);
   const [existing] = await db
     .select({ credentialId: connectionCredentials.credentialId })
     .from(connectionCredentials)
@@ -295,7 +295,7 @@ export async function upsertConnectionCredential(input: {
 
 export async function upsertConnectionOAuth2Credential(
   input: {
-    projectId: string;
+    workspaceId: string;
     connectorId: string;
     connectionId: string;
     oauth2: OAuth2ClientCredentials;
@@ -307,7 +307,7 @@ export async function upsertConnectionOAuth2Credential(
     ? await runtime.acquire(input.oauth2)
     : await acquireOAuth2ClientCredentialsToken(input.oauth2);
   await upsertConnectionCredential({
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     connectorId: input.connectorId,
     connectionId: input.connectionId,
     value: createStoredOAuth2Credential(input.oauth2, token),
@@ -317,7 +317,7 @@ export async function upsertConnectionOAuth2Credential(
 }
 
 export async function ensureDefaultConnection(input: {
-  projectId: string;
+  workspaceId: string;
   connectorId: string;
   createdBy?: string | null;
 }): Promise<string> {
@@ -328,7 +328,7 @@ export async function ensureDefaultConnection(input: {
       and(
         eq(connectorConnections.connectorId, input.connectorId),
         eq(connectorConnections.isDefault, true),
-        // The PROJECT's shared default — defaults are per-owner now, so a
+        // The WORKSPACE's shared default — defaults are per-owner now, so a
         // member's own default connection must never be picked up here.
         eq(connectorConnections.ownerType, 'project'),
       ),
@@ -342,7 +342,7 @@ export async function ensureDefaultConnection(input: {
     .where(
       and(
         eq(connectors.connectorId, input.connectorId),
-        eq(connectors.projectId, input.projectId),
+        eq(connectors.workspaceId, input.workspaceId),
       ),
     )
     .limit(1);
@@ -353,7 +353,7 @@ export async function ensureDefaultConnection(input: {
       .insert(connectorConnections)
       .values({
         accountId: connector.accountId,
-        projectId: connector.projectId,
+        workspaceId: connector.workspaceId,
         connectorId: connector.connectorId,
         ownerType: 'project',
         ownerId: null,
@@ -375,7 +375,7 @@ export async function ensureDefaultConnection(input: {
       and(
         eq(connectorConnections.connectorId, input.connectorId),
         eq(connectorConnections.isDefault, true),
-        // The PROJECT's shared default — defaults are per-owner now, so a
+        // The WORKSPACE's shared default — defaults are per-owner now, so a
         // member's own default connection must never be picked up here.
         eq(connectorConnections.ownerType, 'project'),
       ),
@@ -387,7 +387,7 @@ export async function ensureDefaultConnection(input: {
 
 /** Store/replace a credential. `userId=null` = shared; set = that member's own. */
 export async function upsertCredential(opts: {
-  projectId: string;
+  workspaceId: string;
   connectorId: string;
   userId: string | null;
   value: string;
@@ -395,7 +395,7 @@ export async function upsertCredential(opts: {
   createdBy?: string | null;
 }): Promise<void> {
   const connectionId = await ensureDefaultConnection(opts);
-  const valueEnc = encryptProjectSecret(opts.projectId, opts.value);
+  const valueEnc = encryptWorkspaceSecret(opts.workspaceId, opts.value);
   const [existing] = await db
     .select({ id: connectionCredentials.credentialId })
     .from(connectionCredentials)
@@ -431,7 +431,7 @@ export async function upsertCredential(opts: {
 
 export async function upsertOAuth2Credential(
   opts: {
-    projectId: string;
+    workspaceId: string;
     connectorId: string;
     userId: string | null;
     oauth2: OAuth2ClientCredentials;
@@ -443,7 +443,7 @@ export async function upsertOAuth2Credential(
     ? await runtime.acquire(opts.oauth2)
     : await acquireOAuth2ClientCredentialsToken(opts.oauth2);
   await upsertCredential({
-    projectId: opts.projectId,
+    workspaceId: opts.workspaceId,
     connectorId: opts.connectorId,
     userId: opts.userId,
     value: createStoredOAuth2Credential(opts.oauth2, token),

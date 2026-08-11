@@ -1,9 +1,9 @@
 import {
   getSessionCostRecord,
-  listProjectsForAccount,
+  listWorkspacesForAccount,
   listSessionCosts,
   type GetSessionCostRecordOptions,
-  type KortixProject,
+  type KortixWorkspace,
   type ListSessionCostsOptions,
   type SessionCostDetail,
   type SessionCostSort,
@@ -19,18 +19,18 @@ const SESSION_COST_STALE_TIME_MS = 30_000;
 export interface SessionCostQuerySources {
   list(options?: ListSessionCostsOptions): Promise<SessionCostsPage>;
   get(sessionId: string, options?: GetSessionCostRecordOptions): Promise<SessionCostDetail>;
-  projects(accountId?: string): Promise<KortixProject[]>;
+  workspaces(accountId?: string): Promise<KortixWorkspace[]>;
 }
 
 const sdkSources: SessionCostQuerySources = {
   list: listSessionCosts,
   get: getSessionCostRecord,
-  projects: listProjectsForAccount,
+  workspaces: listWorkspacesForAccount,
 };
 
 export interface SessionCostsListInput {
   accountId?: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   limit: number;
   offset: number;
   from?: string;
@@ -42,7 +42,7 @@ export interface SessionCostsListInput {
 
 export interface SessionCostDetailInput {
   accountId?: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
 }
 
@@ -52,7 +52,7 @@ export function buildSessionCostsListQuery(
 ) {
   const keyInput = {
     accountId: input.accountId ?? null,
-    projectId: input.projectId ?? null,
+    workspaceId: input.workspaceId ?? null,
     limit: input.limit,
     offset: input.offset,
     from: input.from,
@@ -62,7 +62,7 @@ export function buildSessionCostsListQuery(
   };
   const options: ListSessionCostsOptions = {
     accountId: input.accountId,
-    projectId: input.projectId ?? undefined,
+    workspaceId: input.workspaceId ?? undefined,
     ownerId: input.ownerId,
     sort: input.sort,
     from: input.from,
@@ -85,7 +85,7 @@ export function buildSessionCostDetailQuery(
 ) {
   const keyInput = {
     accountId: input.accountId ?? null,
-    projectId: input.projectId ?? null,
+    workspaceId: input.workspaceId ?? null,
     sessionId: input.sessionId ?? null,
   };
 
@@ -97,7 +97,7 @@ export function buildSessionCostDetailQuery(
       }
       return sources.get(input.sessionId, {
         accountId: input.accountId,
-        projectId: input.projectId ?? undefined,
+        workspaceId: input.workspaceId ?? undefined,
       });
     },
     // Requires an account id too, not just a session id: getSessionCostRecord's
@@ -114,27 +114,27 @@ export function buildSessionCostDetailQuery(
   };
 }
 
-export function buildSessionCostProjectsQuery(
+export function buildSessionCostWorkspacesQuery(
   accountId: string | undefined,
   sources: SessionCostQuerySources = sdkSources,
 ) {
   return {
-    queryKey: ['session-costs', 'projects', accountId ?? null] as const,
-    queryFn: () => sources.projects(accountId),
+    queryKey: ['session-costs', 'workspaces', accountId ?? null] as const,
+    queryFn: () => sources.workspaces(accountId),
     staleTime: SESSION_COST_STALE_TIME_MS,
   };
 }
 
-export function resetSessionCostProjectFilter(
-  current: { projectId: string | null; offset: number },
-  projectId: string | null,
+export function resetSessionCostWorkspaceFilter(
+  current: { workspaceId: string | null; offset: number },
+  workspaceId: string | null,
 ) {
-  if (current.projectId === projectId) return current;
-  return { projectId, offset: 0 };
+  if (current.workspaceId === workspaceId) return current;
+  return { workspaceId, offset: 0 };
 }
 
 export function useSessionCosts(input: {
-  projectId: string | null;
+  workspaceId: string | null;
   limit?: number;
   offset: number;
   from?: string;
@@ -146,7 +146,7 @@ export function useSessionCosts(input: {
   return useQuery(
     buildSessionCostsListQuery({
       accountId,
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       limit: input.limit ?? SESSION_COST_PAGE_SIZE,
       offset: input.offset,
       from: input.from,
@@ -158,20 +158,20 @@ export function useSessionCosts(input: {
 }
 
 export function useSessionCostDetail(input: {
-  projectId: string | null;
+  workspaceId: string | null;
   sessionId: string | null;
 }) {
   const accountId = useBillingAccountId();
   return useQuery(
     buildSessionCostDetailQuery({
       accountId,
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       sessionId: input.sessionId,
     }),
   );
 }
 
-export function useSessionCostProjects() {
+export function useSessionCostWorkspaces() {
   const accountId = useBillingAccountId();
-  return useQuery(buildSessionCostProjectsQuery(accountId));
+  return useQuery(buildSessionCostWorkspacesQuery(accountId));
 }

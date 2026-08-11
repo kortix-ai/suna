@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { projectProviderModalTab, resolveGateProjectId } from './use-model-connection-gate';
+import { workspaceProviderModalTab, resolveGateWorkspaceId } from './use-model-connection-gate';
 
 const gateSource = readFileSync(join(import.meta.dir, 'use-model-connection-gate.tsx'), 'utf8');
 const selectorSource = readFileSync(join(import.meta.dir, 'model-selector.tsx'), 'utf8');
@@ -11,14 +11,14 @@ const chatGateSource = readFileSync(join(import.meta.dir, 'model-connection-gate
 
 describe('model management entry-point routing', () => {
   test('maps each precise action to the matching project modal tab', () => {
-    expect(projectProviderModalTab('providers')).toBe('catalog');
-    expect(projectProviderModalTab('connected')).toBe('connected');
-    expect(projectProviderModalTab('models')).toBe('models');
+    expect(workspaceProviderModalTab('providers')).toBe('catalog');
+    expect(workspaceProviderModalTab('connected')).toBe('connected');
+    expect(workspaceProviderModalTab('models')).toBe('models');
   });
 
-  test('opens the project provider modal without opening Customize', () => {
-    expect(gateSource).toContain('setProjectModalTab(projectProviderModalTab(tab))');
-    expect(gateSource).toContain('setProjectModalOpen(true)');
+  test('opens the workspace provider modal without opening Customize', () => {
+    expect(gateSource).toContain('setWorkspaceModalTab(workspaceProviderModalTab(tab))');
+    expect(gateSource).toContain('setWorkspaceModalOpen(true)');
     expect(gateSource).not.toContain('useCustomizeStore');
     expect(gateSource).not.toContain('openCustomize');
   });
@@ -31,7 +31,7 @@ describe('model management entry-point routing', () => {
     expect(selectorSource).toContain('Connect provider');
   });
 
-  // A picked model only STAYS picked if `isSelectableModel` agrees the project
+  // A picked model only STAYS picked if `isSelectableModel` agrees the workspace
   // offers it — `resolveAvailableSelectedModel` nulls it otherwise, and the
   // picker then renders `unsetLabel` with no check mark, so every click looks
   // like a no-op. That answer must come from the server's `enabled` flag, never
@@ -59,22 +59,22 @@ describe('model management entry-point routing', () => {
  * `useParams<{ id?: string }>()`. Every original caller lives under
  * `/projects/[id]`, so that was invisible — until the onboarding wizard's plan
  * step started rendering on `/new` (`app/(app)/new`), a route with NO `[id]`
- * segment. There `params.id` is `undefined`, `projectId` resolved to `null`,
+ * segment. There `params.id` is `undefined`, `workspaceId` resolved to `null`,
  * `modal` was therefore `null`, and picking "Bring your own API key" rendered
  * nothing AND never called `onContinue()` — the wizard could not advance past
  * a step whose primary button is its only control.
  */
-describe('resolveGateProjectId: which project the gate acts on', () => {
+describe('resolveGateWorkspaceId: which project the gate acts on', () => {
   test('an explicitly passed id wins over the route', () => {
-    expect(resolveGateProjectId('proj_explicit', 'proj_from_route')).toBe('proj_explicit');
+    expect(resolveGateWorkspaceId('proj_explicit', 'proj_from_route')).toBe('proj_explicit');
   });
 
   test('falls back to the route id when the caller passes none', () => {
-    expect(resolveGateProjectId(undefined, 'proj_from_route')).toBe('proj_from_route');
+    expect(resolveGateWorkspaceId(undefined, 'proj_from_route')).toBe('proj_from_route');
   });
 
   test('THE /new case: no explicit id and no [id] segment resolves to null', () => {
-    expect(resolveGateProjectId(undefined, undefined)).toBeNull();
+    expect(resolveGateWorkspaceId(undefined, undefined)).toBeNull();
   });
 
   /**
@@ -84,12 +84,12 @@ describe('resolveGateProjectId: which project the gate acts on', () => {
    * the call site.
    */
   test('an explicit null is honoured — it does NOT fall through to the route', () => {
-    expect(resolveGateProjectId(null, 'proj_from_route')).toBeNull();
+    expect(resolveGateWorkspaceId(null, 'proj_from_route')).toBeNull();
   });
 
   test('a non-string route param (a catch-all segment) is not treated as an id', () => {
-    expect(resolveGateProjectId(undefined, ['a', 'b'])).toBeNull();
-    expect(resolveGateProjectId(undefined, null)).toBeNull();
+    expect(resolveGateWorkspaceId(undefined, ['a', 'b'])).toBeNull();
+    expect(resolveGateWorkspaceId(undefined, null)).toBeNull();
   });
 });
 
@@ -101,12 +101,12 @@ describe('useModelConnectionGate: the options argument is backward compatible', 
 
   test('models stays the FIRST parameter and options is optional', () => {
     expect(gateSource).toContain('models: FlatModel[] = []');
-    expect(gateSource).toContain('options?: { projectId?: string | null }');
+    expect(gateSource).toContain('options?: { workspaceId?: string | null }');
   });
 
-  test('the hook resolves through resolveGateProjectId, not a raw params read', () => {
-    expect(gateSource).toContain('resolveGateProjectId(options?.projectId, params?.id)');
-    expect(gateSource).not.toContain('const projectId = typeof params?.id');
+  test('the hook resolves through resolveGateWorkspaceId, not a raw params read', () => {
+    expect(gateSource).toContain('resolveGateWorkspaceId(options?.workspaceId, params?.id)');
+    expect(gateSource).not.toContain('const workspaceId = typeof params?.id');
   });
 
   /**

@@ -1,7 +1,7 @@
 'use client';
 
 import { BRAND, resolveApiUrl } from '@/config/brand';
-import { configureKortix, createKortix } from '@kortix/sdk';
+import { configureKortix, createKortix, type Kortix } from '@kortix/sdk';
 import { getSessionToken } from './session';
 
 /**
@@ -34,7 +34,7 @@ export function clearApiKey(): void {
  * below can safely re-point the same `kortix` object at the wrapper proxy
  * later — no consumer needs to re-import or re-create anything.
  */
-export const kortix = createKortix({
+export const kortix: Kortix = createKortix({
   backendUrl: BRAND.apiUrl,
   getToken: async () => getApiKey(),
 });

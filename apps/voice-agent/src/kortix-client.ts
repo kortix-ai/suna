@@ -57,7 +57,7 @@ interface JsonRpcResponse {
 
 function mcpEndpoint(ctx: CallContext): string {
   const base = ctx.kortixApiUrl.replace(/\/+$/, '');
-  return `${base}/v1/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/mcp/voice`;
+  return `${base}/v1/projects/${encodeURIComponent(ctx.workspaceId)}/sessions/${encodeURIComponent(ctx.sessionId)}/mcp/voice`;
 }
 
 let nextRpcId = 1;

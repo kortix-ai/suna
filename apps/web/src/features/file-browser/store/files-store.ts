@@ -188,7 +188,7 @@ export function createFilesStore(): FilesStoreApi {
   navigateToPath: (path: string) => {
     const { rootPath } = get();
     let normalized = path || '/workspace';
-    // Clamp to rootPath when set — prevent escaping the project directory
+    // Clamp to rootPath when set — prevent escaping the workspace directory
     if (rootPath && !isWithinRoot(normalized, rootPath)) {
       normalized = rootPath;
     }

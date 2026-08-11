@@ -84,7 +84,7 @@ function buildHandler(
   overrides: {
     messagesImpl?: () => Promise<{ data?: unknown }>;
     getImpl?: () => Promise<{ data?: unknown }>;
-    projectId?: string;
+    workspaceId?: string;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -124,7 +124,7 @@ function buildHandler(
     normalizeDiagnosticPaths: { current: (x) => x },
     markSessionAbortedLocally: { current: markSessionAbortedLocally.fn },
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
-    projectId: overrides.projectId,
+    workspaceId: overrides.workspaceId,
   });
 
   return {
@@ -398,12 +398,12 @@ describe('session lifecycle cache mutations', () => {
 // ============================================================================
 
 describe('kortix session title mirroring', () => {
-  const PROJECT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
-  const PROJECT_SESSION_ID = '11111111-2222-4333-8444-555555555555';
+  const WORKSPACE_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const WORKSPACE_SESSION_ID = '11111111-2222-4333-8444-555555555555';
 
   function kortixRow(overrides: Record<string, unknown> = {}) {
     return {
-      session_id: PROJECT_SESSION_ID,
+      session_id: WORKSPACE_SESSION_ID,
       opencode_session_id: 'ses_a',
       name: 'Generated Title',
       custom_name: null,
@@ -423,66 +423,66 @@ describe('kortix session title mirroring', () => {
   }
 
   test('session.updated with a new title patches every cached Kortix session read', () => {
-    const { handleEvent, queryClient } = buildHandler({ projectId: PROJECT_ID });
-    queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [kortixRow()]);
-    queryClient.setQueryData(qk.project.sessions(PROJECT_ID, 'project'), [kortixRow()]);
-    queryClient.setQueryData(qk.project.session(PROJECT_ID, PROJECT_SESSION_ID), kortixRow());
+    const { handleEvent, queryClient } = buildHandler({ workspaceId: WORKSPACE_ID });
+    queryClient.setQueryData(qk.workspace.sessions(WORKSPACE_ID), [kortixRow()]);
+    queryClient.setQueryData(qk.workspace.sessions(WORKSPACE_ID, 'workspace'), [kortixRow()]);
+    queryClient.setQueryData(qk.workspace.session(WORKSPACE_ID, WORKSPACE_SESSION_ID), kortixRow());
 
     handleEvent(titleEvent('Runtime Title'));
 
     const visible = queryClient.getQueryData<Record<string, unknown>[]>(
-      qk.project.sessions(PROJECT_ID),
+      qk.workspace.sessions(WORKSPACE_ID),
     );
-    const project = queryClient.getQueryData<Record<string, unknown>[]>(
-      qk.project.sessions(PROJECT_ID, 'project'),
+    const workspace = queryClient.getQueryData<Record<string, unknown>[]>(
+      qk.workspace.sessions(WORKSPACE_ID, 'workspace'),
     );
     const detail = queryClient.getQueryData<Record<string, unknown>>(
-      qk.project.session(PROJECT_ID, PROJECT_SESSION_ID),
+      qk.workspace.session(WORKSPACE_ID, WORKSPACE_SESSION_ID),
     );
     expect(visible?.[0]?.name).toBe('Runtime Title');
-    expect(project?.[0]?.name).toBe('Runtime Title');
+    expect(workspace?.[0]?.name).toBe('Runtime Title');
     expect(detail?.name).toBe('Runtime Title');
   });
 
   test('a user rename is never overwritten and other rows stay untouched', () => {
-    const { handleEvent, queryClient } = buildHandler({ projectId: PROJECT_ID });
+    const { handleEvent, queryClient } = buildHandler({ workspaceId: WORKSPACE_ID });
     const renamed = kortixRow({ custom_name: 'Mine', name: 'Mine' });
     const other = kortixRow({
       session_id: '99999999-8888-4777-8666-555555555555',
       opencode_session_id: 'ses_other',
       name: 'Other Session',
     });
-    queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [renamed, other]);
+    queryClient.setQueryData(qk.workspace.sessions(WORKSPACE_ID), [renamed, other]);
 
     handleEvent(titleEvent('Runtime Title'));
 
     const list = queryClient.getQueryData<Record<string, unknown>[]>(
-      qk.project.sessions(PROJECT_ID),
+      qk.workspace.sessions(WORKSPACE_ID),
     );
     expect(list?.[0]?.name).toBe('Mine');
     expect(list?.[1]?.name).toBe('Other Session');
   });
 
   test('placeholder runtime titles do not reach the Kortix caches', () => {
-    const { handleEvent, queryClient } = buildHandler({ projectId: PROJECT_ID });
-    queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [kortixRow()]);
+    const { handleEvent, queryClient } = buildHandler({ workspaceId: WORKSPACE_ID });
+    queryClient.setQueryData(qk.workspace.sessions(WORKSPACE_ID), [kortixRow()]);
 
     handleEvent(titleEvent('New session - 2026-08-09T10:00:00.000Z'));
 
     const list = queryClient.getQueryData<Record<string, unknown>[]>(
-      qk.project.sessions(PROJECT_ID),
+      qk.workspace.sessions(WORKSPACE_ID),
     );
     expect(list?.[0]?.name).toBe('Generated Title');
   });
 
-  test('no projectId means no Kortix cache writes', () => {
+  test('no workspaceId means no Kortix cache writes', () => {
     const { handleEvent, queryClient } = buildHandler();
-    queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [kortixRow()]);
+    queryClient.setQueryData(qk.workspace.sessions(WORKSPACE_ID), [kortixRow()]);
 
     handleEvent(titleEvent('Runtime Title'));
 
     const list = queryClient.getQueryData<Record<string, unknown>[]>(
-      qk.project.sessions(PROJECT_ID),
+      qk.workspace.sessions(WORKSPACE_ID),
     );
     expect(list?.[0]?.name).toBe('Generated Title');
   });

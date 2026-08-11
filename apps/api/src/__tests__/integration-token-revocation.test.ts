@@ -14,13 +14,13 @@ import {
 } from '../repositories/account-tokens';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const USER = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
 const OTHER_ACCOUNT = crypto.randomUUID();
 
 let n = 0;
-async function seedToken(userId: string, opts: { projectId?: string; sessionId?: string } = {}) {
+async function seedToken(userId: string, opts: { workspaceId?: string; sessionId?: string } = {}) {
   const tokenId = crypto.randomUUID();
   n += 1;
   await db.insert(accountTokens).values({
@@ -30,7 +30,7 @@ async function seedToken(userId: string, opts: { projectId?: string; sessionId?:
     name: `tok-${n}`,
     publicKey: `pk_${n}_${tokenId.slice(0, 8)}`,
     secretKeyHash: `hash_${n}_${tokenId.slice(0, 8)}`,
-    projectId: opts.projectId ?? null,
+    workspaceId: opts.workspaceId ?? null,
     sessionId: opts.sessionId ?? null,
   });
   return tokenId;
@@ -41,7 +41,7 @@ const statusOf = async (tokenId: string) =>
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'tok-revoke-test' });
   await db.insert(accounts).values({ accountId: OTHER_ACCOUNT, name: 'tok-revoke-test-other' });
-  await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
+  await db.insert(projects).values({ workspaceId: WORKSPACE, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
 });
 
 afterAll(async () => {
@@ -53,7 +53,7 @@ afterAll(async () => {
 describe('revokeAllAccountTokensForUser', () => {
   test('revokes ALL of the user’s active tokens (PAT + live session) but nobody else’s', async () => {
     const pat = await seedToken(USER); // a personal access token
-    const session = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-1' }); // a live sandbox token
+    const session = await seedToken(USER, { workspaceId: WORKSPACE, sessionId: 'sess-1' }); // a live sandbox token
     const otherPat = await seedToken(OTHER); // a different member — must be untouched
 
     const revoked = await revokeAllAccountTokensForUser(USER, ACCOUNT);
@@ -96,9 +96,9 @@ describe('revokeSessionConnectorTokens', () => {
   test('revokes every live token for ONE session, leaving other sessions alone', async () => {
     // A session can hold several tokens — each re-provision mints another under
     // the same session_id — so revoking "the" token is not enough.
-    const first = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-gone' });
-    const afterRestart = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-gone' });
-    const neighbour = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-alive' });
+    const first = await seedToken(USER, { workspaceId: WORKSPACE, sessionId: 'sess-gone' });
+    const afterRestart = await seedToken(USER, { workspaceId: WORKSPACE, sessionId: 'sess-gone' });
+    const neighbour = await seedToken(USER, { workspaceId: WORKSPACE, sessionId: 'sess-alive' });
 
     const revoked = await revokeSessionConnectorTokens('sess-gone', ACCOUNT);
 
@@ -109,13 +109,13 @@ describe('revokeSessionConnectorTokens', () => {
   });
 
   test('will not reach across accounts on a session id', async () => {
-    const mine = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-shared-id' });
+    const mine = await seedToken(USER, { workspaceId: WORKSPACE, sessionId: 'sess-shared-id' });
     expect(await revokeSessionConnectorTokens('sess-shared-id', OTHER_ACCOUNT)).toBe(0);
     expect(await statusOf(mine)).toBe('active');
   });
 
   test('is idempotent — a second call revokes nothing further', async () => {
-    await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-twice' });
+    await seedToken(USER, { workspaceId: WORKSPACE, sessionId: 'sess-twice' });
     expect(await revokeSessionConnectorTokens('sess-twice', ACCOUNT)).toBe(1);
     expect(await revokeSessionConnectorTokens('sess-twice', ACCOUNT)).toBe(0);
   });

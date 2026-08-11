@@ -4,7 +4,7 @@ import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
-import { KortixProjectScope } from '@/components/kortix-project-scope';
+import { KortixWorkspaceScope } from '@/components/kortix-workspace-scope';
 import { LazyMotionProvider } from '@/components/lazy-motion-provider';
 import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -238,8 +238,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                   context = { master_group: 'General', content_group: 'Other', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/auth') === 0) {
                   context = { master_group: 'General', content_group: 'User', page_type: 'auth', language: lang };
-                } else if (pathname.indexOf('/workspace') === 0 || pathname.indexOf('/projects') === 0 || pathname.indexOf('/thread') === 0) {
-                  context = { master_group: 'Platform', content_group: 'Projects', page_type: 'thread', language: lang };
+                } else if (pathname === '/workspaces' || pathname === '/projects') {
+                  context = { master_group: 'Platform', content_group: 'Workspaces', page_type: 'home', language: lang };
+                } else if (pathname.indexOf('/workspaces') === 0 || pathname.indexOf('/projects') === 0 || pathname.indexOf('/thread') === 0) {
+                  context = { master_group: 'Platform', content_group: 'Workspaces', page_type: 'thread', language: lang };
                 } else if (pathname.indexOf('/settings') === 0) {
                   context = { master_group: 'Platform', content_group: 'User', page_type: 'settings', language: lang };
                 }
@@ -354,7 +356,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                         event (coded 403) and walks the user through a TOTP
                         step-up so the retried action passes the IAM gate. */}
                         <MfaStepUpProvider>
-                          <KortixProjectScope>{children}</KortixProjectScope>
+                          <KortixWorkspaceScope>{children}</KortixWorkspaceScope>
                         </MfaStepUpProvider>
                       </RequestDemoProvider>
                       {/* Global maintenance/incident banner (info/warning/critical).
@@ -363,7 +365,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                         <MaintenanceBannerHost />
                       </Suspense>
                       {/* Fallback file-preview modal for surfaces with no session side
-                      panel (dashboard, project pages). Its file/history hooks need
+                      panel (dashboard, workspace pages). Its file/history hooks need
                       the query client, so it mounts inside ReactQueryProvider like
                       MaintenanceBannerHost above. */}
                       <Suspense fallback={null}>

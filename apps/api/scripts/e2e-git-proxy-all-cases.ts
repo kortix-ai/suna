@@ -59,41 +59,41 @@ async function mkProject(name: string, meta: Record<string, unknown>, conn: Reco
     insert into kortix.projects (account_id, name, repo_url, default_branch, manifest_path, status, metadata)
     values (${accountId}, ${name}, ${uniqueRepoUrl}, 'main', 'kortix.yaml', 'active', ${JSON.stringify(meta)}::jsonb)
     returning project_id`);
-  const projectId = (pr.rows ?? pr)[0].project_id;
-  created.projects.push(projectId);
+  const workspaceId = (pr.rows ?? pr)[0].project_id;
+  created.projects.push(workspaceId);
   await db.execute(sql`
     insert into kortix.project_git_connections
       (account_id, project_id, provider, repo_url, upstream_url, managed, repo_owner, repo_name, external_repo_id, installation_id, default_branch, auth_method, status)
-    values (${accountId}, ${projectId}, 'github', ${UPSTREAM}, ${UPSTREAM}, ${conn.managed ?? false}, ${OWNER}, ${NAME}, '0',
+    values (${accountId}, ${workspaceId}, 'github', ${UPSTREAM}, ${UPSTREAM}, ${conn.managed ?? false}, ${OWNER}, ${NAME}, '0',
       ${conn.installationId ?? null}, 'main', ${conn.authMethod}, 'connected')`);
-  return projectId;
+  return workspaceId;
 }
 
-async function mkPat(accountId: string, userId: string, projectId: string): Promise<string> {
+async function mkPat(accountId: string, userId: string, workspaceId: string): Promise<string> {
   const { publicKey, secretKey } = generateAccountTokenPair();
   const name = `e2e-allcases-${randomUUID().slice(0, 8)}`;
   created.tokenNames.push(name);
   await db.execute(sql`
     insert into kortix.account_tokens (account_id, user_id, project_id, name, public_key, secret_key_hash)
-    values (${accountId}, ${userId}, ${projectId}, ${name}, ${publicKey}, ${hashSecretKey(secretKey)})`);
+    values (${accountId}, ${userId}, ${workspaceId}, ${name}, ${publicKey}, ${hashSecretKey(secretKey)})`);
   return secretKey;
 }
 
-async function mkSandboxToken(accountId: string, projectId: string): Promise<string> {
+async function mkSandboxToken(accountId: string, workspaceId: string): Promise<string> {
   const sandboxId = randomUUID();
   created.sandboxes.push(sandboxId);
   await db.execute(sql`
     insert into kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, provider, external_id, status)
-    values (${sandboxId}, ${randomUUID()}, ${accountId}, ${projectId}, 'daytona', 'ext-e2e', 'active')`);
+    values (${sandboxId}, ${randomUUID()}, ${accountId}, ${workspaceId}, 'daytona', 'ext-e2e', 'active')`);
   const key = await createApiKey({ sandboxId, accountId, title: 'e2e-allcases-sb', type: 'sandbox' });
   return key.secretKey;
 }
 
 /** Clone the project through the proxy with a Kortix token. Returns true on success. */
-function cloneThroughProxy(projectId: string, token: string): { ok: boolean; detail: string } {
+function cloneThroughProxy(workspaceId: string, token: string): { ok: boolean; detail: string } {
   const dir = mkdtempSync(join(tmpdir(), 'kx-allcases-'));
   try {
-    const url = `${KORTIX_URL}/v1/git/${projectId}.git`;
+    const url = `${KORTIX_URL}/v1/git/${workspaceId}.git`;
     const b64 = Buffer.from(`x-access-token:${token}`).toString('base64');
     const host = new URL(KORTIX_URL).host;
     const scheme = new URL(KORTIX_URL).protocol.replace(':', '');
@@ -107,8 +107,8 @@ function cloneThroughProxy(projectId: string, token: string): { ok: boolean; det
   }
 }
 
-function httpCode(projectId: string, token: string | null): string {
-  const url = `${KORTIX_URL}/v1/git/${projectId}.git/info/refs?service=git-upload-pack`;
+function httpCode(workspaceId: string, token: string | null): string {
+  const url = `${KORTIX_URL}/v1/git/${workspaceId}.git/info/refs?service=git-upload-pack`;
   const args = ['-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '15'];
   if (token) args.push('-H', `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`);
   args.push(url);

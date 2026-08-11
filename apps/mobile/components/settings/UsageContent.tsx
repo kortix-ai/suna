@@ -22,7 +22,7 @@ import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';
 
 interface UsageContentProps {
-  onThreadPress?: (threadId: string, projectId: string | null) => void;
+  onThreadPress?: (threadId: string, workspaceId: string | null) => void;
   onUpgradePress?: () => void;
 }
 
@@ -122,9 +122,9 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
   }, []);
 
   const handleThreadPress = React.useCallback(
-    (threadId: string, projectId: string | null) => {
+    (threadId: string, workspaceId: string | null) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onThreadPress?.(threadId, projectId);
+      onThreadPress?.(threadId, workspaceId);
     },
     [onThreadPress]
   );

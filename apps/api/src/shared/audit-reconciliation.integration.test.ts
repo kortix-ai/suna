@@ -6,7 +6,7 @@ import { runAuditReconciliationPage } from './audit-reconciliation-worker';
 const databaseUrl = process.env.AUDIT_V2_DATABASE_URL;
 const ACCOUNT = 'b7100000-0000-4000-a000-000000000001';
 const SECOND_ACCOUNT = 'b7100000-0000-4000-a000-000000000002';
-const PROJECT = 'b7200000-0000-4000-a000-000000000001';
+const WORKSPACE = 'b7200000-0000-4000-a000-000000000001';
 const SESSION = 'b7300000-0000-4000-a000-000000000001';
 const ACTOR = 'b7400000-0000-4000-a000-000000000001';
 const TUNNEL = 'b7500000-0000-4000-a000-000000000001';
@@ -41,7 +41,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
     await client.query(
       `INSERT INTO kortix.projects(project_id, account_id, name, repo_url)
        VALUES ($1, $2, 'audit-reconcile', 'https://example.test/audit-reconcile.git')`,
-      [PROJECT, ACCOUNT],
+      [WORKSPACE, ACCOUNT],
     );
     await client.query(`SET session_replication_role = 'replica'`);
     try {
@@ -54,7 +54,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
                    "client_reported_source":"cli","initiator_actor_type":"human",
                    "initiator_actor_id":"b7400000-0000-4000-a000-000000000001",
                    "delegation_depth":1}}'::jsonb)`,
-        [SESSION, ACCOUNT, PROJECT, ACTOR],
+        [SESSION, ACCOUNT, WORKSPACE, ACTOR],
       );
     } finally {
       await client.query(`SET session_replication_role = 'origin'`);
@@ -73,19 +73,19 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
         `INSERT INTO kortix.connector_calls
            (account_id, project_id, action_path, acting_user_id, session_id, status, request_digest)
          VALUES ($1, $2, 'gmail.list_messages', $3, $4, 'ok', repeat('a', 64))`,
-        [ACCOUNT, PROJECT, ACTOR, SESSION],
+        [ACCOUNT, WORKSPACE, ACTOR, SESSION],
       );
       await client.query(
         `INSERT INTO kortix.session_lifecycle_commands
            (command_type, source, status, project_id, session_id, account_id, actor_user_id)
          VALUES ('continue', 'cli', 'succeeded', $1, $2, $3, $4)`,
-        [PROJECT, SESSION, ACCOUNT, ACTOR],
+        [WORKSPACE, SESSION, ACCOUNT, ACTOR],
       );
       await client.query(
         `INSERT INTO kortix.project_trigger_executions
            (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, session_id)
          VALUES ($1, 'daily', 'rev-1', now(), 'completed', '{}'::jsonb, '{}'::jsonb, $2)`,
-        [PROJECT, SESSION],
+        [WORKSPACE, SESSION],
       );
       await client.query(
         `INSERT INTO kortix.provider_events
@@ -98,7 +98,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
            (account_id, project_id, session_id, actor_user_id, provider, model, route,
             input_tokens, output_tokens, upstream_status)
          VALUES ($1, $2, $3, $4, 'openai', 'gpt-test', '/chat/completions', 10, 5, 200)`,
-        [ACCOUNT, PROJECT, SESSION, ACTOR],
+        [ACCOUNT, WORKSPACE, SESSION, ACTOR],
       );
       await client.query(
         `INSERT INTO kortix.gateway_request_logs
@@ -106,12 +106,12 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
             resolved_model, provider, status, ok, input_tokens, output_tokens)
          VALUES ('audit-reconcile-request', $1, $2, $3, $4, 'kortix/test',
                  'openai/test', 'openai', 200, true, 10, 5)`,
-        [ACCOUNT, PROJECT, ACTOR, SESSION],
+        [ACCOUNT, WORKSPACE, ACTOR, SESSION],
       );
       await client.query(
         `INSERT INTO kortix.voice_call_turns(call_id, project_id, session_id, role, speaker, text)
          VALUES ($1, $2, $1, 'user', NULL, 'content hashed but not copied')`,
-        [SESSION, PROJECT],
+        [SESSION, WORKSPACE],
       );
       await client.query(
         `INSERT INTO kortix.tunnel_audit_logs

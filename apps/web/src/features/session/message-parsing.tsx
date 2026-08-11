@@ -79,7 +79,7 @@ function unescapeAttr(v: string): string {
 
 export function parseProjectReferences(text: string): {
   cleanText: string;
-  projects: ParsedProjectRef[];
+  workspaces: ParsedProjectRef[];
 } {
   // Historical messages may contain <project_ref/> blocks. Projects are no
   // longer a user-facing/runtime concept, so strip the metadata without
@@ -88,7 +88,7 @@ export function parseProjectReferences(text: string): {
   // Strip the instruction header (description uses [^)]* which is safe
   // because the header never contains a literal `)` before its closing one).
   cleaned = cleaned.replace(/\n*Referenced projects \([^)]*\):\n?/g, '').trim();
-  return { cleanText: cleaned, projects: [] };
+  return { cleanText: cleaned, workspaces: [] };
 }
 
 // ============================================================================

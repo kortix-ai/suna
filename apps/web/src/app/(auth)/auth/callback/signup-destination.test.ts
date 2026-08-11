@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  * Live report: opening a private project link while logged out sends the path
  * through `/auth` as `?redirect=`. Creating an account from there replayed that
  * path verbatim, so the first screen a brand-new user saw was "Request access
- * to this project" — a stranger's locked door, on an account that could not
+ * to this workspace" — a stranger's locked door, on an account that could not
  * possibly own it.
  *
  * This drives the real route handler, because the rule is only as good as its
@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  * actually makes it.
  */
 
-const FOREIGN_PROJECT = '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
+const FOREIGN_LEGACY_PATH = '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
 const NEW_USER_ID = '44444444-4444-4444-4444-444444444444';
 
 let userCreatedAt = new Date().toISOString();
@@ -49,7 +49,7 @@ mock.module('@/lib/public-env-server', () => ({
 }));
 
 const { GET } = await import('./route');
-const { PROJECT_LANDING_PATH } = await import('@/lib/onboarding/landing-destination');
+const { WORKSPACE_LANDING_PATH } = await import('@/lib/onboarding/landing-destination');
 
 /** The three things the handler actually reads off a NextRequest. */
 function callbackRequest(returnUrl: string) {
@@ -75,15 +75,15 @@ describe('auth callback destination for a brand-new account', () => {
     exchangeError = null;
   });
 
-  test('does not send a signup to a project it cannot open', async () => {
-    const destination = await destinationFor(FOREIGN_PROJECT);
+  test('does not send a signup to a workspace it cannot open', async () => {
+    const destination = await destinationFor(FOREIGN_LEGACY_PATH);
 
-    expect(destination.startsWith(PROJECT_LANDING_PATH)).toBe(true);
+    expect(destination.startsWith(WORKSPACE_LANDING_PATH)).toBe(true);
     expect(destination).not.toContain('319395c1-9c3f-41b4-ac6c-9539a12dbb7c');
   });
 
   test('still marks it as a signup for analytics', async () => {
-    expect(await destinationFor(FOREIGN_PROJECT)).toContain('auth_event=signup');
+    expect(await destinationFor(FOREIGN_LEGACY_PATH)).toContain('auth_event=signup');
   });
 
   test('an invite still survives — the signup happened for it', async () => {
@@ -97,9 +97,9 @@ describe('auth callback destination for a brand-new account', () => {
     // project link must still reach the page where they can ask for access.
     userCreatedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
-    const destination = await destinationFor(FOREIGN_PROJECT);
+    const destination = await destinationFor(FOREIGN_LEGACY_PATH);
 
-    expect(destination).toStartWith(FOREIGN_PROJECT);
+    expect(destination).toStartWith(FOREIGN_LEGACY_PATH);
     expect(destination).toContain('auth_event=login');
   });
 });

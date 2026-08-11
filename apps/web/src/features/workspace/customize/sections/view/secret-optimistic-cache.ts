@@ -1,32 +1,32 @@
-import type { ProjectSecret, ProjectSecretsResponse } from '@kortix/sdk';
+import type { WorkspaceSecret, WorkspaceSecretsResponse } from '@kortix/sdk';
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
-export type ProjectSecretsCache = ProjectSecretsResponse | ProjectSecret[];
+export type WorkspaceSecretsCache = WorkspaceSecretsResponse | WorkspaceSecret[];
 
-export type OptimisticProjectSecretInput = {
-  projectId: string;
+export type OptimisticWorkspaceSecretInput = {
+  workspaceId: string;
   identifier: string;
   name: string;
-  strategy: ProjectSecret['strategy'];
-  consumer: ProjectSecret['consumer'];
-  deliveryStatus: NonNullable<ProjectSecret['delivery_status']>;
-  egressPolicy: ProjectSecret['egress_policy'];
+  strategy: WorkspaceSecret['strategy'];
+  consumer: WorkspaceSecret['consumer'];
+  deliveryStatus: NonNullable<WorkspaceSecret['delivery_status']>;
+  egressPolicy: WorkspaceSecret['egress_policy'];
   valueChanged?: boolean;
 };
 
-function items(cache: ProjectSecretsCache): ProjectSecret[] {
+function items(cache: WorkspaceSecretsCache): WorkspaceSecret[] {
   return Array.isArray(cache) ? cache : cache.items;
 }
 
-function withItems(cache: ProjectSecretsCache, nextItems: ProjectSecret[]): ProjectSecretsCache {
+function withItems(cache: WorkspaceSecretsCache, nextItems: WorkspaceSecret[]): WorkspaceSecretsCache {
   return Array.isArray(cache) ? nextItems : { ...cache, items: nextItems };
 }
 
 function replaceOrAppend(
-  cache: ProjectSecretsCache,
+  cache: WorkspaceSecretsCache,
   identifier: string,
-  nextSecret: ProjectSecret,
-): ProjectSecretsCache {
+  nextSecret: WorkspaceSecret,
+): WorkspaceSecretsCache {
   const currentItems = items(cache);
   const index = currentItems.findIndex((secret) => secret.identifier === identifier);
   if (index === -1) return withItems(cache, [...currentItems, nextSecret]);
@@ -35,15 +35,15 @@ function replaceOrAppend(
   return withItems(cache, nextItems);
 }
 
-export function applyOptimisticProjectSecretSave(
-  cache: ProjectSecretsCache,
-  input: OptimisticProjectSecretInput,
-): ProjectSecretsCache {
+export function applyOptimisticWorkspaceSecretSave(
+  cache: WorkspaceSecretsCache,
+  input: OptimisticWorkspaceSecretInput,
+): WorkspaceSecretsCache {
   const existing = items(cache).find((secret) => secret.identifier === input.identifier);
-  const nextSecret: ProjectSecret = {
+  const nextSecret: WorkspaceSecret = {
     identifier: input.identifier,
     name: input.name,
-    project_id: existing?.project_id ?? input.projectId,
+    workspace_id: existing?.workspace_id ?? input.workspaceId,
     secret_id: existing?.secret_id ?? null,
     created_by: existing?.created_by ?? null,
     created_at: existing?.created_at ?? null,
@@ -68,32 +68,32 @@ export function applyOptimisticProjectSecretSave(
   return replaceOrAppend(cache, input.identifier, nextSecret);
 }
 
-export function beginOptimisticProjectSecretSave(
+export function beginOptimisticWorkspaceSecretSave(
   queryClient: QueryClient,
   queryKey: QueryKey,
-  input: OptimisticProjectSecretInput,
-): { previous: ProjectSecretsCache | undefined } {
-  const previous = queryClient.getQueryData<ProjectSecretsCache>(queryKey);
+  input: OptimisticWorkspaceSecretInput,
+): { previous: WorkspaceSecretsCache | undefined } {
+  const previous = queryClient.getQueryData<WorkspaceSecretsCache>(queryKey);
   if (previous) {
-    queryClient.setQueryData<ProjectSecretsCache>(
+    queryClient.setQueryData<WorkspaceSecretsCache>(
       queryKey,
-      applyOptimisticProjectSecretSave(previous, input),
+      applyOptimisticWorkspaceSecretSave(previous, input),
     );
   }
   return { previous };
 }
 
-export function rollbackOptimisticProjectSecretSave(
+export function rollbackOptimisticWorkspaceSecretSave(
   queryClient: QueryClient,
   queryKey: QueryKey,
-  previous: ProjectSecretsCache | undefined,
+  previous: WorkspaceSecretsCache | undefined,
 ): void {
   if (previous) queryClient.setQueryData(queryKey, previous);
 }
 
-export function applyProjectSecretResponse(
-  cache: ProjectSecretsCache,
-  updated: ProjectSecret,
-): ProjectSecretsCache {
+export function applyWorkspaceSecretResponse(
+  cache: WorkspaceSecretsCache,
+  updated: WorkspaceSecret,
+): WorkspaceSecretsCache {
   return replaceOrAppend(cache, updated.identifier, updated);
 }

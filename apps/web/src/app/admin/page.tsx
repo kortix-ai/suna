@@ -1,6 +1,5 @@
 'use client';
 
-
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import {
   ActivityIcon as Activity,
@@ -42,7 +41,9 @@ export default function AdminOverviewPage() {
       <SectionHeader
         icon={LayoutDashboard}
         title={'Admin overview'}
-        description={'Production support entrypoint. Operations is the source of truth for live platform health.'}
+        description={
+          'Production support entrypoint. Operations is the source of truth for live platform health.'
+        }
       />
 
       <StatRow>
@@ -70,13 +71,15 @@ export default function AdminOverviewPage() {
           href="/admin/accounts"
           icon={Users}
           title="Accounts"
-          description={'Tiers, credits, trials, entitlements, members, and billing state per account.'}
+          description={
+            'Tiers, credits, trials, entitlements, members, and billing state per account.'
+          }
         />
         <QuickLink
-          href="/admin/projects"
+          href="/admin/workspaces"
           icon={FolderKanban}
-          title="Projects"
-          description={'Every project across all accounts, most active first.'}
+          title="Workspaces"
+          description={'Every workspace across all accounts, most active first.'}
         />
         <QuickLink
           href="/admin/sandboxes"
@@ -88,7 +91,9 @@ export default function AdminOverviewPage() {
           href="/admin/utils"
           icon={Wrench}
           title="Maintenance"
-          description={'Support workflows for account access, technical issues, and operational recovery.'}
+          description={
+            'Support workflows for account access, technical issues, and operational recovery.'
+          }
         />
       </div>
     </SectionContainer>

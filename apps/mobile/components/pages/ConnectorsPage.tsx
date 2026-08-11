@@ -1,5 +1,5 @@
 /**
- * ConnectorsPage — the project's tool connectors (web parity:
+ * ConnectorsPage — the workspace's tool connectors (web parity:
  * customize/sections connectors-view). Lists connected connectors (Pipedream
  * apps, MCP servers, custom OpenAPI/Postman/GraphQL/HTTP), with a Sync action, a detail
  * view of each connector's tools, and delete. Adding/connecting connectors is
@@ -58,18 +58,18 @@ import {
   useSyncConnectors,
   useDeleteConnector,
   useDisconnectConnector,
-  useProjectPolicies,
-  useSetProjectPolicies,
+  useWorkspacePolicies,
+  useSetWorkspacePolicies,
   usePipedreamApps,
   usePipedreamAppMeta,
-  projectKeys,
-} from '@/lib/projects/hooks';
+  workspaceKeys,
+} from '@/lib/workspaces/hooks';
 import {
   createConnector,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
-} from '@/lib/projects/projects-client';
+} from '@/lib/workspaces/workspaces-client';
 import type {
   AdminConnector,
   ConnectorAction,
@@ -78,7 +78,7 @@ import type {
   PipedreamApp,
   PolicyAction,
   PolicyDefaultMode,
-} from '@/lib/projects/projects-client';
+} from '@/lib/workspaces/workspaces-client';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -89,7 +89,7 @@ interface PageTabLike {
 
 interface ConnectorsPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -186,14 +186,14 @@ function AppLogo({
 // ─── Connector detail (tools) ────────────────────────────────────────────────
 
 function ConnectorDetail({
-  projectId,
+  workspaceId,
   connector,
   onClose,
   onDelete,
   onSetCredential,
   deleting,
 }: {
-  projectId: string;
+  workspaceId: string;
   connector: AdminConnector;
   onClose: () => void;
   onDelete: () => void;
@@ -205,7 +205,7 @@ function ConnectorDetail({
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
   const queryClient = useQueryClient();
-  const disconnectMut = useDisconnectConnector(projectId);
+  const disconnectMut = useDisconnectConnector(workspaceId);
   const [connecting, setConnecting] = useState(false);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -217,7 +217,7 @@ function ConnectorDetail({
   const Icon = providerIcon(connector.provider);
   const status = STATUS_META[connector.status];
   const isPipedream = connector.provider === 'pipedream';
-  const meta = usePipedreamAppMeta(projectId, connector.slug, isPipedream);
+  const meta = usePipedreamAppMeta(workspaceId, connector.slug, isPipedream);
   const displayName =
     meta.data?.name ||
     (connector.name && connector.name !== connector.slug
@@ -259,7 +259,7 @@ function ConnectorDetail({
     if (connecting) return;
     setConnecting(true);
     try {
-      const conn = await pipedreamConnect(projectId, connector.slug, {
+      const conn = await pipedreamConnect(workspaceId, connector.slug, {
         successRedirectUri: CONNECT_SUCCESS_URI,
         errorRedirectUri: CONNECT_ERROR_URI,
       });
@@ -277,8 +277,8 @@ function ConnectorDetail({
         return;
       }
       haptics.success();
-      const result = await pipedreamFinalize(projectId, connector.slug);
-      queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      const result = await pipedreamFinalize(workspaceId, connector.slug);
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.connectors(workspaceId) });
       Alert.alert(
         result.connected ? 'Connected' : 'Almost there',
         result.connected
@@ -290,7 +290,7 @@ function ConnectorDetail({
     } finally {
       setConnecting(false);
     }
-  }, [connecting, projectId, connector.slug, connector.name, queryClient]);
+  }, [connecting, workspaceId, connector.slug, connector.name, queryClient]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -415,12 +415,12 @@ function ConnectorDetail({
 
 function ConnectorRow({
   connector,
-  projectId,
+  workspaceId,
   onPress,
   isDark,
 }: {
   connector: AdminConnector;
-  projectId: string;
+  workspaceId: string;
   onPress: () => void;
   isDark: boolean;
 }) {
@@ -436,7 +436,7 @@ function ConnectorRow({
   const needsSetup = needsConnect || needsCredential;
 
   // Pipedream connectors: show the real app name + logo from the catalogue.
-  const meta = usePipedreamAppMeta(projectId, connector.slug, isPipedream);
+  const meta = usePipedreamAppMeta(workspaceId, connector.slug, isPipedream);
   const displayName =
     meta.data?.name ||
     (connector.name && connector.name !== connector.slug
@@ -523,10 +523,10 @@ function AppCard({
 }
 
 function AddConnectorView({
-  projectId,
+  workspaceId,
   onClose,
 }: {
-  projectId: string;
+  workspaceId: string;
   onClose: () => void;
 }) {
   const { colorScheme } = useColorScheme();
@@ -538,7 +538,7 @@ function AddConnectorView({
   const [tab, setTab] = useState<'apps' | 'custom'>('apps');
 
   const { data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    usePipedreamApps(projectId, appSearch);
+    usePipedreamApps(workspaceId, appSearch);
 
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -552,8 +552,8 @@ function AddConnectorView({
     setConnectingSlug(app.slug);
     try {
       // Register the connector, then run Pipedream's 1-click OAuth in a browser.
-      await createConnector(projectId, { slug: app.slug, provider: 'pipedream', app: app.slug });
-      const conn = await pipedreamConnect(projectId, app.slug, {
+      await createConnector(workspaceId, { slug: app.slug, provider: 'pipedream', app: app.slug });
+      const conn = await pipedreamConnect(workspaceId, app.slug, {
         successRedirectUri: CONNECT_SUCCESS_URI,
         errorRedirectUri: CONNECT_ERROR_URI,
       });
@@ -571,8 +571,8 @@ function AddConnectorView({
         return;
       }
       haptics.success();
-      const result = await pipedreamFinalize(projectId, app.slug);
-      queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      const result = await pipedreamFinalize(workspaceId, app.slug);
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.connectors(workspaceId) });
       onClose();
       Alert.alert(
         result.connected ? 'Connected' : 'Almost there',
@@ -585,7 +585,7 @@ function AddConnectorView({
     } finally {
       setConnectingSlug(null);
     }
-  }, [projectId, connectingSlug, queryClient, onClose]);
+  }, [workspaceId, connectingSlug, queryClient, onClose]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -612,7 +612,7 @@ function AddConnectorView({
       </View>
 
       {tab === 'custom' ? (
-        <CustomConnectorForm projectId={projectId} onAdded={onClose} isDark={isDark} />
+        <CustomConnectorForm workspaceId={workspaceId} onAdded={onClose} isDark={isDark} />
       ) : (
         <>
           <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
@@ -739,11 +739,11 @@ function FormField({ label, optional, children, isDark }: { label: string; optio
 }
 
 function CustomConnectorForm({
-  projectId,
+  workspaceId,
   onAdded,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   onAdded: () => void;
   isDark: boolean;
 }) {
@@ -789,8 +789,8 @@ function CustomConnectorForm({
         ...(provider === 'mcp' ? { url: url.trim(), transport } : {}),
         ...(provider === 'http' ? { baseUrl: baseUrl.trim(), ...(spec.trim() ? { spec: spec.trim() } : {}) } : {}),
       };
-      await createConnector(projectId, draft);
-      queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      await createConnector(workspaceId, draft);
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.connectors(workspaceId) });
       haptics.tap();
       onAdded();
     } catch (err: any) {
@@ -891,7 +891,7 @@ function CustomConnectorForm({
         )}
 
         <Text style={{ fontSize: 12.5, color: muted, marginTop: 14 }}>
-          Access is project-wide by default — change it from the connector's Manage screen after adding.
+          Access is workspace-wide by default — change it from the connector's Manage screen after adding.
         </Text>
       </BottomSheetScrollView>
 
@@ -913,11 +913,11 @@ function CustomConnectorForm({
 // ─── Set credential (non-Pipedream connectors) ───────────────────────────────
 
 function SetCredentialView({
-  projectId,
+  workspaceId,
   connector,
   onBack,
 }: {
-  projectId: string;
+  workspaceId: string;
   connector: AdminConnector;
   onBack: () => void;
 }) {
@@ -938,8 +938,8 @@ function SetCredentialView({
     if (!value.trim() || saving) return;
     setSaving(true);
     try {
-      await setConnectorCredential(projectId, connector.slug, value);
-      queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      await setConnectorCredential(workspaceId, connector.slug, value);
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.connectors(workspaceId) });
       haptics.tap();
       onBack();
     } catch (err: any) {
@@ -1045,14 +1045,13 @@ interface DraftRule { id: string; match: string; action: PolicyAction }
 let policyRuleSeq = 0;
 const nextRuleId = () => `rule-${++policyRuleSeq}`;
 
-function PoliciesView({ projectId }: { projectId: string }) {
+function PoliciesView({ workspaceId }: { workspaceId: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const theme = useThemeColors();
 
-  const query = useProjectPolicies(projectId);
-  const saveMutation = useSetProjectPolicies(projectId);
+  const query = useWorkspacePolicies(workspaceId);
+  const saveMutation = useSetWorkspacePolicies(workspaceId);
 
   const [defaultMode, setDefaultMode] = useState<PolicyDefaultMode>('allow_all');
   const [rules, setRules] = useState<DraftRule[]>([]);
@@ -1200,7 +1199,7 @@ function PoliciesView({ projectId }: { projectId: string }) {
 
 export function ConnectorsPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -1216,9 +1215,9 @@ export function ConnectorsPage({
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const credentialSheetRef = useRef<BottomSheetModal>(null);
 
-  const { data, isLoading, isError, error, refetch } = useConnectors(projectId);
-  const syncMutation = useSyncConnectors(projectId);
-  const deleteMutation = useDeleteConnector(projectId);
+  const { data, isLoading, isError, error, refetch } = useConnectors(workspaceId);
+  const syncMutation = useSyncConnectors(workspaceId);
+  const deleteMutation = useDeleteConnector(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -1300,7 +1299,7 @@ export function ConnectorsPage({
               />
             </View>
             {pageTab === 'policies' ? (
-              <PoliciesView projectId={projectId} />
+              <PoliciesView workspaceId={workspaceId} />
             ) : (
               <>
             <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search connectors" onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }} />
@@ -1336,7 +1335,7 @@ export function ConnectorsPage({
                   <View key={connector.slug}>
                     <ConnectorRow
                       connector={connector}
-                      projectId={projectId}
+                      workspaceId={workspaceId}
                       isDark={isDark}
                       onPress={() => { haptics.tap(); setSelectedSlug(connector.slug); detailSheetRef.current?.present(); }}
                     />
@@ -1364,7 +1363,7 @@ export function ConnectorsPage({
           <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
         )}
       >
-        <AddConnectorView projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} />
+        <AddConnectorView workspaceId={workspaceId} onClose={() => addSheetRef.current?.dismiss()} />
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -1382,7 +1381,7 @@ export function ConnectorsPage({
       >
         {selected ? (
           <ConnectorDetail
-            projectId={projectId}
+            workspaceId={workspaceId}
             connector={selected}
             onClose={() => detailSheetRef.current?.dismiss()}
             onDelete={() => handleDelete(selected)}
@@ -1409,7 +1408,7 @@ export function ConnectorsPage({
       >
         {selected ? (
           <SetCredentialView
-            projectId={projectId}
+            workspaceId={workspaceId}
             connector={selected}
             onBack={() => credentialSheetRef.current?.dismiss()}
           />

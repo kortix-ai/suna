@@ -42,7 +42,7 @@ export function useServerHealth(options?: { enabled?: boolean }) {
  *
  * CONSOLIDATED: Now uses the same React Query key as useRuntimeCurrentProject
  * (runtimeKeys.currentProject()) to share cache and prevent duplicate fetches.
- * Previously used a different key ['opencode-server', 'project', serverUrl]
+ * Previously used a different key ['opencode-server', 'workspace', serverUrl]
  * which caused independent duplicate requests.
  */
 export function useCurrentProject(options?: { enabled?: boolean }) {

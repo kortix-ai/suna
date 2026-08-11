@@ -3,23 +3,23 @@ import { describe, expect, it } from 'bun:test';
 import {
   PLACEHOLDER_TITLE_SQL_PATTERN,
   isPlaceholderOpencodeTitle,
-} from '../projects/lib/opencode-title';
-import type { ProjectSessionRow } from '../projects/lib/serializers';
+} from '../workspaces/lib/opencode-title';
+import type { WorkspaceSessionRow } from '../workspaces/lib/serializers';
 import {
   type GenerateSessionTitleOptions,
   extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
   sanitizeGeneratedTitle,
   titleSourceForCreate,
-} from '../projects/session-title-generate';
+} from '../workspaces/session-title-generate';
 
-function row(metadata: Record<string, unknown>): ProjectSessionRow {
+function row(metadata: Record<string, unknown>): WorkspaceSessionRow {
   return {
     sessionId: 'sess-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     accountId: 'acct-1',
     metadata,
-  } as unknown as ProjectSessionRow;
+  } as unknown as WorkspaceSessionRow;
 }
 
 function headers(contentType = 'application/json'): Headers {
@@ -153,7 +153,7 @@ describe('PLACEHOLDER_TITLE_SQL_PATTERN', () => {
 });
 
 describe('generateSessionTitleFromFirstPrompt', () => {
-  function harness(over: Partial<GenerateSessionTitleOptions> & { row?: ProjectSessionRow } = {}) {
+  function harness(over: Partial<GenerateSessionTitleOptions> & { row?: WorkspaceSessionRow } = {}) {
     const persisted: string[] = [];
     const minted: string[] = [];
     const revoked: string[] = [];
@@ -194,7 +194,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
 
   const input = {
     sessionId: 'sess-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     accountId: 'acct-1',
     userId: 'user-1',
     firstPromptText: 'Please set up the MS Graph OAuth2 connector',

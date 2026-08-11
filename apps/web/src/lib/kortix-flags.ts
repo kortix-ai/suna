@@ -12,7 +12,7 @@
 
 /**
  * Build-time gate for the founder's personal contact surfaces — the floating
- * CEO concierge widget on the projects pages, the "Personal help" section in
+ * CEO concierge widget on the workspaces pages, the "Personal help" section in
  * the Support dialog, and any other "hey, I'm Marko" UI. Self-hosters should
  * never see the maintainer's face by default.
  *

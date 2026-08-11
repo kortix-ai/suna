@@ -95,7 +95,7 @@ describe('audit buildFilters', () => {
       sinceRaw: null,
       untilRaw: null,
       q: null,
-      projectId: '00000000-0000-4000-a000-000000000201',
+      workspaceId: '00000000-0000-4000-a000-000000000201',
       sessionId: 'session-1',
       actorType: 'agent',
       source: 'connector',

@@ -38,7 +38,7 @@ import {
 
 /** A project counts as ACTIVE (its legacy warm pointer is protected) when it has a
  * session within this window. */
-const QUOTA_GC_PROJECT_ACTIVE_MS = 14 * 24 * 60 * 60 * 1000;
+const QUOTA_GC_WORKSPACE_ACTIVE_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface QuotaGcResult {
   /** Org-wide snapshot count — the number the Daytona quota actually meters. */
@@ -100,7 +100,7 @@ export async function reconcileSnapshotQuota(
   // projects.metadata from before the cold-only unification. Warm baking is gone,
   // but protect any lingering pointer while its project is alive and recently
   // ACTIVE so GC never reclaims a name a stale pointer still references.
-  const activityCutoff = new Date(now - QUOTA_GC_PROJECT_ACTIVE_MS).toISOString();
+  const activityCutoff = new Date(now - QUOTA_GC_WORKSPACE_ACTIVE_MS).toISOString();
   const pointerRows = await db.execute(sql`
     SELECT p.metadata -> 'warm_snapshot' ->> 'name' AS name,
            (

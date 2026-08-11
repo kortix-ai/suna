@@ -41,7 +41,7 @@ describe('audit event middleware', () => {
   test('records a successful API mutation with an authoritative source', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
-    app.post('/v1/projects/:projectId/sessions/:sessionId/messages', async (c) => {
+    app.post('/v1/projects/:workspaceId/sessions/:sessionId/messages', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
       (c as any).set('authType', 'pat');
@@ -62,14 +62,14 @@ describe('audit event middleware', () => {
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
       accountId: '00000000-0000-4000-a000-000000000101',
-      projectId: '00000000-0000-4000-a000-000000000201',
+      workspaceId: '00000000-0000-4000-a000-000000000201',
       sessionId: 'session-1',
       actorUserId: '00000000-0000-4000-a000-000000000001',
       actorType: 'agent',
       source: 'agent',
       outcome: 'success',
       httpStatus: 200,
-      action: 'POST /v1/projects/:projectId/sessions/:sessionId/messages',
+      action: 'POST /v1/projects/:workspaceId/sessions/:sessionId/messages',
       resourceType: 'project_session',
       resourceId: 'session-1',
       userAgent: 'kortix-cli/dev',
@@ -80,7 +80,7 @@ describe('audit event middleware', () => {
   test('keeps client-reported CLI provenance separate from authoritative provenance', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
-    app.patch('/v1/projects/:projectId/secrets/:identifier/strategy', async (c) => {
+    app.patch('/v1/projects/:workspaceId/secrets/:identifier/strategy', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
       (c as any).set('authType', 'pat');
@@ -106,7 +106,7 @@ describe('audit event middleware', () => {
   test('does not accept an unknown client source label', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
-    app.get('/v1/projects/:projectId/detail', async (c) => {
+    app.get('/v1/projects/:workspaceId/detail', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
       (c as any).set('authType', 'pat');
@@ -128,7 +128,7 @@ describe('audit event middleware', () => {
   test('rejects credential-shaped client source labels', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
-    app.get('/v1/projects/:projectId/detail', async (c) => {
+    app.get('/v1/projects/:workspaceId/detail', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
       (c as any).set('authType', 'pat');
@@ -146,7 +146,7 @@ describe('audit event middleware', () => {
   test('records failed mutations with a failure outcome', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
-    app.post('/v1/projects/:projectId/secrets', async (c) => {
+    app.post('/v1/projects/:workspaceId/secrets', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
       (c as any).set('authType', 'supabase');
@@ -190,7 +190,7 @@ describe('audit event middleware', () => {
   test('does not copy request bodies or query values into the central event', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);
-    app.post('/v1/projects/:projectId/secrets', async (c) => {
+    app.post('/v1/projects/:workspaceId/secrets', async (c) => {
       (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
       (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
       (c as any).set('authType', 'supabase');
@@ -214,7 +214,7 @@ describe('audit event middleware', () => {
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]?.metadata).toEqual({
       method: 'POST',
-      path: '/v1/projects/:projectId/secrets',
+      path: '/v1/projects/:workspaceId/secrets',
     });
     expect(JSON.stringify(auditRows[0])).not.toContain('query-secret');
     expect(JSON.stringify(auditRows[0])).not.toContain('body-secret');
@@ -323,7 +323,7 @@ describe('audit event middleware', () => {
     app.post('/v1/projects/provision', (c) => {
       setContextField('userId', '00000000-0000-4000-a000-000000000001');
       setContextField('accountId', '00000000-0000-4000-a000-000000000101');
-      setContextField('projectId', '00000000-0000-4000-a000-000000000201');
+      setContextField('workspaceId', '00000000-0000-4000-a000-000000000201');
       return c.json({ ok: true }, 201);
     });
 
@@ -340,7 +340,7 @@ describe('audit event middleware', () => {
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
       accountId: '00000000-0000-4000-a000-000000000101',
-      projectId: '00000000-0000-4000-a000-000000000201',
+      workspaceId: '00000000-0000-4000-a000-000000000201',
       actorUserId: '00000000-0000-4000-a000-000000000001',
       actorType: 'human',
       source: 'api',
@@ -358,7 +358,7 @@ describe('audit event middleware', () => {
       await runWithContext(c.req.method, c.req.path, async () => {
         setContextField('userId', '00000000-0000-4000-a000-000000000001');
         setContextField('accountId', '00000000-0000-4000-a000-000000000101');
-        setContextField('projectId', 'provision');
+        setContextField('workspaceId', 'provision');
         await next();
       });
     });
@@ -375,7 +375,7 @@ describe('audit event middleware', () => {
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({
       accountId: '00000000-0000-4000-a000-000000000101',
-      projectId: null,
+      workspaceId: null,
       actorUserId: '00000000-0000-4000-a000-000000000001',
       outcome: 'failure',
       correlationId: 'invalid-scope-1',

@@ -3,7 +3,7 @@ import { config } from '../../config';
 import { catalogModelForWireModel, gatewayModelCatalog } from '../models/catalog-models';
 import { platformDefaultModelId } from '../models/served-managed-models';
 import { createGatewayRouteResolver } from './resolve-route';
-import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
+import { getWorkspaceRoutingPolicy } from '../../repositories/workspace-routing-policies';
 
 const routingCatalog = () => gatewayModelCatalog('gateway-routing');
 
@@ -17,7 +17,7 @@ const resolver = createGatewayRouteResolver({
     const wire = model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
     return routingCatalog()[wire]?.attachment === true;
   },
-  getProjectPolicy: getProjectRoutingPolicy,
+  getWorkspacePolicy: getWorkspaceRoutingPolicy,
   catalogModelFor: (model) => catalogModelForWireModel(model),
 });
 

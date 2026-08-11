@@ -4,7 +4,7 @@ import {
   isSweepStale,
   mapWithConcurrency,
   withTimeout,
-} from '../projects/lib/triggers';
+} from '../workspaces/lib/triggers';
 
 // These primitives are what keep one hung trigger fire from freezing the entire
 // cron scheduler — the 2026-06-21 fleet-wide outage, where a single
@@ -156,7 +156,7 @@ describe('initialCatalogBackfillIncomplete', () => {
       initialCatalogBackfillIncomplete({
         catalogCycleCompletedAt: null,
         discoveryCycleCompletedAt: '2026-07-27T04:00:00.000Z',
-        catalogPendingProjects: 0,
+        catalogPendingWorkspaces: 0,
       }),
     ).toBe(true);
   });
@@ -166,7 +166,7 @@ describe('initialCatalogBackfillIncomplete', () => {
       initialCatalogBackfillIncomplete({
         catalogCycleCompletedAt: '2026-07-27T04:00:00.000Z',
         discoveryCycleCompletedAt: '2026-07-27T04:00:00.000Z',
-        catalogPendingProjects: 1,
+        catalogPendingWorkspaces: 1,
       }),
     ).toBe(true);
   });
@@ -176,7 +176,7 @@ describe('initialCatalogBackfillIncomplete', () => {
       initialCatalogBackfillIncomplete({
         catalogCycleCompletedAt: '2026-07-27T04:00:00.000Z',
         discoveryCycleCompletedAt: '2026-07-27T04:00:00.000Z',
-        catalogPendingProjects: 0,
+        catalogPendingWorkspaces: 0,
       }),
     ).toBe(false);
   });

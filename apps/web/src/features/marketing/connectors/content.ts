@@ -45,7 +45,7 @@ export const hero = {
 export const connect = {
   eyebrow: 'Connect once',
   title: 'One connection. Every agent, every session, every person.',
-  sub: 'A connector belongs to the project, not to a laptop or a login. Add it once and every session that project starts can reach it — with no second setup and no key passed around in a DM.',
+  sub: 'A connector belongs to the workspace, not to a laptop or a login. Add it once and every session that workspace starts can reach it — with no second setup and no key passed around in a DM.',
   /** Mirrors the real tabs on the Add-a-connector screen. */
   routes: [
     {
@@ -71,7 +71,7 @@ export const connect = {
   shot: {
     src: '/media/connectors/connector-catalogue.webp',
     alt: 'The Kortix connector catalogue, showing Notion, Google Sheets, Linear, Google Drive, Salesforce, HubSpot, GitHub, Gmail and more, each one click from connected.',
-    caption: 'Connectors → Add app → Easy connect. Real screen, real project.',
+    caption: 'Connectors → Add app → Easy connect. Real screen, real workspace.',
   },
 } as const;
 
@@ -80,7 +80,7 @@ export const connect = {
 export const broker = {
   eyebrow: 'The credential never travels',
   title: 'The agent gets a token. It never gets the key.',
-  sub: 'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the project, and every outbound call is assembled on our side of the wall.',
+  sub: 'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the workspace, and every outbound call is assembled on our side of the wall.',
 
   /** The old shape, stated plainly so the new one has something to beat. */
   before: {
@@ -98,7 +98,7 @@ export const broker = {
     label: 'How Kortix does it',
     title: 'One scoped token, and nothing else',
     lines: ['KORTIX_CLI_TOKEN=kortix_pat_…'],
-    body: 'Scoped to one project and narrowed again by what that agent is allowed to touch. Turning a connector off takes effect on the next call. Nothing in the sandbox needs rotating, because nothing in the sandbox was ever a secret of yours.',
+    body: 'Scoped to one workspace and narrowed again by what that agent is allowed to touch. Turning a connector off takes effect on the next call. Nothing in the sandbox needs rotating, because nothing in the sandbox was ever a secret of yours.',
   },
 
   /** The diagram, left to right. */
@@ -134,7 +134,7 @@ export const broker = {
     {
       id: 'encrypted',
       title: 'Encrypted at rest',
-      body: 'Connector credentials are encrypted with a per-project key and stored apart from the values a sandbox is allowed to read.',
+      body: 'Connector credentials are encrypted with a per-workspace key and stored apart from the values a sandbox is allowed to read.',
     },
     {
       id: 'runtime',
@@ -160,9 +160,9 @@ export const scope = {
   sub: 'Reach is granted, not inherited. An agent gets the connectors you list for it and nothing else, and effective access is always the intersection of what the person can do and what the agent was granted.',
   layers: [
     {
-      id: 'project',
-      label: 'Per project',
-      body: 'A connector lives in one project. Another project cannot see it, call it, or read its credential — a project is its own blast radius.',
+      id: 'workspace',
+      label: 'Per workspace',
+      body: 'A connector lives in one workspace. Another workspace cannot see it, call it, or read its credential — a workspace is its own blast radius.',
     },
     {
       id: 'agent',
@@ -172,7 +172,7 @@ export const scope = {
     {
       id: 'person',
       label: 'Per person',
-      body: 'Choose who the connection belongs to: one project-managed account everyone shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all.',
+      body: 'Choose who the connection belongs to: one workspace-managed account everyone shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all.',
     },
   ],
   /** Real `kortix.yaml`. Keep it valid — people will copy it. */
@@ -222,12 +222,18 @@ export const policy = {
       body: 'The action is not available, and no approval can lift it in the moment. Deleting a customer stays off the table.',
       example: 'stripe.delete_customer',
     },
-  ] satisfies readonly { id: PolicyStateId; label: string; verb: string; body: string; example: string }[],
+  ] satisfies readonly {
+    id: PolicyStateId;
+    label: string;
+    verb: string;
+    body: string;
+    example: string;
+  }[],
 
   /**
    * The fourth state in the screenshot, and the honest default.
    *
-   * ACCURACY: `policy.default_mode` falls back to `allow_all` when a project
+   * ACCURACY: `policy.default_mode` falls back to `allow_all` when a workspace
    * declares no `policy:` block (`apps/api/src/projects/policies.ts:73`), so an
    * untouched project runs everything. `risk` is the other mode: read
    * → `always_run`, write and destructive → `require_approval`
@@ -235,7 +241,7 @@ export const policy = {
    * writes ask by default — they do not until somebody sets `risk`.
    */
   defaultState:
-    'A tool left on Default has no rule of its own and falls through to the project default. Until you set that default to risk — reads run, writes and destructive actions ask — an untouched project runs everything.',
+    'A tool left on Default has no rule of its own and falls through to the workspace default. Until you set that default to risk — reads run, writes and destructive actions ask — an untouched workspace runs everything.',
 
   /** Real product screenshot — the Permissions tab on a live connector. */
   shot: {
@@ -251,8 +257,16 @@ export const policy = {
     body: 'A gate that errors out teaches an agent to retry around it. A Kortix gate holds the call open, so the agent is still mid-task when you answer — and picks up exactly where it stopped.',
     steps: [
       { id: 'run', mono: 'running', label: 'The agent drafts the reply and reaches send_email.' },
-      { id: 'hold', mono: 'waiting', label: 'The call is held. You see the action and its arguments.' },
-      { id: 'go', mono: 'approved', label: 'You approve. The same call completes and the run continues.' },
+      {
+        id: 'hold',
+        mono: 'waiting',
+        label: 'The call is held. You see the action and its arguments.',
+      },
+      {
+        id: 'go',
+        mono: 'approved',
+        label: 'You approve. The same call completes and the run continues.',
+      },
     ],
   },
 
@@ -285,7 +299,7 @@ export const policy = {
     ] satisfies readonly { match: string; when: string; action: PolicyStateId }[],
   },
 
-  note: 'Project-wide rules are evaluated first and cannot be overridden by whoever adds a connector later.',
+  note: 'Workspace-wide rules are evaluated first and cannot be overridden by whoever adds a connector later.',
 } as const;
 
 /* ── 5 · audit ────────────────────────────────────────────────────────────── */
@@ -297,11 +311,19 @@ export const audit = {
   /** Column names below are the real ledger fields. Do not invent more. */
   fields: [
     { id: 'action', label: 'Action', body: 'The connector and the exact action called.' },
-    { id: 'who', label: 'Acted by', body: 'The agent and the person or trigger behind the session.' },
+    {
+      id: 'who',
+      label: 'Acted by',
+      body: 'The agent and the person or trigger behind the session.',
+    },
     { id: 'status', label: 'Outcome', body: 'Ran, denied, waiting on approval, or errored.' },
     { id: 'risk', label: 'Risk', body: 'Whether the action reads, writes, or destroys.' },
     { id: 'approver', label: 'Approved by', body: 'Who released a held call, and when.' },
-    { id: 'digest', label: 'Inputs', body: 'A hash of the arguments, and a redacted result — never a raw secret.' },
+    {
+      id: 'digest',
+      label: 'Inputs',
+      body: 'A hash of the arguments, and a redacted result — never a raw secret.',
+    },
   ],
   note: 'Read the trail for any session inside the app. Audit access is part of Enterprise.',
 } as const;

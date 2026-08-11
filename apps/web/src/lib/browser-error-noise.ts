@@ -193,7 +193,7 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 //
 // BUT every call site fire-and-forgets the returned promise —
 // `void setAccountDefault(...)` / `void setAgentDefault(...)` /
-// `void setProjectDefault(...)` in `session-chat.tsx:3416/3422/3426`,
+// `void setWorkspaceDefault(...)` in `session-chat.tsx:3416/3422/3426`,
 // `agents-view.tsx:297`, `gateway-view.tsx:137`, and `models-tab.tsx:156`.
 // The chain: `setModelDefault` → `unwrap(backendApi.put(...))` THROWS the
 // `ApiError` on `!res.success` → `mutateAsync` rejects → the `async` wrapper's
@@ -624,7 +624,7 @@ const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
 // `scrollLeft` and `appendChild` are STANDARD DOM API method names that
 // first-party React code DOES call (e.g. `apps/web/src/hooks/use-proximity-
 // hover.ts` reads `container.scrollLeft`, `apps/web/src/features/workspace/
-// project-sidebar/session-title.tsx` sets `el.scrollLeft`, ref-callback
+// workspace-sidebar/session-title.tsx` sets `el.scrollLeft`, ref-callback
 // `appendChild` calls exist in portal/tooltip code), so matching on the bare
 // message would swallow a real first-party null-deref regression. The matcher
 // therefore requires BOTH the exact V8/old-JSC message AND a NEGATIVE guard:
@@ -1819,7 +1819,7 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
  * SILENT to `onError` (Sentry) — see `MODEL_NOT_SERVABLE_CODE` (PR #6082) —
  * but every call site fire-and-forgets the returned promise
  * (`void setAccountDefault(...)` / `void setAgentDefault(...)` /
- * `void setProjectDefault(...)`), so the rejected `mutateAsync` becomes an
+ * `void setWorkspaceDefault(...)`), so the rejected `mutateAsync` becomes an
  * UNHANDLED rejection → Sentry's `onunhandledrejection` (`handled:false`),
  * which the #6082 SDK gate never sees (it's past the `makeRequest` return).
  * This is the leak-path backstop. The model name varies, so the match is a

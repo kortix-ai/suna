@@ -25,7 +25,7 @@ describe('recordUsageEvent', () => {
   test('leaves the legacy attribution column unset', async () => {
     const eventId = await recordUsageEvent({
       accountId: 'account-1',
-      projectId: 'project-1',
+      workspaceId: 'project-1',
       sessionId: 'session-1',
       actorUserId: 'user-1',
       provider: 'openai',

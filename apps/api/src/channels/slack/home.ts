@@ -1,40 +1,40 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { chatInstalls, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import { loadSlackTokenForProject } from '../install-store';
+import { loadSlackTokenForWorkspace } from '../install-store';
 import { publishHomeView } from '../slack-api';
 import { config } from '../../config';
 import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage } from './util';
-import type { HomeProjectRow, HomeRecentRow } from './types';
+import type { HomeWorkspaceRow, HomeRecentRow } from './types';
 
 export async function publishHomeForUser(teamId: string, userId: string): Promise<void> {
   const installs = await db
-    .select({ projectId: chatInstalls.projectId })
+    .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformWorkspaceId, teamId)));
   if (installs.length === 0) return;
 
-  const token = await loadSlackTokenForProject(installs[0].projectId);
+  const token = await loadSlackTokenForWorkspace(installs[0].workspaceId);
   if (!token) return;
 
-  const projectIds = installs.map((i) => i.projectId);
-  const projectRows = await db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
+  const workspaceIds = installs.map((install) => install.workspaceId);
+  const workspaceRows = await db
+    .select({ workspaceId: projects.workspaceId, name: projects.name, repoUrl: projects.repoUrl })
     .from(projects)
-    .where(inArray(projects.projectId, projectIds));
+    .where(inArray(projects.workspaceId, workspaceIds));
 
   const recent = await db
     .select({
-      projectId: chatThreads.projectId,
+      workspaceId: chatThreads.workspaceId,
       lastMessageAt: chatThreads.lastMessageAt,
       threadId: chatThreads.threadId,
     })
     .from(chatThreads)
-    .where(and(eq(chatThreads.platform, 'slack'), eq(chatThreads.workspaceId, teamId)))
+    .where(and(eq(chatThreads.platform, 'slack'), eq(chatThreads.platformWorkspaceId, teamId)))
     .orderBy(desc(chatThreads.lastMessageAt))
     .limit(5);
 
-  const view = buildHomeView({ projects: projectRows, recent });
+  const view = buildHomeView({ workspaces: workspaceRows, recent });
   await publishHomeView(token, userId, view);
 }
 
@@ -45,7 +45,7 @@ const HOME_EXAMPLES: Array<{ emoji: string; prompt: string }> = [
   { emoji: '📦', prompt: '@Kortix pull yesterday\'s sign-ups, group them by source, drop the CSV here' },
 ];
 
-const PROJECT_COVERS = [
+const WORKSPACE_COVERS = [
   '1517694712202-14dd9538aa97',
   '1555066931-4365d14bab8c',
   '1542831371-29b0f74f9713',
@@ -55,17 +55,17 @@ const PROJECT_COVERS = [
   '1551288049-bebda4e38f71',
 ];
 
-function projectCoverUrl(projectId: string): string {
+function workspaceCoverUrl(workspaceId: string): string {
   let h = 0;
-  for (let i = 0; i < projectId.length; i++) h = (h * 31 + projectId.charCodeAt(i)) | 0;
-  const idx = Math.abs(h) % PROJECT_COVERS.length;
-  return `https://images.unsplash.com/photo-${PROJECT_COVERS[idx]}?w=1600&h=400&fit=crop&q=80&auto=format`;
+  for (let i = 0; i < workspaceId.length; i++) h = (h * 31 + workspaceId.charCodeAt(i)) | 0;
+  const idx = Math.abs(h) % WORKSPACE_COVERS.length;
+  return `https://images.unsplash.com/photo-${WORKSPACE_COVERS[idx]}?w=1600&h=400&fit=crop&q=80&auto=format`;
 }
 
 const DEFAULT_HOME_HERO_URL =
   'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&h=480&fit=crop&q=80&auto=format';
 
-function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRow[] }): Record<string, unknown> {
+function buildHomeView(input: { workspaces: HomeWorkspaceRow[]; recent: HomeRecentRow[] }): Record<string, unknown> {
   const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
   const heroUrl = config.SLACK_HOME_HERO_URL || DEFAULT_HOME_HERO_URL;
   const blocks: Array<Record<string, unknown>> = [];
@@ -102,10 +102,10 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
 
   blocks.push({ type: 'divider' });
 
-  if (input.projects.length === 0) {
+  if (input.workspaces.length === 0) {
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: '*No projects connected yet.*\nHead to your Kortix dashboard to link a project to this workspace.' },
+      text: { type: 'mrkdwn', text: '*No workspaces connected yet.*\nHead to your Kortix dashboard to link a workspace to this workspace.' },
       accessory: {
         type: 'button',
         text: { type: 'plain_text', text: 'Open dashboard' },
@@ -117,23 +117,23 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
   } else {
     blocks.push({
       type: 'header',
-      text: { type: 'plain_text', text: `Connected projects · ${input.projects.length}`, emoji: true },
+      text: { type: 'plain_text', text: `Connected workspaces · ${input.workspaces.length}`, emoji: true },
     });
-    for (const p of input.projects) {
-      const label = repoLabel(p.repoUrl);
+    for (const workspace of input.workspaces) {
+      const label = repoLabel(workspace.repoUrl);
       // Cover image — full-width card hero.
       blocks.push({
         type: 'image',
-        image_url: projectCoverUrl(p.projectId),
-        alt_text: `${p.name} cover`,
+        image_url: workspaceCoverUrl(workspace.workspaceId),
+        alt_text: `${workspace.name} cover`,
       });
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
           text: [
-            `*${escapeMrkdwn(p.name)}*`,
-            `<${p.repoUrl}|${escapeMrkdwn(label)}>`,
+            `*${escapeMrkdwn(workspace.name)}*`,
+            `<${workspace.repoUrl}|${escapeMrkdwn(label)}>`,
           ].join('\n'),
         },
       });
@@ -141,7 +141,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
         type: 'context',
         elements: [
           { type: 'mrkdwn', text: '🟢  *Connected*' },
-          { type: 'mrkdwn', text: `🪐  <${dashboardBase}/projects/${p.projectId}|Dashboard>` },
+          { type: 'mrkdwn', text: `🪐  <${dashboardBase}/workspaces/${workspace.workspaceId}|Dashboard>` },
         ],
       });
       blocks.push({
@@ -149,16 +149,16 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
         elements: [
           {
             type: 'button',
-            text: { type: 'plain_text', text: 'Open project' },
+            text: { type: 'plain_text', text: 'Open workspace' },
             style: 'primary',
-            url: `${dashboardBase}/projects/${p.projectId}`,
-            action_id: `home_open_${p.projectId}`,
+            url: `${dashboardBase}/workspaces/${workspace.workspaceId}`,
+            action_id: `home_open_${workspace.workspaceId}`,
           },
           {
             type: 'button',
             text: { type: 'plain_text', text: 'View on GitHub' },
-            url: p.repoUrl,
-            action_id: `home_repo_${p.projectId}`,
+            url: workspace.repoUrl,
+            action_id: `home_repo_${workspace.workspaceId}`,
           },
         ],
       });
@@ -182,20 +182,20 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
   }
 
   if (input.recent.length > 0) {
-    const projectById = new Map(input.projects.map((p) => [p.projectId, p]));
+    const workspaceById = new Map(input.workspaces.map((workspace) => [workspace.workspaceId, workspace]));
     blocks.push({ type: 'divider' });
     blocks.push({
       type: 'header',
       text: { type: 'plain_text', text: 'Recent activity', emoji: true },
     });
     for (const r of input.recent) {
-      const proj = projectById.get(r.projectId);
-      const projectName = proj?.name ?? 'project';
+      const workspace = workspaceById.get(r.workspaceId);
+      const workspaceName = workspace?.name ?? 'workspace';
       const when = formatRelativeTime(r.lastMessageAt);
       const elements: Array<Record<string, unknown>> = [];
-      const og = proj ? repoOgImage(proj.repoUrl) : null;
-      if (og) elements.push({ type: 'image', image_url: og, alt_text: `${projectName} repo` });
-      elements.push({ type: 'mrkdwn', text: `*${escapeMrkdwn(projectName)}*  ·  ${when}` });
+      const og = workspace ? repoOgImage(workspace.repoUrl) : null;
+      if (og) elements.push({ type: 'image', image_url: og, alt_text: `${workspaceName} repo` });
+      elements.push({ type: 'mrkdwn', text: `*${escapeMrkdwn(workspaceName)}*  ·  ${when}` });
       blocks.push({ type: 'context', elements });
     }
   }

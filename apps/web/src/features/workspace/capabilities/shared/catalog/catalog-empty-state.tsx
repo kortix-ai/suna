@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
  * The "nothing here" line every catalog uses, so five hand-typed copies of one
  * class string cannot drift into five different-looking messages. `CatalogGrid`
  * owns loading/error/empty; this is what callers put IN the empty slot when the
- * cause is the search box rather than an empty project.
+ * cause is the search box rather than an empty workspace.
  */
 export function CatalogEmptyNote({ children }: { children: ReactNode }) {
   return <p className="text-muted-foreground px-3 py-6 text-center text-xs">{children}</p>;

@@ -19,6 +19,16 @@ test('exports and publishConfig.exports declare the same subpaths', () => {
   expect(Object.keys(publishConfig.exports).sort()).toEqual(Object.keys(src).sort());
 });
 
+test('the canonical workspaces-client subpath is published', () => {
+  const { exports: src, publishConfig } = pkg();
+
+  expect(src['./workspaces-client']).toBe('./src/deprecated/workspaces-client.ts');
+  expect(publishConfig.exports['./workspaces-client']).toEqual({
+    types: './dist/deprecated/workspaces-client.d.ts',
+    import: './dist/deprecated/workspaces-client.js',
+  });
+});
+
 test('every publishConfig entry declares both types and import', () => {
   const { publishConfig } = pkg();
   for (const [subpath, entry] of Object.entries(publishConfig.exports)) {

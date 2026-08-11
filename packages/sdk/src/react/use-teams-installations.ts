@@ -27,22 +27,22 @@ export interface TeamsMode {
   byo: boolean;
 }
 
-const key = (projectId: string | null) =>
-  ['channels', 'teams-install', projectId ?? 'none'] as const;
-const modeKey = (projectId: string | null) =>
-  ['channels', 'teams-mode', projectId ?? 'none'] as const;
-const manifestKey = (projectId: string | null) =>
-  ['channels', 'teams-manifest', projectId ?? 'none'] as const;
+const key = (workspaceId: string | null) =>
+  ['channels', 'teams-install', workspaceId ?? 'none'] as const;
+const modeKey = (workspaceId: string | null) =>
+  ['channels', 'teams-mode', workspaceId ?? 'none'] as const;
+const manifestKey = (workspaceId: string | null) =>
+  ['channels', 'teams-manifest', workspaceId ?? 'none'] as const;
 
-export function useTeamsInstall(projectId: string | null) {
+export function useTeamsInstall(workspaceId: string | null) {
   return useQuery({
-    queryKey: key(projectId),
-    enabled: !!projectId,
+    queryKey: key(workspaceId),
+    enabled: !!workspaceId,
     staleTime: 30_000,
     queryFn: async () => {
-      if (!projectId) return null;
+      if (!workspaceId) return null;
       const res = await backendApi.get<TeamsInstallation | null>(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/installation`,
+        `/workspaces/${encodeURIComponent(workspaceId)}/channels/teams/installation`,
         { showErrors: false },
       );
       if (!res.success) return null;
@@ -51,10 +51,10 @@ export function useTeamsInstall(projectId: string | null) {
   });
 }
 
-export function useTeamsMode(projectId: string | null) {
+export function useTeamsMode(workspaceId: string | null) {
   return useQuery({
-    queryKey: modeKey(projectId),
-    enabled: !!projectId,
+    queryKey: modeKey(workspaceId),
+    enabled: !!workspaceId,
     staleTime: 60_000,
     queryFn: async () => {
       const fallback: TeamsMode = {
@@ -68,9 +68,9 @@ export function useTeamsMode(projectId: string | null) {
         orgInstalled: false,
         byo: false,
       };
-      if (!projectId) return fallback;
+      if (!workspaceId) return fallback;
       const res = await backendApi.get<TeamsMode>(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/mode`,
+        `/workspaces/${encodeURIComponent(workspaceId)}/channels/teams/mode`,
         { showErrors: false },
       );
       if (!res.success || !res.data) return fallback;
@@ -79,15 +79,15 @@ export function useTeamsMode(projectId: string | null) {
   });
 }
 
-export function useTeamsManifest(projectId: string | null) {
+export function useTeamsManifest(workspaceId: string | null) {
   return useQuery({
-    queryKey: manifestKey(projectId),
-    enabled: !!projectId,
+    queryKey: manifestKey(workspaceId),
+    enabled: !!workspaceId,
     staleTime: 60_000,
     queryFn: async () => {
-      if (!projectId) return null;
+      if (!workspaceId) return null;
       const res = await backendApi.get<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/manifest`,
+        `/workspaces/${encodeURIComponent(workspaceId)}/channels/teams/manifest`,
         { showErrors: false },
       );
       if (!res.success || !res.data) {
@@ -99,7 +99,7 @@ export function useTeamsManifest(projectId: string | null) {
 }
 
 interface ConnectInput {
-  projectId: string;
+  workspaceId: string;
   tenant_id: string;
   team_name?: string;
   app_id?: string;
@@ -109,9 +109,9 @@ interface ConnectInput {
 export function useConnectTeams() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ projectId, ...body }: ConnectInput) => {
+    mutationFn: async ({ workspaceId, ...body }: ConnectInput) => {
       const res = await backendApi.post<TeamsInstallation>(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/connect`,
+        `/workspaces/${encodeURIComponent(workspaceId)}/channels/teams/connect`,
         body,
         { showErrors: false },
       );
@@ -120,10 +120,10 @@ export function useConnectTeams() {
       }
       return res.data;
     },
-    onSuccess: (_data, { projectId }) => {
-      qc.invalidateQueries({ queryKey: key(projectId) });
-      qc.invalidateQueries({ queryKey: modeKey(projectId) });
-      qc.invalidateQueries({ queryKey: manifestKey(projectId) });
+    onSuccess: (_data, { workspaceId }) => {
+      qc.invalidateQueries({ queryKey: key(workspaceId) });
+      qc.invalidateQueries({ queryKey: modeKey(workspaceId) });
+      qc.invalidateQueries({ queryKey: manifestKey(workspaceId) });
     },
   });
 }
@@ -131,15 +131,15 @@ export function useConnectTeams() {
 export function useDisconnectTeams() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (projectId: string) => {
+    mutationFn: async (workspaceId: string) => {
       const res = await backendApi.delete(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/installation`,
+        `/workspaces/${encodeURIComponent(workspaceId)}/channels/teams/installation`,
         { showErrors: false },
       );
       if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
     },
-    onSuccess: (_data, projectId) => {
-      qc.invalidateQueries({ queryKey: key(projectId) });
+    onSuccess: (_data, workspaceId) => {
+      qc.invalidateQueries({ queryKey: key(workspaceId) });
     },
   });
 }

@@ -44,7 +44,7 @@ describe('connector authorization owner is locked after creation', () => {
     // Both halves matter: WHICH owner (the thing being read) and WHY it cannot
     // move (the thing that stops a support ticket).
     expect(MODAL).toContain('{lockedReason}');
-    expect(MODAL).toContain("isProject ? 'Project' : 'User'");
+    expect(MODAL).toContain("isWorkspace ? 'Workspace' : 'User'");
   });
 
   test('the backend path is still wired, so this stays a one-prop revert', () => {

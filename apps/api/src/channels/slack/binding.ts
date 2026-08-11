@@ -11,8 +11,8 @@ import { db } from '../../shared/db';
  * its own thread on demand via `slack bind-thread`.
  */
 export async function bindChatThread(input: {
-  projectId: string;
   workspaceId: string;
+  platformWorkspaceId: string;
   threadId: string;
   sessionId: string;
   platform?: string;
@@ -20,36 +20,36 @@ export async function bindChatThread(input: {
   await db
     .insert(chatThreads)
     .values({
-      projectId: input.projectId,
-      platform: input.platform ?? 'slack',
       workspaceId: input.workspaceId,
+      platform: input.platform ?? 'slack',
+      platformWorkspaceId: input.platformWorkspaceId,
       threadId: input.threadId,
       sessionId: input.sessionId,
     })
     .onConflictDoNothing({
-      target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId],
+      target: [chatThreads.platform, chatThreads.platformWorkspaceId, chatThreads.threadId],
     });
 }
 
 /**
- * Resolve the Slack workspace/team id for a channel from its project binding
+ * Resolve the Slack workspace/team id for a channel from its Kortix workspace binding
  * (`chat_channel_bindings`). Returns null when the channel isn't bound to the
- * project yet.
+ * workspace yet.
  */
 export async function resolveWorkspaceIdForChannel(
-  projectId: string,
+  workspaceId: string,
   channelId: string,
 ): Promise<string | null> {
   const [row] = await db
-    .select({ workspaceId: chatChannelBindings.workspaceId })
+    .select({ platformWorkspaceId: chatChannelBindings.platformWorkspaceId })
     .from(chatChannelBindings)
     .where(
       and(
         eq(chatChannelBindings.platform, 'slack'),
-        eq(chatChannelBindings.projectId, projectId),
+        eq(chatChannelBindings.workspaceId, workspaceId),
         eq(chatChannelBindings.channelId, channelId),
       ),
     )
     .limit(1);
-  return row?.workspaceId ?? null;
+  return row?.platformWorkspaceId ?? null;
 }

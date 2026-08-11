@@ -19,10 +19,10 @@ const NO_INSTALLED_NAMES = new Set<string>();
 /** In-project marketplace (Customize → Marketplace). Renders the exact same
  *  `MarketplaceExplore` as the public `/marketplace` page — same source rail,
  *  projects showcase, featured + sectioned skills, cards, and detail — just
- *  embedded in the panel and driven through the "project" surface (adds
- *  start an agent-import session in THIS project, in-panel overlay
+ *  embedded in the panel and driven through the "workspace" surface (adds
+ *  start an agent-import session in this workspace, in-panel overlay
  *  navigation). */
-export function MarketplaceView({ projectId }: { projectId: string }) {
+export function MarketplaceView({ workspaceId }: { workspaceId: string }) {
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const openItem = useMarketplaceDetailStore((s) => s.openItem);
   const closeDetail = useMarketplaceDetailStore((s) => s.close);
@@ -30,8 +30,8 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
   const browseScrollContainerRef = useRef<HTMLDivElement>(null);
 
   const surface = useMemo<MarketplaceSurface>(
-    () => ({ variant: 'project', projectId, installedNames: NO_INSTALLED_NAMES, openItem }),
-    [projectId, openItem],
+    () => ({ variant: 'workspace', workspaceId, installedNames: NO_INSTALLED_NAMES, openItem }),
+    [workspaceId, openItem],
   );
 
   return (
@@ -68,7 +68,7 @@ function MarketplaceExploreTab({
 
   const marketplaces = marketplacesQuery.data?.marketplaces ?? [];
   const allItems = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
-  const projectItems = useMemo(
+  const workspaceItems = useMemo(
     () => allItems.filter((i) => i.type === 'registry:project'),
     [allItems],
   );
@@ -87,7 +87,7 @@ function MarketplaceExploreTab({
     <MarketplaceExplore
       items={allItems}
       marketplaces={marketplaces}
-      projectItems={projectItems}
+      workspaceItems={workspaceItems}
       embedded
       syncUrl={false}
       publicOnly={false}
@@ -97,7 +97,7 @@ function MarketplaceExploreTab({
 }
 
 /** Fetches the open item by id and renders the shared detail as an in-panel
- *  overlay (the project surface makes its actions install into this project). */
+ *  overlay (the workspace surface makes its actions install into this workspace). */
 function MarketplaceDetailOverlay({ onBack }: { onBack: () => void }) {
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const openItem = useMarketplaceDetailStore((s) => s.openItem);

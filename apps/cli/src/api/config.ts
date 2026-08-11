@@ -54,12 +54,20 @@ const LEGACY_DEV_HOST_NAME = 'dev'; // → local-dev (localhost:8008)
 const LEGACY_LOCAL_HOST_NAME = 'local'; // → selfhost (localhost:13738)
 const LEGACY_LOCAL_API_BASE = 'http://localhost:13738';
 
-/** The global default project for a host — used by every project-scoped
+/** The global default workspace for a host — used by every workspace-scoped
  *  command (connectors, sessions, …) when the cwd is not bound
- *  to a project via `.kortix/link.json`. Carries its account_id so the
+ *  to a workspace via `.kortix/link.json`. Carries its account_id so the
  *  default always resolves under the right account. */
+export interface DefaultWorkspaceRef {
+  workspace_id: string;
+  account_id: string;
+  name?: string;
+}
+
+/** @deprecated Use `DefaultWorkspaceRef`. */
 export interface DefaultProjectRef {
   project_id: string;
+  workspace_id?: string;
   account_id: string;
   name?: string;
 }
@@ -74,7 +82,9 @@ export interface Host {
   /** Active account display fields, captured at login / `accounts use`. */
   account_slug?: string;
   account_name?: string;
-  /** Global default project for this host (see DefaultProjectRef). */
+  /** Global default workspace for this host (see DefaultWorkspaceRef). */
+  default_workspace?: DefaultWorkspaceRef;
+  /** @deprecated Read during migration. New writes use `default_workspace`. */
   default_project?: DefaultProjectRef;
   /**
    * The frontend/dashboard base URL for this host, when known authoritatively
@@ -194,7 +204,7 @@ export function deleteConfig(): void {
  *      (The SANDBOX credential
  *      — KORTIX_SANDBOX_TOKEN / its legacy KORTIX_TOKEN alias — is deliberately
  *      NOT used here: it's the daemon's identity, not the user's, and does not
- *      authenticate against the project-scoped API routes the CLI calls.)
+ *      authenticate against the workspace-scoped API routes the CLI calls.)
  *   2. KORTIX_API_URL env var (URL override for the stored active host)
  *   3. `--host` flag (handled at the call site via `getHost(name)`)
  *   4. The `active` host in config.json
@@ -260,7 +270,7 @@ export function activeHostName(): string | null {
   return config.hosts[config.active] ? config.active : null;
 }
 
-// ─── Active account + default project ───────────────────────────────────────
+// ─── Active account + default workspace ────────────────────────────────────
 
 /** The active account for the current invocation (the active host's
  *  stored account), or null when there's no host / no account yet (e.g.
@@ -275,10 +285,21 @@ export function activeAccount(): ActiveAccount | null {
   };
 }
 
-/** The active host's global default project, or null when none is set. */
-export function defaultProject(): DefaultProjectRef | null {
+/** The active host's global default workspace, or null when none is set. */
+export function defaultWorkspace(): DefaultWorkspaceRef | null {
   const host = activeHost();
-  return host?.default_project ?? null;
+  return host?.default_workspace ?? null;
+}
+
+/** @deprecated Use `defaultWorkspace`. */
+export function defaultProject(): DefaultProjectRef | null {
+  const workspace = defaultWorkspace();
+  if (!workspace) return null;
+  return {
+    project_id: workspace.workspace_id,
+    account_id: workspace.account_id,
+    name: workspace.name,
+  };
 }
 
 /** Plain "Name (slug)" label, or just the slug when no name is known (a
@@ -288,7 +309,7 @@ export function accountLabel(a: { name?: string; slug: string }): string {
 }
 
 /** Switch the active account on a host (default: the active host). A
- *  default project that no longer lives in the active account is dropped —
+ *  default workspace that no longer lives in the active account is dropped —
  *  the default must always be reachable under the active account. */
 export function setActiveAccount(
   account: { id: string; slug?: string; name?: string },
@@ -301,36 +322,51 @@ export function setActiveAccount(
   host.account_id = account.id;
   host.account_slug = account.slug ?? account.id.slice(0, 8);
   host.account_name = account.name ?? '';
-  if (host.default_project && host.default_project.account_id !== account.id) {
-    delete host.default_project;
+  if (host.default_workspace && host.default_workspace.account_id !== account.id) {
+    delete host.default_workspace;
   }
   saveConfig(config);
 }
 
-/** Set the global default project on a host (default: the active host). */
-export function setDefaultProject(project: DefaultProjectRef, hostName?: string): void {
+/** Set the global default workspace on a host (default: the active host). */
+export function setDefaultWorkspace(workspace: DefaultWorkspaceRef, hostName?: string): void {
   const config = loadConfig();
   const name = resolveTargetHostName(config, hostName);
   const host = config.hosts[name];
   if (!host) return;
-  host.default_project = {
-    project_id: project.project_id,
-    account_id: project.account_id,
-    ...(project.name ? { name: project.name } : {}),
+  host.default_workspace = {
+    workspace_id: workspace.workspace_id,
+    account_id: workspace.account_id,
+    ...(workspace.name ? { name: workspace.name } : {}),
   };
   saveConfig(config);
 }
 
-/** Clear the global default project. Returns true if one was removed. */
-export function clearDefaultProject(hostName?: string): boolean {
+/** Set the global default project through the canonical Workspace storage. */
+export function setDefaultProject(project: DefaultProjectRef, hostName?: string): void {
+  setDefaultWorkspace(
+    {
+      workspace_id: project.workspace_id ?? project.project_id,
+      account_id: project.account_id,
+      name: project.name,
+    },
+    hostName,
+  );
+}
+
+/** Clear the global default workspace. Returns true if one was removed. */
+export function clearDefaultWorkspace(hostName?: string): boolean {
   const config = loadConfig();
   const name = resolveTargetHostName(config, hostName);
   const host = config.hosts[name];
-  if (!host?.default_project) return false;
-  delete host.default_project;
+  if (!host?.default_workspace) return false;
+  delete host.default_workspace;
   saveConfig(config);
   return true;
 }
+
+/** @deprecated Use `clearDefaultWorkspace`. */
+export const clearDefaultProject = clearDefaultWorkspace;
 
 function resolveTargetHostName(config: Config, hostName?: string): string {
   if (hostName) return hostName;
@@ -502,6 +538,15 @@ function normalizeConfig(parsed: Partial<Config>): Config {
     if (!value || typeof value !== 'object') continue;
     const h = value as Partial<Host>;
     if (typeof h.token !== 'string') continue;
+    const migratedDefault = isDefaultWorkspaceRef(h.default_workspace)
+      ? h.default_workspace
+      : isDefaultProjectRef(h.default_project)
+        ? {
+            workspace_id: h.default_project.project_id,
+            account_id: h.default_project.account_id,
+            ...(h.default_project.name ? { name: h.default_project.name } : {}),
+          }
+        : undefined;
     cleaned[name] = {
       url: secureRemoteBase(h.url ?? DEFAULT_API_BASE),
       token: h.token,
@@ -513,7 +558,7 @@ function normalizeConfig(parsed: Partial<Config>): Config {
       // older config (without them) still loads, and a newer one round-trips.
       ...(typeof h.account_slug === 'string' ? { account_slug: h.account_slug } : {}),
       ...(typeof h.account_name === 'string' ? { account_name: h.account_name } : {}),
-      ...(isDefaultProjectRef(h.default_project) ? { default_project: h.default_project } : {}),
+      ...(migratedDefault ? { default_workspace: migratedDefault } : {}),
       ...(typeof h.dashboard_url === 'string' ? { dashboard_url: h.dashboard_url } : {}),
     };
   }
@@ -581,6 +626,12 @@ function isDefaultProjectRef(value: unknown): value is DefaultProjectRef {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
   return typeof v.project_id === 'string' && typeof v.account_id === 'string';
+}
+
+function isDefaultWorkspaceRef(value: unknown): value is DefaultWorkspaceRef {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.workspace_id === 'string' && typeof v.account_id === 'string';
 }
 
 function defaultHost(url: string): Host {

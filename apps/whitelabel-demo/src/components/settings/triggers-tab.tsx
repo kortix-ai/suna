@@ -26,7 +26,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
-import type { ProjectTrigger } from '@kortix/sdk';
+import type { WorkspaceTrigger } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Play, Trash2, Zap } from 'lucide-react';
 import { useState } from 'react';
@@ -34,14 +34,14 @@ import { toast } from 'sonner';
 
 type TriggerType = 'cron' | 'webhook';
 
-export function TriggersTab({ projectId }: { projectId: string }) {
+export function TriggersTab({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
-  const key = ['project-triggers', projectId] as const;
+  const key = ['workspace-triggers', workspaceId] as const;
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   const triggers = useQuery({
     queryKey: key,
-    queryFn: () => kortix.project(projectId).triggers.list(),
+    queryFn: () => kortix.workspace(workspaceId).triggers.list(),
   });
 
   const [name, setName] = useState('');
@@ -49,11 +49,11 @@ export function TriggersTab({ projectId }: { projectId: string }) {
   const [cron, setCron] = useState('0 0 * * * *');
   const [prompt, setPrompt] = useState('');
 
-  const items: ProjectTrigger[] = triggers.data?.triggers ?? [];
+  const items: WorkspaceTrigger[] = triggers.data?.triggers ?? [];
   const paused: boolean = Boolean(triggers.data?.triggers_paused);
 
   const setActivation = useMutation({
-    mutationFn: (next: boolean) => kortix.project(projectId).triggers.setActivation(next),
+    mutationFn: (next: boolean) => kortix.workspace(workspaceId).triggers.setActivation(next),
     onSuccess: (_res, next) => {
       refresh();
       toast.success(next ? 'All triggers paused' : 'All triggers resumed');
@@ -63,7 +63,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
 
   const create = useMutation({
     mutationFn: () =>
-      kortix.project(projectId).triggers.create({
+      kortix.workspace(workspaceId).triggers.create({
         name: name.trim(),
         type,
         prompt_template: prompt.trim() || name.trim(),
@@ -79,7 +79,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
   });
 
   const fire = useMutation({
-    mutationFn: (slug: string) => kortix.project(projectId).triggers.fire(slug),
+    mutationFn: (slug: string) => kortix.workspace(workspaceId).triggers.fire(slug),
     onSuccess: (res) => {
       toast.success(`Trigger ${res.status}`);
     },
@@ -87,7 +87,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
   });
 
   const remove = useMutation({
-    mutationFn: (slug: string) => kortix.project(projectId).triggers.remove(slug),
+    mutationFn: (slug: string) => kortix.workspace(workspaceId).triggers.remove(slug),
     onSuccess: () => {
       refresh();
       toast.success('Trigger deleted');
@@ -222,7 +222,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
                   <Play className="size-4" />
                 </Button>
                 <EditTriggerDialog
-                  projectId={projectId}
+                  workspaceId={workspaceId}
                   slug={slug}
                   trigger={t}
                   onSaved={refresh}
@@ -247,14 +247,14 @@ export function TriggersTab({ projectId }: { projectId: string }) {
 }
 
 function EditTriggerDialog({
-  projectId,
+  workspaceId,
   slug,
   trigger,
   onSaved,
 }: {
-  projectId: string;
+  workspaceId: string;
   slug: string;
-  trigger: ProjectTrigger;
+  trigger: WorkspaceTrigger;
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -264,7 +264,7 @@ function EditTriggerDialog({
 
   const update = useMutation({
     mutationFn: () =>
-      kortix.project(projectId).triggers.update(slug, {
+      kortix.workspace(workspaceId).triggers.update(slug, {
         name: name.trim() || undefined,
         prompt_template: prompt.trim() || undefined,
         enabled: enabled === 'on',

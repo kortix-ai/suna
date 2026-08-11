@@ -256,7 +256,7 @@ iamRouter.openapi(
 // Per-account ceilings on CLI Personal Access Token lifetime + idle gap,
 // plus a "require expiry on every PAT" toggle. Enforced at mint
 // (createAccountToken) and validate (validateAccountToken) paths.
-// Project-scoped tokens (sandbox-injected) are exempt at both sites.
+// Workspace-scoped tokens (sandbox-injected) are exempt at both sites.
 
 const PAT_MAX_LIFETIME_DAYS = 365 * 2; // 2 years
 const PAT_MAX_IDLE_DAYS = 365;

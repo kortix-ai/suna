@@ -5,7 +5,7 @@ import type { ModelKey } from './use-model-store';
 
 /**
  * Per-session model + agent selection, persisted locally. The lists come from the
- * server-side hooks (`useProjectModels`, `useVisibleAgents`); this just remembers
+ * server-side hooks (`useWorkspaceModels`, `useVisibleAgents`); this just remembers
  * which one is chosen for a session and feeds it to send. `null` means "use the
  * project/agent default" — the field is omitted and the runtime decides. Owned by
  * the SDK so every host shares one implementation (and `useSession` can apply the

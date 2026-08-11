@@ -34,7 +34,7 @@ export type StepFamily =
   | 'memory'
   | 'apps'
   | 'automations'
-  | 'projects'
+  | 'workspaces'
   | 'skills'
   | 'ask'
   | 'retired'
@@ -105,7 +105,8 @@ assign('automations', [
   'triggers', 'trigger_create', 'trigger_delete', 'trigger_get', 'trigger_list',
   'trigger_pause', 'trigger_resume', 'trigger_test', 'trigger_update',
 ]);
-assign('projects', [
+assign('workspaces', [
+  'workspace_create',
   'project_create', 'project_delete', 'project_get',
   'project_list', 'project_select', 'project_update',
 ]);
@@ -294,23 +295,24 @@ function appAction(part: ToolPart): AppAction {
   return APP_ACTION[normalizeName(part.tool)] ?? 'read';
 }
 
-// ─── projects: opening/viewing vs creating vs updating vs a delete that is a no-op ─
+// ─── workspaces: opening/viewing vs creating vs updating vs a delete that is a no-op ─
 
-type ProjectAction = 'open' | 'create' | 'update' | 'delete';
+type WorkspaceAction = 'open' | 'create' | 'update' | 'delete';
 
-const PROJECT_ACTION: Record<string, ProjectAction> = {
+const WORKSPACE_ACTION: Record<string, WorkspaceAction> = {
+  workspace_create: 'create',
   project_get: 'open',
   project_list: 'open',
   project_select: 'open',
-  // A real mutation — renames the project and can change its default_branch /
-  // manifest_path (PATCH /v1/projects/:projectId) — never "opened".
+  // A real mutation — renames the workspace and can change its default_branch /
+  // manifest_path (PATCH /v1/projects/:workspaceId) — never "opened".
   project_update: 'update',
   project_create: 'create',
   project_delete: 'delete',
 };
 
-function projectAction(part: ToolPart): ProjectAction {
-  return PROJECT_ACTION[normalizeName(part.tool)] ?? 'open';
+function workspaceAction(part: ToolPart): WorkspaceAction {
+  return WORKSPACE_ACTION[normalizeName(part.tool)] ?? 'open';
 }
 
 function allSame<T>(items: T[]): boolean {
@@ -719,27 +721,27 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
       }
       return 'Worked with your automations';
     }
-    case 'projects': {
-      const actions = parts.map(projectAction);
+    case 'workspaces': {
+      const actions = parts.map(workspaceAction);
       if (allSame(actions)) {
         switch (actions[0]) {
           case 'delete':
             return n === 1
-              ? "Tried to delete a project — deletion isn't allowed"
-              : `Tried to delete ${n} projects — deletion isn't allowed`;
+              ? "Tried to delete a workspace — deletion isn't allowed"
+              : `Tried to delete ${n} workspaces — deletion isn't allowed`;
           case 'create':
-            if (n === 1) return arg ? `Created ${arg}` : 'Created a project';
-            return `Created ${n} projects`;
+            if (n === 1) return arg ? `Created ${arg}` : 'Created a workspace';
+            return `Created ${n} workspaces`;
           case 'update':
             // A real mutation (rename / default_branch / manifest_path) — never "opened".
-            if (n === 1) return arg ? `Updated ${arg}` : 'Updated your project';
-            return `Updated ${n} projects`;
+            if (n === 1) return arg ? `Updated ${arg}` : 'Updated your workspace';
+            return `Updated ${n} workspaces`;
           case 'open':
-            if (n === 1) return arg ? `Opened ${arg}` : 'Opened your project';
-            return `Opened ${n} projects`;
+            if (n === 1) return arg ? `Opened ${arg}` : 'Opened your workspace';
+            return `Opened ${n} workspaces`;
         }
       }
-      return arg ? `Worked in ${arg}` : 'Worked in your project';
+      return arg ? `Worked in ${arg}` : 'Worked in your workspace';
     }
     case 'skills': {
       if (n === 1) return arg ? `Used the ${arg} skill` : 'Used a skill';
@@ -797,8 +799,8 @@ export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string
       return "Couldn't reach a connected app";
     case 'automations':
       return 'Hit a problem with your automations';
-    case 'projects':
-      return 'Hit a problem with your project';
+    case 'workspaces':
+      return 'Hit a problem with your workspace';
     case 'skills':
       return "Couldn't use a skill";
     case 'ask':

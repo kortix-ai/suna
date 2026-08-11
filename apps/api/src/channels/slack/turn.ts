@@ -5,7 +5,7 @@ import { registerSessionFailureNotifier } from '../../shared/session-failure-not
 import { config } from '../../config';
 import { sessionWebUrl } from './util';
 import { markdownToMrkdwn, mrkdwnToRichTextElements } from './mrkdwn';
-import { loadSlackTokenForProject } from '../install-store';
+import { loadSlackTokenForWorkspace } from '../install-store';
 import {
   addReaction,
   joinChannel,
@@ -30,7 +30,7 @@ export function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: str
     steps: (row.steps as StreamTaskChunk[]) ?? [],
     expiry: new Date(row.expiresAt).getTime(),
     finalized: row.finalized,
-    projectId: row.projectId,
+    workspaceId: row.workspaceId,
     sessionId: row.sessionId,
     teamId: row.teamId,
     originatingEvent: row.originatingEvent as SlackEvent,
@@ -55,14 +55,14 @@ export async function loadTurn(sessionId: string): Promise<LiveTurn | null> {
       const ev = row.originatingEvent as SlackEvent | undefined;
       const triggerTs = row.triggerTs || ev?.ts;
       if (row.channel && triggerTs) {
-        const token = await loadSlackTokenForProject(row.projectId);
+        const token = await loadSlackTokenForWorkspace(row.workspaceId);
         if (token) await removeReaction(token, row.channel, triggerTs, WORKING_EMOJI).catch(() => {});
       }
     }
     await deleteTurn(sessionId);
     return null;
   }
-  const token = await loadSlackTokenForProject(row.projectId);
+  const token = await loadSlackTokenForWorkspace(row.workspaceId);
   if (!token) return null;
   return rowToHandle(row, token);
 }
@@ -72,7 +72,7 @@ export async function saveTurn(handle: LiveTurn): Promise<void> {
   if (!handle.sessionId) return;
   const values = {
     sessionId: handle.sessionId,
-    projectId: handle.projectId,
+    workspaceId: handle.workspaceId,
     teamId: handle.teamId,
     channel: handle.channel,
     triggerTs: handle.triggerTs,
@@ -134,7 +134,7 @@ setInterval(() => {
       for (const row of stale) {
         if (row.channelRef) continue;
         if (!(await claimFinalize(row.sessionId))) continue;
-        const token = await loadSlackTokenForProject(row.projectId);
+        const token = await loadSlackTokenForWorkspace(row.workspaceId);
         if (token) {
           // Last-resort close for a turn that went silent for 30 min — the
           // sandbox never relayed an end (it died, hung, or stalled retrying).
@@ -148,8 +148,8 @@ setInterval(() => {
           // No token (app uninstalled / token rotated) → we can't post or clear
           // the ⏳. Reap the row anyway (below) and surface it so a dead install
           // is observable instead of silently dropping every turn.
-          console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
-            projectId: row.projectId,
+          console.warn('[slack-webhook] gc: no Slack token for workspace — cannot finalize turn', {
+            workspaceId: row.workspaceId,
             teamId: row.teamId,
             sessionId: row.sessionId,
           });
@@ -164,7 +164,7 @@ setInterval(() => {
 }, 5 * 60 * 1000).unref();
 
 export async function startTurn(
-  projectId: string,
+  workspaceId: string,
   teamId: string,
   event: SlackEvent,
   // firstStepTitle was the eager "Spinning up a sandbox" placeholder that
@@ -173,13 +173,13 @@ export async function startTurn(
   _unusedFirstStepTitle?: string,
 ): Promise<LiveTurn | null> {
   if (!event.channel || !event.ts || !event.user) return null;
-  const token = await loadSlackTokenForProject(projectId);
+  const token = await loadSlackTokenForWorkspace(workspaceId);
   if (!token) {
     // No bot token (app uninstalled / token rotated) → we can't even react. Log
     // it so a dead install is observable rather than the bot silently ignoring
     // every mention.
-    console.warn('[slack-webhook] startTurn: no Slack token for project — cannot start turn', {
-      projectId,
+    console.warn('[slack-webhook] startTurn: no Slack token for workspace — cannot start turn', {
+      workspaceId,
       teamId,
       channel: event.channel,
     });
@@ -201,7 +201,7 @@ export async function startTurn(
     triggerTs: event.ts,
     expiry: Date.now() + STREAM_TTL_MS,
     finalized: false,
-    projectId,
+    workspaceId,
     sessionId: '',
     teamId,
     originatingEvent: event,
@@ -313,11 +313,11 @@ export async function finalizeTurn(
           const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
           rendered = f != null;
         }
-      } else if (opts.error && handle.projectId && handle.sessionId) {
+      } else if (opts.error && handle.workspaceId && handle.sessionId) {
         // An error with no plan stream: post the failure copy WITH an "Open
         // session" footer so the thread always has a way to see what went wrong
         // (the plan path already appends this footer; mirror it here).
-        const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
+        const url = sessionWebUrl(config.FRONTEND_URL, handle.workspaceId, handle.sessionId);
         const ts = await postBlocks(
           handle.token,
           handle.channel,
@@ -385,8 +385,8 @@ function toSectionBlocks(body: string, truncated = false): Array<Record<string, 
 // render is rejected. postMessage's text field allows far more than a section, so
 // the full (already ≤MAX_BODY) body fits; append the session link inline.
 function plainFallback(handle: LiveTurn, body: string): string {
-  if (handle.projectId && handle.sessionId) {
-    const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
+  if (handle.workspaceId && handle.sessionId) {
+    const url = sessionWebUrl(config.FRONTEND_URL, handle.workspaceId, handle.sessionId);
     return `${body}\n\n<${url}|Open session in Kortix ↗>`;
   }
   return body;
@@ -448,8 +448,8 @@ function buildFinalPlanBlocks(
   }
   // Footer: a link to open this session on the web. Lets anyone in the thread
   // jump straight to the full session (logs, files, diff) in Kortix.
-  if (handle.projectId && handle.sessionId) {
-    const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
+  if (handle.workspaceId && handle.sessionId) {
+    const url = sessionWebUrl(config.FRONTEND_URL, handle.workspaceId, handle.sessionId);
     blocks.push({
       type: 'context',
       elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }],

@@ -3,14 +3,14 @@
  * file listing, file read, search, commit log, branches, and the diff of
  * the latest commit.
  *
- * Run (from packages/sdk):  bun run playground/git/21-files-and-git.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/git/21-files-and-git.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("files-and-git", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
-  const project = kortix.project(projectId);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
+  const project = kortix.project(workspaceId);
 
   const files = await project.files.list();
   console.log(`✓ files.list(): ${JSON.stringify(files).slice(0, 250)}…`);

@@ -2,18 +2,18 @@
  * 02 — given a project, can I read its sessions?
  * Project selection: argv[2] → KORTIX_PROJECT_ID → first project.
  *
- * Run (from packages/sdk):  bun run playground/sessions/02-list-sessions.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/sessions/02-list-sessions.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("list-sessions", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
 
-  const sessions = await kortix.projects.sessions(projectId);
+  const sessions = await kortix.projects.sessions(workspaceId);
 
   console.log(
-    `✓ projects.sessions(${projectId}) returned ${sessions.length} session(s):\n`,
+    `✓ projects.sessions(${workspaceId}) returned ${sessions.length} session(s):\n`,
   );
   for (const s of sessions) {
     console.log(`  ${s.name ?? s.branch_name}`);

@@ -1,9 +1,9 @@
 export function shouldLoadProjectModelPicker(input: {
-  projectId: string | null;
+  workspaceId: string | null;
   projectModeKnown: boolean;
   projectGatewayEnabled: boolean;
 }): boolean {
   return Boolean(
-    input.projectId && (!input.projectModeKnown || input.projectGatewayEnabled),
+    input.workspaceId && (!input.projectModeKnown || input.projectGatewayEnabled),
   );
 }

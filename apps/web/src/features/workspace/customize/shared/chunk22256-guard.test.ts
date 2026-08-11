@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 //     `(intermediate value)(intermediate value)(intermediate value).filter is not a function`
 //   7ef0c059… — `Cannot read properties of undefined (reading 'map')`
 //
-// All four are `.filter` / `.map` called on a `ProjectConfigSummary` array
+// All four are `.filter` / `.map` called on a `WorkspaceConfigSummary` array
 // field (`agents` / `skills` / `commands`) that the API can return as
 // `undefined` (or a non-array) for repo-less / capability-gated / config-build
 // failure states. The fix guards every such call site with `toArray(...)` so a

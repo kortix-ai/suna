@@ -24,7 +24,7 @@ export const DEFAULT_PRIMARY: CodingAgent = 'codex';
  */
 export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-cli/SKILL.md';
 
-/** The starter's canonical project skill source. */
+/** The starter's canonical workspace skill source. */
 const OPENCODE_DIR = '.kortix/opencode';
 
 /**
@@ -144,9 +144,9 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
 }
 
 function agentsPointer(): string {
-  return `# Kortix project
+  return `# Kortix workspace
 
-This repository is a [Kortix](https://kortix.ai) project — its agent runtime
+This repository is a [Kortix](https://kortix.ai) workspace — its agent runtime
 config lives under \`.kortix/\` and the manifest is \`kortix.yaml\`. The starter's
 canonical system skills are available through each wired tool's native discovery
 location.

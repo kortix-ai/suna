@@ -58,20 +58,20 @@ import {
   deleteGroup,
   getGroup,
   listGroupMembers,
-  listGroupProjectGrants,
+  listGroupWorkspaceGrants,
   removeGroupMember,
   updateGroup,
-  type GroupProjectGrant,
+  type GroupWorkspaceGrant,
 } from '@/lib/iam-client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import {
-  attachGroupToProject,
-  detachGroupFromProject,
+  attachGroupToWorkspace,
+  detachGroupFromWorkspace,
   getAccount,
   listAccountMembers,
-  listProjectsForAccount,
-  type ProjectRole,
+  listWorkspacesForAccount,
+  type WorkspaceRole,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
@@ -183,8 +183,8 @@ export default function GroupDetailPage() {
             <TabsTrigger value="members" className="w-fit flex-none">
               Members
             </TabsTrigger>
-            <TabsTrigger value="projects" className="w-fit flex-none">
-              Projects
+            <TabsTrigger value="workspaces" className="w-fit flex-none">
+              Workspaces
             </TabsTrigger>
             <TabsTrigger value="settings" className="w-fit flex-none">
               Settings
@@ -200,8 +200,8 @@ export default function GroupDetailPage() {
             />
           </TabsContent>
 
-          <TabsContent value="projects">
-            <GroupProjectGrantsCard
+          <TabsContent value="workspaces">
+            <GroupWorkspaceGrantsCard
               accountId={account.account_id}
               groupId={group.group_id}
               groupName={group.name}
@@ -355,7 +355,7 @@ function GroupMembersCard({
       {!membersQuery.isLoading && members.length > 0 && overrideCount > 0 ? (
         <InfoBanner tone="warning">
           {overrideCount} {overrideCount === 1 ? 'member is' : 'members are'} an account owner or
-          admin — they keep Manager access on every project regardless of this group&apos;s role.
+          admin — they keep Manager access on every workspace regardless of this group&apos;s role.
         </InfoBanner>
       ) : null}
 
@@ -376,7 +376,7 @@ function GroupMembersCard({
                       <Badge
                         size="sm"
                         className="bg-kortix-orange/15 text-kortix-orange border-transparent capitalize"
-                        title="Account owners and admins always have Manager on every project"
+                        title="Account owners and admins always have Manager on every workspace"
                       >
                         {badgeLabel}
                       </Badge>
@@ -708,7 +708,7 @@ function GroupSettingsCard({
         title="Delete group"
         description={
           idpManaged
-            ? `Delete "${initialName}"? This cannot be undone — and if your identity provider still pushes this group, the next sync recreates it (without its project roles).`
+            ? `Delete "${initialName}"? This cannot be undone — and if your identity provider still pushes this group, the next sync recreates it (without its workspace roles).`
             : `Delete "${initialName}"? This cannot be undone.`
         }
         confirmLabel="Delete group"
@@ -719,9 +719,9 @@ function GroupSettingsCard({
   );
 }
 
-// ─── V2: Projects this group is attached to ───────────────────────────────
+// ─── V2: Workspaces this group is attached to ─────────────────────────────
 
-function GroupProjectGrantsCard({
+function GroupWorkspaceGrantsCard({
   accountId,
   groupId,
   groupName,
@@ -731,12 +731,12 @@ function GroupProjectGrantsCard({
   groupName: string;
 }) {
   const queryClient = useQueryClient();
-  const queryKey = ['group-project-grants', accountId, groupId];
+  const queryKey = ['group-workspace-grants', accountId, groupId];
   const [attachOpen, setAttachOpen] = useState(false);
 
   const grantsQuery = useQuery({
     queryKey,
-    queryFn: () => listGroupProjectGrants(accountId, groupId),
+    queryFn: () => listGroupWorkspaceGrants(accountId, groupId),
     staleTime: 30_000,
   });
   // Defensive client-side sort. The API also sets ORDER BY (see twin
@@ -747,40 +747,40 @@ function GroupProjectGrantsCard({
     const raw = grantsQuery.data ?? [];
     return [...raw].sort((a, b) => {
       const t = a.created_at.localeCompare(b.created_at);
-      return t !== 0 ? t : a.project_id.localeCompare(b.project_id);
+      return t !== 0 ? t : a.workspace_id.localeCompare(b.workspace_id);
     });
   }, [grantsQuery.data]);
-  const attachedProjectIds = useMemo(() => new Set(grants.map((g) => g.project_id)), [grants]);
+  const attachedWorkspaceIds = useMemo(() => new Set(grants.map((g) => g.workspace_id)), [grants]);
 
   // Set rather than scalar so two concurrent detaches (admin clicks
   // Revoke on row A, then row B before A finishes) both show their
   // own spinner instead of A's spinner jumping to B.
-  const [pendingProjectIds, setPendingProjectIds] = useState<Set<string>>(() => new Set());
+  const [pendingWorkspaceIds, setPendingWorkspaceIds] = useState<Set<string>>(() => new Set());
   // Detach is destructive — strips every group member's inherited
-  // access on the project at once. Confirm first.
-  const [detachTarget, setDetachTarget] = useState<GroupProjectGrant | null>(null);
+  // access on the workspace at once. Confirm first.
+  const [detachTarget, setDetachTarget] = useState<GroupWorkspaceGrant | null>(null);
 
   const detachMutation = useMutation({
-    // detach the grant via the per-project route — that's the one gated
-    // by project.members.manage and the canonical write surface.
-    mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
-    onMutate: (projectId) => setPendingProjectIds((prev) => new Set(prev).add(projectId)),
-    onSettled: (_data, _error, projectId) =>
-      setPendingProjectIds((prev) => {
+    // Detach through the workspace route. The legacy wire permission name
+    // remains `project.members.manage` until the IAM contract migrates.
+    mutationFn: (workspaceId: string) => detachGroupFromWorkspace(workspaceId, groupId),
+    onMutate: (workspaceId) => setPendingWorkspaceIds((prev) => new Set(prev).add(workspaceId)),
+    onSettled: (_data, _error, workspaceId) =>
+      setPendingWorkspaceIds((prev) => {
         const next = new Set(prev);
-        next.delete(projectId);
+        next.delete(workspaceId);
         return next;
       }),
-    onSuccess: (_data, projectId) => {
-      successToast('Group detached from project');
+    onSuccess: (_data, workspaceId) => {
+      successToast('Group detached from workspace');
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
-      // The target project's Members card (in another tab) shows
+      // The target workspace's Members card (in another tab) shows
       // every group member's effective access — detaching this group
       // removes a path. Invalidate so a stale tab refetches on next
       // focus.
-      queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
-      queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.access(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.summary(workspaceId) });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to detach'),
   });
@@ -790,10 +790,10 @@ function GroupProjectGrantsCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <p className="text-foreground text-sm font-medium">
-            Projects{grants.length > 0 ? ` · ${grants.length}` : ''}
+            Workspaces{grants.length > 0 ? ` · ${grants.length}` : ''}
           </p>
           <p className="text-muted-foreground text-xs">
-            Every group member inherits the chosen role on these projects. Account owners and admins
+            Every group member inherits the chosen role on these workspaces. Account owners and admins
             always have Manager.
           </p>
         </div>
@@ -804,7 +804,7 @@ function GroupProjectGrantsCard({
           onClick={() => setAttachOpen(true)}
         >
           <Plus className="size-4" />
-          Attach to project
+          Attach to workspace
         </Button>
       </div>
 
@@ -813,7 +813,7 @@ function GroupProjectGrantsCard({
       ) : grantsQuery.isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load projects"
+          title="Failed to load workspaces"
           description={(grantsQuery.error as Error)?.message}
           action={
             <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>
@@ -825,20 +825,20 @@ function GroupProjectGrantsCard({
         <EmptyState
           icon={FolderOpen}
           size="sm"
-          title="Not attached to any projects"
-          description={`Attach "${groupName}" to a project to give its members access.`}
+          title="Not attached to any workspaces"
+          description={`Attach "${groupName}" to a workspace to give its members access.`}
         />
       ) : (
         <ul className="space-y-2">
-          {grants.map((g: GroupProjectGrant) => {
-            const busy = pendingProjectIds.has(g.project_id);
+          {grants.map((g: GroupWorkspaceGrant) => {
+            const busy = pendingWorkspaceIds.has(g.workspace_id);
             return (
-              <li key={g.project_id} className={MEMBER_ROW}>
+              <li key={g.workspace_id} className={MEMBER_ROW}>
                 <EntityAvatar icon={FolderOpen} size="md" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-foreground truncate text-sm font-medium">
-                      {g.project_name}
+                      {g.workspace_name}
                     </span>
                     <Badge variant="outline" size="sm" className="capitalize">
                       {g.role}
@@ -881,21 +881,21 @@ function GroupProjectGrantsCard({
         </ul>
       )}
 
-      <AttachToProjectDialog
+      <AttachToWorkspaceDialog
         accountId={accountId}
         groupId={groupId}
         groupName={groupName}
         open={attachOpen}
         onOpenChange={setAttachOpen}
-        attachedProjectIds={attachedProjectIds}
-        onAttached={(attachedProjectId) => {
+        attachedWorkspaceIds={attachedWorkspaceIds}
+        onAttached={(attachedWorkspaceId) => {
           queryClient.invalidateQueries({ queryKey });
           queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
-          // The target project's Members card (in another tab) shows
+          // The target workspace's Members card (in another tab) shows
           // group-derived access for every member — without these the
           // tab would be stale until the next focus + 20s staleTime.
-          queryClient.invalidateQueries({ queryKey: qk.project.access(attachedProjectId) });
-          queryClient.invalidateQueries({ queryKey: qk.project.summary(attachedProjectId) });
+          queryClient.invalidateQueries({ queryKey: qk.workspace.access(attachedWorkspaceId) });
+          queryClient.invalidateQueries({ queryKey: qk.workspace.summary(attachedWorkspaceId) });
           setAttachOpen(false);
         }}
       />
@@ -905,12 +905,12 @@ function GroupProjectGrantsCard({
         onOpenChange={(open) => {
           if (!open) setDetachTarget(null);
         }}
-        title="Detach from project"
+        title="Detach from workspace"
         description={
           detachTarget ? (
             <span>
               <strong>{groupName}</strong> will no longer be attached to{' '}
-              <strong>{detachTarget.project_name}</strong>. Every group member will lose their
+              <strong>{detachTarget.workspace_name}</strong>. Every group member will lose their
               inherited <strong className="capitalize">{detachTarget.role}</strong> access.
             </span>
           ) : null
@@ -922,28 +922,28 @@ function GroupProjectGrantsCard({
           if (!detachTarget) return;
           const target = detachTarget;
           setDetachTarget(null);
-          detachMutation.mutate(target.project_id);
+          detachMutation.mutate(target.workspace_id);
         }}
       />
     </div>
   );
 }
 
-// ─── V2: Attach group → project dialog ───────────────────────────────────
+// ─── V2: Attach group → workspace dialog ─────────────────────────────────
 //
-// Opens from the Projects section. Lists every project in the account
-// the caller can manage (effective_project_role === 'manager'), minus
-// projects this group is already attached to. POSTs to the canonical
-// per-project group-grants endpoint (server-side gate on
+// Opens from the Workspaces section. Lists every workspace in the account
+// the caller can manage (effective_workspace_role === 'manager'), minus
+// workspaces this group is already attached to. POSTs to the canonical
+// workspace group-grants endpoint (server-side gate on the legacy wire action
 // project.members.manage matches our client-side filter).
 
-function AttachToProjectDialog({
+function AttachToWorkspaceDialog({
   accountId,
   groupId,
   groupName,
   open,
   onOpenChange,
-  attachedProjectIds,
+  attachedWorkspaceIds,
   onAttached,
 }: {
   accountId: string;
@@ -951,41 +951,43 @@ function AttachToProjectDialog({
   groupName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  attachedProjectIds: Set<string>;
-  /** Receives the projectId so the parent can scope cache
-   *  invalidations to the project that was just attached. */
-  onAttached: (projectId: string) => void;
+  attachedWorkspaceIds: Set<string>;
+  /** Receives the workspaceId so the parent can scope cache
+   *  invalidations to the workspace that was just attached. */
+  onAttached: (workspaceId: string) => void;
 }) {
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
-  const [selectedRole, setSelectedRole] = useState<ProjectRole>('member');
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | undefined>(undefined);
+  const [selectedRole, setSelectedRole] = useState<WorkspaceRole>('member');
   // Optional auto-revoke timestamp. Empty string = permanent (default).
   // Stored as the raw <input type="datetime-local"> value; we convert
   // to ISO on submit so the server can parse it.
   const [expiresAtLocal, setExpiresAtLocal] = useState<string>('');
 
-  // Only fetch the project list when the dialog is open. Includes
-  // effective_project_role so we can filter to manageable projects.
-  const projectsQuery = useQuery({
-    queryKey: qk.projects.list(accountId),
-    queryFn: () => listProjectsForAccount(accountId),
+  // Only fetch the workspace list when the dialog is open. Includes
+  // effective_workspace_role so we can filter to manageable workspaces.
+  const workspacesQuery = useQuery({
+    queryKey: qk.workspaces.list(accountId),
+    queryFn: () => listWorkspacesForAccount(accountId),
     enabled: open,
     ...contract('inventory'),
   });
 
   const candidates = useMemo(() => {
-    const all = projectsQuery.data ?? [];
+    const all = workspacesQuery.data ?? [];
     return all
       .filter(
-        (p) => p.effective_project_role === 'manager' && !attachedProjectIds.has(p.project_id),
+        (workspace) =>
+          workspace.effective_workspace_role === 'manager' &&
+          !attachedWorkspaceIds.has(workspace.workspace_id),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [projectsQuery.data, attachedProjectIds]);
+  }, [workspacesQuery.data, attachedWorkspaceIds]);
 
   // Reset picker state every time the dialog (re)opens so a stale
   // selection from a previous open doesn't pre-fill.
   function handleOpenChange(v: boolean) {
     if (v) {
-      setSelectedProjectId(undefined);
+      setSelectedWorkspaceId(undefined);
       setSelectedRole('editor');
       setExpiresAtLocal('');
     }
@@ -994,62 +996,62 @@ function AttachToProjectDialog({
 
   const attachMutation = useMutation({
     mutationFn: () => {
-      if (!selectedProjectId) throw new Error('Pick a project first');
+      if (!selectedWorkspaceId) throw new Error('Pick a workspace first');
       // datetime-local gives us a naive local timestamp; convert to
       // ISO so server gets unambiguous UTC. Empty = permanent (null
       // would clear an existing expiry, but on attach there's nothing
       // to clear, so we just omit it).
       const expiresAt = expiresAtLocal ? new Date(expiresAtLocal).toISOString() : undefined;
-      return attachGroupToProject(selectedProjectId, groupId, selectedRole, expiresAt);
+      return attachGroupToWorkspace(selectedWorkspaceId, groupId, selectedRole, expiresAt);
     },
     onSuccess: () => {
-      successToast(`"${groupName}" attached to project`);
-      // selectedProjectId is non-null here — the mutationFn throws
+      successToast(`"${groupName}" attached to workspace`);
+      // selectedWorkspaceId is non-null here — the mutationFn throws
       // synchronously if it isn't set, which short-circuits onSuccess.
-      onAttached(selectedProjectId!);
+      onAttached(selectedWorkspaceId!);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to attach group to project'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to attach group to workspace'),
   });
 
   return (
     <Modal open={open} onOpenChange={handleOpenChange}>
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>Attach “{groupName}” to a project</ModalTitle>
+          <ModalTitle>Attach “{groupName}” to a workspace</ModalTitle>
           <ModalDescription>
-            Every member of this group gets the chosen role on the project.
+            Every member of this group gets the chosen role on the workspace.
           </ModalDescription>
         </ModalHeader>
 
         <ModalBody className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="attach-project">Project</Label>
-            {projectsQuery.isLoading ? (
+            <Label htmlFor="attach-workspace">Workspace</Label>
+            {workspacesQuery.isLoading ? (
               <Skeleton className="h-9 w-full rounded-lg" />
             ) : candidates.length === 0 ? (
               <p className="bg-popover text-muted-foreground rounded-md border px-3 py-2.5 text-xs">
-                {(projectsQuery.data ?? []).length === 0
-                  ? 'No projects in this account yet.'
-                  : attachedProjectIds.size > 0 &&
-                      attachedProjectIds.size ===
-                        (projectsQuery.data ?? []).filter(
-                          (p) => p.effective_project_role === 'manager',
+                {(workspacesQuery.data ?? []).length === 0
+                  ? 'No workspaces in this account yet.'
+                  : attachedWorkspaceIds.size > 0 &&
+                      attachedWorkspaceIds.size ===
+                        (workspacesQuery.data ?? []).filter(
+                          (p) => p.effective_workspace_role === 'manager',
                         ).length
-                    ? 'This group is already attached to every project you can manage.'
-                    : 'You need Manager access on a project to attach a group to it.'}
+                    ? 'This group is already attached to every workspace you can manage.'
+                    : 'You need Manager access on a workspace to attach a group to it.'}
               </p>
             ) : (
               <Select
-                value={selectedProjectId ?? ''}
-                onValueChange={(v) => setSelectedProjectId(v || undefined)}
+                value={selectedWorkspaceId ?? ''}
+                onValueChange={(v) => setSelectedWorkspaceId(v || undefined)}
               >
-                <SelectTrigger id="attach-project">
-                  <SelectValue placeholder="Choose a project" />
+                <SelectTrigger id="attach-workspace">
+                  <SelectValue placeholder="Choose a workspace" />
                 </SelectTrigger>
                 <SelectContent>
-                  {candidates.map((p) => (
-                    <SelectItem key={p.project_id} value={p.project_id}>
-                      {p.name}
+                  {candidates.map((workspace) => (
+                    <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                      {workspace.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1059,7 +1061,7 @@ function AttachToProjectDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="attach-role">Role</Label>
-            <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as ProjectRole)}>
+            <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as WorkspaceRole)}>
               <SelectTrigger id="attach-role">
                 <SelectValue />
               </SelectTrigger>
@@ -1104,7 +1106,7 @@ function AttachToProjectDialog({
           </Button>
           <Button
             onClick={() => attachMutation.mutate()}
-            disabled={!selectedProjectId || attachMutation.isPending || candidates.length === 0}
+            disabled={!selectedWorkspaceId || attachMutation.isPending || candidates.length === 0}
             className="gap-1.5"
           >
             {attachMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}

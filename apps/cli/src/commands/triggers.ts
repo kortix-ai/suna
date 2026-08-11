@@ -1,6 +1,6 @@
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -13,13 +13,13 @@ import {
 } from '../manifest-edit.ts';
 import { C, help, pad, status } from '../style.ts';
 import type {
-  ProjectTriggersResponse,
+  WorkspaceTriggersResponse,
   TriggerFireResponse,
 } from '../api/types.ts';
 
 const HELP = help`Usage: kortix triggers <subcommand> [options]
 
-Manage the [[triggers]] declared in your project's kortix.yaml — cron
+Manage the [[triggers]] declared in your workspace's kortix.yaml — cron
 schedules and webhooks. add/rm/enable/disable edit the LOCAL kortix.yaml
 (the source of truth); \`kortix ship\` applies them. ls/fire/info read live
 state from the cloud. pause/resume are a SERVER-SIDE activation switch
@@ -32,17 +32,17 @@ Subcommands:
   fire <slug>              Manually fire a trigger now.
   enable <slug>            Set enabled = true on a trigger.
   disable <slug>           Set enabled = false on a trigger.
-  pause                    Deactivate ALL of this project's triggers server-side
+  pause                    Deactivate ALL of this workspace's triggers server-side
                            (crons + webhooks stop auto-running). Use it on one
                            of two deployments of the same repo to stop double-
                            firing. Manual \`fire\` still works.
-  resume                   Re-activate this project's triggers server-side.
+  resume                   Re-activate this workspace's triggers server-side.
   info <slug> [--json]     Show one trigger in full.
 
 Add options:
   --type <cron|webhook>    Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
-  --agent <name>           Logical agent to run (default: project default_agent).
+  --agent <name>           Logical agent to run (default: workspace default_agent).
   --cron <expr>            6-field cron (cron type). e.g. "0 0 9 * * 1-5".
   --timezone <tz>          Timezone for cron (default UTC).
   --secret-env <NAME>      HMAC secret env var (webhook type).
@@ -50,7 +50,7 @@ Add options:
   --disabled               Create it disabled (default enabled).
 
 Global options:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>     Operate on this workspace id (default: linked).
   -h, --help         Show this help.
 `;
 
@@ -62,14 +62,14 @@ export async function runTriggers(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  let projectFlag: string | undefined;
+  let workspaceFlag: string | undefined;
   let hostFlag: string | undefined;
   const tf: Record<string, string | undefined> = {};
   let disabled = false;
   let json = false;
   try {
     json = takeFlagBool(rest, ['--json']);
-    projectFlag = takeFlagValue(rest, ['--project']);
+    workspaceFlag = takeFlagValue(rest, ['--workspace', '--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     tf.type = takeFlagValue(rest, ['--type']);
     tf.prompt = takeFlagValue(rest, ['--prompt']);
@@ -87,7 +87,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
+  const ctxOpts: CtxOpts = { workspaceArg: workspaceFlag, hostArg: hostFlag };
   const positional = rest.filter((a) => !a.startsWith('-'));
 
   switch (sub) {
@@ -119,16 +119,16 @@ export async function runTriggers(argv: string[]): Promise<number> {
   }
 }
 
-type CtxOpts = { projectArg?: string; hostArg?: string };
+type CtxOpts = { workspaceArg?: string; hostArg?: string };
 
 async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
-  let resp: ProjectTriggersResponse;
+  let resp: WorkspaceTriggersResponse;
   try {
-    resp = await ctx.client.get<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
+    resp = await ctx.client.get<WorkspaceTriggersResponse>(
+      `/workspaces/${ctx.workspaceId}/triggers`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -141,7 +141,7 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
 
   if (resp.triggers_paused) {
     process.stdout.write(
-      `\n  ${status.warn('Triggers are PAUSED server-side for this project')} ${C.dim}— crons + webhooks won't auto-run (manual \`fire\` still works). \`kortix triggers resume\` to re-activate.${C.reset}\n`,
+      `\n  ${status.warn('Triggers are PAUSED server-side for this workspace')} ${C.dim}— crons + webhooks won't auto-run (manual \`fire\` still works). \`kortix triggers resume\` to re-activate.${C.reset}\n`,
     );
   }
 
@@ -183,13 +183,13 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
   let resp: TriggerFireResponse;
   try {
     resp = await ctx.client.post<TriggerFireResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/fire`,
+      `/workspaces/${ctx.workspaceId}/triggers/${encodeURIComponent(slug)}/fire`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -206,14 +206,14 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
 }
 
 // Server-side activation switch (cloud state in projects.metadata, NOT the
-// manifest). Pause = the platform stops auto-running this project's triggers.
+// manifest). Pause = the platform stops auto-running this workspace's triggers.
 async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<number> {
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
   try {
-    await ctx.client.patch<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers/activation`,
+    await ctx.client.patch<WorkspaceTriggersResponse>(
+      `/workspaces/${ctx.workspaceId}/triggers/activation`,
       { paused },
     );
   } catch (err) {
@@ -222,8 +222,8 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
 
   process.stdout.write(
     paused
-      ? `${status.ok('Triggers PAUSED server-side')} ${C.dim}— this project's crons + webhooks won't auto-run. Manual \`fire\` still works.${C.reset}\n`
-      : `${status.ok('Triggers RESUMED server-side')} ${C.dim}— this project's triggers will auto-run again.${C.reset}\n`,
+      ? `${status.ok('Triggers PAUSED server-side')} ${C.dim}— this workspace's crons + webhooks won't auto-run. Manual \`fire\` still works.${C.reset}\n`
+      : `${status.ok('Triggers RESUMED server-side')} ${C.dim}— this workspace's triggers will auto-run again.${C.reset}\n`,
   );
   return 0;
 }
@@ -327,13 +327,13 @@ async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = fals
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
-  let resp: ProjectTriggersResponse;
+  let resp: WorkspaceTriggersResponse;
   try {
-    resp = await ctx.client.get<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
+    resp = await ctx.client.get<WorkspaceTriggersResponse>(
+      `/workspaces/${ctx.workspaceId}/triggers`,
     );
   } catch (err) {
     return surfaceApiError(err);

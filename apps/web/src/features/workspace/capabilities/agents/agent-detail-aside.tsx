@@ -5,12 +5,12 @@
  * and how it is configured.
  *
  * Moved out of the Customize overlay's `agents-view.tsx` when Agents
- * graduated to `/projects/[id]/agent`. "Edit configuration" does not open a
+ * graduated to `/workspaces/[id]/agent`. "Edit configuration" does not open a
  * modal — it calls `onEditConfig`, and the page swaps the editor into the
  * detail modal's source pane (`paneOverride`).
  *
- * `AgentConfigEditor` is the real editor for a v2 (kortix.yaml) project; the
- * `fallback` below is what a v1 project still gets — the legacy model + scope
+ * `AgentConfigEditor` is the real editor for a v2 (kortix.yaml) workspace; the
+ * `fallback` below is what a v1 workspace still gets — the legacy model + scope
  * cards. We degrade, never blank the pane.
  */
 
@@ -27,50 +27,50 @@ import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
   listConnectors,
-  listProjectAccess,
-  listProjectResourceGrants,
-  listProjectSecrets,
-  type ProjectConfigSummary,
+  listWorkspaceAccess,
+  listWorkspaceResourceGrants,
+  listWorkspaceSecrets,
   setAgentScope,
+  type WorkspaceConfigSummary,
 } from '@kortix/sdk';
 import { contract, qk, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import { CheckIcon as Check, UserIcon as User, UsersIcon as Users } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-type Agent = ProjectConfigSummary['agents'][number];
+type Agent = WorkspaceConfigSummary['agents'][number];
 
 /**
- * The whole aside, for one agent. `config` supplies the project's declared
+ * The whole aside, for one agent. `config` supplies the workspace's declared
  * skills for the governance picker — `toArray` because the API can return
- * `skills` as undefined for a repo-less / capability-gated project, and
+ * `skills` as undefined for a repo-less / capability-gated workspace, and
  * `.map` on that throws (the chunk-22256 Sentry cluster).
  */
 export function AgentDetailAside({
-  projectId,
+  workspaceId,
   agent,
   config,
   onEditConfig,
 }: {
-  projectId: string;
+  workspaceId: string;
   agent: Agent;
-  config: ProjectConfigSummary;
+  config: WorkspaceConfigSummary;
   /** Opens the full configuration editor — the page swaps it into the detail
    *  modal's source pane (`paneOverride`), so it is not a modal on a modal. */
   onEditConfig: () => void;
 }) {
   return (
     <div className="space-y-3">
-      <AgentAssignments projectId={projectId} agentName={agent.name} />
+      <AgentAssignments workspaceId={workspaceId} agentName={agent.name} />
       <AgentConfigEditor
-        projectId={projectId}
+        workspaceId={workspaceId}
         agent={agent}
         skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
         onEditConfig={onEditConfig}
         fallback={
           <>
-            <AgentModel projectId={projectId} agentName={agent.name} />
-            <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
+            <AgentModel workspaceId={workspaceId} agentName={agent.name} />
+            <AgentScope workspaceId={workspaceId} agentName={agent.name} scope={agent.scope} />
           </>
         }
       />
@@ -85,16 +85,16 @@ export function AgentDetailAside({
  * fires the manager-only grants endpoint (no 403 / error toast) and never renders
  * stale cached assignments to someone whose manager role was just revoked.
  */
-function AgentAssignments({ projectId, agentName }: { projectId: string; agentName: string }) {
+function AgentAssignments({ workspaceId, agentName }: { workspaceId: string; agentName: string }) {
   const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
+    queryKey: qk.workspace.access(workspaceId),
+    queryFn: () => listWorkspaceAccess(workspaceId),
     ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
   const grantsQuery = useQuery({
-    queryKey: qk.project.resourceGrants(projectId),
-    queryFn: () => listProjectResourceGrants(projectId),
+    queryKey: qk.workspace.resourceGrants(workspaceId),
+    queryFn: () => listWorkspaceResourceGrants(workspaceId),
     enabled: canManage,
     retry: false,
     ...contract('inventory'),
@@ -136,19 +136,19 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
 /**
  * Which model this agent runs on. Sets the per-agent gateway default (scope=agent,
  * DB-backed, instant — no git commit). When unset, the agent falls back to the
- * project → account → platform default. Manager-gated; everyone else sees the
+ * workspace → account → platform default. Manager-gated; everyone else sees the
  * read-only resolved model.
  */
-function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
+function AgentModel({ workspaceId, agentName }: { workspaceId: string; agentName: string }) {
   const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
+    queryKey: qk.workspace.access(workspaceId),
+    queryFn: () => listWorkspaceAccess(workspaceId),
     ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-  const defaults = useModelDefaults(projectId);
+  const defaults = useModelDefaults(workspaceId);
   const explicit = defaults.agentDefaults[agentName] ?? null;
   const resolved = defaults.resolveDefaultFor(agentName) ?? null;
 
@@ -212,7 +212,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
           </>
         ) : (
           <>
-            Follows the project default
+            Follows the workspace default
             {resolved ? (
               <>
                 {' '}
@@ -237,33 +237,33 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
  * aren't governed by the manifest.
  */
 function AgentScope({
-  projectId,
+  workspaceId,
   agentName,
   scope,
 }: {
-  projectId: string;
+  workspaceId: string;
   agentName: string;
   scope?: Agent['scope'];
 }) {
   // Pure prop-guard (no hooks) so the editable inner component can call hooks
   // unconditionally — an OpenCode agent with no scope simply renders nothing.
   if (!scope) return null;
-  return <AgentScopeCard projectId={projectId} agentName={agentName} scope={scope} />;
+  return <AgentScopeCard workspaceId={workspaceId} agentName={agentName} scope={scope} />;
 }
 
 function AgentScopeCard({
-  projectId,
+  workspaceId,
   agentName,
   scope,
 }: {
-  projectId: string;
+  workspaceId: string;
   agentName: string;
   scope: NonNullable<Agent['scope']>;
 }) {
   const queryClient = useQueryClient();
   const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
+    queryKey: qk.workspace.access(workspaceId),
+    queryFn: () => listWorkspaceAccess(workspaceId),
     ...contract('inventory'),
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
@@ -281,14 +281,14 @@ function AgentScopeCard({
   }, [agentName, scope.env, scope.connectors]);
 
   const secretsQuery = useQuery({
-    queryKey: qk.project.secrets(projectId),
-    queryFn: () => listProjectSecrets(projectId),
+    queryKey: qk.workspace.secrets(workspaceId),
+    queryFn: () => listWorkspaceSecrets(workspaceId),
     enabled: canManage,
     ...contract('config'),
   });
   const connectorsQuery = useQuery({
-    queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryKey: qk.workspace.connectors(workspaceId),
+    queryFn: () => listConnectors(workspaceId),
     enabled: canManage,
     ...contract('config'),
   });
@@ -307,11 +307,11 @@ function AgentScopeCard({
 
   const dirty = !grantSetEqual(env, scope.env) || !grantSetEqual(connectors, scope.connectors);
   const save = useMutation({
-    mutationFn: () => setAgentScope(projectId, agentName, { env, connectors }),
+    mutationFn: () => setAgentScope(workspaceId, agentName, { env, connectors }),
     onSuccess: () => {
       successToast(`Scope updated for ${agentName}`);
-      // Refetch the project config so the committed scope (this card's source) updates.
-      queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+      // Refetch the workspace config so the committed scope (this card's source) updates.
+      queryClient.invalidateQueries({ queryKey: qk.workspace.detail(workspaceId) });
     },
     onError: (e: Error) => errorToast(e.message || 'Failed to update scope'),
   });
@@ -340,7 +340,7 @@ function AgentScopeCard({
         key={`env-${editorNonce}`}
         label="Secrets"
         allLabel="All the launcher can see"
-        emptyLabel="No secrets in this project yet."
+        emptyLabel="No secrets in this workspace yet."
         value={env}
         options={secretOptions}
         match="case-insensitive"
@@ -349,8 +349,8 @@ function AgentScopeCard({
       <ScopeEditor
         key={`connectors-${editorNonce}`}
         label="Connectors"
-        allLabel="Every project connector"
-        emptyLabel="No connectors in this project yet."
+        allLabel="Every workspace connector"
+        emptyLabel="No connectors in this workspace yet."
         value={connectors}
         options={connectorOptions}
         onChange={setConnectors}
@@ -394,7 +394,7 @@ export interface ScopeOption {
 }
 
 /**
- * The Secrets checklist, built from the project's secrets.
+ * The Secrets checklist, built from the workspace's secrets.
  *
  * Keyed on IDENTIFIER, never on `name`. Every consumer of the grant matches by
  * identifier — `listAdmits` in the delivery rule and `agentMayUseEnv` in the
@@ -426,7 +426,7 @@ export type ScopeMatch = 'exact' | 'case-insensitive';
 
 export interface ScopeChecklistRow extends ScopeOption {
   selected: boolean;
-  /** Declared in the manifest but not a resource in this project — a deleted
+  /** Declared in the manifest but not a resource in this workspace — a deleted
    *  secret, or a typo. Shown so it can be removed. */
   orphan: boolean;
 }
@@ -435,7 +435,7 @@ const scopeMatchKey = (id: string, match: ScopeMatch) =>
   match === 'exact' ? id : id.toUpperCase();
 
 /**
- * The checklist rows for one grant: every project resource, plus any declared
+ * The checklist rows for one grant: every workspace resource, plus any declared
  * entry that no longer maps to one.
  *
  * With one exact rule for both resource kinds, a hand-written lowercase
@@ -491,7 +491,7 @@ function grantSetEqual(a: AgentGrantSet, b: AgentGrantSet): boolean {
 
 /**
  * Three-way scope control: All · Specific · None. In "Specific" mode it shows a
- * checklist of the project's secrets/connectors; a declared id that no longer
+ * checklist of the workspace's secrets/connectors; a declared id that no longer
  * exists as a resource still shows (flagged) so it can be removed. Rows and
  * toggles come from `buildScopeChecklist` / `toggleScopeSelection`, which own
  * the per-resource `ScopeMatch` rule.

@@ -4,20 +4,20 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
   baseDate,
-  createProjectsContractDbMock,
+  createWorkspacesContractDbMock,
   projectRow,
-  type ProjectRow,
-  type ProjectsContractDbState,
+  type WorkspaceRow,
+  type WorkspacesContractDbState,
 } from './helpers/projects-contract-db-mock';
 
 const OWNER_ID = '00000000-0000-4000-a000-000000000001';
 const MEMBER_ID = '00000000-0000-4000-a000-000000000002';
 const OUTSIDER_ID = '00000000-0000-4000-a000-000000000003';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
-const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
-const OTHER_PROJECT_ID = '00000000-0000-4000-a000-000000000202';
-const NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000203';
-const SECOND_NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000205';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000000201';
+const OTHER_WORKSPACE_ID = '00000000-0000-4000-a000-000000000202';
+const NEW_WORKSPACE_ID = '00000000-0000-4000-a000-000000000203';
+const SECOND_NEW_WORKSPACE_ID = '00000000-0000-4000-a000-000000000205';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 const repoFiles = [
@@ -29,13 +29,13 @@ const repoFiles = [
 
 let currentUserId: string;
 let currentUserEmail: string;
-const dbState: ProjectsContractDbState = {
+const dbState: WorkspacesContractDbState = {
   accountMemberRows: [],
   projectRows: [],
   projectMemberRows: [],
   installationRow: null,
   gitConnectionRows: [],
-  nextProjectIds: [],
+  nextWorkspaceIds: [],
 };
 let commitCalls: any[];
 let listRepoFileCalls: any[];
@@ -65,13 +65,13 @@ function resetState() {
   dbState.projectRows = [
     projectRow(),
     projectRow({
-      projectId: OTHER_PROJECT_ID,
-      name: 'Other Project',
+      workspaceId: OTHER_WORKSPACE_ID,
+      name: 'Other Workspace',
       repoUrl: 'https://github.com/kortix/other-project.git',
     }),
     projectRow({
-      projectId: '00000000-0000-4000-a000-000000000204',
-      name: 'Archived Project',
+      workspaceId: '00000000-0000-4000-a000-000000000204',
+      name: 'Archived Workspace',
       repoUrl: 'https://github.com/kortix/archived-project.git',
       status: 'archived',
     }),
@@ -90,7 +90,7 @@ function resetState() {
     updatedAt: baseDate,
   };
   dbState.gitConnectionRows = [];
-  dbState.nextProjectIds = [NEW_PROJECT_ID, SECOND_NEW_PROJECT_ID];
+  dbState.nextWorkspaceIds = [NEW_WORKSPACE_ID, SECOND_NEW_WORKSPACE_ID];
   commitCalls = [];
   listRepoFileCalls = [];
   readRepoFileCalls = [];
@@ -115,7 +115,7 @@ mock.module('../iam/dispatcher', () => {
     const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     if (!am) return false;
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
-    const pm = dbState.projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
+    const pm = dbState.projectMemberRows.find((r) => r.userId === userId && r.workspaceId === WORKSPACE_ID);
     const pr = pm?.projectRole ?? null;
     if (action === 'project.read') return pr === 'member' || pr === 'editor' || pr === 'manager';
     // Session lifecycle: any project member (a plain `member` included) may run sessions.
@@ -135,13 +135,13 @@ mock.module('../iam/dispatcher', () => {
       if (!am) return { mode: 'none', allowed: new Set<string>() };
       if (isManager(userId)) return { mode: 'all', allowed: new Set<string>() };
       const allowed = new Set(
-        dbState.projectMemberRows.filter((r) => r.userId === userId).map((r) => r.projectId),
+        dbState.projectMemberRows.filter((r) => r.userId === userId).map((r) => r.workspaceId),
       );
       return allowed.size === 0
         ? { mode: 'none', allowed }
         : { mode: 'allow_only', allowed };
     },
-    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+    filterAccessibleWorkspaceResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
   };
 });
 
@@ -158,23 +158,23 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-const actualGit = await import('../projects/git');
-mock.module('../projects/git', () => ({
+const actualGit = await import('../workspaces/git');
+mock.module('../workspaces/git', () => ({
   ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
-  listRepoFiles: async (project: ProjectRow, ref: string, path?: string) => {
-    listRepoFileCalls.push({ projectId: project.projectId, ref, path: path ?? null });
+  listRepoFiles: async (project: WorkspaceRow, ref: string, path?: string) => {
+    listRepoFileCalls.push({ workspaceId: project.workspaceId, ref, path: path ?? null });
     return repoFiles;
   },
-  loadProjectConfig: async (_project: ProjectRow, files: typeof repoFiles) => ({
-    manifest: { project: { name: 'Existing Project' }, env: { required: ['DATABASE_URL'] } },
+  loadWorkspaceConfig: async (_project: WorkspaceRow, files: typeof repoFiles) => ({
+    manifest: { project: { name: 'Existing Workspace' }, env: { required: ['DATABASE_URL'] } },
     env: { required: ['DATABASE_URL'], optional: [] },
     opencode: { agents: ['default'], skills: ['git-workflow'], files: files.map((file) => file.path) },
   }),
-  readRepoFile: async (project: ProjectRow, path: string, ref: string) => {
-    readRepoFileCalls.push({ projectId: project.projectId, path, ref });
+  readRepoFile: async (project: WorkspaceRow, path: string, ref: string) => {
+    readRepoFileCalls.push({ workspaceId: project.workspaceId, path, ref });
     if (path === 'missing.txt') {
       // The legacy `GitOperationError` shape: a raw `fatal: path … does not
       // exist in …` message. `isMissingGitPathError` matches this → 404.
@@ -192,11 +192,11 @@ mock.module('../projects/git', () => ({
     return `content:${path}@${ref}`;
   },
   readManifestFromRepo: async () => null,
-  archiveRepoSubtree: async (project: ProjectRow, ref: string, path?: string | null) => {
-    archiveCalls.push({ projectId: project.projectId, ref, path: path ?? null });
+  archiveRepoSubtree: async (project: WorkspaceRow, ref: string, path?: string | null) => {
+    archiveCalls.push({ workspaceId: project.workspaceId, ref, path: path ?? null });
     // git archive --format=zip outputs binary; emit a tiny readable stream
     // so the route can pipe a real Response back to the test.
-    const body = new TextEncoder().encode(`zip:${project.projectId}:${ref}:${path ?? ''}`);
+    const body = new TextEncoder().encode(`zip:${project.workspaceId}:${ref}:${path ?? ''}`);
     return new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(body);
@@ -210,7 +210,7 @@ mock.module('../projects/git', () => ({
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
-  invalidateProjectMirror: () => {},
+  invalidateWorkspaceMirror: () => {},
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
@@ -227,8 +227,8 @@ mock.module('../projects/git', () => ({
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
-mock.module('../projects/lib/project-deletion', () => ({
-  deleteManagedProjectRepo: async (project: ProjectRow) => {
+mock.module('../workspaces/lib/workspace-deletion', () => ({
+  deleteManagedWorkspaceRepo: async (project: WorkspaceRow) => {
     deleteManagedRepoCalls.push(project);
     if (deleteManagedRepoError) throw deleteManagedRepoError;
     return deleteManagedRepoResult;
@@ -248,10 +248,10 @@ mock.module("../snapshots/builder", () => ({
   kickRoutedPreBuild: () => {},
   templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
   kickStartupPreBuild: () => {},
-  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
-  kickProjectTemplatePrebuilds: () => {},
+  reconcileWorkspaceTemplates: async () => ({ checked: 0, updated: 0 }),
+  kickWorkspaceTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
-  ensurePerProjectWarmImage: async () => ({
+  ensurePerWorkspaceWarmImage: async () => ({
     snapshotName: "kortix-ppwarm-test",
     tip: "a".repeat(40),
     built: false,
@@ -260,8 +260,8 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
-const actualGithub = await import('../projects/github');
-mock.module('../projects/github', () => ({
+const actualGithub = await import('../workspaces/github');
+mock.module('../workspaces/github', () => ({
   ...actualGithub,
   parseGitHubRepoUrl: () => null,
   isOrgAccount: async () => false,
@@ -347,7 +347,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async () => {},
 }));
 
-const projectDbMock = createProjectsContractDbMock(dbState);
+const projectDbMock = createWorkspacesContractDbMock(dbState);
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
@@ -387,15 +387,15 @@ describe('projects API contract', () => {
       body: JSON.stringify({
         account_id: ACCOUNT_ID,
         repo_url: 'https://github.com/kortix-org/new-project.git/',
-        name: 'New Project',
+        name: 'New Workspace',
         manifest_path: 'config/kortix.yaml',
       }),
     });
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({
-      project_id: NEW_PROJECT_ID,
+      project_id: NEW_WORKSPACE_ID,
       account_id: ACCOUNT_ID,
-      name: 'New Project',
+      name: 'New Workspace',
       repo_url: 'https://github.com/kortix-org/new-project.git',
       default_branch: 'trunk',
       manifest_path: 'config/kortix.yaml',
@@ -405,7 +405,7 @@ describe('projects API contract', () => {
     });
     expect(commitCalls).toHaveLength(0);
     expect(dbState.gitConnectionRows).toContainEqual(expect.objectContaining({
-      projectId: NEW_PROJECT_ID,
+      workspaceId: NEW_WORKSPACE_ID,
       provider: 'github',
       repoUrl: 'https://github.com/kortix-org/new-project.git',
       repoOwner: 'kortix-org',
@@ -417,7 +417,7 @@ describe('projects API contract', () => {
       status: 'connected',
     }));
     expect(dbState.projectMemberRows).toContainEqual(expect.objectContaining({
-      projectId: NEW_PROJECT_ID,
+      workspaceId: NEW_WORKSPACE_ID,
       userId: OWNER_ID,
       projectRole: 'manager',
     }));
@@ -440,24 +440,24 @@ describe('projects API contract', () => {
     expect([first.status, second.status]).toEqual([201, 201]);
     const [firstBody, secondBody] = await Promise.all([first.json(), second.json()]);
     expect([firstBody.project_id, secondBody.project_id]).toEqual([
-      NEW_PROJECT_ID,
-      SECOND_NEW_PROJECT_ID,
+      NEW_WORKSPACE_ID,
+      SECOND_NEW_WORKSPACE_ID,
     ]);
     expect(dbState.projectRows.filter((row) => row.repoUrl === payload.repo_url)).toEqual([
       expect.objectContaining({
-        projectId: NEW_PROJECT_ID,
+        workspaceId: NEW_WORKSPACE_ID,
         name: 'Production',
         defaultBranch: 'main',
       }),
       expect.objectContaining({
-        projectId: SECOND_NEW_PROJECT_ID,
+        workspaceId: SECOND_NEW_WORKSPACE_ID,
         name: 'Development',
         defaultBranch: 'dev',
       }),
     ]);
-    expect(dbState.gitConnectionRows.map((row) => [row.projectId, row.defaultBranch])).toEqual([
-      [NEW_PROJECT_ID, 'main'],
-      [SECOND_NEW_PROJECT_ID, 'dev'],
+    expect(dbState.gitConnectionRows.map((row) => [row.workspaceId, row.defaultBranch])).toEqual([
+      [NEW_WORKSPACE_ID, 'main'],
+      [SECOND_NEW_WORKSPACE_ID, 'dev'],
     ]);
   });
 
@@ -485,12 +485,12 @@ describe('projects API contract', () => {
     let res = await app.request(`/v1/projects?account_id=${ACCOUNT_ID}`);
     expect(res.status).toBe(200);
     let body = await res.json();
-    expect(body.map((project: any) => project.project_id).sort()).toEqual([PROJECT_ID, OTHER_PROJECT_ID]);
+    expect(body.map((project: any) => project.project_id).sort()).toEqual([WORKSPACE_ID, OTHER_WORKSPACE_ID]);
     expect(body.every((project: any) => project.effective_project_role === 'manager')).toBe(true);
 
     dbState.projectMemberRows.push({
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       userId: MEMBER_ID,
       projectRole: 'member',
       grantedBy: OWNER_ID,
@@ -504,7 +504,7 @@ describe('projects API contract', () => {
     body = await res.json();
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({
-      project_id: PROJECT_ID,
+      project_id: WORKSPACE_ID,
       project_role: 'member',
       effective_project_role: 'member',
     });
@@ -512,40 +512,40 @@ describe('projects API contract', () => {
 
   test('returns detail, file listings, file content, and updates last_opened_at', async () => {
     const app = createApp();
-    const detail = await app.request(`/v1/projects/${PROJECT_ID}/detail`);
+    const detail = await app.request(`/v1/projects/${WORKSPACE_ID}/detail`);
     expect(detail.status).toBe(200);
     expect(await detail.json()).toMatchObject({
-      project: { project_id: PROJECT_ID, effective_project_role: 'manager' },
+      project: { project_id: WORKSPACE_ID, effective_project_role: 'manager' },
       config: {
-        manifest: { project: { name: 'Existing Project' } },
+        manifest: { project: { name: 'Existing Workspace' } },
         opencode: { agents: ['default'], skills: ['git-workflow'] },
       },
       file_count: repoFiles.length,
     });
-    expect(listRepoFileCalls[0]).toEqual({ projectId: PROJECT_ID, ref: 'main', path: null });
+    expect(listRepoFileCalls[0]).toEqual({ workspaceId: WORKSPACE_ID, ref: 'main', path: null });
 
-    const files = await app.request(`/v1/projects/${PROJECT_ID}/files?ref=dev&path=.opencode`);
+    const files = await app.request(`/v1/projects/${WORKSPACE_ID}/files?ref=dev&path=.opencode`);
     expect(files.status).toBe(200);
     expect(await files.json()).toEqual(repoFiles);
-    expect(listRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, ref: 'dev', path: '.opencode' });
+    expect(listRepoFileCalls.at(-1)).toEqual({ workspaceId: WORKSPACE_ID, ref: 'dev', path: '.opencode' });
 
-    const missingPath = await app.request(`/v1/projects/${PROJECT_ID}/files/content`);
+    const missingPath = await app.request(`/v1/projects/${WORKSPACE_ID}/files/content`);
     expect(missingPath.status).toBe(400);
     expect(await missingPath.json()).toEqual({ error: 'path query param is required' });
 
-    const content = await app.request(`/v1/projects/${PROJECT_ID}/files/content?path=README.md&ref=feature`);
+    const content = await app.request(`/v1/projects/${WORKSPACE_ID}/files/content?path=README.md&ref=feature`);
     expect(content.status).toBe(200);
     expect(await content.json()).toEqual({
       path: 'README.md',
       ref: 'feature',
       content: 'content:README.md@feature',
     });
-    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'README.md', ref: 'feature' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ workspaceId: WORKSPACE_ID, path: 'README.md', ref: 'feature' });
 
-    const missingFile = await app.request(`/v1/projects/${PROJECT_ID}/files/content?path=missing.txt&ref=feature`);
+    const missingFile = await app.request(`/v1/projects/${WORKSPACE_ID}/files/content?path=missing.txt&ref=feature`);
     expect(missingFile.status).toBe(404);
     expect(await missingFile.json()).toEqual({ error: 'File not found' });
-    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'missing.txt', ref: 'feature' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ workspaceId: WORKSPACE_ID, path: 'missing.txt', ref: 'feature' });
 
     // Regression (Better Stack pattern `5b40ec1a…`): `readRepoFile` now throws a
     // typed `RepoFileNotFoundError` (message `file not found in repository at
@@ -558,63 +558,63 @@ describe('projects API contract', () => {
     // `isRepoFileNotFoundError` and return 404 — a 404 here proves the typed
     // error no longer reaches the 500/Sentry path.
     const typedMissingFile = await app.request(
-      `/v1/projects/${PROJECT_ID}/files/content?path=not-found.txt&ref=feature`,
+      `/v1/projects/${WORKSPACE_ID}/files/content?path=not-found.txt&ref=feature`,
     );
     expect(typedMissingFile.status).toBe(404);
     expect(await typedMissingFile.json()).toEqual({ error: 'File not found' });
-    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ workspaceId: WORKSPACE_ID, path: 'not-found.txt', ref: 'feature' });
 
     // Absolute and traversal paths can never resolve inside the repo tree —
     // the meta agent's /workspace/AGENTS.md source lives in the sandbox image.
     // The route answers 404 without reaching git instead of letting the path
     // guard throw a 500.
     const absolutePath = await app.request(
-      `/v1/projects/${PROJECT_ID}/files/content?path=${encodeURIComponent('/workspace/AGENTS.md')}`,
+      `/v1/projects/${WORKSPACE_ID}/files/content?path=${encodeURIComponent('/workspace/AGENTS.md')}`,
     );
     expect(absolutePath.status).toBe(404);
     expect(await absolutePath.json()).toEqual({ error: 'File not found' });
     const traversalPath = await app.request(
-      `/v1/projects/${PROJECT_ID}/files/content?path=${encodeURIComponent('../etc/passwd')}`,
+      `/v1/projects/${WORKSPACE_ID}/files/content?path=${encodeURIComponent('../etc/passwd')}`,
     );
     expect(traversalPath.status).toBe(404);
-    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ workspaceId: WORKSPACE_ID, path: 'not-found.txt', ref: 'feature' });
 
-    const read = await app.request(`/v1/projects/${PROJECT_ID}`);
+    const read = await app.request(`/v1/projects/${WORKSPACE_ID}`);
     expect(read.status).toBe(200);
-    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
+    expect(dbState.projectRows.find((project) => project.workspaceId === WORKSPACE_ID)?.lastOpenedAt).toBeInstanceOf(Date);
   });
 
   test('streams a zip archive of the repo / subtree', async () => {
     const app = createApp();
 
     // No path → archives the whole tree at the default branch.
-    const root = await app.request(`/v1/projects/${PROJECT_ID}/files/archive`);
+    const root = await app.request(`/v1/projects/${WORKSPACE_ID}/files/archive`);
     expect(root.status).toBe(200);
     expect(root.headers.get('content-type')).toBe('application/zip');
     expect(root.headers.get('content-disposition')).toBe('attachment; filename="workspace.zip"');
-    expect(await root.text()).toBe(`zip:${PROJECT_ID}:main:`);
-    expect(archiveCalls.at(-1)).toEqual({ projectId: PROJECT_ID, ref: 'main', path: null });
+    expect(await root.text()).toBe(`zip:${WORKSPACE_ID}:main:`);
+    expect(archiveCalls.at(-1)).toEqual({ workspaceId: WORKSPACE_ID, ref: 'main', path: null });
 
     // ref + subtree path → archives just that subtree, filename derived from path.
     const subtree = await app.request(
-      `/v1/projects/${PROJECT_ID}/files/archive?ref=dev&path=.kortix/opencode/agents`,
+      `/v1/projects/${WORKSPACE_ID}/files/archive?ref=dev&path=.kortix/opencode/agents`,
     );
     expect(subtree.status).toBe(200);
     expect(subtree.headers.get('content-type')).toBe('application/zip');
     expect(subtree.headers.get('content-disposition')).toBe('attachment; filename="agents.zip"');
-    expect(await subtree.text()).toBe(`zip:${PROJECT_ID}:dev:.kortix/opencode/agents`);
+    expect(await subtree.text()).toBe(`zip:${WORKSPACE_ID}:dev:.kortix/opencode/agents`);
     expect(archiveCalls.at(-1)).toEqual({
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       ref: 'dev',
       path: '.kortix/opencode/agents',
     });
 
     // Absolute / workspace-prefixed paths are rejected (the UI must strip them).
     // archiveRepoSubtree throws via normalizeTreePath; route surfaces a 400.
-    mock.module('../projects/git', () => ({
+    mock.module('../workspaces/git', () => ({
       createRemoteSessionBranch: async () => undefined,
       listRepoFiles: async () => repoFiles,
-      loadProjectConfig: async () => ({ manifest: {}, env: { required: [], optional: [] }, opencode: {} }),
+      loadWorkspaceConfig: async () => ({ manifest: {}, env: { required: [], optional: [] }, opencode: {} }),
       readRepoFile: async () => '',
       readManifestFromRepo: async () => null,
       archiveRepoSubtree: async (_p: any, _r: string, path?: string | null) => {
@@ -633,10 +633,10 @@ describe('projects API contract', () => {
       getCommit: async () => null,
       getCommitDiff: async () => null,
       getFileHistory: async () => ({ entries: [], nextCursor: null }),
-      invalidateProjectMirror: () => {},
+      invalidateWorkspaceMirror: () => {},
     }));
 
-    const bad = await app.request(`/v1/projects/${PROJECT_ID}/files/archive?path=%2Fworkspace`);
+    const bad = await app.request(`/v1/projects/${WORKSPACE_ID}/files/archive?path=%2Fworkspace`);
     expect(bad.status).toBe(400);
     expect(await bad.json()).toEqual({ error: 'Invalid path' });
   });
@@ -644,18 +644,18 @@ describe('projects API contract', () => {
   test('archive endpoint denies users without read access', async () => {
     const app = createApp();
     setCurrentUser(OUTSIDER_ID, 'outsider@example.test');
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/files/archive`);
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/files/archive`);
     expect(res.status).toBe(403);
   });
 
   test('patches only project config fields and archives projects', async () => {
     const app = createApp();
-    const beforeRepoUrl = dbState.projectRows.find((project) => project.projectId === PROJECT_ID)!.repoUrl;
-    const patch = await app.request(`/v1/projects/${PROJECT_ID}`, {
+    const beforeRepoUrl = dbState.projectRows.find((project) => project.workspaceId === WORKSPACE_ID)!.repoUrl;
+    const patch = await app.request(`/v1/projects/${WORKSPACE_ID}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: 'Renamed Project',
+        name: 'Renamed Workspace',
         default_branch: 'release',
         manifest_path: 'ops/kortix.yaml',
         repo_url: 'https://github.com/kortix/should-not-change.git',
@@ -663,20 +663,20 @@ describe('projects API contract', () => {
     });
     expect(patch.status).toBe(200);
     expect(await patch.json()).toMatchObject({
-      project_id: PROJECT_ID,
-      name: 'Renamed Project',
+      project_id: WORKSPACE_ID,
+      name: 'Renamed Workspace',
       default_branch: 'release',
       manifest_path: 'ops/kortix.yaml',
       repo_url: beforeRepoUrl,
     });
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
+    const del = await app.request(`/v1/projects/${WORKSPACE_ID}`, { method: 'DELETE' });
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
     expect(deleteManagedRepoCalls).toEqual([]);
-    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
+    expect(dbState.projectRows.find((project) => project.workspaceId === WORKSPACE_ID)?.status).toBe('archived');
 
-    const after = await app.request(`/v1/projects/${PROJECT_ID}`);
+    const after = await app.request(`/v1/projects/${WORKSPACE_ID}`);
     expect(after.status).toBe(404);
   });
 
@@ -684,14 +684,14 @@ describe('projects API contract', () => {
     const app = createApp();
     deleteManagedRepoResult = true;
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, {
+    const del = await app.request(`/v1/projects/${WORKSPACE_ID}?purge=true`, {
       method: 'DELETE',
     });
 
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
-    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
-    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe(
+    expect(deleteManagedRepoCalls.map((project) => project.workspaceId)).toEqual([WORKSPACE_ID]);
+    expect(dbState.projectRows.find((project) => project.workspaceId === WORKSPACE_ID)?.status).toBe(
       'archived',
     );
   });
@@ -700,22 +700,22 @@ describe('projects API contract', () => {
     const app = createApp();
     deleteManagedRepoError = new Error('provider unavailable');
 
-    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+    const del = await app.request(`/v1/projects/${WORKSPACE_ID}?purge=true`, { method: 'DELETE' });
 
     expect(del.status).toBe(502);
     expect(await del.json()).toEqual({ error: 'Failed to delete managed project repository' });
-    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
-    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
+    expect(deleteManagedRepoCalls.map((project) => project.workspaceId)).toEqual([WORKSPACE_ID]);
+    expect(dbState.projectRows.find((project) => project.workspaceId === WORKSPACE_ID)?.status).toBe('active');
   });
 
   test('lists and manages explicit project access grants without overriding account managers', async () => {
     const app = createApp();
 
-    let access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
+    let access = await app.request(`/v1/projects/${WORKSPACE_ID}/access`);
     expect(access.status).toBe(200);
     let body = await access.json();
     expect(body).toMatchObject({
-      project_id: PROJECT_ID,
+      project_id: WORKSPACE_ID,
       account_id: ACCOUNT_ID,
       can_manage: true,
       viewer_user_id: OWNER_ID,
@@ -743,7 +743,7 @@ describe('projects API contract', () => {
       },
     ]);
 
-    const grant = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
+    const grant = await app.request(`/v1/projects/${WORKSPACE_ID}/access/${MEMBER_ID}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'editor' }),
@@ -757,12 +757,12 @@ describe('projects API contract', () => {
       has_implicit_access: false,
     });
     expect(dbState.projectMemberRows).toContainEqual(expect.objectContaining({
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       userId: MEMBER_ID,
       projectRole: 'editor',
     }));
 
-    access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
+    access = await app.request(`/v1/projects/${WORKSPACE_ID}/access`);
     body = await access.json();
     const memberRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
     expect(memberRow).toMatchObject({
@@ -771,7 +771,7 @@ describe('projects API contract', () => {
       has_implicit_access: false,
     });
 
-    const ownerGrant = await app.request(`/v1/projects/${PROJECT_ID}/access/${OWNER_ID}`, {
+    const ownerGrant = await app.request(`/v1/projects/${WORKSPACE_ID}/access/${OWNER_ID}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'user' }),
@@ -785,17 +785,17 @@ describe('projects API contract', () => {
       has_implicit_access: true,
     });
 
-    const removeOwner = await app.request(`/v1/projects/${PROJECT_ID}/access/${OWNER_ID}`, {
+    const removeOwner = await app.request(`/v1/projects/${WORKSPACE_ID}/access/${OWNER_ID}`, {
       method: 'DELETE',
     });
     expect(removeOwner.status).toBe(409);
 
-    const removeMember = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
+    const removeMember = await app.request(`/v1/projects/${WORKSPACE_ID}/access/${MEMBER_ID}`, {
       method: 'DELETE',
     });
     expect(removeMember.status).toBe(200);
     expect(await removeMember.json()).toEqual({ ok: true });
-    expect(dbState.projectMemberRows.some((row) => row.userId === MEMBER_ID && row.projectId === PROJECT_ID)).toBe(false);
+    expect(dbState.projectMemberRows.some((row) => row.userId === MEMBER_ID && row.workspaceId === WORKSPACE_ID)).toBe(false);
   });
 
   test('GET /access drops shadow members whose user_id is not a real auth user', async () => {
@@ -809,7 +809,7 @@ describe('projects API contract', () => {
       joinedAt: baseDate,
     });
     const app = createApp();
-    const access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
+    const access = await app.request(`/v1/projects/${WORKSPACE_ID}/access`);
     expect(access.status).toBe(200);
     const body = await access.json();
     const ids = body.members.map((m: any) => m.user_id);
@@ -821,20 +821,20 @@ describe('projects API contract', () => {
   test('denies non-members and plain project users from manager-only operations', async () => {
     const app = createApp();
     setCurrentUser(OUTSIDER_ID, 'outsider@example.test');
-    const outsider = await app.request(`/v1/projects/${PROJECT_ID}/files`);
+    const outsider = await app.request(`/v1/projects/${WORKSPACE_ID}/files`);
     expect(outsider.status).toBe(403);
 
     setCurrentUser(MEMBER_ID, 'member@example.test');
     dbState.projectMemberRows.push({
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       userId: MEMBER_ID,
       projectRole: 'member',
       grantedBy: OWNER_ID,
       createdAt: baseDate,
       updatedAt: baseDate,
     });
-    const userPatch = await app.request(`/v1/projects/${PROJECT_ID}`, {
+    const userPatch = await app.request(`/v1/projects/${WORKSPACE_ID}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'User Rename' }),

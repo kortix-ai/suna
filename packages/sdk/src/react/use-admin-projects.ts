@@ -13,7 +13,7 @@ import { backendApi } from '../core/http/api-client';
 
 /** One row of the admin projects list. */
 export interface AdminProject {
-  projectId: string;
+  workspaceId: string;
   name: string;
   /** `kortix.project_status` — 'active' | 'archived'. */
   status: string | null;

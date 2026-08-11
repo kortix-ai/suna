@@ -68,7 +68,7 @@ export function SetupLinkButton({
       <Modal open={open} onOpenChange={setOpen}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
-            <ModalTitle>{kind === 'secret' ? 'Add a project secret' : 'Connect an app'}</ModalTitle>
+            <ModalTitle>{kind === 'secret' ? 'Add a workspace secret' : 'Connect an app'}</ModalTitle>
             <ModalDescription>
               {kind === 'secret'
                 ? 'Enter the value below. It’s encrypted and the agent never sees it.'

@@ -14,7 +14,7 @@ export type AuditOutcome = 'success' | 'failure' | 'denied' | 'pending';
 
 export interface AuditEventInput {
   accountId?: string | null;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   opencodeSessionId?: string | null;
   turnId?: string | null;
@@ -68,12 +68,12 @@ function clientIp(c: AuditContext): string | null {
   );
 }
 
-function pathIds(path: string): { projectId: string | null; sessionId: string | null } {
+function pathIds(path: string): { workspaceId: string | null; sessionId: string | null } {
   const projectMatch = path.match(/\/projects\/([^/]+)/);
   const sessionMatch = path.match(/\/projects\/[^/]+\/sessions\/([^/]+)/);
-  const projectId = projectMatch?.[1] && UUID_RE.test(projectMatch[1]) ? projectMatch[1] : null;
+  const workspaceId = projectMatch?.[1] && UUID_RE.test(projectMatch[1]) ? projectMatch[1] : null;
   return {
-    projectId,
+    workspaceId,
     sessionId: sessionMatch?.[1] ?? null,
   };
 }
@@ -81,7 +81,7 @@ function pathIds(path: string): { projectId: string | null; sessionId: string | 
 function inferResource(path: string): { resourceType: string; resourceId: string | null } {
   const ids = pathIds(path);
   if (ids.sessionId) return { resourceType: 'project_session', resourceId: ids.sessionId };
-  if (ids.projectId) return { resourceType: 'project', resourceId: ids.projectId };
+  if (ids.workspaceId) return { resourceType: 'project', resourceId: ids.workspaceId };
 
   const parts = path.split('/').filter(Boolean);
   const v1Index = parts.indexOf('v1');
@@ -129,9 +129,9 @@ function inferActorType(c: AuditContext, actorUserId: string | null): AuditActor
   if (authType === 'service_account') return 'service_account';
   const hasAgentGrant = c.get('agentGrant') != null;
   const apiKeyType = c.get('apiKeyType');
-  const hasProjectSession =
+  const hasWorkspaceSession =
     authType !== 'supabase' && (c.get('sessionId') != null || hasAgentGrant);
-  if (hasProjectSession || (authType === 'apiKey' && apiKeyType === 'sandbox')) return 'agent';
+  if (hasWorkspaceSession || (authType === 'apiKey' && apiKeyType === 'sandbox')) return 'agent';
   if (actorUserId) return 'human';
   return inferAccountId(c) ? 'system' : null;
 }
@@ -304,7 +304,7 @@ async function insertAuditEvent(client: AuditInsertClient, input: AuditEventInpu
     .insert(auditEvents)
     .values({
       accountId: uuidOrNull(input.accountId || request?.accountId),
-      projectId: uuidOrNull(input.projectId || request?.projectId),
+      workspaceId: uuidOrNull(input.workspaceId || request?.workspaceId),
       sessionId: input.sessionId || request?.sessionId || null,
       opencodeSessionId: input.opencodeSessionId ?? null,
       turnId: input.turnId ?? null,
@@ -404,7 +404,7 @@ export async function auditApiRequest(c: AuditContext, next: Next): Promise<void
       try {
         await recordAuditEvent({
           accountId,
-          projectId: ids.projectId ?? request?.projectId ?? null,
+          workspaceId: ids.workspaceId ?? request?.workspaceId ?? null,
           sessionId: projectSessionId(c, ids.sessionId ?? request?.sessionId ?? null),
           actorUserId,
           actorType,

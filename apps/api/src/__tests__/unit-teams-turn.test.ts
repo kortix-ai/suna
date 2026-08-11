@@ -34,7 +34,7 @@ mock.module('../config', () => ({ config: { FRONTEND_URL: 'https://app', MICROSO
 mock.module('../channels/slack/util', () => ({ sessionWebUrl: () => 'https://app/session' }));
 mock.module('../channels/install-store', () => ({
   saveTeamsServiceUrl: async () => {},
-  loadTeamsTenantForProject: async () => 'tenant-1',
+  loadTeamsTenantForWorkspace: async () => 'tenant-1',
 }));
 
 let dbResults: unknown[][] = [];
@@ -75,7 +75,7 @@ const { relayTurnAnswer, relayTurnEnd, relayTurnStep } = await import('../channe
 function streamRow(over: Record<string, unknown> = {}) {
   return {
     sessionId: 'sess-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     teamId: 'tenant-1',
     channel: 'conv-1',
     triggerTs: 'msg-1',

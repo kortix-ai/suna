@@ -76,7 +76,7 @@ const RUNTIME: { icon: Icon; title: string; description: string }[] = [
 ];
 
 const SURFACES: { icon: Icon; title: string; description: string }[] = [
-  { icon: FolderIcon, title: 'Projects', description: 'Provision, share, and archive.' },
+  { icon: FolderIcon, title: 'Workspaces', description: 'Provision, share, and archive.' },
   { icon: LightningIcon, title: 'Triggers', description: 'Schedules, webhooks, and events.' },
   { icon: KeyIcon, title: 'Secrets', description: 'Encrypted at rest, injected at boot.' },
   { icon: UsersIcon, title: 'Members', description: 'Roles, invites, and IAM policies.' },

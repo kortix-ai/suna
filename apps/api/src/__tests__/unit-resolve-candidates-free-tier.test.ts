@@ -70,23 +70,23 @@ mock.module('../billing/services/entitlements', () => ({
     billingEnabled ? !realAccountIsFreeTierForModels(accountTier) : true,
 }));
 
-mock.module('../projects/secrets', () => ({
-  decryptProjectSecret: (_projectId: string, value: string) => value,
-  encryptProjectSecret: (_projectId: string, value: string) => value,
-  getProjectSecretValue: async () => 'user-key',
-  getProjectSecretValueForConsumer: async () => 'user-key',
-  resolveProjectSecretsForConsumer: async (input: { name: string }) => [
+mock.module('../workspaces/secrets', () => ({
+  decryptWorkspaceSecret: (_projectId: string, value: string) => value,
+  encryptWorkspaceSecret: (_projectId: string, value: string) => value,
+  getWorkspaceSecretValue: async () => 'user-key',
+  getWorkspaceSecretValueForConsumer: async () => 'user-key',
+  resolveWorkspaceSecretsForConsumer: async (input: { name: string }) => [
     { identifier: input.name, value: 'user-key' },
   ],
-  listProjectSecrets: async () => ({}),
-  listProjectSecretsForUser: async () => ({}),
-  listProjectSecretsSnapshot: async () => ({
+  listWorkspaceSecrets: async () => ({}),
+  listWorkspaceSecretsForUser: async () => ({}),
+  listWorkspaceSecretsSnapshot: async () => ({
     env: {},
     names: [],
     revision: 'empty',
   }),
-  listProjectSecretNamesForConsumer: async () => [],
-  listProjectSecretsSnapshotForUser: async () => ({
+  listWorkspaceSecretNamesForConsumer: async () => [],
+  listWorkspaceSecretsSnapshotForUser: async () => ({
     env: {},
     names: [],
     revision: 'empty',
@@ -152,7 +152,7 @@ function principal(accountId: string) {
   return {
     userId: `user-${accountId}`,
     accountId,
-    projectId: `project-${accountId}`,
+    workspaceId: `project-${accountId}`,
   };
 }
 

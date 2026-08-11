@@ -10,7 +10,7 @@
  *     on what actually reached "Kortix" — in particular, that `Authorization`
  *     is ALWAYS `Bearer <the wrapper key>`, never an end-user session token,
  *     and that the wrapper's own `lumen_session` cookie never leaks upstream.
- *  2. Behave like a real (if minimal) Kortix API: a projects store, secrets,
+ *  2. Behave like a real (if minimal) Kortix API: a workspaces store, secrets,
  *     session cost rows, cli-token minting, and the `/p/...` sandbox-runtime
  *     proxy surface (generic passthrough + one SSE stream + one echoing
  *     "message" endpoint) — enough surface for every flow the whitelabel app
@@ -19,7 +19,7 @@
 
 export interface RecordedRequest {
   method: string;
-  path: string; // pathname + search, e.g. "/v1/projects/proj_1"
+  path: string; // pathname + search, e.g. "/v1/workspaces/proj_1"
   authorization: string | null;
   cookie: string | null;
   acceptEncoding: string | null;
@@ -28,8 +28,8 @@ export interface RecordedRequest {
   body: unknown;
 }
 
-export interface MockProject {
-  project_id: string;
+export interface MockWorkspace {
+  workspace_id: string;
   account_id: string;
   name: string;
   repo_url: string;
@@ -53,7 +53,7 @@ export interface MockSessionCostRow {
 export interface MockConnection {
   connection_id: string;
   connector_alias: string;
-  owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  owner_type: 'workspace' | 'agent' | 'member' | 'subject' | 'external';
   owner_id: string | null;
   label: string;
   status: 'active' | 'revoked' | 'error';
@@ -70,54 +70,54 @@ export interface MockUpstream {
   /** Any request that carried a `Cookie` header (the proxy should always strip it). */
   cookieViolations: RecordedRequest[];
   reset(): void;
-  /** Directly seed a project into the mock's store (bypassing `/provision`) —
-   *  used to simulate a project that exists upstream but this wrapper user
+  /** Directly seed a workspace into the mock's store (bypassing `/provision`) —
+   *  used to simulate a workspace that exists upstream but this wrapper user
    *  never provisioned, to prove per-user filtering actually filters. */
-  seedProject(overrides?: Partial<MockProject>): MockProject;
-  seedSessionCosts(projectId: string, rows: MockSessionCostRow[]): void;
-  /** Seed the connections `/connections` returns for a project. */
+  seedWorkspace(overrides?: Partial<MockWorkspace>): MockWorkspace;
+  seedSessionCosts(workspaceId: string, rows: MockSessionCostRow[]): void;
+  /** Seed the connections `/connections` returns for a workspace. */
   seedConnections(
-    projectId: string,
+    workspaceId: string,
     connections: MockConnection[],
   ): void;
-  /** Make GET /v1/usage/session-costs fail for this project id. */
-  failSessionCostsFor(projectId: string): void;
-  /** Make POST /v1/projects/:id/cli-token return HTTP 200 with a body MISSING
+  /** Make GET /v1/usage/session-costs fail for this workspace id. */
+  failSessionCostsFor(workspaceId: string): void;
+  /** Make POST /v1/workspaces/:id/cli-token return HTTP 200 with a body MISSING
    *  `secret_key` — a malformed success the wrapper must surface as an error,
    *  never as a 200 carrying an undefined token. */
-  malformCliTokenFor(projectId: string): void;
+  malformCliTokenFor(workspaceId: string): void;
   stop(): void;
 }
 
-let projectCounter = 0;
+let workspaceCounter = 0;
 let tokenCounter = 0;
 
 export function createMockUpstream(expectedAuthToken: string): MockUpstream {
-  const projects = new Map<string, MockProject>();
+  const workspaces = new Map<string, MockWorkspace>();
   const secrets = new Map<string, Array<{ name: string; value?: string }>>();
   const sessionCosts = new Map<string, MockSessionCostRow[]>();
   const connections = new Map<string, MockConnection[]>();
-  const failingSessionCostProjects = new Set<string>();
-  const malformedCliTokenProjects = new Set<string>();
+  const failingSessionCostWorkspaces = new Set<string>();
+  const malformedCliTokenWorkspaces = new Set<string>();
   const activeIntervals = new Set<ReturnType<typeof setInterval>>();
 
   let requests: RecordedRequest[] = [];
   let authViolations: RecordedRequest[] = [];
   let cookieViolations: RecordedRequest[] = [];
 
-  function makeProject(overrides: Partial<MockProject> = {}): MockProject {
-    projectCounter += 1;
-    // UUID-shaped like real Kortix project ids — the app validates ids with
-    // isValidProjectId before recording ownership or building upstream URLs,
+  function makeWorkspace(overrides: Partial<MockWorkspace> = {}): MockWorkspace {
+    workspaceCounter += 1;
+    // UUID-shaped like real Kortix workspace ids — the app validates ids with
+    // isValidWorkspaceId before recording ownership or building upstream URLs,
     // so a non-UUID mock id would be (correctly) rejected.
     const id =
-      overrides.project_id ??
-      `00000000-0000-4000-8000-${String(projectCounter).padStart(12, '0')}`;
+      overrides.workspace_id ??
+      `00000000-0000-4000-8000-${String(workspaceCounter).padStart(12, '0')}`;
     const now = new Date().toISOString();
     return {
-      project_id: id,
+      workspace_id: id,
       account_id: 'acct_test',
-      name: overrides.name ?? `Mock Project ${projectCounter}`,
+      name: overrides.name ?? `Mock Workspace ${workspaceCounter}`,
       repo_url: `https://git.kortix.test/${id}`,
       default_branch: 'main',
       manifest_path: 'kortix.yaml',
@@ -127,6 +127,11 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       updated_at: now,
       ...overrides,
     };
+  }
+
+  function legacyProject(workspace: MockWorkspace): Record<string, unknown> {
+    const { workspace_id: project_id, ...rest } = workspace;
+    return { ...rest, project_id };
   }
 
   const server = Bun.serve({
@@ -171,14 +176,14 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       const p = url.pathname.replace(/^\/v1\//, '');
 
       if (p === 'usage/session-costs' && method === 'GET') {
-        const projectId = url.searchParams.get('project_id') ?? '';
-        if (failingSessionCostProjects.has(projectId)) {
+        const workspaceId = url.searchParams.get('workspace_id') ?? '';
+        if (failingSessionCostWorkspaces.has(workspaceId)) {
           return Response.json(
             { error: 'session costs unavailable' },
             { status: 500 },
           );
         }
-        const rows = sessionCosts.get(projectId) ?? [];
+        const rows = sessionCosts.get(workspaceId) ?? [];
         return Response.json({
           sessions: rows,
           total: rows.length,
@@ -196,19 +201,30 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         });
       }
 
-      // ── projects: bare collection ──────────────────────────────────────
+      // ── workspaces: bare collection ──────────────────────────────────────
+      if (p === 'workspaces' && method === 'GET') {
+        return Response.json([...workspaces.values()]);
+      }
+      if (p === 'workspaces/provision' && method === 'POST') {
+        const reqBody = (body as { name?: string } | undefined) ?? {};
+        const workspace = makeWorkspace({ name: reqBody.name ?? 'New workspace' });
+        workspaces.set(workspace.workspace_id, workspace);
+        return Response.json(workspace, { status: 201 });
+      }
+
+      // Deprecated Project aliases remain a wire-shape compatibility boundary.
       if (p === 'projects' && method === 'GET') {
-        return Response.json([...projects.values()]);
+        return Response.json([...workspaces.values()].map(legacyProject));
       }
       if (p === 'projects/provision' && method === 'POST') {
         const reqBody = (body as { name?: string } | undefined) ?? {};
-        const project = makeProject({ name: reqBody.name ?? 'New project' });
-        projects.set(project.project_id, project);
-        return Response.json(project, { status: 201 });
+        const workspace = makeWorkspace({ name: reqBody.name ?? 'New workspace' });
+        workspaces.set(workspace.workspace_id, workspace);
+        return Response.json(legacyProject(workspace), { status: 201 });
       }
 
-      // ── projects: scoped to one id ──────────────────────────────────────
-      const secretsMatch = p.match(/^projects\/([^/]+)\/secrets$/);
+      // ── workspaces: scoped to one id ──────────────────────────────────────
+      const secretsMatch = p.match(/^workspaces\/([^/]+)\/secrets$/);
       if (secretsMatch) {
         const [, id] = secretsMatch;
         if (method === 'GET') return Response.json(secrets.get(id) ?? []);
@@ -223,17 +239,17 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         }
       }
 
-      const connectionsMatch = p.match(/^projects\/([^/]+)\/connections$/);
+      const connectionsMatch = p.match(/^workspaces\/([^/]+)\/connections$/);
       if (connectionsMatch && method === 'GET') {
         const [, id] = connectionsMatch;
         return Response.json({ connections: connections.get(id) ?? [] });
       }
 
-      const cliTokenMatch = p.match(/^projects\/([^/]+)\/cli-token$/);
+      const cliTokenMatch = p.match(/^workspaces\/([^/]+)\/cli-token$/);
       if (cliTokenMatch && method === 'POST') {
         const [, id] = cliTokenMatch;
         tokenCounter += 1;
-        if (malformedCliTokenProjects.has(id)) {
+        if (malformedCliTokenWorkspaces.has(id)) {
           // HTTP 200 but no `secret_key` — the route must NOT pass this
           // through as a success.
           return Response.json({ token_id: `tok_${tokenCounter}` });
@@ -245,10 +261,10 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       }
 
       const sessionStartMatch = p.match(
-        /^projects\/([^/]+)\/sessions\/([^/]+)\/start$/,
+        /^workspaces\/([^/]+)\/sessions\/([^/]+)\/start$/,
       );
       if (sessionStartMatch && method === 'POST') {
-        const [, projectId, sessionId] = sessionStartMatch;
+        const [, workspaceId, sessionId] = sessionStartMatch;
         const now = new Date().toISOString();
         const externalId = `session-${sessionId}`;
         return Response.json({
@@ -261,7 +277,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
           sandbox: {
             sandbox_id: sessionId,
             session_id: sessionId,
-            project_id: projectId,
+            workspace_id: workspaceId,
             account_id: 'acct_test',
             provider: 'daytona',
             external_id: externalId,
@@ -276,33 +292,51 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         });
       }
 
-      const projectDetailMatch = p.match(/^projects\/([^/]+)$/);
-      if (projectDetailMatch) {
-        const [, id] = projectDetailMatch;
-        const project = projects.get(id);
+      const workspaceDetailMatch = p.match(/^workspaces\/([^/]+)$/);
+      if (workspaceDetailMatch) {
+        const [, id] = workspaceDetailMatch;
+        const workspace = workspaces.get(id);
         if (method === 'GET') {
-          if (!project)
+          if (!workspace)
             return Response.json({ error: 'Not found' }, { status: 404 });
           // Deliberately set an upstream cookie here so tests can assert the
           // proxy strips it before it reaches the browser.
-          return Response.json(project, {
+          return Response.json(workspace, {
             headers: { 'set-cookie': 'upstream_session=leak-me; Path=/' },
           });
         }
       }
 
-      const sessionsMatch = p.match(/^projects\/([^/]+)\/sessions$/);
+      const legacyProjectDetailMatch = p.match(/^projects\/([^/]+)$/);
+      if (legacyProjectDetailMatch) {
+        const [, id] = legacyProjectDetailMatch;
+        const workspace = workspaces.get(id);
+        if (method === 'GET') {
+          if (!workspace)
+            return Response.json({ error: 'Not found' }, { status: 404 });
+          return Response.json(legacyProject(workspace));
+        }
+      }
+
+      const sessionsMatch = p.match(/^workspaces\/([^/]+)\/sessions$/);
       if (sessionsMatch && method === 'GET') {
         return Response.json([]);
       }
 
-      // Any other `projects/:id/...` sub-path (sessions, files, connectors, …) —
+      // Any other `workspaces/:id/...` sub-path (sessions, files, connectors, …) —
       // generic forwarded-OK, recorded for assertion.
+      if (/^workspaces\/[^/]+(\/.*)?$/.test(p)) {
+        return Response.json({ ok: true, path: p, method });
+      }
+
       if (/^projects\/[^/]+(\/.*)?$/.test(p)) {
         return Response.json({ ok: true, path: p, method });
       }
 
-      // ── connectors/projects/:id/... ────────────────────────────────────
+      // ── connectors/workspaces/:id/... ────────────────────────────────────
+      if (/^connectors\/workspaces\/[^/]+(\/.*)?$/.test(p)) {
+        return Response.json({ ok: true, path: p, method });
+      }
       if (/^connectors\/projects\/[^/]+(\/.*)?$/.test(p)) {
         return Response.json({ ok: true, path: p, method });
       }
@@ -399,22 +433,22 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       authViolations = [];
       cookieViolations = [];
     },
-    seedProject(overrides) {
-      const project = makeProject(overrides);
-      projects.set(project.project_id, project);
-      return project;
+    seedWorkspace(overrides) {
+      const workspace = makeWorkspace(overrides);
+      workspaces.set(workspace.workspace_id, workspace);
+      return workspace;
     },
-    seedSessionCosts(projectId, rows) {
-      sessionCosts.set(projectId, rows);
+    seedSessionCosts(workspaceId, rows) {
+      sessionCosts.set(workspaceId, rows);
     },
-    seedConnections(projectId, connectionRows) {
-      connections.set(projectId, connectionRows);
+    seedConnections(workspaceId, connectionRows) {
+      connections.set(workspaceId, connectionRows);
     },
-    failSessionCostsFor(projectId) {
-      failingSessionCostProjects.add(projectId);
+    failSessionCostsFor(workspaceId) {
+      failingSessionCostWorkspaces.add(workspaceId);
     },
-    malformCliTokenFor(projectId) {
-      malformedCliTokenProjects.add(projectId);
+    malformCliTokenFor(workspaceId) {
+      malformedCliTokenWorkspaces.add(workspaceId);
     },
     stop() {
       for (const interval of activeIntervals) clearInterval(interval);

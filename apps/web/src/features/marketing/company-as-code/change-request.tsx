@@ -22,7 +22,7 @@ const SIGN: Record<string, string> = { ctx: ' ', del: '-', add: '+' };
  * that the company's know-how is versioned exactly like its code, and the only
  * way to show that is to show the company's know-how in a diff.
  */
-export function ChangeRequest(): ReactNode {
+export function WorkspaceChangeRequest(): ReactNode {
   const { cr } = change;
 
   return (

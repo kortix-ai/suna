@@ -10,7 +10,7 @@
  *  - Every line of YAML, every path and every CLI command on this page is real.
  *    Ground truth: `packages/starter/templates/base/kortix.yaml`, the same
  *    template's `.kortix/` tree, `packages/manifest-schema/src/index.v2.ts`,
- *    and `apps/web/content/docs/project/manifest.mdx`. Do not invent a field.
+ *    and `apps/web/content/docs/workspace/manifest.mdx`. Do not invent a field.
  *  - `channels:` is NOT a manifest key in schema version 2 — the validator
  *    rejects it. Channel routing is live project state; connecting a channel
  *    creates a `connectors` entry with `provider: channel`. Never show a
@@ -28,11 +28,11 @@
 export const hero = {
   eyebrow: 'Company as code',
   title: 'A company is going to be a git repository.',
-  sub: 'Not as a metaphor. A Kortix project is a git repo, and that repo is the company: its agents, the skills it has built up, everything it has learned, and the definition of the machines all of it runs on. Versioned. Diffable. Owned outright.',
-  ctaPrimary: 'Start a project',
+  sub: 'Not as a metaphor. A Kortix workspace is backed by a git repo, and that repo is the company: its agents, the skills it has built up, everything it has learned, and the definition of the machines all of it runs on. Versioned. Diffable. Owned outright.',
+  ctaPrimary: 'Start a workspace',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the manifest spec',
-  ctaSecondaryHref: '/docs/project/manifest',
+  ctaSecondaryHref: '/docs/workspace/manifest',
   microline: 'kortix init · kortix ship · one repo · any model',
   /** Four mono facts the rest of the page proves. Every value is defensible. */
   specs: [
@@ -197,7 +197,7 @@ export const repo = {
     {
       id: 'channel-routing',
       k: 'Channel routing',
-      v: 'Which Slack or Teams channel reaches which agent is live project state, set in the dashboard. Connecting one adds a connector the agents can call.',
+      v: 'Which Slack or Teams channel reaches which agent is live workspace state, set in the dashboard. Connecting one adds a connector the agents can call.',
     },
     {
       id: 'session-state',
@@ -295,7 +295,7 @@ export const selfImprove = {
   sub: 'An agent can read its own configuration, edit it, and propose the change. Put that on a schedule and the repo gets better at being your company while everyone is asleep.',
   yaml: {
     title: 'kortix.yaml — triggers',
-    caption: 'From the starter template. Every new project ships with it, switched off.',
+    caption: 'From the starter template. Every new workspace ships with it, switched off.',
     lines: [
       'agents:',
       '  memory-reflector:',
@@ -311,7 +311,7 @@ export const selfImprove = {
       '    cron: "0 0 3 * * *"',
       '    timezone: UTC',
       '    prompt: |',
-      '      Reflect on the last 24 hours of project',
+      '      Reflect on the last 24 hours of workspace',
       '      activity. Review git history, merged change',
       '      requests and session digests. Update',
       '      .kortix/memory/ and open one change request',
@@ -391,7 +391,7 @@ export const closing = {
   eyebrow: 'One repo',
   title: 'Turn a directory into a company.',
   sub: 'kortix init makes any directory a Kortix. kortix ship brings it live. From then on it is one repo you own — versioned, diffable, and improving itself one reviewed change at a time.',
-  ctaPrimary: 'Start a project',
+  ctaPrimary: 'Start a workspace',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
   ctaSecondaryHref: '/docs',

@@ -1,0 +1,63 @@
+---
+title: Your workspace
+description: A workspace is a git repository that holds your agent's config and state.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+A workspace is one git repository. It holds a manifest, agent config, and the
+state your agent produces. No separate database exists to keep in sync.
+
+Kortix backs a workspace two ways:
+
+- **Kortix-managed repo** — Kortix creates and hosts a private repo. Default.
+- **Imported GitHub repo** — connect an existing repo. Kortix operates on it
+  through the GitHub API.
+
+Either way, the workspace has a `default_branch`. Every
+[session](/docs/work/sessions) branches from it. Every
+[change request](/docs/work/change-requests) merges into it. Each branch of a
+GitHub repo can become its own workspace. `main` and `dev` can then run as
+separate workspaces, each with its own sessions and change requests.
+
+## A workspace is not your codebase
+
+A workspace holds your agent's instructions, its
+[connectors](/docs/connect/connectors), its [triggers](/docs/connect/triggers),
+and its memory. Keep it small — Kortix clones it into every session.
+
+Your code lives elsewhere. When a task needs a codebase, the agent clones
+that repository, does the work, and opens a change request back to it. Do
+not turn an existing codebase into a workspace by adding a manifest to it.
+Create a dedicated workspace instead, and point it at the repositories the
+agent works on.
+
+## The manifest
+
+Every workspace has a manifest at its repo root, `kortix.yaml` by default. The
+platform reads these top-level keys:
+
+| Key | Configures |
+|---|---|
+| `default_agent` | which agent runs by default |
+| `agents` | per-agent grants: connectors, secrets, skills, CLI actions |
+| `sandbox` | the sandbox image and hardware |
+| `triggers` | scheduled and webhook automation |
+| `connectors` | which external tools the workspace can reach |
+| `env` | env variable names the workspace expects (values come from secrets) |
+
+Unknown keys are ignored.
+
+Older workspaces may still run `kortix.toml` (`kortix_version: 1`). Kortix
+reads both formats. See [legacy TOML](/docs/workspace/legacy-toml) for the
+migration path.
+
+## In this section
+
+<Cards>
+  <Card title="Manifest" href="/docs/workspace/manifest">The full kortix.yaml reference.</Card>
+  <Card title="Agents" href="/docs/workspace/agents">Markdown personas with scoped tools.</Card>
+  <Card title="Models" href="/docs/workspace/models">Which model a session uses, and who pays.</Card>
+  <Card title="Secrets" href="/docs/workspace/secrets">Encrypted values injected into a sandbox.</Card>
+  <Card title="Legacy TOML" href="/docs/workspace/legacy-toml">Migrating from kortix.toml.</Card>
+</Cards>

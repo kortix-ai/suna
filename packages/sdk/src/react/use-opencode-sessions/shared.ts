@@ -119,10 +119,13 @@ export function canQueryOpenCodeSession(sessionId: string | null | undefined): s
   return !!sessionId && !PROJECT_SESSION_UUID_RE.test(sessionId);
 }
 
-export function clearProjectProviderCache(projectId: string): void {
-  providersCache.remove(`proj:${projectId}:native`);
-  providersCache.remove(`proj:${projectId}:gateway`);
+export function clearWorkspaceProviderCache(workspaceId: string): void {
+  providersCache.remove(`proj:${workspaceId}:native`);
+  providersCache.remove(`proj:${workspaceId}:gateway`);
 }
+
+/** @deprecated Use `clearWorkspaceProviderCache`. */
+export const clearProjectProviderCache = clearWorkspaceProviderCache;
 
 /**
  * Stable cache scope for data that does NOT vary per sandbox. The default

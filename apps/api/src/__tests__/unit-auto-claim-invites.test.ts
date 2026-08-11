@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // Unit-tests autoClaimPendingInvites in isolation. The whole point of the fix:
 // auto-claim silently joins the account + stamps accepted_at for PLAIN account
-// invites, but must leave PROJECT invites (the ones carrying bootstrap grants)
+// invites, but must leave WORKSPACE invites (the ones carrying bootstrap grants)
 // pending so the recipient goes through the explicit accept dialog — which is
 // the only path that applies the project_members grant.
 

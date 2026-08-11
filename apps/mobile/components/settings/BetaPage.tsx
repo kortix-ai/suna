@@ -80,7 +80,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
               <View className="mt-3 pt-3 border-t border-purple-500/30">
                 <Text className="text-xs font-roobert-medium text-purple-700 dark:text-purple-300">
                   App Version: {Constants.expoConfig?.version || 'N/A'} • 
-                  Update ID: {Constants.expoConfig?.extra?.eas?.projectId?.slice(0, 8) || 'Local'}
+                  Update ID: {Constants.expoConfig?.extra?.eas?.workspaceId?.slice(0, 8) || 'Local'}
                 </Text>
               </View>
             </View>

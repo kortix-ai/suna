@@ -44,7 +44,7 @@ const BUSY_STATUS = { type: 'busy' } as SessionStatus;
  */
 interface UseSessionSyncOptions {
   /**
-   * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
+   * Stable Kortix `(workspaceId, sessionId)` scope for disk transcript ownership.
    * This prevents equal OpenCode ids in different sandboxes from sharing data.
    */
   kortixSessionScope?: string;

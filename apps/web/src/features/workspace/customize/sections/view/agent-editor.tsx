@@ -4,7 +4,7 @@
  * The full agent editor — every field of one `agents.<name>` block in a
  * kortix_version 2 manifest (agent-first spec §2.2).
  *
- * Mounted from the /projects/[id]/agent detail modal
+ * Mounted from the /workspaces/[id]/agent detail modal
  * (`capabilities/agents/agent-detail-aside.tsx` + `agents-page.tsx`):
  *   - The aside's <AgentConfigEditor/> renders a compact summary card +
  *     "Edit configuration".
@@ -42,15 +42,15 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
+import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/workspaces/use-agent-config';
 import { cn } from '@/lib/utils';
 import {
   type AgentConfigBlock,
   type AgentGrantSetV2,
   listConnectors,
-  listProjectSandboxTemplates,
-  listProjectSecrets,
-  type ProjectConfigSummary,
+  listWorkspaceSandboxTemplates,
+  listWorkspaceSecrets,
+  type WorkspaceConfigSummary,
   type RuntimeAgentConfig,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -82,7 +82,7 @@ export {
   WORKSPACE_MODES,
 } from './agent-editor-catalog';
 
-type Agent = ProjectConfigSummary['agents'][number];
+type Agent = WorkspaceConfigSummary['agents'][number];
 
 /**
  * The editor as a PANE, not a modal — it replaces the entity detail modal's
@@ -93,17 +93,17 @@ type Agent = ProjectConfigSummary['agents'][number];
  * `useAgentConfig`, so this renders from cache in the common case.
  */
 export function AgentEditorPanel({
-  projectId,
+  workspaceId,
   agentName,
   skillsOptions,
   onClose,
 }: {
-  projectId: string;
+  workspaceId: string;
   agentName: string;
   skillsOptions: { id: string; label: string }[];
   onClose: () => void;
 }) {
-  const configQuery = useAgentConfig(projectId, agentName);
+  const configQuery = useAgentConfig(workspaceId, agentName);
 
   if (configQuery.isLoading) {
     return (
@@ -133,7 +133,7 @@ export function AgentEditorPanel({
 
   return (
     <AgentEditorForm
-      projectId={projectId}
+      workspaceId={workspaceId}
       agentName={agentName}
       initial={data.block ?? {}}
       skillsOptions={skillsOptions}
@@ -163,13 +163,13 @@ export function stableStringify(value: unknown): string {
 }
 
 function AgentEditorForm({
-  projectId,
+  workspaceId,
   agentName,
   initial,
   skillsOptions,
   onClose,
 }: {
-  projectId: string;
+  workspaceId: string;
   agentName: string;
   initial: AgentConfigBlock;
   skillsOptions: { id: string; label: string }[];
@@ -182,21 +182,21 @@ function AgentEditorForm({
     () => stableStringify(draft) !== stableStringify(baseline),
     [draft, baseline],
   );
-  const update = useUpdateAgentConfig(projectId, agentName);
+  const update = useUpdateAgentConfig(workspaceId, agentName);
 
   const secretsQuery = useQuery({
-    queryKey: qk.project.secrets(projectId),
-    queryFn: () => listProjectSecrets(projectId),
+    queryKey: qk.workspace.secrets(workspaceId),
+    queryFn: () => listWorkspaceSecrets(workspaceId),
     ...contract('config'),
   });
   const connectorsQuery = useQuery({
-    queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryKey: qk.workspace.connectors(workspaceId),
+    queryFn: () => listConnectors(workspaceId),
     ...contract('config'),
   });
   const sandboxesQuery = useQuery({
-    queryKey: qk.project.sandboxTemplates(projectId),
-    queryFn: () => listProjectSandboxTemplates(projectId),
+    queryKey: qk.workspace.sandboxTemplates(workspaceId),
+    queryFn: () => listWorkspaceSandboxTemplates(workspaceId),
     ...contract('config'),
   });
   const secretOptions = useMemo(
@@ -270,7 +270,7 @@ function AgentEditorForm({
         <div className="min-w-0 space-y-0.5">
           <p className="text-foreground text-sm font-medium">Configuration</p>
           <p className="text-muted-foreground text-xs text-pretty">
-            Saving commits the change to your project repo.
+            Saving commits the change to your workspace repo.
           </p>
         </div>
         <Button variant="ghost" size="icon-sm" aria-label="Close editor" onClick={requestClose}>
@@ -353,15 +353,15 @@ export function grantSummary(v: AgentGrantSetV2 | undefined): {
 }
 
 export function AgentConfigEditor({
-  projectId,
+  workspaceId,
   agent,
   skillsOptions,
   fallback,
   onEditConfig,
 }: {
-  projectId: string;
+  workspaceId: string;
   agent: Agent;
-  /** The project's declared skills, for the governance picker. */
+  /** The workspace's declared skills, for the governance picker. */
   skillsOptions: { id: string; label: string }[];
   /** Rendered for a v1 project (the legacy model + scope cards) — we degrade. */
   fallback: React.ReactNode;
@@ -370,7 +370,7 @@ export function AgentConfigEditor({
    *  stays one level deep. */
   onEditConfig: () => void;
 }) {
-  const configQuery = useAgentConfig(projectId, agent.name);
+  const configQuery = useAgentConfig(workspaceId, agent.name);
 
   if (configQuery.isLoading) {
     return (
@@ -392,7 +392,7 @@ export function AgentConfigEditor({
       <div className="space-y-3">
         {fallback}
         <InfoBanner tone="info" title="Upgrade for the full agent editor">
-          This project uses a v1 manifest. Migrate to <span className="font-mono">kortix.yaml</span>{' '}
+          This workspace uses a v1 manifest. Migrate to <span className="font-mono">kortix.yaml</span>{' '}
           (kortix_version 2) to edit this agent's availability, model, tool permissions and access
           here.
         </InfoBanner>
@@ -421,8 +421,8 @@ export function AgentConfigEditor({
     { key: 'skills', label: 'Skills', value: grantSummary(block.skills).label },
     { key: 'connectors', label: 'Connectors', value: grantSummary(block.connectors).label },
     { key: 'secrets', label: 'Secrets', value: grantSummary(block.secrets).label },
-    { key: 'kortix_cli', label: 'Project actions', value: grantSummary(block.kortix_cli).label },
-    { key: 'sandbox', label: 'Environment', value: block.sandbox ?? 'Project default' },
+    { key: 'kortix_cli', label: 'Workspace actions', value: grantSummary(block.kortix_cli).label },
+    { key: 'sandbox', label: 'Environment', value: block.sandbox ?? 'Workspace default' },
   ];
 
   return (

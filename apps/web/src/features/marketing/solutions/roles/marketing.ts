@@ -78,12 +78,12 @@ export const marketing: RoleContent = {
       ],
     },
     caption:
-      'Illustration. The paths are the real shape of a Kortix project, the copy is fictional.',
+      'Illustration. The paths are the real shape of a Kortix workspace, the copy is fictional.',
     notes: [
       {
         id: 'voice',
         title: 'The voice is code, so fixing it is a commit',
-        body: 'When a draft comes back wrong, you edit the skill file, not the prompt. Every future session in every project that loads that skill inherits the correction — and you can see in the history exactly when the register changed.',
+        body: 'When a draft comes back wrong, you edit the skill file, not the prompt. Every future session in every workspace that loads that skill inherits the correction — and you can see in the history exactly when the register changed.',
       },
       {
         id: 'claims',
@@ -100,7 +100,7 @@ export const marketing: RoleContent = {
 
   reach: {
     title: 'Where the words live, and where they have to go.',
-    sub: 'Connect each source once for the whole project. The raw credential is decrypted on our side and attached to the outbound call — it never lands in the machine the model is driving.',
+    sub: 'Connect each source once for the whole workspace. The raw credential is decrypted on our side and attached to the outbound call — it never lands in the machine the model is driving.',
     rows: [
       {
         k: 'Notion and Google Drive',
@@ -159,7 +159,7 @@ export const marketing: RoleContent = {
       {
         id: 'gates',
         k: 'Approval gates are off until you set them',
-        v: 'The shipped default is permissive — an action runs unless you have said otherwise. For a marketing project, setting every publish and every send to Ask is the first change you make. It is not already done for you, and we would rather say so.',
+        v: 'The shipped default is permissive — an action runs unless you have said otherwise. For a marketing workspace, setting every publish and every send to Ask is the first change you make. It is not already done for you, and we would rather say so.',
       },
       {
         id: 'merge',
@@ -174,7 +174,7 @@ export const marketing: RoleContent = {
       {
         id: 'creds',
         k: 'Connector credentials never enter the machine',
-        v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. The credential for your campaign tool is decrypted server-side and attached to the outbound request.',
+        v: 'The sandbox carries one workspace-scoped Kortix token and no third-party keys. The credential for your campaign tool is decrypted server-side and attached to the outbound request.',
       },
       {
         id: 'audit',

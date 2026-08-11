@@ -769,7 +769,7 @@ function EditProviderDialog({
               <span className="font-medium">Auto-provision groups</span>
               <span className="text-muted-foreground block text-xs">
                 Create an IAM group for every group the IdP sends and add users to it — no per-group
-                mapping. You just attach project roles to the auto-created groups.
+                mapping. You just attach workspace roles to the auto-created groups.
               </span>
             </span>
           </label>

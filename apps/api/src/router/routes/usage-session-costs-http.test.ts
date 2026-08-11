@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import * as realAccess from '../../projects/lib/access';
+import * as realAccess from '../../workspaces/lib/access';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
-const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000000002';
 const SECONDARY_ACCOUNT_ID = '00000000-0000-4000-a000-000000000003';
 const USER_ID = '00000000-0000-4000-a000-000000000004';
 const SESSION_ID = 'session-cost-test';
@@ -15,11 +15,11 @@ let sandboxId: string | null = null;
 let listInput: Record<string, unknown> | null = null;
 let detailInput: Record<string, unknown> | null = null;
 let detailFound = true;
-let projectAccessInput: { projectId: string; action: string } | null = null;
+let projectAccessInput: { workspaceId: string; action: string } | null = null;
 let projectCapabilityInput: {
   userId: string;
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   action: string;
 } | null = null;
 let projectCapabilityDenied = false;
@@ -33,8 +33,8 @@ interface TestContext {
 
 const summary = {
   session_id: SESSION_ID,
-  project_id: PROJECT_ID,
-  project_name: 'Project One',
+  project_id: WORKSPACE_ID,
+  project_name: 'Workspace One',
   owner_id: null,
   owner_type: null,
   owner_name: null,
@@ -86,20 +86,20 @@ mock.module('../../shared/resolve-account', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../projects/lib/access', () => ({
+mock.module('../../workspaces/lib/access', () => ({
   ...realAccess,
-  loadProjectForUser: async (_c: TestContext, projectId: string, action: string) => {
-    projectAccessInput = { projectId, action };
+  loadWorkspaceForUser: async (_c: TestContext, workspaceId: string, action: string) => {
+    projectAccessInput = { workspaceId, action };
     return { userId: USER_ID, row: { accountId: SECONDARY_ACCOUNT_ID } };
   },
-  assertProjectCapability: async (
+  assertWorkspaceCapability: async (
     _c: TestContext,
     userId: string,
     accountId: string,
-    projectId: string,
+    workspaceId: string,
     action: string,
   ) => {
-    projectCapabilityInput = { userId, accountId, projectId, action };
+    projectCapabilityInput = { userId, accountId, workspaceId, action };
     if (projectCapabilityDenied) {
       throw new HTTPException(403, { message: 'Forbidden' });
     }
@@ -158,28 +158,61 @@ beforeEach(() => {
 });
 
 describe('GET /v1/usage/session-costs', () => {
+  test('accepts canonical workspace_id scope and publishes canonical Workspace fields', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs?account_id=${ACCOUNT_ID}&workspace_id=${WORKSPACE_ID}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(listInput).toMatchObject({ accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID });
+    const body = (await response.json()) as {
+      sessions: Array<Record<string, unknown>>;
+    };
+    expect(body.sessions[0]).toMatchObject({
+      workspace_id: WORKSPACE_ID,
+      workspace_name: 'Workspace One',
+      project_id: WORKSPACE_ID,
+      project_name: 'Workspace One',
+    });
+  });
+
+  test('rejects conflicting canonical and legacy Workspace scope fields', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs?workspace_id=${WORKSPACE_ID}&project_id=other-workspace`,
+    );
+
+    expect(response.status).toBe(400);
+    expect(listInput).toBeNull();
+  });
+
   test('uses pagination defaults and returns the complete list envelope', async () => {
     const response = await createTestApp().request(
-      `/v1/usage/session-costs?account_id=${ACCOUNT_ID}&project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs?account_id=${ACCOUNT_ID}&project_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(200);
     expect(listInput).toMatchObject({
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       limit: 25,
       offset: 0,
       sort: 'total_desc',
     });
     const window = (listInput as { window: { from: Date; to: Date } }).window;
     expect(window.to.getTime() - window.from.getTime()).toBe(30 * 24 * 60 * 60 * 1000);
-    // format is absent: the JSON envelope, content-type and headers must be
-    // byte-identical to what this route returned before format=csv existed.
+    // The canonical Workspace fields are additive. Legacy Project fields stay
+    // present for existing direct API consumers.
     expect(response.headers.get('content-type')).toContain('application/json');
     expect(response.headers.get('x-kortix-row-cap')).toBeNull();
     expect(response.headers.get('content-disposition')).toBeNull();
     expect(await response.json()).toEqual({
-      sessions: [summary],
+      sessions: [
+        {
+          ...summary,
+          workspace_id: WORKSPACE_ID,
+          workspace_name: 'Workspace One',
+        },
+      ],
       total: 1,
       limit: 25,
       offset: 0,
@@ -251,20 +284,20 @@ describe('GET /v1/usage/session-costs', () => {
 
   test('infers the account from an accessible project when account_id is omitted', async () => {
     const response = await createTestApp().request(
-      `/v1/usage/session-costs?project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs?project_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(200);
-    expect(projectAccessInput).toEqual({ projectId: PROJECT_ID, action: 'read' });
+    expect(projectAccessInput).toEqual({ workspaceId: WORKSPACE_ID, action: 'read' });
     expect(projectCapabilityInput).toEqual({
       userId: USER_ID,
       accountId: SECONDARY_ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       action: 'project.gateway.spend.read',
     });
     expect(listInput).toMatchObject({
       accountId: SECONDARY_ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
     });
   });
 
@@ -272,14 +305,14 @@ describe('GET /v1/usage/session-costs', () => {
     projectCapabilityDenied = true;
 
     const response = await createTestApp().request(
-      `/v1/usage/session-costs?project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs?project_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(403);
     expect(projectCapabilityInput).toEqual({
       userId: USER_ID,
       accountId: SECONDARY_ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       action: 'project.gateway.spend.read',
     });
     expect(listInput).toBeNull();
@@ -328,14 +361,14 @@ describe('GET /v1/usage/session-costs?format=csv', () => {
 
   test('runs the same filtered query as the JSON path: account, project, owner, sort and window', async () => {
     const response = await createTestApp().request(
-      `/v1/usage/session-costs?project_id=${PROJECT_ID}&owner_id=${USER_ID}&sort=recent` +
+      `/v1/usage/session-costs?project_id=${WORKSPACE_ID}&owner_id=${USER_ID}&sort=recent` +
         '&from=2026-07-01T00:00:00.000Z&to=2026-07-08T00:00:00.000Z&format=csv',
     );
 
     expect(response.status).toBe(200);
     expect(listInput).toMatchObject({
       accountId: SECONDARY_ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       ownerId: USER_ID,
       sort: 'recent',
     });
@@ -368,7 +401,7 @@ describe('GET /v1/usage/session-costs?format=csv', () => {
     expect(await response.text()).toBe(
       'session_id,project_name,owner,status,requests,llm_cost_usd,compute_cost_usd,' +
         'total_cost_usd,last_activity_at\r\n' +
-        `${SESSION_ID},Project One,,stopped,7,1.25,0.75,2,2026-07-01T12:00:00.000Z`,
+        `${SESSION_ID},Workspace One,,stopped,7,1.25,0.75,2,2026-07-01T12:00:00.000Z`,
     );
   });
 
@@ -425,15 +458,43 @@ describe('SESSION_COST_SORTS', () => {
 });
 
 describe('GET /v1/usage/session-costs/{sessionId}', () => {
-  test('passes account and project scope to the detail service', async () => {
+  test('accepts canonical workspace_id scope for detail reads', async () => {
     const response = await createTestApp().request(
-      `/v1/usage/session-costs/${SESSION_ID}?account_id=${ACCOUNT_ID}&project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs/${SESSION_ID}?account_id=${ACCOUNT_ID}&workspace_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(200);
     expect(detailInput).toEqual({
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
+      sessionId: SESSION_ID,
+    });
+    expect(await response.json()).toMatchObject({
+      workspace_id: WORKSPACE_ID,
+      workspace_name: 'Workspace One',
+      project_id: WORKSPACE_ID,
+      project_name: 'Workspace One',
+    });
+  });
+
+  test('rejects conflicting canonical and legacy Workspace scope fields for detail reads', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs/${SESSION_ID}?workspace_id=${WORKSPACE_ID}&project_id=other-workspace`,
+    );
+
+    expect(response.status).toBe(400);
+    expect(detailInput).toBeNull();
+  });
+
+  test('passes account and project scope to the detail service', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/session-costs/${SESSION_ID}?account_id=${ACCOUNT_ID}&project_id=${WORKSPACE_ID}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(detailInput).toEqual({
+      accountId: ACCOUNT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: SESSION_ID,
     });
     expect(await response.json()).toMatchObject({
@@ -447,7 +508,7 @@ describe('GET /v1/usage/session-costs/{sessionId}', () => {
     detailFound = false;
 
     const response = await createTestApp().request(
-      `/v1/usage/session-costs/${SESSION_ID}?project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs/${SESSION_ID}?project_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(404);
@@ -455,20 +516,20 @@ describe('GET /v1/usage/session-costs/{sessionId}', () => {
 
   test('lets session-bound clients address a secondary account through project scope', async () => {
     const response = await createTestApp().request(
-      `/v1/usage/session-costs/${SESSION_ID}?project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs/${SESSION_ID}?project_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(200);
-    expect(projectAccessInput).toEqual({ projectId: PROJECT_ID, action: 'read' });
+    expect(projectAccessInput).toEqual({ workspaceId: WORKSPACE_ID, action: 'read' });
     expect(projectCapabilityInput).toEqual({
       userId: USER_ID,
       accountId: SECONDARY_ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       action: 'project.gateway.spend.read',
     });
     expect(detailInput).toMatchObject({
       accountId: SECONDARY_ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: SESSION_ID,
     });
   });
@@ -477,7 +538,7 @@ describe('GET /v1/usage/session-costs/{sessionId}', () => {
     projectCapabilityDenied = true;
 
     const response = await createTestApp().request(
-      `/v1/usage/session-costs/${SESSION_ID}?project_id=${PROJECT_ID}`,
+      `/v1/usage/session-costs/${SESSION_ID}?project_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(403);

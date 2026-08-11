@@ -27,28 +27,28 @@ import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
 import { getEnv } from '@/lib/env-config';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import { cn } from '@/lib/utils';
-import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
+import { getWorkspace, inviteRepoCollaborator, isManagedGithubWorkspace } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
-export function DevView({ projectId }: { projectId: string }) {
+export function DevView({ workspaceId }: { workspaceId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const projectQuery = useQuery({
-    queryKey: qk.project.summary(projectId),
-    queryFn: () => getProject(projectId),
+  const workspaceQuery = useQuery({
+    queryKey: qk.workspace.summary(workspaceId),
+    queryFn: () => getWorkspace(workspaceId),
     ...contract('config'),
   });
 
-  const project = projectQuery.data;
+  const workspace = workspaceQuery.data;
   // The GitHub-invite form calls inviteRepoCollaborator, which asserts
-  // project.write server-side. A read-only role (project.read only) still sees the
+  // workspace.write server-side. A read-only role (workspace.read only) still sees the
   // whole dev walkthrough — just not the invite control that would 403. Fails safe:
   // false until the probe resolves.
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  const canWrite = useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_WRITE).allowed === true;
 
   return (
     <CustomizeSectionWrapper
@@ -59,29 +59,29 @@ export function DevView({ projectId }: { projectId: string }) {
         'autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b',
       )}
     >
-      {projectQuery.isLoading && (
+      {workspaceQuery.isLoading && (
         <div className="space-y-5">
           <Skeleton className="h-40 rounded-md" />
           <Skeleton className="h-40 rounded-md" />
         </div>
       )}
 
-      {projectQuery.isError && (
+      {workspaceQuery.isError && (
         <ErrorState
           size="sm"
           title={tI18nHardcoded.raw(
             'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb',
           )}
-          description={(projectQuery.error as Error).message}
+          description={(workspaceQuery.error as Error).message}
           action={
-            <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
+            <Button variant="outline" size="sm" onClick={() => workspaceQuery.refetch()}>
               Retry
             </Button>
           }
         />
       )}
 
-      {project && <DevSteps project={project} canWrite={canWrite} />}
+      {workspace && <DevSteps workspace={workspace} canWrite={canWrite} />}
     </CustomizeSectionWrapper>
   );
 }
@@ -93,17 +93,17 @@ type DevStep = {
 };
 
 function DevSteps({
-  project,
+  workspace,
   canWrite,
 }: {
-  project: Awaited<ReturnType<typeof getProject>>;
+  workspace: Awaited<ReturnType<typeof getWorkspace>>;
   canWrite: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const cloneUrl = cloneUrlFor(project.repo_url);
-  const repoDir = repoDirFor(project.repo_url) || 'my-project';
-  const managed = isManagedGithubProject(project);
-  const branch = project.default_branch || 'main';
+  const cloneUrl = cloneUrlFor(workspace.repo_url);
+  const repoDir = repoDirFor(workspace.repo_url) || 'my-workspace';
+  const managed = isManagedGithubWorkspace(workspace);
+  const branch = workspace.default_branch || 'main';
   const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
 
   const steps: DevStep[] = [];
@@ -118,7 +118,7 @@ function DevSteps({
       hint: tI18nHardcoded.raw(
         'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintThiseeeaf15f',
       ),
-      content: <RepoAccessForm projectId={project.project_id} />,
+      content: <RepoAccessForm workspaceId={workspace.workspace_id} />,
     });
   }
 
@@ -303,12 +303,12 @@ function Launchers() {
   );
 }
 
-function RepoAccessForm({ projectId }: { projectId: string }) {
+function RepoAccessForm({ workspaceId }: { workspaceId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [username, setUsername] = useState('');
 
   const invite = useMutation({
-    mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), 'write'),
+    mutationFn: () => inviteRepoCollaborator(workspaceId, username.trim(), 'write'),
     onSuccess: (res) => {
       if (res.alreadyCollaborator) {
         successToast(`@${res.username} already has access to this repo`);

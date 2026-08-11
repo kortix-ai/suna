@@ -6,7 +6,7 @@ import { AccountDetailCard } from '@/components/account/account-detail-card';
 import { AccountSwitcher } from '@/components/account/account-switcher';
 import { InvitesSection } from '@/components/account/invites-section';
 import { MembersSection } from '@/components/account/members-section';
-import { ProjectsSection } from '@/components/account/projects-section';
+import { WorkspacesSection } from '@/components/account/workspaces-section';
 import { ApiKeyGate } from '@/components/api-key-gate';
 import { BrandMark } from '@/components/brand-mark';
 import { Button } from '@/components/ui/button';
@@ -51,7 +51,7 @@ function WrapperAccountNotice() {
         </p>
         <Button asChild className="mt-5 gap-2">
           <Link href="/">
-            <ArrowLeft className="size-4" /> Back to projects
+            <ArrowLeft className="size-4" /> Back to workspaces
           </Link>
         </Button>
       </Card>
@@ -101,7 +101,7 @@ function AccountSettings() {
             href="/"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="size-4" /> Back to projects
+            <ArrowLeft className="size-4" /> Back to workspaces
           </Link>
           <AccountSwitcher
             accounts={accounts}
@@ -119,7 +119,7 @@ function AccountSettings() {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Manage your teams and personal account — members, invites, and the
-            projects they own.
+            workspaces they own.
           </p>
         </div>
 
@@ -156,7 +156,7 @@ function AccountSettings() {
             />
             <MembersSection accountId={accountId} />
             <InvitesSection accountId={accountId} />
-            <ProjectsSection accountId={accountId} />
+            <WorkspacesSection accountId={accountId} />
           </div>
         )}
       </div>

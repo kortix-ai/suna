@@ -14,7 +14,7 @@ const rows = (overrides: Partial<SessionOverrideRow>[] = []): SessionOverrideRow
     name: 'Agent',
     icon: RobotIcon,
     hint: 'Who answers',
-    summary: 'Project default',
+    summary: 'Workspace default',
     description: 'The agent that answers your next prompt.',
     editor: <div>agent editor</div>,
     ...overrides[0],
@@ -24,8 +24,8 @@ const rows = (overrides: Partial<SessionOverrideRow>[] = []): SessionOverrideRow
     name: 'Secrets',
     icon: KeyIcon,
     hint: 'Environment values',
-    summary: 'Project default',
-    description: 'Which project secrets reach this session.',
+    summary: 'Workspace default',
+    description: 'Which workspace secrets reach this session.',
     editor: <div>secrets editor</div>,
     ...overrides[1],
   },
@@ -50,10 +50,10 @@ describe('SessionOverridesControlContent', () => {
     expect(html).toContain('Changes apply to the next prompt.');
   });
 
-  test('every untouched axis reads as the project default, never "none"', () => {
+  test('every untouched axis reads as the workspace default, never "none"', () => {
     const html = render();
 
-    expect(html.match(/Project default/g)).toHaveLength(2);
+    expect(html.match(/Workspace default/g)).toHaveLength(2);
     expect(html).not.toContain('None selected');
     expect(html).not.toContain('>Override<');
   });

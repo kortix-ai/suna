@@ -177,14 +177,14 @@ function wrapScoped<T>(value: T, config: KortixPlatformConfig, seen: WeakSet<obj
  * DIFFERENT request's/end-user's sandbox, and `wrapScoped` only scopes the token,
  * not this global URL resolution. A scoped client has no single ambient session,
  * so there is no safe top-level runtime — reach a specific session's runtime via
- * `kortix.session(projectId, sessionId).runtime` (await `.ensureReady()` first),
+ * `kortix.session(workspaceId, sessionId).runtime` (await `.ensureReady()` first),
  * which resolves that session's OWN sandbox and never the global.
  */
 function scopedRuntimeUnavailable(): never {
   throw new Error(
     'kortix.runtime() is not available on a @kortix/sdk/server (scoped) client: it resolves the ' +
       "process-global active runtime, which in a multi-tenant server is another request's sandbox. " +
-      "Reach a specific session's runtime via `const s = kortix.session(projectId, sessionId); " +
+      "Reach a specific session's runtime via `const s = kortix.session(workspaceId, sessionId); " +
       'await s.ensureReady(); s.runtime`.',
   );
 }

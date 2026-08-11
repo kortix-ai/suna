@@ -17,7 +17,7 @@ interface UsageDrawerProps {
   visible: boolean;
   onClose: () => void;
   onUpgradePress?: () => void;
-  onThreadPress?: (threadId: string, projectId: string | null) => void;
+  onThreadPress?: (threadId: string, workspaceId: string | null) => void;
 }
 
 export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }: UsageDrawerProps) {
@@ -54,11 +54,11 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
     onClose();
   }, [onClose]);
 
-  const handleThreadPress = React.useCallback((threadId: string, projectId: string | null) => {
+  const handleThreadPress = React.useCallback((threadId: string, workspaceId: string | null) => {
     log.log('🎯 Thread pressed from UsageDrawer:', threadId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
-    onThreadPress?.(threadId, projectId);
+    onThreadPress?.(threadId, workspaceId);
   }, [onClose, onThreadPress]);
 
   const renderBackdrop = React.useCallback(

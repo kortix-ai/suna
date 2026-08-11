@@ -9,6 +9,9 @@ describe('buildTeamsManifest', () => {
     expect(m.bots[0]!.scopes).toEqual(['personal', 'team', 'groupchat']);
     expect(m.validDomains).toEqual(['api.kortix.com']);
     expect(m.manifestVersion).toBe('1.16');
+    const commands = m.bots[0]!.commandLists![0]!.commands.map((command) => command.title);
+    expect(commands).toContain('/workspaces');
+    expect(commands).toContain('/projects');
   });
 });
 
@@ -37,7 +40,7 @@ describe('teamsMode', () => {
   test('bring-your-own bot routes the webhook at the project and needs no server credentials', () => {
     const mode = teamsMode('https://api.kortix.com/', {
       enabled: true,
-      projectId: 'p-1',
+      workspaceId: 'p-1',
       byoAppId: 'byo-app-9',
     });
     expect(mode.byo).toBe(true);

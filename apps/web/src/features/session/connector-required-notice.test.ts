@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { KortixSendErrorConnector } from '@kortix/sdk/react';
+import type { WorkspaceSendErrorConnector } from '@kortix/sdk/react';
 
 import { connectorNoticeCopy } from './connector-required-notice';
 
 const connector = (
   name: string,
-  authorization_strategy: 'project' | 'user',
-): KortixSendErrorConnector => ({
+  authorization_strategy: 'workspace' | 'user',
+): WorkspaceSendErrorConnector => ({
   id: `id-${name}`,
   slug: name.toLowerCase(),
   name,
@@ -17,28 +17,28 @@ const connector = (
 
 describe('connectorNoticeCopy', () => {
   test('names one connector plainly', () => {
-    expect(connectorNoticeCopy([connector('Gmail', 'project')]).label).toBe('Gmail');
+    expect(connectorNoticeCopy([connector('Gmail', 'workspace')]).label).toBe('Gmail');
   });
 
   test('joins two with "and", and three with commas plus "and"', () => {
     // The label lands mid-sentence ("This session needs …"), so a bare
     // comma-joined list reads as a fragment.
     expect(
-      connectorNoticeCopy([connector('Gmail', 'project'), connector('Slack', 'project')]).label,
+      connectorNoticeCopy([connector('Gmail', 'workspace'), connector('Slack', 'workspace')]).label,
     ).toBe('Gmail and Slack');
     expect(
       connectorNoticeCopy([
-        connector('Gmail', 'project'),
-        connector('Slack', 'project'),
-        connector('Notion', 'project'),
+        connector('Gmail', 'workspace'),
+        connector('Slack', 'workspace'),
+        connector('Notion', 'workspace'),
       ]).label,
     ).toBe('Gmail, Slack and Notion');
   });
 
-  test('a project-strategy connector is connectable from here', () => {
-    // One shared connection serves the project, so anyone who can mint a setup
+  test('a workspace-strategy connector is connectable from here', () => {
+    // One shared connection serves the workspace, so anyone who can mint a setup
     // link fixes it once.
-    expect(connectorNoticeCopy([connector('Gmail', 'project')]).connectable).toHaveLength(1);
+    expect(connectorNoticeCopy([connector('Gmail', 'workspace')]).connectable).toHaveLength(1);
   });
 
   test('a user-strategy connector is NOT — a button would only ever 409', () => {
@@ -51,7 +51,7 @@ describe('connectorNoticeCopy', () => {
   test('a mixed set still offers the button, for the ones it can serve', () => {
     const { connectable } = connectorNoticeCopy([
       connector('Gmail', 'user'),
-      connector('Slack', 'project'),
+      connector('Slack', 'workspace'),
     ]);
     expect(connectable.map((entry) => entry.name)).toEqual(['Slack']);
   });

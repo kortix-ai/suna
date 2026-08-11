@@ -787,7 +787,7 @@ export async function getConnectionPolicies(
   _connectionId: string,
 ): Promise<{ policies: ConnectorPolicyRule[] }> {
   throw new Error(
-    'Connection-specific policies were removed. Use getConnectorPolicies(projectId, slug).',
+    'Connection-specific policies were removed. Use getConnectorPolicies(workspaceId, slug).',
   );
 }
 
@@ -801,7 +801,7 @@ export async function setConnectionPolicies(
   _policies: ConnectorPolicyRule[],
 ): Promise<{ ok: boolean }> {
   throw new Error(
-    'Connection-specific policies were removed. Use setConnectorPolicies(projectId, slug, policies).',
+    'Connection-specific policies were removed. Use setConnectorPolicies(workspaceId, slug, policies).',
   );
 }
 

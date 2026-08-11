@@ -1,0 +1,208 @@
+/**
+ * Agent-minted SETUP LINKS — the authenticated half.
+ *
+ * The in-sandbox agent (its `KORTIX_CLI_TOKEN` is a
+ * session-scoped PAT, accepted by supabaseAuth) calls these to mint a
+ * short-lived link it can hand to a human to (a) enter a project secret value,
+ * or (b) 1-click connect a Pipedream app.
+ * The link itself is resolved/submitted by the PUBLIC app at /v1/setup-links/*.
+ *
+ * See ../../setup-links/token.ts for the stateless token model and
+ * .kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md
+ * for the agent-facing flow.
+ */
+import { auth, errors, json } from '../../openapi';
+import { config } from '../../config';
+import { createRoute, z } from '@hono/zod-openapi';
+import { connectLinkEligibility } from '../../connectors/db-deps';
+import { pipedreamConfigured } from '../../connectors/pipedream';
+import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
+import { isValidSecretName } from '../secrets';
+import { assertWorkspaceCapability, loadWorkspaceForUser } from '../lib/access';
+import { AnyObject, workspaceRoutesApp } from '../lib/app';
+import { WORKSPACE_ACTIONS } from '../../iam';
+import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString, readBody } from '../lib/serializers';
+
+function frontendBase(): string {
+  return (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+}
+
+// POST /v1/workspaces/:workspaceId/secret-requests
+// Mint a link the human opens to enter one or more secret VALUES. The agent
+// never sees the value — only the names it requested. Requires manage (the
+// same gate as POST /secrets).
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/secret-requests',
+    tags: ['secrets'],
+    summary: 'POST /:workspaceId/secret-requests — mint a secret-entry link',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'A secret-entry link'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const body = await readBody(c);
+    // Floor 'read'; project.secret.write is the real gate — the same leaf as
+    // POST /secrets. Was 'manage' → project.write, so unchecking secret.write
+    // did nothing here.
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(c, loaded.userId, loaded.row.accountId, workspaceId, WORKSPACE_ACTIONS.WORKSPACE_SECRET_WRITE);
+
+    // Accept `names: [...]` or a single `name`.
+    const rawNames: unknown[] = Array.isArray(body.names)
+      ? body.names
+      : body.name != null
+        ? [body.name]
+        : [];
+    const names = rawNames
+      .map((n) => normalizeString(n)?.toUpperCase())
+      .filter((n): n is string => !!n);
+    if (names.length === 0) return c.json({ error: 'names is required (one or more env var names)' }, 400);
+
+    const labels = (body.labels ?? {}) as Record<string, unknown>;
+    const descriptions = (body.descriptions ?? {}) as Record<string, unknown>;
+
+    const fields: SecretFieldSpec[] = [];
+    const seen = new Set<string>();
+    for (const name of names) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      if (!isValidSecretName(name)) {
+        return c.json({ error: `"${name}" is not a valid env var name (A-Z, 0-9, _; max 64 chars)` }, 400);
+      }
+      if (name.startsWith('KORTIX_')) {
+        return c.json({ error: 'KORTIX_* names are reserved for platform/runtime-managed variables' }, 400);
+      }
+      if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+        return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
+      }
+      fields.push({
+        name,
+        label: normalizeString(labels[name]) ?? undefined,
+        description: normalizeString(descriptions[name]) ?? undefined,
+      });
+    }
+
+    const scope = normalizeString(body.scope) === 'connector' ? 'connector' : 'runtime';
+    const { token, expiresAt } = mintSetupLink(
+      workspaceId,
+      { kind: 'secret', fields, scope, uid: loaded.userId, sid: (c.get('sessionId') as string | undefined) ?? null },
+      { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
+    );
+
+    return c.json({
+      kind: 'secret',
+      url: `${frontendBase()}/secret-intake/${token}`,
+      names: fields.map((f) => f.name),
+      scope,
+      expires_at: new Date(expiresAt).toISOString(),
+    });
+  },
+);
+
+// POST /v1/workspaces/:workspaceId/connect-requests
+// Mint a link the human opens to 1-click connect a Pipedream app (Quick
+// Connect). Requires manage. The link is durable for its TTL; the public page
+// mints a FRESH Pipedream connect token each time it's opened so it never
+// hands out a stale (minutes-old) Pipedream token.
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/connect-requests',
+    tags: ['connectors'],
+    summary: 'POST /:workspaceId/connect-requests — mint a Pipedream Quick Connect link',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'A connect link'),
+      ...errors(400, 404, 409, 501),
+    },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const body = await readBody(c);
+    // Floor 'read'; project.connector.write is the real gate (minting a Pipedream
+    // Quick Connect link is a connector operation). Was 'manage' → project.write.
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(c, loaded.userId, loaded.row.accountId, workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE);
+
+    if (!pipedreamConfigured()) return c.json({ error: 'Pipedream is not configured on this deployment' }, 501);
+
+    const slug = normalizeString(body.slug);
+    if (!slug) return c.json({ error: 'slug is required' }, 400);
+
+    const eligibility = await connectLinkEligibility(workspaceId, slug);
+    if (!eligibility.ok) {
+      // Each reason has a different person and a different fix behind it, and
+      // the old single message named the wrong one for two of the three.
+      if (eligibility.reason === 'not_pipedream') {
+        return c.json(
+          {
+            error:
+              `"${slug}" is a ${eligibility.providerType} connector, and setup links are Pipedream ` +
+              'Quick Connect links. It is already on this workspace — connect it the way that ' +
+              'provider is connected rather than adding it to kortix.yaml again.',
+            code: 'CONNECTOR_NOT_PIPEDREAM',
+          },
+          409,
+        );
+      }
+      if (eligibility.reason === 'no_app') {
+        return c.json(
+          {
+            error: `"${slug}" is a Pipedream connector on this workspace but names no Pipedream app, so no connect link can be built for it.`,
+            code: 'CONNECTOR_PIPEDREAM_APP_MISSING',
+          },
+          409,
+        );
+      }
+      return c.json(
+        { error: `"${slug}" is not a connector on this workspace. Add it to kortix.yaml first.` },
+        404,
+      );
+    }
+    const conn = eligibility;
+    if (conn.authorizationStrategy !== 'project') {
+      return c.json(
+        {
+          error: 'Shared connect links require a project authorization strategy',
+          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+        },
+        409,
+      );
+    }
+
+    const { token, expiresAt } = mintSetupLink(
+      workspaceId,
+      {
+        kind: 'connector',
+        slug,
+        app: conn.app,
+        uid: loaded.userId,
+        sid: (c.get('sessionId') as string | undefined) ?? null,
+      },
+      { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
+    );
+
+    return c.json({
+      kind: 'connector',
+      url: `${frontendBase()}/connect/${token}`,
+      slug,
+      app: conn.app,
+      expires_at: new Date(expiresAt).toISOString(),
+    });
+  },
+);

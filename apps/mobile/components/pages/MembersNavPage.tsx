@@ -1,12 +1,12 @@
 /**
- * MembersNavPage — project membership & access (web parity: customize/sections/
+ * MembersNavPage — workspace membership & access (web parity: customize/sections/
  * members-view).
  *
  * Cards:
  *   • Invite by email — add a Kortix user at a chosen role; non-Kortix emails get
  *     an invitation.
  *   • Pending invitations — emailed invites not yet accepted; resend / revoke.
- *   • Project access — everyone with access: implicit owners/admins (Manager),
+ *   • Workspace access — everyone with access: implicit owners/admins (Manager),
  *     direct grants (role change + revoke), and group-inherited members (managed
  *     via the group). Tapping a member opens an action sheet.
  *   • Group access — attach account groups at a role; change role / detach.
@@ -41,42 +41,41 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import {
-  useProject,
-  useProjectAccess,
-  usePendingProjectInvites,
-  useProjectGroupGrants,
+  useWorkspace,
+  useWorkspaceAccess,
+  usePendingWorkspaceInvites,
+  useWorkspaceGroupGrants,
   useAccountGroups,
-  useInviteProjectMember,
-  useUpdateProjectAccess,
-  useRevokeProjectAccess,
-  useResendProjectInvite,
-  useRevokeProjectInvite,
+  useInviteWorkspaceMember,
+  useUpdateWorkspaceAccess,
+  useRevokeWorkspaceAccess,
+  useResendWorkspaceInvite,
+  useRevokeWorkspaceInvite,
   useAttachGroup,
   useUpdateGroupGrant,
   useDetachGroup,
   useRemoveGroupMember,
-} from '@/lib/projects/hooks';
-import { isInviteSent } from '@/lib/projects/projects-client';
+} from '@/lib/workspaces/hooks';
+import { isInviteSent } from '@/lib/workspaces/workspaces-client';
 import type {
-  ProjectAccessMember,
-  ProjectGroupGrant,
-  ProjectRole,
-} from '@/lib/projects/projects-client';
+  WorkspaceAccessMember,
+  WorkspaceGroupGrant,
+  WorkspaceRole,
+} from '@/lib/workspaces/workspaces-client';
 import { haptics } from '@/lib/haptics';
 
-const MONO = 'Menlo';
-const ROLES: ProjectRole[] = ['member', 'editor', 'manager'];
+const ROLES: WorkspaceRole[] = ['member', 'editor', 'manager'];
 
-const ROLE_DESC: Record<ProjectRole, { label: string; blurb: string }> = {
-  member: { label: 'Member', blurb: 'Read, run sessions and chat, and fire the project’s triggers.' },
-  editor: { label: 'Editor', blurb: 'Everything a member does, plus edit the project and run sessions.' },
-  manager: { label: 'Manager', blurb: 'Full control — edit the project, invite members, change settings.' },
+const ROLE_DESC: Record<WorkspaceRole, { label: string; blurb: string }> = {
+  member: { label: 'Member', blurb: 'Read, run sessions and chat, and fire the workspace’s triggers.' },
+  editor: { label: 'Editor', blurb: 'Everything a member does, plus edit the workspace and run sessions.' },
+  manager: { label: 'Manager', blurb: 'Full control — edit the workspace, invite members, change settings.' },
 };
 
 interface PageTabLike { id: string; label: string; icon: string }
 interface MembersNavPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -85,7 +84,7 @@ interface MembersNavPageProps {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-const userLabel = (m: Pick<ProjectAccessMember, 'email' | 'user_id'>) => m.email || m.user_id;
+const userLabel = (m: Pick<WorkspaceAccessMember, 'email' | 'user_id'>) => m.email || m.user_id;
 
 function formatDate(input: string | null | undefined) {
   if (!input) return 'Never';
@@ -98,16 +97,16 @@ function accountRoleRank(role: string): number {
   return role === 'owner' ? 0 : role === 'admin' ? 1 : role === 'member' ? 2 : 99;
 }
 
-function isInheritedFromGroupOnly(m: ProjectAccessMember): boolean {
-  return !m.has_implicit_access && !m.project_role && m.effective_project_role !== null && (m.group_sources?.length ?? 0) > 0;
+function isInheritedFromGroupOnly(m: WorkspaceAccessMember): boolean {
+  return !m.has_implicit_access && !m.workspace_role && m.effective_workspace_role !== null && (m.group_sources?.length ?? 0) > 0;
 }
 
-function inheritedSummary(m: ProjectAccessMember): string | null {
+function inheritedSummary(m: WorkspaceAccessMember): string | null {
   if (!isInheritedFromGroupOnly(m)) return null;
   const sources = m.group_sources!;
   const head = sources[0];
   const rest = sources.length - 1;
-  const label = ROLE_DESC[m.effective_project_role!].label;
+  const label = ROLE_DESC[m.effective_workspace_role!].label;
   return rest > 0 ? `Inherited ${label} via ${head.group_name} + ${rest} more` : `Inherited ${label} via ${head.group_name}`;
 }
 
@@ -165,7 +164,7 @@ function CardHeader({ title, description, count, isDark, action }: { title: stri
   );
 }
 
-function RolePills({ value, onChange, isDark, disabled }: { value: ProjectRole; onChange: (r: ProjectRole) => void; isDark: boolean; disabled?: boolean }) {
+function RolePills({ value, onChange, isDark, disabled }: { value: WorkspaceRole; onChange: (r: WorkspaceRole) => void; isDark: boolean; disabled?: boolean }) {
   const c = useColors(isDark);
   const theme = useThemeColors();
   return (
@@ -184,12 +183,12 @@ function RolePills({ value, onChange, isDark, disabled }: { value: ProjectRole; 
 
 // ─── Invite card ──────────────────────────────────────────────────────────────
 
-function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean }) {
+function InviteCard({ workspaceId, isDark }: { workspaceId: string; isDark: boolean }) {
   const c = useColors(isDark);
   const theme = useThemeColors();
-  const invite = useInviteProjectMember(projectId);
+  const invite = useInviteWorkspaceMember(workspaceId);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<ProjectRole>('editor');
+  const [role, setRole] = useState<WorkspaceRole>('editor');
 
   const canSubmit = email.trim().length > 0 && !invite.isPending;
   const submit = () => {
@@ -200,9 +199,9 @@ function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean 
         haptics.success();
         setEmail('');
         if (isInviteSent(result)) {
-          Alert.alert('Invitation sent', `Invitation sent to ${result.email}. They'll join this project as ${ROLE_DESC[result.project_role].label} when they sign up.`);
+          Alert.alert('Invitation sent', `Invitation sent to ${result.email}. They'll join this workspace as ${ROLE_DESC[result.workspace_role].label} when they sign up.`);
         } else {
-          Alert.alert('Member added', 'They now have access to this project.');
+          Alert.alert('Member added', 'They now have access to this workspace.');
         }
       },
       onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to invite member.'),
@@ -237,11 +236,11 @@ function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean 
 
 // ─── Pending invites card ─────────────────────────────────────────────────────
 
-function PendingInvitesCard({ projectId, isDark }: { projectId: string; isDark: boolean }) {
+function PendingInvitesCard({ workspaceId, isDark }: { workspaceId: string; isDark: boolean }) {
   const c = useColors(isDark);
-  const invitesQuery = usePendingProjectInvites(projectId, true);
-  const resend = useResendProjectInvite(projectId);
-  const revoke = useRevokeProjectInvite(projectId);
+  const invitesQuery = usePendingWorkspaceInvites(workspaceId, true);
+  const resend = useResendWorkspaceInvite(workspaceId);
+  const revoke = useRevokeWorkspaceInvite(workspaceId);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const pending = invitesQuery.data?.pending ?? [];
@@ -284,7 +283,7 @@ function PendingInvitesCard({ projectId, isDark }: { projectId: string; isDark: 
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{inv.email}</Text>
-                    <RoleBadge role={inv.project_role} isDark={isDark} />
+                    <RoleBadge role={inv.workspace_role} isDark={isDark} />
                   </View>
                   {inv.invite_expired ? (
                     <Text style={{ fontSize: 11.5, color: '#d97706', marginTop: 3 }}>Invite link expired — ask them to request a fresh one</Text>
@@ -316,14 +315,14 @@ function PendingInvitesCard({ projectId, isDark }: { projectId: string; isDark: 
   );
 }
 
-// ─── Project access card ──────────────────────────────────────────────────────
+// ─── Workspace access card ──────────────────────────────────────────────────────
 
-function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectId: string; canManage: boolean; isDark: boolean; onSelectMember: (m: ProjectAccessMember) => void }) {
+function AccessCard({ workspaceId, canManage, isDark, onSelectMember }: { workspaceId: string; canManage: boolean; isDark: boolean; onSelectMember: (m: WorkspaceAccessMember) => void }) {
   const c = useColors(isDark);
-  const accessQuery = useProjectAccess(projectId);
+  const accessQuery = useWorkspaceAccess(workspaceId);
 
   const members = accessQuery.data?.members ?? [];
-  const accessMembers = useMemo(() => members.filter((m) => m.has_implicit_access || m.effective_project_role != null), [members]);
+  const accessMembers = useMemo(() => members.filter((m) => m.has_implicit_access || m.effective_workspace_role != null), [members]);
   const sorted = useMemo(() => [...accessMembers].sort((a, b) => {
     const d = accountRoleRank(a.account_role) - accountRoleRank(b.account_role);
     return d !== 0 ? d : userLabel(a).localeCompare(userLabel(b));
@@ -331,7 +330,7 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
 
   return (
     <View style={{ borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, padding: 16 }}>
-      <CardHeader title="Project access" description="Account owners and admins always have Manager access." count={accessMembers.length} isDark={isDark} />
+      <CardHeader title="Workspace access" description="Account owners and admins always have Manager access." count={accessMembers.length} isDark={isDark} />
       {accessQuery.isLoading ? (
         <View style={{ paddingVertical: 24, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
       ) : accessQuery.isError ? (
@@ -346,15 +345,15 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
           {sorted.map((m, i) => {
             const inheritedOnly = isInheritedFromGroupOnly(m);
             const summary = inheritedSummary(m);
-            const effRole = m.effective_project_role;
+            const effRole = m.effective_workspace_role;
             const tappable = canManage && !m.has_implicit_access;
             const subtitle = m.has_implicit_access
               ? 'Implicit account access'
               : summary
                 ? summary
-                : m.project_role
+                : m.workspace_role
                   ? `Granted ${formatDate(m.granted_at)}`
-                  : 'No project access';
+                  : 'No workspace access';
             return (
               <TouchableOpacity
                 key={m.user_id}
@@ -396,10 +395,10 @@ function AccessCard({ projectId, canManage, isDark, onSelectMember }: { projectI
 
 // ─── Group access card ────────────────────────────────────────────────────────
 
-function GroupAccessCard({ projectId, accountId, canManage, isDark, onAttach, onSelectGrant }: { projectId: string; accountId: string; canManage: boolean; isDark: boolean; onAttach: () => void; onSelectGrant: (g: ProjectGroupGrant) => void }) {
+function GroupAccessCard({ workspaceId, accountId, canManage, isDark, onAttach, onSelectGrant }: { workspaceId: string; accountId: string; canManage: boolean; isDark: boolean; onAttach: () => void; onSelectGrant: (g: WorkspaceGroupGrant) => void }) {
   const c = useColors(isDark);
   const theme = useThemeColors();
-  const grantsQuery = useProjectGroupGrants(projectId);
+  const grantsQuery = useWorkspaceGroupGrants(workspaceId);
   const grants = useMemo(() => [...(grantsQuery.data?.grants ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at)), [grantsQuery.data]);
 
   return (
@@ -466,7 +465,7 @@ function SheetHeader({ title, onClose, isDark, leading }: { title: string; onClo
   );
 }
 
-function RoleRadioRow({ role, selected, onPress, isDark }: { role: ProjectRole; selected: boolean; onPress: () => void; isDark: boolean }) {
+function RoleRadioRow({ role, selected, onPress, isDark }: { role: WorkspaceRole; selected: boolean; onPress: () => void; isDark: boolean }) {
   const c = useColors(isDark);
   const theme = useThemeColors();
   return (
@@ -482,18 +481,18 @@ function RoleRadioRow({ role, selected, onPress, isDark }: { role: ProjectRole; 
   );
 }
 
-function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projectId: string; accountId: string | null; member: ProjectAccessMember; onClose: () => void; isDark: boolean }) {
+function MemberSheet({ workspaceId, accountId, member, onClose, isDark }: { workspaceId: string; accountId: string | null; member: WorkspaceAccessMember; onClose: () => void; isDark: boolean }) {
   const c = useColors(isDark);
   const insets = useSafeAreaInsets();
-  const update = useUpdateProjectAccess(projectId);
-  const revoke = useRevokeProjectAccess(projectId);
-  const detach = useDetachGroup(projectId);
-  const removeFromGroup = useRemoveGroupMember(projectId, accountId);
+  const update = useUpdateWorkspaceAccess(workspaceId);
+  const revoke = useRevokeWorkspaceAccess(workspaceId);
+  const detach = useDetachGroup(workspaceId);
+  const removeFromGroup = useRemoveGroupMember(workspaceId, accountId);
   const inheritedOnly = isInheritedFromGroupOnly(member);
   const busy = update.isPending || revoke.isPending || detach.isPending || removeFromGroup.isPending;
 
-  const changeRole = (role: ProjectRole) => {
-    if (role === member.project_role) { onClose(); return; }
+  const changeRole = (role: WorkspaceRole) => {
+    if (role === member.workspace_role) { onClose(); return; }
     haptics.tap();
     update.mutate({ userId: member.user_id, role }, {
       onSuccess: () => { haptics.success(); onClose(); },
@@ -501,7 +500,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
     });
   };
   const doRevoke = () => {
-    Alert.alert('Revoke project access?', `${userLabel(member)} will lose direct access to this project.`, [
+    Alert.alert('Revoke workspace access?', `${userLabel(member)} will lose direct access to this workspace.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Revoke access', style: 'destructive', onPress: () => {
         haptics.medium();
@@ -510,7 +509,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
     ]);
   };
   const doDetach = (groupId: string, groupName: string) => {
-    Alert.alert('Detach group from project?', `"${groupName}" will be detached. Everyone whose access here comes from this group loses it.`, [
+    Alert.alert('Detach group from workspace?', `"${groupName}" will be detached. Everyone whose access here comes from this group loses it.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Detach group', style: 'destructive', onPress: () => {
         haptics.medium();
@@ -519,7 +518,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
     ]);
   };
   const doRemoveFromGroup = (groupId: string, groupName: string) => {
-    Alert.alert('Remove from group?', `${userLabel(member)} will be removed from "${groupName}" across the whole account — this affects every project that group can access.`, [
+    Alert.alert('Remove from group?', `${userLabel(member)} will be removed from "${groupName}" across the whole account — this affects every workspace that group can access.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove from group', style: 'destructive', onPress: () => {
         haptics.medium();
@@ -536,7 +535,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
           <>
             <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Access via group</Text>
             <Text style={{ fontSize: 13, color: c.fg, marginBottom: 16 }}>
-              Has <Text style={{ fontFamily: 'Roobert-Medium' }}>{ROLE_DESC[member.effective_project_role!].label}</Text> access through a group. Manage it below.
+              Has <Text style={{ fontFamily: 'Roobert-Medium' }}>{ROLE_DESC[member.effective_workspace_role!].label}</Text> access through a group. Manage it below.
             </Text>
             {(member.group_sources ?? []).map((g) => (
               <View key={g.group_id} style={{ marginBottom: 14, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 12 }}>
@@ -546,13 +545,13 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
                   <RoleBadge role={g.role} isDark={isDark} />
                 </View>
                 <TouchableOpacity onPress={() => doDetach(g.group_id, g.group_name)} disabled={busy} activeOpacity={0.7} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
-                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Detach from this project</Text>
+                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Detach from this workspace</Text>
                   <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>Removes access for everyone in this group, here only</Text>
                 </TouchableOpacity>
                 {accountId && (
                   <TouchableOpacity onPress={() => doRemoveFromGroup(g.group_id, g.group_name)} disabled={busy} activeOpacity={0.7} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: c.border }}>
                     <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove from group</Text>
-                    <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>Affects every project this group can access</Text>
+                    <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>Affects every workspace this group can access</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -560,11 +559,11 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
           </>
         ) : (
           <>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Project role</Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Workspace role</Text>
             <View>
               {ROLES.map((r, i) => (
                 <View key={r} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                  <RoleRadioRow role={r} selected={(member.project_role ?? 'editor') === r} onPress={() => changeRole(r)} isDark={isDark} />
+                  <RoleRadioRow role={r} selected={(member.workspace_role ?? 'editor') === r} onPress={() => changeRole(r)} isDark={isDark} />
                 </View>
               ))}
             </View>
@@ -579,14 +578,14 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
   );
 }
 
-function AttachGroupSheet({ projectId, accountId, attachedIds, onClose, isDark }: { projectId: string; accountId: string; attachedIds: Set<string>; onClose: () => void; isDark: boolean }) {
+function AttachGroupSheet({ workspaceId, accountId, attachedIds, onClose, isDark }: { workspaceId: string; accountId: string; attachedIds: Set<string>; onClose: () => void; isDark: boolean }) {
   const c = useColors(isDark);
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
   const groupsQuery = useAccountGroups(accountId, true);
-  const attach = useAttachGroup(projectId);
+  const attach = useAttachGroup(workspaceId);
   const [groupId, setGroupId] = useState<string | null>(null);
-  const [role, setRole] = useState<ProjectRole>('editor');
+  const [role, setRole] = useState<WorkspaceRole>('editor');
 
   const available = (groupsQuery.data ?? []).filter((g) => !attachedIds.has(g.group_id));
   const canSubmit = !!groupId && !attach.isPending;
@@ -641,14 +640,14 @@ function AttachGroupSheet({ projectId, accountId, attachedIds, onClose, isDark }
   );
 }
 
-function GrantSheet({ projectId, grant, onClose, isDark }: { projectId: string; grant: ProjectGroupGrant; onClose: () => void; isDark: boolean }) {
+function GrantSheet({ workspaceId, grant, onClose, isDark }: { workspaceId: string; grant: WorkspaceGroupGrant; onClose: () => void; isDark: boolean }) {
   const c = useColors(isDark);
   const insets = useSafeAreaInsets();
-  const update = useUpdateGroupGrant(projectId);
-  const detach = useDetachGroup(projectId);
+  const update = useUpdateGroupGrant(workspaceId);
+  const detach = useDetachGroup(workspaceId);
   const busy = update.isPending || detach.isPending;
 
-  const changeRole = (role: ProjectRole) => {
+  const changeRole = (role: WorkspaceRole) => {
     if (role === grant.role) { onClose(); return; }
     haptics.tap();
     update.mutate({ groupId: grant.group_id, role }, {
@@ -657,7 +656,7 @@ function GrantSheet({ projectId, grant, onClose, isDark }: { projectId: string; 
     });
   };
   const doDetach = () => {
-    Alert.alert('Detach group from project?', `"${grant.group_name}" will no longer be attached. Members lose their inherited ${ROLE_DESC[grant.role].label} access (unless granted another way).`, [
+    Alert.alert('Detach group from workspace?', `"${grant.group_name}" will no longer be attached. Members lose their inherited ${ROLE_DESC[grant.role].label} access (unless granted another way).`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Detach group', style: 'destructive', onPress: () => {
         haptics.medium();
@@ -690,14 +689,14 @@ function GrantSheet({ projectId, grant, onClose, isDark }: { projectId: string; 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 type SheetState =
-  | { kind: 'member'; member: ProjectAccessMember }
+  | { kind: 'member'; member: WorkspaceAccessMember }
   | { kind: 'attach' }
-  | { kind: 'grant'; grant: ProjectGroupGrant }
+  | { kind: 'grant'; grant: WorkspaceGroupGrant }
   | null;
 
 export function MembersNavPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -708,12 +707,12 @@ export function MembersNavPage({
   const insets = useSafeAreaInsets();
   const c = useColors(isDark);
 
-  const projectQuery = useProject(projectId);
-  const accessQuery = useProjectAccess(projectId);
-  const grantsQuery = useProjectGroupGrants(projectId);
-  const project = projectQuery.data;
-  const accountId = project?.account_id ?? null;
-  const canManage = project?.effective_project_role === 'manager' || !!accessQuery.data?.can_manage;
+  const workspaceQuery = useWorkspace(workspaceId);
+  const accessQuery = useWorkspaceAccess(workspaceId);
+  const grantsQuery = useWorkspaceGroupGrants(workspaceId);
+  const workspace = workspaceQuery.data;
+  const accountId = workspace?.account_id ?? null;
+  const canManage = workspace?.effective_workspace_role === 'manager' || !!accessQuery.data?.can_manage;
 
   const [sheet, setSheet] = useState<SheetState>(null);
   const sheetRef = React.useRef<BottomSheetModal>(null);
@@ -736,20 +735,20 @@ export function MembersNavPage({
       <PageContent>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 48, gap: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View>
-            <Text style={{ fontSize: 19, fontFamily: 'Roobert-Medium', color: c.fg }}>Project members</Text>
+            <Text style={{ fontSize: 19, fontFamily: 'Roobert-Medium', color: c.fg }}>Workspace members</Text>
             <Text style={{ fontSize: 12.5, lineHeight: 18, color: c.muted, marginTop: 4 }}>
-              Control who can access this project. Account owners and admins always have Manager access.
+              Control who can access this workspace. Account owners and admins always have Manager access.
             </Text>
           </View>
 
-          {canManage && <InviteCard projectId={projectId} isDark={isDark} />}
-          {canManage && <PendingInvitesCard projectId={projectId} isDark={isDark} />}
+          {canManage && <InviteCard workspaceId={workspaceId} isDark={isDark} />}
+          {canManage && <PendingInvitesCard workspaceId={workspaceId} isDark={isDark} />}
 
-          <AccessCard projectId={projectId} canManage={canManage} isDark={isDark} onSelectMember={(m) => open({ kind: 'member', member: m })} />
+          <AccessCard workspaceId={workspaceId} canManage={canManage} isDark={isDark} onSelectMember={(m) => open({ kind: 'member', member: m })} />
 
           {accountId && (
             <GroupAccessCard
-              projectId={projectId}
+              workspaceId={workspaceId}
               accountId={accountId}
               canManage={canManage}
               isDark={isDark}
@@ -772,11 +771,11 @@ export function MembersNavPage({
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
         {sheet?.kind === 'member' ? (
-          <MemberSheet projectId={projectId} accountId={accountId} member={sheet.member} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
+          <MemberSheet workspaceId={workspaceId} accountId={accountId} member={sheet.member} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
         ) : sheet?.kind === 'attach' && accountId ? (
-          <AttachGroupSheet projectId={projectId} accountId={accountId} attachedIds={attachedIds} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
+          <AttachGroupSheet workspaceId={workspaceId} accountId={accountId} attachedIds={attachedIds} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
         ) : sheet?.kind === 'grant' ? (
-          <GrantSheet projectId={projectId} grant={sheet.grant} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
+          <GrantSheet workspaceId={workspaceId} grant={sheet.grant} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
         ) : (
           <View style={{ height: 1 }} />
         )}

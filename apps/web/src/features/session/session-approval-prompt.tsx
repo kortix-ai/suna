@@ -72,13 +72,13 @@ import { useEffect, useRef, useState } from 'react';
 const DECIDED_LINGER_MS = 5_000;
 
 export function SessionApprovalPrompt() {
-  const { id: projectId, sessionId: projectSessionId } = useParams<{
+  const { id: workspaceId, sessionId: workspaceSessionId } = useParams<{
     id: string;
     sessionId: string;
   }>();
   // Poll faster while the callback decision is pending.
-  const { data } = useSessionAudit(projectId, projectSessionId, { refetchInterval: 5_000 });
-  const resolve = useResolveApproval(projectId, projectSessionId);
+  const { data } = useSessionAudit(workspaceId, workspaceSessionId, { refetchInterval: 5_000 });
+  const resolve = useResolveApproval(workspaceId, workspaceSessionId);
 
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, ApprovalDecisionValue>>({});

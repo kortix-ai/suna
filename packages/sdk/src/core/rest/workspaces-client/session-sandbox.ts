@@ -1,0 +1,201 @@
+// Session sandbox — runtime sandbox row + the session-open (/start) flow.
+
+import { backendApi } from "../../http/api-client";
+import { isSessionFresh } from "../../http/fresh-sessions";
+import { setSessionRuntime } from "../../session/session-runtime-registry";
+import { getSandboxUrlForExternalId } from "../../session/server-store/url-helpers";
+import type { WorkspaceSession } from "./sessions";
+
+// ---------------------------------------------------------------------------
+// Session sandbox — runtime row in `kortix.session_sandboxes`. Separate from
+// the legacy /instances sandbox table (`kortix.sandboxes`); no billing or
+// team-membership coupling. Access gated by `workspace_members` only.
+// ---------------------------------------------------------------------------
+
+export type WorkspaceSessionSandboxStatus =
+  "provisioning" | "active" | "stopped" | "error" | "archived";
+
+export interface WorkspaceSessionSandbox {
+  sandbox_id: string;
+  session_id: string;
+  workspace_id: string;
+  account_id: string;
+  provider: "daytona" | "platinum" | "e2b";
+  external_id: string | null;
+  base_url: string | null;
+  status: WorkspaceSessionSandboxStatus;
+  config: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SessionStartStage =
+  "provisioning" | "starting" | "ready" | "stopped" | "failed";
+
+export interface SessionStartFailure {
+  category: "provider-capacity" | "git-auth" | "sandbox-provider";
+  message: string;
+  /** A user action can retry. Automatic polling must still stop. */
+  retryable: boolean;
+}
+
+export interface SessionStartResult {
+  /** Coarse lifecycle stage to render + poll on. */
+  stage: SessionStartStage;
+  /** Immutable workspace-session agent bound at session creation. */
+  agent_name: string;
+  /** Whether polling /start again can make progress (false = terminal). */
+  retriable: boolean;
+  sandbox: WorkspaceSessionSandbox | null;
+  opencode_session_id: string | null;
+  /** Stable terminal failure. Provider-specific diagnostics stay internal. */
+  failure?: SessionStartFailure | null;
+  /**
+   * Relative proxy path for this session's OpenCode runtime (port 8000), composed
+   * against the configured backendUrl. The server owns the proxy scheme; the SDK
+   * consumes this opaquely (never builds `/p/<id>/<port>` itself). Absent until the
+   * box has an external_id — `useSession` falls back to deriving it from
+   * `sandbox.external_id` when missing.
+   */
+  runtime_url?: string | null;
+  reason?: string;
+}
+
+/**
+ * Convert a server-reported running inventory row into an optimistic readiness
+ * seed. The session route renders it immediately, then its normal `/start`
+ * query revalidates the server state.
+ */
+export function workspaceSessionStartSeed(
+  session: WorkspaceSession,
+): SessionStartResult | null {
+  if (
+    session.status !== "running" ||
+    !session.sandbox_id ||
+    !session.sandbox_provider ||
+    !session.sandbox_url ||
+    !session.opencode_session_id
+  ) {
+    return null;
+  }
+  const externalId = session.sandbox_url.match(/\/p\/([^/]+)\//)?.[1];
+  if (!externalId) return null;
+  return {
+    stage: "ready",
+    agent_name: session.agent_name ?? "default",
+    retriable: true,
+    sandbox: {
+      sandbox_id: session.sandbox_id,
+      session_id: session.session_id,
+      workspace_id: session.workspace_id,
+      account_id: session.account_id,
+      provider: session.sandbox_provider,
+      external_id: externalId,
+      base_url: session.sandbox_url,
+      status: "active",
+      config: {},
+      metadata: session.metadata,
+      last_used_at: session.updated_at,
+      created_at: session.created_at,
+      updated_at: session.updated_at,
+    },
+    opencode_session_id: session.opencode_session_id,
+    runtime_url: session.sandbox_url,
+  };
+}
+
+export class SessionStartError extends Error {
+  status?: number;
+  code?: string;
+  terminal: boolean;
+
+  constructor(message: string, options: { status?: number; code?: string; terminal: boolean },
+  ) {
+    super(message);
+    this.name = "SessionStartError";
+    this.status = options.status;
+    this.code = options.code;
+    this.terminal = options.terminal;
+  }
+}
+
+export function isSessionStartError(error: unknown,
+): error is SessionStartError {
+  return error instanceof Error && error.name === "SessionStartError";
+}
+
+function classifySessionStartFailure(error?: Error): SessionStartError | null {
+  const apiError = error as
+    | (Error & { status?: number; code?: string; details?: { code?: string; error?: string };
+      })
+    | undefined;
+  const status = apiError?.status;
+  const code = apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
+  const message = apiError?.message || "Unable to start this session";
+
+  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return new SessionStartError(message, { status, code, terminal: true });
+  }
+
+  return null;
+}
+
+/**
+ * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
+ * the OpenCode pin server-side, returning ONE readiness payload to poll until
+ * stage='ready'.
+ */
+export async function startWorkspaceSession(
+  workspaceId: string,
+  sessionId: string,
+  // Optional server-side long-poll budget (ms): the server holds the request
+  // until readiness flips (or its bounded deadline), so we learn `ready` the
+  // instant it happens instead of on a fixed poll tick. Omit = one-shot.
+  waitMs?: number,
+): Promise<SessionStartResult | null> {
+  const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : "";
+  const response = await backendApi.post<SessionStartResult>(
+    `/workspaces/${workspaceId}/sessions/${sessionId}/start${qs}`,
+    {},
+    // Keep toasts quiet here. Terminal client errors are rendered by the host;
+    // transient transport/server failures still yield null so polling can recover.
+    { showErrors: false },
+  );
+  if (!response.success || !response.data) {
+    const terminal = classifySessionStartFailure(response.error);
+    // A 404 for a session minted in THIS tab is the optimistic create-vs-start
+    // race: `useNewWorkspaceSession` fires this /start before its background
+    // create POST has landed, so the row doesn't exist yet. Yield null so the
+    // poll keeps going; a 404 for any other session stays terminal.
+    if (terminal && !(terminal.status === 404 && isSessionFresh(sessionId))) throw terminal;
+    return null;
+  }
+  const result = response.data;
+  // Populate the shared session-runtime registry the instant a session goes
+  // ready, regardless of WHICH caller drove this /start (the facade's
+  // `ensureReady()` or the React `useSession` hook — both call this one
+  // function). Every other handle for the same session id — a fresh
+  // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
+  // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
+  const externalId = result.sandbox?.external_id;
+  if (result.stage === "ready" && externalId && result.opencode_session_id) {
+    setSessionRuntime(workspaceId, sessionId, {
+      opencodeSessionId: result.opencode_session_id,
+      runtimeUrl: getSandboxUrlForExternalId(externalId),
+      sandboxId: externalId,
+    });
+  }
+  return result;
+}
+
+/**
+ * Stable React Query key for the session-open (`/start`) poll. Shared by the
+ * session page's useQuery AND every create→navigate site that prefetches it, so
+ * the keys can never drift — a mismatch would issue a SECOND `/start` POST
+ * instead of adopting the in-flight one.
+ */
+export function sessionStartKey(workspaceId: string, sessionId: string) {
+  return ["session-start", workspaceId, sessionId] as const;
+}

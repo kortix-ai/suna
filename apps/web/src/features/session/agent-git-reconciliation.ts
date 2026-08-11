@@ -27,7 +27,7 @@ Follow this contract:
 8. Before the final command, summarize the resolution and warn me that the runtime reload ends this turn. Tell me to send "continue" after the runtime returns.
 9. As the final action, run exactly:
 
-\`kortix sessions reload "$KORTIX_SESSION_ID" --project "$KORTIX_PROJECT_ID" --no-repo --force --yes\`
+\`kortix sessions reload "$KORTIX_SESSION_ID" --workspace "$KORTIX_WORKSPACE_ID" --no-repo --force --yes\`
 
 The final command must remain last. It reloads the already-reconciled files and replaces the agent runtime. Do not run more commands after it.`;
 }

@@ -85,12 +85,12 @@ export interface CatalogState {
 
 /**
  * The catalogue behind the Discovery and All tabs, from whichever of the two
- * sources this project actually has.
+ * sources this workspace actually has.
  *
  * **Why two sources.** `connectors_api_discover` resolves to `false` by
  * default (`apps/api/src/experimental/features.ts:83`), so the Discover
- * catalogue is unavailable to most projects. Easy Connect (Pipedream) is not
- * flagged. Falling back keeps the page populated for every project.
+ * catalogue is unavailable to most workspaces. Easy Connect (Pipedream) is not
+ * flagged. Falling back keeps the page populated for every workspace.
  *
  * **Why not merge them.** The two publish overlapping apps under different
  * slugs and different `id` namespaces, and each has its own add flow. A merged
@@ -109,7 +109,7 @@ export interface CatalogState {
  * at all — see `apps/api/src/connectors/pipedream-index.ts`.
  */
 export function useCatalog(
-  projectId: string,
+  workspaceId: string,
   query: string,
   opts: {
     enabled: boolean;
@@ -124,9 +124,9 @@ export function useCatalog(
   const searching = activeQuery.length > 0;
 
   const discoverQuery = useInfiniteQuery({
-    queryKey: ['discover-connectors', projectId, activeQuery],
+    queryKey: ['discover-connectors', workspaceId, activeQuery],
     queryFn: ({ pageParam }) =>
-      listDiscoverConnectors(projectId, activeQuery || undefined, pageParam as string | undefined),
+      listDiscoverConnectors(workspaceId, activeQuery || undefined, pageParam as string | undefined),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,
@@ -135,9 +135,9 @@ export function useCatalog(
   });
 
   const easyConnectQuery = useInfiniteQuery({
-    queryKey: ['easy-connect-apps', projectId, activeQuery, category],
+    queryKey: ['easy-connect-apps', workspaceId, activeQuery, category],
     queryFn: ({ pageParam }) =>
-      listPipedreamApps(projectId, {
+      listPipedreamApps(workspaceId, {
         ...(activeQuery ? { q: activeQuery } : {}),
         ...(category ? { category } : {}),
         ...(pageParam ? { cursor: pageParam as string } : {}),
@@ -154,9 +154,9 @@ export function useCatalog(
   // an open category are each a single flat result set, so fetching sections
   // for them would be work against a grid that will not render them.
   const sectionsQuery = useQuery({
-    queryKey: ['easy-connect-sections', projectId],
+    queryKey: ['easy-connect-sections', workspaceId],
     queryFn: () =>
-      listPipedreamSections(projectId, {
+      listPipedreamSections(workspaceId, {
         perCategory: SECTION_CARD_COUNT,
         maxCategories: SECTION_COUNT,
       }),

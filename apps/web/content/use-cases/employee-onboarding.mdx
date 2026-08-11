@@ -54,7 +54,7 @@ approval gate before anything is provisioned.
 <Steps>
 <Step title="Connect the HR record as the trigger">
 
-A signed webhook from our HR system points at the project. A new-hire record
+A signed webhook from our HR system points at the workspace. A new-hire record
 fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
 with the role, team, and start date. One hire, one session, one disposable
 machine. Nothing carries over between runs.

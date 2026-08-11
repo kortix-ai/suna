@@ -1,5 +1,5 @@
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
+import { activeHostName, defaultWorkspace, listHosts } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { emitJson } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
@@ -109,9 +109,9 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
 
   const resolvedHost = flags.host ?? activeHostName();
   const active = me.accounts.find((a) => a.account_id === auth.account_id) ?? me.accounts[0];
-  // Default project is read from the active host only (a --host probe shows
+  // Default workspace is read from the active host only (a --host probe shows
   // the other host's identity, not this machine's active default).
-  const def = flags.host ? null : defaultProject();
+  const def = flags.host ? null : defaultWorkspace();
 
   if (flags.json) {
     emitJson({
@@ -123,20 +123,25 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
       account: active ?? null,
       accounts: me.accounts,
       token_context: me.token_context ?? null,
-      default_project: def,
+      default_workspace: def,
+      // Deprecated machine-output alias for older CLI consumers.
+      default_project: def
+        ? { project_id: def.workspace_id, account_id: def.account_id, name: def.name }
+        : null,
     });
     return 0;
   }
 
   if (flags.tokenOnly) {
     const ctx = me.token_context;
+    const workspaceId = ctx?.workspace_id ?? ctx?.project_id;
     const tokenKind = ctx?.session_id
       ? 'session token'
-      : ctx?.project_id
-        ? 'project token'
+      : workspaceId
+        ? 'workspace token'
         : ctx?.auth_type || 'user token';
     process.stdout.write(`\n  ${C.bold}${tokenKind}${C.reset}\n`);
-    if (ctx?.project_id) process.stdout.write(`  ${C.dim}project   ${C.reset}${ctx.project_id}\n`);
+    if (workspaceId) process.stdout.write(`  ${C.dim}workspace ${C.reset}${workspaceId}\n`);
     if (ctx?.session_id) process.stdout.write(`  ${C.dim}session   ${C.reset}${ctx.session_id}\n`);
     if (ctx?.agent) process.stdout.write(`  ${C.dim}agent     ${C.reset}${ctx.agent}\n`);
     if (ctx?.connectors != null) {
@@ -169,15 +174,25 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
   }
   if (def) {
     process.stdout.write(
-      `  ${C.dim}project   ${C.reset}${def.name || def.project_id} ${C.faded}(default)${C.reset}\n`,
+      `  ${C.dim}workspace ${C.reset}${def.name || def.workspace_id} ${C.faded}(default)${C.reset}\n`,
     );
   }
   process.stdout.write(`  ${C.dim}host      ${C.reset}${resolvedHost ?? '—'} ${C.faded}(${auth.api_base})${C.reset}\n`);
-  if (me.token_context?.project_id || me.token_context?.session_id || me.token_context?.agent) {
+  if (
+    me.token_context?.workspace_id ||
+    me.token_context?.project_id ||
+    me.token_context?.session_id ||
+    me.token_context?.agent
+  ) {
     const ctx = me.token_context;
-    const tokenKind = ctx.session_id ? 'session token' : ctx.project_id ? 'project token' : ctx.auth_type || 'token';
+    const workspaceId = ctx.workspace_id ?? ctx.project_id;
+    const tokenKind = ctx.session_id
+      ? 'session token'
+      : workspaceId
+        ? 'workspace token'
+        : ctx.auth_type || 'token';
     process.stdout.write(`  ${C.dim}token     ${C.reset}${tokenKind}\n`);
-    if (ctx.project_id) process.stdout.write(`  ${C.dim}project   ${C.reset}${ctx.project_id}\n`);
+    if (workspaceId) process.stdout.write(`  ${C.dim}workspace ${C.reset}${workspaceId}\n`);
     if (ctx.session_id) process.stdout.write(`  ${C.dim}session   ${C.reset}${ctx.session_id}\n`);
     if (ctx.agent) process.stdout.write(`  ${C.dim}agent     ${C.reset}${ctx.agent}\n`);
     if (ctx.connectors != null) process.stdout.write(`  ${C.dim}connectors ${C.reset}${formatGrant(ctx.connectors)}\n`);

@@ -12,7 +12,7 @@ import { useCallback, useState } from 'react';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { useProjectSession } from '@kortix/sdk/react';
+import { useWorkspaceSession } from '@kortix/sdk/react';
 
 /** git-status status → single-letter badge, using the canonical status tones. */
 export const CHANGE_STATUS_BADGE: Record<string, { letter: string; cls: string; label: string }> = {
@@ -23,12 +23,12 @@ export const CHANGE_STATUS_BADGE: Record<string, { letter: string; cls: string; 
 
 /** The base branch this session forks from (e.g. `main`). Defaults to `main`. */
 export function useSessionBaseRef(
-  projectId: string | undefined,
+  workspaceId: string | undefined,
   gitSessionId: string | undefined,
 ): string {
-  // `useProjectSession` owns the key, the freshness contract and the fetcher
+  // `useWorkspaceSession` owns the key, the freshness contract and the fetcher
   // for this entry — see its doc comment for why all three readers must agree.
-  const sessionQuery = useProjectSession(projectId, gitSessionId);
+  const sessionQuery = useWorkspaceSession(workspaceId, gitSessionId);
   return sessionQuery.data?.base_ref ?? 'main';
 }
 

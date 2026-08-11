@@ -1,4 +1,4 @@
-import type { ProjectIconValue } from '@/features/projects/modal/project-icon-field';
+import type { WorkspaceIconValue } from '@/features/workspaces/modal/workspace-icon-field';
 import { validateWorkspaceName } from '@/features/workspace/new/workspace-name';
 import type { KortixAccount } from '@kortix/sdk';
 
@@ -6,7 +6,7 @@ export type RepositorySource = 'managed' | 'github-create' | 'github-import';
 
 export interface NewWorkspaceFormState {
   name: string;
-  icon: ProjectIconValue;
+  icon: WorkspaceIconValue;
   source: RepositorySource;
   defaultBranch: string;
   templateId: string | null;
@@ -31,9 +31,9 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
 
 /**
  * Accounts the signed-in user may actually create a workspace in — owner or
- * admin. `POST /provision` requires `ACCOUNT_ACTIONS.PROJECT_CREATE` and
+ * admin. `POST /provision` requires `ACCOUNT_ACTIONS.WORKSPACE_CREATE` and
  * returns 403 "Owner or admin role required" for anyone else
- * (`apps/api/src/projects/routes/r1.ts:462`), so offering any other account
+ * (`apps/api/src/workspaces/routes/r1.ts:462`), so offering any other account
  * would be a choice that can only fail: the user fills in a name, presses
  * Create, and gets a 403 with no warning.
  *
@@ -114,7 +114,7 @@ export function isSubmittable(state: NewWorkspaceFormState, accountCount: number
 }
 
 /**
- * The request body for `POST /v1/projects/provision`.
+ * The request body for `POST /v1/workspaces/provision`.
  *
  * Keys are omitted rather than sent as null: the API treats an absent icon key
  * as "no icon" and normalises invalid values by dropping them, so sending

@@ -13,14 +13,14 @@ import { createKortix } from '../src/index';
 async function main() {
   const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
   const apiKey = process.env.KORTIX_API_KEY;
-  const projectId = process.env.KORTIX_PROJECT_ID;
-  if (!apiKey || !projectId) {
+  const workspaceId = process.env.KORTIX_PROJECT_ID;
+  if (!apiKey || !workspaceId) {
     console.error('Set KORTIX_API_KEY and KORTIX_PROJECT_ID and re-run.');
     process.exit(1);
   }
 
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
-  const apps = kortix.project(projectId).apps;
+  const apps = kortix.project(workspaceId).apps;
   const app = await apps.create({ slug: 'hello', name: 'Hello App' });
   const registered = await apps.artifacts.register({
     kind: 'oci_image',

@@ -33,7 +33,7 @@ function buildApp(result: { ok: boolean; connected: boolean }) {
   const deps: ConnectorRouterDeps = {
     featureFlagEnabled: async () => true,
     resolvePrincipal: async () => null as unknown as ConnectorPrincipal,
-    resolveProjectPrincipal: async () => null as unknown as ConnectorPrincipal,
+    resolveWorkspacePrincipal: async () => null as unknown as ConnectorPrincipal,
     makeGatewayDeps: (() => ({}) as unknown) as ConnectorRouterDeps['makeGatewayDeps'],
     listCatalog: async () => [],
     resolveAdmin: async () => null,

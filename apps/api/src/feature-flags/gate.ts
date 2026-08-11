@@ -24,14 +24,14 @@ export function featureDisabledBody(key: FeatureFlagKey): {
 } {
   const def = featureFlagDef(key);
   return {
-    error: `${def?.name ?? key} is not enabled for this project. Enable it in Settings → Feature flags.`,
+    error: `${def?.name ?? key} is not enabled for this workspace. Enable it in Settings → Feature flags.`,
     code: FEATURE_DISABLED_CODE,
     feature: key,
   };
 }
 
 /**
- * Returns the 403 response when the flag is off for this project, else null.
+ * Returns the 403 response when the flag is off for this workspace, else null.
  * Fail-closed: unknown metadata shapes and unavailable flags reject.
  */
 export function requireFeatureFlag(

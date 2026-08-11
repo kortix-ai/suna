@@ -34,7 +34,7 @@ export function SessionDetailPanel() {
   if (!panel) return null;
 
   const { detail, closeDetail, terminalOpen, terminalSwap, closeTerminal, sessionId } = panel;
-  const { projectSessionId } = panel;
+  const { workspaceSessionId } = panel;
 
   const terminalLayer: PersistentLayer = {
     open: terminalOpen,
@@ -45,7 +45,7 @@ export function SessionDetailPanel() {
     body: (
       <SessionTerminalPanel
         sessionId={sessionId}
-        projectSessionId={projectSessionId}
+        workspaceSessionId={workspaceSessionId}
         hidden={!terminalOpen}
       />
     ),
@@ -79,7 +79,7 @@ export function SessionDetailPanel() {
               </DrawerTitle>
             </DrawerHeader>
             <div className="min-h-0 flex-1 overflow-hidden">
-              <SessionTerminalPanel sessionId={sessionId} projectSessionId={projectSessionId} />
+              <SessionTerminalPanel sessionId={sessionId} workspaceSessionId={workspaceSessionId} />
             </div>
           </DrawerContent>
         </Drawer>

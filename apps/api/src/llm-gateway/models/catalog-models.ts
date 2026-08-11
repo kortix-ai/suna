@@ -321,17 +321,17 @@ function refreshedCatalogs(): {
   return { byokAndCodex: cachedByokAndCodex, full: cachedFullCatalog };
 }
 
-// `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
+// `workspaceId` gates BYOK/codex visibility (anonymous callers see managed only).
 // `freeManagedOnly` (a free-tier account with internal billing on) hides every
 // managed Kortix model. A free user's own connected provider keys still work,
 // but there is no unreliable platform-managed free default.
 export function gatewayModelCatalog(
-  projectId: string | undefined,
+  workspaceId: string | undefined,
   opts?: { freeManagedOnly?: boolean },
 ): Record<string, GatewayModel> {
   const catalogs = refreshedCatalogs();
   if (opts?.freeManagedOnly) {
-    return projectId ? catalogs.byokAndCodex : EMPTY_CATALOG;
+    return workspaceId ? catalogs.byokAndCodex : EMPTY_CATALOG;
   }
-  return projectId ? catalogs.full : MANAGED_ONLY;
+  return workspaceId ? catalogs.full : MANAGED_ONLY;
 }

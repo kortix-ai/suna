@@ -2,25 +2,25 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { projectSecrets } from '@kortix/db';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../workspaces/lib/access';
 
-const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
+const WORKSPACE_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const AUTHORIZED_USER_ID = '11111111-1111-4111-8111-111111111111';
 const UNAUTHORIZED_USER_ID = '22222222-2222-4222-8222-222222222222';
 
-const PROJECT_ACTIONS = {
-  PROJECT_CONNECTOR_READ: 'project.connector.read',
-  PROJECT_CONNECTOR_WRITE: 'project.connector.write',
-  PROJECT_CUSTOMIZE_WRITE: 'project.customize.write',
-  PROJECT_SECRET_READ: 'project.secret.read',
-  PROJECT_SECRET_WRITE: 'project.secret.write',
+const WORKSPACE_ACTIONS = {
+  WORKSPACE_CONNECTOR_READ: 'project.connector.read',
+  WORKSPACE_CONNECTOR_WRITE: 'project.connector.write',
+  WORKSPACE_CUSTOMIZE_WRITE: 'project.customize.write',
+  WORKSPACE_SECRET_READ: 'project.secret.read',
+  WORKSPACE_SECRET_WRITE: 'project.secret.write',
 };
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+mock.module('../iam', () => ({ WORKSPACE_ACTIONS }));
 
 const deleteCalls: Array<{ table: unknown; where: unknown }> = [];
-const propagateCalls: Array<{ projectId: string; opts: unknown }> = [];
-const capabilityChecks: Array<{ userId: string; accountId: string; projectId: string; action: string }> = [];
+const propagateCalls: Array<{ workspaceId: string; opts: unknown }> = [];
+const capabilityChecks: Array<{ userId: string; accountId: string; workspaceId: string; action: string }> = [];
 const auditEvents: Array<Record<string, unknown>> = [];
 
 mock.module('../shared/db', () => ({
@@ -38,27 +38,27 @@ mock.module('../shared/db', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../workspaces/lib/access', () => ({
   ...realAccess,
-  loadProjectForUser: async (c: any) => ({
-    row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
+  loadWorkspaceForUser: async (c: any) => ({
+    row: { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID },
     userId: c.get('userId'),
     accountRole: 'owner',
     projectRole: 'owner',
     effectiveRole: 'owner',
     adminBypass: false,
   }),
-  assertProjectCapability: async (_c: any, userId: string, accountId: string, projectId: string, action: string) => {
-    capabilityChecks.push({ userId, accountId, projectId, action });
+  assertWorkspaceCapability: async (_c: any, userId: string, accountId: string, workspaceId: string, action: string) => {
+    capabilityChecks.push({ userId, accountId, workspaceId, action });
     if (userId !== AUTHORIZED_USER_ID) {
       throw new HTTPException(403, { message: 'You do not have access to this project' });
     }
   },
 }));
 
-mock.module('../projects/lib/sandbox-env-sync', () => ({
-  propagateProjectSecretsToActiveSandboxes: async (projectId: string, opts: unknown) => {
-    propagateCalls.push({ projectId, opts });
+mock.module('../workspaces/lib/sandbox-env-sync', () => ({
+  propagateWorkspaceSecretsToActiveSandboxes: async (workspaceId: string, opts: unknown) => {
+    propagateCalls.push({ workspaceId, opts });
   },
 }));
 
@@ -77,8 +77,8 @@ mock.module('../shared/audit', () => ({
   },
 }));
 
-const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/r3');
+const { workspaceRoutesApp: projectsApp } = await import('../workspaces/lib/app');
+await import('../workspaces/routes/r3');
 
 function buildApp(userId: string) {
   const app = new Hono();
@@ -94,7 +94,7 @@ function buildApp(userId: string) {
   return app;
 }
 
-describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
+describe('DELETE /v1/projects/:workspaceId/oauth/:provider', () => {
   beforeEach(() => {
     deleteCalls.length = 0;
     propagateCalls.length = 0;
@@ -103,7 +103,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
   });
 
   test('authorized principal deletes the backing secret and propagates to sandboxes', async () => {
-    const res = await buildApp(AUTHORIZED_USER_ID).request(`/v1/projects/${PROJECT_ID}/oauth/openai`, {
+    const res = await buildApp(AUTHORIZED_USER_ID).request(`/v1/projects/${WORKSPACE_ID}/oauth/openai`, {
       method: 'DELETE',
     });
 
@@ -114,19 +114,19 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
     expect(capabilityChecks[0]).toMatchObject({
       userId: AUTHORIZED_USER_ID,
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
-      action: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      workspaceId: WORKSPACE_ID,
+      action: WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE,
     });
 
     expect(deleteCalls).toHaveLength(1);
     expect(deleteCalls[0].table).toBe(projectSecrets);
 
     expect(propagateCalls).toHaveLength(1);
-    expect(propagateCalls[0].projectId).toBe(PROJECT_ID);
+    expect(propagateCalls[0].workspaceId).toBe(WORKSPACE_ID);
     expect(auditEvents).toHaveLength(1);
     expect(auditEvents[0]).toMatchObject({
       action: 'secret.oauth.disconnected',
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       metadata: {
         identifier: 'CODEX_AUTH_JSON',
         consumer: 'llm_gateway',
@@ -135,7 +135,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
   });
 
   test('unauthorized principal is denied and no delete is issued', async () => {
-    const res = await buildApp(UNAUTHORIZED_USER_ID).request(`/v1/projects/${PROJECT_ID}/oauth/openai`, {
+    const res = await buildApp(UNAUTHORIZED_USER_ID).request(`/v1/projects/${WORKSPACE_ID}/oauth/openai`, {
       method: 'DELETE',
     });
 
@@ -146,7 +146,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
   });
 
   test('unknown provider → 404 before any capability side effect', async () => {
-    const res = await buildApp(AUTHORIZED_USER_ID).request(`/v1/projects/${PROJECT_ID}/oauth/not-a-real-provider`, {
+    const res = await buildApp(AUTHORIZED_USER_ID).request(`/v1/projects/${WORKSPACE_ID}/oauth/not-a-real-provider`, {
       method: 'DELETE',
     });
 

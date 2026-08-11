@@ -13,7 +13,7 @@ import type { FetchImpl } from "../http";
 const principal = {
   userId: "u1",
   accountId: "a1",
-  projectId: "p1",
+  workspaceId: "p1",
   keyId: "k1",
 };
 
@@ -274,7 +274,7 @@ describe("gateway.chatCompletions", () => {
     expect(t.status).toBe(200);
     expect(t.provider).toBe("openrouter");
     expect(t.accountId).toBe("a1");
-    expect(t.projectId).toBe("p1");
+    expect(t.workspaceId).toBe("p1");
     expect(t.usage.promptTokens).toBe(100);
     expect(t.finalCost).toBeCloseTo(0.02);
     expect(t.metadata).toEqual({ tag: "demo" });

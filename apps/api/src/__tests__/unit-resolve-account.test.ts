@@ -10,7 +10,7 @@ const creditAccounts = { __table: 'creditAccounts', accountId: 'accountId', tier
 const accountInvitations = { __table: 'accountInvitations', accountId: 'accountId', email: 'email', inviteId: 'inviteId', acceptedAt: 'acceptedAt', expiresAt: 'expiresAt' };
 const accountGroups = { __table: 'accountGroups', accountId: 'accountId', groupId: 'groupId' };
 const accountGroupMembers = { __table: 'accountGroupMembers', groupId: 'groupId', userId: 'userId' };
-const projectMembers = { __table: 'projectMembers', projectId: 'projectId', userId: 'userId' };
+const projectMembers = { __table: 'projectMembers', workspaceId: 'workspaceId', userId: 'userId' };
 
 const state = {
   membership: null as { accountId: string } | null,

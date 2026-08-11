@@ -1,5 +1,5 @@
 import {
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagValue,
   takeFlagBool,
@@ -7,7 +7,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// ── Response shapes (mirror apps/api/src/projects git endpoints) ────────────
+// ── Response shapes (mirror apps/api/src/workspaces git endpoints) ────────────
 
 interface FileEntry {
   path: string;
@@ -55,7 +55,7 @@ interface BranchInfo {
 
 const HELP = help`Usage: kortix files <subcommand> [options]
 
-Browse the project's git repo — the same read-only view the dashboard shows
+Browse the workspace's git repo — the same read-only view the dashboard shows
 (Files tab + version history). Operates on the default branch unless --ref
 selects another branch, tag, or commit sha.
 
@@ -74,13 +74,13 @@ Subcommands:
   diff <sha> [--path <p>]           Print a commit's unified patch.
 
 Options:
-  --ref <ref>        Branch / tag / commit (default: the project's default branch).
+  --ref <ref>        Branch / tag / commit (default: the workspace's default branch).
   --path <p>         Scope to a subtree (commits) or file (diff).
   --content          search: grep file contents instead of names.
   --limit <n>        Cap rows for history / commits.
   --json             Emit the raw API payload as JSON (machine-readable);
                      suppresses human output. Supported by every subcommand.
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>     Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 `;
@@ -93,7 +93,7 @@ export async function runFiles(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  let projectFlag: string | undefined;
+  let workspaceFlag: string | undefined;
   let hostFlag: string | undefined;
   let ref: string | undefined;
   let path: string | undefined;
@@ -101,7 +101,7 @@ export async function runFiles(argv: string[]): Promise<number> {
   let content = false;
   let json = false;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    workspaceFlag = takeFlagValue(rest, ['--workspace', '--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     ref = takeFlagValue(rest, ['--ref']);
     path = takeFlagValue(rest, ['--path']);
@@ -113,9 +113,9 @@ export async function runFiles(argv: string[]): Promise<number> {
     return 2;
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
+  const ctx = await resolveWorkspaceContext({ workspaceArg: workspaceFlag, hostArg: hostFlag });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.workspaceId}`;
   const refQ = ref ? `ref=${encodeURIComponent(ref)}` : '';
 
   try {

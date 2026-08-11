@@ -35,7 +35,7 @@ export interface SessionScopeRow {
 }
 
 export interface SessionScopeRowsInput {
-  /** `session.agent_name` — null when the project default agent runs. */
+  /** `session.agent_name` — null when the workspace default agent runs. */
   agentName: string | null | undefined;
   /** `session.secrets_allowlist` — null/undefined = never narrowed. */
   secretsAllowlist: string[] | null | undefined;
@@ -91,7 +91,7 @@ export function describeSecretsAllowlist(
   }
   // `secrets: []` is a deliberate choice, not an empty state — saying "none"
   // where the UI says "all" for null is the whole point of the distinction.
-  if (allowlist.length === 0) return 'No project secrets';
+  if (allowlist.length === 0) return 'No workspace secrets';
   return allowlist.join(', ');
 }
 
@@ -99,7 +99,7 @@ export function sessionScopeRows(
   input: SessionScopeRowsInput,
 ): SessionScopeRow[] {
   const agent = input.agentName ?? null;
-  const agentLabel = agent ?? 'The project default agent';
+  const agentLabel = agent ?? 'The workspace default agent';
   const bound = Object.entries(input.boundConnections);
 
   return [
@@ -119,7 +119,7 @@ export function sessionScopeRows(
       value: agentLabel,
       detail: agent
         ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.`
-        : "Messages run as the project's default agent unless another is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.",
+        : "Messages run as the workspace's default agent unless another is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.",
       control: null,
     },
     {
@@ -139,12 +139,12 @@ export function sessionScopeRows(
       badge: 'Changeable now',
       value:
         bound.length === 0
-          ? 'The project default for every connector'
+          ? 'The workspace default for every connector'
           : bound.map(([alias, label]) => `${alias}: ${label}`).join(', '),
       detail:
         bound.length === 0
-          ? 'Every connector this agent uses resolves to the project’s default connection. Bind a specific project connection from the scope bar.'
-          : 'Change these from the scope bar under the composer. Unlike secrets a binding change is fully retroactive — connections resolve server-side on each tool call, so the next call already uses the new one. Only project connections can be bound, never a teammate’s private one.',
+          ? 'Every connector this agent uses resolves to the workspace’s default connection. Bind a specific workspace connection from the scope bar.'
+          : 'Change these from the scope bar under the composer. Unlike secrets a binding change is fully retroactive — connections resolve server-side on each tool call, so the next call already uses the new one. Only workspace connections can be bound, never a teammate’s private one.',
       control: null,
     },
   ];

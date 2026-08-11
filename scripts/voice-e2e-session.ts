@@ -62,14 +62,14 @@ async function main() {
     body: JSON.stringify({ name: `voice-e2e-${stamp}`, seed_starter: true }),
   });
   const proj = await j(projRes);
-  const projectId = proj?.project_id ?? proj?.project?.project_id ?? proj?.id;
-  if (!projectId) throw new Error(`project create failed: ${JSON.stringify(proj).slice(0, 400)}`);
-  console.log(`     project ${projectId}`);
+  const workspaceId = proj?.project_id ?? proj?.project?.project_id ?? proj?.id;
+  if (!workspaceId) throw new Error(`project create failed: ${JSON.stringify(proj).slice(0, 400)}`);
+  console.log(`     project ${workspaceId}`);
 
   // voice_spawn checks this flag directly; without it enabled the MCP tool
   // refuses to start a call.
   console.log('4/5  enabling the voice experimental flag…');
-  const flagRes = await fetch(`${API}/projects/${projectId}/experimental`, {
+  const flagRes = await fetch(`${API}/projects/${workspaceId}/experimental`, {
     method: 'PATCH',
     headers: H,
     body: JSON.stringify({ feature: 'voice', enabled: true }),
@@ -77,7 +77,7 @@ async function main() {
   console.log(`     ${flagRes.status} ${flagRes.ok ? 'enabled' : (await flagRes.text()).slice(0, 200)}`);
 
   console.log('5/5  creating session (boots a sandbox — takes ~20s)…');
-  const sessRes = await fetch(`${API}/projects/${projectId}/sessions`, {
+  const sessRes = await fetch(`${API}/projects/${workspaceId}/sessions`, {
     method: 'POST',
     headers: H,
     body: JSON.stringify({ initial_prompt: 'Say hello and wait for instructions.' }),
@@ -90,7 +90,7 @@ async function main() {
   // Wait for the sandbox to be ready — continueSession polls for this too, but
   // failing here gives a far clearer error than a silent 'pending' later.
   for (let i = 0; i < 60; i++) {
-    const s = await j(await fetch(`${API}/projects/${projectId}/sessions/${sessionId}`, { headers: H }));
+    const s = await j(await fetch(`${API}/projects/${workspaceId}/sessions/${sessionId}`, { headers: H }));
     const stage = s?.session?.sandbox?.stage ?? s?.sandbox?.stage ?? s?.session?.status ?? s?.status;
     if (i % 5 === 0) console.log(`     …${stage}`);
     if (stage === 'ready' || stage === 'running') break;
@@ -100,7 +100,7 @@ async function main() {
 
   console.log('');
   console.log(`SESSION=${sessionId}`);
-  console.log(`PROJECT=${projectId}`);
+  console.log(`PROJECT=${workspaceId}`);
   console.log(`TOKEN=${token.slice(0, 12)}…`);
 }
 

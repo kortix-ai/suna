@@ -222,7 +222,7 @@ export default function ChannelsPage(): ReactNode {
 
       <SectionDivider />
 
-      {/* ── 5 · driving the project from the thread ─────────────────────── */}
+      {/* ── 5 · driving the workspace from the thread ─────────────────────── */}
       <section id="commands" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
         <SectionHeading eyebrow={commands.eyebrow} title={commands.title} sub={commands.sub} />
 

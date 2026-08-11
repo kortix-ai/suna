@@ -631,6 +631,12 @@ export default function RootLayout() {
                                         }}
                                       />
                                       <Stack.Screen
+                                        name="workspaces"
+                                        options={{
+                                          gestureEnabled: false,
+                                        }}
+                                      />
+                                      <Stack.Screen
                                         name="auth"
                                         options={{
                                           gestureEnabled: false,
@@ -759,8 +765,8 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // RULE 2: Authenticated users should NEVER see auth screens
     // This prevents back navigation/gestures from showing auth to logged-in users
     if (isAuthenticated && inAuthGroup) {
-      log.log('🚫 Authenticated user on auth screen, redirecting to /projects');
-      router.replace('/projects');
+      log.log('🚫 Authenticated user on auth screen, redirecting to /workspaces');
+      router.replace('/workspaces');
       return;
     }
   }, [isAuthenticated, authLoading, segments, router]);

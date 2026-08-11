@@ -4,7 +4,7 @@ import type { PageId } from './types';
  *  the CLI skips `nav` beats to them (state `fx` beats still run). */
 export const DEMO_PAGE_FLAGS: Record<PageId, boolean> = {
   home: false,
-  projects: true,
+  workspaces: true,
   chat: true,
   agents: true,
   skills: true,
@@ -18,7 +18,7 @@ export const DEMO_PAGE_FLAGS: Record<PageId, boolean> = {
 /** Canonical tab order before applying {@link DEMO_PAGE_FLAGS}. */
 export const DEMO_PAGE_ORDER: PageId[] = [
   'home',
-  'projects',
+  'workspaces',
   'chat',
   'agents',
   'skills',
@@ -36,5 +36,5 @@ export function isDemoPageEnabled(page: PageId): boolean {
 export const VISIBLE_DEMO_PAGES = DEMO_PAGE_ORDER.filter((id) => DEMO_PAGE_FLAGS[id]);
 
 export function defaultDemoPage(): PageId {
-  return VISIBLE_DEMO_PAGES[0] ?? 'projects';
+  return VISIBLE_DEMO_PAGES[0] ?? 'workspaces';
 }

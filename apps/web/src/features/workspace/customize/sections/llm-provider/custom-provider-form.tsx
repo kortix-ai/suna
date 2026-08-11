@@ -6,8 +6,8 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { upsertProjectSecret } from '@kortix/sdk';
-import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { upsertWorkspaceSecret } from '@kortix/sdk';
+import { qk, refreshWorkspaceProviderState } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CaretLeftIcon as ChevronLeft,
@@ -25,11 +25,11 @@ import type { CustomFormState } from './types';
 import { buildCustomProviderSnippet } from './utils';
 
 export function CustomProviderForm({
-  projectId,
+  workspaceId,
   onBack,
   onDone,
 }: {
-  projectId: string;
+  workspaceId: string;
   onBack: () => void;
   onDone: () => void;
 }) {
@@ -77,10 +77,10 @@ export function CustomProviderForm({
         ? `CUSTOM_${trimmed.providerId.toUpperCase().replace(/-/g, '_')}_API_KEY`
         : null;
       if (secretName) {
-        // LLM provider credentials are always project-wide (see
+        // LLM provider credentials are always workspace-wide (see
         // api-key-connect-form.tsx) — a per-user key is invisible to the
         // gateway's shared-row resolution and breaks every model turn.
-        await upsertProjectSecret(projectId, {
+        await upsertWorkspaceSecret(workspaceId, {
           name: secretName,
           value: trimmed.apiKey,
           strategy: 'broker',
@@ -101,8 +101,8 @@ export function CustomProviderForm({
     },
     onSuccess: (result) => {
       setSavedSnippet(result);
-      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-      refreshProjectProviderState(queryClient, projectId);
+      queryClient.invalidateQueries({ queryKey: qk.workspace.secrets(workspaceId) });
+      refreshWorkspaceProviderState(queryClient, workspaceId);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),
   });
@@ -234,7 +234,7 @@ export function CustomProviderForm({
               />
               {form.apiKey.trim() && (
                 <FieldDescription className="text-xs">
-                  Project-wide — every member of this project can use this provider.
+                  Workspace-wide — every member of this workspace can use this provider.
                 </FieldDescription>
               )}
             </Field>

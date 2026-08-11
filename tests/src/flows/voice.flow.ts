@@ -36,30 +36,30 @@ const ABSENT_JOIN_TOKEN = `vjl_${'A'.repeat(43)}`;
 // VOICE-1 — the bot's display name in the call (manage ACL).
 flow(
   'VOICE-1',
-  { domain: 'voice', routes: ['PUT /v1/projects/:projectId/channels/meet/name'] },
+  { domain: 'voice', routes: ['PUT /v1/projects/:workspaceId/channels/meet/name'] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step('OWNER sets the name → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put('/v1/projects/:projectId/channels/meet/name', { name: 'Kortix QA' }, {
-          params: { projectId: p.id },
+        .put('/v1/projects/:workspaceId/channels/meet/name', { name: 'Kortix QA' }, {
+          params: { workspaceId: p.id },
         });
       r.status(200).body().exists('$.bot_name');
     });
     await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .put('/v1/projects/:projectId/channels/meet/name', { name: 'nope' }, {
-          params: { projectId: p.id },
+        .put('/v1/projects/:workspaceId/channels/meet/name', { name: 'nope' }, {
+          params: { workspaceId: p.id },
         });
       r.status([403, 404]);
     });
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .put('/v1/projects/:projectId/channels/meet/name', { name: 'nope' }, {
-          params: { projectId: p.id },
+        .put('/v1/projects/:workspaceId/channels/meet/name', { name: 'nope' }, {
+          params: { workspaceId: p.id },
         });
       r.status(401);
     });
@@ -82,30 +82,30 @@ flow(
 // here — and this flow goes red.
 flow(
   'VOICE-2',
-  { domain: 'voice', routes: ['POST /v1/projects/:projectId/sessions/:sessionId/mcp/voice'] },
+  { domain: 'voice', routes: ['POST /v1/projects/:workspaceId/sessions/:sessionId/mcp/voice'] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    const params = { projectId: p.id, sessionId: ABSENT_UUID };
+    const params = { workspaceId: p.id, sessionId: ABSENT_UUID };
     const listTools = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
 
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post('/v1/projects/:projectId/sessions/:sessionId/mcp/voice', listTools, { params });
+        .post('/v1/projects/:workspaceId/sessions/:sessionId/mcp/voice', listTools, { params });
       r.status(401);
     });
 
     await ctx.step('OWNER session is not a worker token → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/sessions/:sessionId/mcp/voice', listTools, { params });
+        .post('/v1/projects/:workspaceId/sessions/:sessionId/mcp/voice', listTools, { params });
       r.status(401);
     });
 
     await ctx.step('account PAT is not a worker token → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.PAT_ACCT)
-        .post('/v1/projects/:projectId/sessions/:sessionId/mcp/voice', listTools, { params });
+        .post('/v1/projects/:workspaceId/sessions/:sessionId/mcp/voice', listTools, { params });
       r.status(401);
     });
 
@@ -115,7 +115,7 @@ flow(
       // rejecting rather than some shape heuristic upstream of it.
       const r = await ctx.client
         .withBearer('0'.repeat(64), 'FORGED_WORKER_TOKEN')
-        .post('/v1/projects/:projectId/sessions/:sessionId/mcp/voice', listTools, { params });
+        .post('/v1/projects/:workspaceId/sessions/:sessionId/mcp/voice', listTools, { params });
       r.status(401);
     });
 
@@ -124,7 +124,7 @@ flow(
       // parser, nor be able to tell a parse error from a rejected token.
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post('/v1/projects/:projectId/sessions/:sessionId/mcp/voice', '{not json', {
+        .post('/v1/projects/:workspaceId/sessions/:sessionId/mcp/voice', '{not json', {
           params,
           raw: true,
         });
@@ -139,15 +139,15 @@ flow(
 // is the half that regresses. VOICE-4 asserts the 200 shape on a real session.
 flow(
   'VOICE-3',
-  { domain: 'voice', routes: ['GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript'] },
+  { domain: 'voice', routes: ['GET /v1/projects/:workspaceId/sessions/:sessionId/voice-transcript'] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
 
     await ctx.step('non-uuid session id → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/voice-transcript', {
-          params: { projectId: p.id, sessionId: 'not-a-uuid' },
+        .get('/v1/projects/:workspaceId/sessions/:sessionId/voice-transcript', {
+          params: { workspaceId: p.id, sessionId: 'not-a-uuid' },
         });
       r.status(400);
     });
@@ -155,8 +155,8 @@ flow(
     await ctx.step('unparseable cursor → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/voice-transcript', {
-          params: { projectId: p.id, sessionId: ABSENT_UUID },
+        .get('/v1/projects/:workspaceId/sessions/:sessionId/voice-transcript', {
+          params: { workspaceId: p.id, sessionId: ABSENT_UUID },
           query: { cursor: 'nope' },
         });
       r.status(400);
@@ -165,8 +165,8 @@ flow(
     await ctx.step('unknown session → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/voice-transcript', {
-          params: { projectId: p.id, sessionId: ABSENT_UUID },
+        .get('/v1/projects/:workspaceId/sessions/:sessionId/voice-transcript', {
+          params: { workspaceId: p.id, sessionId: ABSENT_UUID },
         });
       r.status(404);
     });
@@ -174,8 +174,8 @@ flow(
     await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/voice-transcript', {
-          params: { projectId: p.id, sessionId: ABSENT_UUID },
+        .get('/v1/projects/:workspaceId/sessions/:sessionId/voice-transcript', {
+          params: { workspaceId: p.id, sessionId: ABSENT_UUID },
         });
       r.status([403, 404]);
     });
@@ -183,8 +183,8 @@ flow(
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/voice-transcript', {
-          params: { projectId: p.id, sessionId: ABSENT_UUID },
+        .get('/v1/projects/:workspaceId/sessions/:sessionId/voice-transcript', {
+          params: { workspaceId: p.id, sessionId: ABSENT_UUID },
         });
       r.status(401);
     });
@@ -201,7 +201,7 @@ flow(
     domain: 'voice',
     requires: ['daytona', 'funded'],
     timeoutMs: 300_000,
-    routes: ['GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript'],
+    routes: ['GET /v1/projects/:workspaceId/sessions/:sessionId/voice-transcript'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedSeededProject();
@@ -209,8 +209,8 @@ flow(
     await ctx.step('session with no call → 200, empty, not live', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/voice-transcript', {
-          params: { projectId: p.id, sessionId: s.id },
+        .get('/v1/projects/:workspaceId/sessions/:sessionId/voice-transcript', {
+          params: { workspaceId: p.id, sessionId: s.id },
         });
       r.status(200)
         .body()

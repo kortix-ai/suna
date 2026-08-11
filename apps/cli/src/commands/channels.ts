@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -11,7 +11,7 @@ import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix channels <subcommand> [options]
 
-Connect this project to a chat platform (Slack by default; MS Teams via --platform teams).
+Connect this workspace to a chat platform (Slack by default; MS Teams via --platform teams).
 
 Subcommands:
   status                  Show the current connection.
@@ -24,7 +24,7 @@ Subcommands:
                           Teams: prints the Microsoft admin-consent URL (open
                           it, grant tenant-wide consent, the app is published
                           to your Teams catalog automatically).
-  disconnect              Drop the project's connection (Slack only in this release).
+  disconnect              Drop the workspace's connection (Slack only in this release).
   manifest                Print the app manifest JSON — MANUAL/self-host
                           setup only. Slack: paste into api.slack.com/apps →
                           "From a manifest". Teams: prints the Teams app
@@ -33,8 +33,8 @@ Subcommands:
 
 Global options:
   --platform <slack|teams>  Chat platform (default: slack).
-  --project <id>          Operate on this project id (default: linked or
-                          \$KORTIX_PROJECT_ID).
+  --workspace <id>          Operate on this workspace id (default: linked or
+                          \$KORTIX_WORKSPACE_ID).
   --host <name>           Use this host instead of the linked / active one.
   --json                  Machine-readable output (status/connect).
   -h, --help              Show this help.
@@ -71,7 +71,7 @@ interface TeamsInstallation {
 }
 
 interface TeamsMode {
-  /** The project's `teams` experimental feature. Off ⇒ the channel is dark. */
+  /** The workspace's `teams` experimental feature. Off ⇒ the channel is dark. */
   enabled: boolean;
   /** Server (or bring-your-own) bot credentials resolve ⇒ an install can run. */
   available: boolean;
@@ -82,7 +82,7 @@ interface TeamsMode {
 
 type Platform = 'slack' | 'teams';
 
-type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
+type WorkspaceCtx = NonNullable<Awaited<ReturnType<typeof resolveWorkspaceContext>>>;
 
 export async function runChannels(argv: string[]): Promise<number> {
   if (argv[0] === '-h' || argv[0] === '--help') {
@@ -96,14 +96,14 @@ export async function runChannels(argv: string[]): Promise<number> {
   const json = takeFlagBool(rest, ['--json']);
   const manual = takeFlagBool(rest, ['--manual']);
   const wait = takeFlagBool(rest, ['--wait']);
-  let projectFlag: string | undefined;
+  let workspaceFlag: string | undefined;
   let hostFlag: string | undefined;
   let botTokenFlag: string | undefined;
   let signingSecretFlag: string | undefined;
   let timeoutFlag: string | undefined;
   let platformFlag: string | undefined;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    workspaceFlag = takeFlagValue(rest, ['--workspace', '--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     botTokenFlag = takeFlagValue(rest, ['--bot-token']);
     signingSecretFlag = takeFlagValue(rest, ['--signing-secret']);
@@ -118,7 +118,7 @@ export async function runChannels(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err(`--platform must be 'slack' or 'teams', got '${platformFlag}'`)}\n`);
     return 2;
   }
-  const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
+  const ctxOpts = { workspaceArg: workspaceFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'status':
@@ -138,7 +138,7 @@ export async function runChannels(argv: string[]): Promise<number> {
     case 'remove':
     case 'rm':
       if (platform === 'teams') {
-        process.stderr.write(`${status.err('Teams disconnect is not yet supported in the CLI — use the dashboard or DELETE /v1/projects/:id/channels/teams/installation.')}\n`);
+        process.stderr.write(`${status.err('Teams disconnect is not yet supported in the CLI — use the dashboard or DELETE /v1/workspaces/:id/channels/teams/installation.')}\n`);
         return 2;
       }
       return channelsDisconnect(ctxOpts);
@@ -151,14 +151,14 @@ export async function runChannels(argv: string[]): Promise<number> {
 }
 
 async function channelsStatus(
-  ctxOpts: { projectArg?: string; hostArg?: string },
+  ctxOpts: { workspaceArg?: string; hostArg?: string },
   json: boolean,
 ): Promise<number> {
-  const ctx = await resolveProjectContext(ctxOpts);
+  const ctx = await resolveWorkspaceContext(ctxOpts);
   if (!ctx) return 1;
   try {
     const install = await ctx.client.get<SlackInstallation | null>(
-      `/projects/${ctx.projectId}/channels/slack/installation`,
+      `/workspaces/${ctx.workspaceId}/channels/slack/installation`,
     );
     if (json) {
       emitJson({ connected: Boolean(install), installation: install ?? null });
@@ -188,10 +188,10 @@ interface ConnectOpts {
 }
 
 async function channelsConnect(
-  ctxOpts: { projectArg?: string; hostArg?: string },
+  ctxOpts: { workspaceArg?: string; hostArg?: string },
   opts: ConnectOpts,
 ): Promise<number> {
-  const ctx = await resolveProjectContext(ctxOpts);
+  const ctx = await resolveWorkspaceContext(ctxOpts);
   if (!ctx) return 1;
 
   // Explicit credentials always mean manual mode — never second-guess them.
@@ -202,7 +202,7 @@ async function channelsConnect(
 
   let mode: SlackMode = { oauth_available: false, install_url: null };
   try {
-    mode = await ctx.client.get<SlackMode>(`/projects/${ctx.projectId}/channels/slack/mode`);
+    mode = await ctx.client.get<SlackMode>(`/workspaces/${ctx.workspaceId}/channels/slack/mode`);
   } catch (err) {
     // A host too old to serve /mode still supports manual connect.
     if (!(err instanceof ApiError && err.status === 404)) return surfaceApiError(err);
@@ -218,7 +218,7 @@ async function channelsConnect(
   let existing: SlackInstallation | null = null;
   try {
     existing = await ctx.client.get<SlackInstallation | null>(
-      `/projects/${ctx.projectId}/channels/slack/installation`,
+      `/workspaces/${ctx.workspaceId}/channels/slack/installation`,
     );
   } catch {
     // Non-fatal: fall through and offer the install link anyway.
@@ -256,7 +256,7 @@ async function channelsConnect(
   return waitForInstall(ctx, opts.timeoutSec, opts.json);
 }
 
-async function waitForInstall(ctx: ProjectCtx, timeoutSec: number, json: boolean): Promise<number> {
+async function waitForInstall(ctx: WorkspaceCtx, timeoutSec: number, json: boolean): Promise<number> {
   const deadline = Date.now() + timeoutSec * 1000;
   const intervalMs = 4000;
   if (!json) {
@@ -266,7 +266,7 @@ async function waitForInstall(ctx: ProjectCtx, timeoutSec: number, json: boolean
     let install: SlackInstallation | null = null;
     try {
       install = await ctx.client.get<SlackInstallation | null>(
-        `/projects/${ctx.projectId}/channels/slack/installation`,
+        `/workspaces/${ctx.workspaceId}/channels/slack/installation`,
       );
     } catch {
       // Transient poll errors are fine; keep waiting until the deadline.
@@ -294,7 +294,7 @@ async function waitForInstall(ctx: ProjectCtx, timeoutSec: number, json: boolean
   }
 }
 
-async function connectManual(ctx: ProjectCtx, opts: ConnectOpts): Promise<number> {
+async function connectManual(ctx: WorkspaceCtx, opts: ConnectOpts): Promise<number> {
   const botToken = resolveSecret('bot token', opts.botTokenFlag, 'SLACK_BOT_TOKEN');
   const signingSecret = resolveSecret(
     'signing secret',
@@ -317,7 +317,7 @@ async function connectManual(ctx: ProjectCtx, opts: ConnectOpts): Promise<number
   let install: SlackInstallation;
   try {
     install = await ctx.client.post<SlackInstallation>(
-      `/projects/${ctx.projectId}/channels/slack/connect`,
+      `/workspaces/${ctx.workspaceId}/channels/slack/connect`,
       { bot_token: botToken, signing_secret: signingSecret },
     );
   } catch (err) {
@@ -340,9 +340,9 @@ function apiV1Base(url: string): string {
   return `${url.trim().replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`;
 }
 
-function printInstall(ctx: ProjectCtx, install: SlackInstallation, headline: string): void {
+function printInstall(ctx: WorkspaceCtx, install: SlackInstallation, headline: string): void {
   const name = install.workspaceName ?? install.workspaceId;
-  const webhookUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.projectId}`;
+  const webhookUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.workspaceId}`;
   process.stdout.write(
     `${headline}  ${C.bold}${name}${C.reset}\n` +
       `         team       ${C.dim}${install.workspaceId}${C.reset}\n` +
@@ -352,12 +352,12 @@ function printInstall(ctx: ProjectCtx, install: SlackInstallation, headline: str
 }
 
 async function channelsDisconnect(
-  ctxOpts: { projectArg?: string; hostArg?: string },
+  ctxOpts: { workspaceArg?: string; hostArg?: string },
 ): Promise<number> {
-  const ctx = await resolveProjectContext(ctxOpts);
+  const ctx = await resolveWorkspaceContext(ctxOpts);
   if (!ctx) return 1;
   try {
-    await ctx.client.delete(`/projects/${ctx.projectId}/channels/slack/installation`);
+    await ctx.client.delete(`/workspaces/${ctx.workspaceId}/channels/slack/installation`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -366,17 +366,17 @@ async function channelsDisconnect(
 }
 
 async function channelsManifest(
-  ctxOpts: { projectArg?: string; hostArg?: string },
+  ctxOpts: { workspaceArg?: string; hostArg?: string },
 ): Promise<number> {
-  const ctx = await resolveProjectContext(ctxOpts);
+  const ctx = await resolveWorkspaceContext(ctxOpts);
   if (!ctx) return 1;
 
-  const requestUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.projectId}`;
+  const requestUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.workspaceId}`;
 
   const manifest = {
     display_information: {
       name: 'Kortix',
-      description: 'Run a Kortix project from Slack',
+      description: 'Run a Kortix workspace from Slack',
       background_color: '#0a0a0a',
     },
     features: { bot_user: { display_name: 'kortix', always_online: true } },
@@ -446,19 +446,19 @@ function resolveSecret(label: string, flagValue: string | undefined, envName: st
 
 // ─── Microsoft Teams ─────────────────────────────────────────────────────
 // The Teams backend is already mounted in the API (apps/api/src/channels/teams/,
-// /v1/webhooks/teams/*, /v1/projects/:id/channels/teams/installation + /mode).
+// /v1/webhooks/teams/*, /v1/workspaces/:id/channels/teams/installation + /mode).
 // These CLI functions mirror the Slack surface so an operator can connect a
-// project to Teams the same way they connect to Slack.
+// workspace to Teams the same way they connect to Slack.
 
 async function teamsStatus(
-  ctxOpts: { projectArg?: string; hostArg?: string },
+  ctxOpts: { workspaceArg?: string; hostArg?: string },
   json: boolean,
 ): Promise<number> {
-  const ctx = await resolveProjectContext(ctxOpts);
+  const ctx = await resolveWorkspaceContext(ctxOpts);
   if (!ctx) return 1;
   try {
     const install = await ctx.client.get<TeamsInstallation | null>(
-      `/projects/${ctx.projectId}/channels/teams/installation`,
+      `/workspaces/${ctx.workspaceId}/channels/teams/installation`,
     );
     if (json) {
       emitJson({ connected: Boolean(install), installation: install ?? null });
@@ -484,21 +484,21 @@ async function teamsStatus(
 }
 
 async function teamsConnect(
-  ctxOpts: { projectArg?: string; hostArg?: string },
+  ctxOpts: { workspaceArg?: string; hostArg?: string },
   opts: { json: boolean },
 ): Promise<number> {
-  const ctx = await resolveProjectContext(ctxOpts);
+  const ctx = await resolveWorkspaceContext(ctxOpts);
   if (!ctx) return 1;
   try {
     const mode = await ctx.client.get<TeamsMode>(
-      `/projects/${ctx.projectId}/channels/teams/mode`,
+      `/workspaces/${ctx.workspaceId}/channels/teams/mode`,
     );
     // Client-side pre-check, worded exactly like the server's feature-flag gate
     // (feature-flags/gate.ts). It is a failure, so it goes to stderr like every
     // other CLI error — stdout stays reserved for the command's own output.
     if (!mode.enabled) {
       process.stderr.write(
-        `${status.err('Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
+        `${status.err('Microsoft Teams is not enabled for this workspace. Enable it in Settings → Feature flags.')}\n`,
       );
       return 1;
     }
@@ -526,16 +526,16 @@ async function teamsConnect(
 }
 
 async function teamsManifest(
-  ctxOpts: { projectArg?: string; hostArg?: string },
+  ctxOpts: { workspaceArg?: string; hostArg?: string },
 ): Promise<number> {
-  const ctx = await resolveProjectContext(ctxOpts);
+  const ctx = await resolveWorkspaceContext(ctxOpts);
   if (!ctx) return 1;
   // The Teams app manifest lives in the repo at apps/api/src/channels/teams-app-manifest.json.
   // Print it so an operator can review/submit it manually if the one-click flow
   // isn't available. The server's /mode endpoint carries the consent URL; the
-  // manifest is static (doesn't depend on the project).
+  // manifest is static (doesn't depend on the workspace).
   const baseUrl = ctx.client.apiBase.replace(/\/$/, '');
-  const manifestUrl = `${baseUrl}/v1/projects/${ctx.projectId}/channels/teams/mode`;
+  const manifestUrl = `${baseUrl}/v1/workspaces/${ctx.workspaceId}/channels/teams/mode`;
   try {
     const mode = await ctx.client.get<TeamsMode>(manifestUrl);
     process.stdout.write(

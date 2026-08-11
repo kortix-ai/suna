@@ -17,7 +17,7 @@ import {
 
 const entry = (name: string, slot: number, over: Partial<Registry['slots'][string]> = {}) => ({
   slot,
-  projectId: `kortix-${name}`,
+  workspaceId: `kortix-${name}`,
   path: `/repo/suna-${name}`,
   branch: name,
   ports: computePorts(slot),

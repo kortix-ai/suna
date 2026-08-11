@@ -17,8 +17,8 @@ import Hint from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
-import type { GatewayLogRow } from '@/lib/projects-gateway-client';
+import { useGatewayLog, useGatewayLogs } from '@/hooks/workspaces/use-workspace-gateway';
+import type { GatewayLogRow } from '@/lib/workspaces-gateway-client';
 import { cn } from '@/lib/utils';
 
 import { CopyButton, displayModel, modelAccent } from './_shared';
@@ -180,7 +180,7 @@ function NavButton({
 }
 
 function GatewayLogDetail({
-  projectId,
+  workspaceId,
   logId,
   index,
   total,
@@ -188,7 +188,7 @@ function GatewayLogDetail({
   onPrev,
   onNext,
 }: {
-  projectId: string;
+  workspaceId: string;
   logId: string;
   index: number;
   total: number;
@@ -196,7 +196,7 @@ function GatewayLogDetail({
   onPrev: () => void;
   onNext: () => void;
 }) {
-  const { data, isLoading } = useGatewayLog(projectId, logId);
+  const { data, isLoading } = useGatewayLog(workspaceId, logId);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -305,12 +305,12 @@ function GatewayLogDetail({
   );
 }
 
-export function GatewayLogs({ projectId }: { projectId: string }) {
+export function GatewayLogs({ workspaceId }: { workspaceId: string }) {
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'ok' | 'err'>('all');
   const [focused, setFocused] = useState(0);
   const { data, isLoading } = useGatewayLogs(
-    projectId,
+    workspaceId,
     filter === 'all' ? undefined : { ok: filter === 'ok' },
   );
   const logs = data?.logs ?? [];
@@ -377,7 +377,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
     const idx = logs.findIndex((l) => l.log_id === selectedLogId);
     return (
       <GatewayLogDetail
-        projectId={projectId}
+        workspaceId={workspaceId}
         logId={selectedLogId}
         index={idx}
         total={logs.length}

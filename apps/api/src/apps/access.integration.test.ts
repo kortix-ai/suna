@@ -28,7 +28,7 @@ const HAS_CONFIRMED_TEST_DB = Boolean(
 const describeWithDb = HAS_CONFIRMED_TEST_DB ? describe : describe.skip;
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-00000000b101';
-const PROJECT_ID = '00000000-0000-4000-a000-00000000b102';
+const WORKSPACE_ID = '00000000-0000-4000-a000-00000000b102';
 const APP_ID = '00000000-0000-4000-a000-00000000b103';
 const OWNER_ID = '00000000-0000-4000-a000-00000000b104';
 const MEMBER_ID = '00000000-0000-4000-a000-00000000b105';
@@ -47,8 +47,8 @@ function testDb(): Database {
 
 async function cleanup(): Promise<void> {
   const database = testDb();
-  await database.delete(apps).where(eq(apps.projectId, PROJECT_ID));
-  await database.delete(projects).where(eq(projects.projectId, PROJECT_ID));
+  await database.delete(apps).where(eq(apps.workspaceId, WORKSPACE_ID));
+  await database.delete(projects).where(eq(projects.workspaceId, WORKSPACE_ID));
   await database.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
   await database.delete(accounts).where(eq(accounts.accountId, FOREIGN_ACCOUNT_ID));
 }
@@ -57,7 +57,7 @@ async function seedApp() {
   const database = testDb();
   await database.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'App access test' });
   await database.insert(projects).values({
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     accountId: ACCOUNT_ID,
     name: 'App access test',
     repoUrl: 'https://example.test/app-access.git',
@@ -66,7 +66,7 @@ async function seedApp() {
   const [app] = await database.insert(apps).values({
     appId: APP_ID,
     accountId: ACCOUNT_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     slug: 'access-test',
     name: 'Access test',
     routeKey: 'bbbbbbbbbbbbbbbb',
@@ -151,8 +151,9 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
       .where(eq(appAccessGrants.appId, APP_ID));
     expect(rows).toHaveLength(2);
 
-    const project = await persistAppAccessPolicy(updated, { mode: 'project' });
-    expect(project.accessRevision).toBe(3);
+    const workspace = await persistAppAccessPolicy(updated, { mode: 'workspace' });
+    expect(workspace.accessRevision).toBe(3);
+    expect(workspace.accessMode).toBe('project');
     expect(await testDb().select().from(appAccessGrants)
       .where(eq(appAccessGrants.appId, APP_ID))).toHaveLength(0);
   });

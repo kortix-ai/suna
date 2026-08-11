@@ -43,7 +43,7 @@ mock.module('../channels/slack-api', () => ({
 }));
 
 mock.module('../channels/install-store', () => ({
-  loadSlackTokenForProject: async () => 'xoxb-test',
+  loadSlackTokenForWorkspace: async () => 'xoxb-test',
   saveSlackOauthInstall: async () => {},
 }));
 
@@ -113,7 +113,7 @@ function liveHandle(overrides: Record<string, unknown> = {}) {
     ],
     expiry: Date.now() + 60_000,
     finalized: false,
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     sessionId: 'sess-1',
     teamId: 'T1',
     originatingEvent: { type: 'app_mention', channel: 'C1', ts: '10.10', user: 'U1' },
@@ -125,7 +125,7 @@ function liveHandle(overrides: Record<string, unknown> = {}) {
 function streamRow(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'sess-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     teamId: 'T1',
     channel: 'C1',
     triggerTs: '10.10',

@@ -3,8 +3,8 @@
  * (members, project grants). Web parity: lib/iam-client.ts group fns.
  */
 
-import { apiFetch } from '@/lib/projects/projects-client';
-import type { AccountGroup } from '@/lib/projects/projects-client';
+import { apiFetch } from '@/lib/workspaces/workspaces-client';
+import type { AccountGroup } from '@/lib/workspaces/workspaces-client';
 
 export type { AccountGroup };
 

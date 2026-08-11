@@ -189,11 +189,11 @@ describe('qk migration guard — packages/sdk/src/react must never hand-type an 
     // nobody has written yet is already covered.
     ['some-future-family'],
   ])('a reintroduced project-%s literal is a violation', (family) => {
-    expect(violation(`    queryKey: ['project-${family}', projectId],`)).toBe(`project-${family}`);
+    expect(violation(`    queryKey: ['project-${family}', workspaceId],`)).toBe(`project-${family}`);
   });
 
   test('the bare project and projects roots are violations too', () => {
-    expect(violation(`  queryKey: ['project${''}', projectId],`)).toBe('project');
+    expect(violation(`  queryKey: ['project${''}', workspaceId],`)).toBe('project');
     expect(violation(`  queryClient.invalidateQueries({ queryKey: ['project${'s'}'] });`)).toBe(
       'projects',
     );
@@ -206,18 +206,18 @@ describe('qk migration guard — packages/sdk/src/react must never hand-type an 
   });
 
   test('going through the factory is never a violation', () => {
-    expect(violation('    queryKey: qk.project.detail(projectId),')).toBeNull();
-    expect(violation('    queryKey: qk.project.session(projectId, sessionId),')).toBeNull();
-    expect(violation('    queryKey: qk.project.triggers(projectId),')).toBeNull();
+    expect(violation('    queryKey: qk.project.detail(workspaceId),')).toBeNull();
+    expect(violation('    queryKey: qk.project.session(workspaceId, sessionId),')).toBeNull();
+    expect(violation('    queryKey: qk.project.triggers(workspaceId),')).toBeNull();
   });
 
   test('the documented exemptions are permitted, and only those', () => {
     for (const suffix of ALLOWED_SUFFIXES) {
-      expect(violation(`    queryKey: ['project-${suffix}', projectId],`)).toBeNull();
+      expect(violation(`    queryKey: ['project-${suffix}', workspaceId],`)).toBeNull();
     }
     // One character off an exemption is NOT exempt — the match is exact, not
     // a prefix, so `project-provider` cannot ride in on `project-providers`.
-    expect(violation(`    queryKey: ['project-${'provider'}', projectId],`)).toBe(
+    expect(violation(`    queryKey: ['project-${'provider'}', workspaceId],`)).toBe(
       'project-provider',
     );
   });

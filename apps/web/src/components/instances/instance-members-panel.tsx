@@ -218,7 +218,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
           removeTarget
             ? removeTarget.role === 'admin'
               ? `${removeTarget.email || removeTarget.user_id} is an admin on your account. Removing them revokes their access to every instance under this account, not just this one.`
-              : `${removeTarget.email || removeTarget.user_id} will lose access to this instance and any projects they were added to.`
+              : `${removeTarget.email || removeTarget.user_id} will lose access to this instance and any workspaces they were added to.`
             : ''
         }
         confirmLabel="Remove"

@@ -1,0 +1,217 @@
+// GitHub — repository linking and GitHub App installation management.
+
+import { backendApi } from '../../http/api-client';
+import { unwrap, type WorkspaceGitConnection } from './shared';
+import type { KortixWorkspace, WorkspaceGlyph } from './workspaces';
+
+export interface GitHubRepository {
+  id: string;
+  name: string;
+  full_name: string;
+  private: boolean;
+  html_url: string;
+  clone_url: string;
+  ssh_url: string;
+  default_branch: string;
+  description: string | null;
+}
+
+export interface GitHubRepositoriesResponse {
+  account_id: string;
+  installation_id: string;
+  owner_login: string;
+  repositories: GitHubRepository[];
+}
+
+export interface GitHubRepositoryBranch {
+  name: string;
+  protected: boolean;
+}
+
+export interface GitHubRepositoryBranchesResponse {
+  account_id: string;
+  installation_id: string;
+  owner_login: string;
+  repo_full_name: string;
+  default_branch: string;
+  branches: GitHubRepositoryBranch[];
+}
+
+export interface LinkRepositoryInput {
+  account_id?: string;
+  repo_url?: string;
+  repo_full_name?: string;
+  installation_id?: string;
+  name?: string;
+  default_branch?: string;
+  manifest_path?: string;
+  /** Optional emoji icon for the new workspace. Invalid values are dropped
+   *  server-side; they never fail the create. */
+  icon?: string;
+  /** Optional glyph icon for the new workspace. Invalid values are dropped
+   *  rather than failing the create. Wins over `icon` if both are given. */
+  icon_glyph?: WorkspaceGlyph;
+}
+
+export interface LinkRepositoryResponse {
+  workspace: KortixWorkspace;
+  git_connection: WorkspaceGitConnection | null;
+}
+
+export interface GitHubInstallationStatus {
+  account_id: string;
+  installation_row_id: string | null;
+  installed: boolean;
+  configured: boolean;
+  requires_installation: boolean;
+  install_url: string | null;
+  installation_id: string | null;
+  owner_login: string | null;
+  owner_type: string | null;
+  repository_selection: string | null;
+  permissions: Record<string, unknown>;
+  installation_url: string | null;
+  updated_at: string | null;
+}
+
+export interface GitHubInstallationsResponse extends GitHubInstallationStatus {
+  installations: GitHubInstallationStatus[];
+}
+
+export interface LinkableGitHubInstallation {
+  installation_id: string;
+  owner_login: string | null;
+  owner_type: string | null;
+  repository_selection: string | null;
+  permissions: Record<string, unknown>;
+  installation_url: string | null;
+  linked: boolean;
+}
+
+export interface LinkableGitHubInstallationsResponse {
+  account_id: string;
+  github_login: string;
+  configured: boolean;
+  install_url: string | null;
+  installations: LinkableGitHubInstallation[];
+}
+
+export async function linkRepository(input: LinkRepositoryInput) {
+  return unwrap(
+    await backendApi.post<LinkRepositoryResponse>(
+      '/workspaces/link-repository',
+      input,
+      {
+        showErrors: false,
+      },
+    ),
+  );
+}
+
+export async function getGitHubInstallation(accountId: string) {
+  return unwrap(
+    await backendApi.get<GitHubInstallationsResponse>(
+      `/workspaces/github/installation?account_id=${encodeURIComponent(accountId)}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listGitHubInstallations(accountId: string) {
+  return unwrap(
+    await backendApi.get<GitHubInstallationsResponse>(
+      `/workspaces/github/installations?account_id=${encodeURIComponent(accountId)}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listLinkableGitHubInstallations(input: {
+  account_id: string;
+  github_user_token: string;
+}) {
+  return unwrap(
+    await backendApi.post<LinkableGitHubInstallationsResponse>(
+      '/workspaces/github/installations/linkable',
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listGitHubRepositories(
+  accountId: string,
+  installationId?: string | null,
+  options?: { search?: string; limit?: number },
+) {
+  const params = new URLSearchParams({ account_id: accountId });
+  if (installationId) params.set('installation_id', installationId);
+  const search = options?.search?.trim();
+  if (search) params.set('search', search);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  return unwrap(
+    await backendApi.get<GitHubRepositoriesResponse>(
+      `/workspaces/github/repositories?${params.toString()}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listGitHubRepositoryBranches(
+  accountId: string,
+  installationId: string,
+  repoFullName: string,
+) {
+  const params = new URLSearchParams({
+    account_id: accountId,
+    installation_id: installationId,
+    repo_full_name: repoFullName,
+  });
+  return unwrap(
+    await backendApi.get<GitHubRepositoryBranchesResponse>(
+      `/workspaces/github/repository-branches?${params.toString()}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function saveGitHubInstallation(input: {
+  state: string;
+  installation_id: string;
+  github_user_token?: string;
+}) {
+  return unwrap(
+    await backendApi.post<GitHubInstallationStatus>(
+      '/workspaces/github/installation',
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function linkGitHubInstallation(input: {
+  account_id: string;
+  installation_id: string;
+  github_user_token: string;
+}) {
+  return unwrap(
+    await backendApi.post<GitHubInstallationStatus>(
+      '/workspaces/github/installations/link',
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function deleteGitHubInstallation(
+  accountId: string,
+  installationId?: string | null,
+) {
+  const params = new URLSearchParams({ account_id: accountId });
+  if (installationId) params.set('installation_id', installationId);
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/workspaces/github/installation?${params.toString()}`,
+    ),
+  );
+}

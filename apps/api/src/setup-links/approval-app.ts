@@ -16,11 +16,11 @@ import { connectors, connectorCalls, projectSessions, projects } from '@kortix/d
  *
  * So the token here is only a POINTER to "which decision is being asked". Every
  * route requires a signed-in Kortix account and re-checks that the account may
- * act on this project (`mayResolveApproval`: a manager, or the session's
+ * act on this workspace (`mayResolveApproval`: a manager, or the session's
  * launcher — never a session-bound/agent credential).
  *
  * This app is READ-ONLY. The decision itself is POSTed by the page to the
- * existing POST /v1/projects/:projectId/approvals/:executionId, so there is
+ * existing POST /v1/projects/:workspaceId/approvals/:executionId, so there is
  * exactly ONE implementation of the resolve path (atomic CAS, audit stamping,
  * "an agent cannot approve its own call") and this never becomes a second,
  * subtly-weaker door to it.
@@ -28,10 +28,10 @@ import { connectors, connectorCalls, projectSessions, projects } from '@kortix/d
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { summarizeArgsPreview } from '../connectors/args-preview';
-import { PROJECT_ACTIONS } from '../iam';
-import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
-import { mayResolveApproval } from '../projects/lib/approval-authority';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
+import { WORKSPACE_ACTIONS } from '../iam';
+import { assertWorkspaceCapability, loadWorkspaceForUser } from '../workspaces/lib/access';
+import { mayResolveApproval } from '../workspaces/lib/approval-authority';
+import { callerKortixSessionId } from '../workspaces/lib/caller-session';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
 
@@ -43,12 +43,12 @@ approvalLinksApp.get('/:token', async (c) => {
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'approval') return c.json({ error: 'Wrong link type' }, 400);
 
-  const { projectId } = resolved;
+  const { workspaceId } = resolved;
   const executionId = resolved.payload.eid;
 
   // Membership floor. 404 (not 403) for a non-member: the link should not
-  // confirm that a given project or approval exists to someone outside it.
-  const loaded = await loadProjectForUser(c, projectId, 'read');
+  // confirm that a given workspace or approval exists to someone outside it.
+  const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const [row] = await db
@@ -68,7 +68,7 @@ approvalLinksApp.get('/:token', async (c) => {
     .where(
       and(
         eq(connectorCalls.executionId, executionId),
-        eq(connectorCalls.projectId, projectId),
+        eq(connectorCalls.workspaceId, workspaceId),
       ),
     )
     .limit(1);
@@ -78,12 +78,12 @@ approvalLinksApp.get('/:token', async (c) => {
   // because `args_preview` can carry the content of the pending action.
   let isManager = false;
   try {
-    await assertProjectCapability(
+    await assertWorkspaceCapability(
       c,
       loaded.userId,
       loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE,
     );
     isManager = true;
   } catch {
@@ -97,7 +97,7 @@ approvalLinksApp.get('/:token', async (c) => {
       .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
       .from(projectSessions)
       .where(
-        and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)),
+        and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.workspaceId, workspaceId)),
       )
       .limit(1);
     targetCreatedBy = session?.createdBy ?? null;
@@ -126,15 +126,15 @@ approvalLinksApp.get('/:token', async (c) => {
               error: 'Sign in with a Kortix account to review this approval',
               code: 'APPROVAL_REQUIRES_HUMAN',
             }
-          : { error: 'Only a project manager or the session launcher can resolve this' },
+          : { error: 'Only a workspace manager or the session launcher can resolve this' },
       403,
     );
   }
 
-  const [project] = await db
+  const [workspace] = await db
     .select({ name: projects.name })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
 
   let connectorSlug: string | null = null;
@@ -158,8 +158,10 @@ approvalLinksApp.get('/:token', async (c) => {
 
   return c.json({
     kind: 'approval',
-    project_id: projectId,
-    project_name: project?.name ?? 'this project',
+    workspace_id: workspaceId,
+    workspace_name: workspace?.name ?? 'this workspace',
+    project_id: workspaceId,
+    project_name: workspace?.name ?? 'this workspace',
     execution_id: row.executionId,
     session_id: row.sessionId,
     action: row.actionPath,

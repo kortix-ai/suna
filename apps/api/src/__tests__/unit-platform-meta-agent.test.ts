@@ -4,10 +4,10 @@ import {
   addPlatformMetaAgent,
   buildPlatformMetaOpenCodeConfig,
   platformMetaAgentGrant,
-  projectMetaAgentEnabled,
+  workspaceMetaAgentEnabled,
   resolvePlatformMetaSandbox,
-} from '../projects/lib/platform-meta-agent';
-import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
+} from '../workspaces/lib/platform-meta-agent';
+import { resolveManifestVerdict } from '../workspaces/lib/manifest-verdict';
 
 describe('platform meta agent', () => {
   test('adds one reserved meta agent and replaces a project collision', () => {
@@ -80,10 +80,10 @@ describe('platform meta agent', () => {
   });
 
   test('is gated on the meta_agent feature flag, default off', () => {
-    expect(projectMetaAgentEnabled(null)).toBe(false);
-    expect(projectMetaAgentEnabled({})).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: {} })).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: { meta_agent: false } })).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: { meta_agent: true } })).toBe(true);
+    expect(workspaceMetaAgentEnabled(null)).toBe(false);
+    expect(workspaceMetaAgentEnabled({})).toBe(false);
+    expect(workspaceMetaAgentEnabled({ experimental: {} })).toBe(false);
+    expect(workspaceMetaAgentEnabled({ experimental: { meta_agent: false } })).toBe(false);
+    expect(workspaceMetaAgentEnabled({ experimental: { meta_agent: true } })).toBe(true);
   });
 });

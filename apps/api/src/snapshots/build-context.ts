@@ -37,9 +37,9 @@ import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
-import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
+import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../workspaces/starter';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
-import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
+import { buildLayeredDockerfile, buildPerWorkspaceWarmFromBaseDockerfile } from './dockerfile-layer';
 import { stagingTarArgs, stagingTarEnv } from './staging-tar';
 
 const execFileAsyncBC = promisify(execFile);
@@ -231,7 +231,7 @@ export interface WarmRepoContext {
   branch: string;
   /**
    * The EXACT commit sha the checkout is pinned to. The warm image name is keyed
-   * on this sha (`perProjectWarmImageName(..., tip, ...)`), so the staged checkout
+   * on this sha (`perWorkspaceWarmImageName(..., tip, ...)`), so the staged checkout
    * MUST be this exact commit — cloning the branch tip (which can advance after
    * the sha was resolved) would bake SHA_Y content under a SHA_X name, poisoning
    * the content-addressed image. A full 40-char hex sha.
@@ -614,7 +614,7 @@ export async function stageBuildContext(
   }
 
   // Bake the FULL gateway model catalog into the image. The no-restart warm seed
-  // has no sandbox token / projectId to fetch the catalog at PARK, so without this
+  // has no sandbox token / workspaceId to fetch the catalog at PARK, so without this
   // its opencode picker would fall back to the daemon's minimal (~11) set. Computed
   // server-side at build time → full picker, no token, no runtime fetch. The shared
   // seed's captureEnv (builder.ts) points KORTIX_LLM_CATALOG_FILE at the COPY target.
@@ -666,7 +666,7 @@ export async function stageBuildContext(
  * Stage a MINIMAL build context for the per-project warm FAST PATH: a
  * Dockerfile that `FROM`s an already-built runtime image (the shared default's
  * provider-reported image ref) and only adds the warm-repo clone + opencode
- * instance re-warm on top — see `buildPerProjectWarmFromBaseDockerfile`
+ * instance re-warm on top — see `buildPerWorkspaceWarmFromBaseDockerfile`
  * (dockerfile-layer.ts) for why this is the actual fix for the Chromium
  * re-download bug: nothing here re-installs the toolchain, so there's no
  * Chromium download to lose a cache race on.
@@ -704,7 +704,7 @@ export async function stageWarmFromBaseContext(
 
   const dockerfileName = '.kortix-snapshot.Dockerfile';
   const composedPath = join(contextDir, dockerfileName);
-  const composed = buildPerProjectWarmFromBaseDockerfile({
+  const composed = buildPerWorkspaceWarmFromBaseDockerfile({
     baseImageRef,
     warmRepo: { stagedPath, stagedGitPath, branch: warmRepo.branch },
     opencodeConfigPath,
@@ -892,7 +892,7 @@ async function stageScaffoldRepo(contextDir: string): Promise<void> {
   await g(['config', 'user.name', 'Kortix'], work);
   await g(['config', 'user.email', 'noreply@kortix.ai'], work);
   await g(['add', '-A'], work);
-  await g(['commit', '-m', 'chore: scaffold Kortix project'], work);
+  await g(['commit', '-m', 'chore: scaffold Kortix workspace'], work);
   const scaffoldGit = join(contextDir, 'scaffold.git');
   await rename(join(work, '.git'), scaffoldGit);
   await g(['--git-dir', scaffoldGit, 'config', 'core.bare', 'true'], contextDir);

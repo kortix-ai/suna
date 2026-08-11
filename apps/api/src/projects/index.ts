@@ -1,79 +1,64 @@
 /**
- * Project CRUD.
+ * @deprecated Legacy Project namespace adapter.
  *
- * Project is the new first-class source-of-truth object: one account-owned Git
- * repo plus the Kortix metadata needed to render and launch sessions later.
- * The old sandbox/instance tables remain as legacy compute state.
- *
- * ─── Structural note ─────────────────────────────────────────────────────────
- * This module was split for size: the wired Hono app + all helpers now live in
- * ./lib/*, and the 104 route registrations live in ./routes/r1..r9 (grouped by
- * original registration order). This file is a thin barrel: it imports the route
- * modules for their side-effect registration (IN THE ORIGINAL ROUTE ORDER — Hono
- * matches by registration order) and re-exports the same public surface the
- * pre-split file exported, so every external importer keeps working unchanged.
+ * New code imports `../workspaces`. This module exists only for `/v1/projects`
+ * and published Project-named server integrations.
  */
+import { Hono } from 'hono';
 
-// Route registrations run as import side-effects. The order here IS the route
-// registration order — preserve it. r1 registers the global `/*` auth
-// middleware first (its first statement), then the remaining route groups.
-import './routes/r1';
-import './routes/github-repositories';
-import './routes/r2';
-import './routes/r3';
-import './routes/secret-broker';
-import './routes/setup-links';
-import './routes/r4';
-import './routes/oauth2-connectors';
-import './routes/r5';
-import './routes/r6';
-import './routes/r7';
-import './routes/public-shares';
-import './routes/r8';
-import './routes/r9';
-import './routes/r10';
-import './routes/r11';
-import './routes/agent-scope';
-import './routes/agent-config';
-import './routes/gateway';
-import './routes/channel-bindings';
-import '../apps/routes';
-
-// The wired Hono app instances (all routes registered above via side-effect).
-export { projectsApp, projectWebhooksApp } from './lib/app';
-
-// Git-proxy public API (consumed by ../git-proxy).
+import type { AppEnv } from '../types';
+import {
+  buildSessionSandboxEnvVars,
+  commitManifest,
+  continueSession,
+  createWorkspaceSession,
+  createSession,
+  drainSessionLifecycleQueue,
+  drainTriggerExecutionQueue,
+  getTriggerSchedulerHealth,
+  loadManifestForEdit,
+  resolveGitTriggerActor,
+  resolveWorkspaceAutomationActor,
+  runWorkspaceTriggerSweep,
+  schedulerSweepIsStale,
+  startWorkspaceTriggerScheduler,
+  startSession,
+  stopWorkspaceTriggerScheduler,
+  workspaceWebhooksApp,
+} from '../workspaces';
+import { workspaceRoutesApp } from '../workspaces/lib/app';
 export {
-  withProjectGitAuth,
-  resolveProjectUpstream,
   authorizeGitProxy,
+  resolveWorkspaceUpstream,
   type GitProxyAuth,
-} from './lib/git';
+  withWorkspaceGitAuth,
+} from '../workspaces';
+import { projectRequestCompatibility, projectResponseCompatibility } from './compat';
 
-// Session helpers (consumed by channels and provisioning).
+export const projectsApp = new Hono<AppEnv>();
+projectsApp.use('*', projectRequestCompatibility);
+projectsApp.use('*', projectResponseCompatibility);
+projectsApp.route('/', workspaceRoutesApp);
+
+export const projectWebhooksApp = new Hono<AppEnv>();
+projectWebhooksApp.use('/projects/*', projectResponseCompatibility);
+projectWebhooksApp.route('/', workspaceWebhooksApp);
+
 export {
   buildSessionSandboxEnvVars,
-  createProjectSession,
-} from './lib/sessions';
-
-export {
-  createSession,
-  startSession,
-  continueSession,
-  drainSessionLifecycleQueue,
-  resolveProjectAutomationActor,
-} from './session-lifecycle';
-
-// Trigger + manifest helpers (consumed by channels / connector / the boot
-// sequence in src/index.ts).
-export {
-  drainTriggerExecutionQueue,
-  runProjectTriggerSweep,
-  resolveGitTriggerActor,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
-  getTriggerSchedulerHealth,
-  schedulerSweepIsStale,
-  loadManifestForEdit,
   commitManifest,
-} from './lib/triggers';
+  continueSession,
+  createWorkspaceSession,
+  createSession,
+  drainSessionLifecycleQueue,
+  drainTriggerExecutionQueue,
+  getTriggerSchedulerHealth,
+  loadManifestForEdit,
+  resolveGitTriggerActor,
+  resolveWorkspaceAutomationActor,
+  runWorkspaceTriggerSweep,
+  schedulerSweepIsStale,
+  startWorkspaceTriggerScheduler,
+  startSession,
+  stopWorkspaceTriggerScheduler,
+};

@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectSession } from '../api/types.ts';
+import type { WorkspaceSession } from '../api/types.ts';
 import { buildConnectPickerItems } from '../commands/home.ts';
 import { resolveConnectAfterCreate } from '../commands/sessions.ts';
 
-function session(overrides: Partial<ProjectSession>): ProjectSession {
+function session(overrides: Partial<WorkspaceSession>): WorkspaceSession {
   return {
     session_id: '00000000-0000-0000-0000-000000000000',
     account_id: 'acct',
-    project_id: 'proj',
+    workspace_id: 'workspace',
     branch_name: 'branch',
     base_ref: 'main',
     sandbox_provider: 'daytona',
@@ -23,7 +23,7 @@ function session(overrides: Partial<ProjectSession>): ProjectSession {
     created_at: '2026-08-01T00:00:00.000Z',
     updated_at: '2026-08-01T00:00:00.000Z',
     ...overrides,
-  } as ProjectSession;
+  } as WorkspaceSession;
 }
 
 describe('resolveConnectAfterCreate', () => {

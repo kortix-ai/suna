@@ -16,7 +16,7 @@ import {
 } from '@/ui';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
-import { projectChildSessionHref } from './session-spawn-urls';
+import { workspaceChildSessionHref } from './session-spawn-urls';
 
 export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
@@ -26,7 +26,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
 
   const agentName = (input.agent as string) || 'kortix';
   const description = (input.description as string) || '';
-  const projectName = (input.project as string) || '';
+  const workspaceName = (input.workspace as string) || '';
   const fullPrompt = (input.prompt as string) || '';
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
@@ -43,7 +43,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
   const childHref = useMemo(
-    () => projectChildSessionHref(pathname, childSessionId),
+    () => workspaceChildSessionHref(pathname, childSessionId),
     [pathname, childSessionId],
   );
 
@@ -58,8 +58,8 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   // first one. A spawn prompt is routinely kilobytes, and this sits in the
   // component body, so it ran on every render of a worker row.
   const label = useMemo(
-    () => description || projectName || fullPrompt.split('\n')[0]?.slice(0, 80) || '',
-    [description, projectName, fullPrompt],
+    () => description || workspaceName || fullPrompt.split('\n')[0]?.slice(0, 80) || '',
+    [description, workspaceName, fullPrompt],
   );
 
   const subtitle = isRunning ? (lastActivity ?? label) : label || undefined;

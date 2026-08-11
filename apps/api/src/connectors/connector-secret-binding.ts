@@ -24,7 +24,7 @@ export function validateConnectorSecretBinding(
   }
   if (input.authorizationStrategy !== 'project') {
     return {
-      error: 'Project secrets require a project authorization strategy',
+      error: 'Workspace secrets require a project authorization strategy',
       status: 409,
     };
   }

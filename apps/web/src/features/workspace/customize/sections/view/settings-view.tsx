@@ -9,10 +9,8 @@ import { FormEvent, useEffect, useState } from 'react';
 
 import { useDebounce } from '@/hooks/use-debounce';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   Field,
   FieldContent,
@@ -37,190 +35,192 @@ import { Switch } from '@/components/ui/switch';
 import { Github } from '@/features/icon/icons/github';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
-  buildProjectEditPatch,
-  type ProjectEditDraft,
-  type ProjectEditSubject,
-} from '@/features/projects/modal/project-edit-patch';
-import { ProjectIconField, type ProjectIconValue } from '@/features/projects/modal/project-icon-field';
-import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+  buildWorkspaceEditPatch,
+  type WorkspaceEditDraft,
+  type WorkspaceEditSubject,
+} from '@/features/workspaces/modal/workspace-edit-patch';
 import {
-  archiveProject,
-  getProject,
-  inviteRepoCollaborator,
-  isManagedGithubProject,
-  listProjectBranches,
-  listProjectsForAccount,
-  listProjectTriggers,
-  setProjectTriggersActivation,
-  updateProject,
-  type KortixProject,
-  type ProjectDetail,
-  type ProjectInput,
-} from '@kortix/sdk';
-import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
-import { TrashIcon } from '@phosphor-icons/react';
+  WorkspaceIconField,
+  type WorkspaceIconValue,
+} from '@/features/workspaces/modal/workspace-icon-field';
 import {
   renameOnError,
   renameOnMutate,
   renameOnSettled,
-} from '@/hooks/projects/project-rename-cache';
+} from '@/hooks/workspaces/workspace-rename-cache';
+import { suppressAutoWorkspaceAfterDelete } from '@/lib/onboarding/ensure-first-workspace';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import {
+  archiveWorkspace,
+  getWorkspace,
+  inviteRepoCollaborator,
+  isManagedGithubWorkspace,
+  listWorkspaceBranches,
+  listWorkspacesForAccount,
+  listWorkspaceTriggers,
+  setWorkspaceTriggersActivation,
+  updateWorkspace,
+  type KortixWorkspace,
+  type WorkspaceInput,
+} from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { TrashIcon } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
-export interface RunProjectArchiveClient {
-  archiveProject: (projectId: string) => Promise<unknown>;
+export interface RunWorkspaceArchiveClient {
+  archiveWorkspace: (workspaceId: string) => Promise<unknown>;
 }
 
 /**
  * The archive mutation's real side effects, pulled out of the component so
  * this exact wiring can be pinned with a plain fake instead of
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
- * hazard for sibling suites (see ensure-first-project.provision.test.ts /
+ * hazard for sibling suites (see ensure-first-workspace.provision.test.ts /
  * use-create-workspace.test.ts, which use this same injected-client shape).
  *
- * Ported from the deleted `/projects` list page's archive handler
- * (`app/(app)/projects/page.tsx`, pre-Task-21): "Archiving the LAST project
+ * Ported from the deleted `/workspaces` list page's archive handler
+ * (`app/(app)/workspaces/page.tsx`, pre-Task-21): "Archiving the LAST workspace
  * must leave the account empty. Without this the auto-provision door would
- * see zero active projects and immediately recreate one, undoing the delete
+ * see zero active workspaces and immediately recreate one, undoing the delete
  * the user just confirmed." Same condition (`<= 1`, evaluated against the
- * project count from BEFORE this archive lands), same tab-scoped
- * `sessionStorage` guard (`suppressAutoProjectAfterDelete`) — deliberately
+ * workspace count from BEFORE this archive lands), same tab-scoped
+ * `sessionStorage` guard (`suppressAutoWorkspaceAfterDelete`) — deliberately
  * NOT `localStorage`: a later sign-in or a fresh tab must still auto-provision
  * for an empty account like any other.
  *
- * `onSuppress` only runs after `client.archiveProject` resolves — a failed
- * archive must not suppress auto-provision for a project that still exists.
+ * `onSuppress` only runs after `client.archiveWorkspace` resolves — a failed
+ * archive must not suppress auto-provision for a workspace that still exists.
  *
- * `remainingProjectCountBeforeArchive` is `number | null`, NOT the deleted
+ * `remainingWorkspaceCountBeforeArchive` is `number | null`, NOT the deleted
  * page's plain number: that page's count and its Archive button read the
  * SAME query, so the button could not render before the count existed. Here
- * the count is a separate, dependent query (`accountProjectsQuery`) that can
+ * the count is a separate, dependent query (`accountWorkspacesQuery`) that can
  * still be loading or errored when Archive is clicked. `null` means "count
  * unknown" and deliberately does NOT suppress — failing closed, because the
  * cost of skipping a suppression is one unwanted auto-create, while the cost
- * of a FALSE suppression (from an unrelated `?? 0`) is `/projects/start`
+ * of a FALSE suppression (from an unrelated `?? 0`) is `/workspaces/start`
  * refusing to auto-create for the next empty account this tab visits, with
  * nothing left to clear the flag until this same terminal screen is reached
  * again for an account where it actually applies.
  */
-export async function runProjectArchive(
-  projectId: string,
-  remainingProjectCountBeforeArchive: number | null,
-  client: RunProjectArchiveClient,
+export async function runWorkspaceArchive(
+  workspaceId: string,
+  remainingWorkspaceCountBeforeArchive: number | null,
+  client: RunWorkspaceArchiveClient,
   onSuppress: () => void,
 ): Promise<void> {
-  await client.archiveProject(projectId);
-  if (remainingProjectCountBeforeArchive !== null && remainingProjectCountBeforeArchive <= 1) {
+  await client.archiveWorkspace(workspaceId);
+  if (remainingWorkspaceCountBeforeArchive !== null && remainingWorkspaceCountBeforeArchive <= 1) {
     onSuppress();
   }
 }
 
 /**
- * `accountProjectsQuery.data` -> the count `runProjectArchive` needs, kept as
+ * `accountWorkspacesQuery.data` -> the count `runWorkspaceArchive` needs, kept as
  * its own exported step so the exact mapping is pinned independently of
  * TanStack Query. The bug this guards against lived in a bare
- * `accountProjectsQuery.data?.length ?? 0` at the call site: `undefined`
+ * `accountWorkspacesQuery.data?.length ?? 0` at the call site: `undefined`
  * (still loading, OR the query errored — react-query leaves `data`
- * `undefined` in both) silently became `0`, which reads as "zero projects
+ * `undefined` in both) silently became `0`, which reads as "zero workspaces
  * remain" and fires a false suppression. `undefined` must map to `null`
  * ("unknown"), never to `0` ("confirmed empty").
  */
-export function accountProjectCountForArchive(data: unknown[] | undefined): number | null {
+export function accountWorkspaceCountForArchive(data: unknown[] | undefined): number | null {
   return data ? data.length : null;
 }
 
-export function SettingsView({ projectId }: { projectId: string }) {
+export function SettingsView({ workspaceId }: { workspaceId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
-  const projectQuery = useQuery({
-    queryKey: qk.project.summary(projectId),
-    queryFn: () => getProject(projectId),
+  const workspaceQuery = useQuery({
+    queryKey: qk.workspace.summary(workspaceId),
+    queryFn: () => getWorkspace(workspaceId),
     ...contract('config'),
   });
 
-  const project = projectQuery.data;
-  const canManage = project?.effective_project_role === 'manager';
-  // Real per-leaf write cap: a custom role granted project.write edits the
+  const workspace = workspaceQuery.data;
+  const canManage = workspace?.effective_workspace_role === 'manager';
+  // Real per-leaf write cap: a custom role granted workspace.write edits the
   // general controls (name/repo) without being a full manager. Feature flags
-  // moved to their own section and gate on project.customize.write there.
-  // The mutating routes assert project.write, so a READ-only role sees the
+  // moved to their own section and gate on workspace.customize.write there.
+  // The mutating routes assert workspace.write, so a READ-only role sees the
   // section read-only. Archive/danger-zone stays manager-only below.
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  const canWrite = useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_WRITE).allowed === true;
   const canEdit = canManage || canWrite;
 
-  // Same `qk.projects.list(accountId)` cache entry the workspace switcher and
+  // Same `qk.workspaces.list(accountId)` cache entry the workspace switcher and
   // /new already fetch with, so this is warm (no extra request) for the common
-  // case of opening Settings from a project the sidebar has already loaded.
+  // case of opening Settings from a workspace the sidebar has already loaded.
   // That sharing is the whole point, and it is what makes the key mandatory
   // rather than cosmetic: a hand-typed key here is a DIFFERENT entry, which
   // silently costs a second request and lets the two counts disagree.
-  // Read, not re-derived from `project`: this is the account's PROJECT
-  // COUNT before the archive commits, which `runProjectArchive` needs to
+  // Read, not re-derived from `workspace`: this is the account's PROJECT
+  // COUNT before the archive commits, which `runWorkspaceArchive` needs to
   // decide whether this was the last one.
-  const accountId = project?.account_id;
-  const accountProjectsQuery = useQuery({
-    queryKey: qk.projects.list(accountId),
-    queryFn: () => listProjectsForAccount(accountId as string),
+  const accountId = workspace?.account_id;
+  const accountWorkspacesQuery = useQuery({
+    queryKey: qk.workspaces.list(accountId),
+    queryFn: () => listWorkspacesForAccount(accountId as string),
     enabled: !!accountId,
     ...contract('inventory'),
   });
 
   const archiveMutation = useMutation({
     mutationFn: () =>
-      runProjectArchive(
-        projectId,
-        accountProjectCountForArchive(accountProjectsQuery.data),
-        { archiveProject },
-        suppressAutoProjectAfterDelete,
+      runWorkspaceArchive(
+        workspaceId,
+        accountWorkspaceCountForArchive(accountWorkspacesQuery.data),
+        { archiveWorkspace },
+        suppressAutoWorkspaceAfterDelete,
       ),
     onSuccess: () => {
-      successToast('Project archived');
-      // qk.projects.scope(): for a single-account user the archived
-      // project's account IS the primary account qk.projects.list() (no
+      successToast('Workspace archived');
+      // qk.workspaces.scope(): for a single-account user the archived
+      // workspace's account IS the primary account qk.workspaces.list() (no
       // args) resolves to, so a precise invalidation would leave the
-      // marketplace picker showing the archived project until gcTime
+      // marketplace picker showing the archived workspace until gcTime
       // evicts it. Archiving is rare — over-invalidating costs nothing.
-      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+      queryClient.invalidateQueries({ queryKey: qk.workspaces.scope() });
       setArchiveOpen(false);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to archive workspace'),
   });
 
   return (
-    <CustomizeSectionWrapper title="Settings" description="Manage your project settings">
-      {projectQuery.isLoading && (
+    <CustomizeSectionWrapper title="Settings" description="Manage your workspace settings">
+      {workspaceQuery.isLoading && (
         <div className="space-y-5">
           <Skeleton className="h-56 rounded-md" />
           <Skeleton className="h-72 rounded-md" />
         </div>
       )}
 
-      {projectQuery.isError && (
+      {workspaceQuery.isError && (
         <ErrorState
           size="sm"
           title={tHardcodedUi.raw(
             'appProjectsIdCustomizeSettingsPage.line86JsxAttrTitleFailedToLoadProject',
           )}
-          description={(projectQuery.error as Error).message}
+          description={(workspaceQuery.error as Error).message}
           action={
-            <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
+            <Button variant="outline" size="sm" onClick={() => workspaceQuery.refetch()}>
               Retry
             </Button>
           }
         />
       )}
 
-      {project && (
+      {workspace && (
         <div className="space-y-8">
-          <GeneralProjectCard project={project} canManage={canEdit} />
-          <RepositoryCard project={project} canManage={canEdit} />
+          <GeneralWorkspaceCard workspace={workspace} canManage={canEdit} />
+          <RepositoryCard workspace={workspace} canManage={canEdit} />
           {canManage && (
             <section className="space-y-4">
               <Label>Automation</Label>
-              <TriggersActivationCard projectId={projectId} canManage={canEdit} />
+              <TriggersActivationCard workspaceId={workspaceId} canManage={canEdit} />
             </section>
           )}
           {canManage && (
@@ -266,7 +266,9 @@ export function SettingsView({ projectId }: { projectId: string }) {
         title={tHardcodedUi.raw(
           'appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject',
         )}
-        description={project ? `Archive ${project.name}? Current sessions remain recoverable.` : ''}
+        description={
+          workspace ? `Archive ${workspace.name}? Current sessions remain recoverable.` : ''
+        }
         confirmLabel="Archive"
         onConfirm={() => archiveMutation.mutate()}
         isPending={archiveMutation.isPending}
@@ -275,27 +277,33 @@ export function SettingsView({ projectId }: { projectId: string }) {
   );
 }
 
-function RepositoryCard({ project, canManage }: { project: KortixProject; canManage: boolean }) {
+function RepositoryCard({
+  workspace,
+  canManage,
+}: {
+  workspace: KortixWorkspace;
+  canManage: boolean;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const repoUrl = project.repo_url;
+  const repoUrl = workspace.repo_url;
   const githubUrl = githubRepoWebUrl(repoUrl);
   const repoLabel = githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
-  const managed = isManagedGithubProject(project);
+  const managed = isManagedGithubWorkspace(workspace);
   const branchesQuery = useQuery({
-    queryKey: qk.project.branches(project.project_id),
-    queryFn: () => listProjectBranches(project.project_id),
+    queryKey: qk.workspace.branches(workspace.workspace_id),
+    queryFn: () => listWorkspaceBranches(workspace.workspace_id),
     ...contract('config'),
   });
   const branchNames = Array.from(
     new Set([
-      project.default_branch,
+      workspace.default_branch,
       ...(branchesQuery.data?.branches.map((branch) => branch.name) ?? []),
     ]),
   );
 
-  const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
-  const [manifestPath, setManifestPath] = useState(project.manifest_path);
+  const [defaultBranch, setDefaultBranch] = useState(workspace.default_branch);
+  const [manifestPath, setManifestPath] = useState(workspace.manifest_path);
   const { debouncedValue: debouncedBranch, isLoading: isDebouncingBranch } = useDebounce(
     defaultBranch,
     500,
@@ -306,21 +314,21 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   );
 
   useEffect(() => {
-    setDefaultBranch(project.default_branch);
-    setManifestPath(project.manifest_path);
-  }, [project.default_branch, project.manifest_path]);
+    setDefaultBranch(workspace.default_branch);
+    setManifestPath(workspace.manifest_path);
+  }, [workspace.default_branch, workspace.manifest_path]);
 
   const mutation = useMutation({
     mutationFn: (patch: { default_branch: string; manifest_path: string }) =>
-      updateProject(project.project_id, patch),
+      updateWorkspace(workspace.workspace_id, patch),
     onSuccess: (updated) => {
-      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
-      // qk.projects.scope(): reaches every account's list (and the
+      queryClient.setQueryData(qk.workspace.summary(workspace.workspace_id), updated);
+      // qk.workspaces.scope(): reaches every account's list (and the
       // accountless slot the marketplace picker reads), restoring the reach
-      // the old bare projects-literal prefix match had. Repo-settings edits
+      // the old bare workspaces-literal prefix match had. Repo-settings edits
       // are rare — over-invalidating costs nothing.
-      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-      queryClient.invalidateQueries({ queryKey: qk.project.branches(project.project_id) });
+      queryClient.invalidateQueries({ queryKey: qk.workspaces.scope() });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.branches(workspace.workspace_id) });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
   });
@@ -333,15 +341,15 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
     const branch = debouncedBranch.trim();
     const manifest = debouncedManifest.trim();
     if (!branch) return;
-    if (branch === project.default_branch && manifest === project.manifest_path) return;
+    if (branch === workspace.default_branch && manifest === workspace.manifest_path) return;
 
     mutate({ default_branch: branch, manifest_path: manifest });
   }, [
     debouncedBranch,
     debouncedManifest,
     canManage,
-    project.default_branch,
-    project.manifest_path,
+    workspace.default_branch,
+    workspace.manifest_path,
     isPending,
     mutate,
   ]);
@@ -407,7 +415,7 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
 
         {managed ? (
           <div className="border-border/60 border-t pt-5">
-            <RepoCollaboratorInvite projectId={project.project_id} canManage={canManage} />
+            <RepoCollaboratorInvite workspaceId={workspace.workspace_id} canManage={canManage} />
           </div>
         ) : null}
       </div>
@@ -416,28 +424,28 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
 }
 
 function TriggersActivationCard({
-  projectId,
+  workspaceId,
   canManage,
 }: {
-  projectId: string;
+  workspaceId: string;
   canManage: boolean;
 }) {
   const queryClient = useQueryClient();
-  // Same entity/fetcher `ScheduleView` (components/projects/schedule-view.tsx)
+  // Same entity/fetcher `ScheduleView` (components/workspaces/schedule-view.tsx)
   // reads — both must share this key or a pause/resume here goes unseen there.
-  const queryKey = qk.project.triggers(projectId);
+  const queryKey = qk.workspace.triggers(workspaceId);
   const triggersQuery = useQuery({
     queryKey,
-    queryFn: () => listProjectTriggers(projectId),
+    queryFn: () => listWorkspaceTriggers(workspaceId),
     ...contract('config'),
   });
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
   const mutation = useMutation({
-    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
+    mutationFn: (next: boolean) => setWorkspaceTriggersActivation(workspaceId, next),
     onSuccess: (data, next) => {
       queryClient.setQueryData(queryKey, data);
-      successToast(next ? 'All triggers paused for this project' : 'Triggers resumed');
+      successToast(next ? 'All triggers paused for this workspace' : 'Triggers resumed');
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update trigger activation'),
   });
@@ -450,7 +458,7 @@ function TriggersActivationCard({
           {paused && <span className="text-muted-foreground font-normal"> · paused</span>}
         </FieldTitle>
         <FieldDescription>
-          Dev kill-switch — stop the platform auto-running this project&apos;s schedules &amp;
+          Dev kill-switch — stop the platform auto-running this workspace&apos;s schedules &amp;
           webhooks (manual test-fires still work). Use it when another environment owns the
           triggers.
         </FieldDescription>
@@ -459,17 +467,17 @@ function TriggersActivationCard({
         checked={paused}
         disabled={!canManage || mutation.isPending || triggersQuery.isLoading}
         onCheckedChange={(v) => mutation.mutate(v)}
-        aria-label="Pause all triggers for this project"
+        aria-label="Pause all triggers for this workspace"
       />
     </Field>
   );
 }
 
 function RepoCollaboratorInvite({
-  projectId,
+  workspaceId,
   canManage,
 }: {
-  projectId: string;
+  workspaceId: string;
   canManage: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -477,7 +485,7 @@ function RepoCollaboratorInvite({
   const [permission, setPermission] = useState<'read' | 'write'>('write');
 
   const inviteMutation = useMutation({
-    mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), permission),
+    mutationFn: () => inviteRepoCollaborator(workspaceId, username.trim(), permission),
     onSuccess: (res) => {
       if (res.alreadyCollaborator) {
         successToast(`@${res.username} already has access to this repo`);
@@ -593,68 +601,68 @@ function githubRepoWebUrl(repoUrl: string | null | undefined): string | null {
 }
 
 /**
- * The field's union, seeded from the project's two independent stored
+ * The field's union, seeded from the workspace's two independent stored
  * columns. Glyph wins if — despite the server invariant — a stale row
  * somehow carries both, matching `EntityAvatar`'s own glyph > emoji
  * precedence rather than inventing a different tiebreak here. Ported from
- * the deleted `EditProjectModal`, which needed the identical seed.
+ * the deleted Workspace edit modal, which needed the identical seed.
  */
-function toIconValue(icon?: string | null, glyph?: GlyphSelection | null): ProjectIconValue {
+function toIconValue(icon?: string | null, glyph?: GlyphSelection | null): WorkspaceIconValue {
   if (glyph) return { glyph };
   if (icon) return { emoji: icon };
   return null;
 }
 
 /**
- * What `GeneralProjectCard`'s combined name+icon autosave sends to
- * `updateProject`, or `null` when there is nothing to send — pulled out so
+ * What `GeneralWorkspaceCard`'s combined name+icon autosave sends to
+ * `updateWorkspace`, or `null` when there is nothing to send — pulled out so
  * this exact wiring is under test without mounting the component or mocking
- * `@kortix/sdk` (same DI shape `runProjectArchive` above uses, and for the
+ * `@kortix/sdk` (same DI shape `runWorkspaceArchive` above uses, and for the
  * same reason: `mock.module('@kortix/sdk', ...)` is process-wide in this
  * monorepo and a hazard for sibling suites).
  *
- * Thin wrapper over `buildProjectEditPatch` (`project-edit-patch.ts`), which
+ * Thin wrapper over `buildWorkspaceEditPatch` (`workspace-edit-patch.ts`), which
  * already owns the union-diffing rules — including the invariant this field
  * exists to prove: `icon` and `icon_glyph` are never both present in the same
  * patch, because the API deletes whichever one a write does NOT name. This
- * function only pins what THIS card feeds that shared diff: the live project
+ * function only pins what THIS card feeds that shared diff: the live workspace
  * as `subject`, the name input plus the icon field's current value as
  * `draft`.
  */
-export function buildProjectSavePatch(
-  subject: ProjectEditSubject,
-  draft: ProjectEditDraft,
-): Partial<ProjectInput> | null {
-  const edit = buildProjectEditPatch(subject, draft);
+export function buildWorkspaceSavePatch(
+  subject: WorkspaceEditSubject,
+  draft: WorkspaceEditDraft,
+): Partial<WorkspaceInput> | null {
+  const edit = buildWorkspaceEditPatch(subject, draft);
   return edit.status === 'ready' ? edit.patch : null;
 }
 
-function GeneralProjectCard({
-  project,
+function GeneralWorkspaceCard({
+  workspace,
   canManage,
 }: {
-  project: Awaited<ReturnType<typeof getProject>>;
+  workspace: Awaited<ReturnType<typeof getWorkspace>>;
   canManage: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const [name, setName] = useState(project.name);
-  const [icon, setIcon] = useState<ProjectIconValue>(() =>
-    toIconValue(project.icon, project.icon_glyph),
+  const [name, setName] = useState(workspace.name);
+  const [icon, setIcon] = useState<WorkspaceIconValue>(() =>
+    toIconValue(workspace.icon, workspace.icon_glyph),
   );
   const { debouncedValue: debouncedName, isLoading: isDebouncing } = useDebounce(name, 500);
 
   useEffect(() => {
-    setName(project.name);
-    setIcon(toIconValue(project.icon, project.icon_glyph));
-  }, [project.name, project.icon, project.icon_glyph]);
+    setName(workspace.name);
+    setIcon(toIconValue(workspace.icon, workspace.icon_glyph));
+  }, [workspace.name, workspace.icon, workspace.icon_glyph]);
 
   const mutation = useMutation({
-    mutationFn: (patch: Partial<ProjectInput>) => updateProject(project.project_id, patch),
+    mutationFn: (patch: Partial<WorkspaceInput>) => updateWorkspace(workspace.workspace_id, patch),
     // Paint the new name in the same frame it's typed, snapshotting what it
     // overwrote so a REJECTED rename can put it back. `renameOnMutate` /
     // `renameOnError` / `renameOnSettled` were shared with
-    // `edit-project-modal.tsx` so the two rename paths could not drift; that
+    // `edit-workspace-modal.tsx` so the two rename paths could not drift; that
     // modal is gone and this card is now the only rename path, but the trio
     // stays because it owns the snapshot/restore invariant, not the sharing.
     //
@@ -662,15 +670,15 @@ function GeneralProjectCard({
     // (migrated here from that modal), and `renameOnMutate` returns
     // `undefined` for a patch with no `name` — an icon-only save writes
     // nothing optimistic and so has nothing to roll back.
-    onMutate: (patch) => renameOnMutate(queryClient, project.project_id, patch.name),
+    onMutate: (patch) => renameOnMutate(queryClient, workspace.workspace_id, patch.name),
     onSuccess: (updated) => {
-      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
+      queryClient.setQueryData(qk.workspace.summary(workspace.workspace_id), updated);
     },
     onError: (error: Error, _patch, context) => {
-      renameOnError(queryClient, project.project_id, context);
-      errorToast(error.message || 'Failed to update project');
+      renameOnError(queryClient, workspace.workspace_id, context);
+      errorToast(error.message || 'Failed to update workspace');
     },
-    onSettled: () => renameOnSettled(queryClient, project.project_id),
+    onSettled: () => renameOnSettled(queryClient, workspace.workspace_id),
   });
 
   const { mutate, isPending } = mutation;
@@ -679,15 +687,15 @@ function GeneralProjectCard({
   // branch+manifest save above. Name still only fires once its debounce
   // settles; the icon field is a discrete pick (not continuous typing), so
   // it saves the moment `icon` changes — no artificial delay, matching
-  // `ExperimentalFeatureRow`'s switch. `buildProjectSavePatch` computes the
-  // diff against the LIVE project on every run, so an icon pick made mid-name
+  // `ExperimentalFeatureRow`'s switch. `buildWorkspaceSavePatch` computes the
+  // diff against the LIVE workspace on every run, so an icon pick made mid-name
   // -edit (before the debounce settles) sends only the icon key, never a
   // half-typed name.
   useEffect(() => {
     if (!canManage || isPending) return;
 
-    const patch = buildProjectSavePatch(
-      { name: project.name, icon: project.icon, icon_glyph: project.icon_glyph },
+    const patch = buildWorkspaceSavePatch(
+      { name: workspace.name, icon: workspace.icon, icon_glyph: workspace.icon_glyph },
       { name: debouncedName, icon },
     );
     if (!patch) return;
@@ -697,9 +705,9 @@ function GeneralProjectCard({
     debouncedName,
     icon,
     canManage,
-    project.name,
-    project.icon,
-    project.icon_glyph,
+    workspace.name,
+    workspace.icon,
+    workspace.icon_glyph,
     isPending,
     mutate,
   ]);
@@ -708,10 +716,10 @@ function GeneralProjectCard({
 
   return (
     <section className="space-y-4">
-      <Label htmlFor="project-name">General</Label>
+      <Label htmlFor="workspace-name">General</Label>
       <Field>
         <div className="flex items-center justify-between gap-2">
-          <FieldLabel htmlFor="project-name">
+          <FieldLabel htmlFor="workspace-name">
             {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line259JsxTextProjectName')}
           </FieldLabel>
           {saving ? <SaveStatus /> : null}
@@ -721,10 +729,10 @@ function GeneralProjectCard({
             for the identical pairing (`items-start`: both controls are 9
             units tall today, and it stays correct if the input ever grows a
             second line). `onClear` IS passed here — unlike `/new`'s create
-            surface, this project's icon is already saved, so removing it is
+            surface, this workspace's icon is already saved, so removing it is
             a real, undoable-only-by-picking-again action. */}
         <div className="flex items-start gap-2">
-          <ProjectIconField
+          <WorkspaceIconField
             value={icon}
             onChange={(emoji) => setIcon({ emoji })}
             onGlyphChange={(glyph) => setIcon({ glyph })}
@@ -733,7 +741,7 @@ function GeneralProjectCard({
           />
           <div className="min-w-0 flex-1">
             <Input
-              id="project-name"
+              id="workspace-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={!canManage || isPending}

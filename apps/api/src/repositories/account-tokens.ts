@@ -18,8 +18,8 @@ export interface AccountTokenValidationResult {
   userId?: string;
   tokenId?: string;
   /** Non-null = this token is scoped to one project; the auth
-   *  middleware enforces URL :projectId === this value. */
-  projectId?: string | null;
+   *  middleware enforces URL :workspaceId === this value. */
+  workspaceId?: string | null;
   /** Non-null = this token belongs to a specific session (sandbox connector
    *  token, session_id = sandbox_id). Used to attribute LLM usage per-session. */
   sessionId?: string | null;
@@ -36,7 +36,7 @@ export interface CreateAccountTokenParams {
   name: string;
   /** Non-null = token is scoped to one project. Session connector tokens also
    *  set sessionId + agentGrant. Null/undefined = user-scoped laptop CLI PAT. */
-  projectId?: string;
+  workspaceId?: string;
   /** Set for sandbox session tokens (session_id = sandbox_id) so LLM usage
    *  through the gateway is attributed to the session. */
   sessionId?: string | null;
@@ -56,7 +56,7 @@ export interface CreateAccountTokenResult {
   secretKey: string; // plaintext — shown ONCE at creation
   name: string;
   status: string;
-  projectId: string | null;
+  workspaceId: string | null;
   expiresAt: Date | null;
   createdAt: Date;
 }
@@ -66,7 +66,7 @@ export interface AccountTokenListEntry {
   publicKey: string;
   name: string;
   status: string;
-  projectId: string | null;
+  workspaceId: string | null;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
@@ -119,7 +119,7 @@ async function loadPatPolicy(accountId: string): Promise<{
  *   - require_expiry → must provide expires_at
  *   - max_lifetime_days → expires_at can't be more than N days out
  *
- * Project-scoped tokens (sandbox injection) are EXEMPT: they're short-
+ * Workspace-scoped tokens (sandbox injection) are EXEMPT: they're short-
  * lived by construction (sandbox lifetime) and we don't want admin
  * policy to break the agent runtime.
  */
@@ -130,7 +130,7 @@ export async function createAccountToken(
     throw new Error('API_KEY_SECRET not configured');
   }
 
-  if (!params.projectId) {
+  if (!params.workspaceId) {
     const policy = await loadPatPolicy(params.accountId);
     if (policy) {
       if (policy.requireExpiry && !params.expiresAt) {
@@ -159,7 +159,7 @@ export async function createAccountToken(
     .values({
       accountId: params.accountId,
       userId: params.userId,
-      projectId: params.projectId ?? null,
+      workspaceId: params.workspaceId ?? null,
       sessionId: params.sessionId ?? null,
       name: params.name,
       publicKey,
@@ -180,21 +180,21 @@ export async function createAccountToken(
     secretKey, // plaintext — shown once
     name: row.name,
     status: row.status,
-    projectId: row.projectId,
+    workspaceId: row.workspaceId,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
   };
 }
 
-/** List tokens for an account. If `projectId` is provided, narrows to
+/** List tokens for an account. If `workspaceId` is provided, narrows to
  *  tokens scoped to that project (useful for the per-project token
  *  management UI). Never returns secret data. */
 export async function listAccountTokens(
   accountId: string,
-  projectId?: string,
+  workspaceId?: string,
 ): Promise<AccountTokenListEntry[]> {
-  const filter = projectId
-    ? and(eq(accountTokens.accountId, accountId), eq(accountTokens.projectId, projectId))
+  const filter = workspaceId
+    ? and(eq(accountTokens.accountId, accountId), eq(accountTokens.workspaceId, workspaceId))
     : eq(accountTokens.accountId, accountId);
   return db
     .select({
@@ -202,7 +202,7 @@ export async function listAccountTokens(
       publicKey: accountTokens.publicKey,
       name: accountTokens.name,
       status: accountTokens.status,
-      projectId: accountTokens.projectId,
+      workspaceId: accountTokens.workspaceId,
       expiresAt: accountTokens.expiresAt,
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
@@ -217,13 +217,13 @@ export async function listAccountTokens(
 export async function revokeAccountToken(
   tokenId: string,
   accountId: string,
-  projectId?: string | null,
+  workspaceId?: string | null,
 ): Promise<boolean> {
   const filter = and(
     eq(accountTokens.tokenId, tokenId),
     eq(accountTokens.accountId, accountId),
     eq(accountTokens.status, 'active'),
-    projectId ? eq(accountTokens.projectId, projectId) : undefined,
+    workspaceId ? eq(accountTokens.workspaceId, workspaceId) : undefined,
   );
   const result = await db
     .update(accountTokens)
@@ -327,7 +327,7 @@ export async function validateAccountToken(
         tokenId: accountTokens.tokenId,
         accountId: accountTokens.accountId,
         userId: accountTokens.userId,
-        projectId: accountTokens.projectId,
+        workspaceId: accountTokens.workspaceId,
         sessionId: accountTokens.sessionId,
         status: accountTokens.status,
         expiresAt: accountTokens.expiresAt,
@@ -356,9 +356,9 @@ export async function validateAccountToken(
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
     // been used in that window, soft-revoke it now and refuse the call.
-    // Project-scoped tokens (sandbox-injected, lifetime tied to the
+    // Workspace-scoped tokens (sandbox-injected, lifetime tied to the
     // sandbox) are exempt — same carve-out as the mint path.
-    if (row.patIdleRevokeDays != null && !row.projectId) {
+    if (row.patIdleRevokeDays != null && !row.workspaceId) {
       const reference = row.lastUsedAt ?? row.createdAt;
       const idleMs = Date.now() - reference.getTime();
       const maxIdleMs = row.patIdleRevokeDays * 24 * 60 * 60 * 1000;
@@ -381,7 +381,7 @@ export async function validateAccountToken(
       accountId: row.accountId,
       userId: row.userId,
       tokenId: row.tokenId,
-      projectId: row.projectId,
+      workspaceId: row.workspaceId,
       sessionId: row.sessionId ?? null,
       agentGrant: row.agentGrant ?? null,
     };

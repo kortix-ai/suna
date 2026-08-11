@@ -28,7 +28,7 @@ let endpointResult: { url: string; headers: Record<string, string> } | null = {
 let endpointThrow: Error | null = null;
 let resolvedRootId: string | null = 'oc-root-1';
 
-mock.module('../projects/opencode-mapping', () => ({
+mock.module('../workspaces/opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => {
     if (endpointThrow) throw endpointThrow;
     return endpointResult;

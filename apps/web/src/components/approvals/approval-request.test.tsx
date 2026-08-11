@@ -5,7 +5,7 @@ import { ApprovalDecisionActions, ApprovalParameters, ApprovalRequest } from './
 const request = {
   action: 'gmail.send_email',
   risk: 'write',
-  projectName: 'Approval proof',
+  workspaceName: 'Approval proof',
   requestedAt: '2026-08-06T00:00:00.000Z',
   argsPreview: {
     to: ['marko@kortix.ai'],

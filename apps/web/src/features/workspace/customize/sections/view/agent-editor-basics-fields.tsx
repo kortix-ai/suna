@@ -96,7 +96,7 @@ export function BasicsSection({
 
       <SettingRow
         label="Availability"
-        help={oc.mode ? AGENT_MODE_HELP[oc.mode] : 'Follows the project default.'}
+        help={oc.mode ? AGENT_MODE_HELP[oc.mode] : 'Follows the workspace default.'}
       >
         <Select
           value={oc.mode ?? INHERIT}
@@ -108,7 +108,7 @@ export function BasicsSection({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={INHERIT}>Project default</SelectItem>
+            <SelectItem value={INHERIT}>Workspace default</SelectItem>
             {AGENT_MODES.map((mode) => (
               <SelectItem key={mode} value={mode}>
                 {AGENT_MODE_LABEL[mode]}
@@ -254,10 +254,10 @@ export function ModelSection({ oc, setOc }: { oc: RuntimeAgentConfig; setOc: Set
         help={
           oc.model ? (
             <InlineAction onClick={() => setOc('model', undefined)}>
-              Reset to project default
+              Reset to workspace default
             </InlineAction>
           ) : (
-            'Follows the project default.'
+            'Follows the workspace default.'
           )
         }
       >

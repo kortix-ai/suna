@@ -196,6 +196,8 @@ export function submitOAuthConsent(
 }
 
 export interface ConnectorSetupLinkInfo {
+  workspace_name: string;
+  /** @deprecated Use `workspace_name`. */
   project_name: string;
   slug: string;
   app: string | null;
@@ -206,7 +208,14 @@ export function getConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
 ): Promise<ConnectorSetupLinkInfo> {
-  return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}`, options);
+  return requestJson<ConnectorSetupLinkInfo>(
+    `/setup-links/connectors/${encodeURIComponent(token)}`,
+    options,
+  ).then((info) => ({
+    ...info,
+    workspace_name: info.workspace_name ?? info.project_name,
+    project_name: info.project_name ?? info.workspace_name,
+  }));
 }
 
 export function startConnectorSetupLink(
@@ -237,6 +246,8 @@ export function finalizeConnectorSetupLink(
 }
 
 export interface SecretSetupLinkInfo {
+  workspace_name: string;
+  /** @deprecated Use `workspace_name`. */
   project_name: string;
   fields: Array<{
     name: string;
@@ -250,7 +261,14 @@ export function getSecretSetupLink(
   token: string,
   options: HostRequestOptions,
 ): Promise<SecretSetupLinkInfo> {
-  return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options);
+  return requestJson<SecretSetupLinkInfo>(
+    `/setup-links/secret/${encodeURIComponent(token)}`,
+    options,
+  ).then((info) => ({
+    ...info,
+    workspace_name: info.workspace_name ?? info.project_name,
+    project_name: info.project_name ?? info.workspace_name,
+  }));
 }
 
 export function submitSecretSetupLink(
@@ -272,12 +290,12 @@ export function getPublicShareByToken<T = Record<string, unknown>>(
 }
 
 export function startSessionWithToken(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   options: HostRequestOptions,
 ): Promise<unknown> {
   return requestJson(
-    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
+    `/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}/start`,
     options,
     { method: 'POST', body: {} },
   );
@@ -325,6 +343,8 @@ export async function downloadAccountAudit(
     format: 'csv' | 'jsonl';
     action?: string;
     actor?: string;
+    workspace_id?: string;
+    /** @deprecated Use workspace_id. */
     project_id?: string;
     session_id?: string;
     actor_type?: 'human' | 'agent' | 'service_account' | 'system';
@@ -345,7 +365,8 @@ export async function downloadAccountAudit(
   const params = new URLSearchParams({ format: query.format });
   if (query.action) params.set('action', query.action);
   if (query.actor) params.set('actor', query.actor);
-  if (query.project_id) params.set('project_id', query.project_id);
+  if (query.workspace_id) params.set('workspace_id', query.workspace_id);
+  else if (query.project_id) params.set('project_id', query.project_id);
   if (query.session_id) params.set('session_id', query.session_id);
   if (query.actor_type) params.set('actor_type', query.actor_type);
   if (query.source) params.set('source', query.source);

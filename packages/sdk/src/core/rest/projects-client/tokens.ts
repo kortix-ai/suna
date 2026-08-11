@@ -34,7 +34,7 @@ export interface CreateAccountTokenInput {
   expiresAt?: string;
   /** Scope the minted token to a single project (still a "kortix_pat_..." token,
    *  but the auth middleware rejects it outside this project). */
-  projectId?: string;
+  workspaceId?: string;
 }
 
 /** The newly minted token — `secret_key` is the plaintext PAT, returned ONCE. */
@@ -58,13 +58,13 @@ export async function listAccountTokens(accountId?: string) {
 /** Mint a new account-scoped CLI PAT. The `secret_key` is returned once — the
  *  caller must persist it immediately; subsequent reads only ever see `public_key`. */
 export async function createAccountToken(input: CreateAccountTokenInput) {
-  const { accountId, expiresAt, projectId, name } = input;
+  const { accountId, expiresAt, workspaceId, name } = input;
   return unwrap(
     await backendApi.post<CreatedAccountToken>('/accounts/tokens', {
       name,
       ...(accountId ? { account_id: accountId } : {}),
       ...(expiresAt ? { expires_at: expiresAt } : {}),
-      ...(projectId ? { project_id: projectId } : {}),
+      ...(workspaceId ? { project_id: workspaceId } : {}),
     }),
   );
 }
@@ -111,29 +111,29 @@ export interface CreatedProjectCliToken {
   created_at: string;
 }
 
-export async function listProjectCliTokens(projectId: string) {
+export async function listProjectCliTokens(workspaceId: string) {
   return unwrap(
-    await backendApi.get<ProjectCliTokenListResponse>(`/projects/${projectId}/cli-token`),
+    await backendApi.get<ProjectCliTokenListResponse>(`/projects/${workspaceId}/cli-token`),
   );
 }
 
 /** Mint a project-scoped CLI PAT. Defaults `name` to "cli · <project name>" server-side. */
 export async function createProjectCliToken(
-  projectId: string,
+  workspaceId: string,
   input?: { name?: string },
 ) {
   return unwrap(
     await backendApi.post<CreatedProjectCliToken>(
-      `/projects/${projectId}/cli-token`,
+      `/projects/${workspaceId}/cli-token`,
       input ?? {},
     ),
   );
 }
 
-export async function revokeProjectCliToken(projectId: string, tokenId: string) {
+export async function revokeProjectCliToken(workspaceId: string, tokenId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/cli-token/${tokenId}`,
+      `/projects/${workspaceId}/cli-token/${tokenId}`,
     ),
   );
 }

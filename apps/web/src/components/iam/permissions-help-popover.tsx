@@ -7,9 +7,9 @@ import { QuestionIcon as HelpCircle } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import {
   ACCOUNT_ROLE_DESCRIPTORS,
-  PROJECT_ROLE_DESCRIPTORS,
-  PROJECT_ROLES_ASCENDING,
-} from './project-role-descriptors';
+  WORKSPACE_ROLE_DESCRIPTORS,
+  WORKSPACE_ROLES_ASCENDING,
+} from './workspace-role-descriptors';
 
 const ACCOUNT_ROLES_DESCENDING: AccountRole[] = ['owner', 'admin', 'member'];
 
@@ -58,7 +58,7 @@ export function PermissionsHelpPopover({
         <section className="space-y-1">
           <h3 className="text-foreground font-semibold">
             {tI18nHardcoded.raw(
-              'autoComponentsIamPermissionsHelpPopoverJsxTextProjectRoles38d48ed3',
+              'autoComponentsIamPermissionsHelpPopoverJsxTextWorkspaceRoles38d48ed3',
             )}
           </h3>
           <p className="text-muted-foreground text-xs">
@@ -67,8 +67,8 @@ export function PermissionsHelpPopover({
             )}
           </p>
           <ul className="space-y-1 text-xs">
-            {[...PROJECT_ROLES_ASCENDING].reverse().map((role) => {
-              const d = PROJECT_ROLE_DESCRIPTORS[role];
+            {[...WORKSPACE_ROLES_ASCENDING].reverse().map((role) => {
+              const d = WORKSPACE_ROLE_DESCRIPTORS[role];
               return (
                 <li key={role}>
                   <span className="text-foreground font-medium">{d.label}</span> · {d.summary}
@@ -99,7 +99,7 @@ export function PermissionsHelpPopover({
             )}
             <strong>Manager</strong>{' '}
             {tI18nHardcoded.raw(
-              'autoComponentsIamPermissionsHelpPopoverJsxTextOnEveryProject7532e737',
+              'autoComponentsIamPermissionsHelpPopoverJsxTextOnEveryWorkspace7532e737',
             )}{' '}
             <strong>Member</strong> first.
           </p>

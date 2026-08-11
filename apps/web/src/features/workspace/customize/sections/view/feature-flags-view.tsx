@@ -16,19 +16,24 @@ import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import {
-  getProjectDetail,
+  getWorkspaceDetail,
   updateFeatureFlag,
-  updateProjectSandboxProvider,
+  updateWorkspaceSandboxProvider,
   type FeatureFlagStability,
   type FeatureFlagView,
-  type KortixProject,
-  type ProjectDetail,
+  type KortixWorkspace,
+  type WorkspaceDetail,
   type SandboxProviderName,
 } from '@kortix/sdk';
-import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import {
+  contract,
+  invalidateWorkspace,
+  qk,
+  refreshWorkspaceProviderState,
+} from '@kortix/sdk/react';
 import { FlagIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -45,38 +50,38 @@ import {
  * per-flag STABILITY badges, not the name of the section — anything can ship
  * dark behind a flag, including a finished feature.
  *
- * Reads are consolidated onto the project DETAIL query (`qk.project.detail`) —
+ * Reads are consolidated onto the workspace DETAIL query (`qk.workspace.detail`) —
  * the same entry `useFeatureFlag`, the Customize rail, and the command palette
  * read — so one cache write lights every gated surface up together. The write
- * ALSO patches the summary entry because the PATCH response IS a `KortixProject`
+ * ALSO patches the summary entry because the PATCH response IS a `KortixWorkspace`
  * (the summary payload) and `settings-view` still renders off it.
  */
-export function FeatureFlagsView({ projectId }: { projectId: string }) {
+export function FeatureFlagsView({ workspaceId }: { workspaceId: string }) {
   const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
     ...contract('config'),
   });
 
-  // The API asserts `project.customize.write` on `PATCH /projects/:id/features`,
-  // so the switches gate on exactly that leaf — not on `project.write` and not
+  // The API asserts `workspace.customize.write` on `PATCH /workspaces/:id/features`,
+  // so the switches gate on exactly that leaf — not on `workspace.write` and not
   // on the manager role. FAIL-CLOSED while the probe is in flight: `isLoading`
   // is checked explicitly, so a slow probe renders read-only rather than
   // briefly offering a toggle the server would reject.
-  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const writeCap = useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE);
   const canWrite = !writeCap.isLoading && writeCap.allowed === true;
 
-  const project = detailQuery.data?.project;
+  const workspace = detailQuery.data?.workspace;
   // Server order is intentional (the registry's declaration order in
   // `apps/api/src/feature-flags/registry.ts`) — render it as served, never
   // re-sorted. Unavailable flags are not offered at all: the platform does not
   // support them here, so a switch would be a lie.
-  const flags = (project?.experimental_features ?? []).filter((f) => f.available);
+  const flags = (workspace?.experimental_features ?? []).filter((f) => f.available);
 
   return (
     <CustomizeSectionWrapper
       title="Feature flags"
-      description="Turn individual platform capabilities on or off for this project."
+      description="Turn individual platform capabilities on or off for this workspace."
     >
       {detailQuery.isLoading ? (
         <div className="space-y-2">
@@ -104,29 +109,29 @@ export function FeatureFlagsView({ projectId }: { projectId: string }) {
                 size="sm"
                 icon={FlagIcon}
                 title="No feature flags"
-                description="This deployment exposes no per-project feature flags."
+                description="This deployment exposes no per-workspace feature flags."
               />
             ) : (
               <ul className="space-y-2">
                 {flags.map((flag) => (
                   <li key={flag.key}>
-                    <FeatureFlagRow projectId={projectId} flag={flag} canWrite={canWrite} />
+                    <FeatureFlagRow workspaceId={workspaceId} flag={flag} canWrite={canWrite} />
                   </li>
                 ))}
               </ul>
             )}
           </section>
 
-          {project ? (
+          {workspace ? (
             <section className="space-y-4">
               <Label>Runtime</Label>
-              <SandboxProviderRow project={project} canWrite={canWrite} />
+              <SandboxProviderRow workspace={workspace} canWrite={canWrite} />
             </section>
           ) : null}
 
           {!canWrite && !writeCap.isLoading ? (
             <p className="text-muted-foreground text-xs">
-              You need the project&apos;s customize-write permission to change a feature flag.
+              You need the workspace&apos;s customize-write permission to change a feature flag.
             </p>
           ) : null}
         </div>
@@ -146,21 +151,21 @@ const STABILITY_BADGE: Record<
   stable: { label: 'Stable', variant: 'outline' },
 };
 
-/** The origin line under a flag: inherited platform default, or this project's
- *  own choice. `FeatureFlagView` reports WHETHER the project overrode the flag,
+/** The origin line under a flag: inherited platform default, or this workspace's
+ *  own choice. `FeatureFlagView` reports WHETHER the workspace overrode the flag,
  *  not what the default was — so an overridden flag says only that, rather than
  *  guessing a default it cannot see. */
 function originLabel(flag: FeatureFlagView): string {
-  if (flag.overridden) return 'Overridden for this project';
+  if (flag.overridden) return 'Overridden for this workspace';
   return flag.enabled ? 'Default on' : 'Default off';
 }
 
 function FeatureFlagRow({
-  projectId,
+  workspaceId,
   flag,
   canWrite,
 }: {
-  projectId: string;
+  workspaceId: string;
   flag: FeatureFlagView;
   canWrite: boolean;
 }) {
@@ -172,21 +177,23 @@ function FeatureFlagRow({
   const badge = STABILITY_BADGE[flag.stability] ?? STABILITY_BADGE.experimental;
 
   const mutation = useMutation({
-    // Canonical route: `PATCH /projects/:id/features`.
-    mutationFn: (next: boolean) => updateFeatureFlag(projectId, flag.key, next),
+    // Canonical route: `PATCH /workspaces/:id/features`.
+    mutationFn: (next: boolean) => updateFeatureFlag(workspaceId, flag.key, next),
     onSettled: () => setPendingValue(null),
     onSuccess: (updated) => {
-      queryClient.setQueryData(qk.project.summary(projectId), updated);
-      queryClient.setQueryData<ProjectDetail | undefined>(qk.project.detail(projectId), (current) =>
-        current ? { ...current, project: updated } : current,
+      queryClient.setQueryData(qk.workspace.summary(workspaceId), updated);
+      queryClient.setQueryData<WorkspaceDetail | undefined>(qk.workspace.detail(workspaceId), (current) =>
+        current ? { ...current, workspace: updated } : current,
       );
-      void invalidateProject(queryClient, projectId);
-      // Only projectId is passed down to this row, not the owning account_id,
-      // so this can't target one qk.projects.list(accountId) entry —
-      // qk.projects.scope() is the shared prefix every list form lives under.
-      queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+      void invalidateWorkspace(queryClient, workspaceId);
+      // Only workspaceId is passed down to this row, not the owning account_id,
+      // so this can't target one qk.workspaces.list(accountId) entry —
+      // qk.workspaces.scope() is the shared prefix every list form lives under.
+      queryClient.invalidateQueries({ queryKey: qk.workspaces.scope() });
       if (flag.key === 'llm_gateway') {
-        refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
+        refreshWorkspaceProviderState(queryClient, workspaceId, {
+          removeWorkspaceScopedCache: true,
+        });
       }
     },
     onError: (error: Error) => errorToast(error.message || `Failed to update ${flag.name}`),
@@ -220,50 +227,50 @@ function FeatureFlagRow({
   );
 }
 
-// Per-project sandbox-provider pin. Overrides the platform's weighted
-// distribution for THIS project only (e.g. put one project on Platinum even
-// when the fleet is mostly Daytona). Options come from the project payload
+// Per-workspace sandbox-provider pin. Overrides the platform's weighted
+// distribution for THIS workspace only (e.g. put one workspace on Platinum even
+// when the fleet is mostly Daytona). Options come from the workspace payload
 // (`available_sandbox_providers` = the usable set). It moved here with the flag
-// list — it is the same kind of per-project platform override, and it was only
+// list — it is the same kind of per-workspace platform override, and it was only
 // ever reachable from inside the old collapsed disclosure. Hidden when no
 // provider is usable.
 const AUTO_PROVIDER = '__auto__';
 function SandboxProviderRow({
-  project,
+  workspace,
   canWrite,
 }: {
-  project: KortixProject;
+  workspace: KortixWorkspace;
   canWrite: boolean;
 }) {
   const queryClient = useQueryClient();
-  const available = project.available_sandbox_providers ?? [];
-  const current = project.default_sandbox_provider ?? null;
+  const available = workspace.available_sandbox_providers ?? [];
+  const current = workspace.default_sandbox_provider ?? null;
   const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
   const mutation = useMutation({
     mutationFn: (next: SandboxProviderName | null) =>
-      updateProjectSandboxProvider(project.project_id, next),
+      updateWorkspaceSandboxProvider(workspace.workspace_id, next),
     onSuccess: (result, next) => {
-      // The PATCH returns EITHER the updated project (immediate) OR a
+      // The PATCH returns EITHER the updated workspace (immediate) OR a
       // preparation object (the prepare branch — a switch to a different
-      // enabled provider). Write the project cache ONLY for the immediate
-      // result; a preparation is a transition, not a project, and must not
-      // clobber the cached project shape.
-      const kind = applySandboxProviderResult(queryClient, project.project_id, result);
+      // enabled provider). Write the workspace cache ONLY for the immediate
+      // result; a preparation is a transition, not a workspace, and must not
+      // clobber the cached workspace shape.
+      const kind = applySandboxProviderResult(queryClient, workspace.workspace_id, result);
       if (kind === 'preparation') {
         successToast(
           `Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`,
         );
         // Poll the durable transition (bounded, backoff, terminal-stop, 404 =
-        // done) and refresh the project once it settles so the now-active
+        // done) and refresh the workspace once it settles so the now-active
         // provider shows.
-        void pollSandboxProviderTransition(project.project_id, {
+        void pollSandboxProviderTransition(workspace.workspace_id, {
           onSettled: (state) => {
-            // invalidateProject() reaches qk.project.scope(project.project_id),
-            // which qk.project.summary(project.project_id) nests under — so it
-            // already covers the bare-project row too.
-            void invalidateProject(queryClient, project.project_id);
-            queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+            // invalidateWorkspace() reaches qk.workspace.scope(workspace.workspace_id),
+            // which qk.workspace.summary(workspace.workspace_id) nests under — so it
+            // already covers the bare-workspace row too.
+            void invalidateWorkspace(queryClient, workspace.workspace_id);
+            queryClient.invalidateQueries({ queryKey: qk.workspaces.scope() });
             const status = state?.latest?.status;
             if (status === 'activated') {
               successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
@@ -289,7 +296,7 @@ function SandboxProviderRow({
           </Badge>
         </div>
         <p className="text-muted-foreground text-xs text-pretty">
-          Pin this project to a specific sandbox provider, overriding the platform default. New
+          Pin this workspace to a specific sandbox provider, overriding the platform default. New
           sessions here run on the chosen provider — “Automatic” follows the platform default.
         </p>
       </div>

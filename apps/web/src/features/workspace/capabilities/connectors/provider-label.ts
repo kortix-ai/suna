@@ -1,4 +1,4 @@
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 
 /**
  * Forward-facing provider label — "App" for the 1-click (Pipedream) connectors.
@@ -9,12 +9,12 @@ import type { AdminConnector } from '@kortix/sdk';
  * the whole file off React Fast Refresh's hot path (every edit = full page
  * reload), and importing this six-line switch from it dragged the entire module
  * — plus `@pipedream/sdk/browser`, `HighlightedCode`, `PoliciesPanel` — into
- * the `/projects/[id]/connectors` route chunk.
+ * the `/workspaces/[id]/connectors` route chunk.
  *
  * The legacy Customize surface imports it back from here. That direction is
  * deliberate: when `connectors-view.tsx` is retired, this module does not move.
  */
-export function providerLabel(p: AdminConnector['provider']): string {
+export function providerLabel(p: WorkspaceAdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer Tunnel';

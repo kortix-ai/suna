@@ -1,12 +1,12 @@
 'use client';
 
-import { useMarketplaceEnabled } from '@/components/projects/marketplace/marketplace-nav';
+import { useMarketplaceEnabled } from '@/components/workspaces/marketplace/marketplace-nav';
 import { Button } from '@/components/ui/button';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { StorefrontIcon as Store } from '@phosphor-icons/react';
 
-export function MarketplaceSectionButton({ projectId }: { projectId: string }) {
-  const enabled = useMarketplaceEnabled(projectId);
+export function MarketplaceSectionButton({ workspaceId }: { workspaceId: string }) {
+  const enabled = useMarketplaceEnabled(workspaceId);
   const setSection = useCustomizeStore((s) => s.setSection);
 
   if (!enabled) return null;

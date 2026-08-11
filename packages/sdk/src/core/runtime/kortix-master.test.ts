@@ -103,7 +103,7 @@ describe('request core (via listTickets)', () => {
 
 describe('tasks', () => {
   test('listTasks GETs /kortix/tasks with project_id + status query params', async () => {
-    await KM.listTasks(BASE, { projectId: 'p-1', status: 'todo' });
+    await KM.listTasks(BASE, { workspaceId: 'p-1', status: 'todo' });
     expect(last().url).toBe('http://sbx.test/kortix/tasks?project_id=p-1&status=todo');
     expect(last().method).toBe('GET');
   });

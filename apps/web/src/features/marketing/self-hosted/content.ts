@@ -57,13 +57,13 @@ export const hero = {
 export const yours = {
   eyebrow: 'What you keep',
   title: 'The company stays on your side of the wall.',
-  sub: 'Self-hosting is not a smaller Kortix with the interesting parts removed. It is the whole control plane — accounts, projects, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.',
+  sub: 'Self-hosting is not a smaller Kortix with the interesting parts removed. It is the whole control plane — accounts, workspaces, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.',
   onbox: {
     label: 'on your box',
     items: [
       'The Postgres database, as a directory you can back up',
       'File storage, as a second directory next to it',
-      'Every project repo and every secret the platform holds',
+      'Every workspace repo and every secret the platform holds',
       'Accounts, roles, policies, triggers, channels and the audit record',
       'The LLM gateway your sessions route model calls through',
     ],
@@ -119,7 +119,7 @@ export const commands = {
     ],
   },
   notes: [
-    'Tokens are stored per host, so switching hosts switches the account and the default project with it.',
+    'Tokens are stored per host, so switching hosts switches the account and the default workspace with it.',
     'kortix self-host start registers the selfhost host for you and makes it active.',
     'Override for one command instead of switching: pass --host selfhost.',
   ],
@@ -181,7 +181,8 @@ export const firstRun = {
     ],
     note: 'Everything the CLI generates is rotatable later with kortix self-host env rotate, and every value is visible with kortix self-host env ls, masked unless you ask for --show.',
   },
-  after: 'GitHub and your model key are not asked here on purpose. Both are set in the dashboard after the stack is up — GitHub at Settings → Git, the model key in the model picker.',
+  after:
+    'GitHub and your model key are not asked here on purpose. Both are set in the dashboard after the stack is up — GitHub at Settings → Git, the model key in the model picker.',
 } as const;
 
 /* ── 4 · the stack ─────────────────────────────────────────────────────────
@@ -252,7 +253,7 @@ export const parity = {
     {
       id: 'features',
       k: 'The same product surface',
-      v: 'Projects, sessions on their own cloud computers, agents, skills, connectors, channels, triggers, secrets, change requests and the audit record. Nothing on that list is cloud-only.',
+      v: 'Workspaces, sessions on their own cloud computers, agents, skills, connectors, channels, triggers, secrets, change requests and the audit record. Nothing on that list is cloud-only.',
     },
     {
       id: 'enterprise',
@@ -268,7 +269,7 @@ export const parity = {
 } as const;
 
 /* ── 6 · models ────────────────────────────────────────────────────────────
-   `kortix providers set <provider> <key>` stores an encrypted project secret.
+   `kortix providers set <provider> <key>` stores an encrypted workspace secret.
    The provider list is the literal map in apps/cli/src/commands/providers.ts. */
 export const models = {
   eyebrow: 'Models',
@@ -277,7 +278,7 @@ export const models = {
   shell: {
     title: 'connect a provider',
     lines: [
-      '# stored as an encrypted project secret, injected at session boot',
+      '# stored as an encrypted workspace secret, injected at session boot',
       '$ kortix providers set anthropic sk-ant-...',
       '$ kortix providers set openai sk-...',
       '$ kortix providers set openrouter sk-or-...',

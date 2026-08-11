@@ -39,20 +39,20 @@ export interface ProjectPoliciesResponse {
   errors: Array<{ path: string; error: string }>;
 }
 
-export async function listProjectPolicies(projectId: string) {
+export async function listProjectPolicies(workspaceId: string) {
   return unwrap(
-    await backendApi.get<ProjectPoliciesResponse>(`/connectors/projects/${projectId}/policies`),
+    await backendApi.get<ProjectPoliciesResponse>(`/connectors/projects/${workspaceId}/policies`),
   );
 }
 
 export async function setProjectPolicies(
-  projectId: string,
+  workspaceId: string,
   policies: ProjectPolicy[],
   defaultMode: PolicyDefaultMode,
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/policies`,
+      `/connectors/projects/${workspaceId}/policies`,
       { policies, defaultMode },
     ),
   );

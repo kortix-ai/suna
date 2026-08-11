@@ -177,7 +177,7 @@ export function getRelativePath(absPath: string): string {
   if (clean.startsWith('/')) {
     // Strip /workspace/desktop/.../ or /home/user/project/.../ patterns
     // Strategy: find the deepest "project root" heuristic and strip it
-    // Common patterns: /workspace/X/Y/ where Y is the project
+    // Common patterns: /workspace/X/Y/ where Y is the workspace
     const parts = clean.split('/').filter(Boolean);
     // Look for common project markers going from right to left
     for (let i = 0; i < parts.length; i++) {

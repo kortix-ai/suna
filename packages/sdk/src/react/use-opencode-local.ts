@@ -16,7 +16,7 @@ import { featureFlags } from '../core/http/feature-flags';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
-import { useKortixRouteProjectId } from './route-project';
+import { useKortixRouteWorkspaceId } from './route-project';
 import { normalizeProviderList } from './provider-selection';
 import { useModelStore, type ModelKey } from './use-model-store';
 
@@ -255,7 +255,7 @@ export function useOpenCodeLocal({
   // ---- Flatten models from providers (shared with the chat input, so the
   // gateway-only allowlist applies here too — native providers never leak in) ----
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
-  const projectId = useKortixRouteProjectId();
+  const workspaceId = useKortixRouteWorkspaceId();
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
 
   // ---- Model store (persisted: recent, variant, per-agent/session selection) ----
@@ -314,7 +314,7 @@ export function useOpenCodeLocal({
   const agentSelectionScope = createAgentSelectionScope({
     sessionId,
     boundAgentName,
-    projectId,
+    workspaceId,
   });
   const [explicitAgentSelection, setExplicitAgentSelection] = useState<{
     scope: string;

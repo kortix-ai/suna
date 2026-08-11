@@ -165,7 +165,7 @@ export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 /**
  * The gateway wire id for a model listed under a PROVIDER entry (the "Add
- * provider" catalog, which browses providers rather than the project's served
+ * provider" catalog, which browses providers rather than the workspace's served
  * models). Surfaces that work from the served catalog have the wire id already
  * and use `modelKeyToWire` instead — see model-rows.ts.
  */

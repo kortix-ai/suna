@@ -18,9 +18,9 @@ const KNOWN_SKILL = 'kortix-system';
 async function createProjectPat(ctx: FlowContext, label: string) {
   const project = await ctx.fixtures.project();
   const response = await ctx.client.as(ctx.P.OWNER).post(
-    '/v1/projects/:projectId/cli-token',
+    '/v1/projects/:workspaceId/cli-token',
     { name: ctx.fixtures.name(label) },
-    { params: { projectId: project.id } },
+    { params: { workspaceId: project.id } },
   );
   response.status(201).body().exists('$.secret_key').exists('$.token_id');
   const body = response.json<{ secret_key: string; token_id: string }>();
@@ -31,7 +31,7 @@ async function createProjectPat(ctx: FlowContext, label: string) {
 flow('SKILL-1', {
   domain: 'skills',
   tags: ['smoke'],
-  routes: ['GET /v1/skills', 'POST /v1/projects/:projectId/cli-token'],
+  routes: ['GET /v1/skills', 'POST /v1/projects/:workspaceId/cli-token'],
 }, async (ctx) => {
   const projectPat = await createProjectPat(ctx, 'skill-list-pat');
   await ctx.step('ANON cannot list the system skills', async () => {
@@ -66,7 +66,7 @@ flow(
   {
     domain: 'skills',
     tags: ['smoke'],
-    routes: ['GET /v1/skills/:name', 'POST /v1/projects/:projectId/cli-token'],
+    routes: ['GET /v1/skills/:name', 'POST /v1/projects/:workspaceId/cli-token'],
   },
   async (ctx) => {
     const projectPat = await createProjectPat(ctx, 'skill-read-pat');

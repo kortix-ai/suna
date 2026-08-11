@@ -28,6 +28,8 @@ export const GroupSchema = z
     source: z.string().optional(),
     external_id: z.string().nullable().optional(),
     member_count: z.number().optional(),
+    workspace_count: z.number().optional(),
+    /** @deprecated Use workspace_count. */
     project_count: z.number().optional(),
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
@@ -42,6 +44,17 @@ export const GroupMemberSchema = z
   })
   .openapi('IamGroupMember');
 
+export const WorkspaceGrantSchema = z
+  .object({
+    workspace_id: z.string(),
+    workspace_name: z.string(),
+    role: z.string(),
+    granted_by: z.string().nullable(),
+    created_at: z.string(),
+    expires_at: z.string().nullable(),
+  })
+  .openapi('IamWorkspaceGrant');
+
 export const ProjectGrantSchema = z
   .object({
     project_id: z.string(),
@@ -52,6 +65,15 @@ export const ProjectGrantSchema = z
     expires_at: z.string().nullable(),
   })
   .openapi('IamProjectGrant');
+
+export const WorkspaceAccessSchema = z
+  .object({
+    workspace_id: z.string(),
+    workspace_name: z.string(),
+    role: z.string(),
+    sources: z.array(z.string()),
+  })
+  .openapi('IamWorkspaceAccess');
 
 export const ProjectAccessSchema = z
   .object({

@@ -18,7 +18,7 @@ import {
   codeStorageGitAuthHeader,
   mintCodeStorageJwt,
   type GitConnectionRef,
-} from '../projects/git-backends';
+} from '../workspaces/git-backends';
 
 // Throwaway EC (P-256) and RSA keypairs — signing-only, never a live
 // code.storage credential.
@@ -246,7 +246,7 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
 
     const repo = await codeStorageBackend.createRepo({
       accountId: 'acct-1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       slug: 'my-project',
       defaultBranch: 'main',
       isPrivate: true,
@@ -285,7 +285,7 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
     globalThis.fetch = (async () => json({ repo_id: 'repo_x', message: 'ok' })) as unknown as typeof fetch;
     const repo = await codeStorageBackend.createRepo({
       accountId: 'a',
-      projectId: 'p',
+      workspaceId: 'p',
       slug: 'fallback-slug',
       defaultBranch: 'main',
       isPrivate: true,
@@ -299,7 +299,7 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
     await expect(
       codeStorageBackend.createRepo({
         accountId: 'a',
-        projectId: 'p',
+        workspaceId: 'p',
         slug: 'dup',
         defaultBranch: 'main',
         isPrivate: true,
@@ -317,7 +317,7 @@ describe('createRepo / deleteRepo (mocked HTTP)', () => {
 
     await codeStorageBackend.createRepo({
       accountId: 'a',
-      projectId: 'p',
+      workspaceId: 'p',
       slug: 'my-project',
       defaultBranch: 'main',
       isPrivate: true,
@@ -425,7 +425,7 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
       ref(),
       'git-write-token',
       [{ path: 'README.md', content: '# hello' }],
-      { branch: 'main', message: 'chore: scaffold Kortix project' },
+      { branch: 'main', message: 'chore: scaffold Kortix workspace' },
     );
 
     expect(urls).toHaveLength(1);
@@ -434,7 +434,7 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
     );
     const lines = parseNdjson(bodies[0]!);
     expect(lines[0].metadata.target_branch).toBe('main');
-    expect(lines[0].metadata.commit_message).toBe('chore: scaffold Kortix project');
+    expect(lines[0].metadata.commit_message).toBe('chore: scaffold Kortix workspace');
     expect(lines[0].metadata.files).toEqual([
       { path: 'README.md', operation: 'upsert', content_id: 'blob-0', mode: '100644' },
     ]);
@@ -444,7 +444,7 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
     expect(lines[1].blob_chunk.eof).toBe(true);
   });
 
-  test('two sequential commits when baseFiles is set: deterministic scaffold, then project files', async () => {
+  test('two sequential commits when baseFiles is set: deterministic scaffold, then workspace files', async () => {
     await codeStorageBackend.seedFiles!(
       ref(),
       'git-write-token',
@@ -458,11 +458,11 @@ describe('seedFiles (mocked HTTP, commit-pack ndjson)', () => {
 
     expect(urls).toHaveLength(2);
     const first = parseNdjson(bodies[0]!);
-    expect(first[0].metadata.commit_message).toBe('chore: scaffold Kortix project');
+    expect(first[0].metadata.commit_message).toBe('chore: scaffold Kortix workspace');
     expect(first[0].metadata.files[0].path).toBe('.kortix/agent.md');
 
     const second = parseNdjson(bodies[1]!);
-    expect(second[0].metadata.commit_message).toBe('chore: project setup');
+    expect(second[0].metadata.commit_message).toBe('chore: workspace setup');
     expect(second[0].metadata.files[0].path).toBe('kortix.yaml');
   });
 

@@ -99,7 +99,7 @@ describe('final Executor compatibility adapter', () => {
     });
   });
 
-  test('maps project-explicit calls and attachment uploads to @kortix/sdk', async () => {
+  test('maps workspace-explicit calls and attachment uploads to @kortix/sdk', async () => {
     const { calls, fetchImpl } = harness((call) =>
       call.url.endsWith('/attachments')
         ? {
@@ -117,7 +117,7 @@ describe('final Executor compatibility adapter', () => {
     const client = createExecutorClient({
       apiUrl: 'https://api.test/v1/',
       token: 'user-token',
-      projectId: 'project/1',
+      workspaceId: 'workspace/1',
       fetchImpl,
     });
 
@@ -129,10 +129,27 @@ describe('final Executor compatibility adapter', () => {
 
     expect(attachment.attachment_id).toBe('attachment-1');
     expect(calls[0]?.url).toBe(
-      'https://api.test/v1/connectors/projects/project%2F1/catalog',
+      'https://api.test/v1/connectors/workspaces/workspace%2F1/catalog',
     );
     expect(calls[1]?.url).toBe(
-      'https://api.test/v1/connectors/projects/project%2F1/attachments',
+      'https://api.test/v1/connectors/workspaces/workspace%2F1/attachments',
+    );
+  });
+
+  test('accepts canonical workspaceId and prefers it over deprecated projectId', async () => {
+    const { calls, fetchImpl } = harness(() => ({ body: catalog }));
+    const client = createExecutorClient({
+      apiUrl: 'https://api.test',
+      token: 'user-token',
+      workspaceId: 'workspace/1',
+      projectId: 'stale-project',
+      fetchImpl,
+    });
+
+    await client.connectors();
+
+    expect(calls[0]?.url).toBe(
+      'https://api.test/v1/connectors/workspaces/workspace%2F1/catalog',
     );
   });
 
@@ -177,7 +194,7 @@ describe('final Executor compatibility adapter', () => {
     const client = createExecutorClient({
       apiUrl: 'https://api.test',
       token: 'agent-token',
-      projectId: 'project/1',
+      workspaceId: 'workspace/1',
       fetchImpl,
     });
 
@@ -186,7 +203,7 @@ describe('final Executor compatibility adapter', () => {
     });
 
     expect(calls[0]?.url).toBe(
-      'https://api.test/v1/connectors/projects/project%2F1/call',
+      'https://api.test/v1/connectors/workspaces/workspace%2F1/call',
     );
     expect(calls[0]?.body).toEqual({
       connector: 'gmail',

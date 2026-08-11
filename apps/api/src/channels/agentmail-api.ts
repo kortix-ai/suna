@@ -17,14 +17,14 @@ const AGENTMAIL_REQUEST_TIMEOUT_MS = 15_000;
 /**
  * Stable, connection-scoped AgentMail idempotency keys.
  *
- * A Kortix project may contain several email connections. Project-only client ids
+ * A Kortix workspace may contain several email connections. Workspace-only client ids
  * cause AgentMail to return the first inbox and webhook for every later connection.
- * Hash the project/connection tuple so retries remain idempotent while distinct
+ * Hash the workspace/connection tuple so retries remain idempotent while distinct
  * connections always provision distinct provider resources.
  */
-export function agentMailProvisioningClientIds(projectId: string, connectionSlug: string) {
+export function agentMailProvisioningClientIds(workspaceId: string, connectionSlug: string) {
   const scope = createHash('sha256')
-    .update(projectId)
+    .update(workspaceId)
     .update('\0')
     .update(connectionSlug.trim().toLowerCase())
     .digest('hex')

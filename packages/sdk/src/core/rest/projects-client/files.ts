@@ -6,7 +6,7 @@ import { platformConfig } from '../../http/config';
 import { unwrap, type ProjectFileEntry } from './shared';
 
 export async function listProjectFiles(
-  projectId: string,
+  workspaceId: string,
   options?: { ref?: string; path?: string },
 ) {
   const params = new URLSearchParams();
@@ -15,7 +15,7 @@ export async function listProjectFiles(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectFileEntry[]>(
-      `/projects/${projectId}/files${query}`,
+      `/projects/${workspaceId}/files${query}`,
       // project.file.read is editor-tier — a member deep-linking to the files
       // page legitimately 403s. The files view renders its own error state.
       { showErrors: false },
@@ -40,7 +40,7 @@ export interface ProjectFileSearchResponse {
 /** Search the project's git repo — filenames by default, contents when
  *  `content` is true (server-side `git grep`). */
 export async function searchProjectFiles(
-  projectId: string,
+  workspaceId: string,
   query: string,
   options?: { content?: boolean; ref?: string; limit?: number },
 ) {
@@ -50,13 +50,13 @@ export async function searchProjectFiles(
   if (options?.limit) params.set('limit', String(options.limit));
   return unwrap(
     await backendApi.get<ProjectFileSearchResponse>(
-      `/projects/${projectId}/files/search?${params.toString()}`,
+      `/projects/${workspaceId}/files/search?${params.toString()}`,
     ),
   );
 }
 
 export async function readProjectFile(
-  projectId: string,
+  workspaceId: string,
   path: string,
   ref?: string,
 ) {
@@ -64,7 +64,7 @@ export async function readProjectFile(
   if (ref) params.set('ref', ref);
   return unwrap(
     await backendApi.get<{ path: string; ref: string; content: string }>(
-      `/projects/${projectId}/files/content?${params.toString()}`,
+      `/projects/${workspaceId}/files/content?${params.toString()}`,
       // Same editor-tier gate as listProjectFiles above: project.file.read
       // legitimately 403s for a plain member reading one file (e.g. a
       // skill/command detail modal, or the git-ref file explorer). Every
@@ -82,7 +82,7 @@ export async function readProjectFile(
  * can stream `application/zip` directly.
  */
 export async function fetchProjectArchive(
-  projectId: string,
+  workspaceId: string,
   ref: string,
   path?: string,
 ): Promise<Blob> {
@@ -92,7 +92,7 @@ export async function fetchProjectArchive(
   const query = params.toString() ? `?${params.toString()}` : '';
 
   const token = await getSupabaseAccessTokenWithRetry();
-  const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/archive${query}`;
+  const url = `${platformConfig().backendUrl || ''}/projects/${workspaceId}/files/archive${query}`;
   const res = await fetch(url, {
     method: 'GET',
     headers: token ? { Authorization: `Bearer ${token}` } : {},

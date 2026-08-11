@@ -64,7 +64,7 @@ describe('audit HTTP route registry', () => {
       'Updated audit webhook',
     );
     expect(describeAuditAction(`GET /v1/projects/${UID}/audit`).title).toBe(
-      'Viewed project audit log',
+      'Viewed workspace audit log',
     );
     expect(describeAuditAction(`GET /v1/projects/${UID}/sessions/${UID2}/audit`).title).toBe(
       'Viewed session audit log',
@@ -121,6 +121,8 @@ describe('humanizeAuditAction — IAM action codes', () => {
       'iam.policy.create',
       'iam.policy.delete',
       'iam.policy.update',
+      'iam.workspace.group.expired',
+      'iam.workspace.member.expired',
       'iam.project.group.expired',
       'iam.project.member.expired',
       'iam.role.create',
@@ -167,9 +169,9 @@ describe('humanizeAuditAction — IAM action codes', () => {
   test('iam.member.super_admin.grant → Granted super-admin', () => {
     expect(humanizeAuditAction('iam.member.super_admin.grant').title).toBe('Granted super-admin');
   });
-  test('iam.project.group.detach → Detached…', () => {
-    const r = humanizeAuditAction('iam.project.group.detach');
-    expect(r.title).toBe('Detached group from project');
+  test('iam.workspace.group.detach → Detached…', () => {
+    const r = humanizeAuditAction('iam.workspace.group.detach');
+    expect(r.title).toBe('Detached group from workspace');
     expect(r.kind).toBe('detach');
   });
 });
@@ -177,21 +179,21 @@ describe('humanizeAuditAction — IAM action codes', () => {
 describe('humanizeAuditAction — HTTP routes', () => {
   test('POST /v1/projects/:id/group-grants → Attached group', () => {
     expect(humanizeAuditAction(`POST /v1/projects/${UID}/group-grants`)).toEqual({
-      title: 'Attached group to project',
+      title: 'Attached group to workspace',
       kind: 'attach',
     });
   });
 
   test('PATCH /v1/projects/:id/group-grants/:gid → Changed role', () => {
     expect(humanizeAuditAction(`PATCH /v1/projects/${UID}/group-grants/${UID2}`)).toEqual({
-      title: 'Changed group role on project',
+      title: 'Changed group role on workspace',
       kind: 'update',
     });
   });
 
   test('DELETE /v1/projects/:id/group-grants/:gid → Detached', () => {
     expect(humanizeAuditAction(`DELETE /v1/projects/${UID}/group-grants/${UID2}`)).toEqual({
-      title: 'Detached group from project',
+      title: 'Detached group from workspace',
       kind: 'detach',
     });
   });
@@ -221,7 +223,7 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('POST /v1/projects/:id/access/invite → Invited project member', () => {
     expect(humanizeAuditAction(`POST /v1/projects/${UID}/access/invite`).title).toBe(
-      'Invited project member',
+      'Invited workspace member',
     );
   });
 
@@ -290,13 +292,13 @@ describe('humanizeAuditAction — HTTP routes', () => {
 
   test('DELETE /v1/projects/:id/access/pending-invites/:inviteId → Revoked pending invitation', () => {
     const r = humanizeAuditAction(`DELETE /v1/projects/${UID}/access/pending-invites/${UID2}`);
-    expect(r.title).toBe('Revoked pending project invitation');
+    expect(r.title).toBe('Revoked pending workspace invitation');
     expect(r.kind).toBe('revoke');
   });
 
   test('GET /v1/projects/:id/access/pending-invites → Listed pending invites', () => {
     expect(humanizeAuditAction(`GET /v1/projects/${UID}/access/pending-invites`).title).toBe(
-      'Listed pending project invites',
+      'Listed pending workspace invites',
     );
   });
 
@@ -325,9 +327,9 @@ describe('humanizeAuditAction — HTTP routes', () => {
     );
   });
 
-  test('POST /v1/projects/:id/secrets (root, no name) → Set project secret', () => {
+  test('POST /v1/projects/:id/secrets (root, no name) → Set workspace secret', () => {
     expect(humanizeAuditAction(`POST /v1/projects/${UID}/secrets`)).toEqual({
-      title: 'Set project secret',
+      title: 'Set workspace secret',
       kind: 'update',
     });
   });
@@ -405,7 +407,8 @@ describe('humanizeAuditAction — fallbacks', () => {
 
 describe('formatResourcePill', () => {
   test('type + id → "type · short"', () => {
-    expect(formatResourcePill('project', UID)).toBe('project · 8fb490fe');
+    expect(formatResourcePill('workspace', UID)).toBe('workspace · 8fb490fe');
+    expect(formatResourcePill('project', UID)).toBe('workspace · 8fb490fe');
   });
   test('type only → "type"', () => {
     expect(formatResourcePill('account_group', null)).toBe('account group');

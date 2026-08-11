@@ -1,27 +1,27 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
-import { PROJECT_ACTIONS, authorize } from '../../iam';
+import { WORKSPACE_ACTIONS, authorize } from '../../iam';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
-import { callerKortixSessionId } from '../../projects/lib/caller-session';
+import { callerKortixSessionId } from '../../workspaces/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
   type PromptConnectorVerdict,
   missingPromptConnectorConnections,
-} from '../../projects/lib/prompt-connector-preflight';
-import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+} from '../../workspaces/lib/prompt-connector-preflight';
+import { syncSandboxEnvForPrompt } from '../../workspaces/lib/sandbox-env-sync';
 import {
   AgentSecretGrantMismatchError,
   SecretGrantResolutionError,
-} from '../../projects/lib/secret-grant';
+} from '../../workspaces/lib/secret-grant';
 import {
   SessionGrantRemintError,
   remintGrantForAgentSwitch,
-} from '../../projects/lib/session-token-grant';
-import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
-import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
-import { recordSessionActivity } from '../../projects/session-activity';
+} from '../../workspaces/lib/session-token-grant';
+import { scheduleOpencodeSnapshotSync } from '../../workspaces/opencode-session-snapshot';
+import { resumeStoppedSandboxByExternalId } from '../../workspaces/routes/shared';
+import { recordSessionActivity } from '../../workspaces/session-activity';
 import {
   createExtendThrottle,
   extendSandboxDeadline,
@@ -32,11 +32,11 @@ import {
   previewGrantMs,
   turnDeliveryGraceMs,
   turnGrantMs,
-} from '../../projects/sandbox-deadline';
+} from '../../workspaces/sandbox-deadline';
 import {
   extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
-} from '../../projects/session-title-generate';
+} from '../../workspaces/session-title-generate';
 import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
@@ -124,11 +124,11 @@ const previewUseThrottle = createExtendThrottle(60_000);
  * present only in the account log and disappears from project/session history.
  */
 export function bindSandboxRequestContext(
-  record: { accountId: string; projectId: string; sessionId: string },
+  record: { accountId: string; workspaceId: string; sessionId: string },
   sandboxId: string,
 ): void {
   setContextField('accountId', record.accountId);
-  setContextField('projectId', record.projectId);
+  setContextField('workspaceId', record.workspaceId);
   setContextField('sessionId', record.sessionId);
   setContextField('sandboxId', sandboxId);
 }
@@ -371,9 +371,9 @@ function sanitizeRedirectLocation(
   }
 }
 
-// === Project-env pre-sync (before a prompt reaches opencode) ===
+// === Workspace-env pre-sync (before a prompt reaches opencode) ===
 
-function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: string): boolean {
+function shouldSyncWorkspaceEnvBeforeProxy(port: number, method: string, path: string): boolean {
   if (port !== 8000) return false;
   if (method.toUpperCase() !== 'POST') return false;
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
@@ -422,7 +422,7 @@ function requestedPromptAgent(
  * is disconnected would wedge the session instead of protecting it.
  *
  * Built on `isTurnStartRequest` rather than the env-sync predicate
- * (`shouldSyncProjectEnvBeforeProxy`) because that one keys on the
+ * (`shouldSyncWorkspaceEnvBeforeProxy`) because that one keys on the
  * client-addressed port, so a request sent straight to :4096 slips past it, and
  * it does not strip the in-box `/proxy/{port}` prefix.
  */
@@ -444,7 +444,7 @@ function isConnectorGatedTurn(port: number, method: string, path: string): boole
  * being granted access came back as a silent duplicate.
  */
 async function agentSwitchRefusal(
-  record: { accountId: string; projectId: string; agentName?: string | null },
+  record: { accountId: string; workspaceId: string; agentName?: string | null },
   requestedAgent: string | null,
   userId: string | undefined,
   sandboxId: string,
@@ -478,9 +478,9 @@ async function agentSwitchRefusal(
     );
   }
 
-  const verdict = await authorize(userId, record.accountId, PROJECT_ACTIONS.PROJECT_AGENT_READ, {
+  const verdict = await authorize(userId, record.accountId, WORKSPACE_ACTIONS.WORKSPACE_AGENT_READ, {
     type: 'project',
-    id: record.projectId,
+    id: record.workspaceId,
     resource: { type: 'agent', id: switchedToAgent },
   });
   if (verdict.allowed) return null;
@@ -509,7 +509,7 @@ async function agentSwitchRefusal(
 async function connectorGateRefusal(
   record: {
     accountId: string;
-    projectId: string;
+    workspaceId: string;
     sessionId: string;
     agentName?: string | null;
   },
@@ -520,7 +520,7 @@ async function connectorGateRefusal(
   try {
     verdict = await missingPromptConnectorConnections({
       accountId: record.accountId,
-      projectId: record.projectId,
+      workspaceId: record.workspaceId,
       sessionId: record.sessionId,
       sessionAgent: record.agentName ?? DEFAULT_AGENT_SENTINEL,
       requestedAgent,
@@ -836,7 +836,7 @@ export async function forwardToSandbox(
   // key on THIS via carriesSessionData(), which covers BOTH 8000 and opencode's
   // 4096 — Platinum reroutes 4096→8000, Daytona does not, and gating on 8000
   // alone left the direct-:4096 Daytona path ungated. NOTE:
-  // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
+  // redirectPrefix/X-Forwarded-Prefix and shouldSyncWorkspaceEnvBeforeProxy stay on
   // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
   // client actually used (/4096), and env-sync-before-prompt must behave identically
   // to Daytona, which likewise skips it on the direct 4096 opencode path.
@@ -851,7 +851,7 @@ export async function forwardToSandbox(
   // observation, the preview-use extend, the auto-resume — must exclude them or
   // the self-renewing lease this design deletes is rebuilt through the proxy.
   const sandboxAuthored = access.kind === 'principal' && access.sandboxAuthored;
-  const promptDelivery = shouldSyncProjectEnvBeforeProxy(port, method, remainingPath);
+  const promptDelivery = shouldSyncWorkspaceEnvBeforeProxy(port, method, remainingPath);
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -862,7 +862,7 @@ export async function forwardToSandbox(
     requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
-      projectId: record.projectId,
+      workspaceId: record.workspaceId,
       accountId: record.accountId,
       userId,
       callerSessionId: callerSessionId ?? null,
@@ -993,7 +993,7 @@ export async function forwardToSandbox(
       // own package (invalidateProviderCache), and a static edge here would be a
       // real cycle. This branch is rare by construction — once per 24h of
       // continuous work — so the one-time load cost is irrelevant.
-      void import('../../projects/reaping/stop-box')
+      void import('../../workspaces/reaping/stop-box')
         .then((m) => m.parkBoxAtRunCap(capped))
         .catch((err) =>
           console.warn(
@@ -1032,15 +1032,11 @@ export async function forwardToSandbox(
     if (!claimPromptDelivery(promptDedupeKey)) {
       return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
     }
-    // Stamped HERE, and only here: past the dedupe claim, so a re-sent prompt
-    // cannot double-count, and outside the retry loop below, so a wake retry
-    // cannot either. This is the sidebar's authoritative "last activity" —
-    // unlike the opencode_sessions snapshot scheduled further down, it needs no
-    // sandbox round-trip, so a session stays correctly dated even when the box
-    // is unreachable. See projects/session-activity.ts.
+    // Stamp only after the dedupe claim succeeds. This database-only write
+    // preserves last-activity ordering even when the sandbox snapshot fails.
     void recordSessionActivity({
       sessionId: record.sessionId,
-      projectId: record.projectId,
+      workspaceId: record.workspaceId,
     });
   }
 
@@ -1089,7 +1085,7 @@ export async function forwardToSandbox(
       const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
-      if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
+      if (shouldSyncWorkspaceEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
         const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
         // The agent-lock 409 and the project.agent.read 403 used to live here.
@@ -1111,7 +1107,7 @@ export async function forwardToSandbox(
         if (userId && prompt.text) {
           void generateSessionTitleFromFirstPrompt({
             sessionId: record.sessionId,
-            projectId: record.projectId,
+            workspaceId: record.workspaceId,
             accountId: record.accountId,
             userId,
             firstPromptText: prompt.text,
@@ -1120,12 +1116,12 @@ export async function forwardToSandbox(
         }
         scheduleOpencodeSnapshotSync({
           sessionId: record.sessionId,
-          projectId: record.projectId,
+          workspaceId: record.workspaceId,
           externalId: record.externalId,
         });
         try {
           await syncSandboxEnvForPrompt({
-            projectId: record.projectId,
+            workspaceId: record.workspaceId,
             sessionId: record.sessionId,
             externalId: record.externalId,
             serviceKey,
@@ -1144,7 +1140,7 @@ export async function forwardToSandbox(
           // time. Only on a real switch: an ordinary turn resolves to the
           // session's own agent and skips the manifest read entirely.
           await remintGrantForAgentSwitch({
-            projectId: record.projectId,
+            workspaceId: record.workspaceId,
             sessionId: record.sessionId,
             sessionAgent,
             requestedAgent,
@@ -1168,7 +1164,7 @@ export async function forwardToSandbox(
             // turned expected 502/timeouts from Daytona into Better Stack errors.
             throw new Error(message);
           }
-          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
+          console.warn(`[PREVIEW] Workspace env sync failed for ${sandboxId}:${port}: ${message}`);
           return jsonProxyError({ error: message }, 502, origin);
         }
       }
@@ -1578,7 +1574,7 @@ export async function resolvePreviewWsUpstream(opts: {
     requiresSessionVisibility(upstreamPort) &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
-      projectId: record.projectId,
+      workspaceId: record.workspaceId,
       accountId: record.accountId,
       userId,
       callerSessionId: callerSessionId ?? null,

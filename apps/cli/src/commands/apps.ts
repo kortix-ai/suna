@@ -9,7 +9,7 @@ import type {
   AppHostingProvider,
   AppAccessMode,
   AppSource,
-  ProjectHandle,
+  WorkspaceHandle,
 } from '@kortix/sdk';
 import ignore from 'ignore';
 import * as tar from 'tar';
@@ -17,7 +17,7 @@ import * as tar from 'tar';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -55,7 +55,7 @@ Subcommands:
     --readiness-path <path>         Default: /.
     --spa | --no-spa                Static/bundle history fallback.
     --provider <name>               daytona, platinum, or e2b.
-    --access <mode>                 private (default), project, restricted, public, or password.
+    --access <mode>                 private (default), workspace, restricted, public, or password.
     --password <value>              Required for new password-protected Apps.
     --members <ids>                 Comma-separated member ids for restricted access.
     --groups <ids>                  Comma-separated group ids for restricted access.
@@ -71,14 +71,15 @@ Subcommands:
   delete <id|slug>                  Delete the App and its runtimes. --yes.
 
 Global options:
-  --project <id>     Operate on this project id.
+  --workspace <id>   Operate on this workspace id.
+  --project <id>     Deprecated alias for --workspace.
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
 `;
 
-type AppsHandle = ProjectHandle['apps'];
-type ContextOptions = { projectArg?: string; hostArg?: string };
+type AppsHandle = WorkspaceHandle['apps'];
+type ContextOptions = { workspaceArg?: string; hostArg?: string };
 
 function fail(message: string): number {
   process.stderr.write(`${status.err(message)}\n`);
@@ -150,29 +151,29 @@ function commandArg(value: string | undefined): string[] | undefined {
 }
 
 async function context(options: ContextOptions): Promise<{
-  projectId: string;
-  auth: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>['auth'];
+  workspaceId: string;
+  auth: NonNullable<Awaited<ReturnType<typeof resolveWorkspaceContext>>>['auth'];
   apps: AppsHandle;
 } | null> {
-  const resolved = await resolveProjectContext(options);
+  const resolved = await resolveWorkspaceContext(options);
   if (!resolved) return null;
   const kortix = kortixFromAuth(resolved.auth);
-  const project = await withKortixScope(resolved.auth, () =>
-    kortix.project(resolved.projectId).get(),
+  const workspace = await withKortixScope(resolved.auth, () =>
+    kortix.workspace(resolved.workspaceId).get(),
   );
   // Client-side pre-check: saves a wasted round trip when the flag is off. The
   // wording matches the server's gate verbatim (feature-flags/gate.ts), so the
   // user reads the same sentence whichever side rejects.
-  if (project.experimental?.apps !== true) {
+  if (workspace.experimental?.apps !== true) {
     process.stderr.write(
-      `${status.err('Apps is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
+      `${status.err('Apps is not enabled for this workspace. Enable it in Settings → Feature flags.')}\n`,
     );
     return null;
   }
   return {
-    projectId: resolved.projectId,
+    workspaceId: resolved.workspaceId,
     auth: resolved.auth,
-    apps: kortix.project(resolved.projectId).apps,
+    apps: kortix.workspace(resolved.workspaceId).apps,
   };
 }
 
@@ -206,7 +207,7 @@ function takeCommon(rest: string[]) {
   return {
     json,
     options: {
-      projectArg: takeFlagValue(rest, ['--project']),
+      workspaceArg: takeFlagValue(rest, ['--workspace', '--project']),
       hostArg: takeFlagValue(rest, ['--host']),
     },
   };
@@ -329,8 +330,8 @@ function deployFlags(rest: string[]): DeployFlags {
     throw new Error('--provider must be daytona, platinum, or e2b');
   }
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
-  if (accessMode && !['private', 'project', 'restricted', 'public', 'password'].includes(accessMode)) {
-    throw new Error('--access must be private, project, restricted, public, or password');
+  if (accessMode && !['private', 'workspace', 'restricted', 'public', 'password'].includes(accessMode)) {
+    throw new Error('--access must be private, workspace, restricted, public, or password');
   }
   const spa = takeFlagBool(rest, ['--spa']);
   const noSpa = takeFlagBool(rest, ['--no-spa']);
@@ -722,8 +723,8 @@ async function accessCommand(rest: string[], options: ContextOptions, json: bool
   if (!target) return fail('access needs an App id or slug');
   rest.splice(rest.indexOf(target), 1);
   const mode = takeFlagValue(rest, ['--mode']) as AppAccessMode | undefined;
-  if (mode && !['private', 'project', 'restricted', 'public', 'password'].includes(mode)) {
-    throw new Error('--mode must be private, project, restricted, public, or password');
+  if (mode && !['private', 'workspace', 'restricted', 'public', 'password'].includes(mode)) {
+    throw new Error('--mode must be private, workspace, restricted, public, or password');
   }
   const password = takeFlagValue(rest, ['--password']);
   const memberIds = csv(takeFlagValue(rest, ['--members']));

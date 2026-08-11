@@ -6,7 +6,7 @@
  *   - list  GET  /change-requests        → `{ change_requests: [...] }`   (line ~7880)
  *   - get   GET  /change-requests/:crId   → `{ change_request: {...} }`    (line ~8082)
  *   - merge POST /change-requests/:crId/merge → `{ change_request, merge }` (line ~8283)
- *   - project DELETE /:projectId          → `{ ok: true }` (soft archive, line ~6209)
+ *   - project DELETE /:workspaceId          → `{ ok: true }` (soft archive, line ~6209)
  *
  *   We exercise the list envelope directly on a read-only sharedProject() (200 +
  *   `$.change_requests` is an array). The get/merge envelopes CANNOT be exercised
@@ -23,8 +23,8 @@
  *     `/interactivity`) and the OAuth callback gate on slackOauthMode().available
  *     FIRST → unconfigured server returns 503 before the signature check; a
  *     configured server with a bad/missing signature returns 401.
- *   - Slack BYO per-project (`/webhooks/slack/:projectId`) and Telegram
- *     (`/webhooks/telegram/:projectId`) look up the per-project secret first →
+ *   - Slack BYO per-project (`/webhooks/slack/:workspaceId`) and Telegram
+ *     (`/webhooks/telegram/:workspaceId`) look up the per-project secret first →
  *     not configured → 404; configured + bad signature/secret → 401.
  *   We post raw/unsigned bodies with a deliberately-wrong signature header and
  *   assert the documented code, narrowed per route to the handler's actual gate.
@@ -40,10 +40,10 @@ flow(
   {
     domain: "change-requests",
     routes: [
-      "GET /v1/projects/:projectId/change-requests",
-      "GET /v1/projects/:projectId/change-requests/:crId",
-      "POST /v1/projects/:projectId/change-requests/:crId/merge",
-      "DELETE /v1/projects/:projectId",
+      "GET /v1/projects/:workspaceId/change-requests",
+      "GET /v1/projects/:workspaceId/change-requests/:crId",
+      "POST /v1/projects/:workspaceId/change-requests/:crId/merge",
+      "DELETE /v1/projects/:workspaceId",
     ],
   },
   async (ctx) => {
@@ -52,7 +52,7 @@ flow(
     await ctx.step("list envelope → 200 `{ change_requests: [...] }`", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests", { params: { projectId: shared.id } });
+        .get("/v1/projects/:workspaceId/change-requests", { params: { workspaceId: shared.id } });
       r.status(200).body().exists("$.change_requests");
       // The envelope key must be an array (list shape), not an object/scalar.
       const crs = r.json<{ change_requests: unknown }>().change_requests;
@@ -62,8 +62,8 @@ flow(
     await ctx.step("get envelope boundary → unknown crId 404 (`{ change_request }` route wired)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests/:crId", {
-          params: { projectId: shared.id, crId: RANDOM_CR },
+        .get("/v1/projects/:workspaceId/change-requests/:crId", {
+          params: { workspaceId: shared.id, crId: RANDOM_CR },
         });
       r.status(404);
     });
@@ -72,9 +72,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/change-requests/:crId/merge",
+          "/v1/projects/:workspaceId/change-requests/:crId/merge",
           {},
-          { params: { projectId: shared.id, crId: RANDOM_CR } },
+          { params: { workspaceId: shared.id, crId: RANDOM_CR } },
         );
       r.status(404);
     });
@@ -83,7 +83,7 @@ flow(
       const disposable = await ctx.fixtures.project();
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId", { params: { projectId: disposable.id } });
+        .del("/v1/projects/:workspaceId", { params: { workspaceId: disposable.id } });
       r.status(200).body().has("$.ok", true);
     });
   },
@@ -99,8 +99,8 @@ flow(
       "POST /v1/webhooks/slack/commands",
       "POST /v1/webhooks/slack/interactivity",
       "GET /v1/webhooks/slack/oauth/callback",
-      "POST /v1/webhooks/slack/:projectId",
-      "POST /v1/webhooks/telegram/:projectId",
+      "POST /v1/webhooks/slack/:workspaceId",
+      "POST /v1/webhooks/telegram/:workspaceId",
     ],
   },
   async (ctx) => {
@@ -157,9 +157,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          "/v1/webhooks/slack/:projectId",
+          "/v1/webhooks/slack/:workspaceId",
           { type: "event_callback", event: { type: "app_mention" } },
-          { params: { projectId: shared.id }, headers: badSlackSig },
+          { params: { workspaceId: shared.id }, headers: badSlackSig },
         );
       r.status([401, 404]);
     });
@@ -168,9 +168,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          "/v1/webhooks/slack/:projectId",
+          "/v1/webhooks/slack/:workspaceId",
           { type: "event_callback" },
-          { params: { projectId: UNKNOWN_PROJECT }, headers: badSlackSig },
+          { params: { workspaceId: UNKNOWN_PROJECT }, headers: badSlackSig },
         );
       r.status(404);
     });
@@ -181,10 +181,10 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          "/v1/webhooks/telegram/:projectId",
+          "/v1/webhooks/telegram/:workspaceId",
           { update_id: 1, message: { message_id: 1, chat: { id: 1, type: "private" } } },
           {
-            params: { projectId: shared.id },
+            params: { workspaceId: shared.id },
             headers: { "x-telegram-bot-api-secret-token": "wrong-secret" },
           },
         );
@@ -195,10 +195,10 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          "/v1/webhooks/telegram/:projectId",
+          "/v1/webhooks/telegram/:workspaceId",
           { update_id: 1 },
           {
-            params: { projectId: UNKNOWN_PROJECT },
+            params: { workspaceId: UNKNOWN_PROJECT },
             headers: { "x-telegram-bot-api-secret-token": "wrong-secret" },
           },
         );

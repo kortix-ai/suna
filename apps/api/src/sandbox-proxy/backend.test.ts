@@ -62,7 +62,7 @@ const BASE_RECORD = {
   sandboxId: 'sbx-1',
   agentName: null,
   sessionId: 'sess-1',
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   accountId: 'acct-1',
   provider: 'platinum',
   status: 'active',

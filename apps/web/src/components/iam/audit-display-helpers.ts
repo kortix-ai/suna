@@ -96,44 +96,46 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/accounts/me': 'Viewed current account',
   'GET /v1/accounts/:accountId/iam/enterprise-demo': 'Viewed Enterprise preview',
   'PUT /v1/accounts/:accountId/iam/enterprise-demo': 'Updated Enterprise preview',
-  'GET /v1/projects/:projectId/audit': 'Viewed project audit log',
-  'GET /v1/projects/:projectId/sessions/:sessionId/audit': 'Viewed session audit log',
-  'POST /v1/projects/:projectId/sessions/:sessionId/audit/events': 'Ingested session audit events',
-  'GET /v1/projects/:projectId/sessions/:sessionId/transcript': 'Viewed session transcript',
-  'GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
+  'GET /v1/projects/:workspaceId/audit': 'Viewed workspace audit log',
+  'GET /v1/projects/:workspaceId/sessions/:sessionId/audit': 'Viewed session audit log',
+  'POST /v1/projects/:workspaceId/sessions/:sessionId/audit/events': 'Ingested session audit events',
+  'GET /v1/projects/:workspaceId/sessions/:sessionId/transcript': 'Viewed session transcript',
+  'GET /v1/projects/:workspaceId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
   // The park-and-restore pair (`r4.ts`): a parked session's `question` tool
   // survives past its sandbox (`lib/pending-questions.ts`); GET reads the one
   // still waiting on a human, POST answers it as a follow-up turn. Reads
   // naturally beside `turn-question`'s "Submitted session question" below —
   // submitted, then viewed, then answered.
-  'GET /v1/projects/:projectId/sessions/:sessionId/question': 'Viewed open session question',
-  'POST /v1/projects/:projectId/sessions/:sessionId/question': 'Answered session question',
-  'POST /v1/projects/:projectId/sessions/:sessionId/commit-push':
+  'GET /v1/projects/:workspaceId/sessions/:sessionId/question': 'Viewed open session question',
+  'POST /v1/projects/:workspaceId/sessions/:sessionId/question': 'Answered session question',
+  'POST /v1/projects/:workspaceId/sessions/:sessionId/commit-push':
     'Committed and pushed session changes',
-  'POST /v1/projects/:projectId/sessions/:sessionId/reload': 'Reloaded session agent config',
-  'POST /v1/projects/:projectId/sessions/:sessionId/reload-stream': 'Reloaded session agent config',
-  'POST /v1/projects/:projectId/turn-stream': 'Streamed session turn',
-  'POST /v1/projects/:projectId/turn-question': 'Submitted session question',
-  'POST /v1/projects/:projectId/sessions/warm': 'Warmed session sandbox',
-  'POST /v1/projects/:projectId/sessions/warm/claim': 'Claimed warm session sandbox',
-  'GET /v1/projects/:projectId/files/content': 'Viewed file content',
-  'GET /v1/projects/:projectId/files/search': 'Searched project files',
-  'GET /v1/projects/:projectId/files/archive': 'Downloaded project files',
-  'GET /v1/projects/:projectId/detail': 'Viewed project details',
-  'POST /v1/projects/:projectId/access-requests': 'Requested project access',
-  'POST /v1/projects/:projectId/approvals/:executionId': 'Resolved approval',
-  'GET /v1/projects/:projectId/approvals/needs-input': 'Listed approvals needing input',
-  'POST /v1/projects/:projectId/connect-requests': 'Created connection request',
-  'PUT /v1/projects/:projectId/connections/:connectionId/activate': 'Activated connector',
-  'PUT /v1/projects/:projectId/connections/:connectionId/default': 'Set default connector',
-  'PUT /v1/projects/:projectId/connections/:connectionId/revoke': 'Revoked connector',
-  'POST /v1/projects/:projectId/connections/me': 'Created personal connector',
-  'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',
-  'POST /v1/projects/:projectId/gateway/routing-policy/preview': 'Previewed gateway routing policy',
-  'POST /v1/projects/:projectId/git/collaborators': 'Added Git collaborator',
-  'POST /v1/projects/:projectId/marketplace/install-session': 'Started marketplace install',
-  'POST /v1/projects/:projectId/review/bulk': 'Updated review items in bulk',
-  'POST /v1/projects/:projectId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
+  'POST /v1/projects/:workspaceId/sessions/:sessionId/reload':
+    'Reloaded session agent config',
+  'POST /v1/projects/:workspaceId/sessions/:sessionId/reload-stream':
+    'Reloaded session agent config',
+  'POST /v1/projects/:workspaceId/turn-stream': 'Streamed session turn',
+  'POST /v1/projects/:workspaceId/turn-question': 'Submitted session question',
+  'POST /v1/projects/:workspaceId/sessions/warm': 'Warmed session sandbox',
+  'POST /v1/projects/:workspaceId/sessions/warm/claim': 'Claimed warm session sandbox',
+  'GET /v1/projects/:workspaceId/files/content': 'Viewed file content',
+  'GET /v1/projects/:workspaceId/files/search': 'Searched workspace files',
+  'GET /v1/projects/:workspaceId/files/archive': 'Downloaded workspace files',
+  'GET /v1/projects/:workspaceId/detail': 'Viewed workspace details',
+  'POST /v1/projects/:workspaceId/access-requests': 'Requested workspace access',
+  'POST /v1/projects/:workspaceId/approvals/:executionId': 'Resolved approval',
+  'GET /v1/projects/:workspaceId/approvals/needs-input': 'Listed approvals needing input',
+  'POST /v1/projects/:workspaceId/connect-requests': 'Created connection request',
+  'PUT /v1/projects/:workspaceId/connections/:connectionId/activate': 'Activated connector',
+  'PUT /v1/projects/:workspaceId/connections/:connectionId/default': 'Set default connector',
+  'PUT /v1/projects/:workspaceId/connections/:connectionId/revoke': 'Revoked connector',
+  'POST /v1/projects/:workspaceId/connections/me': 'Created personal connector',
+  'POST /v1/projects/:workspaceId/gateway/playground': 'Ran gateway playground request',
+  'POST /v1/projects/:workspaceId/gateway/routing-policy/preview': 'Previewed gateway routing policy',
+  'POST /v1/projects/:workspaceId/git/collaborators': 'Added Git collaborator',
+  'POST /v1/projects/:workspaceId/marketplace/install-session': 'Started marketplace install',
+  'POST /v1/projects/:workspaceId/review/bulk': 'Updated review items in bulk',
+  'POST /v1/projects/:workspaceId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
   'POST /v1/projects/github/installations/linkable': 'Listed linkable GitHub installations',
   // Same underlying create as bare `POST /v1/projects/provision` (both run
   // `runProvision` in `apps/api/src/projects/provision-core.ts` — see that
@@ -141,13 +143,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   // it, not a different action. `provision` itself has no override here (the
   // generic fallback already reads correctly as "Provisioned project"); this
   // entry pins the SAME text so the two never drift apart in the log.
-  'POST /v1/projects/provision-stream': 'Provisioned project',
-  'POST /v1/projects/suna-migration/start': 'Started project migration',
+  'POST /v1/projects/provision-stream': 'Provisioned workspace',
+  'POST /v1/projects/suna-migration/start': 'Started workspace migration',
   'POST /v1/connectors/call': 'Ran connector call',
   'GET /v1/connectors/catalog': 'Viewed connector catalog',
-  'POST /v1/connectors/projects/:projectId/call': 'Ran project connector action',
-  'GET /v1/connectors/projects/:projectId/catalog': 'Viewed connector catalog',
-  'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding':
+  'POST /v1/connectors/projects/:workspaceId/call': 'Ran workspace connector action',
+  'GET /v1/connectors/projects/:workspaceId/catalog': 'Viewed connector catalog',
+  'PUT /v1/connectors/projects/:workspaceId/connectors/:slug/secret-binding':
     'Updated connector secret binding',
   'GET /v1/runtime-assets/manifest': 'Checked sandbox runtime-asset versions',
   'GET /v1/runtime-assets/cli': 'Downloaded the sandbox CLI',
@@ -160,7 +162,7 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/openapi.json': 'Viewed OpenAPI specification',
   'GET /v1/billing/account-state': 'Viewed billing status',
   'GET /v1/billing/account-state/minimal': 'Viewed billing summary',
-  'GET /v1/usage/cost-by-project': 'Viewed project cost rollup',
+  'GET /v1/usage/cost-by-project': 'Viewed workspace cost rollup',
   'GET /v1/usage/cost-summary': 'Viewed cost summary',
   'POST /internal/gateway/billing': 'Processed gateway billing',
   'POST /internal/gateway/budget-check': 'Checked gateway budget',
@@ -259,7 +261,8 @@ const IRREGULAR_SINGULARS: Record<string, string> = {
   policies: 'policy',
   previews: 'preview',
   profiles: 'profile',
-  projects: 'project',
+  projects: 'workspace',
+  workspaces: 'workspace',
   providers: 'provider',
   repositories: 'repository',
   requests: 'request',
@@ -359,11 +362,17 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.member.super_admin.grant': { title: 'Granted super-admin', kind: 'grant' },
   'iam.member.super_admin.revoke': { title: 'Revoked super-admin', kind: 'revoke' },
   'iam.member.role.change': { title: 'Changed member role', kind: 'update' },
-  'iam.project.group.attach': { title: 'Attached group to project', kind: 'attach' },
-  'iam.project.group.detach': { title: 'Detached group from project', kind: 'detach' },
-  'iam.project.group.expired': { title: 'Expired project group access', kind: 'revoke' },
-  'iam.project.group.update': { title: 'Changed group role on project', kind: 'update' },
-  'iam.project.member.expired': { title: 'Expired project member access', kind: 'revoke' },
+  'iam.workspace.group.attach': { title: 'Attached group to workspace', kind: 'attach' },
+  'iam.workspace.group.detach': { title: 'Detached group from workspace', kind: 'detach' },
+  'iam.workspace.group.expired': { title: 'Expired workspace group access', kind: 'revoke' },
+  'iam.workspace.group.update': { title: 'Changed group role on workspace', kind: 'update' },
+  'iam.workspace.member.expired': { title: 'Expired workspace member access', kind: 'revoke' },
+  // Historical rows and legacy clients still emit the Project action codes.
+  'iam.project.group.attach': { title: 'Attached group to workspace', kind: 'attach' },
+  'iam.project.group.detach': { title: 'Detached group from workspace', kind: 'detach' },
+  'iam.project.group.expired': { title: 'Expired workspace group access', kind: 'revoke' },
+  'iam.project.group.update': { title: 'Changed group role on workspace', kind: 'update' },
+  'iam.project.member.expired': { title: 'Expired workspace member access', kind: 'revoke' },
   'iam.member.invite': { title: 'Invited member', kind: 'create' },
   'iam.member.remove': { title: 'Removed member', kind: 'delete' },
   'iam.mfa_required.enable': { title: 'Required MFA for the account', kind: 'update' },
@@ -394,12 +403,12 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.role.delete': { title: 'Deleted IAM role', kind: 'delete' },
   'iam.role.permissions.set': { title: 'Updated IAM role permissions', kind: 'update' },
   'iam.session.revoke': { title: 'Revoked account session', kind: 'revoke' },
-  'project.admin_bypass_read': { title: 'Used admin bypass to view project', kind: 'read' },
+  'project.admin_bypass_read': { title: 'Used admin bypass to view workspace', kind: 'read' },
   'project.admin_bypass_session_read': {
     title: 'Used admin bypass to view session',
     kind: 'read',
   },
-  'project.connector.read': { title: 'Read project connector', kind: 'read' },
+  'project.connector.read': { title: 'Read workspace connector', kind: 'read' },
   'scim.group.create': { title: 'Provisioned SCIM group', kind: 'create' },
   'scim.group.delete': { title: 'Deleted SCIM group', kind: 'delete' },
   'scim.group.update': { title: 'Updated SCIM group', kind: 'update' },
@@ -416,9 +425,12 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
 // match wins. `segments` is the path after /v1/ with UUIDs replaced by
 // the literal token `:id`, so e.g.
 //   POST /v1/projects/abc-…/group-grants
-// becomes segments ["projects", ":id", "group-grants"]
+// becomes segments ["workspaces", ":id", "group-grants"]
 
 type PathSegments = string[];
+const isWorkspaceRoute = (segments: PathSegments): boolean =>
+  segments[0] === 'workspaces' || segments[0] === 'projects';
+
 type HttpPatternHandler = (
   method: string,
   segs: PathSegments,
@@ -428,19 +440,19 @@ type HttpPatternHandler = (
 const HTTP_PATTERNS: HttpPatternHandler[] = [
   // ── Project group-grants ─────────────────────────────────────────
   (m, s) => {
-    if (s[0] === 'projects' && s[2] === 'group-grants') {
+    if (isWorkspaceRoute(s) && s[2] === 'group-grants') {
       if (m === 'POST' && s.length === 3)
-        return { title: 'Attached group to project', kind: 'attach' };
+        return { title: 'Attached group to workspace', kind: 'attach' };
       if (m === 'PATCH' && s.length === 4)
-        return { title: 'Changed group role on project', kind: 'update' };
+        return { title: 'Changed group role on workspace', kind: 'update' };
       if (m === 'DELETE' && s.length === 4)
-        return { title: 'Detached group from project', kind: 'detach' };
+        return { title: 'Detached group from workspace', kind: 'detach' };
     }
     return null;
   },
-  // ── Project secrets ──────────────────────────────────────────────
+  // ── Workspace secrets ──────────────────────────────────────────────
   (m, s, raw) => {
-    if (s[0] === 'projects' && s[2] === 'secrets') {
+    if (isWorkspaceRoute(s) && s[2] === 'secrets') {
       // /v1/projects/:id/secrets/NAME[/personal]
       const name = s[3] && s[3] !== ':id' ? s[3] : null;
       const personal = s[4] === 'personal';
@@ -472,35 +484,36 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       // The name isn't recoverable from the URL so we just label the
       // action and rely on the before/after diff for the detail.
       if (m === 'POST' && s.length === 3) {
-        return { title: 'Set project secret', kind: 'update' };
+        return { title: 'Set workspace secret', kind: 'update' };
       }
     }
     return null;
   },
-  // ── Project access (direct members + pending invites) ───────────
+  // ── Workspace access (direct members + pending invites) ───────────
   (m, s) => {
-    if (s[0] === 'projects' && s[2] === 'access') {
+    if (isWorkspaceRoute(s) && s[2] === 'access') {
       // Bootstrap-grant pending-invite endpoints. The DELETE is the
       // Revoke action on the Pending Invitations card.
       if (s[3] === 'pending-invites') {
-        if (m === 'GET') return { title: 'Listed pending project invites', kind: 'read' };
-        if (m === 'DELETE') return { title: 'Revoked pending project invitation', kind: 'revoke' };
+        if (m === 'GET') return { title: 'Listed pending workspace invites', kind: 'read' };
+        if (m === 'DELETE')
+          return { title: 'Revoked pending workspace invitation', kind: 'revoke' };
       }
       if (m === 'POST' && s[3] === 'invite')
-        return { title: 'Invited project member', kind: 'create' };
+        return { title: 'Invited workspace member', kind: 'create' };
       if (m === 'PUT' && s.length === 4)
-        return { title: 'Changed project member role', kind: 'update' };
+        return { title: 'Changed workspace member role', kind: 'update' };
       if (m === 'DELETE' && s.length === 4)
-        return { title: 'Removed project member', kind: 'delete' };
+        return { title: 'Removed workspace member', kind: 'delete' };
     }
     return null;
   },
-  // ── Project sessions ─────────────────────────────────────────────
+  // ── Workspace sessions ─────────────────────────────────────────────
   // POST /v1/projects/:id/sessions[/:sessionId/...] — every interactive
   // run lands here, so we get a lot of these. Friendly title beats raw
   // method+path in a long audit list.
   (m, s) => {
-    if (s[0] === 'projects' && s[2] === 'sessions') {
+    if (isWorkspaceRoute(s) && s[2] === 'sessions') {
       const tail = s.slice(3); // after /sessions
       if (m === 'POST' && tail.length === 0) return { title: 'Started session', kind: 'create' };
       if (m === 'POST' && tail[1] === 'exec')
@@ -513,7 +526,7 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
   },
   // ── Project triggers ─────────────────────────────────────────────
   (m, s) => {
-    if (s[0] === 'projects' && s[2] === 'triggers') {
+    if (isWorkspaceRoute(s) && s[2] === 'triggers') {
       if (m === 'POST' && s.length === 3) return { title: 'Created trigger', kind: 'create' };
       if (m === 'PATCH' && s.length === 4) return { title: 'Updated trigger', kind: 'update' };
       if (m === 'DELETE' && s.length === 4) return { title: 'Deleted trigger', kind: 'delete' };
@@ -523,10 +536,12 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
   },
   // ── Project lifecycle ────────────────────────────────────────────
   (m, s) => {
-    if (s[0] === 'projects') {
-      if (m === 'POST' && s.length === 1) return { title: 'Created project', kind: 'create' };
-      if (m === 'PATCH' && s.length === 2) return { title: 'Updated project', kind: 'update' };
-      if (m === 'DELETE' && s.length === 2) return { title: 'Deleted project', kind: 'delete' };
+    if (isWorkspaceRoute(s)) {
+      if (m === 'POST' && s.length === 1) return { title: 'Created workspace', kind: 'create' };
+      if (m === 'PATCH' && s.length === 2)
+        return { title: 'Updated workspace', kind: 'update' };
+      if (m === 'DELETE' && s.length === 2)
+        return { title: 'Deleted workspace', kind: 'delete' };
     }
     return null;
   },
@@ -581,12 +596,13 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
     }
     return null;
   },
-  // ── IAM members (super-admin, groups, project access, effective probe) ──
+  // ── IAM members (super-admin, groups, workspace access, effective probe) ──
   (m, s) => {
     if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'members') {
       const tail = s.slice(4); // after /members/:userId
       if (tail[1] === 'super-admin') return { title: 'Set super-admin status', kind: 'grant' };
-      if (tail[1] === 'project-access') return { title: 'Listed project access', kind: 'read' };
+      if (tail[1] === 'project-access')
+        return { title: 'Listed workspace access', kind: 'read' };
       if (tail[1] === 'groups') return { title: 'Listed member groups', kind: 'read' };
       if (tail[1]?.startsWith('effective'))
         return { title: 'Checked effective permissions', kind: 'read' };
@@ -606,7 +622,7 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
         if (m === 'DELETE') return { title: 'Removed member from group', kind: 'detach' };
       }
       if (tail[1] === 'project-grants')
-        return { title: 'Listed group project access', kind: 'read' };
+        return { title: 'Listed group workspace access', kind: 'read' };
     }
     return null;
   },
@@ -697,8 +713,17 @@ function routeArea(path: string): string {
   if (path === '/health' || path === '/health/live' || path === '/metrics') return 'System';
   if (path.includes('/accounts/:accountId/audit')) return 'Account audit';
   if (path.includes('/accounts/:accountId/iam')) return 'Identity and access';
-  if (path.includes('/projects/:projectId/sessions') || path.includes('/turn-')) return 'Sessions';
-  if (path.includes('/projects/:projectId/gateway')) return 'AI gateway';
+  if (
+    path.includes('/projects/:workspaceId/sessions') ||
+    path.includes('/workspaces/:workspaceId/sessions') ||
+    path.includes('/turn-')
+  )
+    return 'Sessions';
+  if (
+    path.includes('/projects/:workspaceId/gateway') ||
+    path.includes('/workspaces/:workspaceId/gateway')
+  )
+    return 'AI gateway';
   if (path.includes('/connector') || path.startsWith('/v1/connectors/')) return 'Connectors';
   if (path.startsWith('/v1/billing/')) return 'Billing';
   if (path.startsWith('/v1/tunnel/')) return 'Computer';
@@ -707,7 +732,8 @@ function routeArea(path: string): string {
   if (path.startsWith('/v1/webhooks/')) return 'Webhooks';
   if (path.includes('/channels/')) return 'Channels';
   if (path.startsWith('/v1/router/') || path.startsWith('/v1/llm/')) return 'Models';
-  if (path.startsWith('/v1/projects')) return 'Projects';
+  if (path.startsWith('/v1/workspaces')) return 'Workspaces';
+  if (path.startsWith('/v1/projects')) return 'Workspaces';
   if (path.startsWith('/v1/accounts') || path.startsWith('/v1/account')) return 'Accounts';
   return 'API';
 }
@@ -842,6 +868,13 @@ function compactHttpAction(method: string, path: string): string {
   return `${method} ${path.replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '/…')}`;
 }
 
+function routeLabelOverride(method: string, path: string): string | undefined {
+  const compatibilityPath = path
+    .replace('/v1/workspaces/', '/v1/projects/')
+    .replaceAll(':projectId', ':workspaceId');
+  return ROUTE_LABEL_OVERRIDES[`${method} ${compatibilityPath}`];
+}
+
 /**
  * Describe an audit action with a readable title and its matched route.
  * Unknown actions keep the compact raw value as their title.
@@ -885,8 +918,7 @@ export function describeAuditAction(action: string): AuditActionDescription {
     }
 
     return {
-      title:
-        ROUTE_LABEL_OVERRIDES[`${method} ${route.path}`] ?? genericRouteLabel(method, route.path),
+      title: routeLabelOverride(method, route.path) ?? genericRouteLabel(method, route.path),
       kind: kindFromMethod(method),
       mapped: true,
       method,
@@ -928,7 +960,7 @@ function kindFromMethod(method: string): HumanizedAuditAction['kind'] {
 }
 
 /**
- * Render a friendly resource pill: "Project · 8fb490fe" / "Group · Engineering".
+ * Render a friendly resource pill: "Workspace · 8fb490fe" / "Group · Engineering".
  * Resource type comes from the audit_events row; the id is shortened
  * to the first 8 chars so it stays scannable.
  */
@@ -937,7 +969,8 @@ export function formatResourcePill(
   resourceId: string | null | undefined,
 ): string | null {
   if (!resourceType) return null;
-  const label = resourceType.replace(/_/g, ' ');
+  const normalizedType = resourceType.replace(/_/g, ' ');
+  const label = normalizedType === 'project' ? 'workspace' : normalizedType;
   const short = resourceId ? resourceId.slice(0, 8) : null;
   return short ? `${label} · ${short}` : label;
 }

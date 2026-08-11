@@ -32,10 +32,10 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-export function SessionHeader({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function SessionHeader({ workspaceId, sessionId }: { workspaceId: string; sessionId: string }) {
   const session = useQuery({
-    queryKey: qk.session(projectId, sessionId),
-    queryFn: () => kortix.session(projectId, sessionId).get({ showErrors: false }),
+    queryKey: qk.session(workspaceId, sessionId),
+    queryFn: () => kortix.session(workspaceId, sessionId).get({ showErrors: false }),
     retry: false,
   });
   const title =
@@ -44,8 +44,8 @@ export function SessionHeader({ projectId, sessionId }: { projectId: string; ses
 
   // Runtime liveness probe (GET /kortix/health) for the header dot.
   const health = useQuery({
-    queryKey: ['session-health', projectId, sessionId],
-    queryFn: () => kortix.session(projectId, sessionId).health(),
+    queryKey: ['session-health', workspaceId, sessionId],
+    queryFn: () => kortix.session(workspaceId, sessionId).health(),
     refetchInterval: 15_000,
     retry: false,
   });
@@ -66,24 +66,24 @@ export function SessionHeader({ projectId, sessionId }: { projectId: string; ses
       {/* Mid-session model change. Placed by the status badge because switching
           restarts the runtime and ends the in-flight turn — it belongs with the
           session's live state, not buried in settings. */}
-      <ModelSwitcher projectId={projectId} sessionId={sessionId} />
+      <ModelSwitcher workspaceId={workspaceId} sessionId={sessionId} />
       {status && (
         <Badge variant="secondary" className="capitalize">
           {status}
         </Badge>
       )}
-      <SessionActions projectId={projectId} sessionId={sessionId} currentName={title} />
+      <SessionActions workspaceId={workspaceId} sessionId={sessionId} currentName={title} />
     </header>
   );
 }
 
 /** Session lifecycle actions: rename (update), restart, delete. */
 function SessionActions({
-  projectId,
+  workspaceId,
   sessionId,
   currentName,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   currentName: string;
 }) {
@@ -97,30 +97,30 @@ function SessionActions({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const rename = useMutation({
-    mutationFn: () => kortix.session(projectId, sessionId).update({ name: name.trim() }),
+    mutationFn: () => kortix.session(workspaceId, sessionId).update({ name: name.trim() }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
-      invalidateSessions(qc, projectId);
+      qc.invalidateQueries({ queryKey: qk.session(workspaceId, sessionId) });
+      invalidateSessions(qc, workspaceId);
       setRenaming(false);
       toast.success('Session renamed');
     },
     onError: () => toast.error('Could not rename'),
   });
   const restart = useMutation({
-    mutationFn: () => kortix.session(projectId, sessionId).restart(),
+    mutationFn: () => kortix.session(workspaceId, sessionId).restart(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.sessionStart(projectId, sessionId) });
+      qc.invalidateQueries({ queryKey: qk.sessionStart(workspaceId, sessionId) });
       toast.success('Restarting the session…');
     },
     onError: () => toast.error('Could not restart'),
   });
   const remove = useMutation({
-    mutationFn: () => kortix.session(projectId, sessionId).delete(),
+    mutationFn: () => kortix.session(workspaceId, sessionId).delete(),
     onSuccess: () => {
-      invalidateSessions(qc, projectId);
+      invalidateSessions(qc, workspaceId);
       setConfirmingDelete(false);
       toast.success('Session deleted');
-      router.push(`/projects/${projectId}`);
+      router.push(`/workspaces/${workspaceId}`);
     },
     onError: () => toast.error('Could not delete'),
   });
@@ -187,7 +187,7 @@ function SessionActions({
           {/* Both lifecycle calls, on the step where one of them is about to
               happen: the restart this dialog is recommending, and the delete
               the button performs. */}
-          <CallSnippet id="session.delete" context={{ projectId, sessionId }} />
+          <CallSnippet id="session.delete" context={{ workspaceId, sessionId }} />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setConfirmingDelete(false)}>
               Cancel

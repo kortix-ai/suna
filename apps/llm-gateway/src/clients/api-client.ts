@@ -158,7 +158,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       for (const message of result.warnings ?? []) {
         console.warn(`[gateway] budget warn threshold reached: ${message}`, {
           accountId: principal.accountId,
-          projectId: principal.projectId,
+          workspaceId: principal.workspaceId,
         });
       }
       if (result.exceeded) {

@@ -222,11 +222,11 @@ test('connection methods use the canonical connection route contract', async () 
 
 test('deprecated authorization policy methods fail before widening policy scope', async () => {
   await expect(getConnectionPolicies('P1', 'authorization-1')).rejects.toThrow(
-    'Use getConnectorPolicies(projectId, slug)',
+    'Use getConnectorPolicies(workspaceId, slug)',
   );
   await expect(
     setConnectionPolicies('P1', 'authorization-1', [{ match: 'send_email', action: 'block' }]),
-  ).rejects.toThrow('Use setConnectorPolicies(projectId, slug, policies)');
+  ).rejects.toThrow('Use setConnectorPolicies(workspaceId, slug, policies)');
   expect(calls).toHaveLength(0);
 });
 

@@ -8,7 +8,7 @@ const auditRow = {
   eventId: '11111111-1111-4111-8111-111111111111',
   occurredAt: new Date('2026-08-03T10:00:00.000Z'),
   accountId: '22222222-2222-4222-8222-222222222222',
-  projectId: null,
+  workspaceId: null,
   sessionId: null,
   actorUserId: null,
   actorType: 'system',

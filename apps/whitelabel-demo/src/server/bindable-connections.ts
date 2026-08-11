@@ -4,7 +4,7 @@ import type { Connection } from '@kortix/sdk';
  * Which connections a WRAPPER may bind to a session it starts.
  *
  * A wrapper acts under one credential for many end-users, so it has no personal
- * identity upstream. It can therefore bind only project-owned
+ * identity upstream. It can therefore bind only workspace-owned
  * connections — never a member's private one, and never another wrapper's
  * `external` one. `require_connectors`, which resolves the *acting user's own*
  * connection, is refused outright for the same reason
@@ -22,14 +22,14 @@ export interface BindableConnection {
 }
 
 /**
- * Why an alias the project HAS connections for still has nothing to bind.
+ * Why an alias the workspace HAS connections for still has nothing to bind.
  *
  * Both answers are "ask a teammate", never "connect it yourself": a wrapper
  * credential cannot connect on an end-user's behalf, and `require_connectors`
  * — the interactive flow that would — is refused for it outright.
  */
 export type ConnectorBindingUnavailable =
-  'private_only' | 'project_connection_inactive';
+  'private_only' | 'workspace_connection_inactive';
 
 export interface ConnectorBindingChoice {
   alias: string;
@@ -46,8 +46,8 @@ export function selectBindableConnections(
     .filter(
       (connection) =>
         connection.connector_alias === connectorAlias &&
-        // Project-owned only — see above.
-        connection.owner_type === 'project' &&
+        // Workspace-owned only — see above.
+        connection.owner_type === 'workspace' &&
         // A revoked or errored connection binds "successfully" and then fails at
         // the first tool call, which is a worse experience than not offering it.
         connection.status === 'active',
@@ -67,7 +67,7 @@ export function selectBindableConnections(
 }
 
 /**
- * Every connector alias the project has connections for, each with what this
+ * Every connector alias the workspace has connections for, each with what this
  * wrapper may actually bind — including the aliases where the answer is
  * "nothing".
  *
@@ -89,11 +89,11 @@ export function selectConnectorBindingChoices(
     const bindableConnections = selectBindableConnections(connections, alias);
     if (bindableConnections.length > 0)
       return { alias, connections: bindableConnections, unavailable: null };
-    // A revoked or errored project connection is a different ask than a private one:
-    // the project connection exists and needs reconnecting, rather than never
+    // A revoked or errored workspace connection is a different ask than a private one:
+    // the workspace connection exists and needs reconnecting, rather than never
     // having been shared. Same actor either way — a teammate.
     // `member` is the only owner type a wrapper genuinely cannot reach — it is
-    // one person's private connection. Everything else (`project`, `agent`,
+    // one person's private connection. Everything else (`workspace`, `agent`,
     // `subject`, `external`) is a shared/system connection that the platform WILL
     // bind for a caller who may manage system connections, so calling those
     // "only connected to people's own accounts" tells the user something false
@@ -108,7 +108,7 @@ export function selectConnectorBindingChoices(
       alias,
       connections: bindableConnections,
       unavailable: hasNonMemberConnection
-        ? 'project_connection_inactive'
+        ? 'workspace_connection_inactive'
         : 'private_only',
     };
   });

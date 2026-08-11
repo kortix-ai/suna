@@ -4,7 +4,7 @@ import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
 import { getProvider, type ProviderName } from '../../platform/providers';
-import { isAlreadyNotRunning, reconcileSandboxStoppedByExternalId } from '../../projects/sandbox-reaper';
+import { isAlreadyNotRunning, reconcileSandboxStoppedByExternalId } from '../../workspaces/sandbox-reaper';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
 import {

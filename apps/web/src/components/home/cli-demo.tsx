@@ -123,7 +123,7 @@ function getStartedBox(): Line[] {
   lines.push([t(boxLine(''), 'faded')]);
   for (const s of [
     'Paste this prompt into your coding agent',
-    'to configure your Kortix project:',
+    'to configure your Kortix workspace:',
   ]) {
     lines.push([t('║ ', 'faded'), t(padTo(s, BW), 'dim'), t(' ║', 'faded')]);
   }
@@ -148,14 +148,14 @@ const INIT_INTRO: Line[] = [
     t('   '),
     t('The open-source AI Management System', 'fg'),
     t('   '),
-    t('·  configure your Kortix project', 'faded'),
+    t('·  configure your Kortix workspace', 'faded'),
   ],
   [],
 ];
 
 const AGENT_PICK_INTRO: Line[] = [
   [],
-  [t('  Pick your local coding agent to configure this Kortix project.', 'dim')],
+  [t('  Pick your local coding agent to configure this Kortix workspace.', 'dim')],
   [],
   [t('  It picks up the Kortix skill — ask it to scaffold triggers,', 'dim')],
   [t('  custom agents, or edit kortix.yaml for you.', 'dim')],
@@ -164,11 +164,11 @@ const AGENT_PICK_INTRO: Line[] = [
 ];
 
 const AGENTS = ['opencode', 'claude', 'codex', 'cursor'];
-const PROJECT_NAME_LABEL: Line = [t('Project name '), t('(my-app)', 'dim'), t(': ')];
+const WORKSPACE_NAME_LABEL: Line = [t('Workspace name '), t('(my-app)', 'dim'), t(': ')];
 
 const initTail = (name: string): Line[] => [
   [],
-  [t('Initialized Kortix project '), t(`"${name}"`, 'fg'), t(' in '), t(`~/${name}`, 'faded')],
+  [t('Initialized Kortix workspace '), t(`"${name}"`, 'fg'), t(' in '), t(`~/${name}`, 'faded')],
   [t('Wrote 9 files:')],
   [t('  + ', 'faded'), t('kortix.yaml')],
   [t('  + ', 'faded'), t('.kortix/Dockerfile')],
@@ -185,7 +185,7 @@ const initTail = (name: string): Line[] => [
 
 const INIT_EVENTS: OutEvent[] = [
   ...lines(INIT_INTRO),
-  { k: 'ask', label: PROJECT_NAME_LABEL, answer: 'my-app', color: 'fg' },
+  { k: 'ask', label: WORKSPACE_NAME_LABEL, answer: 'my-app', color: 'fg' },
   { k: 'pick', intro: AGENT_PICK_INTRO, options: AGENTS, selected: 0 },
   ...lines(initTail('my-app')),
 ];
@@ -201,7 +201,7 @@ const SCRIPT: Step[] = [
     out: [
       ok(t('kortix.yaml verified')),
       [],
-      [t('  '), t('kortix ship', 'kortix'), t('  new project → managed Kortix git', 'dim')],
+      [t('  '), t('kortix ship', 'kortix'), t('  new workspace → managed Kortix git', 'dim')],
       [t('  name    ', 'dim'), t('my-app')],
       [],
       ok(t('Committed: '), t('kortix: ship', 'fg')),
@@ -250,7 +250,7 @@ const STATIC_BLOCKS: Block[] = SCRIPT.map((step) => ({
 }));
 
 const PALETTE: { cmd: string; desc: string }[] = [
-  { cmd: 'kortix init', desc: 'scaffold a new Kortix project' },
+  { cmd: 'kortix init', desc: 'scaffold a new Kortix workspace' },
   { cmd: 'kortix ship', desc: 'commit, push & deploy to managed git' },
   { cmd: 'kortix sessions new', desc: 'start an agent session' },
   { cmd: 'kortix cr open', desc: 'open a change request' },
@@ -568,7 +568,7 @@ export function CliDemo() {
 
   const submitName = () => {
     const name = draft.trim() || 'my-app';
-    pushOutLines([[...PROJECT_NAME_LABEL, t(name, 'fg')], ...AGENT_PICK_INTRO]);
+    pushOutLines([[...WORKSPACE_NAME_LABEL, t(name, 'fg')], ...AGENT_PICK_INTRO]);
     setWizard({ phase: 'agent', name, agentIdx: 0 });
     setDraft('');
   };

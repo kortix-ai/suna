@@ -39,7 +39,7 @@ describe('shouldMountSessionChat', () => {
     // in-memory fresh-mark, or a start-stash that was never consumed) said
     // "brand new" about a session with hours of history. The chat was then
     // never mounted, so it could never report ready, so the hint was never
-    // cleared: the session painted the empty project-home surface until a hard
+    // cleared: the session painted the empty workspace-home surface until a hard
     // reload. Transcript evidence has to beat the hint, unconditionally.
     expect(
       shouldMountSessionChat({

@@ -1,6 +1,6 @@
 'use client';
 
-import { listAccounts, provisionProject } from '@kortix/sdk';
+import { listAccounts, provisionWorkspace } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   SignInIcon as LogIn,
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -23,19 +24,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import Loading from '@/components/ui/loading';
-import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
+import { useWorkspacePicker } from '@/features/marketplace/marketplace-workspace-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
+import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-workspace';
 
 // First-party use-case templates ship in the bundled `kortix-starter` registry,
 // so a use-case slug maps to the catalog id the install-session resolves by.
 const TEMPLATE_CATALOG_NAMESPACE = 'kortix-starter';
 
-// Same sentinel the unified AddToProjectModal uses: "create a project inline,
-// then install into it" as one Select choice next to the existing projects.
-const NEW_PROJECT = '__new__';
+// Same sentinel the unified AddToWorkspaceModal uses: "create a workspace inline,
+// then install into it" as one Select choice next to the existing workspaces.
+const NEW_WORKSPACE = '__new__';
 
 export function TemplateSessionInstallDialog({
   templateId,
@@ -56,60 +56,60 @@ export function TemplateSessionInstallDialog({
 
   const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState('');
-  const [newProjectName, setNewProjectName] = useState('');
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [opening, setOpening] = useState(false);
 
-  const { projects, projectsQuery } = useProjectPicker({ open, enabled: !!user });
-  const activeProjects = useMemo(
-    () => projects.filter((p) => p.status === 'active'),
-    [projects],
+  const { workspaces, workspacesQuery } = useWorkspacePicker({ open, enabled: !!user });
+  const activeWorkspaces = useMemo(
+    () => workspaces.filter((workspace) => workspace.status === 'active'),
+    [workspaces],
   );
 
   useEffect(() => {
     if (!open) return;
     setError(null);
     setOpening(false);
-    setNewProjectName(title ?? '');
+    setNewWorkspaceName(title ?? '');
   }, [open, title]);
 
-  // Default the target once the list is known: the first project, or inline
+  // Default the target once the list is known: the first workspace, or inline
   // creation when the account genuinely has none.
   useEffect(() => {
-    if (!open || target || !projectsQuery.isSuccess) return;
-    setTarget(activeProjects[0]?.project_id ?? NEW_PROJECT);
-  }, [open, target, projectsQuery.isSuccess, activeProjects]);
+    if (!open || target || !workspacesQuery.isSuccess) return;
+    setTarget(activeWorkspaces[0]?.workspace_id ?? NEW_WORKSPACE);
+  }, [open, target, workspacesQuery.isSuccess, activeWorkspaces]);
 
   async function openSession() {
     setOpening(true);
     setError(null);
     try {
-      let projectId = target;
-      if (target === NEW_PROJECT) {
+      let workspaceId = target;
+      if (target === NEW_WORKSPACE) {
         const accounts = await listAccounts();
         // No `personal_account` flag on this API — the bootstrapped personal
         // account is the one where the caller is the primary owner.
         const account = accounts.find((a) => a.is_primary_owner) ?? accounts[0];
-        if (!account) throw new Error('No account available to create a project in');
-        const project = await provisionProject({
+        if (!account) throw new Error('No account available to create a workspace in');
+        const workspace = await provisionWorkspace({
           account_id: account.account_id,
-          name: newProjectName.trim() || title || 'My project',
+          name: newWorkspaceName.trim() || title || 'My workspace',
           starter_template: 'general-knowledge-worker',
         });
-        // qk.projects.scope(): every account's list AND the accountless slot.
-        // qk.projects.list(...) forms are SIBLINGS under this prefix, so the
+        // qk.workspaces.scope(): every account's list AND the accountless slot.
+        // qk.workspaces.list(...) forms are SIBLINGS under this prefix, so the
         // prefix is the only shape that reaches all of them in one call.
-        queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-        projectId = project.project_id;
+        queryClient.invalidateQueries({ queryKey: qk.workspaces.scope() });
+        workspaceId = workspace.workspace_id;
       }
       const { session_id } = await installMarketplaceItemAsSession(
-        projectId,
+        workspaceId,
         `${TEMPLATE_CATALOG_NAMESPACE}:${templateId}`,
       );
-      router.push(`/projects/${projectId}/sessions/${session_id}`);
+      router.push(`/workspaces/${workspaceId}/sessions/${session_id}`);
     } catch (e) {
       setError(
         isManagedGitUnavailableError(e)
-          ? "Managed git isn't set up on this server — an admin needs to connect GitHub in Git settings before projects can be created."
+          ? "Managed git isn't set up on this server — an admin needs to connect GitHub in Git settings before workspaces can be created."
           : (e as Error).message || 'Could not open the install session',
       );
       setOpening(false);
@@ -117,9 +117,7 @@ export function TemplateSessionInstallDialog({
   }
 
   const confirmDisabled =
-    opening ||
-    !target ||
-    (target === NEW_PROJECT && newProjectName.trim().length === 0);
+    opening || !target || (target === NEW_WORKSPACE && newWorkspaceName.trim().length === 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,12 +133,12 @@ export function TemplateSessionInstallDialog({
             </span>
             <div>
               <h3 className="text-foreground text-sm font-medium">Set it up with the agent</h3>
-              <p className="text-muted-foreground text-xs">Guided install, right in your project</p>
+              <p className="text-muted-foreground text-xs">Guided install, inside your workspace</p>
             </div>
           </div>
 
           <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
-            We&apos;ll open a chat in your project and an agent will walk you through it — ask for
+            We&apos;ll open a chat in your workspace and an agent will walk you through it — ask for
             the details it needs, connect your accounts, and turn it on when you&apos;re ready.
             Nothing runs until you say go.
           </p>
@@ -162,28 +160,28 @@ export function TemplateSessionInstallDialog({
                     Sign in to install this automation
                   </p>
                   <p className="text-muted-foreground mx-auto mt-1 max-w-xs text-xs leading-relaxed">
-                    Sign in to pick a project and open the install chat — we&apos;ll bring you right
-                    back here.
+                    Sign in to pick a workspace and open the install chat — we&apos;ll bring you
+                    right back here.
                   </p>
                 </div>
               </div>
-            ) : projectsQuery.isPending ? (
+            ) : workspacesQuery.isPending ? (
               <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                <Loading className="size-4" /> Loading your projects…
+                <Loading className="size-4" /> Loading your workspaces…
               </div>
-            ) : projectsQuery.isError ? (
+            ) : workspacesQuery.isError ? (
               <div className="border-border/60 bg-muted/30 rounded-xl border px-4 py-4">
                 <p className="text-foreground text-sm font-medium">
-                  Couldn&apos;t load your projects
+                  Couldn&apos;t load your workspaces
                 </p>
                 <p className="text-muted-foreground mt-0.5 text-xs">
-                  {(projectsQuery.error as Error)?.message || 'The request failed.'}
+                  {(workspacesQuery.error as Error)?.message || 'The request failed.'}
                 </p>
                 <Button
                   size="sm"
                   variant="outline"
                   className="mt-3"
-                  onClick={() => projectsQuery.refetch()}
+                  onClick={() => workspacesQuery.refetch()}
                 >
                   Try again
                 </Button>
@@ -194,28 +192,28 @@ export function TemplateSessionInstallDialog({
                   <Label className="text-sm">Open the install chat in</Label>
                   <Select value={target} onValueChange={setTarget}>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Choose a project" />
+                      <SelectValue placeholder="Choose a workspace" />
                     </SelectTrigger>
                     <SelectContent>
-                      {activeProjects.map((p) => (
-                        <SelectItem key={p.project_id} value={p.project_id}>
-                          {p.name}
+                      {activeWorkspaces.map((workspace) => (
+                        <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                          {workspace.name}
                         </SelectItem>
                       ))}
-                      <SelectItem value={NEW_PROJECT}>＋ New project</SelectItem>
+                      <SelectItem value={NEW_WORKSPACE}>＋ New workspace</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                {target === NEW_PROJECT && (
+                {target === NEW_WORKSPACE && (
                   <div className="space-y-1.5">
-                    <Label className="text-sm" htmlFor="use-case-new-project-name">
-                      Project name
+                    <Label className="text-sm" htmlFor="use-case-new-workspace-name">
+                      Workspace name
                     </Label>
                     <Input
-                      id="use-case-new-project-name"
-                      value={newProjectName}
-                      onChange={(e) => setNewProjectName(e.target.value)}
-                      placeholder="My project"
+                      id="use-case-new-workspace-name"
+                      value={newWorkspaceName}
+                      onChange={(e) => setNewWorkspaceName(e.target.value)}
+                      placeholder="My workspace"
                       autoFocus
                     />
                   </div>
@@ -244,12 +242,14 @@ export function TemplateSessionInstallDialog({
                 {opening ? (
                   <>
                     <Loading className="size-4" />{' '}
-                    {target === NEW_PROJECT ? 'Creating project…' : 'Opening chat…'}
+                    {target === NEW_WORKSPACE ? 'Creating workspace…' : 'Opening chat…'}
                   </>
                 ) : (
                   <>
                     <MessagesSquare className="size-4" />{' '}
-                    {target === NEW_PROJECT ? 'Create project & install' : 'Open install session'}
+                    {target === NEW_WORKSPACE
+                      ? 'Create workspace & install'
+                      : 'Open install session'}
                   </>
                 )}
               </Button>

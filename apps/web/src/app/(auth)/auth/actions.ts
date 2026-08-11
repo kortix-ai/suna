@@ -13,6 +13,7 @@ import {
   SSO_REQUIRED_MESSAGE,
   resolveEmailFlowMode,
 } from '@/lib/auth/unified-auth-flow';
+import { LAST_WORKSPACE_COOKIE } from '@/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -21,7 +22,6 @@ import {
   recordPlatformLogout,
   submitAccessRequest,
 } from '@kortix/sdk';
-import { LAST_PROJECT_COOKIE } from '@/lib/onboarding/landing-destination';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -510,9 +510,9 @@ export async function signOut() {
   }
 
   // Forget the remembered project. Ownership binding already stops the next
-  // account from following it, but leaving one user's project id sitting in a
+  // account from following it, but leaving one user's workspace id sitting in a
   // shared browser after they sign out is needless.
-  (await cookies()).delete(LAST_PROJECT_COOKIE);
+  (await cookies()).delete(LAST_WORKSPACE_COOKIE);
 
   return redirect('/');
 }
@@ -549,13 +549,13 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   const authEvent = isNewUser ? 'signup' : 'login';
 
   // For new cloud users with no plan yet, land in account management. The
-  // repo-first app surface starts from /projects; the old plan route is not v1.
+  // repo-first app surface starts from /workspaces; the old plan route is not v1.
   const runtimeEnv = getServerPublicEnv();
   const billingEnabled = runtimeEnv.BILLING_ENABLED;
   // `sendEmailCode` already applied this rule when the API could tell us the
   // address was new. Re-applying it here covers the case where it could not
   // (a fail-open 'unknown' flow mode), so a fresh account never rides a
-  // pre-signup return URL into a project it cannot open.
+  // pre-signup return URL into a workspace it cannot open.
   let finalDestination = isNewUser ? resolveNewAccountReturnUrl(returnUrl) : returnUrl;
 
   // Invited users (returnUrl → /invites/:id) must land on the accept/decline
@@ -576,7 +576,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
         // Entitlement is the only reason to override the destination here.
         // First-project provisioning used to run on this path too and blocked
         // the OTP form for the length of a managed git repo create plus a full
-        // starter push; PROJECT_LANDING_PATH now absorbs that behind the UI.
+        // starter push; WORKSPACE_LANDING_PATH now absorbs that behind the UI.
         if (accountState && !accountHasAppAccess(accountState)) {
           finalDestination = '/accounts';
         }

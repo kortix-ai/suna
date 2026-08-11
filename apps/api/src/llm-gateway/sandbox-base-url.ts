@@ -8,7 +8,7 @@
  * need it —
  *   - session-sandbox.ts computes it once at sandbox boot (KORTIX_LLM_BASE_URL
  *     injected into the container's env), using `config.KORTIX_URL` as the origin.
- *   - projects/lib/sandbox-env-sync.ts recomputes it on every prompt / gateway-
+ *   - workspaces/lib/sandbox-env-sync.ts recomputes it on every prompt / gateway-
  *     mode toggle (the hot env-push path posts it to the running daemon).
  * One implementation keeps boot and hot environment pushes synchronized.
  */

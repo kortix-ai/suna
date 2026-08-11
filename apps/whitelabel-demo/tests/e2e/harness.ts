@@ -10,6 +10,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import type { Kortix } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 
 export const APP_ROOT = join(import.meta.dir, '..', '..');
@@ -62,7 +63,7 @@ export interface AppInstance {
 }
 
 /** SDK client for one authenticated black-box wrapper user. */
-export function createTestKortix(app: AppInstance, token: string) {
+export function createTestKortix(app: AppInstance, token: string): Kortix {
   return createScopedKortix({
     backendUrl: `${app.baseUrl}/api/kortix`,
     getToken: async () => token,
@@ -71,7 +72,7 @@ export function createTestKortix(app: AppInstance, token: string) {
 
 /** Remove the suite's per-user ownership JSON store (the temp
  *  `TEST_DATA_DIR`, never the app dir's real `.lumen-data`). Always call this
- *  before AND after a boot that will provision/own projects, so test files
+ *  before AND after a boot that will provision/own workspaces, so test files
  *  don't leak state into each other via the shared store. */
 export function resetUsersStore(): void {
   rmSync(TEST_DATA_DIR, { recursive: true, force: true });

@@ -2,7 +2,7 @@
  * `kortix marketplace <subcommand>` - browse the Kortix marketplace. This is
  * intentionally a discovery-only surface: no build, validate, or publish
  * commands live here, and no deterministic install/update/remove machinery
- * either — adding a marketplace item to a project is an agent import
+ * either — adding a marketplace item to a workspace is an agent import
  * (start/continue a session and ask it to bring the item in), not a CLI
  * write path.
  */
@@ -11,7 +11,7 @@ import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -46,7 +46,7 @@ interface CatalogResponse {
 
 interface MarketplaceFlags {
   host?: string;
-  project?: string;
+  workspace?: string;
   query?: string;
   type?: string;
   source?: string;
@@ -68,18 +68,18 @@ Options:
   --type <type>        Filter by item type, e.g. skill.
   --source <source>    Filter by marketplace/source, e.g. kortix.
   --host <name>        Use a configured Kortix host.
-  --project <id>       Install into this project id (default: linked).
+  --workspace <id>     Install into this workspace (default: linked).
   --json               Machine-readable output.
   -h, --help           Show this help.
 
-Install is agent-driven. It starts a project session that clones, reads, merges
+Install is agent-driven. It starts a workspace session that clones, reads, merges
 what fits, and opens a change request.
 `;
 
 function parseFlags(argv: string[]): MarketplaceFlags {
   return {
     host: takeFlagValue(argv, ['--host']),
-    project: takeFlagValue(argv, ['--project']),
+    workspace: takeFlagValue(argv, ['--workspace', '--project']),
     query: takeFlagValue(argv, ['--query', '-q']),
     type: takeFlagValue(argv, ['--type']),
     source: takeFlagValue(argv, ['--source']),
@@ -95,14 +95,20 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
     );
     return 2;
   }
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveWorkspaceContext({ workspaceArg: flags.workspace, hostArg: flags.host });
   if (!ctx) return 1;
   try {
     const result = await ctx.client.post<{ session_id: string }>(
-      `/projects/${ctx.projectId}/marketplace/install-session`,
+      `/workspaces/${ctx.workspaceId}/marketplace/install-session`,
       { id: itemId },
     );
-    const output = { ...result, project_id: ctx.projectId, item_id: itemId };
+    const output = {
+      ...result,
+      workspace_id: ctx.workspaceId,
+      /** Deprecated JSON compatibility alias. */
+      project_id: ctx.workspaceId,
+      item_id: itemId,
+    };
     if (flags.json) emitJson(output);
     else {
       process.stdout.write(
@@ -171,7 +177,7 @@ function printItems(items: CatalogItem[], flags: MarketplaceFlags): void {
   }
   if (items.length > 40) process.stdout.write(`\n  ${C.dim}Showing 40 of ${items.length}. Narrow with --query.${C.reset}\n`);
   process.stdout.write(`\n  ${C.dim}Show details:${C.reset} ${C.cyan}kortix marketplace show <name>${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import it${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Add to a workspace:${C.reset} ${C.dim}start a session and ask the agent to import it${C.reset}\n`);
 }
 
 async function marketplaceSearch(argv: string[], flags: MarketplaceFlags): Promise<number> {
@@ -229,7 +235,7 @@ async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise
   if (secrets.length > 0) process.stdout.write(`  ${C.dim}Needs secrets:${C.reset} ${secrets.join(', ')}\n`);
   if (connectors.length > 0) process.stdout.write(`  ${C.dim}Needs connectors:${C.reset} ${connectors.join(', ')}\n`);
   if (item.managedBy === 'kortix') process.stdout.write(`  ${C.dim}Managed by:${C.reset} Kortix (${item.updatePolicy})\n`);
-  process.stdout.write(`\n  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import "${item.name}"${C.reset}\n`);
+  process.stdout.write(`\n  ${C.dim}Add to a workspace:${C.reset} ${C.dim}start a session and ask the agent to import "${item.name}"${C.reset}\n`);
   return 0;
 }
 

@@ -162,7 +162,7 @@ export function ConnectorIntake({
         </span>
         <p className="text-foreground text-sm font-medium">Connected</p>
         <p className="text-muted-foreground max-w-xs text-xs">
-          {appLabel} is connected to this project. You can close this window and return to your
+          {appLabel} is connected to this workspace. You can close this window and return to your
           session — the agent has been notified.
         </p>
       </div>

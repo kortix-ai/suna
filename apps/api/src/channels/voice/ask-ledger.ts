@@ -3,9 +3,9 @@
  *
  * THE BUG. A live call handed Kortix the same question over and over. A stray
  * transcription artifact ("dog.") led the voice model to assert something false
- * about the project; that claim then sat in its OWN conversation history as
+ * about the workspace; that claim then sat in its OWN conversation history as
  * fact, so every correct answer Kortix sent back contradicted what it believed,
- * and it asked again to resolve the contradiction — "clarify whether the project
+ * and it asked again to resolve the contradiction — "clarify whether the workspace
  * involves dogs", "summarize all references to dog" — indefinitely. Each ask is
  * a real Kortix turn: $0.02-$0.03 and up to 3.2k tokens. It ran until a human
  * hung up.

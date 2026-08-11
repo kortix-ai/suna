@@ -5,7 +5,7 @@
  * The client receives one final URL. It does not receive a standalone token,
  * an upstream base URL, or runtime coordinates.
  *
- * Wrapper mode authenticates the Lumen session and checks project ownership.
+ * Wrapper mode authenticates the Lumen session and checks workspace ownership.
  * Direct mode forwards the caller's Kortix token through the server SDK.
  */
 
@@ -13,12 +13,12 @@ import {
   ApiError,
   appendPreviewToken,
   isProxiableLocalhostUrl,
-  type CreatedProjectCliToken,
+  type CreatedWorkspaceCliToken,
 } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { isOwner, isValidProjectId } from '@/server/users';
+import { isOwner, isValidWorkspaceId } from '@/server/users';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -30,7 +30,7 @@ const MAX_PATH_LENGTH = 4096;
 const MAX_TARGET_LENGTH = 8192;
 
 interface PreviewRequest {
-  projectId?: unknown;
+  workspaceId?: unknown;
   sessionId?: unknown;
   preview?: {
     port?: unknown;
@@ -58,18 +58,18 @@ function errorResponse(status: number, error: string) {
 }
 
 function parseRequest(body: PreviewRequest): {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   target: { kind: 'preview'; port: number; path: string } | { kind: 'localhost'; url: string };
 } | null {
-  const projectId = typeof body.projectId === 'string' ? body.projectId : '';
+  const workspaceId = typeof body.workspaceId === 'string' ? body.workspaceId : '';
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-  if (!isValidProjectId(projectId) || !UUID_RE.test(sessionId)) return null;
+  if (!isValidWorkspaceId(workspaceId) || !UUID_RE.test(sessionId)) return null;
 
   if (typeof body.targetUrl === 'string') {
     const url = body.targetUrl.trim();
     if (!url || url.length > MAX_TARGET_LENGTH || !isProxiableLocalhostUrl(url)) return null;
-    return { projectId, sessionId, target: { kind: 'localhost', url } };
+    return { workspaceId, sessionId, target: { kind: 'localhost', url } };
   }
 
   const port = body.preview?.port;
@@ -85,7 +85,7 @@ function parseRequest(body: PreviewRequest): {
   }
 
   return {
-    projectId,
+    workspaceId,
     sessionId,
     target: { kind: 'preview', port, path },
   };
@@ -112,8 +112,8 @@ export async function POST(req: NextRequest) {
   if (appSession) {
     const limited = consumeRateLimit(appSession.userId);
     if (!limited.ok) return errorResponse(429, 'Rate limit exceeded');
-    if (!isOwner(appSession.userId, input.projectId)) {
-      return errorResponse(403, "You don't have access to this project.");
+    if (!isOwner(appSession.userId, input.workspaceId)) {
+      return errorResponse(403, "You don't have access to this workspace.");
     }
   }
 
@@ -124,10 +124,10 @@ export async function POST(req: NextRequest) {
     backendUrl: upstreamBase(),
     getToken: async () => token,
   });
-  const session = kortix.session(input.projectId, input.sessionId);
+  const session = kortix.session(input.workspaceId, input.sessionId);
 
   let previewUrl: string | undefined;
-  let created: CreatedProjectCliToken;
+  let created: CreatedWorkspaceCliToken;
   try {
     await session.ensureReady();
     previewUrl =
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
     if (!previewUrl) return errorResponse(400, 'Could not resolve preview URL');
 
     created = await kortix
-      .project(input.projectId)
+      .workspace(input.workspaceId)
       .tokens.create({ name: `lumen-preview-${Date.now()}` });
   } catch (error) {
     const status = error instanceof ApiError && error.status ? error.status : 502;

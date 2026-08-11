@@ -764,7 +764,7 @@ const GROUPS: Group[] = [
       },
       {
         label: 'project_delete',
-        node: part('project_delete', done({ project: 'kortix-marketing-site' }, '')),
+        node: part('project_delete', done({ workspace: 'kortix-marketing-site' }, '')),
       },
     ],
   },

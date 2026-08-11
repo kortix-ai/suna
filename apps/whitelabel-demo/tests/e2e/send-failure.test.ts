@@ -85,7 +85,7 @@ describe('the overrides dialog makes new refusals reachable (F3)', () => {
   });
 
   test('the key-collision refusal names the actual problem', () => {
-    // "Two identifiers inject the same env var" is legal in the project and
+    // "Two identifiers inject the same env var" is legal in the workspace and
     // illegal in one session — the user cannot guess that from a generic error.
     const failure = sessionCreateFailure(
       apiError('SECRET_IDENTIFIER_KEY_COLLISION'),

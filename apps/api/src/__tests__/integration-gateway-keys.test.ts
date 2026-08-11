@@ -12,7 +12,7 @@ import {
 } from '../llm-gateway/gateway-keys';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const CREATOR = crypto.randomUUID();
 
 let n = 0;
@@ -27,7 +27,7 @@ async function seedKey(opts: {
     .insert(gatewayApiKeys)
     .values({
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       name: `test-key-${n}`,
       keyPrefix: secretKey.slice(0, 14),
       secretKeyHash: hashSecretKey(secretKey),
@@ -42,7 +42,7 @@ async function seedKey(opts: {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'gateway-key-test-acct' });
   await db.insert(projects).values({
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     name: 'gateway-key-test-project',
     repoUrl: 'https://example.test/gw-key.git',
@@ -59,7 +59,7 @@ describe('validateGatewayKey', () => {
     const { secretKey, keyId } = await seedKey({ expiresAt: null });
     expect(await validateGatewayKey(secretKey)).toEqual({
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       userId: CREATOR,
       keyId,
     });
@@ -103,28 +103,28 @@ describe('validateGatewayKey', () => {
     // instead also keeps one row per prompt out of gateway_api_keys forever.
     const created = await createGatewayKey({
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       name: INTERNAL_SESSION_TITLE_KEY_NAME,
       createdBy: CREATOR,
     });
-    expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).toContain(created.key_id);
+    expect((await listGatewayKeys(WORKSPACE)).map((k) => k.keyId)).toContain(created.key_id);
 
-    expect(await deleteGatewayKey(PROJECT, created.key_id)).toBe(true);
+    expect(await deleteGatewayKey(WORKSPACE, created.key_id)).toBe(true);
     expect(await validateGatewayKey(created.secret_key)).toBeNull();
-    expect((await listGatewayKeys(PROJECT)).map((k) => k.keyId)).not.toContain(created.key_id);
-    expect(await deleteGatewayKey(PROJECT, created.key_id)).toBe(false);
+    expect((await listGatewayKeys(WORKSPACE)).map((k) => k.keyId)).not.toContain(created.key_id);
+    expect(await deleteGatewayKey(WORKSPACE, created.key_id)).toBe(false);
   });
 
   test('deleteGatewayKey is scoped to the owning project', async () => {
     const created = await createGatewayKey({
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       name: INTERNAL_SESSION_TITLE_KEY_NAME,
       createdBy: CREATOR,
     });
     expect(await deleteGatewayKey(crypto.randomUUID(), created.key_id)).toBe(false);
     expect(await validateGatewayKey(created.secret_key)).not.toBeNull();
-    expect(await deleteGatewayKey(PROJECT, created.key_id)).toBe(true);
+    expect(await deleteGatewayKey(WORKSPACE, created.key_id)).toBe(true);
   });
 
   test('stamps lastUsedAt on a successful validation (fire-and-forget)', async () => {

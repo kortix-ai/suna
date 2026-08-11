@@ -31,7 +31,7 @@ describe('kortix self-host (generic Docker CLI)', () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-self-host-cli-'));
     configRoot = join(tmp, 'self-host');
-    // Compose project identity is based only on --instance. Never let a test
+    // Compose workspace identity is based only on --instance. Never let a test
     // that exercises `env set` inspect or recreate a developer's real
     // `kortix-default` services merely because its files use a temp root.
     instance = `kortixtest${randomUUID().replaceAll('-', '')}`;

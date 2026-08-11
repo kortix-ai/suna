@@ -1,5 +1,5 @@
 /**
- * CommandsPage — the project's OpenCode slash-commands (web parity:
+ * CommandsPage — the workspace's OpenCode slash-commands (web parity:
  * customize/sections commands-view). Lists the commands declared under
  * .kortix/opencode/commands/ and, on tap, shows the command's markdown
  * source. Read-only; authoring flows through a session (to be wired next).
@@ -32,9 +32,9 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
-import type { ProjectConfigEntry } from '@/lib/projects/projects-client';
-import { newConfigPrompt, editConfigPrompt } from '@/lib/projects/configure-prompts';
+import { useWorkspaceDetail, useWorkspaceFile } from '@/lib/workspaces/hooks';
+import type { WorkspaceConfigEntry } from '@/lib/workspaces/workspaces-client';
+import { newConfigPrompt, editConfigPrompt } from '@/lib/workspaces/configure-prompts';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -45,7 +45,7 @@ interface PageTabLike {
 
 interface CommandsPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   /** Start an agent-led config session seeded with `prompt` (New / Edit). */
   onConfigure: (prompt: string) => void;
   onOpenDrawer?: () => void;
@@ -65,13 +65,13 @@ function stripFrontmatter(src: string): string {
 // ─── Command detail (markdown source) ────────────────────────────────────────
 
 function CommandDetail({
-  projectId,
+  workspaceId,
   command,
   onBack,
   onConfigure,
 }: {
-  projectId: string;
-  command: ProjectConfigEntry;
+  workspaceId: string;
+  command: WorkspaceConfigEntry;
   onBack: () => void;
   onConfigure: (prompt: string) => void;
 }) {
@@ -80,7 +80,7 @@ function CommandDetail({
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
 
-  const fileQuery = useProjectFile(projectId, command.path);
+  const fileQuery = useWorkspaceFile(workspaceId, command.path);
   const body = useMemo(
     () => stripFrontmatter(fileQuery.data?.content ?? ''),
     [fileQuery.data?.content],
@@ -187,7 +187,7 @@ function CommandRow({
   onPress,
   isDark,
 }: {
-  command: ProjectConfigEntry;
+  command: WorkspaceConfigEntry;
   onPress: () => void;
   isDark: boolean;
 }) {
@@ -225,7 +225,7 @@ function CommandRow({
 
 export function CommandsPage({
   page,
-  projectId,
+  workspaceId,
   onConfigure,
   onOpenDrawer,
   onOpenRightDrawer,
@@ -236,9 +236,9 @@ export function CommandsPage({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<ProjectConfigEntry | null>(null);
+  const [selected, setSelected] = useState<WorkspaceConfigEntry | null>(null);
 
-  const { data, isLoading, isError, error, refetch } = useProjectDetail(projectId);
+  const { data, isLoading, isError, error, refetch } = useWorkspaceDetail(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -269,7 +269,7 @@ export function CommandsPage({
 
       <PageContent>
       {selected ? (
-        <CommandDetail projectId={projectId} command={selected} onBack={() => setSelected(null)} onConfigure={onConfigure} />
+        <CommandDetail workspaceId={workspaceId} command={selected} onBack={() => setSelected(null)} onConfigure={onConfigure} />
       ) : (
         <>
           <SearchListHeader
@@ -301,7 +301,7 @@ export function CommandsPage({
             ) : filtered.length === 0 ? (
               <View style={{ padding: 40, alignItems: 'center', gap: 14 }}>
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
-                  {commands.length === 0 ? 'No commands in this project yet.' : 'No commands match your search.'}
+                  {commands.length === 0 ? 'No commands in this workspace yet.' : 'No commands match your search.'}
                 </Text>
                 {commands.length === 0 && (
                   <TouchableOpacity

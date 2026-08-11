@@ -1,4 +1,4 @@
-import type { ConnectorSharing } from '@kortix/sdk';
+import type { WorkspaceConnectorSharing } from '@kortix/sdk';
 
 /**
  * Pure sharing-selection logic, shared by the <SharingPicker> component and its
@@ -7,7 +7,7 @@ import type { ConnectorSharing } from '@kortix/sdk';
  * and groups (account groups) — aligned with the IAM member+group
  * model; the share-scope backend already evaluates group grants.
  */
-export type SharingMode = 'project' | 'private' | 'members';
+export type SharingMode = 'workspace' | 'private' | 'members';
 
 export interface SharingSelection {
   mode: SharingMode;
@@ -23,14 +23,14 @@ export interface OptionCopy {
 
 export interface SharingCopy {
   heading: string;
-  project: OptionCopy;
+  workspace: OptionCopy;
   private: OptionCopy;
   members: OptionCopy;
 }
 
 export const DEFAULT_COPY: SharingCopy = {
   heading: 'Who can access this',
-  project: { label: 'Project-wide', desc: 'Every member of this project' },
+  workspace: { label: 'Workspace-wide', desc: 'Every member of this workspace' },
   private: { label: 'Only me', desc: 'Just you' },
   members: {
     label: 'Specific members or groups',
@@ -39,19 +39,19 @@ export const DEFAULT_COPY: SharingCopy = {
 };
 
 /** A "Specific members or groups" selection must name at least one subject,
- *  else the empty allow-list silently collapses to project-wide on save. */
+ *  else the empty allow-list silently collapses to workspace-wide on save. */
 export function isSharingComplete(s: SharingSelection): boolean {
   return s.mode !== 'members' || s.memberIds.length + s.groupIds.length > 0;
 }
 
-export function selectionToIntent(s: SharingSelection): ConnectorSharing {
-  if (s.mode === 'project') return { mode: 'project' };
+export function selectionToIntent(s: SharingSelection): WorkspaceConnectorSharing {
+  if (s.mode === 'workspace') return { mode: 'workspace' };
   if (s.mode === 'private') return { mode: 'private', ownerId: '' };
   return { mode: 'members', memberIds: s.memberIds, groupIds: s.groupIds };
 }
 
-export function intentToSelection(intent: ConnectorSharing | null | undefined): SharingSelection {
-  if (!intent || intent.mode === 'project') return { mode: 'project', memberIds: [], groupIds: [] };
+export function intentToSelection(intent: WorkspaceConnectorSharing | null | undefined): SharingSelection {
+  if (!intent || intent.mode === 'workspace') return { mode: 'workspace', memberIds: [], groupIds: [] };
   if (intent.mode === 'private') return { mode: 'private', memberIds: [], groupIds: [] };
   return { mode: 'members', memberIds: intent.memberIds ?? [], groupIds: intent.groupIds ?? [] };
 }

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
-import { parseManifestString, serializeManifest } from '../projects/triggers';
-import { applyAgentScopeV2 } from '../projects/lib/agent-config-v2';
-import { extractAgents } from '../projects/agents';
+import { parseManifestString, serializeManifest } from '../workspaces/triggers';
+import { applyAgentScopeV2 } from '../workspaces/lib/agent-config-v2';
+import { extractAgents } from '../workspaces/agents';
 
 // Regression for the v2-YAML agent-scope bug: the /scope route used
 // applyAgentScope (v1 `[[agents]]` array only), which treated a v2 `agents:` map

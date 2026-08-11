@@ -1,0 +1,82 @@
+---
+title: Models
+description: How Kortix picks a model, and how billing works for managed vs. your-own-key models.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Kortix runs each [session](/docs/work/sessions) on a model. This page
+explains managed models vs. your own provider key (BYOK), how Kortix picks a
+model automatically, and two billing gotchas to know.
+
+This page applies to workspaces with the LLM Gateway on. LLM Gateway is an
+experimental feature flag, and it is on by default for cloud workspaces. Check or
+toggle it in Customize → Feature flags.
+
+## Managed models and BYOK
+
+A model id has one of three shapes:
+
+- **Managed** — a bare id, like `glm-5.2` or `deepseek-v4-flash`. Kortix
+  supplies the credentials. Cloud accounts pay with Kortix credits.
+- **BYOK** — a `provider/model` id, like `anthropic/claude-opus-4-8`. You
+  supply the key. Your provider account pays.
+- **ChatGPT** — a `codex/<id>` id. You connect your ChatGPT plan once through
+  OAuth, and it pays.
+
+Connect a BYOK key on the workspace's Model settings page, or set the
+provider's env var directly as a [secret](/docs/workspace/secrets).
+
+## How auto picks a model
+
+Set no model, and Kortix resolves one through five layers, in order. (The
+id `auto` covers this same behavior, but it is not yet a selectable option
+in the model picker.)
+
+1. An explicit pin — a session, channel, or trigger's own `model:` field.
+2. The [agent's](/docs/workspace/agents) default for this workspace.
+3. The workspace's default.
+4. The account's default.
+5. The platform default.
+
+Kortix uses the first layer that has a value it can still serve. A saved
+default that stops working — a disconnected key, a retired model — is
+skipped automatically. A session never dies from a stale default. See the
+[manifest reference](/docs/workspace/manifest) for the trigger `model:`
+field.
+
+<Callout type="warn" title="Billing surprises on BYOK">
+Two costs are easy to miss on a paid cloud account:
+
+- **Platform fee.** Kortix adds a 10% fee, billed as credits, on top of what
+  your own provider charges. Free-tier and self-hosted accounts are exempt.
+- **Silent failover.** If your BYOK key hits a rate limit or billing error
+  mid-turn, Kortix retries on a managed model and bills your credits instead
+  of failing the session.
+
+If you see credit charges on a BYOK-only workspace, check these two causes
+before reporting a billing bug.
+</Callout>
+
+## Per-workspace model enablement
+
+The workspace controls which models its pickers offer. By default, the newest
+model of each family is offered automatically. Kortix-managed models and any
+model your workspace's defaults or routing policy reference are always offered —
+a guard never prunes them.
+
+You can override the default for individual models on the **Manage models**
+page (Customize → Models). An exception is stored per workspace and takes effect
+immediately. The session model picker and the command palette hide anything
+you turn off; new models stay on by default as the catalog grows.
+
+Enablement governs what is offered, not what is served: a request that names a
+disabled model outright (for example through the raw API) still runs. The
+workspace's default model cannot be turned off — set a different default first.
+
+## Shared, not private, keys
+
+A connected provider key applies to the whole workspace. There is no private,
+per-user key — setting a personal override for a provider key fails with a
+`llm_credentials_project_wide` error. This code remains for wire compatibility. Update the shared key on the
+[secrets](/docs/workspace/secrets) page instead.

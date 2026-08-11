@@ -16,6 +16,9 @@ describe('agent Git reconciliation task', () => {
     expect(prompt).toContain('Run the relevant tests');
     expect(prompt).toContain('Commit the completed reconciliation');
     expect(prompt).toContain('kortix sessions reload "$KORTIX_SESSION_ID"');
+    expect(prompt).toContain('--workspace "$KORTIX_WORKSPACE_ID"');
+    expect(prompt).not.toContain('--project');
+    expect(prompt).not.toContain('KORTIX_PROJECT_ID');
     expect(prompt.indexOf('Commit the completed reconciliation')).toBeLessThan(
       prompt.indexOf('kortix sessions reload "$KORTIX_SESSION_ID"'),
     );

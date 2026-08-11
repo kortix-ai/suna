@@ -11,7 +11,9 @@ const ENV_KEYS = [
   'KORTIX_CONFIG_FILE',
   'KORTIX_CLI_TOKEN',
   'KORTIX_API_URL',
+  'KORTIX_WORKSPACE_ID',
   'KORTIX_PROJECT_ID',
+  'KORTIX_DISABLE_SANDBOX_ENV_FILE',
 ];
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -46,13 +48,17 @@ beforeEach(() => {
           user_email: 'user@example.test',
           account_id: 'acct_1',
           logged_in_at: new Date().toISOString(),
-          default_project: PROJECT_ID,
+          default_workspace: {
+            workspace_id: PROJECT_ID,
+            account_id: 'acct_1',
+            name: 'demo',
+          },
         },
       },
     }),
   );
   process.env.KORTIX_CONFIG_FILE = configFile;
-  process.env.KORTIX_PROJECT_ID = PROJECT_ID;
+  process.env.KORTIX_WORKSPACE_ID = PROJECT_ID;
 
   createBodies = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -67,16 +73,16 @@ beforeEach(() => {
         { status: 200, headers: JSON_HEADERS },
       );
     }
-    if (url.endsWith(`/v1/projects/${PROJECT_ID}/sessions`) && init?.method === 'POST') {
+    if (url.endsWith(`/v1/workspaces/${PROJECT_ID}/sessions`) && init?.method === 'POST') {
       createBodies.push(typeof init.body === 'string' ? JSON.parse(init.body) : null);
       return new Response(JSON.stringify({ error: 'stop here' }), {
         status: 500,
         headers: JSON_HEADERS,
       });
     }
-    if (url.endsWith(`/v1/projects/${PROJECT_ID}`)) {
+    if (url.endsWith(`/v1/workspaces/${PROJECT_ID}`)) {
       return new Response(
-        JSON.stringify({ project_id: PROJECT_ID, name: 'demo', account_id: 'acct_1' }),
+        JSON.stringify({ workspace_id: PROJECT_ID, name: 'demo', account_id: 'acct_1' }),
         { status: 200, headers: JSON_HEADERS },
       );
     }

@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import { getProjectSession, type ProjectSession } from '../core/rest/projects-client';
+import { getWorkspaceSession, type WorkspaceSession } from '../core/rest/workspaces-client';
 
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
@@ -10,7 +10,7 @@ import { qk } from './query-keys';
 /**
  * The ONLY way to read one Kortix session row.
  *
- * `qk.project.session(projectId, sessionId)` had three independent readers,
+ * `qk.workspace.session(workspaceId, sessionId)` had three independent readers,
  * and the migration that unified their KEY left their CONTRACTS apart — the
  * narrower half of the same bug:
  *
@@ -34,7 +34,7 @@ import { qk } from './query-keys';
  * boot and in the idle-stopped window, where a transient miss is expected and
  * self-heals. And `showErrors` is a client-side PRESENTATION flag: it does not
  * change the request or the response, so it cannot justify separate keys the
- * way `scope` does for `qk.project.sessions` (see `query-keys.ts`). One
+ * way `scope` does for `qk.workspace.sessions` (see `query-keys.ts`). One
  * entity, one entry, one fetcher.
  *
  * `enabled` stays per-call-site on purpose. It decides whether THIS surface
@@ -42,16 +42,19 @@ import { qk } from './query-keys';
  * disagree — the session page skips the read entirely when `POST /start`
  * already handed it the pin.
  */
-export function useProjectSession(
-  projectId: string | undefined,
+export function useWorkspaceSession(
+  workspaceId: string | undefined,
   sessionId: string | undefined,
   options?: { enabled?: boolean },
 ) {
-  return useQuery<ProjectSession>({
-    queryKey: qk.project.session(projectId ?? '', sessionId ?? ''),
+  return useQuery<WorkspaceSession>({
+    queryKey: qk.workspace.session(workspaceId ?? '', sessionId ?? ''),
     queryFn: () =>
-      getProjectSession(projectId as string, sessionId as string, { showErrors: false }),
-    enabled: Boolean(projectId) && Boolean(sessionId) && (options?.enabled ?? true),
+      getWorkspaceSession(workspaceId as string, sessionId as string, { showErrors: false }),
+    enabled: Boolean(workspaceId) && Boolean(sessionId) && (options?.enabled ?? true),
     ...contract('inventory'),
   });
 }
+
+/** @deprecated Use `useWorkspaceSession`. */
+export const useProjectSession = useWorkspaceSession;

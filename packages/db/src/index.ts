@@ -201,6 +201,8 @@ export {
   connectorPolicies,
   connectorProjectPolicies,
   connectorProjectSettings,
+  connectorWorkspacePolicies,
+  connectorWorkspaceSettings,
   connectorCalls,
   connectorAttachments,
   sessionToolApprovals,
@@ -209,6 +211,8 @@ export {
   connectorPoliciesRelations,
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
+  connectorWorkspacePoliciesRelations,
+  connectorWorkspaceSettingsRelations,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
@@ -231,6 +235,8 @@ export type {
   NewAccountMember,
   Project,
   NewProject,
+  Workspace,
+  NewWorkspace,
   ProjectMember,
   NewProjectMember,
   ProjectSecret,

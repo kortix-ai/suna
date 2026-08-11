@@ -26,8 +26,8 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
-import { sandboxOpencodeEndpoint } from '../../projects/opencode-mapping';
-import { sandboxRuntimeRequestHeaders } from '../../projects/sandbox-fetch';
+import { sandboxOpencodeEndpoint } from '../../workspaces/opencode-mapping';
+import { sandboxRuntimeRequestHeaders } from '../../workspaces/sandbox-fetch';
 import { promptVoiceAgent, settleAsk } from './runtime';
 import { kortixError, kortixResult } from './utterance';
 

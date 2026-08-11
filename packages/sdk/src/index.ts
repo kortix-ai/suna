@@ -292,17 +292,6 @@ export type {
   BillingTransactionsSummary,
   BillingCreditBreakdown,
   BillingTierConfiguration,
-  SessionCostOwnerType,
-  SessionCostSummary,
-  SessionCostModelUsage,
-  SessionCostLlmLedgerEntry,
-  SessionCostComputeLedgerEntry,
-  SessionCostLedgerEntry,
-  SessionCostDetail,
-  SessionCostReconciliation,
-  SessionCostsPage,
-  ListSessionCostsOptions,
-  GetSessionCostRecordOptions,
   // Account audit
   AuditEvent,
   AuditEventList,
@@ -328,6 +317,20 @@ export type {
   AccountIdentity,
   ValidateTokenResult,
 } from './core/rest/projects-client';
+
+export type {
+  GetSessionCostRecordOptions,
+  ListSessionCostsOptions,
+  SessionCostComputeLedgerEntry,
+  SessionCostDetail,
+  SessionCostLedgerEntry,
+  SessionCostLlmLedgerEntry,
+  SessionCostModelUsage,
+  SessionCostOwnerType,
+  SessionCostReconciliation,
+  SessionCostsPage,
+  SessionCostSummary,
+} from './core/rest/workspaces-client/session-costs';
 
 /**
  * Linear-time trailing-slash strip shared with hosts — see
@@ -371,11 +374,18 @@ export {
 // core/runtime/client). Each is declared ONCE in this package; naming it here
 // picks the canonical module and silences the ambiguity without renaming.
 export { type FileContent, type FileNode } from './core/files/types';
+// These generic names predate the Workspace namespace. Keep their Project
+// shapes at the root; canonical consumers use the Workspace-prefixed variants.
+export type {
+  PreparationView,
+  SandboxProviderTransitionState,
+  SandboxProviderTransitionView,
+} from './core/rest/projects-client/projects';
 export {
   type PermissionAction,
   type PermissionConfig,
   type PermissionRule,
-} from './core/rest/projects-client/agent-config';
+} from './core/rest/workspaces-client/agent-config';
 
 export * from './core/client/kortix';
 export * from './core/http/api-client';
@@ -386,7 +396,8 @@ export * from './core/http/fresh-sessions';
 export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
-export * from './core/rest/projects-client';
+export * from './core/rest/projects-client/legacy-root';
+export * from './core/rest/workspaces-client';
 export * from './core/runtime/client';
 export * from './core/session';
 export {
@@ -408,4 +419,4 @@ export type {
 } from './core/rest/projects-client/sessions';
 export type {
   OpencodeAgentConfig as RuntimeAgentConfig,
-} from './core/rest/projects-client/agent-config';
+} from './core/rest/workspaces-client/agent-config';

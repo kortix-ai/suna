@@ -10,7 +10,7 @@ const canonicalRow = {
   externalId: 'sbx_01KYSVD9Y8YETHH5059G6GGN1M',
   sessionId: 'session-1',
   agentName: null,
-  projectId: 'project-1',
+  workspaceId: 'project-1',
   accountId: 'account-1',
   provider: 'platinum',
   status: 'active',

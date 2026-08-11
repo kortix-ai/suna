@@ -6,8 +6,8 @@
  * token / observability cards. Reuses the shared apiFetch helper.
  */
 
-import { apiFetch } from '@/lib/projects/projects-client';
-import type { AccountRole } from '@/lib/projects/projects-client';
+import { apiFetch } from '@/lib/workspaces/workspaces-client';
+import type { AccountRole } from '@/lib/workspaces/workspaces-client';
 
 // ── Account + members ─────────────────────────────────────────────────────────
 
@@ -16,7 +16,7 @@ export interface AccountDetail {
   name: string;
   iam_v2_enabled?: boolean;
   member_count: number;
-  project_count: number;
+  workspace_count: number;
   role: AccountRole;
   created_at: string;
   updated_at: string;
@@ -32,7 +32,7 @@ export interface AccountMember {
   email: string | null;
   account_role: AccountRole;
   is_super_admin?: boolean;
-  explicit_project_count?: number;
+  explicit_workspace_count?: number;
   groups?: AccountMemberGroup[];
   active_pat_count?: number;
   has_verified_mfa?: boolean;

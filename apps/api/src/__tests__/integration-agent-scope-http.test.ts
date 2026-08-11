@@ -2,7 +2,7 @@
  * HTTP-level enforcement (in-process, real DB + real app): an agent-session
  * token whose grant lacks `project.cr.merge` is rejected with 403 by the actual
  * CR-merge route — exercising the full path: auth middleware (validates the
- * token, sets agentGrant on context) → route (loadProjectForUser → assertAgentScope).
+ * token, sets agentGrant on context) → route (loadWorkspaceForUser → assertAgentScope).
  * A token granted the scope (or no grant) passes the gate (and falls through to
  * the CR-not-found 404, which proves the scope check let it through).
  */
@@ -13,7 +13,7 @@ import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 
 const minted: string[] = [];
-let ctx: { projectId: string; accountId: string; userId: string } | null = null;
+let ctx: { workspaceId: string; accountId: string; userId: string } | null = null;
 
 beforeAll(async () => {
   // Idempotently ensure the columns createAccountToken writes (the local DB may
@@ -27,7 +27,7 @@ beforeAll(async () => {
     join kortix.account_members m on m.account_id = p.account_id and m.account_role = 'owner'
     limit 1`)) as unknown as Array<{ project_id: string; account_id: string; user_id: string }>;
   const r = rows[0];
-  if (r) ctx = { projectId: r.project_id, accountId: r.account_id, userId: r.user_id };
+  if (r) ctx = { workspaceId: r.project_id, accountId: r.account_id, userId: r.user_id };
 });
 
 afterAll(async () => {
@@ -40,7 +40,7 @@ async function mintToken(agentGrant: unknown): Promise<string> {
   const t = await createAccountToken({
     accountId: ctx!.accountId,
     userId: ctx!.userId,
-    projectId: ctx!.projectId,
+    workspaceId: ctx!.workspaceId,
     name: 'http-scope-test',
     agentGrant: agentGrant as any,
   });
@@ -50,7 +50,7 @@ async function mintToken(agentGrant: unknown): Promise<string> {
 
 function mergeReq(secret: string) {
   // A valid-shape but nonexistent CR id → a clean 404 once the scope gate passes.
-  return app.request(`/v1/projects/${ctx!.projectId}/change-requests/${crypto.randomUUID()}/merge`, {
+  return app.request(`/v1/projects/${ctx!.workspaceId}/change-requests/${crypto.randomUUID()}/merge`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
     body: '{}',

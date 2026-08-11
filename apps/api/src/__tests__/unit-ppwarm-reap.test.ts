@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { excludePinnedTargets, ppwarmReapTargets, perProjectWarmImageName } from '../snapshots/ppwarm-names';
+import { excludePinnedTargets, ppwarmReapTargets, perWorkspaceWarmImageName } from '../snapshots/ppwarm-names';
 
-// proj8 = first 8 hex chars of the projectId with dashes stripped.
+// proj8 = first 8 hex chars of the workspaceId with dashes stripped.
 const PROJ_A = '9ee8bc9c-5108-437f-a01f-6c5e26f2062c'; // proj8 = 9ee8bc9c
 const CURRENT = 'kortix-ppwarm-9ee8bc9c-aaaaaaaaaaaa';
 
@@ -43,10 +43,10 @@ describe('ppwarmReapTargets — on-bake reap selector', () => {
     expect(ppwarmReapTargets(PROJ_A, CURRENT, [])).toEqual([]);
   });
 
-  test('integrates with perProjectWarmImageName: a moved tip makes the old image a target, a re-bake does not', () => {
+  test('integrates with perWorkspaceWarmImageName: a moved tip makes the old image a target, a re-bake does not', () => {
     const base = 'kortix-default-e881f000eae5';
-    const cur = perProjectWarmImageName(PROJ_A, 'tipB', base);
-    const old = perProjectWarmImageName(PROJ_A, 'tipA', base);
+    const cur = perWorkspaceWarmImageName(PROJ_A, 'tipB', base);
+    const old = perWorkspaceWarmImageName(PROJ_A, 'tipA', base);
     expect(cur.startsWith('kortix-ppwarm-9ee8bc9c-')).toBe(true);
     expect(old).not.toBe(cur);
     // moved tip: the old image is a reap target, the current is kept
@@ -67,7 +67,7 @@ describe('ppwarmReapTargets — on-bake reap selector', () => {
 
 describe('excludePinnedTargets — FIX-K-lite proj8-collision guard', () => {
   test("a colliding project B's LIVE pinned image sharing proj8 is NEVER reaped", () => {
-    // Project A and project B collide on proj8 (both 9ee8bc9c). A bakes and its
+    // Workspace A and project B collide on proj8 (both 9ee8bc9c). A bakes and its
     // raw prefix-scoped selection sweeps up B's live pinned tip as a "superseded"
     // one — the exact org-wide-collision bug. The pinned guard keeps B's image.
     const bPinned = 'kortix-ppwarm-9ee8bc9c-bbbbbbbbbbbb'; // B's LIVE pinned image

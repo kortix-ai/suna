@@ -2,14 +2,14 @@
  * 20 — access control: project members, pending invites, access requests,
  * per-resource grants, and project policies. All reads.
  *
- * Run (from packages/sdk):  bun run playground/access/20-access-and-policies.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/access/20-access-and-policies.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("access-and-policies", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
-  const project = kortix.project(projectId);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
+  const project = kortix.project(workspaceId);
 
   const access = await project.access.list();
   console.log(`✓ access.list(): ${JSON.stringify(access).slice(0, 300)}…`);

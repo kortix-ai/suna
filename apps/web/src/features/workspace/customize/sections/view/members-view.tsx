@@ -29,7 +29,7 @@ import {
   isInheritedFromGroupOnly,
 } from '@/components/iam/iam-display-helpers';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
+import { WorkspaceRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -81,33 +81,33 @@ import {
 } from '@/lib/iam-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
-  approveProjectAccessRequest,
-  attachGroupToProject,
-  createProjectResourceGrant,
-  deleteProjectResourceGrant,
-  detachGroupFromProject,
-  getProject,
-  inviteProjectMember,
+  approveWorkspaceAccessRequest,
+  attachGroupToWorkspace,
+  createWorkspaceResourceGrant,
+  deleteWorkspaceResourceGrant,
+  detachGroupFromWorkspace,
+  getWorkspace,
+  inviteWorkspaceMember,
   isInviteSent,
-  listPendingProjectInvites,
-  listProjectAccess,
-  listProjectAccessRequests,
-  listProjectGroupGrants,
-  listProjectResourceGrants,
-  rejectProjectAccessRequest,
-  resendPendingProjectInvite,
-  revokePendingProjectInvite,
-  revokeProjectAccess,
-  updateProjectAccess,
-  updateProjectGroupGrant,
-  type InviteProjectMemberResult,
-  type ProjectAccessMember,
-  type ProjectGroupGrant,
-  type ProjectResourceGrant,
-  type ProjectRole,
+  listPendingWorkspaceInvites,
+  listWorkspaceAccess,
+  listWorkspaceAccessRequests,
+  listWorkspaceGroupGrants,
+  listWorkspaceResourceGrants,
+  rejectWorkspaceAccessRequest,
+  resendPendingWorkspaceInvite,
+  revokePendingWorkspaceInvite,
+  revokeWorkspaceAccess,
+  updateWorkspaceAccess,
+  updateWorkspaceGroupGrant,
+  type InviteWorkspaceMemberResult,
+  type WorkspaceAccessMember,
+  type WorkspaceGroupGrant,
+  type WorkspaceResourceGrant,
+  type WorkspaceRole,
   type ResourceGrantType,
 } from '@kortix/sdk';
-import { contract, invalidateProject, qk } from '@kortix/sdk/react';
+import { contract, invalidateWorkspace, qk } from '@kortix/sdk/react';
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
@@ -115,7 +115,7 @@ import { toArray } from '@/features/workspace/customize/shared/utils';
 
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
 
-function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
+function userLabel(member: Pick<WorkspaceAccessMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
 }
 
@@ -126,7 +126,7 @@ function formatDate(input: string | null | undefined) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function MembersView({ projectId }: { projectId: string }) {
+export function MembersView({ workspaceId }: { workspaceId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // Deep-link target tab (e.g. the palette's "Invite members" opens here). Plain
   // in-view tab clicks stay local; this only follows an external openCustomize.
@@ -137,31 +137,32 @@ export function MembersView({ projectId }: { projectId: string }) {
     setTab(requestedTab);
   }, [requestedTab]);
 
-  const projectQuery = useQuery({
-    queryKey: qk.project.summary(projectId),
-    queryFn: () => getProject(projectId),
+  const workspaceQuery = useQuery({
+    queryKey: qk.workspace.summary(workspaceId),
+    queryFn: () => getWorkspace(workspaceId),
     ...contract('config'),
   });
 
   const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
+    queryKey: qk.workspace.access(workspaceId),
+    queryFn: () => listWorkspaceAccess(workspaceId),
     ...contract('inventory'),
   });
 
-  const project = projectQuery.data;
-  const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
+  const workspace = workspaceQuery.data;
+  const canManage =
+    workspace?.effective_workspace_role === 'manager' || accessQuery.data?.can_manage;
 
   const pendingInvitesQuery = useQuery({
-    queryKey: qk.project.pendingInvites(projectId),
-    queryFn: () => listPendingProjectInvites(projectId),
+    queryKey: qk.workspace.pendingInvites(workspaceId),
+    queryFn: () => listPendingWorkspaceInvites(workspaceId),
     ...contract('inventory'),
     enabled: !!canManage,
   });
 
   const accessRequestsQuery = useQuery({
-    queryKey: qk.project.accessRequests(projectId),
-    queryFn: () => listProjectAccessRequests(projectId),
+    queryKey: qk.workspace.accessRequests(workspaceId),
+    queryFn: () => listWorkspaceAccessRequests(workspaceId),
     ...contract('inventory'),
     enabled: !!canManage,
   });
@@ -172,9 +173,9 @@ export function MembersView({ projectId }: { projectId: string }) {
 
   const peopleContent = (
     <div className="space-y-6">
-      <ProjectAccessCard
-        projectId={projectId}
-        accountId={project?.account_id ?? null}
+      <WorkspaceAccessCard
+        workspaceId={workspaceId}
+        accountId={workspace?.account_id ?? null}
         canManage={!!canManage}
         members={toArray(accessQuery.data?.members)}
         isLoading={accessQuery.isLoading}
@@ -184,10 +185,10 @@ export function MembersView({ projectId }: { projectId: string }) {
         setTab={setTab}
       />
 
-      {project?.account_id && (
-        <ProjectGroupGrantsCard
-          projectId={projectId}
-          accountId={project.account_id}
+      {workspace?.account_id && (
+        <WorkspaceGroupGrantsCard
+          workspaceId={workspaceId}
+          accountId={workspace.account_id}
           canManage={!!canManage}
         />
       )}
@@ -197,19 +198,19 @@ export function MembersView({ projectId }: { projectId: string }) {
           non-managers), so the cards hide entirely for viewers who can't
           read them — an inert husk with an error or empty body is worse
           than absence. Group access above stays: its list is member-readable. */}
-      {project?.account_id && canManage && (
+      {workspace?.account_id && canManage && (
         <ResourceAccessCard
-          projectId={projectId}
-          accountId={project.account_id}
+          workspaceId={workspaceId}
+          accountId={workspace.account_id}
           canManage={!!canManage}
           members={toArray(accessQuery.data?.members)}
         />
       )}
 
-      {project?.account_id && canManage && (
-        <ProjectRoleAssignmentsCard
-          projectId={projectId}
-          accountId={project.account_id}
+      {workspace?.account_id && canManage && (
+        <WorkspaceRoleAssignmentsCard
+          workspaceId={workspaceId}
+          accountId={workspace.account_id}
           canManage={!!canManage}
           members={toArray(accessQuery.data?.members)}
         />
@@ -257,9 +258,9 @@ export function MembersView({ projectId }: { projectId: string }) {
           </TabsContent>
 
           <TabsContent value="invite" className="space-y-6">
-            <InviteMemberCard projectId={projectId} />
-            <PendingAccessRequestsCard projectId={projectId} />
-            <PendingInvitesCard projectId={projectId} />
+            <InviteMemberCard workspaceId={workspaceId} />
+            <PendingAccessRequestsCard workspaceId={workspaceId} />
+            <PendingInvitesCard workspaceId={workspaceId} />
           </TabsContent>
         </Tabs>
       ) : (
@@ -269,7 +270,7 @@ export function MembersView({ projectId }: { projectId: string }) {
   );
 }
 
-function InviteMemberCard({ projectId }: { projectId: string }) {
+function InviteMemberCard({ workspaceId }: { workspaceId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { copy } = useCopy({
     successMessage: 'Invite link copied',
@@ -278,7 +279,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [emails, setEmails] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [role, setRole] = useState<ProjectRole>('member');
+  const [role, setRole] = useState<WorkspaceRole>('member');
   // Optional ISO time-bound: the granted role auto-revokes at this instant once
   // the invitee joins. Empty = permanent. `datetime-local` yields a local
   // wall-clock string; converted to ISO at submit.
@@ -292,8 +293,8 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       Promise.all(
         list.map(async (addr) => {
           try {
-            const res = await inviteProjectMember(
-              projectId,
+            const res = await inviteWorkspaceMember(
+              workspaceId,
               addr,
               role,
               expiresAt ? new Date(expiresAt).toISOString() : null,
@@ -309,7 +310,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         }),
       ),
     onSuccess: (results) => {
-      type Ok = { email: string; ok: true; res: InviteProjectMemberResult };
+      type Ok = { email: string; ok: true; res: InviteWorkspaceMemberResult };
       type Failed = { email: string; ok: false; message: string };
       const succeeded = results.filter((r): r is Ok => r.ok);
       const failed = results.filter((r): r is Failed => !r.ok);
@@ -322,7 +323,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         if (isInviteSent(r.res)) {
           if (r.res.email_sent) {
             successToast(
-              `Invitation sent to ${r.res.email}. They'll land on this project as ${r.res.project_role} when they sign up.`,
+              `Invitation sent to ${r.res.email}. They'll land on this workspace as ${r.res.workspace_role} when they sign up.`,
             );
           } else {
             const inviteUrl = r.res.invite_url;
@@ -359,16 +360,16 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       }
 
       if (invited.length > 0) {
-        queryClient.invalidateQueries({ queryKey: qk.project.pendingInvites(projectId) });
+        queryClient.invalidateQueries({ queryKey: qk.workspace.pendingInvites(workspaceId) });
       }
       if (added.length > 0) {
-        queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
-        // Only projectId is in scope here, not the owning account_id, so
-        // this can't target one qk.projects.list(accountId) entry —
-        // qk.projects.scope() is the shared prefix every list form lives
+        queryClient.invalidateQueries({ queryKey: qk.workspace.access(workspaceId) });
+        // Only workspaceId is in scope here, not the owning account_id, so
+        // this can't target one qk.workspaces.list(accountId) entry —
+        // qk.workspaces.scope() is the shared prefix every list form lives
         // under.
-        queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-        queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
+        queryClient.invalidateQueries({ queryKey: qk.workspaces.scope() });
+        queryClient.invalidateQueries({ queryKey: qk.workspace.summary(workspaceId) });
       }
 
       setEmails(failed.map((f) => f.email));
@@ -530,16 +531,16 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
               <FieldLabel htmlFor="invite-role">Role</FieldLabel>
               <Select
                 value={role}
-                onValueChange={(next) => setRole(next as ProjectRole)}
+                onValueChange={(next) => setRole(next as WorkspaceRole)}
                 disabled={inviteMutation.isPending}
               >
                 <SelectTrigger id="invite-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <ProjectRoleSelectItem role="member" />
-                  <ProjectRoleSelectItem role="editor" />
-                  <ProjectRoleSelectItem role="manager" />
+                  <WorkspaceRoleSelectItem role="member" />
+                  <WorkspaceRoleSelectItem role="editor" />
+                  <WorkspaceRoleSelectItem role="manager" />
                 </SelectContent>
               </Select>
             </Field>
@@ -583,8 +584,8 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   );
 }
 
-function ProjectAccessCard({
-  projectId,
+function WorkspaceAccessCard({
+  workspaceId,
   accountId,
   canManage,
   members,
@@ -594,10 +595,10 @@ function ProjectAccessCard({
   onRetry,
   setTab,
 }: {
-  projectId: string;
+  workspaceId: string;
   accountId: string | null;
   canManage: boolean;
-  members: ProjectAccessMember[];
+  members: WorkspaceAccessMember[];
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -614,18 +615,18 @@ function ProjectAccessCard({
       next.delete(userId);
       return next;
     });
-  const [revokeTarget, setRevokeTarget] = useState<ProjectAccessMember | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<WorkspaceAccessMember | null>(null);
 
-  type GroupSource = NonNullable<ProjectAccessMember['group_sources']>[number];
+  type GroupSource = NonNullable<WorkspaceAccessMember['group_sources']>[number];
   type GroupAction = {
     type: 'detach' | 'removeFromGroup';
-    member: ProjectAccessMember;
+    member: WorkspaceAccessMember;
     group: GroupSource;
   };
   const [groupAction, setGroupAction] = useState<GroupAction | null>(null);
 
   const accessMembers = useMemo(
-    () => members.filter((m) => m.has_implicit_access || m.effective_project_role != null),
+    () => members.filter((m) => m.has_implicit_access || m.effective_workspace_role != null),
     [members],
   );
   const sortedMembers = useMemo(
@@ -634,17 +635,17 @@ function ProjectAccessCard({
   );
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
-    // qk.projects.scope(): restores the reach the old bare projects-literal
+    queryClient.invalidateQueries({ queryKey: qk.workspace.access(workspaceId) });
+    // qk.workspaces.scope(): restores the reach the old bare projects-literal
     // prefix match had. An access change is rare — over-invalidating a few
     // extra account lists costs nothing measurable.
-    queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-    queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
+    queryClient.invalidateQueries({ queryKey: qk.workspaces.scope() });
+    queryClient.invalidateQueries({ queryKey: qk.workspace.summary(workspaceId) });
   };
 
   const updateMutation = useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: ProjectRole }) =>
-      updateProjectAccess(projectId, userId, role),
+    mutationFn: ({ userId, role }: { userId: string; role: WorkspaceRole }) =>
+      updateWorkspaceAccess(workspaceId, userId, role),
     onMutate: ({ userId }) => markPending(userId),
     onSettled: (_data, _error, vars) => clearPending(vars.userId),
     onSuccess: () => {
@@ -655,7 +656,7 @@ function ProjectAccessCard({
   });
 
   const revokeMutation = useMutation({
-    mutationFn: (userId: string) => revokeProjectAccess(projectId, userId),
+    mutationFn: (userId: string) => revokeWorkspaceAccess(workspaceId, userId),
     onMutate: (userId) => markPending(userId),
     onSettled: (_data, _error, userId) => clearPending(userId),
     onSuccess: () => {
@@ -666,9 +667,9 @@ function ProjectAccessCard({
   });
 
   const detachMutation = useMutation({
-    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
+    mutationFn: (groupId: string) => detachGroupFromWorkspace(workspaceId, groupId),
     onSuccess: () => {
-      successToast('Group detached from project');
+      successToast('Group detached from workspace');
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to detach group'),
@@ -684,13 +685,13 @@ function ProjectAccessCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to remove from group'),
   });
 
-  function setRole(member: ProjectAccessMember, value: string) {
+  function setRole(member: WorkspaceAccessMember, value: string) {
     if (member.has_implicit_access || !canManage) return;
     if (value === 'none') {
       setRevokeTarget(member);
       return;
     }
-    updateMutation.mutate({ userId: member.user_id, role: value as ProjectRole });
+    updateMutation.mutate({ userId: member.user_id, role: value as WorkspaceRole });
   }
 
   return (
@@ -744,7 +745,7 @@ function ProjectAccessCard({
             {sortedMembers.map((member) => {
               const busy = pendingUserIds.has(member.user_id);
               const value =
-                member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
+                member.workspace_role ?? (member.has_implicit_access ? 'manager' : 'none');
               const inheritedFromGroup = isInheritedFromGroupOnly(member);
               const inheritedSummary = inheritedFromGroupSummary(member);
 
@@ -787,9 +788,9 @@ function ProjectAccessCard({
                             ? 'Implicit account access'
                             : inheritedSummary
                               ? inheritedSummary
-                              : member.project_role
+                              : member.workspace_role
                                 ? `Granted ${formatDate(member.granted_at)}`
-                                : 'No project access'}
+                                : 'No workspace access'}
                         </span>
                         {member.expires_at ? (
                           <span className="text-kortix-yellow">
@@ -810,7 +811,7 @@ function ProjectAccessCard({
                     <div className="flex shrink-0 items-center gap-2">
                       <Badge variant="outline" size="sm" className="capitalize">
                         <Shield className="mr-1 size-3.5" />
-                        {member.effective_project_role}
+                        {member.effective_workspace_role}
                       </Badge>
                       {canManage && (member.group_sources ?? []).length > 0 && (
                         <DropdownMenu>
@@ -894,9 +895,9 @@ function ProjectAccessCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <ProjectRoleSelectItem role="member" />
-                          <ProjectRoleSelectItem role="editor" />
-                          <ProjectRoleSelectItem role="manager" />
+                          <WorkspaceRoleSelectItem role="member" />
+                          <WorkspaceRoleSelectItem role="editor" />
+                          <WorkspaceRoleSelectItem role="manager" />
                         </SelectContent>
                       </Select>
                       {canManage && (
@@ -959,7 +960,9 @@ function ProjectAccessCard({
         onOpenChange={(open) => {
           if (!open) setGroupAction(null);
         }}
-        title={groupAction?.type === 'detach' ? 'Detach group from project?' : 'Remove from group?'}
+        title={
+          groupAction?.type === 'detach' ? 'Detach group from workspace?' : 'Remove from group?'
+        }
         description={
           groupAction ? (
             groupAction.type === 'detach' ? (
@@ -1016,10 +1019,10 @@ function ProjectAccessCard({
   );
 }
 
-function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
+function PendingAccessRequestsCard({ workspaceId }: { workspaceId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const queryKey = qk.project.accessRequests(projectId);
+  const queryKey = qk.workspace.accessRequests(workspaceId);
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
   const markBusy = (id: string) => setBusyIds((prev) => new Set(prev).add(id));
   const clearBusy = (id: string) =>
@@ -1031,24 +1034,25 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
 
   const requestsQuery = useQuery({
     queryKey,
-    queryFn: () => listProjectAccessRequests(projectId),
+    queryFn: () => listWorkspaceAccessRequests(workspaceId),
     ...contract('inventory'),
   });
 
   const approveMutation = useMutation({
-    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'member'),
+    mutationFn: (requestId: string) =>
+      approveWorkspaceAccessRequest(workspaceId, requestId, 'member'),
     onMutate: (requestId) => markBusy(requestId),
     onSettled: (_data, _error, requestId) => clearBusy(requestId),
     onSuccess: (result) => {
-      successToast(`${result.member.email ?? 'Requester'} can now view this project`);
+      successToast(`${result.member.email ?? 'Requester'} can now view this workspace`);
       queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.workspace.access(workspaceId) });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to approve request'),
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (requestId: string) => rejectProjectAccessRequest(projectId, requestId),
+    mutationFn: (requestId: string) => rejectWorkspaceAccessRequest(workspaceId, requestId),
     onMutate: (requestId) => markBusy(requestId),
     onSettled: (_data, _error, requestId) => clearBusy(requestId),
     onSuccess: () => {
@@ -1143,14 +1147,14 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   );
 }
 
-function PendingInvitesCard({ projectId }: { projectId: string }) {
+function PendingInvitesCard({ workspaceId }: { workspaceId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { copy } = useCopy({
     successMessage: 'Invite link copied',
     errorMessage: 'Could not copy link',
   });
   const queryClient = useQueryClient();
-  const queryKey = qk.project.pendingInvites(projectId);
+  const queryKey = qk.workspace.pendingInvites(workspaceId);
   const [pendingInviteIds, setPendingInviteIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingInviteIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
@@ -1165,19 +1169,19 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
 
   const invitesQuery = useQuery({
     queryKey,
-    queryFn: () => listPendingProjectInvites(projectId),
+    queryFn: () => listPendingWorkspaceInvites(workspaceId),
     ...contract('inventory'),
   });
 
   const revokeMutation = useMutation({
-    mutationFn: (inviteId: string) => revokePendingProjectInvite(projectId, inviteId),
+    mutationFn: (inviteId: string) => revokePendingWorkspaceInvite(workspaceId, inviteId),
     onMutate: (inviteId) => markPending(inviteId),
     onSettled: (_data, _error, inviteId) => clearPending(inviteId),
     onSuccess: (result) => {
       successToast(
         result.invitation_cancelled
           ? 'Invitation cancelled.'
-          : 'Project access removed from invitation.',
+          : 'Workspace access removed from invitation.',
       );
       queryClient.invalidateQueries({ queryKey });
     },
@@ -1185,7 +1189,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   });
 
   const resendMutation = useMutation({
-    mutationFn: (inviteId: string) => resendPendingProjectInvite(projectId, inviteId),
+    mutationFn: (inviteId: string) => resendPendingWorkspaceInvite(workspaceId, inviteId),
     onMutate: (inviteId) => markPending(inviteId),
     onSettled: (_data, _error, inviteId) => clearPending(inviteId),
     onSuccess: (result) => {
@@ -1252,7 +1256,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
                         {invite.email}
                       </span>
                       <Badge variant="outline" size="sm" className="capitalize">
-                        {invite.project_role}
+                        {invite.workspace_role}
                       </Badge>
                     </div>
                     <span className="text-muted-foreground text-xs">
@@ -1355,22 +1359,22 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   );
 }
 
-function ProjectGroupGrantsCard({
-  projectId,
+function WorkspaceGroupGrantsCard({
+  workspaceId,
   accountId,
   canManage,
 }: {
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   canManage: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const grantsKey = qk.project.groupGrants(projectId);
+  const grantsKey = qk.workspace.groupGrants(workspaceId);
 
   const grantsQuery = useQuery({
     queryKey: grantsKey,
-    queryFn: () => listProjectGroupGrants(projectId),
+    queryFn: () => listWorkspaceGroupGrants(workspaceId),
     ...contract('inventory'),
   });
   const groupsQuery = useQuery({
@@ -1379,18 +1383,18 @@ function ProjectGroupGrantsCard({
     enabled: canManage,
     staleTime: 60_000,
   });
-  // Custom-role policies bound to a GROUP on this project. A group that has BOTH
+  // Custom-role policies bound to a GROUP on this workspace. A group that has BOTH
   // a built-in grant (this list) AND a custom-role policy hits the union trap:
   // allow-only/highest-wins means the built-in role WINS and silently overrides
   // the custom role's restrictions. We flag those rows so it isn't a silent gotcha.
-  // qk.project.policies — the IAM role-policy family, NOT
-  // qk.project.executorPolicies (the unrelated sandbox tool-rule family
+  // qk.workspace.policies — the IAM role-policy family, NOT
+  // qk.workspace.executorPolicies (the unrelated sandbox tool-rule family
   // PoliciesPanel reads). Both used to share the literal ['project-policies',
   // id] pre-migration, which meant whichever fetch resolved last clobbered
   // the other's cache entry with an incompatible shape.
   const policiesQuery = useQuery({
-    queryKey: qk.project.policies(projectId),
-    queryFn: () => listPolicies(accountId, { scopeId: projectId }),
+    queryKey: qk.workspace.policies(workspaceId),
+    queryFn: () => listPolicies(accountId, { scopeId: workspaceId }),
     enabled: canManage,
     ...contract('config'),
   });
@@ -1401,12 +1405,12 @@ function ProjectGroupGrantsCard({
           .filter(
             (p) =>
               p.principal_type === 'group' &&
-              p.scope_type === 'project' &&
-              p.scope_id === projectId,
+              p.scope_type === 'workspace' &&
+              p.scope_id === workspaceId,
           )
           .map((p) => p.principal_id),
       ),
-    [policiesQuery.data, projectId],
+    [policiesQuery.data, workspaceId],
   );
 
   const grants = useMemo(() => {
@@ -1424,7 +1428,7 @@ function ProjectGroupGrantsCard({
   );
 
   const [pickerGroupId, setPickerGroupId] = useState<string>('');
-  const [pickerRole, setPickerRole] = useState<ProjectRole>('member');
+  const [pickerRole, setPickerRole] = useState<WorkspaceRole>('member');
   const [pendingGroupIds, setPendingGroupIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingGroupIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
@@ -1433,16 +1437,16 @@ function ProjectGroupGrantsCard({
       next.delete(id);
       return next;
     });
-  const [detachTarget, setDetachTarget] = useState<ProjectGroupGrant | null>(null);
+  const [detachTarget, setDetachTarget] = useState<WorkspaceGroupGrant | null>(null);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
-    queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
-    queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
+    queryClient.invalidateQueries({ queryKey: qk.workspace.access(workspaceId) });
+    queryClient.invalidateQueries({ queryKey: qk.workspace.summary(workspaceId) });
   }
 
   const attachMutation = useMutation({
-    mutationFn: () => attachGroupToProject(projectId, pickerGroupId, pickerRole),
+    mutationFn: () => attachGroupToWorkspace(workspaceId, pickerGroupId, pickerRole),
     onMutate: () => {
       markPending(pickerGroupId);
       return { groupId: pickerGroupId };
@@ -1458,8 +1462,8 @@ function ProjectGroupGrantsCard({
   });
 
   const updateMutation = useMutation({
-    mutationFn: (input: { groupId: string; role: ProjectRole }) =>
-      updateProjectGroupGrant(projectId, input.groupId, input.role),
+    mutationFn: (input: { groupId: string; role: WorkspaceRole }) =>
+      updateWorkspaceGroupGrant(workspaceId, input.groupId, input.role),
     onMutate: (input) => markPending(input.groupId),
     onSettled: (_data, _error, input) => clearPending(input.groupId),
     onSuccess: () => {
@@ -1470,7 +1474,7 @@ function ProjectGroupGrantsCard({
   });
 
   const detachMutation = useMutation({
-    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
+    mutationFn: (groupId: string) => detachGroupFromWorkspace(workspaceId, groupId),
     onMutate: (groupId) => markPending(groupId),
     onSettled: (_data, _error, groupId) => clearPending(groupId),
     onSuccess: () => {
@@ -1531,16 +1535,16 @@ function ProjectGroupGrantsCard({
               </Select>
               <Select
                 value={pickerRole}
-                onValueChange={(v) => setPickerRole(v as ProjectRole)}
+                onValueChange={(v) => setPickerRole(v as WorkspaceRole)}
                 disabled={attachMutation.isPending}
               >
                 <SelectTrigger className="h-8 w-28 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <ProjectRoleSelectItem role="member" />
-                  <ProjectRoleSelectItem role="editor" />
-                  <ProjectRoleSelectItem role="manager" />
+                  <WorkspaceRoleSelectItem role="member" />
+                  <WorkspaceRoleSelectItem role="editor" />
+                  <WorkspaceRoleSelectItem role="manager" />
                 </SelectContent>
               </Select>
               <Button
@@ -1595,7 +1599,7 @@ function ProjectGroupGrantsCard({
 
         {!grantsQuery.isLoading && grants.length > 0 && (
           <ul className="space-y-2">
-            {grants.map((g: ProjectGroupGrant) => {
+            {grants.map((g: WorkspaceGroupGrant) => {
               const busy = pendingGroupIds.has(g.group_id);
               return (
                 <li key={g.group_id} className={MEMBER_ROW}>
@@ -1628,7 +1632,7 @@ function ProjectGroupGrantsCard({
                         {groupsWithCustomRole.has(g.group_id) && (
                           <span
                             className="text-kortix-orange font-medium"
-                            title="This group also has a custom role assigned on this project. Built-in role grants WIN over custom roles (allow-only / highest-wins), so this grant overrides the custom role's limits. Detach it to let the custom role apply."
+                            title="This group also has a custom role assigned on this workspace. Built-in role grants WIN over custom roles (allow-only / highest-wins), so this grant overrides the custom role's limits. Detach it to let the custom role apply."
                           >
                             ⚠ overrides an assigned custom role
                           </span>
@@ -1643,16 +1647,16 @@ function ProjectGroupGrantsCard({
                       <Select
                         value={g.role}
                         onValueChange={(v) =>
-                          updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
+                          updateMutation.mutate({ groupId: g.group_id, role: v as WorkspaceRole })
                         }
                       >
                         <SelectTrigger className="h-8 w-28 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <ProjectRoleSelectItem role="member" />
-                          <ProjectRoleSelectItem role="editor" />
-                          <ProjectRoleSelectItem role="manager" />
+                          <WorkspaceRoleSelectItem role="member" />
+                          <WorkspaceRoleSelectItem role="editor" />
+                          <WorkspaceRoleSelectItem role="manager" />
                         </SelectContent>
                       </Select>
                       <Button
@@ -1819,22 +1823,22 @@ function BlastRadiusPreview({
 }
 
 function ResourceAccessCard({
-  projectId,
+  workspaceId,
   accountId,
   canManage,
   members,
 }: {
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   canManage: boolean;
-  members: ProjectAccessMember[];
+  members: WorkspaceAccessMember[];
 }) {
   const queryClient = useQueryClient();
-  const grantsKey = qk.project.resourceGrants(projectId);
+  const grantsKey = qk.workspace.resourceGrants(workspaceId);
 
   const grantsQuery = useQuery({
     queryKey: grantsKey,
-    queryFn: () => listProjectResourceGrants(projectId),
+    queryFn: () => listWorkspaceResourceGrants(workspaceId),
     // Manager-only endpoint (403s otherwise) — don't fire it for non-managers.
     enabled: canManage,
     ...contract('inventory'),
@@ -1908,11 +1912,11 @@ function ResourceAccessCard({
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
     // The agent/skill lists the rest of the UI renders are now filtered, so
-    // the project detail must refetch to reflect what this user can see.
-    // invalidateProject() reaches qk.project.scope(projectId), which
-    // qk.project.summary(projectId) nests under — no separate summary
+    // the workspace detail must refetch to reflect what this user can see.
+    // invalidateWorkspace() reaches qk.workspace.scope(workspaceId), which
+    // qk.workspace.summary(workspaceId) nests under — no separate summary
     // invalidation needed alongside it.
-    void invalidateProject(queryClient, projectId);
+    void invalidateWorkspace(queryClient, workspaceId);
   }
 
   function splitOnce(v: string): [string, string] {
@@ -1923,7 +1927,7 @@ function ResourceAccessCard({
   const createMutation = useMutation({
     mutationFn: () => {
       const [principalType, principalId] = splitOnce(principalValue);
-      return createProjectResourceGrant(projectId, {
+      return createWorkspaceResourceGrant(workspaceId, {
         resourceType: pickerType as ResourceGrantType,
         resourceId: pickerResourceId,
         principalType: principalType as 'member' | 'group',
@@ -1946,7 +1950,7 @@ function ResourceAccessCard({
   }
 
   const removeMutation = useMutation({
-    mutationFn: (grantId: string) => deleteProjectResourceGrant(projectId, grantId),
+    mutationFn: (grantId: string) => deleteWorkspaceResourceGrant(workspaceId, grantId),
     onMutate: (grantId) => markPending(grantId),
     onSettled: (_d, _e, grantId) => clearPending(grantId),
     onSuccess: () => {
@@ -1995,7 +1999,7 @@ function ResourceAccessCard({
             </h3>
             <p className="text-muted-foreground mt-1 text-xs">
               Assign agents to a member or group to control who can USE them. An agent with no
-              assignment is open to everyone with project access; assigning one restricts it to the
+              assignment is open to everyone with workspace access; assigning one restricts it to the
               people or groups you choose — they inherit that agent's declared skills, connectors,
               and secrets to use in its sessions. This only ever grants USE, never edit: changing
               the agent, a skill, a connector, or a secret still requires the editor role.
@@ -2025,8 +2029,8 @@ function ResourceAccessCard({
         {!grantsQuery.isLoading && grants.length === 0 && (
           <p className="text-muted-foreground text-xs">
             {hasResources
-              ? 'Nothing is scoped yet — every agent is open to everyone with project access to use. Grant one above to restrict who can use it. Skills, connectors, and secrets aren’t assigned directly here — they’re governed by the editor role (to edit) and inherited through the agents you assign (to use).'
-              : 'This project has no agents to scope yet. Add one first, then come back here to limit who can use it.'}
+              ? 'Nothing is scoped yet — every agent is open to everyone with workspace access to use. Grant one above to restrict who can use it. Skills, connectors, and secrets aren’t assigned directly here — they’re governed by the editor role (to edit) and inherited through the agents you assign (to use).'
+              : 'This workspace has no agents to scope yet. Add one first, then come back here to limit who can use it.'}
           </p>
         )}
 
@@ -2040,7 +2044,7 @@ function ResourceAccessCard({
               />
             )}
             <ul className="space-y-2">
-              {visibleGrants.map((g: ProjectResourceGrant) => {
+              {visibleGrants.map((g: WorkspaceResourceGrant) => {
                 const busy = pendingIds.has(g.grant_id);
                 const displayName =
                   resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
@@ -2115,7 +2119,7 @@ function ResourceAccessCard({
               Assign an agent to a member or group — they inherit everything that agent uses (its
               secrets, connectors, and skills) to USE, not edit. Resources reach people through
               agents, not by a direct grant; agents you don't assign stay open to everyone with
-              project access. Editing the agent or any resource it uses still requires the editor
+              workspace access. Editing the agent or any resource it uses still requires the editor
               role.
             </ModalDescription>
           </ModalHeader>
@@ -2198,28 +2202,28 @@ function ResourceAccessCard({
 }
 
 /**
- * Custom-role assignments for THIS project — the project-level view of the
+ * Custom-role assignments for this workspace — the workspace-level view of the
  * account Roles page's bindings. Custom roles are DEFINED on the account Roles
  * page; here a manager grants one (to a member / group / agent) scoped to
- * this project, so a project's full access picture lives in one place.
+ * this workspace, so a workspace's full access picture lives in one place.
  */
-function ProjectRoleAssignmentsCard({
-  projectId,
+function WorkspaceRoleAssignmentsCard({
+  workspaceId,
   accountId,
   canManage,
   members,
 }: {
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   canManage: boolean;
-  members: ProjectAccessMember[];
+  members: WorkspaceAccessMember[];
 }) {
   const queryClient = useQueryClient();
-  // qk.project.policies — the IAM role-policy family. See
-  // ProjectGroupGrantsCard's policiesQuery above for why this is NOT
-  // qk.project.executorPolicies (a different endpoint/shape both used to
+  // qk.workspace.policies — the IAM role-policy family. See
+  // WorkspaceGroupGrantsCard's policiesQuery above for why this is NOT
+  // qk.workspace.executorPolicies (a different endpoint/shape both used to
   // share the literal ['project-policies', id] with, pre-migration).
-  const policiesKey = qk.project.policies(projectId);
+  const policiesKey = qk.workspace.policies(workspaceId);
 
   const policiesQuery = useQuery({
     queryKey: policiesKey,
@@ -2227,7 +2231,7 @@ function ProjectRoleAssignmentsCard({
     // policy.read, which a non-manager doesn't hold — firing it anyway just
     // 403s for data this card can never show them.
     enabled: canManage,
-    queryFn: () => listPolicies(accountId, { scopeId: projectId }),
+    queryFn: () => listPolicies(accountId, { scopeId: workspaceId }),
     ...contract('config'),
   });
   const rolesQuery = useQuery({
@@ -2249,23 +2253,23 @@ function ProjectRoleAssignmentsCard({
     staleTime: 60_000,
   });
 
-  // Only project-scoped bindings for THIS project (account-wide custom roles
-  // apply too, but they're managed on the account page, not per-project).
+  // Only workspace-scoped bindings for this workspace. Account-wide custom
+  // roles apply too, but they are managed on the account page.
   const policies = useMemo(
     () =>
       toArray(policiesQuery.data).filter(
-        (p) => p.scope_type === 'project' && p.scope_id === projectId,
+        (p) => p.scope_type === 'workspace' && p.scope_id === workspaceId,
       ),
-    [policiesQuery.data, projectId],
+    [policiesQuery.data, workspaceId],
   );
   const customRoles = useMemo(
     () => toArray(rolesQuery.data).filter((r) => !r.is_system),
     [rolesQuery.data],
   );
   const groups = useMemo(() => toArray(groupsQuery.data), [groupsQuery.data]);
-  const projectAgents = useMemo(
-    () => toArray(agentsQuery.data).filter((a) => a.project_id === projectId),
-    [agentsQuery.data, projectId],
+  const workspaceAgents = useMemo(
+    () => toArray(agentsQuery.data).filter((a) => a.workspace_id === workspaceId),
+    [agentsQuery.data, workspaceId],
   );
 
   const roleNameById = useMemo(
@@ -2324,7 +2328,7 @@ function ProjectRoleAssignmentsCard({
   }
 
   // Step 1 of the assign flow: pick the SUBJECT type. Only offer types that
-  // have someone to assign (no empty "Agent" list when the project has none).
+  // have someone to assign (no empty "Agent" list when the workspace has none).
   const subjectOptions = useMemo(
     () =>
       (
@@ -2345,14 +2349,14 @@ function ProjectRoleAssignmentsCard({
             type: 'token',
             label: 'Agent',
             Icon: Bot,
-            items: projectAgents.map((a) => ({
+            items: workspaceAgents.map((a) => ({
               id: a.service_account_id,
               name: a.agent_name ?? a.name,
             })),
           },
         ] as const
       ).filter((o) => o.items.length > 0),
-    [members, groups, projectAgents],
+    [members, groups, workspaceAgents],
   );
   // Step 2 options: only the subjects of the chosen type.
   const activeSubjects = subjectOptions.find((o) => o.type === subjectType)?.items ?? [];
@@ -2372,8 +2376,8 @@ function ProjectRoleAssignmentsCard({
       createPolicy(accountId, {
         principalType: subjectType as PrincipalType,
         principalId: subjectId,
-        scopeType: 'project',
-        scopeId: projectId,
+        scopeType: 'workspace',
+        scopeId: workspaceId,
         roleId,
       }),
     onSuccess: () => {
@@ -2445,8 +2449,8 @@ function ProjectRoleAssignmentsCard({
               ) : null}
             </h3>
             <p className="text-muted-foreground mt-1 text-xs">
-              Grant a custom role to a member, group, or agent on this project. Custom roles are
-              defined on the account Roles page; here you bind them for this project only.
+              Grant a custom role to a member, group, or agent on this workspace. Custom roles are
+              defined on the account Roles page; here you bind them for this workspace only.
             </p>
           </div>
 
@@ -2478,10 +2482,10 @@ function ProjectRoleAssignmentsCard({
                 <a href={`/accounts/${accountId}?tab=roles`} className="underline">
                   account Roles page
                 </a>
-                , then bind it here for this project.
+                , then bind it here for this workspace.
               </>
             ) : (
-              'No custom-role assignments on this project yet. Bind one above to grant a member, group, or agent a custom role here.'
+              'No custom-role assignments on this workspace yet. Bind one above to grant a member, group, or agent a custom role here.'
             )}
           </p>
         )}
@@ -2561,7 +2565,7 @@ function ProjectRoleAssignmentsCard({
           <ModalHeader>
             <ModalTitle>Assign a custom role</ModalTitle>
             <ModalDescription>
-              Bind a custom role to a member, group, or agent on this project only.
+              Bind a custom role to a member, group, or agent on this workspace only.
             </ModalDescription>
           </ModalHeader>
 

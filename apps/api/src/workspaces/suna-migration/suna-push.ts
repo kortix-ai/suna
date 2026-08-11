@@ -1,0 +1,123 @@
+/**
+ * Create ONE managed repo and push the assembled Suna bundle to it:
+ *   <bundle>/legacy/<slug>/…   (his content)         + one synthesized root
+ *   kortix.yaml / Dockerfile / .kortix/opencode       config (buildStarterFiles).
+ *
+ * The opencode.db is NOT a repo file — it's chat storage, shipped into the
+ * sandbox separately (rehydrate). We move it out of the tree before pushing.
+ */
+import { dirname, join } from 'node:path';
+import { mkdirSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { getDefaultManagedBackend } from '../git-backends/registry';
+import type { GitConnectionRef } from '../git-backends/types';
+import { buildStarterFiles } from '../starter';
+
+const STARTER_TEMPLATE = 'general-knowledge-worker';
+
+function git(args: string[], cwd: string, secret = false): void {
+  const r = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+  if (r.exitCode !== 0) {
+    const err = new TextDecoder().decode(r.stderr);
+    throw new Error(`git ${secret ? args[0] : args.join(' ')} failed: ${err.slice(0, 400)}`);
+  }
+}
+
+export interface PushedRepo {
+  workspaceId: string;
+  provider: string;
+  upstreamUrl: string;
+  repoOwner: string | null;
+  repoName: string | null;
+  defaultBranch: string;
+  externalRepoId: string | null;
+  installationId: string | null;
+  credentialRef: string | null;
+}
+
+export async function pushBundleAsRepo(accountId: string, bundleDir: string): Promise<PushedRepo> {
+  const backend = getDefaultManagedBackend();
+  if (!(await backend.isConfigured())) throw new Error(`managed git backend "${backend.id}" not configured (GitHub App creds)`);
+  if (!backend.authedPushUrl) throw new Error(`backend "${backend.id}" cannot mint a push URL`);
+
+  const workspaceId = crypto.randomUUID();
+  const slug = `suna-legacy-${workspaceId.slice(0, 8)}`;
+  const repo = await backend.createRepo({ accountId, workspaceId, slug, defaultBranch: 'main', isPrivate: true });
+
+  const ref: GitConnectionRef = {
+    provider: repo.provider, upstreamUrl: repo.upstreamUrl, externalRepoId: repo.externalRepoId,
+    repoOwner: repo.repoOwner, repoName: repo.repoName, installationId: repo.installationId,
+    credentialRef: repo.credentialRef, defaultBranch: repo.defaultBranch, managed: true, metadata: {},
+  };
+  const pushUrl = await backend.authedPushUrl(ref);
+
+  // Keep opencode.db + manifest OUT of the repo (chat storage, not source).
+  // repoStep already moved opencode.db aside (keyed by the stable migrationId);
+  // drop any stragglers so chat storage never lands in the commit.
+  for (const f of ['opencode.db', 'migration-manifest.json']) {
+    rmSync(join(bundleDir, f), { force: true });
+  }
+
+  // One synthesized root config for the whole project.
+  const repoFullName = repo.repoOwner && repo.repoName ? `${repo.repoOwner}/${repo.repoName}` : undefined;
+  for (const f of buildStarterFiles({ projectName: 'Legacy (Suna) projects', repoFullName, template: STARTER_TEMPLATE })) {
+    const full = join(bundleDir, f.path);
+    mkdirSync(dirname(full), { recursive: true });
+    // Exclusive create (O_EXCL via 'wx', mode 0600): the bundle dir is a
+    // predictable /tmp path, so a plain write could clobber his content or
+    // follow a pre-planted symlink. Exclusive creation both preserves the
+    // "never clobber his content" rule (EEXIST → skip) and closes the
+    // existsSync-then-write race in one step.
+    try {
+      writeFileSync(full, f.content, { flag: 'wx', mode: 0o600 });
+    } catch (e: any) {
+      if (e?.code !== 'EEXIST') throw e; // his file already present — leave it
+    }
+  }
+
+  // GitHub rejects oversized blobs (and LFS isn't wired up for managed repos),
+  // so a single big workspace artifact would fail the whole push. Strip anything
+  // over the limit and record what was dropped so it isn't lost silently.
+  const MAX_BLOB_BYTES = 50 * 1024 * 1024;
+  const dropped: string[] = [];
+  const strip = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === '.git') continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { strip(p); continue; }
+      if (e.isFile()) {
+        const size = statSync(p).size;
+        if (size > MAX_BLOB_BYTES) {
+          dropped.push(`${p.slice(bundleDir.length + 1)} (${(size / 1048576).toFixed(1)}MB)`);
+          rmSync(p, { force: true });
+        }
+      }
+    }
+  };
+  strip(bundleDir);
+  if (dropped.length) {
+    const reportPath = join(bundleDir, '.kortix-skipped-large-files.txt');
+    // Exclusive create (O_EXCL, 0600) into the predictable /tmp bundle dir; a
+    // retry that re-enters this step just re-uses the existing report (EEXIST).
+    try {
+      writeFileSync(reportPath,
+        `Omitted from this repo — exceeded GitHub's ${MAX_BLOB_BYTES / 1048576}MB file limit:\n\n${dropped.join('\n')}\n`,
+        { flag: 'wx', mode: 0o600 });
+    } catch (e: any) {
+      if (e?.code !== 'EEXIST') throw e;
+    }
+  }
+
+  rmSync(join(bundleDir, '.git'), { recursive: true, force: true });
+  git(['init', '-b', repo.defaultBranch], bundleDir);
+  git(['config', 'user.email', 'migration@kortix.com'], bundleDir);
+  git(['config', 'user.name', 'Kortix Migration'], bundleDir);
+  git(['add', '-A'], bundleDir);
+  git(['commit', '-m', 'Import Suna legacy projects (chats restored as sessions; files under legacy/)'], bundleDir);
+  git(['push', pushUrl, `HEAD:${repo.defaultBranch}`], bundleDir, true);
+
+  return {
+    workspaceId, provider: repo.provider, upstreamUrl: repo.upstreamUrl,
+    repoOwner: repo.repoOwner, repoName: repo.repoName, defaultBranch: repo.defaultBranch,
+    externalRepoId: repo.externalRepoId, installationId: repo.installationId, credentialRef: repo.credentialRef,
+  };
+}

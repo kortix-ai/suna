@@ -1,16 +1,16 @@
 import { readFileSync } from 'node:fs';
 import {
-  brokerProjectSecretRequest,
-  setProjectSecretStrategy,
+  brokerWorkspaceSecretRequest,
+  setWorkspaceSecretStrategy,
   type SecretBrokerRequest,
   type SecretEgressPolicy,
   type SecretInjectionSlot,
 } from '@kortix/sdk';
-import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
+import type { WorkspaceSecret, WorkspaceSecretsResponse } from '../api/types.ts';
 import { withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -20,7 +20,7 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix secrets <subcommand> [options]
 
-Manage encrypted secrets on the linked Kortix project. A delivery policy
+Manage encrypted secrets on the linked Kortix workspace. A delivery policy
 controls whether each value reaches a sandbox or stays on Kortix services.
 
 A secret has an IDENTIFIER (the unique handle an agent's
@@ -48,7 +48,7 @@ Subcommands:
                                     link across runs — do not re-mint/re-post
                                     while one is unexpired.
                                     --scope runtime|connector  --expires <min>
-  sync                              Force a re-push of all project secrets to
+  sync                              Force a re-push of all workspace secrets to
                                     this session's sandbox. Use after setting
                                     a secret via the intake link or after a
                                     secret was updated mid-session.
@@ -74,8 +74,8 @@ Which agents may use a secret is governed by that agent's \`secrets\` grant in
 kortix.yaml (by identifier), not a per-secret setting here.
 
 Global options:
-  --project <id>     Operate on this project id (default: linked or
-                     \$KORTIX_PROJECT_ID).
+  --workspace <id>     Operate on this workspace id (default: linked or
+                     \$KORTIX_WORKSPACE_ID).
   -h, --help         Show this help.
 `;
 
@@ -88,16 +88,16 @@ export async function runSecrets(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   const json = takeFlagBool(rest, ['--json']);
-  let projectFlag: string | undefined;
+  let workspaceFlag: string | undefined;
   let hostFlag: string | undefined;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    workspaceFlag = takeFlagValue(rest, ['--workspace', '--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
+  const ctxOpts = { workspaceArg: workspaceFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
@@ -125,7 +125,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
   }
 }
 
-type CtxOpts = { projectArg?: string; hostArg?: string };
+type CtxOpts = { workspaceArg?: string; hostArg?: string };
 
 // Mirrors the backend's isValidIdentifier / web IDENTIFIER_REGEX: alphanumeric
 // start, then letters/digits/_.- up to 128 chars total. Validated here only for
@@ -141,18 +141,18 @@ type SecretRow = {
   available: boolean;
   effectiveSource: 'mine' | 'shared' | 'none';
   strategy: 'runtime' | 'egress' | 'broker' | 'denied';
-  consumer: ProjectSecret['consumer'];
+  consumer: WorkspaceSecret['consumer'];
   deliveryStatus: 'available' | 'unavailable' | 'disabled';
   requiresRotation: boolean;
 };
 
 async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
-  let resp: ProjectSecretsResponse;
+  let resp: WorkspaceSecretsResponse;
   try {
-    resp = await ctx.client.get<ProjectSecretsResponse>(`/projects/${ctx.projectId}/secrets`);
+    resp = await ctx.client.get<WorkspaceSecretsResponse>(`/workspaces/${ctx.workspaceId}/secrets`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -179,8 +179,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   // required/optional against the key, but list rows by identifier — surfacing
   // two identifiers under one key as two distinct rows (the web does the same).
   const requiredSet = new Set(required);
-  const optionalSet = new Set(optional);
-  const itemState = (secret: ProjectSecret) => {
+  const itemState = (secret: WorkspaceSecret) => {
     const configured = secret.configured ?? true;
     const effectiveSource = secret.effective_source ?? (configured ? 'shared' : 'none');
     return {
@@ -405,7 +404,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     return 2;
   }
 
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   const strategy = strategyRaw as SecretStrategy;
   const normalizedConsumer = consumerFlag?.replace(/-/g, '_') ?? 'http_broker';
@@ -525,7 +524,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
 
   try {
     const result = await withKortixScope(ctx.auth, () =>
-      setProjectSecretStrategy(ctx.projectId, identifier, strategy, {
+      setWorkspaceSecretStrategy(ctx.workspaceId, identifier, strategy, {
         ...(strategy === 'broker'
           ? { consumer: consumer as 'llm_gateway' | 'connector' | 'http_broker' }
           : {}),
@@ -633,11 +632,11 @@ async function secretsCall(args: string[], opts: CtxOpts, json = false): Promise
     ...(body !== undefined ? { body_base64: Buffer.from(body).toString('base64') } : {}),
   };
 
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   try {
     const result = await withKortixScope(ctx.auth, () =>
-      brokerProjectSecretRequest(ctx.projectId, identifier, request),
+      brokerWorkspaceSecretRequest(ctx.workspaceId, identifier, request),
     );
     if (json) {
       emitJson(result);
@@ -686,7 +685,7 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
     }
   }
 
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   if (args.length === 0) {
     process.stderr.write(`${status.err('Pass at least one KEY=VALUE pair.')}\n`);
@@ -731,7 +730,7 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
         ? `${C.bold}${shownId}${C.reset} ${C.dim}→ ${p.key}${C.reset}`
         : `${C.bold}${p.key}${C.reset}`;
     try {
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+      await ctx.client.post<WorkspaceSecret>(`/workspaces/${ctx.workspaceId}/secrets`, {
         name: p.key,
         ...(identifier !== undefined ? { identifier } : {}),
         value: p.value,
@@ -763,12 +762,12 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
     return 2;
   }
 
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
   let resp: { url: string; names: string[]; scope: string; expires_at: string };
   try {
-    resp = await ctx.client.post(`/projects/${ctx.projectId}/secret-requests`, {
+    resp = await ctx.client.post(`/workspaces/${ctx.workspaceId}/secret-requests`, {
       names,
       ...(scope ? { scope } : {}),
       ...(expires ? { expires_in_minutes: Number(expires) } : {}),
@@ -802,7 +801,7 @@ export function describeLinkValidity(expiresAtIso: string, nowMs: number): strin
 }
 
 async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   if (names.length === 0) {
     process.stderr.write(`${status.err('Pass at least one secret name to unset.')}\n`);
@@ -812,7 +811,7 @@ async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
   let okCount = 0;
   for (const name of names) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/secrets/${encodeURIComponent(name)}`);
+      await ctx.client.delete(`/workspaces/${ctx.workspaceId}/secrets/${encodeURIComponent(name)}`);
       okCount += 1;
       process.stdout.write(`${status.ok(`removed ${C.bold}${name}${C.reset}`)}\n`);
     } catch (err) {
@@ -825,16 +824,16 @@ async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
 }
 
 /**
- * Force a re-push of all project secrets to this session's sandbox daemon.
+ * Force a re-push of all workspace secrets to this session's sandbox daemon.
  * Use after setting a secret via the intake link or when secrets are missing
  * from the agent's shell environment despite being set in the store.
  *
  * The backend's propagateProjectSecretsToActiveSandboxes fans out to every
  * active sandbox. This command triggers the same propagation by calling the
- * project's secret-propagation endpoint.
+ * workspace's secret-propagation endpoint.
  */
 async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
   try {
@@ -858,7 +857,7 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
         reason?: string;
       }>;
     }>(
-      `/projects/${ctx.projectId}/secrets/sync`,
+      `/workspaces/${ctx.workspaceId}/secrets/sync`,
       {},
     );
     if (json) {
@@ -888,7 +887,7 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
     );
     for (const target of result.results.filter((item) => item.status === 'failed')) {
       process.stderr.write(
-        `  ${C.dim}${target.session_id || 'project'}: ${target.reason ?? 'delivery verification failed'}${C.reset}\n`,
+        `  ${C.dim}${target.session_id || 'workspace'}: ${target.reason ?? 'delivery verification failed'}${C.reset}\n`,
       );
     }
     return 1;

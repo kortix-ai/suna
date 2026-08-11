@@ -16,16 +16,16 @@ mock.module('../channels/install-store', () => ({
   TELEGRAM_BOT_TOKEN: 'TELEGRAM_BOT_TOKEN',
   TELEGRAM_WEBHOOK_SECRET: 'TELEGRAM_WEBHOOK_SECRET',
   deleteSlackInstall: async () => {},
-  listProjectsForWorkspace: async () => ['proj-1'],
+  listWorkspacesForWorkspace: async () => ['proj-1'],
   loadSlackInstall: async () => null,
-  loadSlackBotUserIdForProject: async () => 'B1',
-  loadSlackSigningSecretForProject: async () => {
+  loadSlackBotUserIdForWorkspace: async () => 'B1',
+  loadSlackSigningSecretForWorkspace: async () => {
     loadSigningSecretCalls++;
     return projectSigningSecret;
   },
-  loadSlackTeamNameForProject: async () => null,
-  loadSlackTokenForProject: async () => 'xoxb-test',
-  loadTelegramWebhookSecretForProject: async () => null,
+  loadSlackTeamNameForWorkspace: async () => null,
+  loadSlackTokenForWorkspace: async () => 'xoxb-test',
+  loadTelegramWebhookSecretForWorkspace: async () => null,
   saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
 }));

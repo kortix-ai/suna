@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { resolveConfigAgents } from '../projects/git/config';
-import type { LoadedAgents } from '../projects/agents';
+import { resolveConfigAgents } from '../workspaces/git/config';
+import type { LoadedAgents } from '../workspaces/agents';
 
 const nativeAgents = [
   {

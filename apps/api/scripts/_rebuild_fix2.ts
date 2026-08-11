@@ -23,7 +23,7 @@ if (row) {
   console.log('[rebuild2] refreshed providerState ->', r?.providerState);
 }
 
-const PLATFORM_PROJECT_SHELL = { projectId: '', repoUrl: '', defaultBranch: '', manifestPath: '' } as any;
+const PLATFORM_PROJECT_SHELL = { workspaceId: '', repoUrl: '', defaultBranch: '', manifestPath: '' } as any;
 const t0 = Date.now();
 console.log('[rebuild2] building inline on platinum (capture will warm opencode)…');
 const res = await ensureSandboxImage(PLATFORM_PROJECT_SHELL, {

@@ -24,7 +24,7 @@ describe('agentInMode', () => {
 
   test('an undeclared mode reads as primary', () => {
     // The runtime assumes primary when the frontmatter omits `mode`. If this
-    // filtered as "neither", the project default agent would vanish under the
+    // filtered as "neither", the workspace default agent would vanish under the
     // Primary tab.
     expect(agentInMode(agent('kortix', null), 'primary')).toBe(true);
     expect(agentInMode(agent('kortix', null), 'subagent')).toBe(false);

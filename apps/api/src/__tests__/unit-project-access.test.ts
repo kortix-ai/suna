@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  effectiveProjectRole,
+  effectiveWorkspaceRole,
   isAccountManager,
   roleAllows,
   type AccountRole,
-  type ProjectAccessAction,
-  type ProjectRole,
-} from '../projects/access';
-import { normalizeProjectRole as parseProjectRole } from '../iam/role-perms';
-import { iamActionForProjectAccess, isUuid } from '../projects/lib/access';
+  type WorkspaceAccessAction,
+  type WorkspaceRole,
+} from '../workspaces/access';
+import { normalizeWorkspaceRole as parseWorkspaceRole } from '../iam/role-perms';
+import { iamActionForWorkspaceAccess, isUuid } from '../workspaces/lib/access';
 
 describe('isUuid project-id guard', () => {
   test.each([
@@ -37,10 +37,10 @@ describe('project access roles', () => {
     ['admin', 'member', 'manager'],
     ['member', 'editor', 'editor'],
     ['member', null, null],
-  ] as Array<[AccountRole, ProjectRole | null, ProjectRole | null]>)(
+  ] as Array<[AccountRole, WorkspaceRole | null, WorkspaceRole | null]>)(
     'effective role for %s + %s',
     (accountRole, projectRole, expected) => {
-      expect(effectiveProjectRole(accountRole, projectRole)).toBe(expected);
+      expect(effectiveWorkspaceRole(accountRole, projectRole)).toBe(expected);
     },
   );
 
@@ -59,7 +59,7 @@ describe('project access roles', () => {
     ['manager', 'manage', true],
     [null, 'read', false],
     [null, 'session', false], // no role → no session
-  ] as Array<[ProjectRole | null, ProjectAccessAction, boolean]>)(
+  ] as Array<[WorkspaceRole | null, WorkspaceAccessAction, boolean]>)(
     '%s can %s => %p',
     (role, action, expected) => {
       expect(roleAllows(role, action)).toBe(expected);
@@ -71,23 +71,23 @@ describe('project access roles', () => {
     ['session', 'project.session.start'],
     ['write', 'project.write'],
     ['manage', 'project.write'],
-  ] as Array<[ProjectAccessAction, string]>)(
-    'iamActionForProjectAccess(%p) === %p',
+  ] as Array<[WorkspaceAccessAction, string]>)(
+    'iamActionForWorkspaceAccess(%p) === %p',
     (action, expected) => {
-      expect(iamActionForProjectAccess(action)).toBe(expected);
+      expect(iamActionForWorkspaceAccess(action)).toBe(expected);
     },
   );
 
   test('normalizes valid role input and rejects invalid values', () => {
-    expect(parseProjectRole(' Manager ')).toBe('manager');
-    expect(parseProjectRole('editor')).toBe('editor');
-    expect(parseProjectRole('member')).toBe('member');
+    expect(parseWorkspaceRole(' Manager ')).toBe('manager');
+    expect(parseWorkspaceRole('editor')).toBe('editor');
+    expect(parseWorkspaceRole('member')).toBe('member');
     // `user` and `viewer` are deprecated aliases — both fold into `member`, never round-trip.
-    expect(parseProjectRole('user')).toBe('member');
-    expect(parseProjectRole(' USER ')).toBe('member');
-    expect(parseProjectRole('viewer')).toBe('member');
-    expect(parseProjectRole(' VIEWER ')).toBe('member');
-    expect(parseProjectRole('owner')).toBeNull();
-    expect(parseProjectRole(null)).toBeNull();
+    expect(parseWorkspaceRole('user')).toBe('member');
+    expect(parseWorkspaceRole(' USER ')).toBe('member');
+    expect(parseWorkspaceRole('viewer')).toBe('member');
+    expect(parseWorkspaceRole(' VIEWER ')).toBe('member');
+    expect(parseWorkspaceRole('owner')).toBeNull();
+    expect(parseWorkspaceRole(null)).toBeNull();
   });
 });

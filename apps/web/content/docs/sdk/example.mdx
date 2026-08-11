@@ -1,6 +1,6 @@
 ---
 title: Full example
-description: One file that lists projects, starts a session, and streams a reply.
+description: One file that lists workspaces, starts a session, and streams a reply.
 ---
 
 This page shows the OpenCode REST SDK path in one file. It uses no framework
@@ -21,16 +21,16 @@ async function main() {
     getToken: async () => process.env.KORTIX_API_KEY!,
   });
 
-  // 2. Platform REST: list projects, pick one (or provision your first).
-  const projects = await kortix.projects.list();
-  const project = projects[0] ?? (await kortix.projects.provision({ name: 'sdk-quickstart' }));
-  console.log(`using project ${project.name} (${project.project_id})`);
+  // 2. Platform REST: list workspaces, pick one (or provision your first).
+  const workspaces = await kortix.workspaces.list();
+  const workspace = workspaces[0] ?? (await kortix.workspaces.provision({ name: 'sdk-quickstart' }));
+  console.log(`using workspace ${workspace.name} (${workspace.workspace_id})`);
 
   // 3. Create a session — a cheap platform call. No sandbox exists yet.
-  const created = await kortix.projects.createSession(project.project_id, {
+  const created = await kortix.workspaces.createSession(workspace.workspace_id, {
     name: 'sdk full example',
   });
-  const session = kortix.session(project.project_id, created.session_id);
+  const session = kortix.session(workspace.workspace_id, created.session_id);
 
   // 4. Ready the session. This provisions (or resumes) the real cloud
   //    sandbox. ensureReady() polls /start (each call long-polls up to 30s)
@@ -59,8 +59,8 @@ async function main() {
   });
 
   // 6. Send. Per-send overrides pick the model and the agent for this
-  //    prompt only (ids come from projects.modelPicker() and
-  //    projects.detail().config.agents).
+  //    prompt only (ids come from workspaces.modelPicker() and
+  //    workspaces.detail().config.agents).
   await session.send('What files are in this repo?', {
     model: { providerID: 'kortix', modelID: 'glm-5.2' },
   });
@@ -116,7 +116,7 @@ step takes a while on the first run. Later runs resume the same sandbox and fini
 | Step | Concept                                             | Deep dive                          |
 | ---- | ---------------------------------------------------- | ----------------------------------- |
 | 1    | One client, one token, one auth seam                | [Authentication](/docs/sdk/auth)   |
-| 2–3  | The platform REST surface: projects and sessions    | [Reference](/docs/sdk/reference)   |
+| 2–3  | The platform REST surface: workspaces and sessions    | [Reference](/docs/sdk/reference)   |
 | 4    | Session readiness, the bridge from platform to runtime | [Sessions](/docs/sdk/sessions)     |
 | 5, 7 | Live SSE events, `narrowChatEvent`, `session.idle`  | [Sessions](/docs/sdk/sessions)     |
 | 6    | Per-send `{ model, agent }` overrides               | [Sessions](/docs/sdk/sessions)     |
@@ -127,14 +127,14 @@ step takes a while on the first run. Later runs resume the same sandbox and fini
 The same client reaches the rest of the platform through one facade.
 
 ```ts
-const project = kortix.project(projectId);
+const workspace = kortix.workspace(workspaceId);
 
 // Workspace files inside the session's live sandbox
 const tree = await session.files.list('/workspace');
 const readme = await session.files.read('/workspace/README.md');
 
 // Runtime secrets are readable by selected sessions inside the sandbox.
-await project.secrets.upsert({
+await workspace.secrets.upsert({
   name: 'LOCAL_TOOL_TOKEN',
   value: 'secret-value',
   strategy: 'runtime',
@@ -142,7 +142,7 @@ await project.secrets.upsert({
 });
 
 // Managed provider credentials stay on the Kortix LLM gateway.
-await project.secrets.upsert({
+await workspace.secrets.upsert({
   identifier: 'anthropic-primary',
   name: 'ANTHROPIC_API_KEY',
   value: 'sk-ant-…',
@@ -150,16 +150,16 @@ await project.secrets.upsert({
   consumer: 'llm_gateway',
 });
 
-// The project's agents and skills (config files in the repo)
-const { config } = await kortix.projects.detail(projectId);
+// The workspace's agents and skills (config files in the repo)
+const { config } = await kortix.workspaces.detail(workspaceId);
 console.log(
   config.agents.map((a) => a.name),
   config.skills.length,
 );
 
 // LLM gateway observability — cost, latency, per-model breakdown
-const overview = await project.gateway.overview(7);
-const routing = await project.gateway.routing.get();
+const overview = await workspace.gateway.overview(7);
+const routing = await workspace.gateway.routing.get();
 ```
 
 The package ships runnable examples that cover each of these steps, in

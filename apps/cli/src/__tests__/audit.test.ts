@@ -58,7 +58,7 @@ describe('buildAuditQuery', () => {
         action: 'iam.',
         actor: 'user-1',
         actorType: 'agent',
-        project: 'proj-1',
+        workspace: 'workspace-1',
         session: 'sess-1',
         source: 'cli',
         phase: 'completed',
@@ -76,7 +76,7 @@ describe('buildAuditQuery', () => {
       action: 'iam.',
       actor: 'user-1',
       actor_type: 'agent',
-      project_id: 'proj-1',
+      workspace_id: 'workspace-1',
       session_id: 'sess-1',
       source: 'cli',
       phase: 'completed',
@@ -123,7 +123,7 @@ describe('buildAuditQuery', () => {
 });
 
 describe('audit CLI process', () => {
-  test('publishes account, project, session, and resumable export commands', async () => {
+  test('publishes workspace, deprecated project, session, and resumable export commands', async () => {
     const process = Bun.spawn(['bun', 'run', 'src/index.ts', 'audit', '--help'], {
       cwd: new URL('../..', import.meta.url).pathname,
       stdout: 'pipe',
@@ -136,13 +136,14 @@ describe('audit CLI process', () => {
     ]);
     expect(exitCode).toBe(0);
     expect(stderr).not.toContain('Unknown subcommand');
+    expect(stdout).toContain('workspace <workspace-id>');
     expect(stdout).toContain('project <project-id>');
     expect(stdout).toContain('session <session-id>');
     expect(stdout).toContain('--cursor <c>');
     expect(stdout).toContain('--phase <p>');
   });
 
-  test('executes filtered account, project, session, and resumable export reads', async () => {
+  test('executes filtered account, workspace, session, legacy project, and resumable export reads', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-audit-cli-'));
     const cliRoot = resolve(import.meta.dir, '..', '..');
     const cliEntry = join(cliRoot, 'src', 'index.ts');
@@ -151,14 +152,14 @@ describe('audit CLI process', () => {
     const event = (id: string, action: string) => ({
       event_id: id,
       occurred_at: '2026-08-07T12:00:00.000Z',
-      project_id: 'project-1',
+      workspace_id: 'workspace-1',
       session_id: sessionId,
       actor_user_id: 'user-1',
       actor_type: 'human',
       source: 'cli',
       outcome: 'success',
       action,
-      resource_type: 'project_session',
+      resource_type: 'workspace_session',
       resource_id: sessionId,
       http_status: 200,
       duration_ms: 12,
@@ -194,8 +195,8 @@ describe('audit CLI process', () => {
         }
         const scope = url.pathname.includes('/sessions/')
           ? 'session'
-          : url.pathname.includes('/projects/')
-            ? 'project'
+          : url.pathname.includes('/workspaces/')
+            ? 'workspace'
             : 'account';
         return Response.json({
           events: [event(`${scope}-${cursor ? '2' : '1'}`, `${scope}.${cursor ? 'second' : 'first'}`)],
@@ -262,8 +263,8 @@ describe('audit CLI process', () => {
         '24h',
         '--action',
         'session.',
-        '--project',
-        'project-1',
+        '--workspace',
+        'workspace-1',
         '--session',
         sessionId,
         '--source',
@@ -277,24 +278,34 @@ describe('audit CLI process', () => {
       expect(account.stderr).not.toContain('Error');
       expect(JSON.parse(account.stdout).events).toHaveLength(2);
 
-      const project = await run([
+      const workspace = await run([
         'audit',
-        'project',
-        'project-1',
+        'workspace',
+        'workspace-1',
         '--all',
         '--json',
         '--source',
         'agent',
       ]);
-      expect(project.code).toBe(0);
-      expect(JSON.parse(project.stdout).events).toHaveLength(2);
+      expect(workspace.code).toBe(0);
+      expect(JSON.parse(workspace.stdout).events).toHaveLength(2);
+
+      const legacyProject = await run([
+        'audit',
+        'project',
+        'workspace-1',
+        '--all',
+        '--json',
+      ]);
+      expect(legacyProject.code).toBe(0);
+      expect(JSON.parse(legacyProject.stdout).events).toHaveLength(2);
 
       const session = await run([
         'audit',
         'session',
         sessionId,
-        '--project',
-        'project-1',
+        '--workspace',
+        'workspace-1',
         '--all',
         '--json',
         '--limit',
@@ -326,7 +337,7 @@ describe('audit CLI process', () => {
       );
       expect(accountRequests).toHaveLength(2);
       expect(accountRequests[0]!.searchParams.get('action')).toBe('session.');
-      expect(accountRequests[0]!.searchParams.get('project_id')).toBe('project-1');
+      expect(accountRequests[0]!.searchParams.get('workspace_id')).toBe('workspace-1');
       expect(accountRequests[0]!.searchParams.get('session_id')).toBe(sessionId);
       expect(accountRequests[0]!.searchParams.get('source')).toBe('cli');
       expect(accountRequests[0]!.searchParams.get('phase')).toBe('completed');
@@ -334,15 +345,17 @@ describe('audit CLI process', () => {
       expect(accountRequests[0]!.searchParams.get('since')).toMatch(/^2026-/);
       expect(accountRequests[1]!.searchParams.get('cursor')).toBe('account-cursor-2');
 
-      const projectRequests = requests.filter(
-        (url) => url.pathname.endsWith('/projects/project-1/audit'),
+      const workspaceRequests = requests.filter(
+        (url) => url.pathname.endsWith('/workspaces/workspace-1/audit'),
       );
-      expect(projectRequests.map((url) => url.searchParams.get('cursor'))).toEqual([
+      expect(workspaceRequests.map((url) => url.searchParams.get('cursor'))).toEqual([
         null,
-        'project-cursor-2',
+        'workspace-cursor-2',
+        null,
+        'workspace-cursor-2',
       ]);
       const sessionRequests = requests.filter((url) =>
-        url.pathname.endsWith(`/projects/project-1/sessions/${sessionId}/audit`),
+        url.pathname.endsWith(`/workspaces/workspace-1/sessions/${sessionId}/audit`),
       );
       expect(sessionRequests.map((url) => url.searchParams.get('cursor'))).toEqual([
         null,

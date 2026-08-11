@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
 
+import { useAuth } from '@/features/providers/auth-provider';
 import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-workspace-key';
 import {
   buildProvisionPayload,
@@ -12,22 +13,21 @@ import {
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { onboardingPath } from '@/features/workspace/new/onboarding-param';
-import { useAuth } from '@/features/providers/auth-provider';
 import {
   isManagedGitUnavailableError,
-  isProjectLimitError,
-} from '@/lib/onboarding/ensure-first-project';
-import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
+  isWorkspaceLimitError,
+} from '@/lib/onboarding/ensure-first-workspace';
+import { writeLastWorkspaceId } from '@/lib/onboarding/last-workspace-cookie';
 import {
   listAccounts,
-  provisionProject,
-  provisionProjectStream,
   PROVISION_IN_FLIGHT_CODE,
+  provisionWorkspace,
+  provisionWorkspaceStream,
   type KortixAccount,
-  type KortixProject,
+  type KortixWorkspace,
   type ProvisionPhase,
-  type ProvisionProjectInput,
   type ProvisionStreamEvent,
+  type ProvisionWorkspaceInput,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
@@ -35,8 +35,8 @@ export type CreateStatus = 'idle' | 'creating' | 'error';
 
 /**
  * Backoff for a 409 `provision_in_flight` retry, ms — one entry per retry.
- * Identical to `/projects/start`'s `RETRY_DELAY_MS`
- * (`app/(app)/projects/start/page.tsx:36`, `const RETRY_DELAY_MS = [400,
+ * Identical to `/workspaces/start`'s `RETRY_DELAY_MS`
+ * (`app/(app)/workspaces/start/page.tsx:36`, `const RETRY_DELAY_MS = [400,
  * 1200]`): both doors run the SAME logical create against the same persisted
  * `idempotency_key`, so their backoffs must not diverge.
  */
@@ -52,13 +52,16 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * actually identifies a genuinely different workspace: keying on those means
  * creating "suna-web" then, moments later, "kortix-api" in the same account
  * mints two independent keys instead of the second create silently returning
- * the first project (the exact failure mode `r1.ts`'s `idempotency_key` doc
+ * the first workspace (the exact failure mode `r1.ts`'s `idempotency_key` doc
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
-  return [state.accountId ?? 'default', state.name.trim(), state.templateId ?? '', state.source].join(
-    ':',
-  );
+  return [
+    state.accountId ?? 'default',
+    state.name.trim(),
+    state.templateId ?? '',
+    state.source,
+  ].join(':');
 }
 
 /**
@@ -97,14 +100,10 @@ export function resolveTargetAccountId(
   creatableAccounts: KortixAccount[],
   email?: string | null,
 ): string | undefined {
-  return (
-    state.accountId ??
-    resolveDefaultCreatableAccountId(creatableAccounts, email) ??
-    undefined
-  );
+  return state.accountId ?? resolveDefaultCreatableAccountId(creatableAccounts, email) ?? undefined;
 }
 
-/** The exact `POST /projects/provision` request body for one create attempt. */
+/** The exact `POST /workspaces/provision` request body for one create attempt. */
 export function buildCreatePayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
@@ -123,33 +122,33 @@ export function buildCreatePayload(
  * `ApiError` field names verified at
  * `packages/sdk/src/core/http/api/errors.ts:46-55`: `status?: number`,
  * `code?: string` — branches below read those, not invented names. Both
- * transports (`provisionProject` and, since final-review FIX 1,
- * `provisionProjectStream`) throw an `ApiError` carrying the same fields, so
+ * transports (`provisionWorkspace` and, since final-review FIX 1,
+ * `provisionWorkspaceStream`) throw an `ApiError` carrying the same fields, so
  * every branch below reads identically regardless of which one ran.
  *
  * 502 and 503 are NOT the same failure and must not share a message. This
  * route's only 503 is `isManagedGitUnavailableError`
- * (`ensure-first-project.ts:254`) — managed git is not configured on this
+ * (`ensure-first-workspace.ts:254`) — managed git is not configured on this
  * server, a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
  * until an operator configures it. 502 (an upstream/gateway fault) keeps the
  * retryable generic message, matching every OTHER call site that reuses
- * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
- * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
+ * `isManagedGitUnavailableError` (`workspace-create-modal.tsx:352`,
+ * `add-to-workspace-modal.tsx:188`) — same title, so the wording never drifts
  * between the toast those use and the inline message here.
  *
  * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
- * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
+ * (`apps/api/src/workspaces/lib/access.ts`) returns 403 too, and
  * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
- * plus `ensureFirstProject` auto-provisioning every account's first project
+ * plus `ensureFirstWorkspace` auto-provisioning every account's first workspace
  * means EVERY free-tier user who clicks "Create a workspace…" hits this —
  * not an edge case. The generic 403 message ("You need owner or admin
  * access…") is actively false for them: they have the role, they are simply
  * out of quota. The server's own message is reused verbatim rather than
  * inventing new copy — it already states the exact limit and the upgrade
- * path, matching what the deleted create modal's `isProjectLimitError`
- * handling reused for the same code (`ensure-first-project.ts`).
+ * path, matching what the deleted create modal's `isWorkspaceLimitError`
+ * handling reused for the same code (`ensure-first-workspace.ts`).
  *
  * `provision_in_flight` (409, final-review FIX 1) also gets its own branch,
  * never the raw server text: `PROVISION_IN_FLIGHT_CODE`'s own doc comment
@@ -163,8 +162,8 @@ export function buildCreatePayload(
 export function messageFor(error: unknown): string {
   const status = (error as { status?: number } | null | undefined)?.status;
   const message = error instanceof Error ? error.message : undefined;
-  if (isProjectLimitError(error)) {
-    return message || "This account has reached its plan's workspace limit. Upgrade to create another.";
+  if (isWorkspaceLimitError(error)) {
+    return "This account has reached its plan's workspace limit. Upgrade to create another.";
   }
   if (status === 403) {
     return 'You need owner or admin access in this account to create a workspace.';
@@ -205,7 +204,7 @@ export function messageFor(error: unknown): string {
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
  * - `503` (this route's only 503 is `isManagedGitUnavailableError`,
- *   `ensure-first-project.ts:254`) — NOT retryable. A server configuration
+ *   `ensure-first-workspace.ts:254`) — NOT retryable. A server configuration
  *   state; see `messageFor` above. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
  *   about which failure is which.
@@ -240,23 +239,23 @@ export function isRetryableError(error: unknown): boolean {
  * The network calls `runCreateAttempt` and `runProvisionAttempt` need,
  * injectable so their logic is unit-tested with a plain fake instead of
  * `mock.module('@kortix/sdk', ...)` — process-wide in this monorepo and a
- * hazard for sibling test suites (see `ensure-first-project.ts`'s own
- * `EnsureFirstProjectClient` for the same pattern). `wait` is injected too, so
+ * hazard for sibling test suites (see `ensure-first-workspace.ts`'s own
+ * `EnsureFirstWorkspaceClient` for the same pattern). `wait` is injected too, so
  * a test exercises the FULL retry budget without sleeping the real
  * 400ms/1200ms.
  */
 export type CreateWorkspaceClient = {
-  provisionProject: (input: ProvisionProjectInput) => Promise<KortixProject>;
-  provisionProjectStream: (
-    input: ProvisionProjectInput,
+  provisionWorkspace: (input: ProvisionWorkspaceInput) => Promise<KortixWorkspace>;
+  provisionWorkspaceStream: (
+    input: ProvisionWorkspaceInput,
     onEvent: (event: ProvisionStreamEvent) => void,
-  ) => Promise<KortixProject>;
+  ) => Promise<KortixWorkspace>;
   wait: (ms: number) => Promise<void>;
 };
 
 const defaultClient: CreateWorkspaceClient = {
-  provisionProject,
-  provisionProjectStream,
+  provisionWorkspace,
+  provisionWorkspaceStream,
   wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
 
@@ -265,11 +264,11 @@ const defaultClient: CreateWorkspaceClient = {
  * never reached the server to do real work, as opposed to a real failure the
  * server reported through a stream that worked. `runProvisionAttempt` (below)
  * uses this, ALWAYS in combination with "zero events received", as the only
- * signal that its fallback to the plain `provisionProject` is safe: retrying
- * a genuine provisioning failure as a second `POST /projects/provision` risks
+ * signal that its fallback to the plain `provisionWorkspace` is safe: retrying
+ * a genuine provisioning failure as a second `POST /workspaces/provision` risks
  * a second upstream managed repo, so this classifier stays conservative and
- * recognizes only the three shapes `provisionProjectStream`'s own doc comment
- * (`packages/sdk/src/core/rest/projects-client/projects.ts`) names as
+ * recognizes only the three shapes `provisionWorkspaceStream`'s own doc comment
+ * (`packages/sdk/src/core/rest/workspaces-client/workspaces.ts`) names as
  * "stream unavailable" failures:
  *
  * - **A raw network failure** — the `fetch()` call itself never got a
@@ -279,10 +278,10 @@ const defaultClient: CreateWorkspaceClient = {
  *   `TypeError`. Checking the error's real TYPE, not a message string, is
  *   what keeps this from being the fragile message-sniffing the brief for
  *   this task explicitly warns against.
- * - **No `response.body`** — the React Native case. `provisionProjectStream`
+ * - **No `response.body`** — the React Native case. `provisionWorkspaceStream`
  *   throws the literal message `'...(no response body)'`.
- * - **The `/projects/provision-stream` route itself 404s** — an older server
- *   build without it. `provisionProjectStream` throws
+ * - **The `/workspaces/provision-stream` route itself 404s** — an older server
+ *   build without it. `provisionWorkspaceStream` throws
  *   `` `Provision failed: HTTP ${status}` `` when the response is non-2xx and
  *   carries no JSON `error` field; a REAL API rejection (400/403/503) always
  *   carries one, and lands in the pre-stream-denial branch below instead.
@@ -302,7 +301,7 @@ export function isTransportFailure(error: unknown): boolean {
  *
  * POSTs once. On a `409` `provision_in_flight` — another call carrying this
  * SAME `idempotency_key` is still mid-provision, per
- * `apps/api/src/projects/routes/r1.ts` — retries up to `RETRY_DELAY_MS.length`
+ * `apps/api/src/workspaces/routes/r1.ts` — retries up to `RETRY_DELAY_MS.length`
  * more times with the IDENTICAL payload. Never a re-minted key: the key
  * identifies the ATTEMPT, and the whole point of retrying is to land on that
  * same attempt's result. Any other error, or exhausting the retry budget,
@@ -310,17 +309,19 @@ export function isTransportFailure(error: unknown): boolean {
  * (`messageFor`).
  */
 export async function runCreateAttempt(
-  payload: ProvisionProjectInput,
+  payload: ProvisionWorkspaceInput,
   client: CreateWorkspaceClient = defaultClient,
-): Promise<KortixProject> {
+): Promise<KortixWorkspace> {
   for (let attempt = 0; attempt <= RETRY_DELAY_MS.length; attempt += 1) {
     try {
-      return await client.provisionProject(payload);
+      return await client.provisionWorkspace(payload);
     } catch (caught) {
       const code = (caught as { code?: string } | null | undefined)?.code;
       const canRetry = code === PROVISION_IN_FLIGHT_CODE && attempt < RETRY_DELAY_MS.length;
       if (!canRetry) throw caught;
-      await client.wait(RETRY_DELAY_MS[attempt]!);
+      const retryDelay = RETRY_DELAY_MS[attempt];
+      if (retryDelay === undefined) throw caught;
+      await client.wait(retryDelay);
     }
   }
   // Unreachable: every iteration above either returns or throws.
@@ -329,8 +330,8 @@ export async function runCreateAttempt(
 
 /**
  * One provisioning attempt, preferring the live-progress
- * `provisionProjectStream` and falling back to the plain `runCreateAttempt`
- * (the 409-retrying `provisionProject` above) exactly once — and only when
+ * `provisionWorkspaceStream` and falling back to the plain `runCreateAttempt`
+ * (the 409-retrying `provisionWorkspace` above) exactly once — and only when
  * the fallback is provably safe.
  *
  * The gate is **whether `onEvent` fired at all**, not the shape of the error
@@ -348,7 +349,7 @@ export async function runCreateAttempt(
  * a different transport, not a new one; a re-minted key here would be
  * exactly the bug this function exists to prevent, just moved one layer up.
  * Routing the fallback through `runCreateAttempt` (rather than a bare
- * `client.provisionProject` call) also means it inherits that function's own
+ * `client.provisionWorkspace` call) also means it inherits that function's own
  * 409 `provision_in_flight` retry, so the plain-POST path keeps its full
  * existing resilience even when reached through the stream.
  *
@@ -359,7 +360,7 @@ export async function runCreateAttempt(
  * **DECISION (final-review FIX 1, consequence 3): a 409 `provision_in_flight`
  * error ALSO reaches the fallback, regardless of `eventsReceived`.**
  * `emit('validating')` is the first statement of `runProvision`
- * (`apps/api/src/projects/provision-core.ts`), so by the time this failure
+ * (`apps/api/src/workspaces/provision-core.ts`), so by the time this failure
  * can arrive at all, `eventsReceived > 0` is already guaranteed — under the
  * plain "any event blocks fallback" rule, that made `runCreateAttempt`'s own
  * 409 backoff loop unreachable from the streaming path, the exact "409
@@ -370,18 +371,18 @@ export async function runCreateAttempt(
  * way a 502/503/plain error is. By construction it means another call
  * carrying this SAME `idempotency_key` is already mid-provision, so handing
  * it to `runCreateAttempt` (identical key, unchanged payload) is exactly
- * correct: either the server returns the SAME project once the in-flight
+ * correct: either the server returns the SAME workspace once the in-flight
  * attempt commits, or it 409s again and the loop keeps waiting — never a
  * second upstream repo, and never a second create for this user intent.
  */
 export async function runProvisionAttempt(
-  payload: ProvisionProjectInput,
+  payload: ProvisionWorkspaceInput,
   onPhase: (phase: ProvisionPhase | null) => void,
   client: CreateWorkspaceClient = defaultClient,
-): Promise<KortixProject> {
+): Promise<KortixWorkspace> {
   let eventsReceived = 0;
   try {
-    return await client.provisionProjectStream(payload, (event) => {
+    return await client.provisionWorkspaceStream(payload, (event) => {
       eventsReceived += 1;
       if (event.type === 'phase') onPhase(event.phase);
     });
@@ -402,10 +403,10 @@ export async function runProvisionAttempt(
  * unit-tested — same reason as `CreateWorkspaceClient` above: no
  * `mock.module('@kortix/sdk', ...)`, which is process-wide in this monorepo.
  *
- * `attemptKeyFor`/`clearAttemptKey`/`writeLastProjectId`/`now` don't depend on
+ * `attemptKeyFor`/`clearAttemptKey`/`writeLastWorkspaceId`/`now` don't depend on
  * React and could be given real module-level defaults (as
- * `EnsureFirstProjectClient` does in `ensure-first-project.ts`); the other
- * three (`primeProjectCache`, `invalidateProjects`, `enterOnboarding`) are
+ * `EnsureFirstWorkspaceClient` does in `ensure-first-workspace.ts`); the other
+ * three (`primeWorkspaceCache`, `invalidateWorkspaces`, `enterOnboarding`) are
  * inherently render-scoped — they close over the live `queryClient`/`router`
  * a hook only has inside a component — so there is no single "no-args"
  * default here. `useCreateWorkspace` below always supplies the whole object
@@ -415,29 +416,29 @@ export async function runProvisionAttempt(
 export type CreateOrchestrationClient = {
   attemptKeyFor: (fingerprint: string, now: number) => string;
   clearAttemptKey: (fingerprint: string) => void;
-  runCreateAttempt: (payload: ProvisionProjectInput) => Promise<KortixProject>;
-  primeProjectCache: (accountId: string, project: KortixProject) => void;
-  invalidateProjects: () => void;
-  writeLastProjectId: (userId: string | null | undefined, projectId: string) => void;
+  runCreateAttempt: (payload: ProvisionWorkspaceInput) => Promise<KortixWorkspace>;
+  primeWorkspaceCache: (accountId: string, workspace: KortixWorkspace) => void;
+  invalidateWorkspaces: () => void;
+  writeLastWorkspaceId: (userId: string | null | undefined, workspaceId: string) => void;
   /**
    * Hand off to the guided onboarding, which runs on `/new` itself rather
    * than on the new workspace's page.
    *
-   * This replaced a `navigate('/projects/:id')`. Onboarding cannot run there:
-   * the wizard is mounted on the project shell but self-gates on
+   * This replaced a `navigate('/workspaces/:id')`. Onboarding cannot run there:
+   * the wizard is mounted on the workspace shell but self-gates on
    * `metadata.onboarding_completed_at`, and this function used to stamp that
    * field before navigating — so the wizard rendered `null` every time. The
    * stamp now comes from the wizard's own `complete()` instead, which means
-   * the project shell's copy correctly renders nothing once the user arrives.
+   * the workspace shell's copy correctly renders nothing once the user arrives.
    *
    * Implemented as `router.replace`, never `push`: the form state this
    * replaces is not somewhere the user may navigate back into.
    */
-  enterOnboarding: (projectId: string) => void;
+  enterOnboarding: (workspaceId: string) => void;
   now: () => number;
 };
 
-export type CreateResult = { ok: true; project: KortixProject } | { ok: false; error: unknown };
+export type CreateResult = { ok: true; workspace: KortixWorkspace } | { ok: false; error: unknown };
 
 /**
  * The full sequence one submit runs:
@@ -448,20 +449,20 @@ export type CreateResult = { ok: true; project: KortixProject } | { ok: false; e
  *   -> enter onboarding on /new
  * ```
  *
- * **No onboarding gate.** An earlier version read the account's project count
- * here and pre-stamped the new project onboarded unless it was the account's
- * first. That gate could never fire: the account's first project is
- * auto-provisioned (`ensure-first-project.ts`), never created through `/new`,
+ * **No onboarding gate.** An earlier version read the account's workspace count
+ * here and pre-stamped the new workspace onboarded unless it was the account's
+ * first. That gate could never fire: the account's first workspace is
+ * auto-provisioned (`ensure-first-workspace.ts`), never created through `/new`,
  * so the count was always >= 1 by the time anyone reached this code — and the
  * pre-stamp made the wizard render `null` on arrival, every single time.
  * Every `/new` create now runs onboarding, and the only thing that stamps the
- * project is the wizard finishing.
+ * workspace is the wizard finishing.
  *
  * The key is cleared FIRST among the success-path steps, before any of the
  * other four. The API's own contract (`r1.ts`) is that the key identifies the
  * ATTEMPT, not the payload — once the server has confirmed this attempt
  * succeeded, the key must never be replayed, or a LATER, genuinely different
- * create with the same name would silently return THIS project instead of
+ * create with the same name would silently return THIS workspace instead of
  * making a new one. Clearing it first, rather than last, also means that if
  * cache priming or entering onboarding ever throws, the key is already gone
  * and cannot be resurrected by a subsequent retry.
@@ -483,16 +484,16 @@ export async function runCreate(
     state,
     creatableAccounts,
     idempotencyKey,
-  ) as unknown as ProvisionProjectInput;
+  ) as unknown as ProvisionWorkspaceInput;
 
   try {
-    const project = await client.runCreateAttempt(payload);
+    const workspace = await client.runCreateAttempt(payload);
     client.clearAttemptKey(fingerprint);
-    client.primeProjectCache(project.account_id, project);
-    client.invalidateProjects();
-    client.writeLastProjectId(userId, project.project_id);
-    client.enterOnboarding(project.project_id);
-    return { ok: true, project };
+    client.primeWorkspaceCache(workspace.account_id, workspace);
+    client.invalidateWorkspaces();
+    client.writeLastWorkspaceId(userId, workspace.workspace_id);
+    client.enterOnboarding(workspace.workspace_id);
+    return { ok: true, workspace };
   } catch (error) {
     return { ok: false, error };
   }
@@ -501,7 +502,7 @@ export async function runCreate(
 /**
  * Drives the `/new` submit button: mints/reuses the idempotency key, POSTs
  * the create (with retry-on-in-flight via `runCreateAttempt`), primes the
- * workspace caches, and enters the guided onboarding for the new project on
+ * workspace caches, and enters the guided onboarding for the new workspace on
  * success. All of that sequencing lives in `runCreate`, above — this hook
  * only wires it to the live `queryClient`/`router`/`user` and to component
  * state.
@@ -531,7 +532,11 @@ export function useCreateWorkspace(): {
   const [lastError, setLastError] = useState<unknown>(null);
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
 
-  const accountsQuery = useQuery({ queryKey: ['accounts'], queryFn: listAccounts, staleTime: 60_000 });
+  const accountsQuery = useQuery({
+    queryKey: ['accounts'],
+    queryFn: listAccounts,
+    staleTime: 60_000,
+  });
   const creatableAccounts = filterCreatableAccounts(accountsQuery.data ?? []);
 
   const create = useCallback(
@@ -553,27 +558,27 @@ export function useCreateWorkspace(): {
         runCreateAttempt: (payload) => runProvisionAttempt(payload, () => {}),
         // The optimistic write goes ONLY into the account this workspace
         // actually belongs to — the one entry a merge here can never get
-        // wrong. `qk.projects.list()` (no account) is a DIFFERENT, sibling
+        // wrong. `qk.workspaces.list()` (no account) is a DIFFERENT, sibling
         // cache entry backing callers that let the API resolve the account,
         // so hand-merging into it could inject this workspace into the wrong
         // account's cached list. The invalidate below reaches that slot too,
         // correctly, via a real fetch instead of a guess.
-        primeProjectCache: (accountId, project) => {
-          queryClient.setQueryData<KortixProject[]>(qk.projects.list(accountId), (existing) => [
-            project,
+        primeWorkspaceCache: (accountId, workspace) => {
+          queryClient.setQueryData<KortixWorkspace[]>(qk.workspaces.list(accountId), (existing) => [
+            workspace,
             ...(existing ?? []),
           ]);
         },
-        // `qk.projects.scope()`, NOT `qk.projects.list()`. Under the old flat
-        // keys `['projects']` was a genuine PREFIX of `['projects', accountId]`,
+        // `qk.workspaces.scope()`, NOT `qk.workspaces.list()`. Under the old flat
+        // keys `['workspaces']` was a genuine PREFIX of `['workspaces', accountId]`,
         // so invalidating it reached every account's list. Under `qk` those two
         // are SIBLINGS (`'all'` vs `'<id>'`), so `list()` alone would match only
         // the accountless slot and silently stop refreshing the list this
         // create just added to. `scope()` is the shared prefix over every form.
-        invalidateProjects: () =>
-          void queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
-        writeLastProjectId,
-        enterOnboarding: (projectId) => router.replace(onboardingPath(projectId)),
+        invalidateWorkspaces: () =>
+          void queryClient.invalidateQueries({ queryKey: qk.workspaces.scope() }),
+        writeLastWorkspaceId,
+        enterOnboarding: (workspaceId) => router.replace(onboardingPath(workspaceId)),
         now: Date.now,
       });
 

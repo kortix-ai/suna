@@ -37,7 +37,7 @@ interface ReviewItemBase {
   risk: ReviewRisk;
   status: ReviewStatus;
   source: ReviewSource;
-  project: string;
+  workspace: string;
   agent: string; // originating agent / session label
   actor: ReviewActor;
   createdAt: string; // ISO

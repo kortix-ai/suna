@@ -1,16 +1,16 @@
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import { withProjectGitAuth } from '../../projects/lib/git';
-import { listRepoFiles, loadProjectConfig } from '../../projects/git';
+import { withWorkspaceGitAuth } from '../../workspaces/lib/git';
+import { listRepoFiles, loadWorkspaceConfig } from '../../workspaces/git';
 
-// Per-channel agent + model selection. A Slack channel is bound to a project
+// Per-channel agent + model selection. A Slack channel is bound to a workspace
 // (chat_channel_bindings); these helpers read/write the optional agent + model
 // overrides on that binding. A session started from the channel inherits them
-// (see session.ts) — null means "use the project/platform default".
+// (see session.ts) — null means "use the workspace/platform default".
 
 export interface ChannelSelection {
-  projectId: string;
+  workspaceId: string;
   agentName: string | null;
   opencodeModel: string | null;
   conversationPolicy: string | null;
@@ -28,11 +28,11 @@ export interface ChannelCtx {
 /** The channel's bound project + its agent/model overrides, or null if unbound. */
 export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelSelection | null> {
   if (!ctx.channelId) return null;
-  let binding: { projectId: string | null; agentName: string | null; opencodeModel: string | null; conversationPolicy: string | null } | undefined;
+  let binding: { workspaceId: string | null; agentName: string | null; opencodeModel: string | null; conversationPolicy: string | null } | undefined;
   try {
     [binding] = await db
       .select({
-        projectId: chatChannelBindings.projectId,
+        workspaceId: chatChannelBindings.workspaceId,
         agentName: chatChannelBindings.agentName,
         opencodeModel: chatChannelBindings.opencodeModel,
         conversationPolicy: chatChannelBindings.conversationPolicy,
@@ -40,19 +40,19 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
       .from(chatChannelBindings)
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformWorkspaceId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .limit(1);
   } catch (err) {
     if (!isMissingSelectionColumnError(err)) throw err;
-    console.warn('[slack-selection] optional channel override columns missing; falling back to project-only routing');
-    const projectId = await currentChannelProjectId(ctx);
-    return projectId ? { projectId, agentName: null, opencodeModel: null, conversationPolicy: null } : null;
+    console.warn('[slack-selection] optional channel override columns missing; falling back to workspace-only routing');
+    const workspaceId = await currentChannelWorkspaceId(ctx);
+    return workspaceId ? { workspaceId, agentName: null, opencodeModel: null, conversationPolicy: null } : null;
   }
-  if (!binding?.projectId) return null;
+  if (!binding?.workspaceId) return null;
   return {
-    projectId: binding.projectId,
+    workspaceId: binding.workspaceId,
     agentName: binding.agentName ?? null,
     opencodeModel: binding.opencodeModel ?? null,
     conversationPolicy: binding.conversationPolicy ?? null,
@@ -67,7 +67,7 @@ export async function setChannelConversationPolicy(ctx: ChannelCtx, conversation
       .set({ conversationPolicy })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformWorkspaceId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -87,12 +87,12 @@ export type SetChannelAgentResult =
 /**
  * Update the channel binding's agent (null clears the override → 'default').
  * `no_binding` means the channel has no binding to update — the caller tells
- * the user to bind a project first. `unknown_agent` means the project has
+ * the user to bind a workspace first. `unknown_agent` means the workspace has
  * adopted `[[agents]]` (declarative governance) and `agentName` doesn't match
  * any declared agent — enforced HERE, not left to individual callers, so the
  * check can't be bypassed by a caller that forgets to validate (this is the
  * same catalog check `PATCH /channels/bindings` runs via
- * `loadProjectAgentGovernance`).
+ * `loadWorkspaceAgentGovernance`).
  */
 export async function setChannelAgent(
   ctx: ChannelCtx,
@@ -100,9 +100,9 @@ export async function setChannelAgent(
 ): Promise<SetChannelAgentResult> {
   if (!ctx.channelId) return { ok: false, reason: 'no_binding' };
   if (agentName !== null) {
-    const projectId = await currentChannelProjectId(ctx);
-    if (projectId) {
-      const governance = await loadProjectAgentGovernance(projectId);
+    const workspaceId = await currentChannelWorkspaceId(ctx);
+    if (workspaceId) {
+      const governance = await loadWorkspaceAgentGovernance(workspaceId);
       if (governance.declared && !governance.agents.some((a) => a.name === agentName)) {
         return { ok: false, reason: 'unknown_agent' };
       }
@@ -114,7 +114,7 @@ export async function setChannelAgent(
       .set({ agentName })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformWorkspaceId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -135,7 +135,7 @@ export async function setChannelModel(ctx: ChannelCtx, opencodeModel: string | n
       .set({ opencodeModel })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformWorkspaceId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -147,17 +147,17 @@ export async function setChannelModel(ctx: ChannelCtx, opencodeModel: string | n
   }
 }
 
-async function currentChannelProjectId(ctx: ChannelCtx): Promise<string | null> {
+async function currentChannelWorkspaceId(ctx: ChannelCtx): Promise<string | null> {
   const [binding] = await db
-    .select({ projectId: chatChannelBindings.projectId })
+    .select({ workspaceId: chatChannelBindings.workspaceId })
     .from(chatChannelBindings)
     .where(and(
       eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-      eq(chatChannelBindings.workspaceId, ctx.teamId),
+      eq(chatChannelBindings.platformWorkspaceId, ctx.teamId),
       eq(chatChannelBindings.channelId, ctx.channelId),
     ))
     .limit(1);
-  return binding?.projectId ?? null;
+  return binding?.workspaceId ?? null;
 }
 
 function isMissingSelectionColumnError(err: unknown): boolean {
@@ -173,19 +173,19 @@ function isMissingSelectionColumnError(err: unknown): boolean {
   );
 }
 
-export interface ProjectAgent {
+export interface WorkspaceAgent {
   name: string;
   description: string | null;
   mode: string | null;
 }
 
-export interface ProjectAgentGovernance {
-  agents: ProjectAgent[];
+export interface WorkspaceAgentGovernance {
+  agents: WorkspaceAgent[];
   /**
-   * True when the project has adopted `kortix.yaml`'s `agents:` block — the listed
+   * True when the workspace has adopted `kortix.yaml`'s `agents:` block — the listed
    * names are ENFORCED (an undeclared name isn't a real launchable agent), not
    * merely discovered from `.kortix/opencode/agents/*.md`. Mirrors
-   * `ProjectConfigSummary.agent_discovery === 'declarative'`. Callers that
+   * `WorkspaceConfigSummary.agent_discovery === 'declarative'`. Callers that
    * validate a channel-binding's `agentName` against the catalog should only
    * reject unknown names when this is true — a legacy (undeclared) project
    * has no fixed catalog to validate against.
@@ -194,26 +194,26 @@ export interface ProjectAgentGovernance {
 }
 
 /**
- * The project's launchable agents from the server-side config summary:
+ * The workspace's launchable agents from the server-side config summary:
  * declarative `kortix.yaml` `agents:` for adopted projects, OpenCode markdown
  * discovery for legacy projects. Touches git, so callers must use the async
  * slash response path (response_url) to stay inside Slack's 3s window.
  */
-export async function loadProjectAgentGovernance(projectId: string): Promise<ProjectAgentGovernance> {
+export async function loadWorkspaceAgentGovernance(workspaceId: string): Promise<WorkspaceAgentGovernance> {
   const [row] = await db
     .select()
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
   if (!row) return { agents: [], declared: false };
-  const gitProject = await withProjectGitAuth(row);
+  const gitWorkspace = await withWorkspaceGitAuth(row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
-    files = await listRepoFiles(gitProject, row.defaultBranch);
+    files = await listRepoFiles(gitWorkspace, row.defaultBranch);
   } catch {
-    // Repo unreachable — fall back to whatever loadProjectConfig can infer.
+    // Repo unreachable — fall back to whatever loadWorkspaceConfig can infer.
   }
-  const config = await loadProjectConfig(gitProject, files);
+  const config = await loadWorkspaceConfig(gitWorkspace, files);
   return {
     agents: config.agents.map((a) => ({
       name: a.name,
@@ -225,15 +225,15 @@ export async function loadProjectAgentGovernance(projectId: string): Promise<Pro
 }
 
 /** Back-compat convenience wrapper — just the agent list, no governance flag. */
-export async function listProjectAgents(projectId: string): Promise<ProjectAgent[]> {
-  return (await loadProjectAgentGovernance(projectId)).agents;
+export async function listWorkspaceAgents(workspaceId: string): Promise<WorkspaceAgent[]> {
+  return (await loadWorkspaceAgentGovernance(workspaceId)).agents;
 }
 
 export interface ChannelBindingRow {
   bindingId: string;
-  projectId: string;
-  platform: string;
   workspaceId: string;
+  platform: string;
+  platformWorkspaceId: string;
   channelId: string;
   channelName: string | null;
   channelType: string | null;
@@ -243,14 +243,14 @@ export interface ChannelBindingRow {
   installedAt: Date;
 }
 
-/** Every channel bound to a project — the web Channels surface's list source. */
-export async function listChannelBindingsForProject(projectId: string): Promise<ChannelBindingRow[]> {
+/** Every channel bound to a workspace — the web Channels surface's list source. */
+export async function listChannelBindingsForWorkspace(workspaceId: string): Promise<ChannelBindingRow[]> {
   const rows = await db
     .select({
       bindingId: chatChannelBindings.bindingId,
-      projectId: chatChannelBindings.projectId,
-      platform: chatChannelBindings.platform,
       workspaceId: chatChannelBindings.workspaceId,
+      platform: chatChannelBindings.platform,
+      platformWorkspaceId: chatChannelBindings.platformWorkspaceId,
       channelId: chatChannelBindings.channelId,
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
@@ -260,24 +260,24 @@ export async function listChannelBindingsForProject(projectId: string): Promise<
       installedAt: chatChannelBindings.installedAt,
     })
     .from(chatChannelBindings)
-    .where(eq(chatChannelBindings.projectId, projectId))
+    .where(eq(chatChannelBindings.workspaceId, workspaceId))
     .orderBy(chatChannelBindings.installedAt);
   // `project_id` is nullable at the column level (unbound rows can exist
   // transiently) but this query filters on it, so every row has one.
-  return rows.filter((r): r is ChannelBindingRow => Boolean(r.projectId));
+  return rows.filter((r): r is ChannelBindingRow => Boolean(r.workspaceId));
 }
 
-/** A single binding scoped to a project — 404 surface for the PATCH route. */
+/** A single binding scoped to a workspace — 404 surface for the PATCH route. */
 export async function getChannelBindingById(
-  projectId: string,
+  workspaceId: string,
   bindingId: string,
 ): Promise<ChannelBindingRow | null> {
   const [row] = await db
     .select({
       bindingId: chatChannelBindings.bindingId,
-      projectId: chatChannelBindings.projectId,
-      platform: chatChannelBindings.platform,
       workspaceId: chatChannelBindings.workspaceId,
+      platform: chatChannelBindings.platform,
+      platformWorkspaceId: chatChannelBindings.platformWorkspaceId,
       channelId: chatChannelBindings.channelId,
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
@@ -287,9 +287,9 @@ export async function getChannelBindingById(
       installedAt: chatChannelBindings.installedAt,
     })
     .from(chatChannelBindings)
-    .where(and(eq(chatChannelBindings.projectId, projectId), eq(chatChannelBindings.bindingId, bindingId)))
+    .where(and(eq(chatChannelBindings.workspaceId, workspaceId), eq(chatChannelBindings.bindingId, bindingId)))
     .limit(1);
-  if (!row?.projectId) return null;
+  if (!row?.workspaceId) return null;
   return row as ChannelBindingRow;
 }
 

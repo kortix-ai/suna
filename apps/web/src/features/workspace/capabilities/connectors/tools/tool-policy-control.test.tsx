@@ -75,13 +75,13 @@ describe('ToolPolicyControl', () => {
     expect(POLICY_SEGMENTS[0]?.tint).toBe('text-muted-foreground');
   });
 
-  test('a project-locked tool disables every segment', () => {
+  test('a workspace-locked tool disables every segment', () => {
     const markup = render(
       <ToolPolicyControl
         value="block"
         onChange={() => {}}
         label="Permission for a"
-        lockedReason="A project rule already decides this tool."
+        lockedReason="A workspace rule already decides this tool."
       />,
     );
     expect(markup.match(/disabled=""/g)).toHaveLength(4);

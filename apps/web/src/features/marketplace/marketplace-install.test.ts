@@ -5,7 +5,7 @@ import {
   capabilityCount,
   hasCapabilities,
   isInstallDisabled,
-  projectMarketplaceHref,
+  workspaceMarketplaceHref,
 } from './marketplace-install';
 import { buildTemplateSetupPrompt } from './marketplace-setup-prompt';
 
@@ -30,14 +30,16 @@ describe('buildInstallSuccessSummary', () => {
   });
 });
 
-describe('projectMarketplaceHref', () => {
-  test('builds the customize marketplace deep link for a project', () => {
-    expect(projectMarketplaceHref('proj_123')).toBe('/projects/proj_123/customize/marketplace');
+describe('workspaceMarketplaceHref', () => {
+  test('builds the canonical Workspace marketplace deep link', () => {
+    expect(workspaceMarketplaceHref('proj_123')).toBe(
+      '/workspaces/proj_123/customize/marketplace',
+    );
   });
 
-  test('URL-encodes project ids with special characters', () => {
-    expect(projectMarketplaceHref('proj/weird id')).toBe(
-      '/projects/proj%2Fweird%20id/customize/marketplace',
+  test('URL-encodes workspace ids with special characters', () => {
+    expect(workspaceMarketplaceHref('proj/weird id')).toBe(
+      '/workspaces/proj%2Fweird%20id/customize/marketplace',
     );
   });
 });
@@ -94,18 +96,18 @@ describe('capabilityCount', () => {
 
 describe('isInstallDisabled', () => {
   test('disabled when no item is resolved', () => {
-    expect(isInstallDisabled({ hasItem: false, targetProjectId: 'p1', pending: false })).toBe(true);
+    expect(isInstallDisabled({ hasItem: false, targetWorkspaceId: 'w1', pending: false })).toBe(true);
   });
 
-  test('disabled when no target project is chosen', () => {
-    expect(isInstallDisabled({ hasItem: true, targetProjectId: '', pending: false })).toBe(true);
+  test('disabled when no target workspace is chosen', () => {
+    expect(isInstallDisabled({ hasItem: true, targetWorkspaceId: '', pending: false })).toBe(true);
   });
 
   test('disabled while a request is pending', () => {
-    expect(isInstallDisabled({ hasItem: true, targetProjectId: 'p1', pending: true })).toBe(true);
+    expect(isInstallDisabled({ hasItem: true, targetWorkspaceId: 'w1', pending: true })).toBe(true);
   });
 
-  test('enabled once an item, project, and idle state all line up', () => {
-    expect(isInstallDisabled({ hasItem: true, targetProjectId: 'p1', pending: false })).toBe(false);
+  test('enabled once an item, workspace, and idle state all line up', () => {
+    expect(isInstallDisabled({ hasItem: true, targetWorkspaceId: 'w1', pending: false })).toBe(false);
   });
 });

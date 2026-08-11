@@ -21,7 +21,7 @@ import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { Plus } from '@/features/icon/icons/plus';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
@@ -249,17 +249,17 @@ export function AccountSwitcher({ className }: { className?: string }) {
           });
           void queryClient.invalidateQueries({ queryKey: ['accounts'] });
           setSelectedAccountId(account.account_id);
-          // qk.projects.scope(): reaches every account's list (and the
+          // qk.workspaces.scope(): reaches every account's list (and the
           // accountless slot), the same reach the old bare projects-literal
           // prefix match had. Account creation is rare — over-invalidating
           // costs nothing measurable.
           void queryClient.invalidateQueries({
-            queryKey: qk.projects.scope(),
+            queryKey: qk.workspaces.scope(),
           });
-          // The landing door, NOT the remembered project: that cookie names a
+          // The landing door, NOT the remembered workspace: that cookie names a
           // project in the account being left. The door re-resolves the latest
           // project for the account just switched to.
-          router.push(PROJECT_LANDING_PATH);
+          router.push(WORKSPACE_LANDING_PATH);
         }}
       />
     </>

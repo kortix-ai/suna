@@ -83,7 +83,7 @@ function GitHubSetup() {
     if (!installState || !installationId) {
       setState('error');
       setMessage(
-        'GitHub did not return the installation details. Try connecting again from your project or account settings.',
+        'GitHub did not return the installation details. Try connecting again from your workspace or account settings.',
       );
       return;
     }

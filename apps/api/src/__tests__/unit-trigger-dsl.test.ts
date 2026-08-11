@@ -5,30 +5,30 @@ import {
   parseManifestString,
   serializeManifest,
   triggerSpecToTomlEntry,
-} from '../projects/triggers';
+} from '../workspaces/triggers';
 
-const MIN_PROJECT = `
+const MIN_WORKSPACE = `
 [project]
 name = "test"
 `;
 
 function manifestWith(triggersBlock: string): string {
-  return [`kortix_version = ${KNOWN_SCHEMA_VERSION}`, MIN_PROJECT, triggersBlock].join('\n');
+  return [`kortix_version = ${KNOWN_SCHEMA_VERSION}`, MIN_WORKSPACE, triggersBlock].join('\n');
 }
 
 describe('kortix manifest — schema versioning', () => {
   test('missing kortix_version is treated as v1 (back-compat)', () => {
-    const parsed = parseManifestString(MIN_PROJECT);
+    const parsed = parseManifestString(MIN_WORKSPACE);
     expect(parsed.schemaVersion).toBe(1);
   });
 
   test('explicit kortix_version = 1 round-trips', () => {
-    const parsed = parseManifestString(`kortix_version = 1\n${MIN_PROJECT}`);
+    const parsed = parseManifestString(`kortix_version = 1\n${MIN_WORKSPACE}`);
     expect(parsed.schemaVersion).toBe(1);
   });
 
   test('a future major version is rejected with a clear error', () => {
-    expect(() => parseManifestString(`kortix_version = 99\n${MIN_PROJECT}`)).toThrow(
+    expect(() => parseManifestString(`kortix_version = 99\n${MIN_WORKSPACE}`)).toThrow(
       /Unsupported kortix\.toml schema version 99/,
     );
   });
@@ -51,14 +51,14 @@ describe('kortix manifest — schema versioning', () => {
 
   // V2 is the current ceiling. Any later schema version must stay rejected.
   test('the current ceiling parses and anything above it is still rejected', () => {
-    expect(parseManifestString(`kortix_version = 2\n${MIN_PROJECT}`).schemaVersion).toBe(2);
-    expect(() => parseManifestString(`kortix_version = 3\n${MIN_PROJECT}`)).toThrow(
+    expect(parseManifestString(`kortix_version = 2\n${MIN_WORKSPACE}`).schemaVersion).toBe(2);
+    expect(() => parseManifestString(`kortix_version = 3\n${MIN_WORKSPACE}`)).toThrow(
       /schema version 3/,
     );
   });
 
   test('serialize always emits kortix_version as the first key', () => {
-    const parsed = parseManifestString(`kortix_version = 1\n${MIN_PROJECT}`);
+    const parsed = parseManifestString(`kortix_version = 1\n${MIN_WORKSPACE}`);
     const out = serializeManifest(parsed);
     expect(out.indexOf('kortix_version')).toBe(0);
   });
@@ -283,12 +283,12 @@ prompt_template = "legacy field name"
 
 describe('[[triggers]] — validation errors', () => {
   test('an empty manifest yields zero triggers, no errors', () => {
-    const parsed = parseManifestString(MIN_PROJECT);
+    const parsed = parseManifestString(MIN_WORKSPACE);
     expect(extractTriggers(parsed)).toEqual({ specs: [], errors: [] });
   });
 
   test('a [triggers] table (single brackets) is rejected with guidance', () => {
-    const parsed = parseManifestString(`${MIN_PROJECT}\n[triggers]\nslug = "x"\n`);
+    const parsed = parseManifestString(`${MIN_WORKSPACE}\n[triggers]\nslug = "x"\n`);
     const { specs, errors } = extractTriggers(parsed);
     expect(specs).toEqual([]);
     expect(errors[0]!.error).toMatch(/array of tables/);

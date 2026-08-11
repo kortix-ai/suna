@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { deleteManagedProjectRepo } from '../projects/lib/project-deletion';
+import { deleteManagedWorkspaceRepo } from '../workspaces/lib/workspace-deletion';
 
 const project = {
-  projectId: '00000000-0000-4000-a000-000000000201',
+  workspaceId: '00000000-0000-4000-a000-000000000201',
   accountId: '00000000-0000-4000-a000-000000000101',
   name: 'Managed project',
   repoUrl: 'https://kortix.code.storage/managed-project.git',
@@ -21,11 +21,11 @@ const project = {
   },
 } as any;
 
-describe('deleteManagedProjectRepo', () => {
+describe('deleteManagedWorkspaceRepo', () => {
   test('deletes a managed repository through its configured backend', async () => {
     const deleteRepo = mock(async (_ref: any) => undefined);
 
-    const deleted = await deleteManagedProjectRepo(project, {
+    const deleted = await deleteManagedWorkspaceRepo(project, {
       getConnection: async () => null,
       getBackend: () => ({ deleteRepo }) as any,
     });
@@ -53,7 +53,7 @@ describe('deleteManagedProjectRepo', () => {
       },
     };
 
-    const deleted = await deleteManagedProjectRepo(byo, {
+    const deleted = await deleteManagedWorkspaceRepo(byo, {
       getConnection: async () => null,
       getBackend: () => ({ deleteRepo }) as any,
     });

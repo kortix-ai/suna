@@ -27,7 +27,7 @@ export interface UsePermissionResult {
    * While loading or on error, this is false — UI defaults to hidden/disabled. */
   allowed: boolean;
   /** Engine's verdict reason: super_admin, policy, legacy_account_role,
-   *  legacy_project_role, explicit_deny, no_matching_policy, not_a_member.
+   *  legacy_workspace_role, explicit_deny, no_matching_policy, not_a_member.
    *  Useful for "why does Alice have this?" tooltips on the capabilities panel. */
   reason: string | null;
   isLoading: boolean;

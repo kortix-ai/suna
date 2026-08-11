@@ -1,4 +1,4 @@
-import type { AdminConnector, Connection, ProjectSecret } from '@kortix/sdk';
+import type { WorkspaceAdminConnector, Connection, WorkspaceSecret } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -7,10 +7,10 @@ import {
   sessionScopeQueryKey,
 } from './use-session-scope';
 
-const secret = (identifier: string): ProjectSecret => ({
+const secret = (identifier: string): WorkspaceSecret => ({
   identifier,
   name: identifier,
-  project_id: 'project-1',
+  workspace_id: 'workspace-1',
   secret_id: `secret-${identifier}`,
   created_by: null,
   created_at: null,
@@ -21,13 +21,13 @@ const secret = (identifier: string): ProjectSecret => ({
   can_manage_shared: false,
 });
 
-const connector = (slug: string): AdminConnector => ({
+const connector = (slug: string): WorkspaceAdminConnector => ({
   slug,
   name: slug,
   provider: 'pipedream',
   status: 'active',
   credentialMode: 'shared',
-  authorizationStrategy: 'project',
+  authorizationStrategy: 'workspace',
   sensitive: false,
   actions: [],
   authSecret: null,
@@ -37,7 +37,7 @@ const connector = (slug: string): AdminConnector => ({
 const connection = (connectionId: string): Connection => ({
   connection_id: connectionId,
   connector_alias: 'mail',
-  owner_type: 'project',
+  owner_type: 'workspace',
   owner_id: null,
   label: connectionId,
   status: 'active',
@@ -47,14 +47,14 @@ const connection = (connectionId: string): Connection => ({
 
 describe('session scope query keys', () => {
   test('uses the shared scope and catalog cache keys', () => {
-    expect(sessionScopeQueryKey('project-1', 'session-1')).toEqual([
-      'project-session-scope',
-      'project-1',
+    expect(sessionScopeQueryKey('workspace-1', 'session-1')).toEqual([
+      'workspace-session-scope',
+      'workspace-1',
       'session-1',
     ]);
-    expect(sessionScopeCatalogQueryKey('project-1')).toEqual([
+    expect(sessionScopeCatalogQueryKey('workspace-1')).toEqual([
       'session-scope-catalog',
-      'project-1',
+      'workspace-1',
     ]);
   });
 });
@@ -62,25 +62,25 @@ describe('session scope query keys', () => {
 describe('loadSessionScopeCatalog', () => {
   test('loads all catalog axes as ready states', async () => {
     const calls: string[] = [];
-    const result = await loadSessionScopeCatalog('project-1', {
-      listSecrets: async (projectId) => {
-        calls.push(`secrets:${projectId}`);
+    const result = await loadSessionScopeCatalog('workspace-1', {
+      listSecrets: async (workspaceId) => {
+        calls.push(`secrets:${workspaceId}`);
         return [secret('MAIL_TOKEN')];
       },
-      listConnectors: async (projectId) => {
-        calls.push(`connectors:${projectId}`);
+      listConnectors: async (workspaceId) => {
+        calls.push(`connectors:${workspaceId}`);
         return [connector('mail')];
       },
-      listConnections: async (projectId) => {
-        calls.push(`connections:${projectId}`);
+      listConnections: async (workspaceId) => {
+        calls.push(`connections:${workspaceId}`);
         return [connection('connection-mail')];
       },
     });
 
     expect(calls).toEqual([
-      'secrets:project-1',
-      'connectors:project-1',
-      'connections:project-1',
+      'secrets:workspace-1',
+      'connectors:workspace-1',
+      'connections:workspace-1',
     ]);
     expect(result.raw.secrets).toEqual({
       status: 'ready',
@@ -102,7 +102,7 @@ describe('loadSessionScopeCatalog', () => {
   });
 
   test('keeps failed axes unavailable and preserves successful empty catalogs', async () => {
-    const result = await loadSessionScopeCatalog('project-1', {
+    const result = await loadSessionScopeCatalog('workspace-1', {
       listSecrets: async () => {
         throw new Error('secret catalog denied');
       },

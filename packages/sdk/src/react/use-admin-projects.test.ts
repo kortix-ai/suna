@@ -118,7 +118,7 @@ describe('useAdminProjects', () => {
     nextData = {
       projects: [
         {
-          projectId: 'p1',
+          workspaceId: 'p1',
           name: 'demo',
           status: 'active',
           accountId: 'a1',

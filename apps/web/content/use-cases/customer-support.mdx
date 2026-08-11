@@ -51,7 +51,7 @@ investigates, resolves what it can, and stops at a human for sensitive actions.
 <Steps>
 <Step title="Connect Plain as the trigger">
 
-A signed webhook from Plain points at the project. Every new thread or customer
+A signed webhook from Plain points at the workspace. Every new thread or customer
 reply fires it, and each firing spawns a fresh **session** in its own isolated
 sandbox. One customer, one thread, one sandbox. Sessions don't share state, and a
 busy inbox means more sessions running in parallel.

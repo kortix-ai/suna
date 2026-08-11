@@ -1,6 +1,14 @@
 'use client';
 
 import { CopyButton } from '@/components/markdown/copy-button';
+import {
+  cmdLine,
+  LineView,
+  meta,
+  ok,
+  t,
+  type Line,
+} from '@/components/home/interactive-demo/cli/terminal';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
 import Hint from '@/components/ui/hint';
@@ -29,7 +37,7 @@ type Surface = {
   icon: ComponentType<{ className?: string }>;
 };
 
-/** Web leads and CLI follows it: the two recorded-in-the-product surfaces sit
+/** Web leads and CLI follows it: the two primary product surfaces sit
  *  together at the front, then the channels, then the API. */
 const SURFACES: Surface[] = [
   { id: 'web', label: 'Web', icon: Monitor },
@@ -344,7 +352,7 @@ function MobileSurface() {
 /** The product walkthrough exists in both themes. Same eight screens, same
  *  order, same pacing, same 2880x1800 master — only the palette differs, and it
  *  is the palette `globals.css` ships (`:root` vs `.dark`). Both were shot from
- *  the same signed-in session against the same project, toggling the app's own
+ *  the same signed-in session against the same workspace, toggling the app's own
  *  theme between passes; neither is a filtered copy of the other. */
 const SHOWCASE_MEDIA = {
   light: {
@@ -358,26 +366,6 @@ const SHOWCASE_MEDIA = {
     phone: '/media/showcase/kortix-showcase-dark-1280.mp4',
     retina: '/media/showcase/kortix-showcase-dark-2880.mp4',
     mp4: '/media/showcase/kortix-showcase-dark-1920.mp4',
-  },
-} as const;
-
-/** The CLI recording exists in both themes. Same flow, same 112x18 grid, same
- *  encodes — only the palette differs, and it is the palette `globals.css`
- *  ships (`:root` vs `.dark`). */
-const CLI_MEDIA = {
-  light: {
-    poster: '/media/cli/kortix-cli-poster.jpg',
-    phone: '/media/cli/kortix-cli-1280.mp4',
-    retina: '/media/cli/kortix-cli-2880.mp4',
-    webm: '/media/cli/kortix-cli-1920.webm',
-    mp4: '/media/cli/kortix-cli-1920.mp4',
-  },
-  dark: {
-    poster: '/media/cli/kortix-cli-dark-poster.jpg',
-    phone: '/media/cli/kortix-cli-dark-1280.mp4',
-    retina: '/media/cli/kortix-cli-dark-2880.mp4',
-    webm: '/media/cli/kortix-cli-dark-1920.webm',
-    mp4: '/media/cli/kortix-cli-dark-1920.mp4',
   },
 } as const;
 
@@ -402,9 +390,9 @@ function useHeroTheme(): 'light' | 'dark' {
   return mounted && resolvedTheme === 'dark' ? 'dark' : 'light';
 }
 
-/** Recorded in the real product: a project, its connectors, agents, skills and
+/** Recorded in the real product: a workspace, its connectors, agents, skills and
  *  schedules, then a session researching on a cloud computer and returning a
- *  finished deck. Every frame is the live app driven against a real project —
+ *  finished deck. Every frame is the live app driven against a real workspace —
  *  the deck in the last screens is one the agent actually produced. */
 function WebSurface() {
   const theme = useHeroTheme();
@@ -468,7 +456,7 @@ function WebSurface() {
       </video>
       <Image
         src={media.poster}
-        alt="Kortix in the browser, showing a project and its files"
+        alt="Kortix in the browser, showing a workspace and its files"
         fill
         sizes="(max-width: 1024px) 100vw, 1100px"
         className="hidden object-contain motion-reduce:block"
@@ -477,12 +465,7 @@ function WebSurface() {
   );
 }
 
-/** The install command is IN the recording — it is the first thing typed. You
- *  can't select text out of a video, so this is the copy affordance for it: one
- *  icon-only button in the corner. The recording has no title bar to park it
- *  in, so it carries its own bordered, blurred plate and sits over the oldest
- *  row — the one the frame crops first, and the one that is never the live
- *  prompt. */
+/** Keep the install command one click away from the terminal transcript. */
 function CopyInstallCommand() {
   return (
     <Hint label="Copy the install command" side="left">
@@ -493,73 +476,46 @@ function CopyInstallCommand() {
   );
 }
 
-/** A real terminal recording, replayed from the captured pty output of the
- *  shipped CLI: `curl … | bash` installs it, `kortix projects use` picks the
- *  project, `kortix connectors ls` / `show` lists the connectors and the exact
- *  actions an agent calls through the connector, `kortix sessions new` boots a
- *  cloud computer, `kortix sessions status` shows it working. Every character
- *  on screen is output the CLI produced against dev-api.kortix.com. The grid is
- *  112 columns by 18 rows so real output — the host line is 111 characters —
- *  reaches the right edge instead of hugging the left third. */
+const CLI_TRANSCRIPT: Line[] = [
+  cmdLine(KORTIX_CLI_INSTALL_COMMAND),
+  ok(t('Kortix CLI installed', 'fg')),
+  [],
+  cmdLine('kortix workspaces use acme-ops'),
+  ok(t('Default workspace: acme-ops', 'fg')),
+  [],
+  cmdLine('kortix workspaces ls'),
+  [t('  workspace acme-ops (default)', 'fg')],
+  [],
+  cmdLine('kortix connectors ls'),
+  meta('connected', 'github, slack', 'green'),
+  meta('available', 'notion, linear, google-drive'),
+  [],
+  cmdLine('kortix sessions new --agent researcher'),
+  ok(t('Cloud computer ready', 'fg')),
+  meta('session', 'ses_01K42QD7R4QW8GJH9ACV'),
+  meta('workspace', 'acme-ops'),
+];
+
+/** A code-native terminal keeps the canonical CLI contract current and makes
+ *  every command readable at each viewport size. */
 function CliSurface() {
-  const theme = useHeroTheme();
-  const media = CLI_MEDIA[theme];
   return (
-    <div className="bg-card relative h-full w-full overflow-hidden">
+    <div className="bg-zinc-950 relative h-full w-full overflow-hidden text-zinc-100">
       <CopyInstallCommand />
-      {/* left-bottom, and both halves of that matter.
-          bottom: the recording is 2.380:1, the frame is 2.382:1 on a tall
-          desktop but 2.74:1 at 1440x900 and 3.53:1 at 1280x800, so `cover`
-          crops height. The terminal writes upward from the last row, so
-          anchoring bottom throws away the OLDEST lines — exactly what shrinking
-          a real terminal does — and never the live prompt.
-          left: at phone width the frame is 1.02:1, far narrower than the
-          recording, so `cover` crops ~57% of the width. Anchoring left keeps
-          the prompt and the first characters of every line. */}
-      <video
-        // The key is the whole theme mechanism: changing it remounts the
-        // element, which is the only way a <video> re-runs source selection.
-        key={theme}
-        className="h-full w-full object-cover object-left-bottom motion-reduce:hidden"
-        poster={media.poster}
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        aria-label="A terminal running the Kortix CLI: curl installs it, kortix projects use picks a project, kortix connectors show lists the actions an agent can call, and kortix sessions new starts a session on a cloud computer"
+      <div className="border-white/10 flex h-10 items-center gap-1.5 border-b px-4">
+        <span className="size-2.5 rounded-full bg-red-400/80" />
+        <span className="size-2.5 rounded-full bg-amber-300/80" />
+        <span className="size-2.5 rounded-full bg-emerald-400/80" />
+        <span className="ml-2 font-mono text-[10px] text-zinc-500">kortix — acme-ops</span>
+      </div>
+      <div
+        aria-label="A terminal running canonical Kortix Workspace commands"
+        className="h-[calc(100%-2.5rem)] overflow-hidden p-4 font-mono text-[11px] leading-[1.55] sm:p-6 sm:text-[13px] lg:p-8 lg:text-sm"
       >
-        {/* Same per-device selection as the web panel: first supported source
-            whose media matches wins, so the narrowest condition leads. Only
-            device traits are expressed as media queries — those cannot change
-            without a reload. The theme is the `key` above.
-
-            Phones get the 1280. The frame is 344 CSS px there, so even a 3x
-            screen resolves 1032 device px.
-
-            Retina desktops get the 2880 master. The frame is 1234 CSS px, so a
-            2x display needs 2472 device px — the old 1920 capture was being
-            upscaled 1.29x, which is what made the glyphs soft. The terminal is
-            now recorded at deviceScaleFactor 2, so 2880 is native pixels, not
-            an upscale, and it costs 3.5MB against the webm's 1.5MB. The poster
-            JPG (131K) paints first and carries LCP, so the video never blocks
-            first paint. */}
-        <source media="(max-width: 480px)" src={media.phone} type="video/mp4" />
-        <source
-          media="(min-resolution: 2dppx) and (min-width: 1024px)"
-          src={media.retina}
-          type="video/mp4"
-        />
-        <source src={media.webm} type="video/webm" />
-        <source src={media.mp4} type="video/mp4" />
-      </video>
-      <Image
-        src={media.poster}
-        alt="A terminal showing the Kortix CLI with a session running on a cloud computer"
-        fill
-        sizes="(max-width: 1024px) 100vw, 1100px"
-        className="hidden object-cover object-left-bottom motion-reduce:block"
-      />
+        {CLI_TRANSCRIPT.map((line, index) => (
+          <LineView key={index} line={line} />
+        ))}
+      </div>
     </div>
   );
 }

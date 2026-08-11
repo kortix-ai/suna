@@ -10,14 +10,14 @@ import { marketplaceItemHref } from '@/lib/marketplace-slug';
  * target, and installed-state awareness. Rather than fork the components, they
  * read those differences from this context. A discriminated union on
  * `variant` lets consumers narrow to the fields that only make sense on one
- * surface (`projectId`/`installedNames` on project, `itemHref` on public)
+ * surface (`workspaceId`/`installedNames` on project, `itemHref` on public)
  * without non-null assertions.
  *
  * - **public** (`/marketplace`): route-based navigation (`itemHref` → real
  *   `<Link>`), no project bound, no installed state.
  * - **project** (Customize → Marketplace): in-panel overlay navigation
  *   (`openItem` drives the detail store, no `itemHref`); adding an item starts
- *   an agent-import session in `projectId`. `installedNames` is always empty
+ *   an agent-import session in `workspaceId`. `installedNames` is always empty
  *   now (see the field doc) — there's no deterministic lock to derive it from.
  */
 export type MarketplaceSurface =
@@ -29,10 +29,10 @@ export type MarketplaceSurface =
       openItem: (id: string) => void;
     }
   | {
-      variant: 'project';
+      variant: 'workspace';
       /** The fixed install/commit target. */
-      projectId: string;
-      /** Formerly populated from the project's registry-lock to drive
+      workspaceId: string;
+      /** Formerly populated from the workspace's registry-lock to drive
        *  "Installed" badges + Re-install / Remove affordances. Installing is
        *  agent-driven now (no deterministic lock to read), so this is always
        *  an empty `Set` — kept only so `MarketplaceSurface` consumers on the

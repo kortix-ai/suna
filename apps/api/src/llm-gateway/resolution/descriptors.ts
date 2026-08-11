@@ -14,21 +14,21 @@ export function bedrockBaseUrl(): string {
   return `https://bedrock-runtime.${config.AWS_BEDROCK_REGION || 'us-west-2'}.amazonaws.com`;
 }
 
-// Default region for a project's BYOK Bedrock connection when it hasn't set
+// Default region for a workspace's BYOK Bedrock connection when it hasn't set
 // its own AWS_REGION secret. Deliberately separate from AWS_BEDROCK_REGION's
 // 'us-west-2' default above — that constant belongs to the CLOUD-ONLY managed
-// path (Kortix's own AWS account/region choice); a BYOK project's default is
+// path (Kortix's own AWS account/region choice); a BYOK workspace's default is
 // its own, unrelated decision. us-east-1 is Bedrock's broadest-availability
 // region (new models/cross-region inference profiles land there first).
 const DEFAULT_BEDROCK_BYOK_REGION = 'us-east-1';
 
 /**
- * Bedrock runtime endpoint for a project's OWN region (BYOK), as opposed to
+ * Bedrock runtime endpoint for a workspace's OWN region (BYOK), as opposed to
  * `bedrockBaseUrl()` above which is the CLOUD-ONLY managed path's endpoint
  * (Kortix's own AWS_BEDROCK_REGION config). Takes the region as a parameter —
- * never reads config — because the BYOK region is per-PROJECT (the project's
+ * never reads config — because the BYOK region is per-WORKSPACE (the workspace's
  * own AWS_REGION secret, resolved by resolve-candidates.ts, which has the
- * project context this module doesn't), not a deployment-wide setting.
+ * workspace context this module does not have), not a deployment-wide setting.
  */
 export function bedrockByokBaseUrl(region: string | null | undefined): string {
   const trimmed = region?.trim();
@@ -194,7 +194,7 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
   // KORTIX_MANAGED_PROVIDER_ENABLED is on: it uses KORTIX'S OWN shared AWS
   // credentials and bills the user's Kortix credits. It is NOT "how Bedrock
   // works." Bedrock is ALSO a standalone BYOK provider (like OpenRouter) — a
-  // project connecting its OWN Bedrock API key gets a `kind:'bedrock'`
+  // workspace connecting its own Bedrock API key gets a `kind:'bedrock'`
   // descriptor via the normal BYOK path (resolveCatalogUpstream('amazon-bedrock')
   // → resolveCandidates), fully independent of this managed flag. This managed
   // descriptor and the BYOK one share the same bedrock transport; they differ

@@ -1,4 +1,4 @@
-import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
+import type { WorkspaceAdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 
 import { groupIntoSections, POPULAR_SECTION } from './connector-categories';
 import { sortByPicks } from './connector-picks';
@@ -93,10 +93,10 @@ export function foldKey(value: string): string {
 }
 
 /**
- * The tokens that mean "this project already has it", for the `+` -> `✓` swap
+ * The tokens that mean "this workspace already has it", for the `+` -> `✓` swap
  * on a catalogue card.
  *
- * **This join is best-effort, and deliberately so.** `AdminConnector` does not
+ * **This join is best-effort, and deliberately so.** `WorkspaceAdminConnector` does not
  * carry the catalogue app it was created from — `buildEasyConnectConnectorDraft`
  * writes `app: <catalogue slug>` into the draft
  * (`connector-connection-form.ts:156`) but the read model never returns it
@@ -113,10 +113,10 @@ export function foldKey(value: string): string {
  * away from the app they came from. That card shows `+` instead of `✓`. The
  * card is still safe to click — the add flow proposes a fresh, non-colliding
  * slug — so the failure mode is a redundant offer, never a broken one. The
- * exact fix is to expose `app` on `AdminConnector`; until then this is the
+ * exact fix is to expose `app` on `WorkspaceAdminConnector`; until then this is the
  * honest ceiling.
  */
-export function connectedCatalogKeys(connectors: readonly AdminConnector[]): ReadonlySet<string> {
+export function connectedCatalogKeys(connectors: readonly WorkspaceAdminConnector[]): ReadonlySet<string> {
   const keys = new Set<string>();
   for (const connector of connectors) {
     keys.add(`provider:${connector.provider}`);

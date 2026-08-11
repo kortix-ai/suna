@@ -12,10 +12,10 @@ import { eq } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { authorizeV2 } from '../iam/engine-v2';
-import { PROJECT_ACTIONS, upsertResourceGrant } from '../iam';
+import { WORKSPACE_ACTIONS, upsertResourceGrant } from '../iam';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const uid = () => crypto.randomUUID();
 
 const SCOPED_AGENT = 'outreach-bot';
@@ -23,9 +23,9 @@ const OPEN_AGENT = 'general-bot';
 
 // SESSION_START is in the 'user' baseline, so the base verdict passes for any
 // project member — isolating the per-RESOURCE fold as the thing under test.
-const onAgent = (agent: string) => ({ type: 'project' as const, id: PROJECT, resource: { type: 'agent' as const, id: agent } });
+const onAgent = (agent: string) => ({ type: 'project' as const, id: WORKSPACE, resource: { type: 'agent' as const, id: agent } });
 const canUse = async (userId: string, agent: string) =>
-  (await authorizeV2(userId, ACCOUNT, PROJECT_ACTIONS.PROJECT_SESSION_START, onAgent(agent))).allowed;
+  (await authorizeV2(userId, ACCOUNT, WORKSPACE_ACTIONS.WORKSPACE_SESSION_START, onAgent(agent))).allowed;
 
 async function seedMember(role: 'owner' | 'admin' | 'member') {
   const userId = uid();
@@ -35,7 +35,7 @@ async function seedMember(role: 'owner' | 'admin' | 'member') {
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'resource-scope-test' });
-  await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
+  await db.insert(projects).values({ workspaceId: WORKSPACE, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
 });
 afterAll(async () => {
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
@@ -45,9 +45,9 @@ afterAll(async () => {
 describe('per-resource scoping (iam_resource_grants)', () => {
   test('scoping one agent restricts ONLY that agent; unscoped agents stay open', async () => {
     const alice = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: alice, projectRole: 'editor' });
+    await db.insert(projectMembers).values({ accountId: ACCOUNT, workspaceId: WORKSPACE, userId: alice, projectRole: 'editor' });
     const bob = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: bob, projectRole: 'editor' });
+    await db.insert(projectMembers).values({ accountId: ACCOUNT, workspaceId: WORKSPACE, userId: bob, projectRole: 'editor' });
 
     // Before any grant: both agents are unscoped → both members can use both.
     expect(await canUse(alice, SCOPED_AGENT)).toBe(true);
@@ -55,7 +55,7 @@ describe('per-resource scoping (iam_resource_grants)', () => {
 
     // Scope SCOPED_AGENT to Alice only.
     await upsertResourceGrant({
-      accountId: ACCOUNT, projectId: PROJECT, resourceType: 'agent', resourceId: SCOPED_AGENT,
+      accountId: ACCOUNT, workspaceId: WORKSPACE, resourceType: 'agent', resourceId: SCOPED_AGENT,
       principalType: 'member', principalId: alice, grantedBy: alice,
     });
 
@@ -65,19 +65,19 @@ describe('per-resource scoping (iam_resource_grants)', () => {
     expect(await canUse(bob, SCOPED_AGENT)).toBe(false);
     expect(await canUse(alice, OPEN_AGENT)).toBe(true);
     expect(await canUse(bob, OPEN_AGENT)).toBe(true);
-    expect((await authorizeV2(bob, ACCOUNT, PROJECT_ACTIONS.PROJECT_SESSION_START, onAgent(SCOPED_AGENT))).reason).toBe(
+    expect((await authorizeV2(bob, ACCOUNT, WORKSPACE_ACTIONS.WORKSPACE_SESSION_START, onAgent(SCOPED_AGENT))).reason).toBe(
       'resource_scope_insufficient',
     );
   });
 
   test('granting the scoped agent to a member lets them in immediately', async () => {
     const carol = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: carol, projectRole: 'editor' });
+    await db.insert(projectMembers).values({ accountId: ACCOUNT, workspaceId: WORKSPACE, userId: carol, projectRole: 'editor' });
     // SCOPED_AGENT was scoped (to Alice) in the previous test → Carol is out.
     expect(await canUse(carol, SCOPED_AGENT)).toBe(false);
 
     await upsertResourceGrant({
-      accountId: ACCOUNT, projectId: PROJECT, resourceType: 'agent', resourceId: SCOPED_AGENT,
+      accountId: ACCOUNT, workspaceId: WORKSPACE, resourceType: 'agent', resourceId: SCOPED_AGENT,
       principalType: 'member', principalId: carol, grantedBy: carol,
     });
     expect(await canUse(carol, SCOPED_AGENT)).toBe(true); // upsert busted the resource memo

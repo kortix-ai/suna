@@ -1,0 +1,160 @@
+// Agent-scope CRUD — the dashboard surface for the inheritance PYRAMID's first
+// step: bind specific secrets + connectors to a specific agent. Writes the
+// `[[agents]].env` / `.connectors` allowlists straight into the manifest (same
+// git round-trip the connector/policy editors use), so a non-technical admin
+// never hand-edits config. The agent's declared scope is what members assigned
+// to it (Members → Resource access) inherit.
+//
+// NOTE: `applyAgentScope` (agents.ts) operates on the `[[agents]]` array shape
+// — a legacy v1 kortix.toml manifest. A v2 kortix.yaml's `agents:` map isn't
+// an array, so `manifest.raw.agents` here reads as `[]` and this route 404s
+// with "agent not found" for v2 projects (see below).
+//
+// Manager-gated: an agent's scope decides what flows to everyone who inherits
+// it, so it's a governance control, not an editor convenience.
+//
+// `kortix_cli` is intentionally NOT editable here — granting Kortix-CLI powers
+// is a sharper escalation; it stays a manifest change.
+
+import { createRoute, z } from '@hono/zod-openapi';
+import { auth, errors, json } from '../../openapi';
+import { applyAgentScope, extractAgents } from '../agents';
+import { applyAgentScopeV2, normalizeRequiredConnectorAliases } from '../lib/agent-config-v2';
+import { assertWorkspaceCapability, loadWorkspaceForUser } from '../lib/access';
+import { workspaceRoutesApp } from '../lib/app';
+import { WORKSPACE_ACTIONS } from '../../iam';
+import { commitManifest, loadManifestForEdit } from '../lib/triggers';
+
+// `'all'` = every item the launcher can see; a list = an explicit allowlist;
+// `[]` = none. Mirrors the AgentSpec GrantSet.
+const GrantSetSchema = z.union([z.literal('all'), z.array(z.string().min(1).max(200)).max(500)]);
+
+const AgentScopeBody = z.object({
+  env: GrantSetSchema.optional(),
+  connectors: GrantSetSchema.optional(),
+  connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
+  connectors_personal: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
+});
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{workspaceId}/agents/{agentName}/scope',
+    tags: ['workspaces'],
+    summary: 'PUT /:workspaceId/agents/:agentName/scope',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string(), agentName: z.string() }),
+      body: { content: { 'application/json': { schema: AgentScopeBody } } },
+    },
+    responses: {
+      200: json(z.any(), 'Updated agent scope'),
+      ...errors(400, 403, 404, 409, 502),
+    },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const agentName = c.req.param('agentName');
+    // Floor 'read' (membership); the real gate is project.agent.write below.
+    // Scoping an agent edits its `[[agents]]` manifest entry (binding its
+    // connectors AND secrets), so it's an agent-config edit — agent.write is the
+    // precise leaf (a single connector/secret leaf wouldn't cover both). Was
+    // 'manage' → project.write, so unchecking agent.write did nothing here.
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE,
+    );
+
+    const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
+    const { env, connectors, connectors_required, connectors_personal } = parsed.data;
+    const normalizedRequired = normalizeRequiredConnectorAliases({
+      connectors_required,
+      connectors_personal,
+    });
+    if (!normalizedRequired.ok) {
+      return c.json({ error: normalizedRequired.error, code: 'invalid_body' }, 400);
+    }
+    const connectorsRequired = normalizedRequired.block.connectors_required as string[] | undefined;
+    if (env === undefined && connectors === undefined && connectorsRequired === undefined) {
+      return c.json(
+        { error: 'Provide env, connectors and/or connectors_required', code: 'nothing_to_update' },
+        400,
+      );
+    }
+
+    let manifest;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (e) {
+      return c.json(
+        { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
+        400,
+      );
+    }
+
+    // The agent must already be declared — this route SCOPES an existing agent,
+    // it doesn't create the roster entry (that's the fuller /config editor). v1
+    // stores agents as a `[[agents]]` array; v2 (kortix.yaml) as an `agents:`
+    // map. The v1-only path treated a v2 map as an empty array, so EVERY scope
+    // edit on a YAML project 404'd "agent not found" — branch on the schema.
+    if (manifest.schemaVersion >= 2) {
+      const applied = applyAgentScopeV2(manifest, agentName, {
+        env,
+        connectors,
+        connectorsRequired,
+      });
+      if (!applied.ok) {
+        return applied.notFound
+          ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
+          : c.json({ error: applied.error, code: 'invalid_scope', issues: applied.issues }, 400);
+      }
+      manifest.raw = applied.raw;
+    } else {
+      const current = Array.isArray(manifest.raw.agents)
+        ? (manifest.raw.agents as Record<string, unknown>[])
+        : [];
+      if (connectorsRequired !== undefined) {
+        return c.json(
+          {
+            error: 'connectors_required requires a v2 (kortix.yaml) manifest',
+            code: 'unsupported_in_v1',
+          },
+          400,
+        );
+      }
+      const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
+      if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
+      manifest.raw.agents = applied.agents;
+    }
+
+    // Shape-validate through the real parser before committing — a malformed
+    // grant set is a clean 400, never a broken manifest.
+    const check = extractAgents(manifest);
+    const problem = check.errors.find((e) => e.name === agentName);
+    if (problem) return c.json({ error: problem.error, code: 'invalid_scope' }, 400);
+
+    const committed = await commitManifest(
+      loaded.row,
+      manifest,
+      `chore: scope agent ${agentName} (secrets/connectors)`,
+    );
+    if ('error' in committed) {
+      return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
+    }
+
+    const spec = check.specs.find((s) => s.name === agentName);
+    return c.json({
+      ok: true,
+      agent: agentName,
+      env: spec?.env ?? 'all',
+      connectors: spec?.connectors ?? [],
+      connectors_required: spec?.connectorsRequired ?? [],
+    });
+  },
+);

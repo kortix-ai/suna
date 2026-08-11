@@ -32,9 +32,9 @@ const FEATURE_COPY: Record<
   groups: {
     title: 'Groups are an Enterprise feature',
     blurb:
-      'Bundle members into groups and grant the whole group a role on a project — one grant instead of dozens, revoked just as easily.',
+      'Bundle members into groups and grant the whole group a role on a workspace — one grant instead of dozens, revoked just as easily.',
     points: [
-      'Attach a group to any project with a role',
+      'Attach a group to any workspace with a role',
       'Sync membership automatically from your identity provider',
       'Offboard someone everywhere by removing one membership',
     ],
@@ -46,7 +46,7 @@ const FEATURE_COPY: Record<
     points: [
       'Pick per-capability permissions (files, secrets, triggers, …)',
       'Duplicate a built-in preset and subtract what you don’t want',
-      'Assign roles to users or groups per project',
+      'Assign roles to users or groups per workspace',
     ],
   },
   audit: {
@@ -65,7 +65,7 @@ const FEATURE_COPY: Record<
       'Bring your identity provider — Okta, Microsoft Entra ID, or any SAML IdP — and let it drive who gets in and what they can touch.',
     points: [
       'Single sign-on with just-in-time member provisioning',
-      'IdP groups map to roles on your projects',
+      'IdP groups map to roles in your workspaces',
       'SCIM keeps users and groups in sync, including offboarding',
     ],
   },

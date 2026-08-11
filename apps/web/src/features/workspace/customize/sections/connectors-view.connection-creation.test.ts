@@ -19,7 +19,7 @@ describe('connection creation controls', () => {
   });
 
   test('collects an authorization strategy for custom connectors', () => {
-    expect(source).toContain("authorization_strategy: 'project'");
+    expect(source).toContain("authorization_strategy: 'workspace'");
     expect(source).toContain('idPrefix="custom-connector"');
   });
 
@@ -30,13 +30,13 @@ describe('connection creation controls', () => {
 
   test('uses only the authorization owner allowed by the selected strategy', () => {
     expect(source).toContain('connection.owner_type === connectionOwnerType');
-    expect(source).toContain("connectionOwnerType === 'project' && canManageConnections");
+    expect(source).toContain("connectionOwnerType === 'workspace' && canManageConnections");
     expect(source).toContain("connectionOwnerType === 'member' && (");
     expect(source).toContain("authorizationStrategy === 'user'");
     expect(source).toContain('reconcileMemberConnection(');
     expect(source).toContain('updateConnectionCredential(');
     expect(source).toContain(
-      "enabled: open && Boolean(connector) && authorizationStrategy === 'project'",
+      "enabled: open && Boolean(connector) && authorizationStrategy === 'workspace'",
     );
     expect(source).toContain('connector?.requestAuthType');
   });
@@ -44,7 +44,7 @@ describe('connection creation controls', () => {
   test('locks managed providers and invalidates authorization consumers', () => {
     expect(source).toContain('connectorAuthorizationStrategyIsEditable(');
     expect(source).toContain('connectorAuthorizationStrategyForProvider(');
-    expect(source).toContain('connectorConnectionQueryKeys(projectId)');
+    expect(source).toContain('connectorConnectionQueryKeys(workspaceId)');
     expect(source).toContain('for (const affectedQueryKey of connectionQueryKeys)');
   });
 
@@ -63,9 +63,9 @@ describe('connection creation controls', () => {
   });
 
   test('does not use shared OAuth credentials for user-owned custom connectors', () => {
-    expect(source).toContain("oauth2Selected && effectiveAuthorizationStrategy === 'project'");
+    expect(source).toContain("oauth2Selected && effectiveAuthorizationStrategy === 'workspace'");
     expect(source).toContain(
-      "effectiveAuthorizationStrategy === 'project' ? setOauth2Selected : undefined",
+      "effectiveAuthorizationStrategy === 'workspace' ? setOauth2Selected : undefined",
     );
     expect(source).toContain('Each user then stores their own private credential');
   });

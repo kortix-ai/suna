@@ -3,7 +3,7 @@
 // the same file in the same format. (Read RESOLUTION is exercised against a live
 // git mirror in ke2e; here we cover the pure parse/serialize dispatch.)
 import { describe, expect, test } from 'bun:test';
-import { parseManifestString, serializeManifest } from '../projects/triggers';
+import { parseManifestString, serializeManifest } from '../workspaces/triggers';
 
 const YAML = `kortix_version: 1
 project:

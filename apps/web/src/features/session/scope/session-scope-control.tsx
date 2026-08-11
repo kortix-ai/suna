@@ -132,7 +132,7 @@ export function setSessionConnectorEnabled(
 
 /**
  * The way OUT of an override. An override you cannot switch off is a trap: the
- * session keeps a frozen selection while the project's own defaults move on.
+ * session keeps a frozen selection while the workspace's own defaults move on.
  *
  * Rendered by the overrides panel BESIDE an axis editor, never inside it: an
  * empty catalog must not be able to hide the only way back to the default.
@@ -187,7 +187,7 @@ export function SessionSecretsEditor({
         checked={draft.secrets === null}
         disabled={disabled}
         className="min-h-10"
-        label="Use the project default"
+        label="Use the workspace default"
         onCheckedChange={(checked) => onChange(setAllSessionSecrets(draft, checked === true))}
       />
       {catalog.secrets.items.length > 0 ? (
@@ -229,7 +229,7 @@ export function SessionSecretsEditor({
 
 /**
  * The connector checklist, plus a connection picker per selected connector.
- * Untouched, it PREVIEWS what the project resolves today — see
+ * Untouched, it PREVIEWS what the workspace resolves today — see
  * `connector_bindings_inherited`. Touching any row turns the preview into an
  * explicit, fail-closed override.
  */
@@ -285,7 +285,7 @@ export function SessionConnectorsEditor({
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="text-foreground truncate">{connector.name}</span>
                     <Badge variant="outline" size="xs">
-                      {connector.authorization_strategy === 'user' ? 'Private' : 'Project'}
+                      {connector.authorization_strategy === 'user' ? 'Private' : 'Workspace'}
                     </Badge>
                     {!hasConnection ? (
                       <span className="text-muted-foreground truncate text-xs font-normal">

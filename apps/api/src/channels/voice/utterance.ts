@@ -30,8 +30,8 @@
  * with its OWN LLM on the far side. Slack, Teams and email are one model talking
  * to humans; here, whatever apps/api says is read by a second model that has its
  * own conversation history and its own beliefs — and that model can be, and has
- * been, WRONG about the project. On a real call a transcription artifact led it
- * to assert "this project is about developing a system involving dogs", and
+ * been, WRONG about the workspace. On a real call a transcription artifact led it
+ * to assert "this workspace is about developing a system involving dogs", and
  * because that claim sat in its history as fact, every correct answer sent from
  * here CONTRADICTED it. It could not simply relay an answer that disagreed with
  * itself, so it asked Kortix again to resolve the contradiction, indefinitely,
@@ -54,12 +54,12 @@
 /**
  * The clause that lets the voice model abandon a claim it already made.
  *
- * Shared verbatim by every utterance that asserts something about the project,
+ * Shared verbatim by every utterance that asserts something about the workspace,
  * because half of it working is worse than none: if a `result` supersedes but an
  * `error` does not, the model still has a standing contradiction to chase.
  */
 const SUPERSEDES =
-  'This is what your Kortix agent — the one that actually knows this project — says, so it ' +
+  'This is what your Kortix agent — the one that actually knows this workspace — says, so it ' +
   'is now the truth and it REPLACES anything you said or assumed earlier in this call. If it ' +
   'contradicts something the room already heard you say, correct that plainly in the same ' +
   'breath ("I had that wrong — it is actually…") and move on. Do not ask Kortix about it again.';

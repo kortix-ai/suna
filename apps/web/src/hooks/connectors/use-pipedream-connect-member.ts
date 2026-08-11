@@ -62,25 +62,25 @@ export function withPipedreamOverlayEscape(): () => void {
  * connect-to-start gate so both drive one implementation.
  */
 export function usePipedreamConnectMember(
-  projectId: string,
+  workspaceId: string,
   slug: string,
   onConnected: () => void,
 ) {
   return useMutation({
     mutationFn: async (input?: { label?: string }) => {
-      const connection = await reconcileMemberConnection(projectId, {
+      const connection = await reconcileMemberConnection(workspaceId, {
         connector_alias: slug,
         // The label distinguishes several personal connections on one connector
         // ("Work", "Personal") — reconciling the same label updates in place.
         label: input?.label?.trim() || 'Private connection',
       });
       const { token, app } = await pipedreamConnectConnection(
-        projectId,
+        workspaceId,
         connection.connection_id,
       );
       if (!token || !app) throw new Error('App connect is not configured');
       const pd = createFrontendClient({
-        externalUserId: `${projectId}:${slug}:${connection.connection_id}`,
+        externalUserId: `${workspaceId}:${slug}:${connection.connection_id}`,
         tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
       });
       const release = withPipedreamOverlayEscape();
@@ -100,7 +100,7 @@ export function usePipedreamConnectMember(
         release();
       }
       if (!connected) return { connected: false };
-      await pipedreamFinalizeConnection(projectId, connection.connection_id);
+      await pipedreamFinalizeConnection(workspaceId, connection.connection_id);
       return { connected: true };
     },
     onSuccess: (res) => {

@@ -181,12 +181,13 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './internal/opencode-pending-store', file: 'internal/opencode-pending-store.ts', tier: 'browser-only' },
   { name: './internal/idb-sync-cache', file: 'internal/idb-sync-cache.ts', tier: 'browser-only' },
 
-  // The 20 legacy subpaths, now @deprecated shims under src/deprecated/.
+  // The 21 legacy subpaths, now @deprecated shims under src/deprecated/.
   // Store shims stay browser-only; everything else is isomorphic-core.
   { name: './opencode-client', file: 'deprecated/opencode-client.ts', tier: 'isomorphic-core' },
   { name: './config', file: 'deprecated/config.ts', tier: 'isomorphic-core' },
   { name: './auth', file: 'deprecated/auth.ts', tier: 'isomorphic-core' },
   { name: './api-client', file: 'deprecated/api-client.ts', tier: 'isomorphic-core' },
+  { name: './workspaces-client', file: 'deprecated/workspaces-client.ts', tier: 'isomorphic-core' },
   { name: './projects-client', file: 'deprecated/projects-client.ts', tier: 'isomorphic-core' },
   { name: './feature-flags', file: 'deprecated/feature-flags.ts', tier: 'isomorphic-core' },
   { name: './fresh-sessions', file: 'deprecated/fresh-sessions.ts', tier: 'isomorphic-core' },

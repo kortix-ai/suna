@@ -48,7 +48,7 @@ export interface SessionsLevelFilters {
 }
 
 interface SessionsLevelListInput {
-  projectId: string;
+  workspaceId: string;
   limit: number;
   offset: number;
   from: string;
@@ -153,12 +153,12 @@ export function collectOwnerOptions(
  * a mocked hook (the hook is real react-query + the SDK's fetch).
  */
 export function buildSessionsLevelListInput(
-  projectId: string,
+  workspaceId: string,
   range: CostRange,
   filters: SessionsLevelFilters,
 ): SessionsLevelListInput {
   return {
-    projectId,
+    workspaceId,
     limit: SESSION_COST_PAGE_SIZE,
     offset: filters.offset,
     from: range.from,
@@ -186,11 +186,11 @@ export function buildSessionsLevelListInput(
  * the `Hint` in `SessionsLevel`) rather than filtering silently.
  */
 export function buildSessionsLevelOwnerCatalogInput(
-  projectId: string,
+  workspaceId: string,
   range: CostRange,
 ): SessionsLevelListInput {
   return {
-    projectId,
+    workspaceId,
     limit: SESSION_OWNER_CATALOG_LIMIT,
     offset: 0,
     from: range.from,
@@ -214,11 +214,11 @@ export function buildSessionsLevelOwnerCatalogInput(
  * rendering the hook-owning component.
  */
 export function buildSessionsLevelExportFilters(
-  projectId: string,
+  workspaceId: string,
   filters: SessionsLevelFilters,
 ): SessionCostExportFilters {
   return {
-    projectId,
+    workspaceId,
     ownerId: filters.ownerId ?? undefined,
     sort: filters.sort,
   };
@@ -273,7 +273,7 @@ export interface SessionsLevelTableProps {
  * lives in `SessionsLevel` below. Kept separate so the table markup (column
  * order, the totals footer, the click contract) is testable without a real
  * `useSessionCosts` fetch, mirroring the `SessionCostExplorerContent` /
- * `ProjectsLevelContent` split this replaces.
+ * `WorkspacesLevelContent` split this replaces.
  */
 export function SessionsLevelTable({
   data,
@@ -294,7 +294,7 @@ export function SessionsLevelTable({
   }
 
   // `!data` — not `isLoading && !data`. The empty state below is a factual
-  // claim about this project's sessions, so it may only render once a page
+  // claim about this workspace's sessions, so it may only render once a page
   // has actually come back. `isLoading` is `isPending && isFetching`, and a
   // query can be pending WITHOUT fetching: `enabled: false` while the
   // billing account id resolves, a fetch that was cancelled, and — the one
@@ -400,9 +400,9 @@ export function SessionsLevelTable({
         </TableBody>
         <TableFooter>
           <TableRow>
-            {/* "Page total", not "Total" — same rule as the projects level's
+            {/* "Page total", not "Total" — same rule as the workspaces level's
                 footer. This row sums `sessions`, which is one page of
-                `total`; the Total tile above the table is this project's
+                `total`; the Total tile above the table is this workspace's
                 whole window, from `/usage/cost-summary`. Measured on the seed
                 account's largest project over 2026-07-01..2026-08-03: 55
                 sessions totalling $24.2324, of which the top 25 are $24.1103
@@ -460,7 +460,7 @@ export function SessionsLevelTable({
 }
 
 export interface SessionsLevelProps {
-  projectId: string;
+  workspaceId: string;
   range: CostRange;
   onRangeChange: (next: CostRange) => void;
   onSelectSession: (sessionId: string) => void;
@@ -470,10 +470,10 @@ export interface SessionsLevelProps {
  * The Sessions level (L2) of the Project -> Sessions -> Session drill-down.
  * Scoped to one project; owns its own owner/sort/page filters locally, while
  * `range` stays a controlled prop shared with the sibling levels (mirrors
- * `ProjectsLevel`'s split of state).
+ * `WorkspacesLevel`'s split of state).
  */
 export function SessionsLevel({
-  projectId,
+  workspaceId,
   range,
   onRangeChange,
   onSelectSession,
@@ -484,14 +484,14 @@ export function SessionsLevel({
   // shorter) result set. The other three dimensions reset their own offset on
   // their own paths — owner inline in the Select's handler, sort in
   // `applySessionSort`, range in `handleRangeChange` below — so this covers
-  // only the project switch, which none of them sees.
+  // only the workspace switch, which none of them sees.
   useEffect(() => {
     setFilters((current) => (current.offset === 0 ? current : { ...current, offset: 0 }));
-  }, [projectId]);
+  }, [workspaceId]);
 
-  const summaryQuery = useCostSummary({ projectId, from: range.from, to: range.to });
-  const ownerCatalogQuery = useSessionCosts(buildSessionsLevelOwnerCatalogInput(projectId, range));
-  const sessionsQuery = useSessionCosts(buildSessionsLevelListInput(projectId, range, filters));
+  const summaryQuery = useCostSummary({ workspaceId, from: range.from, to: range.to });
+  const ownerCatalogQuery = useSessionCosts(buildSessionsLevelOwnerCatalogInput(workspaceId, range));
+  const sessionsQuery = useSessionCosts(buildSessionsLevelListInput(workspaceId, range, filters));
 
   const ownerOptions = collectOwnerOptions(ownerCatalogQuery.data?.sessions ?? []);
 
@@ -541,7 +541,7 @@ export function SessionsLevel({
       <CostExportButton
         kind="sessions"
         range={range}
-        filters={buildSessionsLevelExportFilters(projectId, filters)}
+        filters={buildSessionsLevelExportFilters(workspaceId, filters)}
       />
     </>
   );

@@ -30,8 +30,8 @@ import { createInternalGatewayRoutes } from './internal-routes';
 const GATEWAY_INFERENCE_TAG = 'gateway-inference';
 
 const AUTH_DESCRIPTION =
-  'Bearer token: a project gateway key (`kortix_gw_…`, created via ' +
-  'POST /v1/projects/{projectId}/gateway/keys) or a Kortix account token ' +
+  'Bearer token: a workspace gateway key (`kortix_gw_…`, created via ' +
+  'POST /v1/workspaces/{workspaceId}/gateway/keys) or a Kortix account token ' +
   '(PAT `kortix_pat_…`, API key, or sandbox key). Unlike most of the API, the ' +
   'raw Supabase user JWT is NOT accepted here — mint a gateway key or PAT first.';
 
@@ -342,7 +342,7 @@ function modelsRoute(path: string) {
     path,
     tags: [GATEWAY_INFERENCE_TAG],
     summary: `GET ${fullPath}`,
-    description: `Servable model catalog for the caller\'s account/project — a keyed object (NOT the OpenAI \`{object:"list",data:[...]}\` array shape) mapping model id → capabilities.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
+    description: `Servable model catalog for the caller\'s account/workspace — a keyed object (NOT the OpenAI \`{object:"list",data:[...]}\` array shape) mapping model id → capabilities.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
     ...auth,
     responses: { 200: json(ModelsResponseSchema, 'Servable model catalog'), ...errors(401, 502) },
   });
@@ -370,7 +370,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // OpenAPIHono (not a plain Hono) so the inference surface below registers
     // in the shared OpenAPI registry — `.route()` merges a child OpenAPIHono's
     // registry into the parent, path-prefixed, the same way `projectsApp` does
-    // for the gateway MANAGEMENT ops in projects/routes/gateway.ts.
+    // for the gateway management operations in workspaces/routes/gateway.ts.
     const llm = makeOpenApiApp();
     llm.get('/health', (c) =>
       c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),

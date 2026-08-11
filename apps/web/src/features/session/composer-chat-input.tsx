@@ -18,7 +18,7 @@ import {
   useRuntimeCommands,
   useRuntimeProviders,
 } from '@kortix/sdk/react';
-import { useProjectConfig } from '@kortix/sdk/react';
+import { useWorkspaceConfig } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
 
 export interface ComposerOptions {
@@ -41,7 +41,7 @@ export function ComposerChatInput({
   onSend,
   onCommand,
   sessionId,
-  projectId,
+  workspaceId,
   isBusy,
   stopDisabled,
   isSending,
@@ -70,14 +70,14 @@ export function ComposerChatInput({
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
   sessionId?: string;
-  projectId?: string;
+  workspaceId?: string;
   isBusy?: boolean;
   /** Show a disabled stop button while busy (e.g. the computer is still booting). */
   stopDisabled?: boolean;
   /** Send in flight, not yet settled — spinner in the send slot (see SessionChatInput.isSending). */
   isSending?: boolean;
   disabled?: boolean;
-  /** Clear the composer optimistically on send. Set false on the project-home
+  /** Clear the composer optimistically on send. Set false on the workspace-home
    *  composer, whose send navigates it away (see SessionChatInput.clearOnSend). */
   clearOnSend?: boolean;
   autoFocus?: boolean;
@@ -90,7 +90,7 @@ export function ComposerChatInput({
   } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
-  /** Extra classes for the input card (e.g. the project-home radius override). */
+  /** Extra classes for the input card (e.g. the workspace-home radius override). */
   cardClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
@@ -109,18 +109,18 @@ export function ComposerChatInput({
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
 }) {
-  const { data: agents } = useRuntimeAgents({ projectId });
+  const { data: agents } = useRuntimeAgents({ workspaceId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
   const { data: commands } = useRuntimeCommands();
   const { data: config } = useRuntimeConfig();
-  const projectConfig = useProjectConfig(projectId);
+  const workspaceConfig = useWorkspaceConfig(workspaceId);
   const local = useSessionModelSelection({
     agents,
     providers,
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: workspaceConfig?.open_code_default_agent,
   });
   // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
   // the new-session picker is switchable; the chosen agent rides through on create.
@@ -149,16 +149,16 @@ export function ComposerChatInput({
   // agent/model/effort controls this toolbar already renders.
   const sessionScopeToolbar = useMemo(
     () =>
-      projectId ? (
+      workspaceId ? (
         <SessionOverridesComposer
-          projectId={projectId}
+          workspaceId={workspaceId}
           sessionId={sessionId}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
           agents={local.agent.list}
           selectedAgent={selectedAgentName}
           onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
           agentLocked={!!lockedAgentName}
-          defaultAgentName={projectConfig?.open_code_default_agent}
+          defaultAgentName={workspaceConfig?.open_code_default_agent}
           models={local.model.list}
           modelsLoading={providersLoading}
           selectedModel={local.model.currentKey ?? null}
@@ -172,8 +172,8 @@ export function ComposerChatInput({
       local.agent,
       local.model,
       lockedAgentName,
-      projectConfig?.open_code_default_agent,
-      projectId,
+      workspaceConfig?.open_code_default_agent,
+      workspaceId,
       providers,
       providersLoading,
       selectedAgentName,
@@ -232,7 +232,7 @@ export function ComposerChatInput({
       toolbarSlot={combinedToolbarSlot}
       cardClassName={cardClassName}
       sessionId={sessionId}
-      projectId={projectId}
+      workspaceId={workspaceId}
       providers={providers}
       agents={local.agent.list}
       selectedAgent={selectedAgentName}

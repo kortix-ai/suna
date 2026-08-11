@@ -6,7 +6,7 @@ import { SessionTerminalConnectBar } from './session-terminal-connect-bar';
 describe('SessionTerminalConnectBar', () => {
   test('collapsed bar surfaces the install command — the one command that always works', () => {
     const html = renderToStaticMarkup(
-      <SessionTerminalConnectBar projectSessionId="ps-123" />,
+      <SessionTerminalConnectBar workspaceSessionId="ps-123" />,
     );
     expect(html).toContain(KORTIX_CLI_INSTALL_COMMAND);
     // The session-specific connect command lives in the expanded steps, not

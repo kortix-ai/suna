@@ -3,6 +3,7 @@ import {
   appAccessCookie,
   appAccessCookieName,
   appAccessDecision,
+  appAccessModeFromStorage,
   createAppAccessToken,
   verifyAppAccessToken,
 } from './access';
@@ -13,13 +14,18 @@ const MEMBER_ID = '33333333-3333-4333-8333-333333333333';
 const SECRET = 'test-app-access-secret-at-least-32-characters';
 
 describe('Kortix App access', () => {
+  test('maps only the physical Project value into the canonical Workspace contract', () => {
+    expect(appAccessModeFromStorage('project')).toBe('workspace');
+    expect(appAccessModeFromStorage('private')).toBe('private');
+  });
+
   test('defaults to owner-only Kortix access and supports every explicit mode', () => {
     const owner = { userId: OWNER_ID, groupIds: [] };
     const member = { userId: MEMBER_ID, groupIds: ['44444444-4444-4444-8444-444444444444'] };
 
     expect(appAccessDecision({ mode: 'private', ownerId: OWNER_ID, grants: [], subject: owner })).toBe(true);
     expect(appAccessDecision({ mode: 'private', ownerId: OWNER_ID, grants: [], subject: member })).toBe(false);
-    expect(appAccessDecision({ mode: 'project', ownerId: OWNER_ID, grants: [], subject: member })).toBe(true);
+    expect(appAccessDecision({ mode: 'workspace', ownerId: OWNER_ID, grants: [], subject: member })).toBe(true);
     expect(appAccessDecision({
       mode: 'restricted', ownerId: OWNER_ID,
       grants: [{ principalType: 'member', principalId: MEMBER_ID }], subject: member,

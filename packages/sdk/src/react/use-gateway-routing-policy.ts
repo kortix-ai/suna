@@ -6,41 +6,41 @@ import {
   previewGatewayRoute,
   resetGatewayRoutingPolicy,
   setGatewayRoutingPolicy,
-  type GatewayProjectRoutingPolicy,
+  type GatewayWorkspaceRoutingPolicy,
   type GatewayRoutePreviewInput,
-} from "../core/rest/projects-client";
+} from "../core/rest/workspaces-client";
 
-export const gatewayRoutingPolicyKey = (projectId: string | null | undefined) =>
-  ["gateway-routing-policy", projectId] as const;
+export const gatewayRoutingPolicyKey = (workspaceId: string | null | undefined) =>
+  ["gateway-routing-policy", workspaceId] as const;
 
-export function useGatewayRoutingPolicy(projectId: string | null | undefined) {
+export function useGatewayRoutingPolicy(workspaceId: string | null | undefined) {
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: gatewayRoutingPolicyKey(projectId),
-    queryFn: () => getGatewayRoutingPolicy(projectId as string),
-    enabled: !!projectId,
+    queryKey: gatewayRoutingPolicyKey(workspaceId),
+    queryFn: () => getGatewayRoutingPolicy(workspaceId as string),
+    enabled: !!workspaceId,
     retry: false,
   });
   const invalidate = () =>
     queryClient.invalidateQueries({
-      queryKey: gatewayRoutingPolicyKey(projectId),
+      queryKey: gatewayRoutingPolicyKey(workspaceId),
     });
 
   return Object.assign(query, {
     set: useMutation({
-      mutationKey: gatewayRoutingPolicyKey(projectId),
-      mutationFn: (policy: GatewayProjectRoutingPolicy) =>
-        setGatewayRoutingPolicy(projectId as string, policy),
+      mutationKey: gatewayRoutingPolicyKey(workspaceId),
+      mutationFn: (policy: GatewayWorkspaceRoutingPolicy) =>
+        setGatewayRoutingPolicy(workspaceId as string, policy),
       onSuccess: invalidate,
     }),
     reset: useMutation({
-      mutationKey: gatewayRoutingPolicyKey(projectId),
-      mutationFn: () => resetGatewayRoutingPolicy(projectId as string),
+      mutationKey: gatewayRoutingPolicyKey(workspaceId),
+      mutationFn: () => resetGatewayRoutingPolicy(workspaceId as string),
       onSuccess: invalidate,
     }),
     preview: useMutation({
       mutationFn: (input: GatewayRoutePreviewInput) =>
-        previewGatewayRoute(projectId as string, input),
+        previewGatewayRoute(workspaceId as string, input),
     }),
   });
 }

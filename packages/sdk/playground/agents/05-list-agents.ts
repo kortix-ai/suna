@@ -5,16 +5,16 @@
  * The platform surfaces them read-only through `projects.detail().config`,
  * and `getAgentConfig()` returns one agent's resolved opencode config.
  *
- * Run (from packages/sdk):  bun run playground/agents/05-list-agents.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/agents/05-list-agents.ts [workspaceId]
  */
 import { getAgentConfig } from "../../src/index";
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("list-agents", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
 
-  const detail = await kortix.projects.detail(projectId);
+  const detail = await kortix.projects.detail(workspaceId);
   const config = detail.config;
 
   console.log(`✓ agent discovery: ${config.agent_discovery}`);
@@ -30,7 +30,7 @@ run("list-agents", async () => {
 
   const first = config.open_code_default_agent ?? config.agents[0]?.name;
   if (first) {
-    const agentConfig = await getAgentConfig(projectId, first);
+    const agentConfig = await getAgentConfig(workspaceId, first);
     console.log(`✓ getAgentConfig('${first}'):`);
     console.log(`  ${JSON.stringify(agentConfig).slice(0, 400)}…`);
   }

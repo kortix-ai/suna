@@ -9,7 +9,7 @@ import { db } from '../../shared/db';
 export interface AuditLogEntry {
   tunnelId: string;
   accountId: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
   actorType?: AuditActorType | null;
@@ -36,7 +36,7 @@ export interface AuditLogCompletion {
 
 export async function startAuditLog(entry: AuditLogStart): Promise<string> {
   const request = getRequestContext();
-  const projectId = entry.projectId ?? request?.projectId ?? null;
+  const workspaceId = entry.workspaceId ?? request?.workspaceId ?? null;
   const sessionId = entry.sessionId ?? request?.sessionId ?? null;
   const actorUserId = entry.actorUserId ?? request?.userId ?? null;
   const [row] = await db
@@ -44,7 +44,7 @@ export async function startAuditLog(entry: AuditLogStart): Promise<string> {
     .values({
       tunnelId: entry.tunnelId,
       accountId: entry.accountId,
-      projectId,
+      workspaceId,
       sessionId,
       actorUserId,
       actorType: entry.actorType ?? (sessionId ? 'agent' : actorUserId ? 'human' : 'system'),

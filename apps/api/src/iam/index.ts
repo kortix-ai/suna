@@ -7,7 +7,7 @@ export {
   authorize,
   assertAuthorized,
   listAccessibleResources,
-  filterAccessibleProjectResources,
+  filterAccessibleWorkspaceResources,
 } from './dispatcher';
 export {
   RESOURCE_GRANT_TYPES,
@@ -19,13 +19,13 @@ export {
   deleteResourceGrant,
   hasAnyResourceGrants,
   unscopedResourceIds,
-  isProjectResourceExplicitlyGranted,
+  isWorkspaceResourceExplicitlyGranted,
   type ResourceType as ResourceGrantType,
   type PrincipalType as ResourceGrantPrincipalType,
 } from './resource-grants';
 export {
   ACCOUNT_ACTIONS,
-  PROJECT_ACTIONS,
+  WORKSPACE_ACTIONS,
   ACTION_CATALOG,
   VALID_ACTIONS,
   resourceTypeForAction,

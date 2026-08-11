@@ -103,7 +103,7 @@ async function fetchPrefixesFromSdkUncached(
 }
 
 /**
- * Last-resort fallback: discover the project root by probing the file API
+ * Last-resort fallback: discover the workspace root by probing the file API
  * with progressively shorter suffixes of the absolute path.
  * Starts from just the filename and adds parent segments until a read succeeds.
  * Caches the discovered prefix for future use.
@@ -143,7 +143,7 @@ async function discoverPrefixViaFileApi(absPath: string): Promise<string | null>
 }
 
 /**
- * Absolute sandbox path → the project-relative path the file APIs and the
+ * Absolute sandbox path → the workspace-relative path the file APIs and the
  * session panel actually accept. Returns the input unchanged when it is
  * already relative, or when no prefix could be discovered.
  *

@@ -30,7 +30,7 @@ describe('LLM_PROVIDERS — amazon-bedrock connect requirements', () => {
 });
 
 describe('useConnectedProviders predicate — Bedrock (the essentia case)', () => {
-  test('a project with ONLY AWS_BEARER_TOKEN_BEDROCK + AWS_REGION secrets shows amazon-bedrock as connected', () => {
+  test('a workspace with ONLY AWS_BEARER_TOKEN_BEDROCK + AWS_REGION secrets shows amazon-bedrock as connected', () => {
     const connected = connectedProviderIds(new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']));
     expect(connected.has('amazon-bedrock')).toBe(true);
   });

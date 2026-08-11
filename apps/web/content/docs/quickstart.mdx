@@ -31,15 +31,15 @@ kortix login
 ```
 
 This opens your browser for sign-in. After you sign in, `kortix login` picks
-your account and a default [project](/docs/project) for you.
+your account and a default [workspace](/docs/workspace) for you.
 </Step>
 
 <Step>
-### Create or clone a project
+### Create or clone a workspace
 
-A new account has no projects yet, so `kortix login` has none to pick. Run
-`kortix init` with a name to create your first project. This scaffolds a
-project directory on your machine.
+A new account has no workspaces yet, so `kortix login` has none to pick. Run
+`kortix init` with a name to create your first workspace. This scaffolds a
+workspace directory on your machine.
 
 ```sh
 kortix init my-app
@@ -47,16 +47,16 @@ cd my-app
 kortix ship
 ```
 
-`kortix ship` creates the project in Kortix Cloud on its first run, then
+`kortix ship` creates the workspace in Kortix Cloud on its first run, then
 pushes your code. Run `kortix ship` again any time to sync local changes.
 
-To work on a project that already exists in Kortix Cloud, clone it instead:
+To work on a workspace that already exists in Kortix Cloud, clone it instead:
 
 ```sh
-kortix projects clone <project-id>
+kortix workspaces clone <workspace-id>
 ```
 
-Find `<project-id>` with `kortix projects ls`.
+Find `<workspace-id>` with `kortix workspaces ls`.
 </Step>
 
 <Step>
@@ -67,7 +67,7 @@ kortix sessions new --prompt "Build the login page"
 ```
 
 This starts a [session](/docs/work/sessions). The agent works in its own
-sandbox, on its own branch, so your project is not touched yet.
+sandbox, on its own branch, so your workspace is not touched yet.
 
 Attach to the session to watch progress and reply:
 
@@ -86,7 +86,7 @@ the exact diff.
 kortix cr ls
 ```
 
-This lists the open CRs in your project. Review the one the agent opened, then
+This lists the open CRs in your workspace. Review the one the agent opened, then
 merge it to land the work on your default branch:
 
 ```sh
@@ -94,7 +94,7 @@ kortix cr merge 1
 ```
 
 Replace `1` with the CR number from `kortix cr ls`. Nothing reaches your
-project's default branch until you merge.
+workspace's default branch until you merge.
 </Step>
 
 </Steps>
@@ -103,7 +103,7 @@ project's default branch until you merge.
 
 <Cards>
   <Card title="How the pieces fit" href="/docs/work">
-    Projects, sessions, and change requests, explained.
+    Workspaces, sessions, and change requests, explained.
   </Card>
   <Card title="CLI command reference" href="/docs/cli">
     Every command, flag, and subcommand.

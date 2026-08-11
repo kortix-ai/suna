@@ -1,5 +1,5 @@
 /**
- * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
+ * Kortix Apps — workspace-owned serverless App CRUD, artifact registration, and
  * deployment lifecycle boundaries. Maps to spec section 28 (APP-1..2).
  */
 import { flow } from "../core/flow";
@@ -165,6 +165,8 @@ flow(
       "GET /v1/projects/:projectId/apps/:appId/access",
       "PATCH /v1/projects/:projectId/apps/:appId/access",
       "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "GET /v1/workspaces/:workspaceId/apps/:appId",
+      "PATCH /v1/workspaces/:workspaceId/apps/:appId/access",
     ],
   },
   async (ctx) => {
@@ -221,6 +223,22 @@ flow(
         { params: appParams },
       );
       response.status(200).body().has("$.mode", "project");
+    });
+
+    await ctx.step("canonical workspace access uses Workspace fields and values", async () => {
+      const params = { workspaceId: project.id, appId };
+      const updated = await owner.patch(
+        "/v1/workspaces/:workspaceId/apps/:appId/access",
+        { mode: "workspace" },
+        { params },
+      );
+      updated.status(200).body().has("$.mode", "workspace");
+
+      const app = await owner.get(
+        "/v1/workspaces/:workspaceId/apps/:appId",
+        { params },
+      );
+      app.status(200).body().has("$.workspace_id", project.id);
     });
 
     await ctx.step("member access-session returns a signed URL", async () => {

@@ -167,7 +167,9 @@ describe('the catalogue reaches the whole catalogue', () => {
 
     // The category is part of the query KEY. Without it, changing category
     // would re-slice an accumulated list instead of starting a new one.
-    expect(catalog).toContain("queryKey: ['easy-connect-apps', projectId, activeQuery, category]");
+    expect(catalog).toContain(
+      "queryKey: ['easy-connect-apps', workspaceId, activeQuery, category]",
+    );
 
     // No client-side bucketing of loaded entries to fake a category.
     expect(catalog).not.toContain('countInSection');
@@ -348,7 +350,7 @@ describe('the connectors page has three tabs', () => {
   });
 
   test('no tab filters connected apps out of the catalogue', () => {
-    // Available was the catalogue minus what the project has. Every card it
+    // Available was the catalogue minus what the workspace has. Every card it
     // removed already carried a `✓` on the other two tabs, so it only ever
     // made an app the user could see was connected disappear.
     expect(page).not.toContain('isCatalogEntryConnected');

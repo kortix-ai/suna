@@ -8,7 +8,7 @@ export interface AuditReconciliationResult {
 }
 
 /**
- * Project durable source ledgers that predate the canonical triggers.
+ * Workspace durable source ledgers that predate the canonical triggers.
  *
  * The query selects only missing `(source_ledger, source_record_id, phase)`
  * tuples. Repeated calls are idempotent and resumable. A bounded page prevents

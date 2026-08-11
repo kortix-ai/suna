@@ -1,20 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 /**
- * Guards the vocabulary split this feature depends on: UI copy says
- * "Workspace", code identifiers keep `project` (SDK exports, query keys,
- * routes, DB columns are a contract this repo does not get to rename), and
- * the owning org is "Account" — never "Organization"/"Team".
+ * Guards the Workspace domain model. Canonical UI copy and application
+ * identifiers use Workspace. Project remains only at explicit compatibility,
+ * OpenCode, marketplace-schema, IAM-wire, and persistence-migration boundaries.
  *
- * Scope is deliberately the four surfaces this project authored. The rest of
- * the app still says "Project" in ~20 places, several of them a genuinely
- * different concept (a project/account SCOPE TIER, e.g.
- * `roles-tab.tsx`'s `<SelectItem value="project">Project</SelectItem>` paired
- * with `value="account">Account`) — see task-24-report.md for the enumerated
- * list and judgment on each. Widening this guard to the whole app would make
- * those scope-tier selectors fail a check they were never wrong under.
+ * Visible-copy assertions cover the user-facing creation and switcher surfaces.
+ * A separate AST assertion below protects canonical Workspace directories.
  *
  * Two describe blocks, deliberately paired: the first asserts ABSENCE (no
  * "Project" leaks back in); the second asserts PRESENCE (the "Workspace"
@@ -24,7 +19,7 @@ import { join } from 'node:path';
  * would leave every absence check green.
  */
 const SURFACES = [
-  'project-sidebar/workspace-menu-section.tsx',
+  'workspace-sidebar/workspace-menu-section.tsx',
   'new/new-workspace-page.tsx',
   'new/advanced-fields.tsx',
   'new/account-picker.tsx',
@@ -46,8 +41,8 @@ function stripComments(source: string): string {
  * substring of a longer identifier. `\b` only fires at a transition between a
  * word character and a non-word character, and PascalCase/camelCase
  * identifiers have no such transition at the point "Project" is glued to
- * neighbouring text: `KortixProject`, `projectId`, `listProjectsForAccount`,
- * `useProjectSwitchStore`, `getProjectDetail`, `ProjectIconField` all keep
+ * neighbouring text: `KortixWorkspace`, `workspaceId`, `listWorkspacesForAccount`,
+ * `useWorkspaceSwitchStore`, `getWorkspaceDetail`, `WorkspaceIconField` all keep
  * "Project" flanked by word characters on at least one side, so none of them
  * match. What DOES match is "Project" standing alone — inside a JSX text
  * node, a string literal, or an attribute value like `aria-label="Project
@@ -55,7 +50,7 @@ function stripComments(source: string): string {
  * check exists to catch, and a plain `/>\s*Project/` scan for JSX children
  * would miss the aria-label case entirely.
  */
-const STANDALONE_PROJECT = /\bProjects?\b/;
+const LEGACY_ENTITY_NOUN = /\bProjects?\b/;
 
 describe('workspace vocabulary', () => {
   for (const relative of SURFACES) {
@@ -63,12 +58,12 @@ describe('workspace vocabulary', () => {
     const code = stripComments(source);
 
     test(`${relative} never renders the standalone word "Project(s)"`, () => {
-      expect(code).not.toMatch(STANDALONE_PROJECT);
+      expect(code).not.toMatch(LEGACY_ENTITY_NOUN);
     });
 
     test(`${relative} says Workspace, not Project, in the two retired phrasings`, () => {
       expect(code).not.toContain('New project');
-      expect(code).not.toContain('All projects');
+      expect(code).not.toContain('All workspaces');
     });
 
     test(`${relative} calls the owning org "Account", never Organization or Team`, () => {
@@ -76,6 +71,64 @@ describe('workspace vocabulary', () => {
       expect(code).not.toContain('Organisation');
     });
   }
+});
+
+const CANONICAL_WORKSPACE_ROOTS = [
+  join(import.meta.dir),
+  join(import.meta.dir, '../../components/workspaces'),
+  join(import.meta.dir, '../../hooks/workspaces'),
+  join(import.meta.dir, '../../app/(app)/workspaces'),
+  join(import.meta.dir, '../workspace-files'),
+];
+
+const APPROVED_PROJECT_IDENTIFIERS = new Set([
+  // OpenCode runtime contract. These names describe OpenCode's own Project object.
+  'RuntimeProjectInfo',
+  'getCurrentProject',
+  'useCurrentProject',
+  // The separate, future Project work-unit feature flag.
+  'enableProjects',
+  // Marketplace wire schema. The registry entity remains registry:project.
+  'partOfProject',
+  // One-time readers for persisted state written before the migration.
+  'selectedByProject',
+]);
+
+function sourceFiles(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    return /\.(?:ts|tsx)$/.test(entry.name) ? [path] : [];
+  });
+}
+
+describe('canonical Workspace architecture', () => {
+  test('canonical Workspace directories contain no unapproved Project identifiers', () => {
+    const violations: string[] = [];
+
+    for (const path of CANONICAL_WORKSPACE_ROOTS.flatMap(sourceFiles)) {
+      if (path === import.meta.path) continue;
+      const source = ts.createSourceFile(
+        path,
+        readFileSync(path, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+      );
+      const visit = (node: ts.Node): void => {
+        if (ts.isIdentifier(node) && /project/i.test(node.text)) {
+          if (!APPROVED_PROJECT_IDENTIFIERS.has(node.text)) {
+            const position = source.getLineAndCharacterOfPosition(node.getStart(source));
+            violations.push(`${path}:${position.line + 1}:${node.text}`);
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
+
+    expect(violations).toEqual([]);
+  });
 });
 
 /**
@@ -90,7 +143,7 @@ describe('workspace vocabulary', () => {
 describe('workspace vocabulary: each surface actually renders its Workspace copy', () => {
   test('workspace-menu-section.tsx renders the search placeholder and the empty state', () => {
     const code = stripComments(
-      readFileSync(join(import.meta.dir, 'project-sidebar/workspace-menu-section.tsx'), 'utf8'),
+      readFileSync(join(import.meta.dir, 'workspace-sidebar/workspace-menu-section.tsx'), 'utf8'),
     );
     expect(code).toContain('Find workspace…');
     expect(code).toContain('No workspaces yet');
@@ -102,7 +155,7 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
   // file passes for the wrong reason the moment someone moves the row again.
   test('workspace-switcher.tsx renders the create item and the switch row', () => {
     const code = stripComments(
-      readFileSync(join(import.meta.dir, 'project-sidebar/workspace-switcher.tsx'), 'utf8'),
+      readFileSync(join(import.meta.dir, 'workspace-sidebar/workspace-switcher.tsx'), 'utf8'),
     );
     expect(code).toContain('Create a workspace…');
     expect(code).toContain('Switch Workspace');

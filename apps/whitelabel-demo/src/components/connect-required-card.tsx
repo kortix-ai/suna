@@ -11,7 +11,7 @@
  * fix it.
  *
  * The card is deliberately honest about WHICH case it is in. Only a
- * `project`-strategy connector can be unblocked from here (a Quick Connect link
+ * `workspace`-strategy connector can be unblocked from here (a Quick Connect link
  * this app can mint through its own allow-listed proxy); a `user`-strategy one
  * cannot be, by construction, so it gets a list of what would actually unblock
  * it and no button. A button that leads to a 409 is worse than a sentence that
@@ -33,12 +33,12 @@ import { useMutation } from '@tanstack/react-query';
 import { ExternalLink, Link2, Plug } from 'lucide-react';
 
 export function ConnectRequiredCard({
-  projectId,
+  workspaceId,
   requirement,
   onRetry,
   onDismiss,
 }: {
-  projectId: string;
+  workspaceId: string;
   requirement: ConnectorRequirement;
   /** Offered only after the user has been told what to do; never auto-fires. */
   onRetry?: () => void;
@@ -67,7 +67,7 @@ export function ConnectRequiredCard({
           {requirement.connectors.map((connector) => (
             <ConnectorRemedyBlock
               key={connector.alias}
-              projectId={projectId}
+              workspaceId={workspaceId}
               connector={connector}
               wrapperMode={wrapperMode}
             />
@@ -92,26 +92,26 @@ export function ConnectRequiredCard({
 }
 
 function ConnectorRemedyBlock({
-  projectId,
+  workspaceId,
   connector,
   wrapperMode,
 }: {
-  projectId: string;
+  workspaceId: string;
   connector: RequiredConnector;
   wrapperMode: boolean;
 }) {
   const copy = connectorRemedy(connector, { wrapperMode });
 
-  // `POST /projects/{id}/connect-requests` — the same setup-link mint an agent
-  // uses to ask a human for a credential. It is a `projects/{id}/…` route, so
-  // the wrapper proxy already allows it for a project the caller owns, and no
+  // `POST /workspaces/{id}/connect-requests` — the same setup-link mint an agent
+  // uses to ask a human for a credential. It is a `workspaces/{id}/…` route, so
+  // the wrapper proxy already allows it for a workspace the caller owns, and no
   // new app route is introduced. It can still legitimately refuse (the
   // deployment has no Pipedream, or the connector is not a Pipedream one), so
   // the refusal is shown verbatim instead of being swallowed into "try again".
   const mint = useMutation({
     mutationFn: () =>
       kortix
-        .project(projectId)
+        .workspace(workspaceId)
         .setupLinks.requestConnector({ slug: connector.alias }),
   });
   const mintError = mint.error
@@ -140,7 +140,7 @@ function ConnectorRemedyBlock({
               </p>
               <p className="text-xs text-muted-foreground">
                 Anyone with this link can connect {connector.name} for the whole
-                project. It expires on its own — share it only with whoever
+                workspace. It expires on its own — share it only with whoever
                 should own that connection.
               </p>
             </div>
@@ -171,7 +171,7 @@ function ConnectorRemedyBlock({
           <CallSnippet
             id="connector.connect-link"
             className="mt-2"
-            context={{ projectId, connector: connector.alias }}
+            context={{ workspaceId, connector: connector.alias }}
           />
         </div>
       ) : (

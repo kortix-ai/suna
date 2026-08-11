@@ -20,7 +20,7 @@ import { useState } from 'react';
 
 export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { id: projectId, sessionId: gitSessionId } = useParams<{
+  const { id: workspaceId, sessionId: gitSessionId } = useParams<{
     id: string;
     sessionId: string;
   }>();
@@ -28,7 +28,7 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
   const statusQuery = useGitStatus();
   const changedFiles = statusQuery.data ?? [];
   const changedCount = changedFiles.length;
-  const baseRef = useSessionBaseRef(projectId, gitSessionId);
+  const baseRef = useSessionBaseRef(workspaceId, gitSessionId);
   const { asking, openChangeRequest } = useOpenChangeRequest(sessionId, baseRef);
 
   const [open, setOpen] = useState(false);

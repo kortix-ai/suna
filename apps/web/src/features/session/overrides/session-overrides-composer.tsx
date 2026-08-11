@@ -11,12 +11,12 @@ import {
 } from '@/features/session/reasoning-effort-selector';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import type { Agent, ProviderListResponse } from '@kortix/sdk/react';
-import { useProjectSession } from '@kortix/sdk/react';
+import { useWorkspaceSession } from '@kortix/sdk/react';
 
 import { SessionOverridesToolbar } from './session-overrides-toolbar';
 
 export interface SessionOverridesComposerProps {
-  projectId: string;
+  workspaceId: string;
   sessionId?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
 
@@ -24,7 +24,7 @@ export interface SessionOverridesComposerProps {
   selectedAgent: string | null;
   onAgentChange?: (agentName: string | null) => void;
   agentLocked?: boolean;
-  /** The project's configured default agent — what "no override" resolves to. */
+  /** The workspace's configured default agent — what "no override" resolves to. */
   defaultAgentName?: string | null;
 
   models: FlatModel[];
@@ -33,7 +33,7 @@ export interface SessionOverridesComposerProps {
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
   providers?: ProviderListResponse;
   /**
-   * What the model resolves to with no session pick (agent → project → account
+   * What the model resolves to with no session pick (agent → workspace → account
    * → platform). The composer always HAS a selected model — it is seeded from
    * this — so only a difference from it is an override worth badging.
    */
@@ -44,13 +44,13 @@ export interface SessionOverridesComposerProps {
  * The composer's overrides control, wired to the SAME agent/model/effort
  * controls the toolbar row renders.
  *
- * It exists so the two composers (the project-home one in
+ * It exists so the two composers (the workspace-home one in
  * `composer-chat-input.tsx` and the in-session one in `session-chat.tsx`) build
  * the panel from one place. Each already owns this state for its toolbar; this
  * only re-uses it.
  */
 export function SessionOverridesComposer({
-  projectId,
+  workspaceId,
   sessionId,
   onCommittedDraft,
   agents,
@@ -65,8 +65,8 @@ export function SessionOverridesComposer({
   providers,
   defaultModel,
 }: SessionOverridesComposerProps) {
-  const sessionRow = useProjectSession(projectId, sessionId, { enabled: Boolean(sessionId) });
-  const effort = useReasoningEffortControl(selectedModel, projectId);
+  const sessionRow = useWorkspaceSession(workspaceId, sessionId, { enabled: Boolean(sessionId) });
+  const effort = useReasoningEffortControl(selectedModel, workspaceId);
   const currentModel = models.find(
     (candidate) =>
       candidate.providerID === selectedModel?.providerID &&
@@ -75,8 +75,8 @@ export function SessionOverridesComposer({
 
   const agentSlot = useMemo(
     () => ({
-      summary: selectedAgent ?? 'Project default',
-      // The project's own default agent is not an override, even though it is
+      summary: selectedAgent ?? 'Workspace default',
+      // The workspace's own default agent is not an override, even though it is
       // the selected one.
       overridden: Boolean(selectedAgent) && selectedAgent !== defaultAgentName,
       description: agentLocked
@@ -94,7 +94,7 @@ export function SessionOverridesComposer({
         !agentLocked && onAgentChange && defaultAgentName
           ? () => onAgentChange(defaultAgentName)
           : undefined,
-      resetLabel: 'Reset to project default',
+      resetLabel: 'Reset to workspace default',
     }),
     [agentLocked, agents, defaultAgentName, onAgentChange, selectedAgent],
   );
@@ -142,10 +142,10 @@ export function SessionOverridesComposer({
         ? {
             summary: effort.current ?? 'Model default',
             overridden: Boolean(effort.current),
-            control: <ReasoningEffortSelector model={selectedModel} projectId={projectId} />,
+            control: <ReasoningEffortSelector model={selectedModel} workspaceId={workspaceId} />,
           }
         : undefined,
-    [effort.current, effort.visible, projectId, selectedModel],
+    [effort.current, effort.visible, workspaceId, selectedModel],
   );
 
   const sandbox = useMemo(
@@ -158,7 +158,7 @@ export function SessionOverridesComposer({
 
   return (
     <SessionOverridesToolbar
-      projectId={projectId}
+      workspaceId={workspaceId}
       sessionId={sessionId}
       agentName={selectedAgent ?? undefined}
       onCommittedDraft={onCommittedDraft}

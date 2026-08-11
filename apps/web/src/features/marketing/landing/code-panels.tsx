@@ -196,7 +196,7 @@ const SDK_LINES = [
   '});',
   '',
   '// one hook owns the whole session lifecycle',
-  'const session = kortix.session(projectId, sessionId);',
+  'const session = kortix.session(workspaceId, sessionId);',
   '',
   "await session.send('Draft the renewal for Northwind');",
   '',

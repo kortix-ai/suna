@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
  * unit-testable without booting the server.
  *
  * Names are scoped to (project, template): `kortix-ppwarm-<proj8>-<tpl8>-<hash12>`.
- * See the FORMAT MIGRATION note below {@link perProjectWarmImageName} for why —
+ * See the FORMAT MIGRATION note below {@link perWorkspaceWarmImageName} for why —
  * in short, a name scoped only to the project (the pre-existing shape) is safe
  * ONLY while a project can have at most one live warm image; the moment a second
  * template gets one, one bake's reap deletes the other's tip and vice versa —
@@ -61,11 +61,11 @@ export function templateSlugFromBuildSlug(buildSlug: string): string {
 }
 
 /**
- * First 8 hex chars of the projectId with dashes stripped — the per-project scope
+ * First 8 hex chars of the workspaceId with dashes stripped — the per-project scope
  * key in a ppwarm name. Matches warm-project.ts's `proj8` so the prefixes line up.
  */
-export function proj8(projectId: string): string {
-  return projectId.replace(/-/g, '').slice(0, 8);
+export function proj8(workspaceId: string): string {
+  return workspaceId.replace(/-/g, '').slice(0, 8);
 }
 
 /**
@@ -74,7 +74,7 @@ export function proj8(projectId: string): string {
  * imports — so importing the real constant (which drags in the whole Dockerfile-
  * layer renderer) is off the table; we mirror the value instead, same as
  * quota-gc-select.ts mirrors {@link PPWARM_REAP_PROTECT_MS}. It is ONLY the
- * default for {@link perProjectWarmImageName}'s `templateSlug` param, so a caller
+ * default for {@link perWorkspaceWarmImageName}'s `templateSlug` param, so a caller
  * that has not (yet) been updated to pass it explicitly — e.g.
  * provider-transition-service.ts's `resolvePrepIdentity`, which always targets
  * the shared default template — still lands on the SAME (project, tpl8) scope as
@@ -98,7 +98,7 @@ const MIRRORED_DEFAULT_TEMPLATE_SLUG = 'default';
  * in ONE project that collided would silently reintroduce the mutual-deletion
  * hazard this scoping exists to close.
  *
- * This is now a LIVE residual, not a hypothetical: `perProjectWarmEligible`
+ * This is now a LIVE residual, not a hypothetical: `perWorkspaceWarmEligible`
  * (builder.ts) mints per-template warm images for real on the providers in
  * `KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS` (Platinum by default). It is
  * accepted deliberately — a 32-bit space against a realistic 1-3 templates per
@@ -124,22 +124,22 @@ export function tpl8(templateSlug: string): string {
  * expects for the default template (see {@link MIRRORED_DEFAULT_TEMPLATE_SLUG}).
  * Every NEW caller should pass it explicitly.
  */
-export function perProjectWarmImageName(
-  projectId: string,
+export function perWorkspaceWarmImageName(
+  workspaceId: string,
   tip: string,
   baseSnapshotName: string,
   templateSlug: string = MIRRORED_DEFAULT_TEMPLATE_SLUG,
 ): string {
   const hash = createHash('sha256')
-    .update(`${projectId}|${templateSlug}|${tip}|${baseSnapshotName}`)
+    .update(`${workspaceId}|${templateSlug}|${tip}|${baseSnapshotName}`)
     .digest('hex')
     .slice(0, 12);
-  return `${PPWARM_PREFIX}${proj8(projectId)}-${tpl8(templateSlug)}-${hash}`;
+  return `${PPWARM_PREFIX}${proj8(workspaceId)}-${tpl8(templateSlug)}-${hash}`;
 }
 
 /**
  * The PRE-MIGRATION name for a project's default-template warm image:
- * `kortix-ppwarm-<proj8>-<hash12>` over `projectId|tip|baseSnapshotName` (no
+ * `kortix-ppwarm-<proj8>-<hash12>` over `workspaceId|tip|baseSnapshotName` (no
  * template segment, no slug in the hash).
  *
  * Exists so the warm-HIT lookup can serve an image that is already built and
@@ -159,16 +159,16 @@ export function perProjectWarmImageName(
  * Delete this once no legacy name can still be active anywhere (they age out via
  * quota-gc's idle/LRU rules, which match both formats).
  */
-export function legacyPerProjectWarmImageName(
-  projectId: string,
+export function legacyPerWorkspaceWarmImageName(
+  workspaceId: string,
   tip: string,
   baseSnapshotName: string,
 ): string {
   const hash = createHash('sha256')
-    .update(`${projectId}|${tip}|${baseSnapshotName}`)
+    .update(`${workspaceId}|${tip}|${baseSnapshotName}`)
     .digest('hex')
     .slice(0, 12);
-  return `${PPWARM_PREFIX}${proj8(projectId)}-${hash}`;
+  return `${PPWARM_PREFIX}${proj8(workspaceId)}-${hash}`;
 }
 
 /**
@@ -176,8 +176,8 @@ export function legacyPerProjectWarmImageName(
  * Every ppwarm name baked before this change has the OLD shape
  * `kortix-ppwarm-<proj8>-<hash12>` (2 dash-delimited segments after the
  * prefix) — proj8 was the ONLY scope key, correct only because every caller of
- * `perProjectWarmImageName` hardcoded the shared default template, i.e. at most
- * one live tip per PROJECT. The NEW shape is
+ * `perWorkspaceWarmImageName` hardcoded the shared default template, i.e. at most
+ * one live tip per WORKSPACE. The NEW shape is
  * `kortix-ppwarm-<proj8>-<tpl8>-<hash12>` (3 segments), scoped to (project,
  * template) so a second template's warm image can never reap — or be reaped
  * by — the default's.
@@ -244,12 +244,12 @@ function parsePpwarmName(name: string): ParsedPpwarmName | null {
  * is nothing to reap.
  *
  * `currentName` is expected to be NEW-format (every real caller now mints one
- * via {@link perProjectWarmImageName}). If it is somehow OLD-format instead,
+ * via {@link perWorkspaceWarmImageName}). If it is somehow OLD-format instead,
  * this degrades to the pre-migration proj8-only scope, byte-identical to the
  * original behavior — a defensive fallback, not a path any current caller takes.
  */
-export function ppwarmReapTargets(projectId: string, currentName: string, allNames: string[]): string[] {
-  const proj = proj8(projectId);
+export function ppwarmReapTargets(workspaceId: string, currentName: string, allNames: string[]): string[] {
+  const proj = proj8(workspaceId);
   const current = parsePpwarmName(currentName);
 
   if (current && current.tpl8 !== null) {
@@ -268,7 +268,7 @@ export function ppwarmReapTargets(projectId: string, currentName: string, allNam
 
 /**
  * FIX-K-lite guard: drop any reap target that is the ACTIVE pinned image (by name)
- * of SOME project. proj8 is only the first 8 hex of the projectId, so the
+ * of SOME project. proj8 is only the first 8 hex of the workspaceId, so the
  * prefix-scoped {@link ppwarmReapTargets} can collide with another project whose id
  * shares those 8 hex; cross-checking against the live pins makes such a collision
  * harmless (worst case, a superseded tip is kept one extra cycle).

@@ -24,11 +24,11 @@ import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
-import { reloadProgressText } from '@/hooks/projects/session-reload-progress';
+import { reloadProgressText } from '@/hooks/workspaces/session-reload-progress';
 import {
   type ReloadBusyReason,
   useSessionConfigFreshness,
-} from '@/hooks/projects/use-session-config-freshness';
+} from '@/hooks/workspaces/use-session-config-freshness';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import type { SessionReloadPhase } from '@kortix/sdk';
 import { ArrowsClockwiseIcon } from '@phosphor-icons/react';
@@ -50,7 +50,7 @@ const BUSY_COPY: Record<ReloadBusyReason, { title: string; body: string; tail: s
 };
 
 export function SessionConfigIndicator({
-  projectId,
+  workspaceId,
   sessionId,
   chatSessionId,
   baseRef,
@@ -59,7 +59,7 @@ export function SessionConfigIndicator({
   phase,
   canReload,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   chatSessionId: string;
   baseRef?: string | null;
@@ -69,7 +69,7 @@ export function SessionConfigIndicator({
   phase: SessionReloadPhase | null;
   canReload: boolean;
 }) {
-  const { notice } = useSessionConfigFreshness(projectId, sessionId);
+  const { notice } = useSessionConfigFreshness(workspaceId, sessionId);
   const [open, setOpen] = useState(false);
   const [isAskingAgent, setIsAskingAgent] = useState(false);
   const sendToSession = useChatSendStore((state) => state.sendToSession);
@@ -151,7 +151,7 @@ export function SessionConfigIndicator({
             <>
               <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
                 A newer agent config is available. Reloading restarts the agent runtime and leaves
-                every project file and commit unchanged.
+                every workspace file and commit unchanged.
               </p>
 
               <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
@@ -203,7 +203,7 @@ export function SessionConfigIndicator({
           // only ever 403s is worse than a sentence saying who can press it.
           <div className="border-border border-t px-4 py-2.5">
             <p className="text-muted-foreground text-xs text-pretty">
-              The session owner or a project manager can reload it.
+              The session owner or a workspace manager can reload it.
             </p>
           </div>
         )}

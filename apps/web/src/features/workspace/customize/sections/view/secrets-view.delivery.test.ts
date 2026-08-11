@@ -27,9 +27,9 @@ const sliceBetween = (start: string, end: string) => {
 describe('SecretsView gates network-boundary delivery on the ACTIVE provider', () => {
   test('the availability comes from the helper, not from the platform provider list', () => {
     expect(code).toContain(
-      'const networkBoundary = networkBoundaryAvailability(projectDetailQuery.data?.project);',
+      'const networkBoundary = networkBoundaryAvailability(workspaceDetailQuery.data?.workspace);',
     );
-    // The old gate read what the DEPLOYMENT offers. A project on Daytona
+    // The old gate read what the DEPLOYMENT offers. A workspace on Daytona
     // injects nothing, so that check offered an impossible mode.
     expect(code).not.toContain('available_sandbox_providers');
   });
@@ -47,7 +47,7 @@ describe('SecretsView gates network-boundary delivery on the ACTIVE provider', (
     expect(code).not.toContain('Not available in this deployment.');
   });
 
-  test('an already-egress secret on a non-Platinum project says so in the panel', () => {
+  test('an already-egress secret on a non-Platinum workspace says so in the panel', () => {
     expect(code).toContain(
       'const networkBoundaryNotice = networkBoundaryBlockedReason(networkBoundary);',
     );

@@ -5,12 +5,12 @@ import { fileURLToPath } from 'node:url';
 const source = readFileSync(fileURLToPath(new URL('./session-chat.tsx', import.meta.url)), 'utf8');
 
 describe('SessionChat external agent tasks', () => {
-  test('registers the project session as an alias for the active OpenCode chat', () => {
+  test('registers the workspace session as an alias for the active OpenCode chat', () => {
     const registration = source.slice(
       source.indexOf('registerSender('),
       source.indexOf('return () => unregisterSender(sessionId)'),
     );
-    expect(registration).toContain('projectSessionId ? [projectSessionId] : []');
+    expect(registration).toContain('workspaceSessionId ? [workspaceSessionId] : []');
   });
 
   test('queues tasks behind active turns, prompts, approvals, permissions, and existing queue work', () => {

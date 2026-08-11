@@ -5,11 +5,11 @@ import { flow } from "../core/flow";
 
 flow(
   "SEC-1",
-  { domain: "secrets", routes: ["GET /v1/projects/:projectId/secrets"] },
+  { domain: "secrets", routes: ["GET /v1/projects/:workspaceId/secrets"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("list secret names", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/secrets", { params: { projectId: p.id } });
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:workspaceId/secrets", { params: { workspaceId: p.id } });
       r.status(200);
     });
   },
@@ -17,25 +17,25 @@ flow(
 
 flow(
   "SEC-2",
-  { domain: "secrets", routes: ["POST /v1/projects/:projectId/secrets"] },
+  { domain: "secrets", routes: ["POST /v1/projects/:workspaceId/secrets"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("upsert a secret → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/secrets", { name: "MY_SECRET", value: "v1" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/secrets", { name: "MY_SECRET", value: "v1" }, { params: { workspaceId: p.id } });
       r.status([200, 201]);
     });
     await ctx.step("KORTIX_* reserved → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/secrets", { name: "KORTIX_HACK", value: "x" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/secrets", { name: "KORTIX_HACK", value: "x" }, { params: { workspaceId: p.id } });
       r.status(400);
     });
     await ctx.step("invalid name format → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/secrets", { name: "not a name!", value: "x" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/secrets", { name: "not a name!", value: "x" }, { params: { workspaceId: p.id } });
       r.status(400);
     });
   },
@@ -43,23 +43,23 @@ flow(
 
 flow(
   "SEC-3",
-  { domain: "secrets", routes: ["DELETE /v1/projects/:projectId/secrets/:name"] },
+  { domain: "secrets", routes: ["DELETE /v1/projects/:workspaceId/secrets/:name"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("create then delete a secret", async () => {
       await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/secrets", { name: "TO_DELETE", value: "x" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/secrets", { name: "TO_DELETE", value: "x" }, { params: { workspaceId: p.id } });
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/secrets/:name", { params: { projectId: p.id, name: "TO_DELETE" } });
+        .del("/v1/projects/:workspaceId/secrets/:name", { params: { workspaceId: p.id, name: "TO_DELETE" } });
       r.status(200);
     });
 
     await ctx.step("system KORTIX_* secret cannot be deleted → 403", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/secrets/:name", { params: { projectId: p.id, name: "KORTIX_TOKEN" } });
+        .del("/v1/projects/:workspaceId/secrets/:name", { params: { workspaceId: p.id, name: "KORTIX_TOKEN" } });
       r.status(403);
     });
   },
@@ -67,16 +67,16 @@ flow(
 
 flow(
   "SEC-6",
-  { domain: "secrets", routes: ["POST /v1/projects/:projectId/secrets"] },
+  { domain: "secrets", routes: ["POST /v1/projects/:workspaceId/secrets"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("two identifiers may share the same key (profile-like secrets)", async () => {
       const primary = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secrets",
+          "/v1/projects/:workspaceId/secrets",
           { identifier: "GMAPS-primary", name: "GOOGLE_MAPS_API_KEY", value: "primary-key" },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       primary.status([200, 201]);
       primary.body().has("identifier", "GMAPS-primary").has("name", "GOOGLE_MAPS_API_KEY");
@@ -84,16 +84,16 @@ flow(
       const backup = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secrets",
+          "/v1/projects/:workspaceId/secrets",
           { identifier: "GMAPS-backup", name: "GOOGLE_MAPS_API_KEY", value: "backup-key" },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       backup.status([200, 201]);
       backup.body().has("identifier", "GMAPS-backup").has("name", "GOOGLE_MAPS_API_KEY");
 
       const list = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/secrets", { params: { projectId: p.id } });
+        .get("/v1/projects/:workspaceId/secrets", { params: { workspaceId: p.id } });
       list.status(200);
       const items: any[] = list.json().items ?? [];
       const withKey = items.filter((i) => i.name === "GOOGLE_MAPS_API_KEY");
@@ -106,9 +106,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secrets",
+          "/v1/projects/:workspaceId/secrets",
           { identifier: "GMAPS-primary", name: "SOME_OTHER_KEY", value: "x" },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(409);
     });
@@ -120,11 +120,11 @@ flow(
   {
     domain: "secrets",
     routes: [
-      "POST /v1/projects/:projectId/secrets",
-      "GET /v1/projects/:projectId/secrets",
-      "PUT /v1/projects/:projectId/secrets/:identifier/strategy",
-      "POST /v1/projects/:projectId/secrets/:identifier/broker",
-      "POST /v1/projects/:projectId/secrets/sync",
+      "POST /v1/projects/:workspaceId/secrets",
+      "GET /v1/projects/:workspaceId/secrets",
+      "PUT /v1/projects/:workspaceId/secrets/:identifier/strategy",
+      "POST /v1/projects/:workspaceId/secrets/:identifier/broker",
+      "POST /v1/projects/:workspaceId/secrets/sync",
       "GET /v1/accounts/:accountId/audit",
     ],
   },
@@ -137,9 +137,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secrets",
+          "/v1/projects/:workspaceId/secrets",
           { name: "CONTROL_PLANE_KEY", value: "control-plane-value" },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200)
         .body()
@@ -154,9 +154,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          "/v1/projects/:workspaceId/secrets/:identifier/strategy",
           { strategy: "denied" },
-          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          { params: { workspaceId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
       r.status(200)
         .body()
@@ -170,9 +170,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secrets/sync",
+          "/v1/projects/:workspaceId/secrets/sync",
           {},
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200)
         .body()
@@ -189,9 +189,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          "/v1/projects/:workspaceId/secrets/:identifier/strategy",
           { strategy: "runtime" },
-          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          { params: { workspaceId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
       r.status(409).body().has("$.code", "secret_rotation_required");
     });
@@ -200,9 +200,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          "/v1/projects/:workspaceId/secrets/:identifier/strategy",
           { strategy: "broker" },
-          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          { params: { workspaceId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
       r.status(400).body().has("$.code", "secret_delivery_policy_required");
     });
@@ -216,9 +216,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          "/v1/projects/:workspaceId/secrets/:identifier/strategy",
           { strategy: "broker", egress_policy: policy, handle_prefix: "svc_" },
-          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          { params: { workspaceId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
       r.status(200)
         .body()
@@ -236,12 +236,12 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          "/v1/projects/:workspaceId/secrets/:identifier/strategy",
           {
             strategy: "egress",
             egress_policy: policy,
           },
-          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          { params: { workspaceId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
       if (networkBoundaryAvailable) {
         r.status(200)
@@ -259,7 +259,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          "/v1/projects/:workspaceId/secrets/:identifier/strategy",
           {
             strategy: "egress",
             egress_policy: {
@@ -267,7 +267,7 @@ flow(
               inject: { kind: "header", name: "authorization" },
             },
           },
-          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          { params: { workspaceId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
       r.status(400).body().has("$.code", "secret_delivery_policy_invalid");
     });
@@ -276,13 +276,13 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secrets/:identifier/broker",
+          "/v1/projects/:workspaceId/secrets/:identifier/broker",
           {
             url: "https://api.example.com/v1/messages",
             method: "POST",
             body_base64: "e30=",
           },
-          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          { params: { workspaceId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
       r.status(403).body().has("$.code", "session_agent_token_required");
     });
@@ -291,9 +291,9 @@ flow(
       const rotate = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secrets",
+          "/v1/projects/:workspaceId/secrets",
           { name: "CONTROL_PLANE_KEY", value: "rotated-control-plane-value" },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       rotate
         .status(200)
@@ -304,9 +304,9 @@ flow(
       const restore = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          "/v1/projects/:workspaceId/secrets/:identifier/strategy",
           { strategy: "runtime" },
-          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+          { params: { workspaceId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
       restore
         .status(200)
@@ -342,7 +342,7 @@ flow(
     domain: "secrets",
     routes: [
       "POST /v1/connectors/attachments",
-      "POST /v1/connectors/projects/:projectId/attachments",
+      "POST /v1/connectors/projects/:workspaceId/attachments",
     ],
   },
   async (ctx) => {
@@ -355,9 +355,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          "/v1/connectors/projects/:projectId/attachments",
+          "/v1/connectors/projects/:workspaceId/attachments",
           {},
-          { params: { projectId: "00000000-0000-4000-a000-000000000000" } },
+          { params: { workspaceId: "00000000-0000-4000-a000-000000000000" } },
         );
       r.status(401);
     });
@@ -376,7 +376,7 @@ flow(
   {
     domain: "secrets",
     routes: [
-      "POST /v1/projects/:projectId/secret-requests",
+      "POST /v1/projects/:workspaceId/secret-requests",
       "GET /v1/setup-links/secret/:token",
       "POST /v1/setup-links/secret/:token",
     ],
@@ -389,9 +389,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secret-requests",
+          "/v1/projects/:workspaceId/secret-requests",
           { names: ["SEC7_TEST_KEY"] },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(200).body().has("$.kind", "secret").has("$.names[0]", "SEC7_TEST_KEY").exists("$.url");
       const url = r.json<{ url: string }>().url;
@@ -403,9 +403,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secret-requests",
+          "/v1/projects/:workspaceId/secret-requests",
           { names: ["KORTIX_HACK"] },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status(400);
     });
@@ -413,7 +413,7 @@ flow(
     await ctx.step("mint with no names → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/secret-requests", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/secret-requests", {}, { params: { workspaceId: p.id } });
       r.status(400);
     });
 
@@ -421,9 +421,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          "/v1/projects/:projectId/secret-requests",
+          "/v1/projects/:workspaceId/secret-requests",
           { names: ["SEC7_TEST_KEY"] },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status([403, 404]);
     });

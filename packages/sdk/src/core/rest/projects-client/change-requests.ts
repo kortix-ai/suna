@@ -81,13 +81,13 @@ export interface VersionDiffPreview {
 }
 
 export async function getVersionDiff(
-  projectId: string,
+  workspaceId: string,
   input: { from: string; into: string },
 ) {
   const params = new URLSearchParams({ from: input.from, into: input.into });
   return unwrap(
     await backendApi.get<VersionDiffPreview>(
-      `/projects/${projectId}/version-diff?${params.toString()}`,
+      `/projects/${workspaceId}/version-diff?${params.toString()}`,
     ),
   );
 }
@@ -103,13 +103,13 @@ export interface ChangeRequestMergeResponse {
 }
 
 export async function listChangeRequests(
-  projectId: string,
+  workspaceId: string,
   status?: ChangeRequestStatus | 'all',
 ) {
   const query = status ? `?status=${status}` : '';
   return unwrap(
     await backendApi.get<{ change_requests: ChangeRequest[] }>(
-      `/projects/${projectId}/change-requests${query}`,
+      `/projects/${workspaceId}/change-requests${query}`,
       {
         // This is often a badge/background poll. Keep failures visible to the
         // query consumer without turning temporary poll misses into global API
@@ -121,35 +121,35 @@ export async function listChangeRequests(
   );
 }
 
-export async function getChangeRequest(projectId: string, crId: string) {
+export async function getChangeRequest(workspaceId: string, crId: string) {
   return unwrap(
     await backendApi.get<ChangeRequestDetailResponse>(
-      `/projects/${projectId}/change-requests/${crId}`,
+      `/projects/${workspaceId}/change-requests/${crId}`,
     ),
   );
 }
 
-export async function getChangeRequestDiff(projectId: string, crId: string) {
+export async function getChangeRequestDiff(workspaceId: string, crId: string) {
   return unwrap(
     await backendApi.get<ChangeRequestDiffResponse>(
-      `/projects/${projectId}/change-requests/${crId}/diff`,
+      `/projects/${workspaceId}/change-requests/${crId}/diff`,
     ),
   );
 }
 
 export async function getChangeRequestMergePreview(
-  projectId: string,
+  workspaceId: string,
   crId: string,
 ) {
   return unwrap(
     await backendApi.get<ChangeRequestMergePreview>(
-      `/projects/${projectId}/change-requests/${crId}/merge-preview`,
+      `/projects/${workspaceId}/change-requests/${crId}/merge-preview`,
     ),
   );
 }
 
 export async function openChangeRequest(
-  projectId: string,
+  workspaceId: string,
   input: {
     title: string;
     description?: string;
@@ -160,39 +160,39 @@ export async function openChangeRequest(
 ) {
   return unwrap(
     await backendApi.post<ChangeRequest>(
-      `/projects/${projectId}/change-requests`,
+      `/projects/${workspaceId}/change-requests`,
       input,
     ),
   );
 }
 
 export async function mergeChangeRequest(
-  projectId: string,
+  workspaceId: string,
   crId: string,
   input?: { message?: string },
 ) {
   return unwrap(
     await backendApi.post<ChangeRequestMergeResponse>(
-      `/projects/${projectId}/change-requests/${crId}/merge`,
+      `/projects/${workspaceId}/change-requests/${crId}/merge`,
       input ?? {},
       { showErrors: false },
     ),
   );
 }
 
-export async function closeChangeRequest(projectId: string, crId: string) {
+export async function closeChangeRequest(workspaceId: string, crId: string) {
   return unwrap(
     await backendApi.post<ChangeRequest>(
-      `/projects/${projectId}/change-requests/${crId}/close`,
+      `/projects/${workspaceId}/change-requests/${crId}/close`,
       {},
     ),
   );
 }
 
-export async function reopenChangeRequest(projectId: string, crId: string) {
+export async function reopenChangeRequest(workspaceId: string, crId: string) {
   return unwrap(
     await backendApi.post<ChangeRequest>(
-      `/projects/${projectId}/change-requests/${crId}/reopen`,
+      `/projects/${workspaceId}/change-requests/${crId}/reopen`,
       {},
     ),
   );
@@ -201,13 +201,13 @@ export async function reopenChangeRequest(projectId: string, crId: string) {
 /** Request changes on a CR (Review Center) — records feedback + optionally
  *  delivers it back to the originating session. */
 export async function requestChangesOnChangeRequest(
-  projectId: string,
+  workspaceId: string,
   crId: string,
   feedback: string,
 ) {
   return unwrap(
     await backendApi.post<{ change_request: ChangeRequest; delivering: boolean }>(
-      `/projects/${projectId}/change-requests/${crId}/request-changes`,
+      `/projects/${workspaceId}/change-requests/${crId}/request-changes`,
       { feedback },
     ),
   );
@@ -231,13 +231,13 @@ export interface CommitSessionResult {
  * fully-UI flow (see the API endpoint /sessions/:id/commit-push).
  */
 export async function commitSessionChanges(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   input?: { message?: string },
 ) {
   return unwrap(
     await backendApi.post<CommitSessionResult>(
-      `/projects/${projectId}/sessions/${sessionId}/commit-push`,
+      `/projects/${workspaceId}/sessions/${sessionId}/commit-push`,
       input ?? {},
     ),
   );

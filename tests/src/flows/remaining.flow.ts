@@ -50,8 +50,8 @@ flow(
   {
     domain: "secrets",
     routes: [
-      "PUT /v1/projects/:projectId/secrets/:name/personal",
-      "DELETE /v1/projects/:projectId/secrets/:name/personal",
+      "PUT /v1/projects/:workspaceId/secrets/:name/personal",
+      "DELETE /v1/projects/:workspaceId/secrets/:name/personal",
     ],
   },
   async (ctx) => {
@@ -59,22 +59,22 @@ flow(
     await ctx.step("set a personal override → 200", async () => {
       await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/secrets", { name: "PERSONAL_KEY", value: "shared" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/secrets", { name: "PERSONAL_KEY", value: "shared" }, { params: { workspaceId: p.id } });
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/secrets/:name/personal", { value: "mine" }, { params: { projectId: p.id, name: "PERSONAL_KEY" } });
+        .put("/v1/projects/:workspaceId/secrets/:name/personal", { value: "mine" }, { params: { workspaceId: p.id, name: "PERSONAL_KEY" } });
       r.status([200, 201, 400, 404]);
     });
     await ctx.step("delete the personal override → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/secrets/:name/personal", { params: { projectId: p.id, name: "PERSONAL_KEY" } });
+        .del("/v1/projects/:workspaceId/secrets/:name/personal", { params: { workspaceId: p.id, name: "PERSONAL_KEY" } });
       r.status([200, 204, 404]);
     });
     await ctx.step("personal override of an LLM provider key → 400 (always project-wide)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/secrets/:name/personal", { value: "sk-mine" }, { params: { projectId: p.id, name: "ANTHROPIC_API_KEY" } });
+        .put("/v1/projects/:workspaceId/secrets/:name/personal", { value: "sk-mine" }, { params: { workspaceId: p.id, name: "ANTHROPIC_API_KEY" } });
       r.status(400);
     });
   },
@@ -84,14 +84,14 @@ flow(
   "TRG-5",
   {
     domain: "triggers",
-    routes: ["POST /v1/projects/:projectId/triggers/:slug/fire"],
+    routes: ["POST /v1/projects/:workspaceId/triggers/:slug/fire"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("fire unknown trigger slug → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/triggers/:slug/fire", {}, { params: { projectId: p.id, slug: "no-such-trigger" } });
+        .post("/v1/projects/:workspaceId/triggers/:slug/fire", {}, { params: { workspaceId: p.id, slug: "no-such-trigger" } });
       r.status([400, 404]);
     });
   },
@@ -99,12 +99,24 @@ flow(
 
 flow(
   "TRG-7",
-  { domain: "triggers", routes: ["POST /v1/webhooks/projects/:projectId/:slug"] },
+  {
+    domain: "triggers",
+    routes: [
+      "POST /v1/webhooks/workspaces/:workspaceId/:slug",
+      "POST /v1/webhooks/projects/:workspaceId/:slug",
+    ],
+  },
   async (ctx) => {
+    await ctx.step("canonical Workspace webhook — bad/missing signature → rejected", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/workspaces/:workspaceId/:slug", { hello: "world" }, { params: { workspaceId: BOGUS_UUID, slug: "x" } });
+      r.status([400, 401, 404, 409]);
+    });
     await ctx.step("webhook fire — bad/missing signature → rejected", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/webhooks/projects/:projectId/:slug", { hello: "world" }, { params: { projectId: BOGUS_UUID, slug: "x" } });
+        .post("/v1/webhooks/projects/:workspaceId/:slug", { hello: "world" }, { params: { workspaceId: BOGUS_UUID, slug: "x" } });
       // unknown project / bad sig / missing secret — all real rejections.
       r.status([400, 401, 404, 409]);
     });
@@ -116,8 +128,8 @@ flow(
   {
     domain: "connectors",
     routes: [
-      "POST /v1/connectors/projects/:projectId/connectors/:slug/connect",
-      "POST /v1/connectors/projects/:projectId/connectors/:slug/connect/finalize",
+      "POST /v1/connectors/projects/:workspaceId/connectors/:slug/connect",
+      "POST /v1/connectors/projects/:workspaceId/connectors/:slug/connect/finalize",
     ],
   },
   async (ctx) => {
@@ -125,13 +137,13 @@ flow(
     await ctx.step("pipedream connect on unknown connector → 404/501", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/connectors/projects/:projectId/connectors/:slug/connect", {}, { params: { projectId: p.id, slug: "nope" } });
+        .post("/v1/connectors/projects/:workspaceId/connectors/:slug/connect", {}, { params: { workspaceId: p.id, slug: "nope" } });
       r.status([404, 501, 403, 400]);
     });
     await ctx.step("pipedream finalize on unknown connector → 404/501", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/connectors/projects/:projectId/connectors/:slug/connect/finalize", {}, { params: { projectId: p.id, slug: "nope" } });
+        .post("/v1/connectors/projects/:workspaceId/connectors/:slug/connect/finalize", {}, { params: { workspaceId: p.id, slug: "nope" } });
       r.status([404, 501, 403, 400]);
     });
   },
@@ -152,8 +164,8 @@ flow(
   {
     domain: "sessions",
     routes: [
-      "PATCH /v1/projects/:projectId/sessions/:sessionId",
-      "PUT /v1/projects/:projectId/sessions/:sessionId/sharing",
+      "PATCH /v1/projects/:workspaceId/sessions/:sessionId",
+      "PUT /v1/projects/:workspaceId/sessions/:sessionId/sharing",
     ],
   },
   async (ctx) => {
@@ -161,13 +173,13 @@ flow(
     await ctx.step("PATCH non-uuid session → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/sessions/:sessionId", { name: "x" }, { params: { projectId: p.id, sessionId: "not-a-uuid" } });
+        .patch("/v1/projects/:workspaceId/sessions/:sessionId", { name: "x" }, { params: { workspaceId: p.id, sessionId: "not-a-uuid" } });
       r.status([400, 404]);
     });
     await ctx.step("PUT sharing on unknown session → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/sessions/:sessionId/sharing", { visibility: "private" }, { params: { projectId: p.id, sessionId: BOGUS_UUID } });
+        .put("/v1/projects/:workspaceId/sessions/:sessionId/sharing", { visibility: "private" }, { params: { workspaceId: p.id, sessionId: BOGUS_UUID } });
       r.status([400, 404]);
     });
   },
@@ -178,27 +190,27 @@ flow(
   {
     domain: "sessions",
     routes: [
-      "POST /v1/projects/:projectId/sessions/:sessionId/commit-push",
-      "POST /v1/projects/:projectId/sessions/:sessionId/ensure-opencode",
-      "POST /v1/projects/:projectId/sessions/:sessionId/restart",
-      "POST /v1/projects/:projectId/sessions/:sessionId/wake",
+      "POST /v1/projects/:workspaceId/sessions/:sessionId/commit-push",
+      "POST /v1/projects/:workspaceId/sessions/:sessionId/ensure-opencode",
+      "POST /v1/projects/:workspaceId/sessions/:sessionId/restart",
+      "POST /v1/projects/:workspaceId/sessions/:sessionId/wake",
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     const sub = (path: string) =>
-      ctx.client.as(ctx.P.OWNER).post(path, {}, { params: { projectId: p.id, sessionId: BOGUS_UUID } });
+      ctx.client.as(ctx.P.OWNER).post(path, {}, { params: { workspaceId: p.id, sessionId: BOGUS_UUID } });
     await ctx.step("commit-push unknown session → 4xx", async () => {
-      (await sub("/v1/projects/:projectId/sessions/:sessionId/commit-push")).status([400, 404]);
+      (await sub("/v1/projects/:workspaceId/sessions/:sessionId/commit-push")).status([400, 404]);
     });
     await ctx.step("ensure-opencode unknown session → 4xx", async () => {
-      (await sub("/v1/projects/:projectId/sessions/:sessionId/ensure-opencode")).status([400, 404]);
+      (await sub("/v1/projects/:workspaceId/sessions/:sessionId/ensure-opencode")).status([400, 404]);
     });
     await ctx.step("restart unknown session → 4xx", async () => {
-      (await sub("/v1/projects/:projectId/sessions/:sessionId/restart")).status([400, 404, 202]);
+      (await sub("/v1/projects/:workspaceId/sessions/:sessionId/restart")).status([400, 404, 202]);
     });
     await ctx.step("wake unknown session → 4xx", async () => {
-      (await sub("/v1/projects/:projectId/sessions/:sessionId/wake")).status([400, 404, 202]);
+      (await sub("/v1/projects/:workspaceId/sessions/:sessionId/wake")).status([400, 404, 202]);
     });
   },
 );

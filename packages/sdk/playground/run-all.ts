@@ -52,7 +52,7 @@ const SCRIPTS = [
 
 run("run-all", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix);
+  const workspaceId = await pickProjectId(kortix);
 
   const model = process.env.KORTIX_MODEL ?? "glm-5.2";
   if (!process.env.KORTIX_MODEL) {
@@ -63,7 +63,7 @@ run("run-all", async () => {
 
   let sessionId = process.env.KORTIX_SESSION_ID;
   if (!sessionId) {
-    const created = await kortix.projects.createSession(projectId, {
+    const created = await kortix.projects.createSession(workspaceId, {
       name: "sdk run-all",
     });
     sessionId = created.session_id;
@@ -79,7 +79,7 @@ run("run-all", async () => {
     const proc = Bun.spawn(["bun", "run", `playground/${script}`], {
       env: {
         ...process.env,
-        KORTIX_PROJECT_ID: projectId,
+        KORTIX_PROJECT_ID: workspaceId,
         KORTIX_SESSION_ID: sessionId,
         KORTIX_MODEL: model,
       },

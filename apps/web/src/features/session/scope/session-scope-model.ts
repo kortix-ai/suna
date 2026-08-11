@@ -1,7 +1,7 @@
 import type {
   AdminConnector,
   Connection,
-  ProjectSecret,
+  WorkspaceSecret,
   SessionScope,
   SessionScopeInput,
 } from '@kortix/sdk';
@@ -42,7 +42,7 @@ export interface SessionScopeCatalogGrants {
 }
 
 export interface SessionScopeRawCatalogs {
-  secrets: SessionScopeCatalogState<ProjectSecret>;
+  secrets: SessionScopeCatalogState<WorkspaceSecret>;
   connectors: SessionScopeCatalogState<AdminConnector>;
   connections: SessionScopeCatalogState<Connection>;
   grants?: SessionScopeCatalogGrants;
@@ -130,10 +130,10 @@ export function createSessionScopeDraft(
     draft.connector_bindings = cloneBindings(scope.connector_bindings);
     // `scope.connector_bindings` is the SERVER-RESOLVED map, which is identical
     // for a session that overrode its connectors and one that just inherits the
-    // project defaults. `connector_bindings_configured` is the only thing that
+    // workspace defaults. `connector_bindings_configured` is the only thing that
     // separates them. Without this marker the draft treated the preview as a
     // user selection, so an untouched Save posted it back as a full
-    // replacement — freezing project defaults into an override, and turning an
+    // replacement — freezing workspace defaults into an override, and turning an
     // empty resolve into an explicit zero-connector session.
     draft.connector_bindings_inherited = scope.connector_bindings_configured !== true;
     draft.require_connectors = [...(scope.required_connectors ?? [])];
@@ -168,7 +168,7 @@ export function resetSessionSecrets(draft: SessionScopeDraft): SessionScopeDraft
 }
 
 /**
- * Drop a session's connector override and preview the project defaults again.
+ * Drop a session's connector override and preview the workspace defaults again.
  *
  * The marker is what makes `buildSessionScopeReplacement` send
  * `connector_bindings: null` — the API's clear verb — when the session actually
@@ -193,10 +193,10 @@ export function resetSessionConnectorBindings(
  * comes from, per axis. Secrets: `intersectSecretGrants(grant, null)` returns
  * the AGENT's grant untouched, so the inherited state is the agent's. Connectors:
  * the agent's grant gates the set, but each granted alias resolves to the
- * PROJECT's default connection (`resolveProjectDefaultConnectorConnection`).
+ * WORKSPACE's default connection (`resolveWorkspaceDefaultConnectorConnection`).
  */
 export const SESSION_SCOPE_SECRETS_INHERITED_LABEL = 'Agent default';
-export const SESSION_SCOPE_CONNECTORS_INHERITED_LABEL = 'Project default';
+export const SESSION_SCOPE_CONNECTORS_INHERITED_LABEL = 'Workspace default';
 
 export function sessionSecretsSummary(draft: SessionScopeDraft): string {
   if (draft.secrets === undefined) return 'Unchanged';
@@ -234,7 +234,7 @@ export function createNewSessionScopeDraft(
   if (catalog.secrets.status === 'ready') {
     // No user override yet. `null` means "inherit everything the agent's grant
     // allows" — the same state a server-created session starts in. `[]` would be
-    // an EXPLICIT "inject zero project secrets", which silently denied every
+    // an EXPLICIT "inject zero workspace secrets", which silently denied every
     // browser-created session its grant on the first prompt. The user can still
     // deliberately deselect all (see `setAllSessionSecrets`) to get `[]`; the
     // two are opposite and must not be conflated.
@@ -336,7 +336,7 @@ export function buildSessionScopeSelectionCatalog(
             connectorGrantIncludes(input.grants?.connectors, connector.slug),
         )
         .map((connector) => {
-          const ownerType = connector.authorizationStrategy === 'user' ? 'member' : 'project';
+          const ownerType = connector.authorizationStrategy === 'user' ? 'member' : 'workspace';
           return {
             slug: connector.slug,
             name: connector.name,

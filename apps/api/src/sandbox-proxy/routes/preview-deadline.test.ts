@@ -26,7 +26,7 @@ const ACTIVE_RECORD = {
   status: 'active',
   serviceKey: 'svc-key',
   sessionId: 'sess-1',
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   accountId: 'acct-1',
   externalId: 'ext-1',
   agentName: 'default',
@@ -65,24 +65,24 @@ mock.module('../../shared/preview-ownership', () => ({
 }));
 // The connector pre-flight now runs on every turn-start. This file is about a
 // different concern, so keep it satisfied — unstubbed it reaches a real DB.
-mock.module('../../projects/lib/prompt-connector-preflight', () => ({
+mock.module('../../workspaces/lib/prompt-connector-preflight', () => ({
   PromptConnectorPreflightUnresolved: class PromptConnectorPreflightUnresolved extends Error {},
   missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../workspaces/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../workspaces/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../workspaces/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../workspaces/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
-mock.module('../../projects/reaping/stop-box', () => ({
+mock.module('../../workspaces/reaping/stop-box', () => ({
   parkBoxAtRunCap: async (row: unknown) => {
     parkCalls.push(row);
   },
@@ -92,8 +92,8 @@ mock.module('../../projects/reaping/stop-box', () => ({
 // classifiers (isTurnStartRequest / isPreviewUseObservation / isSandboxAuthored)
 // and the grant sizes are the REAL ones, because the thing under test here is
 // which requests reach a writer and with what grant.
-const realDeadline = await import('../../projects/sandbox-deadline-policy');
-mock.module('../../projects/sandbox-deadline', () => ({
+const realDeadline = await import('../../workspaces/sandbox-deadline-policy');
+mock.module('../../workspaces/sandbox-deadline', () => ({
   ...realDeadline,
   extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
     extends_.push({ target, grantMs });

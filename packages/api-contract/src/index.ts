@@ -15,7 +15,7 @@
  *      these schemas (see
  *      apps/api/src/__tests__/unit-api-contract-serializers.test.ts).
  */
-import { z } from 'zod';
+import { z } from "zod";
 
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -69,7 +69,11 @@ export const FEATURE_FLAG_KEYS = FeatureFlagKeySchema.options;
 
 /** How settled a flag's surface is — a badge, not a mechanism. A `stable`
  *  feature can still ship behind a flag (dark launch, gradual rollout). */
-export const FeatureFlagStabilitySchema = z.enum(['experimental', 'beta', 'stable']);
+export const FeatureFlagStabilitySchema = z.enum([
+  "experimental",
+  "beta",
+  "stable",
+]);
 export type FeatureFlagStability = z.infer<typeof FeatureFlagStabilitySchema>;
 
 /** One catalog entry of the self-describing feature-flag UI list. */
@@ -91,7 +95,7 @@ export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
  */
 export const FeatureDisabledErrorSchema = z.object({
   error: z.string(),
-  code: z.literal('feature_disabled'),
+  code: z.literal("feature_disabled"),
   feature: FeatureFlagKeySchema,
 });
 export type FeatureDisabledError = z.infer<typeof FeatureDisabledErrorSchema>;
@@ -112,12 +116,15 @@ export const ExperimentalFeatureViewSchema = FeatureFlagViewSchema;
 export type ExperimentalFeatureView = FeatureFlagView;
 
 /** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
-export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
+export const PROJECT_ROLES = ["manager", "editor", "member"] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
+/** Canonical domain name. ProjectRole remains a compatibility export. */
+export const WorkspaceRoleSchema = ProjectRoleSchema;
+export type WorkspaceRole = ProjectRole;
 
 /** Every sandbox provider the current platform can select or emit. */
-export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
+export const SANDBOX_PROVIDERS = ["daytona", "platinum", "e2b"] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
@@ -125,16 +132,28 @@ export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
  * The dashboard's three sharing options, as emitted on sessions
  * (`visibilityToIntent`) and secrets (`scopeToIntent`).
  */
-export const SharingIntentSchema = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('project') }),
-  z.object({ mode: z.literal('private'), ownerId: z.string() }),
+export const SharingIntentSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("project") }),
+  z.object({ mode: z.literal("private"), ownerId: z.string() }),
   z.object({
-    mode: z.literal('members'),
+    mode: z.literal("members"),
     memberIds: z.array(z.string()).readonly().optional(),
     groupIds: z.array(z.string()).readonly().optional(),
   }),
 ]);
 export type SharingIntent = z.infer<typeof SharingIntentSchema>;
+export const WorkspaceSharingIntentSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("workspace") }),
+  z.object({ mode: z.literal("private"), ownerId: z.string() }),
+  z.object({
+    mode: z.literal("members"),
+    memberIds: z.array(z.string()).readonly().optional(),
+    groupIds: z.array(z.string()).readonly().optional(),
+  }),
+]);
+export type WorkspaceSharingIntent = z.infer<
+  typeof WorkspaceSharingIntentSchema
+>;
 
 /** A project as serialized by `serializeProject`. */
 export const ProjectSchema = z.object({
@@ -146,7 +165,7 @@ export const ProjectSchema = z.object({
   git_origin_url: z.string(),
   default_branch: z.string(),
   manifest_path: z.string(),
-  status: z.enum(['active', 'archived']),
+  status: z.enum(["active", "archived"]),
   metadata: JsonObjectSchema,
   /** Per-project emoji shown on the project card, or null when unset/invalid. */
   icon: z.string().nullable(),
@@ -168,22 +187,47 @@ export const ProjectSchema = z.object({
   available_sandbox_providers: z.array(SandboxProviderSchema),
 });
 export type Project = z.infer<typeof ProjectSchema>;
+/** Canonical domain name. Project remains a compatibility export. */
+export const WorkspaceSchema = ProjectSchema.omit({
+  project_id: true,
+  project_role: true,
+  effective_project_role: true,
+}).extend({
+  workspace_id: z.string(),
+  /** Explicit project_members role, or null when access is inherited. */
+  workspace_role: WorkspaceRoleSchema.nullable(),
+  /** UI label for the caller's effective role (not an auth decision). */
+  effective_workspace_role: WorkspaceRoleSchema.nullable(),
+});
+export type Workspace = z.infer<typeof WorkspaceSchema>;
 
 export const SESSION_STATUSES = [
-  'queued',
-  'branching',
-  'provisioning',
-  'running',
-  'stopped',
-  'failed',
-  'completed',
+  "queued",
+  "branching",
+  "provisioning",
+  "running",
+  "stopped",
+  "failed",
+  "completed",
 ] as const;
 export const SessionStatusSchema = z.enum(SESSION_STATUSES);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
-export const SESSION_VISIBILITIES = ['private', 'project', 'restricted'] as const;
+export const SESSION_VISIBILITIES = [
+  "private",
+  "project",
+  "restricted",
+] as const;
 export const SessionVisibilitySchema = z.enum(SESSION_VISIBILITIES);
 export type SessionVisibility = z.infer<typeof SessionVisibilitySchema>;
+export const WorkspaceSessionVisibilitySchema = z.enum([
+  "private",
+  "workspace",
+  "restricted",
+]);
+export type WorkspaceSessionVisibility = z.infer<
+  typeof WorkspaceSessionVisibilitySchema
+>;
 
 /**
  * Non-secret, wrapper-supplied context attached durably to one Kortix session.
@@ -202,7 +246,9 @@ export const SessionRuntimeContextScalarSchema = z.union([
   z.boolean(),
   z.null(),
 ]);
-export type SessionRuntimeContextScalar = z.infer<typeof SessionRuntimeContextScalarSchema>;
+export type SessionRuntimeContextScalar = z.infer<
+  typeof SessionRuntimeContextScalarSchema
+>;
 
 export const SessionRuntimeContextSchema = z
   .record(
@@ -210,11 +256,11 @@ export const SessionRuntimeContextSchema = z
       .string()
       .regex(
         SESSION_RUNTIME_CONTEXT_KEY_PATTERN,
-        'runtime_context keys must start with a lower-case letter and contain only lower-case letters, numbers, dots, dashes, or underscores (max 64 characters)',
+        "runtime_context keys must start with a lower-case letter and contain only lower-case letters, numbers, dots, dashes, or underscores (max 64 characters)",
       )
       .refine(
         (key) => !SESSION_RUNTIME_CONTEXT_SENSITIVE_KEY_PATTERN.test(key),
-        'runtime_context is non-secret and cannot contain credential-like keys',
+        "runtime_context is non-secret and cannot contain credential-like keys",
       ),
     SessionRuntimeContextScalarSchema,
   )
@@ -240,7 +286,7 @@ const SessionConnectorBindingAliasSchema = z
   .string()
   .regex(
     /^[a-z][a-z0-9_-]{0,127}$/,
-    'connector binding aliases must be lower-case connector slugs',
+    "connector binding aliases must be lower-case connector slugs",
   );
 
 export const SessionConnectorBindingInputSchema = z
@@ -257,10 +303,15 @@ export const SessionConnectorBindingSchema = z
     connection_id: z.string().uuid(),
   })
   .strict();
-export type SessionConnectorBinding = z.infer<typeof SessionConnectorBindingSchema>;
+export type SessionConnectorBinding = z.infer<
+  typeof SessionConnectorBindingSchema
+>;
 
 export const SessionConnectorBindingsInputSchema = z
-  .record(SessionConnectorBindingAliasSchema, SessionConnectorBindingInputSchema)
+  .record(
+    SessionConnectorBindingAliasSchema,
+    SessionConnectorBindingInputSchema,
+  )
   .superRefine((value, ctx) => {
     if (Object.keys(value).length > SESSION_CONNECTOR_BINDINGS_MAX_KEYS) {
       ctx.addIssue({
@@ -269,7 +320,9 @@ export const SessionConnectorBindingsInputSchema = z
       });
     }
   });
-export type SessionConnectorBindingsInput = z.input<typeof SessionConnectorBindingsInputSchema>;
+export type SessionConnectorBindingsInput = z.input<
+  typeof SessionConnectorBindingsInputSchema
+>;
 
 export const SessionConnectorBindingsSchema = z
   .record(SessionConnectorBindingAliasSchema, SessionConnectorBindingSchema)
@@ -281,7 +334,9 @@ export const SessionConnectorBindingsSchema = z
       });
     }
   });
-export type SessionConnectorBindings = z.infer<typeof SessionConnectorBindingsSchema>;
+export type SessionConnectorBindings = z.infer<
+  typeof SessionConnectorBindingsSchema
+>;
 
 export const SESSION_SECRETS_ALLOWLIST_MAX_KEYS = 128;
 /**
@@ -296,17 +351,28 @@ export const SessionSecretsAllowlistSchema = z
       .string()
       .regex(
         /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/,
-        'each secrets entry must be a project-secret identifier',
+        "each secrets entry must be a project-secret identifier",
       ),
   )
   .max(
     SESSION_SECRETS_ALLOWLIST_MAX_KEYS,
     `secrets may contain at most ${SESSION_SECRETS_ALLOWLIST_MAX_KEYS} identifiers`,
   );
-export type SessionSecretsAllowlist = z.infer<typeof SessionSecretsAllowlistSchema>;
+export type SessionSecretsAllowlist = z.infer<
+  typeof SessionSecretsAllowlistSchema
+>;
 
-export const ConnectorAuthorizationStrategySchema = z.enum(['project', 'user']);
-export type ConnectorAuthorizationStrategy = z.infer<typeof ConnectorAuthorizationStrategySchema>;
+export const ConnectorAuthorizationStrategySchema = z.enum(["project", "user"]);
+export type ConnectorAuthorizationStrategy = z.infer<
+  typeof ConnectorAuthorizationStrategySchema
+>;
+export const WorkspaceConnectorAuthorizationStrategySchema = z.enum([
+  "workspace",
+  "user",
+]);
+export type WorkspaceConnectorAuthorizationStrategy = z.infer<
+  typeof WorkspaceConnectorAuthorizationStrategySchema
+>;
 
 /**
  * Connector aliases a session REQUIRES, whether or not anything is connected.
@@ -319,8 +385,10 @@ export type ConnectorAuthorizationStrategy = z.infer<typeof ConnectorAuthorizati
  */
 export const SessionRequiredConnectorsSchema = z
   .array(z.string().min(1).max(128))
-  .max(64, 'require_connectors may contain at most 64 aliases');
-export type SessionRequiredConnectors = z.infer<typeof SessionRequiredConnectorsSchema>;
+  .max(64, "require_connectors may contain at most 64 aliases");
+export type SessionRequiredConnectors = z.infer<
+  typeof SessionRequiredConnectorsSchema
+>;
 
 export const SessionScopeInputSchema = z
   .object({
@@ -342,10 +410,10 @@ export const SessionScopeInputSchema = z
   .strict()
   .refine(
     (value) =>
-      Object.hasOwn(value, 'secrets') ||
-      Object.hasOwn(value, 'connector_bindings') ||
-      Object.hasOwn(value, 'require_connectors'),
-    'Supply `secrets`, `connector_bindings`, `require_connectors`, or any combination',
+      Object.hasOwn(value, "secrets") ||
+      Object.hasOwn(value, "connector_bindings") ||
+      Object.hasOwn(value, "require_connectors"),
+    "Supply `secrets`, `connector_bindings`, `require_connectors`, or any combination",
   );
 export type SessionScopeInput = z.input<typeof SessionScopeInputSchema>;
 
@@ -414,7 +482,7 @@ export type RequiredConnectorConnection = z.infer<
 
 export const ConnectorConnectionRequiredErrorSchema = z
   .object({
-    code: z.literal('CONNECTOR_CONNECTION_REQUIRED'),
+    code: z.literal("CONNECTOR_CONNECTION_REQUIRED"),
     message: z.string().min(1),
     connector_connections: z.array(RequiredConnectorConnectionSchema).min(1),
   })
@@ -423,13 +491,34 @@ export type ConnectorConnectionRequiredError = z.infer<
   typeof ConnectorConnectionRequiredErrorSchema
 >;
 
+export const WorkspaceRequiredConnectorConnectionSchema =
+  RequiredConnectorConnectionSchema.omit({
+    authorization_strategy: true,
+  }).extend({
+    authorization_strategy: WorkspaceConnectorAuthorizationStrategySchema,
+  });
+export type WorkspaceRequiredConnectorConnection = z.infer<
+  typeof WorkspaceRequiredConnectorConnectionSchema
+>;
+export const WorkspaceConnectorConnectionRequiredErrorSchema =
+  ConnectorConnectionRequiredErrorSchema.omit({
+    connector_connections: true,
+  }).extend({
+    connector_connections: z
+      .array(WorkspaceRequiredConnectorConnectionSchema)
+      .min(1),
+  });
+export type WorkspaceConnectorConnectionRequiredError = z.infer<
+  typeof WorkspaceConnectorConnectionRequiredErrorSchema
+>;
+
 export const ConnectionOwnerTypeSchema = z.enum([
-  'agent',
-  'member',
-  'subject',
-  'external',
+  "agent",
+  "member",
+  "subject",
+  "external",
 ]);
-export const ConnectionStatusSchema = z.enum(['active', 'revoked', 'error']);
+export const ConnectionStatusSchema = z.enum(["active", "revoked", "error"]);
 export const ConnectionMetadataSchema = z
   .record(
     z
@@ -440,7 +529,7 @@ export const ConnectionMetadataSchema = z
           !/(^|[._-])(token|secret|password|credential|api[_-]?key|private[_-]?key|authorization|cookie)([._-]|$)/.test(
             key,
           ),
-        'connection metadata is non-secret',
+        "connection metadata is non-secret",
       ),
     SessionRuntimeContextScalarSchema,
   )
@@ -448,20 +537,23 @@ export const ConnectionMetadataSchema = z
     if (Object.keys(value).length > 64) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'metadata may contain at most 64 entries',
+        message: "metadata may contain at most 64 entries",
       });
     }
-    if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 16 * 1024) {
+    if (
+      new TextEncoder().encode(JSON.stringify(value)).byteLength >
+      16 * 1024
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'metadata must be at most 16384 UTF-8 bytes',
+        message: "metadata must be at most 16384 UTF-8 bytes",
       });
     }
   });
 export const ConnectionSchema = z.object({
   connection_id: z.string().uuid(),
   connector_alias: z.string(),
-  owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
+  owner_type: z.enum(["project", "agent", "member", "subject", "external"]),
   owner_id: z.string().nullable(),
   label: z.string(),
   status: ConnectionStatusSchema,
@@ -469,6 +561,12 @@ export const ConnectionSchema = z.object({
   metadata: ConnectionMetadataSchema,
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
+export const WorkspaceConnectionSchema = ConnectionSchema.omit({
+  owner_type: true,
+}).extend({
+  owner_type: z.enum(["workspace", "agent", "member", "subject", "external"]),
+});
+export type WorkspaceConnection = z.infer<typeof WorkspaceConnectionSchema>;
 
 export const ReconcileConnectionInputSchema = z
   .object({
@@ -477,28 +575,42 @@ export const ReconcileConnectionInputSchema = z
     // distinguished by label); it takes no owner_id. Every other owner type
     // requires one. Creating a project connection needs the connections-manage
     // capability — enforced at the route.
-    owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
+    owner_type: z.enum(["project", "agent", "member", "subject", "external"]),
     owner_id: z.string().trim().min(1).max(512).optional(),
     label: z.string().trim().min(1).max(255),
     metadata: ConnectionMetadataSchema.optional(),
   })
   .strict();
-export type ReconcileConnectionInput = z.infer<typeof ReconcileConnectionInputSchema>;
+export type ReconcileConnectionInput = z.infer<
+  typeof ReconcileConnectionInputSchema
+>;
+export const WorkspaceReconcileConnectionInputSchema =
+  ReconcileConnectionInputSchema.omit({
+    owner_type: true,
+  }).extend({
+    owner_type: z.enum(["workspace", "agent", "member", "subject", "external"]),
+  });
+export type WorkspaceReconcileConnectionInput = z.infer<
+  typeof WorkspaceReconcileConnectionInputSchema
+>;
 
 export const OAuth2ClientCredentialsSchema = z
   .object({
-    type: z.literal('oauth2_client_credentials'),
+    type: z.literal("oauth2_client_credentials"),
     token_url: z
       .string()
       .url()
-      .refine((value) => value.startsWith('https://'), 'token_url must use https'),
+      .refine(
+        (value) => value.startsWith("https://"),
+        "token_url must use https",
+      ),
     client_id: z.string().trim().min(1).max(1024),
     token_endpoint_auth_method: z.enum([
-      'none',
-      'client_secret_post',
-      'client_secret_basic',
-      'client_secret_jwt',
-      'private_key_jwt',
+      "none",
+      "client_secret_post",
+      "client_secret_basic",
+      "client_secret_jwt",
+      "private_key_jwt",
     ]),
     client_secret: z.string().min(1).max(65536).optional(),
     private_key: z.string().min(1).max(65536).optional(),
@@ -510,30 +622,39 @@ export const OAuth2ClientCredentialsSchema = z
   .strict()
   .superRefine((value, ctx) => {
     const usesSecret =
-      value.token_endpoint_auth_method === 'client_secret_post' ||
-      value.token_endpoint_auth_method === 'client_secret_basic' ||
-      value.token_endpoint_auth_method === 'client_secret_jwt';
+      value.token_endpoint_auth_method === "client_secret_post" ||
+      value.token_endpoint_auth_method === "client_secret_basic" ||
+      value.token_endpoint_auth_method === "client_secret_jwt";
     if (usesSecret && !value.client_secret) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['client_secret'],
-        message: 'client_secret is required for the selected authentication method',
+        path: ["client_secret"],
+        message:
+          "client_secret is required for the selected authentication method",
       });
     }
-    if (value.token_endpoint_auth_method === 'private_key_jwt' && !value.private_key) {
+    if (
+      value.token_endpoint_auth_method === "private_key_jwt" &&
+      !value.private_key
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['private_key'],
-        message: 'private_key is required for private_key_jwt',
+        path: ["private_key"],
+        message: "private_key is required for private_key_jwt",
       });
     }
   });
-export type OAuth2ClientCredentials = z.infer<typeof OAuth2ClientCredentialsSchema>;
+export type OAuth2ClientCredentials = z.infer<
+  typeof OAuth2ClientCredentialsSchema
+>;
 
 const OAuth2HttpsUrlSchema = z
   .string()
   .url()
-  .refine((value) => value.startsWith('https://'), 'OAuth2 endpoints must use https');
+  .refine(
+    (value) => value.startsWith("https://"),
+    "OAuth2 endpoints must use https",
+  );
 
 const OAuth2RedirectUrlSchema = z
   .string()
@@ -541,19 +662,22 @@ const OAuth2RedirectUrlSchema = z
   .refine((value) => {
     const url = new URL(value);
     return (
-      url.protocol === 'https:' ||
-      (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1'))
+      url.protocol === "https:" ||
+      (url.protocol === "http:" &&
+        (url.hostname === "localhost" || url.hostname === "127.0.0.1"))
     );
-  }, 'redirect URI must use https except on loopback');
+  }, "redirect URI must use https except on loopback");
 
 export const OAuth2TokenEndpointAuthMethodSchema = z.enum([
-  'none',
-  'client_secret_basic',
-  'client_secret_post',
-  'client_secret_jwt',
-  'private_key_jwt',
+  "none",
+  "client_secret_basic",
+  "client_secret_post",
+  "client_secret_jwt",
+  "private_key_jwt",
 ]);
-export type OAuth2TokenEndpointAuthMethod = z.infer<typeof OAuth2TokenEndpointAuthMethodSchema>;
+export type OAuth2TokenEndpointAuthMethod = z.infer<
+  typeof OAuth2TokenEndpointAuthMethodSchema
+>;
 
 const OAuth2ApplicationFields = {
   discovery_url: OAuth2HttpsUrlSchema.optional(),
@@ -579,31 +703,37 @@ export const OAuth2ApplicationInputSchema = z
     if (!value.discovery_url && !value.token_url) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['token_url'],
-        message: 'token_url or discovery_url is required',
+        path: ["token_url"],
+        message: "token_url or discovery_url is required",
       });
     }
     if (
-      (value.token_endpoint_auth_method === 'client_secret_basic' ||
-        value.token_endpoint_auth_method === 'client_secret_post' ||
-        value.token_endpoint_auth_method === 'client_secret_jwt') &&
+      (value.token_endpoint_auth_method === "client_secret_basic" ||
+        value.token_endpoint_auth_method === "client_secret_post" ||
+        value.token_endpoint_auth_method === "client_secret_jwt") &&
       !value.client_secret
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['client_secret'],
-        message: 'client_secret is required for the selected authentication method',
+        path: ["client_secret"],
+        message:
+          "client_secret is required for the selected authentication method",
       });
     }
-    if (value.token_endpoint_auth_method === 'private_key_jwt' && !value.private_key) {
+    if (
+      value.token_endpoint_auth_method === "private_key_jwt" &&
+      !value.private_key
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['private_key'],
-        message: 'private_key is required for private_key_jwt',
+        path: ["private_key"],
+        message: "private_key is required for private_key_jwt",
       });
     }
   });
-export type OAuth2ApplicationInput = z.infer<typeof OAuth2ApplicationInputSchema>;
+export type OAuth2ApplicationInput = z.infer<
+  typeof OAuth2ApplicationInputSchema
+>;
 
 export const OAuth2ApplicationViewSchema = z
   .object(OAuth2ApplicationFields)
@@ -622,7 +752,10 @@ export const OAuth2DiscoveryInputSchema = z
   .strict();
 export type OAuth2DiscoveryInput = z.infer<typeof OAuth2DiscoveryInputSchema>;
 
-const OAuth2OptionalScopesSchema = z.array(z.string().trim().min(1).max(2048)).max(64).optional();
+const OAuth2OptionalScopesSchema = z
+  .array(z.string().trim().min(1).max(2048))
+  .max(64)
+  .optional();
 
 export const OAuth2AuthorizationStartInputSchema = z
   .object({
@@ -631,7 +764,9 @@ export const OAuth2AuthorizationStartInputSchema = z
     error_redirect_uri: OAuth2RedirectUrlSchema.optional(),
   })
   .strict();
-export type OAuth2AuthorizationStartInput = z.infer<typeof OAuth2AuthorizationStartInputSchema>;
+export type OAuth2AuthorizationStartInput = z.infer<
+  typeof OAuth2AuthorizationStartInputSchema
+>;
 
 export const OAuth2DeviceAuthorizationStartInputSchema = z
   .object({ scopes: OAuth2OptionalScopesSchema })
@@ -646,7 +781,9 @@ export const OAuth2AuthorizationStartResultSchema = z
     expires_at: z.string().datetime(),
   })
   .strict();
-export type OAuth2AuthorizationStartResult = z.infer<typeof OAuth2AuthorizationStartResultSchema>;
+export type OAuth2AuthorizationStartResult = z.infer<
+  typeof OAuth2AuthorizationStartResultSchema
+>;
 
 export const OAuth2DeviceAuthorizationStartResultSchema = z
   .object({
@@ -664,19 +801,28 @@ export type OAuth2DeviceAuthorizationStartResult = z.infer<
 
 export const OAuth2ConnectionStatusSchema = z
   .object({
-    status: z.enum(['not_configured', 'ready', 'pending', 'active', 'error', 'revoked']),
+    status: z.enum([
+      "not_configured",
+      "ready",
+      "pending",
+      "active",
+      "error",
+      "revoked",
+    ]),
     expires_at: z.string().datetime().nullable().optional(),
     scopes: z.array(z.string()).optional(),
     error_code: z.string().max(128).nullable().optional(),
   })
   .strict();
-export type OAuth2ConnectionStatus = z.infer<typeof OAuth2ConnectionStatusSchema>;
+export type OAuth2ConnectionStatus = z.infer<
+  typeof OAuth2ConnectionStatusSchema
+>;
 
 export const UpdateConnectionCredentialInputSchema = z.union([
   z
     .object({
       value: z.string().min(1).max(65536),
-      kind: z.enum(['secret', 'connection']).optional(),
+      kind: z.enum(["secret", "connection"]).optional(),
     })
     .strict(),
   z.object({ oauth2: OAuth2ClientCredentialsSchema }).strict(),
@@ -698,16 +844,20 @@ export const PendingSessionPromptSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.text.trim().length > 0 || (value.attachment_names?.length ?? 0) > 0) return;
+    if (
+      value.text.trim().length > 0 ||
+      (value.attachment_names?.length ?? 0) > 0
+    )
+      return;
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ['text'],
-      message: 'A pending prompt requires text or an attachment name.',
+      path: ["text"],
+      message: "A pending prompt requires text or an attachment name.",
     });
   });
 export type PendingSessionPrompt = z.infer<typeof PendingSessionPromptSchema>;
 
-/** Authoritative public body for POST /v1/projects/:projectId/sessions. */
+/** Authoritative public body for POST /v1/projects/:workspaceId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
     base_ref: z.string().min(1).optional(),
@@ -725,7 +875,7 @@ export const SessionCreateInputSchema = z
       .string()
       .regex(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-        'session_id must be an RFC 4122 v4 UUID',
+        "session_id must be an RFC 4122 v4 UUID",
       )
       .optional(),
     provider: SandboxProviderSchema.optional(),
@@ -741,7 +891,12 @@ export const SessionCreateInputSchema = z
     // structured CONNECTOR_CONNECTION_REQUIRED response before provisioning.
     require_connectors: z
       .array(
-        z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/, 'connector alias must be a lower-case slug'),
+        z
+          .string()
+          .regex(
+            /^[a-z][a-z0-9_-]{0,127}$/,
+            "connector alias must be a lower-case slug",
+          ),
       )
       .max(SESSION_CONNECTOR_BINDINGS_MAX_KEYS)
       .optional(),
@@ -761,7 +916,7 @@ export const SessionCreateInputSchema = z
       .string()
       .regex(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-        'sessionId must be an RFC 4122 v4 UUID',
+        "sessionId must be an RFC 4122 v4 UUID",
       )
       .optional(),
     branchAlreadyCreated: z.boolean().optional(),
@@ -792,10 +947,13 @@ export const ProjectSessionSchema = z.object({
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
-  owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
+  owner_type: z
+    .enum(["user", "service_account", "unknown"])
+    .nullable()
+    .optional(),
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */
-  origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
+  origin: z.enum(["user", "trigger", "schedule", "backend", "system"]),
   /** Backend-set per-session secrets allowlist (identifiers); null = no narrowing. */
   secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
   sharing: SharingIntentSchema,
@@ -803,7 +961,7 @@ export const ProjectSessionSchema = z.object({
   can_manage_sharing: z.boolean(),
   can_access: z.boolean().optional(),
   runtime_status: z
-    .enum(['provisioning', 'active', 'stopped', 'error', 'archived'])
+    .enum(["provisioning", "active", "stopped", "error", "archived"])
     .nullable()
     .optional(),
   deleted_at: z.string().nullable().optional(),
@@ -812,9 +970,20 @@ export const ProjectSessionSchema = z.object({
   updated_at: z.string(),
 });
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
+/** Canonical domain name. ProjectSession remains a compatibility export. */
+export const WorkspaceSessionSchema = ProjectSessionSchema.omit({
+  project_id: true,
+  visibility: true,
+  sharing: true,
+}).extend({
+  workspace_id: z.string(),
+  visibility: WorkspaceSessionVisibilitySchema,
+  sharing: WorkspaceSharingIntentSchema,
+});
+export type WorkspaceSession = z.infer<typeof WorkspaceSessionSchema>;
 
 export const WarmProjectSessionWorkspaceRefreshSchema = z.object({
-  status: z.enum(['skipped', 'unchanged', 'updated', 'failed']),
+  status: z.enum(["skipped", "unchanged", "updated", "failed"]),
   before_sha: z.string().nullable().optional(),
   after_sha: z.string().nullable().optional(),
   error: z.string().optional(),
@@ -828,7 +997,16 @@ export const WarmProjectSessionResultSchema = z.object({
   reused: z.boolean(),
   workspace_refresh: WarmProjectSessionWorkspaceRefreshSchema,
 });
-export type WarmProjectSessionResult = z.infer<typeof WarmProjectSessionResultSchema>;
+export type WarmProjectSessionResult = z.infer<
+  typeof WarmProjectSessionResultSchema
+>;
+export const WarmWorkspaceSessionResultSchema =
+  WarmProjectSessionResultSchema.omit({
+    session: true,
+  }).extend({ session: WorkspaceSessionSchema });
+export type WarmWorkspaceSessionResult = z.infer<
+  typeof WarmWorkspaceSessionResultSchema
+>;
 
 export const ClaimWarmProjectSessionInputSchema = z
   .object({
@@ -836,21 +1014,26 @@ export const ClaimWarmProjectSessionInputSchema = z
       .string()
       .regex(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-        'session_id must be an RFC 4122 v4 UUID',
+        "session_id must be an RFC 4122 v4 UUID",
       ),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
   })
   .strict();
-export type ClaimWarmProjectSessionInput = z.infer<typeof ClaimWarmProjectSessionInputSchema>;
+export type ClaimWarmProjectSessionInput = z.infer<
+  typeof ClaimWarmProjectSessionInputSchema
+>;
+export const ClaimWarmWorkspaceSessionInputSchema =
+  ClaimWarmProjectSessionInputSchema;
+export type ClaimWarmWorkspaceSessionInput = ClaimWarmProjectSessionInput;
 
 export const SESSION_SANDBOX_STATUSES = [
-  'provisioning',
-  'active',
-  'stopped',
-  'error',
-  'archived',
+  "provisioning",
+  "active",
+  "stopped",
+  "error",
+  "archived",
 ] as const;
 export const SessionSandboxStatusSchema = z.enum(SESSION_SANDBOX_STATUSES);
 export type SessionSandboxStatus = z.infer<typeof SessionSandboxStatusSchema>;
@@ -872,13 +1055,21 @@ export const ProjectSessionSandboxSchema = z.object({
   updated_at: z.string(),
 });
 export type ProjectSessionSandbox = z.infer<typeof ProjectSessionSandboxSchema>;
+export const WorkspaceSessionSandboxSchema = ProjectSessionSandboxSchema.omit({
+  project_id: true,
+}).extend({
+  workspace_id: z.string(),
+});
+export type WorkspaceSessionSandbox = z.infer<
+  typeof WorkspaceSessionSandboxSchema
+>;
 
 export const SESSION_START_STAGES = [
-  'provisioning',
-  'starting',
-  'ready',
-  'stopped',
-  'failed',
+  "provisioning",
+  "starting",
+  "ready",
+  "stopped",
+  "failed",
 ] as const;
 export const SessionStartStageSchema = z.enum(SESSION_START_STAGES);
 export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
@@ -886,14 +1077,14 @@ export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
 export const SessionStartFailureSchema = z
   .object({
     category: z.enum([
-      'provider-capacity',
-      'git-auth',
+      "provider-capacity",
+      "git-auth",
       // The PROVIDER cannot do network-boundary delivery (e.g. a Daytona box).
-      'unsupported-secret-delivery',
+      "unsupported-secret-delivery",
       // The PROJECT's own boundary policy is unusable — two secrets claiming the same
       // (host, header), or a policy the boundary cannot enforce. Never retryable.
-      'invalid-secret-boundary-policy',
-      'sandbox-provider',
+      "invalid-secret-boundary-policy",
+      "sandbox-provider",
     ]),
     message: z.string(),
     retryable: z.boolean(),
@@ -919,7 +1110,7 @@ export const SessionStartResultSchema = z.object({
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),
   /** Server-selected OpenCode REST transport. */
-  runtime_transport: z.literal('rest').optional(),
+  runtime_transport: z.literal("rest").optional(),
   /**
    * Relative proxy path for this session's OpenCode runtime (port 8000),
    * composed by the client against its configured backend URL. The server owns
@@ -929,6 +1120,16 @@ export const SessionStartResultSchema = z.object({
   reason: z.string().optional(),
 });
 export type SessionStartResult = z.infer<typeof SessionStartResultSchema>;
+
+/** Canonical Workspace readiness payload for `/v1/workspaces/**`. */
+export const WorkspaceSessionStartResultSchema = SessionStartResultSchema.omit({
+  sandbox: true,
+}).extend({
+  sandbox: WorkspaceSessionSandboxSchema.nullable(),
+});
+export type WorkspaceSessionStartResult = z.infer<
+  typeof WorkspaceSessionStartResultSchema
+>;
 
 /**
  * The 202 envelope of POST /v1/projects/:id/sessions when the create is
@@ -947,7 +1148,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook']),
+  type: z.enum(["cron", "webhook"]),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -957,7 +1158,7 @@ export const TriggerSchema = z.object({
   timezone: z.string(),
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
-  session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']),
+  session_mode: z.enum(["fresh", "reuse", "pinned", "keyed"]),
   /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
   session_id: z.string().nullable(),
   /**
@@ -982,7 +1183,9 @@ export type Trigger = z.infer<typeof TriggerSchema>;
 export const TriggerListSchema = z.object({
   triggers: z.array(TriggerSchema),
   triggers_paused: z.boolean(),
-  errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
+  errors: z.array(
+    z.object({ slug: z.string(), path: z.string(), error: z.string() }),
+  ),
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;
 
@@ -998,20 +1201,31 @@ export type TriggerList = z.infer<typeof TriggerListSchema>;
  * no per-secret member/group sharing and no resource-side agent allow-list
  * (both retired); every project member with read access sees every secret.
  */
-export const SecretDeliveryStrategySchema = z.enum(['runtime', 'egress', 'broker', 'denied']);
-export type SecretDeliveryStrategy = z.infer<typeof SecretDeliveryStrategySchema>;
+export const SecretDeliveryStrategySchema = z.enum([
+  "runtime",
+  "egress",
+  "broker",
+  "denied",
+]);
+export type SecretDeliveryStrategy = z.infer<
+  typeof SecretDeliveryStrategySchema
+>;
 
 export const SecretConsumerSchema = z.enum([
-  'sandbox',
-  'llm_gateway',
-  'connector',
-  'git_proxy',
-  'http_broker',
-  'network',
+  "sandbox",
+  "llm_gateway",
+  "connector",
+  "git_proxy",
+  "http_broker",
+  "network",
 ]);
 export type SecretConsumer = z.infer<typeof SecretConsumerSchema>;
 
-export const SecretDeliveryStatusSchema = z.enum(['available', 'unavailable', 'disabled']);
+export const SecretDeliveryStatusSchema = z.enum([
+  "available",
+  "unavailable",
+  "disabled",
+]);
 export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
 
 /**
@@ -1024,17 +1238,25 @@ export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
  * Never a guess. A warning raised because the manifest failed to load is worse
  * than no warning, so an unreadable manifest reports null.
  */
-export const SecretDeliveryBlockedReasonSchema = z.enum(['no_agent_grant']);
-export type SecretDeliveryBlockedReason = z.infer<typeof SecretDeliveryBlockedReasonSchema>;
+export const SecretDeliveryBlockedReasonSchema = z.enum(["no_agent_grant"]);
+export type SecretDeliveryBlockedReason = z.infer<
+  typeof SecretDeliveryBlockedReasonSchema
+>;
 
-export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
-  z.object({ kind: z.literal('query'), name: z.string() }),
-  z.object({ kind: z.literal('json_body_field'), path: z.string() }),
+export const SecretInjectionSlotSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("header"),
+    name: z.string(),
+    template: z.string().optional(),
+  }),
+  z.object({ kind: z.literal("query"), name: z.string() }),
+  z.object({ kind: z.literal("json_body_field"), path: z.string() }),
 ]);
 
 export const SecretEgressPolicySchema = z.object({
-  backend: z.enum(['llm_gateway', 'connector', 'git_proxy', 'kortix_fetch']).optional(),
+  backend: z
+    .enum(["llm_gateway", "connector", "git_proxy", "kortix_fetch"])
+    .optional(),
   base_url_env: z.string().optional(),
   rules: z.array(
     z.object({
@@ -1045,8 +1267,8 @@ export const SecretEgressPolicySchema = z.object({
     }),
   ),
   inject: SecretInjectionSlotSchema,
-  on_no_match: z.enum(['deny', 'observe']).optional(),
-  tls: z.enum(['terminate', 'tunnel']).optional(),
+  on_no_match: z.enum(["deny", "observe"]).optional(),
+  tls: z.enum(["terminate", "tunnel"]).optional(),
 });
 export type SecretEgressPolicy = z.infer<typeof SecretEgressPolicySchema>;
 
@@ -1058,19 +1280,23 @@ export const UpdateSecretStrategyInputSchema = z
     handle_prefix: z.string().min(1).max(48).optional(),
   })
   .strict();
-export type UpdateSecretStrategyInput = z.infer<typeof UpdateSecretStrategyInputSchema>;
+export type UpdateSecretStrategyInput = z.infer<
+  typeof UpdateSecretStrategyInputSchema
+>;
 
 export const SecretBrokerRequestSchema = z
   .object({
     url: z.string().min(1).max(4096),
-    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']).default('GET'),
+    method: z
+      .enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+      .default("GET"),
     headers: z.record(z.string(), z.string().max(8192)).optional(),
     body_base64: z.string().max(1_400_000).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value.headers ?? {}).length <= 64, {
-    message: 'headers must contain at most 64 entries',
-    path: ['headers'],
+    message: "headers must contain at most 64 entries",
+    path: ["headers"],
   });
 export type SecretBrokerRequest = z.infer<typeof SecretBrokerRequestSchema>;
 
@@ -1093,16 +1319,16 @@ export const SecretSchema = z.object({
   updated_at: z.string().nullable(),
   system: z.boolean(),
   readonly: z.boolean(),
-  purpose: z.literal('git_auth').nullable(),
+  purpose: z.literal("git_auth").nullable(),
   can_rotate: z.boolean(),
-  managed_by: z.literal('project_secret').nullable(),
+  managed_by: z.literal("project_secret").nullable(),
   /** Is a shared project value set at all. */
   configured: z.boolean(),
   /** The caller's private override (value omitted), or null. Used today only by
    *  the CODEX_AUTH_JSON per-user provider login. */
   mine: z.object({ active: z.boolean(), updated_at: z.string() }).nullable(),
   /** Which value actually gets injected into the caller's sessions. */
-  effective_source: z.enum(['mine', 'shared', 'none']),
+  effective_source: z.enum(["mine", "shared", "none"]),
   can_manage_shared: z.boolean(),
   strategy: SecretDeliveryStrategySchema,
   consumer: SecretConsumerSchema.nullable(),
@@ -1111,7 +1337,8 @@ export const SecretSchema = z.object({
    *  `delivery_status` says the deployment supports the mode; this says whether
    *  any agent may actually receive the secret. See
    *  `SecretDeliveryBlockedReasonSchema` for the tri-state rule. */
-  delivery_blocked_reason: SecretDeliveryBlockedReasonSchema.nullable().optional(),
+  delivery_blocked_reason:
+    SecretDeliveryBlockedReasonSchema.nullable().optional(),
   network_boundary_available: z.boolean().optional(),
   egress_policy: SecretEgressPolicySchema.nullable(),
   strategy_locked: z.boolean(),
@@ -1119,3 +1346,11 @@ export const SecretSchema = z.object({
   requires_rotation: z.boolean(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
+
+/** Canonical Workspace secret payload. Secret remains the Project compatibility shape. */
+export const WorkspaceSecretSchema = SecretSchema.omit({
+  project_id: true,
+}).extend({
+  workspace_id: z.string(),
+});
+export type WorkspaceSecret = z.infer<typeof WorkspaceSecretSchema>;

@@ -1,7 +1,7 @@
 export interface AuthedPrincipal {
   userId: string;
   accountId: string;
-  projectId?: string;
+  workspaceId?: string;
   sessionId?: string;
   keyId?: string;
   // Resolved billing tier (e.g. 'free', 'pro', 'per_seat'). Attached once at

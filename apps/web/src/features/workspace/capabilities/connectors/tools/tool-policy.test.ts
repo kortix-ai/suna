@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   applyBulkPolicy,
   effectiveChoice,
-  isLockedByProject,
+  isLockedByWorkspace,
   isPatternRule,
   orderPolicyRules,
   previewEffective,
@@ -34,20 +34,20 @@ describe('effectiveChoice', () => {
   test('an unknown path is default', () => {
     expect(effectiveChoice('nope', [])).toBe('default');
   });
-  test('a project rule shows its action — that is what actually happens', () => {
-    expect(effectiveChoice('send_email', [eff('send_email', 'block', 'project')])).toBe('block');
+  test('a workspace rule shows its action — that is what actually happens', () => {
+    expect(effectiveChoice('send_email', [eff('send_email', 'block', 'workspace')])).toBe('block');
   });
 });
 
-describe('isLockedByProject', () => {
-  test('a project-scope rule cannot be overridden here', () => {
-    expect(isLockedByProject('send_email', [eff('send_email', 'block', 'project')])).toBe(true);
+describe('isLockedByWorkspace', () => {
+  test('a workspace-scope rule cannot be overridden here', () => {
+    expect(isLockedByWorkspace('send_email', [eff('send_email', 'block', 'workspace')])).toBe(true);
   });
   test('a connector-scope rule is editable', () => {
-    expect(isLockedByProject('send_email', [eff('send_email', 'block', 'connector')])).toBe(false);
+    expect(isLockedByWorkspace('send_email', [eff('send_email', 'block', 'connector')])).toBe(false);
   });
   test('no policy is editable', () => {
-    expect(isLockedByProject('send_email', [])).toBe(false);
+    expect(isLockedByWorkspace('send_email', [])).toBe(false);
   });
 });
 
@@ -206,7 +206,7 @@ describe('toolChoice', () => {
       toolChoice(
         'send_email',
         [{ match: 'send_email', action: 'always_run' }],
-        [eff('send_email', 'block', 'project')],
+        [eff('send_email', 'block', 'workspace')],
       ),
     ).toBe('block');
   });
@@ -236,9 +236,9 @@ describe('previewEffective', () => {
       ),
     ).toEqual([eff('a', 'block', 'connector'), eff('b', 'always_run', 'allow_all')]);
   });
-  test('never overwrites a project-scope entry — the server would not either', () => {
-    expect(previewEffective([eff('a', 'block', 'project')], ['a'], 'always_run')).toEqual([
-      eff('a', 'block', 'project'),
+  test('never overwrites a workspace-scope entry — the server would not either', () => {
+    expect(previewEffective([eff('a', 'block', 'workspace')], ['a'], 'always_run')).toEqual([
+      eff('a', 'block', 'workspace'),
     ]);
   });
   test('an empty effective list stays empty — nothing is invented', () => {
@@ -256,9 +256,9 @@ describe('previewEffective', () => {
       ),
     ).toEqual([eff('b', 'block', 'connector')]);
   });
-  test("'default' still never touches a project-scope entry", () => {
-    expect(previewEffective([eff('a', 'block', 'project')], ['a'], 'default')).toEqual([
-      eff('a', 'block', 'project'),
+  test("'default' still never touches a workspace-scope entry", () => {
+    expect(previewEffective([eff('a', 'block', 'workspace')], ['a'], 'default')).toEqual([
+      eff('a', 'block', 'workspace'),
     ]);
   });
 });

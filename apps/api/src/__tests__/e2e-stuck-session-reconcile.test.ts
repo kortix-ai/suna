@@ -21,7 +21,7 @@ import {
   chatTurnStreams,
   type Database,
 } from '@kortix/db';
-import { reconcileStuckActiveSessions } from '../projects/sandbox-reaper';
+import { reconcileStuckActiveSessions } from '../workspaces/sandbox-reaper';
 
 const TEST_DB_CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const HAS_CONFIRMED_TEST_DB = Boolean(
@@ -32,7 +32,7 @@ const HAS_CONFIRMED_TEST_DB = Boolean(
 const describeWithDb = HAS_CONFIRMED_TEST_DB ? describe : describe.skip;
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000009301';
-const PROJECT_ID = '00000000-0000-4000-a000-000000009302';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000009302';
 const SANDBOX_STOPPED = '00000000-0000-4000-a000-000000009303';
 const SANDBOX_ACTIVE = '00000000-0000-4000-a000-000000009304';
 const SANDBOX_ACTIVE_DELETED = '00000000-0000-4000-a000-000000009305';
@@ -73,7 +73,7 @@ async function cleanup() {
   await d.delete(chatTurnStreams).where(inArray(chatTurnStreams.sessionId, ALL_SESSIONS));
   await d.delete(sessionSandboxes).where(inArray(sessionSandboxes.sandboxId, [SANDBOX_STOPPED, SANDBOX_ACTIVE, SANDBOX_ACTIVE_DELETED]));
   await d.delete(projectSessions).where(inArray(projectSessions.sessionId, ALL_SESSIONS));
-  await d.delete(projects).where(eq(projects.projectId, PROJECT_ID));
+  await d.delete(projects).where(eq(projects.workspaceId, WORKSPACE_ID));
   await d.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
 }
 
@@ -82,12 +82,12 @@ async function seed(now: Date) {
   const old = minsAgo(now, 30); // older than the 15m auto-stop TTL → a candidate
   await d.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'Reaper E2E Acct' });
   await d.insert(projects).values({
-    projectId: PROJECT_ID, accountId: ACCOUNT_ID, name: 'Reaper E2E', repoUrl: 'https://example.test/r.git',
+    workspaceId: WORKSPACE_ID, accountId: ACCOUNT_ID, name: 'Reaper E2E', repoUrl: 'https://example.test/r.git',
   });
 
   // One session row per case (distinct branch_name — unique per project).
   const sess = (sessionId: string, status: 'running' | 'provisioning', updatedAt: Date) => ({
-    sessionId, accountId: ACCOUNT_ID, projectId: PROJECT_ID, branchName: `b/${sessionId}`,
+    sessionId, accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID, branchName: `b/${sessionId}`,
     status, createdAt: minsAgo(now, 60), updatedAt,
   });
   await d.insert(projectSessions).values([
@@ -108,19 +108,19 @@ async function seed(now: Date) {
   // box behind the deleted-but-resurrected session (must NOT keep it alive —
   // metadata.deletedAt overrides the active-sandbox-row exclusion).
   await d.insert(sessionSandboxes).values([
-    { sandboxId: SANDBOX_STOPPED, sessionId: S_STOPPED_BOX_STUCK, accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'stopped', externalId: 'ext-stopped' },
-    { sandboxId: SANDBOX_ACTIVE, sessionId: S_ACTIVE_BOX_KEEP, accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'active', externalId: 'ext-active' },
-    { sandboxId: SANDBOX_ACTIVE_DELETED, sessionId: S_DELETED_ACTIVE_BOX_STUCK, accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'active', externalId: 'ext-active-deleted' },
+    { sandboxId: SANDBOX_STOPPED, sessionId: S_STOPPED_BOX_STUCK, accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID, status: 'stopped', externalId: 'ext-stopped' },
+    { sandboxId: SANDBOX_ACTIVE, sessionId: S_ACTIVE_BOX_KEEP, accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID, status: 'active', externalId: 'ext-active' },
+    { sandboxId: SANDBOX_ACTIVE_DELETED, sessionId: S_DELETED_ACTIVE_BOX_STUCK, accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID, status: 'active', externalId: 'ext-active-deleted' },
   ]);
 
   // Recent LLM usage → meaningful activity within the TTL window.
   await d.insert(usageEvents).values({
-    accountId: ACCOUNT_ID, projectId: PROJECT_ID, sessionId: S_RECENT_USAGE_KEEP,
+    accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID, sessionId: S_RECENT_USAGE_KEEP,
     provider: 'kortix', model: 'test', route: 'chat', createdAt: minsAgo(now, 2),
   });
   // An in-flight (unfinalized) turn → never reap.
   await d.insert(chatTurnStreams).values({
-    sessionId: S_INFLIGHT_TURN_KEEP, projectId: PROJECT_ID, teamId: 't', channel: 'c',
+    sessionId: S_INFLIGHT_TURN_KEEP, workspaceId: WORKSPACE_ID, teamId: 't', channel: 'c',
     triggerTs: '1', finalized: false, originatingEvent: {}, expiresAt: minsAgo(now, -60),
   });
 }

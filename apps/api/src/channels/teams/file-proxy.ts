@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { teamsPendingUploads } from '@kortix/db';
 import { eq, lt } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { loadTeamsBotCredentials, loadTeamsTenantForProject } from '../install-store';
+import { loadTeamsBotCredentials, loadTeamsTenantForWorkspace } from '../install-store';
 import { sendActivity } from '../teams-api';
 import { assertValidTeamsServiceUrl } from '../teams-service-url';
 import { graphToken } from '../teams-auth';
@@ -17,7 +17,7 @@ const ALLOWED_DOWNLOAD_HOST =
 export type FileProxyError = { ok: false; error: string; status: number };
 
 export async function downloadTeamsFile(
-  projectId: string,
+  workspaceId: string,
   url: string,
 ): Promise<{ ok: true; body: ArrayBuffer; contentType: string } | FileProxyError> {
   let parsed: URL;
@@ -32,9 +32,9 @@ export async function downloadTeamsFile(
 
   const headers: Record<string, string> = {};
   if (/(^|\.)graph\.microsoft\.com$/i.test(parsed.hostname)) {
-    const tenant = await loadTeamsTenantForProject(projectId);
-    if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
-    const creds = await loadTeamsBotCredentials(projectId);
+    const tenant = await loadTeamsTenantForWorkspace(workspaceId);
+    if (!tenant) return { ok: false, error: 'Teams not connected for this workspace', status: 404 };
+    const creds = await loadTeamsBotCredentials(workspaceId);
     const token = await graphToken(tenant, creds).catch(() => null);
     if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
     headers.Authorization = `Bearer ${token}`;
@@ -59,7 +59,7 @@ export interface TeamsUploadArgs {
 }
 
 export async function initiateTeamsUpload(
-  projectId: string,
+  workspaceId: string,
   args: TeamsUploadArgs,
 ): Promise<{ ok: true; uploadId: string } | FileProxyError> {
   if (!args.serviceUrl || !args.conversationId || !args.filename || !args.contentBase64) {
@@ -97,7 +97,7 @@ export async function initiateTeamsUpload(
   const uploadId = randomUUID();
   await db.insert(teamsPendingUploads).values({
     uploadId,
-    projectId,
+    workspaceId,
     serviceUrl: args.serviceUrl,
     conversationId: args.conversationId,
     botId: args.botId ?? null,
@@ -112,7 +112,7 @@ export async function initiateTeamsUpload(
     serviceUrl: args.serviceUrl,
     conversationId: args.conversationId,
     botId: args.botId,
-    projectId,
+    workspaceId,
   };
   const posted = await sendActivity(ref, {
     type: 'message',
@@ -166,7 +166,7 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
     serviceUrl: activity.serviceUrl ?? row?.serviceUrl ?? '',
     conversationId: activity.conversation?.id ?? row?.conversationId ?? '',
     botId: activity.recipient?.id ?? row?.botId ?? undefined,
-    projectId: row?.projectId,
+    workspaceId: row?.workspaceId,
   };
 
   if (value.action !== 'accept') {

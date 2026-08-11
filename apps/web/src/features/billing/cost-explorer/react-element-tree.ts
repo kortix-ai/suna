@@ -18,7 +18,7 @@
  * `children` — so a children-only walk cannot see half of what a level
  * assembles.
  *
- * Shared by `projects-level.test.tsx` and `sessions-level.test.tsx`. Not
+ * Shared by `workspaces-level.test.tsx` and `sessions-level.test.tsx`. Not
  * imported by any application module — deliberately named without `.test.` so
  * the runner does not treat it as a suite of its own.
  */

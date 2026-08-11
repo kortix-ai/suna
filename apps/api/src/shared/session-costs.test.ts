@@ -11,8 +11,8 @@ import {
 
 const baseSession = {
   sessionId: 'session-zero',
-  projectId: '00000000-0000-4000-a000-000000000101',
-  projectName: 'Project One',
+  workspaceId: '00000000-0000-4000-a000-000000000101',
+  projectName: 'Workspace One',
   ownerId: null,
   status: 'stopped' as const,
   createdAt: new Date('2026-07-01T10:00:00.000Z'),
@@ -24,7 +24,7 @@ describe('assembleSessionCostSummary', () => {
     expect(assembleSessionCostSummary({ session: baseSession })).toEqual({
       session_id: 'session-zero',
       project_id: '00000000-0000-4000-a000-000000000101',
-      project_name: 'Project One',
+      project_name: 'Workspace One',
       owner_id: null,
       owner_type: null,
       owner_name: null,

@@ -19,17 +19,17 @@ import {
   ApiError,
   PROVISION_IN_FLIGHT_CODE,
   type KortixAccount,
-  type KortixProject,
+  type KortixWorkspace,
   type ProvisionPhase,
-  type ProvisionProjectInput,
+  type ProvisionWorkspaceInput,
   type ProvisionStreamEvent,
 } from '@kortix/sdk';
 
 const OWNER_ACCOUNT: KortixAccount = { account_id: 'acct-owner', name: 'Owner Co', account_role: 'owner' };
 
-function fakeProject(id: string, accountId = 'acct-owner'): KortixProject {
+function fakeWorkspace(id: string, accountId = 'acct-owner'): KortixWorkspace {
   return {
-    project_id: id,
+    workspace_id: id,
     account_id: accountId,
     name: 'suna-web',
     repo_url: 'https://example.test/repo.git',
@@ -40,7 +40,7 @@ function fakeProject(id: string, accountId = 'acct-owner'): KortixProject {
     last_opened_at: null,
     created_at: '2026-08-06T00:00:00.000Z',
     updated_at: '2026-08-06T00:00:00.000Z',
-  } as unknown as KortixProject;
+  } as unknown as KortixWorkspace;
 }
 
 function inFlightError(): ApiError {
@@ -146,7 +146,7 @@ describe('messageFor', () => {
   });
 
   // This route's ONLY 503 is the managed-git-unavailable one
-  // (`isManagedGitUnavailableError`, `ensure-first-project.ts`) — a server
+  // (`isManagedGitUnavailableError`, `ensure-first-workspace.ts`) — a server
   // configuration state, not a transient failure. Unlike 502, it must NOT
   // get the retry-hint message: nothing the user does changes the outcome.
   test('maps 503 to a server-config message distinct from the 502 retry hint', () => {
@@ -168,7 +168,7 @@ describe('messageFor', () => {
 
   // ── Final-review FIX 1 ───────────────────────────────────────────────────
   //
-  // Before FIX 1, `provisionProjectStream` threw a bare `Error` with no
+  // Before FIX 1, `provisionWorkspaceStream` threw a bare `Error` with no
   // `.status`/`.code` — so on the default streaming path, `status` here was
   // ALWAYS `undefined`, and a 409 fell through every named branch straight to
   // `return message || '...'`, surfacing the server's raw text (which names
@@ -190,19 +190,21 @@ describe('messageFor', () => {
   // ── Final-review FIX 2 ───────────────────────────────────────────────────
   //
   // `messageFor`'s 403 branch used to fire for ANY 403, including
-  // `enforceProjectQuota`'s `project_limit_reached` (`apps/api/src/projects/
+  // `enforceProjectQuota`'s `project_limit_reached` (`apps/api/src/workspaces/
   // lib/access.ts`) — telling a free-tier user (FREE_TIER_PROJECT_LIMIT = 1,
-  // `ensureFirstProject` auto-provisions everyone's first project) they lack
+  // `ensureFirstWorkspace` auto-provisions everyone's first workspace) they lack
   // permissions they actually have.
 
   test('FIX 2: maps a 403 project_limit_reached to the server\'s own quota message, not the owner/admin explanation', () => {
     const err = new ApiError(
-      'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.',
+      'Free accounts are limited to 1 workspace. Upgrade to a paid plan to create more.',
       { status: 403, code: 'project_limit_reached' },
     );
     const msg = messageFor(err);
     expect(msg).not.toBe('You need owner or admin access in this account to create a workspace.');
-    expect(msg).toBe('Free accounts are limited to 1 project. Upgrade to a paid plan to create more.');
+    expect(msg).toBe(
+      "This account has reached its plan's workspace limit. Upgrade to create another.",
+    );
   });
 
   test('FIX 2: a plain 403 with no quota code still gets the owner/admin explanation', () => {
@@ -228,16 +230,16 @@ describe('runCreateAttempt', () => {
     const calls: unknown[] = [];
     const waits: number[] = [];
     return {
-      provisionProject: async (input) => {
+      provisionWorkspace: async (input) => {
         calls.push(input);
-        return fakeProject('created-1');
+        return fakeWorkspace('created-1');
       },
       // Unused by any test in THIS describe block — `runCreateAttempt` never
       // calls it — but required to satisfy `CreateWorkspaceClient`. Throwing
       // makes an accidental future call to it fail loudly instead of
-      // resolving a project no test asked for.
-      provisionProjectStream: async () => {
-        throw new Error('provisionProjectStream should not be called by runCreateAttempt');
+      // resolving a workspace no test asked for.
+      provisionWorkspaceStream: async () => {
+        throw new Error('provisionWorkspaceStream should not be called by runCreateAttempt');
       },
       wait: async (ms) => {
         waits.push(ms);
@@ -250,11 +252,11 @@ describe('runCreateAttempt', () => {
 
   test('succeeds on the first try — no retry, no wait', async () => {
     const c = client();
-    const project = await runCreateAttempt(
+    const workspace = await runCreateAttempt(
       { name: 'x', idempotency_key: 'key-1' },
       c,
     );
-    expect(project.project_id).toBe('created-1');
+    expect(workspace.workspace_id).toBe('created-1');
     expect(c.calls).toHaveLength(1);
     expect(c.waits).toEqual([]);
   });
@@ -262,16 +264,16 @@ describe('runCreateAttempt', () => {
   test('retries once on provision_in_flight, then succeeds', async () => {
     let attempt = 0;
     const c = client({
-      provisionProject: async (input) => {
+      provisionWorkspace: async (input) => {
         attempt += 1;
         c.calls.push(input);
         if (attempt === 1) throw inFlightError();
-        return fakeProject('created-2');
+        return fakeWorkspace('created-2');
       },
     });
 
-    const project = await runCreateAttempt({ name: 'x', idempotency_key: 'key-1' }, c);
-    expect(project.project_id).toBe('created-2');
+    const workspace = await runCreateAttempt({ name: 'x', idempotency_key: 'key-1' }, c);
+    expect(workspace.workspace_id).toBe('created-2');
     expect(c.calls).toHaveLength(2);
     expect(c.waits).toEqual([RETRY_DELAY_MS[0]]);
   });
@@ -279,7 +281,7 @@ describe('runCreateAttempt', () => {
   test('exhausts the full retry budget then rejects with the last error', async () => {
     const err = inFlightError();
     const c = client({
-      provisionProject: async (input) => {
+      provisionWorkspace: async (input) => {
         c.calls.push(input);
         throw err;
       },
@@ -294,7 +296,7 @@ describe('runCreateAttempt', () => {
   test('does NOT retry a non-in-flight error (e.g. 403) — fails immediately', async () => {
     const err = new ApiError('Owner or admin role required', { status: 403 });
     const c = client({
-      provisionProject: async (input) => {
+      provisionWorkspace: async (input) => {
         c.calls.push(input);
         throw err;
       },
@@ -308,11 +310,11 @@ describe('runCreateAttempt', () => {
   test('every retry of one attempt sends the IDENTICAL idempotency_key — never re-minted mid-retry', async () => {
     let attempt = 0;
     const c = client({
-      provisionProject: async (input) => {
+      provisionWorkspace: async (input) => {
         attempt += 1;
         c.calls.push(input);
         if (attempt < 3) throw inFlightError();
-        return fakeProject('created-3');
+        return fakeWorkspace('created-3');
       },
     });
 
@@ -331,7 +333,7 @@ describe('runCreateAttempt', () => {
  * above only covers the provision sub-step; NONE of those tests would fail
  * if a future edit dropped `clearAttemptKey`, or moved it after
  * `enterOnboarding` — a stale key left behind is exactly what lets a later
- * create with the same name silently return the OLD project instead of
+ * create with the same name silently return the OLD workspace instead of
  * making a new one.
  *
  * Every seam is injected (`CreateOrchestrationClient`), never
@@ -361,10 +363,10 @@ describe('runCreate: the full create() orchestration', () => {
     return {
       attemptKeyFor,
       clearAttemptKey,
-      runCreateAttempt: async () => fakeProject('created'),
-      primeProjectCache: () => {},
-      invalidateProjects: () => {},
-      writeLastProjectId: () => {},
+      runCreateAttempt: async () => fakeWorkspace('created'),
+      primeWorkspaceCache: () => {},
+      invalidateWorkspaces: () => {},
+      writeLastWorkspaceId: () => {},
       enterOnboarding: () => {},
       now: () => 1_000,
       ...overrides,
@@ -380,7 +382,7 @@ describe('runCreate: the full create() orchestration', () => {
       ...noopClient(),
       runCreateAttempt: async (payload) => {
         sentKeys.push(payload.idempotency_key ?? '');
-        return fakeProject('created-clear');
+        return fakeWorkspace('created-clear');
       },
     });
 
@@ -401,10 +403,10 @@ describe('runCreate: the full create() orchestration', () => {
         order.push('clearKey');
         clearAttemptKey(fingerprint);
       },
-      runCreateAttempt: async () => fakeProject('created-order'),
-      primeProjectCache: () => order.push('primeCache'),
-      invalidateProjects: () => order.push('invalidate'),
-      writeLastProjectId: () => order.push('writeCookie'),
+      runCreateAttempt: async () => fakeWorkspace('created-order'),
+      primeWorkspaceCache: () => order.push('primeCache'),
+      invalidateWorkspaces: () => order.push('invalidate'),
+      writeLastWorkspaceId: () => order.push('writeCookie'),
       enterOnboarding: () => order.push('enterOnboarding'),
       now: () => 1_000,
     });
@@ -444,7 +446,7 @@ describe('runCreate: the full create() orchestration', () => {
       now: () => 1_500,
       runCreateAttempt: async (payload) => {
         retryKeys.push(payload.idempotency_key ?? '');
-        return fakeProject('created-retry');
+        return fakeWorkspace('created-retry');
       },
     });
 
@@ -464,29 +466,29 @@ describe('runCreate: the full create() orchestration', () => {
       },
       clearAttemptKey,
       // Composes the REAL retry engine (already covered by its own suite
-      // above) with a fake low-level provisionProject/wait, so this proves
+      // above) with a fake low-level provisionWorkspace/wait, so this proves
       // genuine retry behaviour, not a restated assumption.
       runCreateAttempt: (payload) =>
         runCreateAttempt(payload, {
-          provisionProject: async (input) => {
+          provisionWorkspace: async (input) => {
             provisionCalls += 1;
             idempotencyKeysSeen.push(input.idempotency_key ?? '');
             if (provisionCalls < 3) {
               throw new ApiError('in flight', { status: 409, code: PROVISION_IN_FLIGHT_CODE });
             }
-            return fakeProject('created-retry-mint');
+            return fakeWorkspace('created-retry-mint');
           },
           // Unused here — this test exercises `runCreateAttempt`'s 409 retry,
           // not the streaming path — but required to satisfy
           // `CreateWorkspaceClient`.
-          provisionProjectStream: async () => {
-            throw new Error('provisionProjectStream should not be called by runCreateAttempt');
+          provisionWorkspaceStream: async () => {
+            throw new Error('provisionWorkspaceStream should not be called by runCreateAttempt');
           },
           wait: async () => {},
         }),
-      primeProjectCache: () => {},
-      invalidateProjects: () => {},
-      writeLastProjectId: () => {},
+      primeWorkspaceCache: () => {},
+      invalidateWorkspaces: () => {},
+      writeLastWorkspaceId: () => {},
       enterOnboarding: () => {},
       now: () => 1_000,
     });
@@ -499,9 +501,9 @@ describe('runCreate: the full create() orchestration', () => {
     expect(new Set(idempotencyKeysSeen).size).toBe(1);
   });
 
-  test('on success, writes the last-project cookie with the current user id and primes the cache for the account actually used', async () => {
-    const project = fakeProject('created-cookie', 'acct-used');
-    const primeCalls: Array<[string, KortixProject]> = [];
+  test('on success, writes the last-workspace cookie with the current user id and primes the cache for the account actually used', async () => {
+    const workspace = fakeWorkspace('created-cookie', 'acct-used');
+    const primeCalls: Array<[string, KortixWorkspace]> = [];
     const cookieCalls: Array<[string | null | undefined, string]> = [];
 
     await runCreate(
@@ -510,22 +512,22 @@ describe('runCreate: the full create() orchestration', () => {
       'user-42',
       {
         ...noopClient(),
-        runCreateAttempt: async () => project,
-        primeProjectCache: (accountId, p) => primeCalls.push([accountId, p]),
-        writeLastProjectId: (userId, projectId) => cookieCalls.push([userId, projectId]),
+        runCreateAttempt: async () => workspace,
+        primeWorkspaceCache: (accountId, p) => primeCalls.push([accountId, p]),
+        writeLastWorkspaceId: (userId, workspaceId) => cookieCalls.push([userId, workspaceId]),
       },
     );
 
-    expect(primeCalls).toEqual([['acct-used', project]]);
+    expect(primeCalls).toEqual([['acct-used', workspace]]);
     expect(cookieCalls).toEqual([['user-42', 'created-cookie']]);
   });
 
-  test('enters onboarding on /new for the created project, and does not leave /new', async () => {
+  test('enters onboarding on /new for the created workspace, and does not leave /new', async () => {
     const entered: string[] = [];
     const client = {
       ...noopClient(),
-      runCreateAttempt: async () => fakeProject('created-nav'),
-      enterOnboarding: (projectId: string) => entered.push(projectId),
+      runCreateAttempt: async () => fakeWorkspace('created-nav'),
+      enterOnboarding: (workspaceId: string) => entered.push(workspaceId),
     };
     await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
@@ -536,13 +538,13 @@ describe('runCreate: the full create() orchestration', () => {
     expect(entered).toEqual(['created-nav']);
   });
 
-  // A create must NOT stamp the new project onboarded — stamping is what made
+  // A create must NOT stamp the new workspace onboarded — stamping is what made
   // the wizard render `null` on arrival. The guard against the stamping seam
   // coming back is `CreateOrchestrationClient` not declaring it, which `tsc`
   // enforces at every call site; this test proves the orchestration runs to
   // completion through the seams that client DOES declare.
-  test('does not mark the new project onboarded', async () => {
-    const client = { ...noopClient(), runCreateAttempt: async () => fakeProject('created') };
+  test('does not mark the new workspace onboarded', async () => {
+    const client = { ...noopClient(), runCreateAttempt: async () => fakeWorkspace('created') };
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
       [OWNER_ACCOUNT],
@@ -567,9 +569,9 @@ describe('runCreate: the full create() orchestration', () => {
         runCreateAttempt: async () => {
           throw err;
         },
-        primeProjectCache: () => primeCalls.push('called'),
-        writeLastProjectId: () => cookieCalls.push('called'),
-        enterOnboarding: (projectId) => entered.push(projectId),
+        primeWorkspaceCache: () => primeCalls.push('called'),
+        writeLastWorkspaceId: () => cookieCalls.push('called'),
+        enterOnboarding: (workspaceId) => entered.push(workspaceId),
       },
     );
 
@@ -580,7 +582,7 @@ describe('runCreate: the full create() orchestration', () => {
   });
 
   test('always resolves the account_id through buildCreatePayload — sends the fallback account even with no explicit pick', async () => {
-    const sentPayloads: ProvisionProjectInput[] = [];
+    const sentPayloads: ProvisionWorkspaceInput[] = [];
     await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: null },
       [OWNER_ACCOUNT],
@@ -589,7 +591,7 @@ describe('runCreate: the full create() orchestration', () => {
         ...noopClient(),
         runCreateAttempt: async (payload) => {
           sentPayloads.push(payload);
-          return fakeProject('created-account-id');
+          return fakeWorkspace('created-account-id');
         },
       },
     );
@@ -603,8 +605,8 @@ describe('runCreate: the full create() orchestration', () => {
  * `isTransportFailure` is the ONLY signal `runProvisionAttempt` (below) is
  * allowed to use to decide the fallback is safe, and only in combination with
  * "zero events received". It must recognize exactly the transport-shaped
- * failures `provisionProjectStream`'s own doc comment
- * (`packages/sdk/src/core/rest/projects-client/projects.ts`) names — no
+ * failures `provisionWorkspaceStream`'s own doc comment
+ * (`packages/sdk/src/core/rest/workspaces-client/workspaces.ts`) names — no
  * `response.body` (React Native), the stream route 404ing (an old server
  * build), and a raw network failure — and MUST NOT recognize a real server
  * rejection, even one that (like a transport failure) arrives before any
@@ -630,11 +632,11 @@ describe('isTransportFailure', () => {
   });
 
   test('MANDATORY: a real pre-stream authorization denial is NOT transport-shaped', () => {
-    // `provisionProjectStream` rejects a 403 the same way it rejects a
+    // `provisionWorkspaceStream` rejects a 403 the same way it rejects a
     // non-transport HTTP status — a plain `Error` carrying the SERVER's own
     // message, no `HTTP 404`, no "no response body", not a `TypeError`. This
     // is the exact shape that must NOT trigger the fallback: retrying it as
-    // `provisionProject` would be pointless (same rejection) and, if the
+    // `provisionWorkspace` would be pointless (same rejection) and, if the
     // classifier were as loose as "any zero-event failure", would blur the
     // line between "the stream is unavailable" and "the server said no".
     expect(isTransportFailure(new Error('Owner or admin role required'))).toBe(false);
@@ -652,14 +654,14 @@ describe('isTransportFailure', () => {
 
 /**
  * `runProvisionAttempt` is the fallback gate itself: try
- * `provisionProjectStream`; fall back to the plain `provisionProject` — via
+ * `provisionWorkspaceStream`; fall back to the plain `provisionWorkspace` — via
  * `runCreateAttempt`, so the fallback keeps that function's own 409
  * `provision_in_flight` retry — ONLY when the stream never delivered a single
  * event AND the failure is transport-shaped. Any other failure rethrows
  * unchanged.
  *
  * The danger this gate exists to prevent: falling back after the stream
- * already did real work would run `POST /projects/provision` a SECOND time
+ * already did real work would run `POST /workspaces/provision` a SECOND time
  * for the same user intent, minting a second upstream managed repo. So the
  * two halves below are both MANDATORY, and deliberately adversarial to each
  * other — one proves an event must block the fallback even when the error
@@ -668,18 +670,18 @@ describe('isTransportFailure', () => {
  */
 describe('runProvisionAttempt', () => {
   function streamClient(overrides: Partial<CreateWorkspaceClient> = {}): CreateWorkspaceClient & {
-    plainCalls: ProvisionProjectInput[];
+    plainCalls: ProvisionWorkspaceInput[];
     waits: number[];
   } {
-    const plainCalls: ProvisionProjectInput[] = [];
+    const plainCalls: ProvisionWorkspaceInput[] = [];
     const waits: number[] = [];
     return {
-      provisionProjectStream: async () => {
-        throw new Error('this test must override provisionProjectStream');
+      provisionWorkspaceStream: async () => {
+        throw new Error('this test must override provisionWorkspaceStream');
       },
-      provisionProject: async (input) => {
+      provisionWorkspace: async (input) => {
         plainCalls.push(input);
-        return fakeProject('created-fallback');
+        return fakeWorkspace('created-fallback');
       },
       wait: async (ms) => {
         waits.push(ms);
@@ -690,24 +692,24 @@ describe('runProvisionAttempt', () => {
     };
   }
 
-  test('the stream succeeds — resolves with its project, reports every phase, never touches provisionProject', async () => {
+  test('the stream succeeds — resolves with its workspace, reports every phase, never touches provisionWorkspace', async () => {
     const seenPhases: (ProvisionPhase | null)[] = [];
     const client = streamClient({
-      provisionProjectStream: async (_input, onEvent) => {
+      provisionWorkspaceStream: async (_input, onEvent) => {
         const events: ProvisionStreamEvent[] = [
           { type: 'phase', phase: 'validating' },
           { type: 'phase', phase: 'creating_repository' },
         ];
         for (const event of events) onEvent(event);
-        return fakeProject('created-stream');
+        return fakeWorkspace('created-stream');
       },
     });
 
-    const project = await runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, (phase) => {
+    const workspace = await runProvisionAttempt({ name: 'x', idempotency_key: 'key-1' }, (phase) => {
       seenPhases.push(phase);
     }, client);
 
-    expect(project.project_id).toBe('created-stream');
+    expect(workspace.workspace_id).toBe('created-stream');
     expect(seenPhases).toEqual(['validating', 'creating_repository']);
     expect(client.plainCalls).toEqual([]);
   });
@@ -715,7 +717,7 @@ describe('runProvisionAttempt', () => {
   test('MANDATORY: an event fired, THEN the stream fails — rethrows the real failure and NEVER falls back', async () => {
     const err = new Error('Provision stream ended without a result');
     const client = streamClient({
-      provisionProjectStream: async (_input, onEvent) => {
+      provisionWorkspaceStream: async (_input, onEvent) => {
         // The stream delivered real progress before dying — a genuine
         // provisioning failure, not an unreached server.
         onEvent({ type: 'phase', phase: 'validating' });
@@ -731,12 +733,12 @@ describe('runProvisionAttempt', () => {
 
   test('MANDATORY: an event fired via the terminal error frame itself still blocks the fallback', async () => {
     // The in-stream `error` event IS an `onEvent` call before
-    // `provisionProjectStream` throws — even a failure on the very first
+    // `provisionWorkspaceStream` throws — even a failure on the very first
     // frame must not fall back, because the stream demonstrably reached the
     // server.
     const err = new Error('Owner or admin role required');
     const client = streamClient({
-      provisionProjectStream: async (_input, onEvent) => {
+      provisionWorkspaceStream: async (_input, onEvent) => {
         onEvent({ type: 'error', error: 'Owner or admin role required' });
         throw err;
       },
@@ -748,18 +750,18 @@ describe('runProvisionAttempt', () => {
     expect(client.plainCalls).toEqual([]);
   });
 
-  test('MANDATORY: zero events AND a transport-shaped failure — falls back to provisionProject with the SAME idempotency_key', async () => {
-    const payload: ProvisionProjectInput = { name: 'suna-web', idempotency_key: 'stream-key-1' };
+  test('MANDATORY: zero events AND a transport-shaped failure — falls back to provisionWorkspace with the SAME idempotency_key', async () => {
+    const payload: ProvisionWorkspaceInput = { name: 'suna-web', idempotency_key: 'stream-key-1' };
     const seenPhases: (ProvisionPhase | null)[] = [];
     const client = streamClient({
-      provisionProjectStream: async () => {
+      provisionWorkspaceStream: async () => {
         throw new TypeError('fetch failed');
       },
     });
 
-    const project = await runProvisionAttempt(payload, (phase) => seenPhases.push(phase), client);
+    const workspace = await runProvisionAttempt(payload, (phase) => seenPhases.push(phase), client);
 
-    expect(project.project_id).toBe('created-fallback');
+    expect(workspace.workspace_id).toBe('created-fallback');
     expect(client.plainCalls).toHaveLength(1);
     // The exact idempotency_key the streaming attempt would have sent — the
     // fallback is the SAME attempt continuing on a different transport, not
@@ -779,7 +781,7 @@ describe('runProvisionAttempt', () => {
     // through a second code path is not what this gate is for.
     const err = new Error('Owner or admin role required');
     const client = streamClient({
-      provisionProjectStream: async () => {
+      provisionWorkspaceStream: async () => {
         throw err;
       },
     });
@@ -793,7 +795,7 @@ describe('runProvisionAttempt', () => {
   // ── Final-review FIX 1, consequence 3 ────────────────────────────────────
   //
   // `emit('validating')` is the FIRST statement of `runProvision`
-  // (`apps/api/src/projects/provision-core.ts`), so by the time a 409
+  // (`apps/api/src/workspaces/provision-core.ts`), so by the time a 409
   // `provision_in_flight` frame can possibly arrive, the stream has ALWAYS
   // already delivered at least one phase event. Under the plain
   // "any event blocks fallback" rule, that made the backoff retry
@@ -805,7 +807,7 @@ describe('runProvisionAttempt', () => {
   // carrying this SAME idempotency_key is already running. Replaying it
   // through `runCreateAttempt` (identical key) is exactly what that
   // function's own backoff loop is for, and it is safe regardless of
-  // `eventsReceived`: the server either hands back the SAME project once the
+  // `eventsReceived`: the server either hands back the SAME workspace once the
   // in-flight attempt commits, or 409s again and the loop keeps waiting.
   // Nothing about "the stream did real work" makes that unsafe — unlike a
   // genuine 502/503/plain-error rethrow, this never risks a second upstream
@@ -813,7 +815,7 @@ describe('runProvisionAttempt', () => {
   test('CONSEQUENCE 3: an in-band 409 provision_in_flight, even after a phase event fired, reaches the backoff retry via runCreateAttempt', async () => {
     let plainAttempts = 0;
     const client = streamClient({
-      provisionProjectStream: async (_input, onEvent) => {
+      provisionWorkspaceStream: async (_input, onEvent) => {
         // The real-world shape: `validating` always fires before any error
         // can possibly arrive, so `eventsReceived > 0` is always true here.
         onEvent({ type: 'phase', phase: 'validating' });
@@ -828,22 +830,22 @@ describe('runProvisionAttempt', () => {
           code: PROVISION_IN_FLIGHT_CODE,
         });
       },
-      provisionProject: async (input) => {
+      provisionWorkspace: async (input) => {
         plainAttempts += 1;
         if (plainAttempts === 1) {
           throw new ApiError('in flight', { status: 409, code: PROVISION_IN_FLIGHT_CODE });
         }
-        return fakeProject('created-after-inflight-retry');
+        return fakeWorkspace('created-after-inflight-retry');
       },
     });
 
-    const project = await runProvisionAttempt(
+    const workspace = await runProvisionAttempt(
       { name: 'x', idempotency_key: 'key-1' },
       () => {},
       client,
     );
 
-    expect(project.project_id).toBe('created-after-inflight-retry');
+    expect(workspace.workspace_id).toBe('created-after-inflight-retry');
     expect(plainAttempts).toBe(2);
     expect(client.waits).toEqual([RETRY_DELAY_MS[0]]);
   });
@@ -853,7 +855,7 @@ describe('runProvisionAttempt', () => {
     // narrow — keyed on the code, not just "any error after events fired".
     const err = new ApiError('Bad Gateway', { status: 502 });
     const client = streamClient({
-      provisionProjectStream: async (_input, onEvent) => {
+      provisionWorkspaceStream: async (_input, onEvent) => {
         onEvent({ type: 'phase', phase: 'validating' });
         throw err;
       },
@@ -866,30 +868,30 @@ describe('runProvisionAttempt', () => {
   });
 
   test('the fallback goes through runCreateAttempt — it keeps the 409 provision_in_flight retry', async () => {
-    // Proves the fallback is not a bare `provisionProject` call: routing it
+    // Proves the fallback is not a bare `provisionWorkspace` call: routing it
     // through `runCreateAttempt` means the plain-POST path keeps its full
     // existing resilience even when reached through the stream.
     let plainAttempts = 0;
     const client = streamClient({
-      provisionProjectStream: async () => {
+      provisionWorkspaceStream: async () => {
         throw new TypeError('fetch failed');
       },
-      provisionProject: async (input) => {
+      provisionWorkspace: async (input) => {
         plainAttempts += 1;
         if (plainAttempts === 1) {
           throw new ApiError('in flight', { status: 409, code: PROVISION_IN_FLIGHT_CODE });
         }
-        return fakeProject('created-after-retry');
+        return fakeWorkspace('created-after-retry');
       },
     });
 
-    const project = await runProvisionAttempt(
+    const workspace = await runProvisionAttempt(
       { name: 'x', idempotency_key: 'key-1' },
       () => {},
       client,
     );
 
-    expect(project.project_id).toBe('created-after-retry');
+    expect(workspace.workspace_id).toBe('created-after-retry');
     expect(plainAttempts).toBe(2);
     expect(client.waits).toEqual([RETRY_DELAY_MS[0]]);
   });

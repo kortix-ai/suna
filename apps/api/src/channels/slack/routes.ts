@@ -4,7 +4,7 @@ import { chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { generateSlackManifest, resolveBaseUrl } from '../slack-manifest';
-import { loadSlackSigningSecretForProject } from '../install-store';
+import { loadSlackSigningSecretForWorkspace } from '../install-store';
 import { slackOauthMode } from '../slack-oauth-mode';
 import { json, errors } from '../../openapi';
 import { slackWebhookApp } from './app';
@@ -12,12 +12,12 @@ import { alreadyHandled } from './dedup';
 import { parseEnvelope, verifySlackSignature } from './util';
 import {
   dispatchSlackEvent,
-  ensureProjectChannelBinding,
+  ensureWorkspaceChannelBinding,
   handleAssistantThreadStarted,
   maybeHandleDmCommand,
   maybePostChannelIntro,
   maybePostPicker,
-  resolveOauthProject,
+  resolveOauthWorkspace,
 } from './dispatch';
 import { publishHomeForUser } from './home';
 import { handleBlockAction, handleMessageShortcut } from './interactivity';
@@ -25,12 +25,12 @@ import { handleSlashCommand } from './commands';
 import type { SlackInteractionPayload, SlashResponse } from './types';
 
 // ── Shared slash + interactivity processing ───────────────────────────────────
-// The canonical OAuth app and per-project (BYO) apps run the SAME logic — they
+// The canonical OAuth app and per-workspace (BYO) apps run the SAME logic — they
 // differ ONLY in which signing secret verifies the request. Each route does its
 // own signature check, then hands the verified raw body to these.
 
 /** Parse a slash-command form body and run it → the Slack response object. */
-async function runSlashCommandBody(rawBody: string, projectScopedProjectId?: string): Promise<SlashResponse> {
+async function runSlashCommandBody(rawBody: string, workspaceScopedWorkspaceId?: string): Promise<SlashResponse> {
   const params = new URLSearchParams(rawBody);
   const text = (params.get('text') ?? '').trim();
   const teamId = params.get('team_id') ?? '';
@@ -39,8 +39,8 @@ async function runSlashCommandBody(rawBody: string, projectScopedProjectId?: str
   const command = params.get('command') || '/kortix';
   const responseUrl = params.get('response_url') ?? undefined;
 
-  if (projectScopedProjectId && teamId && channelId) {
-    await ensureProjectChannelBinding(projectScopedProjectId, teamId, channelId);
+  if (workspaceScopedWorkspaceId && teamId && channelId) {
+    await ensureWorkspaceChannelBinding(workspaceScopedWorkspaceId, teamId, channelId);
   }
 
   const [sub, ...rest] = text.split(/\s+/);
@@ -53,7 +53,7 @@ async function runSlashCommandBody(rawBody: string, projectScopedProjectId?: str
       slackUserId,
       command,
       responseUrl,
-      projectScopedProjectId,
+      workspaceScopedWorkspaceId,
     });
   } catch (err) {
     console.error('[slack-webhook] slash command failed', err);
@@ -130,9 +130,9 @@ slackWebhookApp.openapi(
       await publishHomeForUser(teamId, envelope.event.user);
       return;
     }
-    // Opening the Kortix DM (AI-Assistant pane) → greet with the project picker.
+    // Opening the Kortix DM (AI-Assistant pane) → greet with the workspace picker.
     // The channel/thread live on event.assistant_thread, NOT the top-level event,
-    // so resolveOauthProject can't see it — handle it before that branch.
+    // so resolveOauthWorkspace can't see it — handle it before that branch.
     if (envelope.event?.type === 'assistant_thread_started') {
       await handleAssistantThreadStarted(teamId, envelope.event);
       return;
@@ -142,18 +142,18 @@ slackWebhookApp.openapi(
     if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event))) {
       return;
     }
-    const resolution = await resolveOauthProject(teamId, envelope.event?.channel);
-    if (resolution.kind === 'project') {
-      await dispatchSlackEvent(resolution.projectId, envelope);
+    const resolution = await resolveOauthWorkspace(teamId, envelope.event?.channel);
+    if (resolution.kind === 'workspace') {
+      await dispatchSlackEvent(resolution.workspaceId, envelope);
     } else if (resolution.kind === 'ambiguous') {
-      await maybePostPicker(teamId, resolution.projectIds, envelope);
+      await maybePostPicker(teamId, resolution.workspaceIds, envelope);
     } else if (resolution.kind === 'pending') {
       const installs = await db
-        .select({ projectId: chatInstalls.projectId })
+        .select({ workspaceId: chatInstalls.workspaceId })
         .from(chatInstalls)
-        .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+        .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformWorkspaceId, teamId)));
       if (installs.length > 0) {
-        await maybePostPicker(teamId, installs.map((i) => i.projectId), envelope);
+        await maybePostPicker(teamId, installs.map((i) => i.workspaceId), envelope);
       }
     }
   })().catch((err) => console.error('[slack-webhook] oauth handler failed', err));
@@ -227,11 +227,11 @@ slackWebhookApp.openapi(
 slackWebhookApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}',
+    path: '/{workspaceId}',
     tags: ['channels'],
-    summary: 'Per-project (BYO app) Slack Events webhook (signature verified)',
+    summary: 'Per-Workspace (BYO app) Slack Events webhook (signature verified)',
     request: {
-      params: z.object({ projectId: z.string() }),
+      params: z.object({ workspaceId: z.string() }),
       body: { content: { 'application/json': { schema: z.any() } } },
     },
     responses: {
@@ -240,18 +240,18 @@ slackWebhookApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
+  const workspaceId = c.req.param('workspaceId');
   const rawBody = await c.req.text();
 
   const envelope = parseEnvelope(rawBody);
   if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
   // Slack verifies the Events API request URL before a manual/BYO app can be
-  // installed and saved back to Kortix, so there is no project signing secret
+  // installed and saved back to Kortix, so there is no workspace signing secret
   // yet. Only the bootstrap challenge is allowed through this unsigned path;
-  // every real callback below remains project-secret verified.
+  // every real callback below remains workspace-secret verified.
   if (envelope.type === 'url_verification') return c.json({ challenge: envelope.challenge });
 
-  const signingSecret = await loadSlackSigningSecretForProject(projectId);
+  const signingSecret = await loadSlackSigningSecretForWorkspace(workspaceId);
   if (!signingSecret) return c.json({ error: 'Not configured' }, 404);
 
   const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
@@ -265,26 +265,26 @@ slackWebhookApp.openapi(
 
   void (async () => {
     const teamId = envelope.team_id ?? envelope.event?.team ?? '';
-    if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event, projectId))) {
+    if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event, workspaceId))) {
       return;
     }
-    await dispatchSlackEvent(projectId, envelope);
+    await dispatchSlackEvent(workspaceId, envelope);
   })().catch((err) => console.error('[slack-webhook] byo handler failed', err));
   return c.json({ ok: true });
 },
 );
 
-// Per-project (BYO app) slash commands — parity with the canonical /commands,
-// verified with the project's OWN signing secret. The BYO manifest points its
+// Per-Workspace (BYO app) slash commands — parity with the canonical /commands,
+// verified with the workspace's OWN signing secret. The BYO manifest points its
 // slash command url here.
 slackWebhookApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/commands',
+    path: '/{workspaceId}/commands',
     tags: ['channels'],
-    summary: 'Per-project (BYO app) Slack slash command webhook (signature verified)',
+    summary: 'Per-Workspace (BYO app) Slack slash command webhook (signature verified)',
     request: {
-      params: z.object({ projectId: z.string() }),
+      params: z.object({ workspaceId: z.string() }),
       body: { content: { 'application/x-www-form-urlencoded': { schema: z.any() } } },
     },
     responses: {
@@ -293,30 +293,30 @@ slackWebhookApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
+  const workspaceId = c.req.param('workspaceId');
   const rawBody = await c.req.text();
-  const signingSecret = await loadSlackSigningSecretForProject(projectId);
+  const signingSecret = await loadSlackSigningSecretForWorkspace(workspaceId);
   if (!signingSecret) return c.json({ error: 'Not configured' }, 404);
   const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
   const signature = c.req.header('x-slack-signature') ?? '';
   if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
-  return c.json(await runSlashCommandBody(rawBody, projectId));
+  return c.json(await runSlashCommandBody(rawBody, workspaceId));
 },
 );
 
-// Per-project (BYO app) interactivity — parity with the canonical /interactivity
+// Per-Workspace (BYO app) interactivity — parity with the canonical /interactivity
 // (block-action pickers + the "Open in Kortix" message shortcut), verified with
-// the project's own signing secret. The BYO manifest points interactivity here.
+// the workspace's own signing secret. The BYO manifest points interactivity here.
 slackWebhookApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/interactivity',
+    path: '/{workspaceId}/interactivity',
     tags: ['channels'],
-    summary: 'Per-project (BYO app) Slack interactivity webhook (signature verified)',
+    summary: 'Per-Workspace (BYO app) Slack interactivity webhook (signature verified)',
     request: {
-      params: z.object({ projectId: z.string() }),
+      params: z.object({ workspaceId: z.string() }),
       body: { content: { 'application/x-www-form-urlencoded': { schema: z.any() } } },
     },
     responses: {
@@ -325,9 +325,9 @@ slackWebhookApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
+  const workspaceId = c.req.param('workspaceId');
   const rawBody = await c.req.text();
-  const signingSecret = await loadSlackSigningSecretForProject(projectId);
+  const signingSecret = await loadSlackSigningSecretForWorkspace(workspaceId);
   if (!signingSecret) return c.json({ error: 'Not configured' }, 404);
   const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
   const signature = c.req.header('x-slack-signature') ?? '';
@@ -339,19 +339,19 @@ slackWebhookApp.openapi(
 },
 );
 
-// The per-project (BYO) Slack manifest — served from the SAME builder the
+// The per-Workspace (BYO) Slack manifest — served from the SAME builder the
 // canonical app uses, so the in-sandbox `kortix-agent slack manifest` command
 // fetches this instead of carrying its own copy. No secrets, no DB: it's a
-// scaffolding template (the project may not have Slack configured yet), so it's
-// intentionally unauthenticated and works for any projectId.
+// scaffolding template (the workspace may not have Slack configured yet), so it's
+// intentionally unauthenticated and works for any workspaceId.
 slackWebhookApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/manifest',
+    path: '/{workspaceId}/manifest',
     tags: ['channels'],
-    summary: 'Per-project (BYO app) Slack app manifest (single source of truth)',
+    summary: 'Per-Workspace (BYO app) Slack app manifest (single source of truth)',
     request: {
-      params: z.object({ projectId: z.string() }),
+      params: z.object({ workspaceId: z.string() }),
       query: z.object({ name: z.string().optional(), command: z.string().optional() }),
     },
     responses: {
@@ -359,11 +359,11 @@ slackWebhookApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
+  const workspaceId = c.req.param('workspaceId');
   const name = c.req.query('name') || undefined;
   const command = c.req.query('command') || undefined;
   // Prefer the configured public URL; fall back to the request host.
   const baseUrl = resolveBaseUrl(new URL(c.req.url), config.KORTIX_URL || undefined);
-  return c.json(generateSlackManifest({ baseUrl, projectId, appName: name, botName: name, command }));
+  return c.json(generateSlackManifest({ baseUrl, workspaceId, appName: name, botName: name, command }));
 },
 );

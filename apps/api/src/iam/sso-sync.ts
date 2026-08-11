@@ -287,7 +287,7 @@ export async function syncSsoMembership(args: {
     memberCreated = true;
     // JIT bypasses invite acceptance, so SCIM group memberships parked on a
     // pending invite for this email (scim/groups.ts) would strand forever —
-    // consume them now. Project grants on the invite stay for the real
+    // consume them now. Workspace grants on the invite stay for the real
     // accept flow; only the {group_id} entries are applied and stripped.
     await consumeInviteGroupGrants(provider.accountId, args.userId, args.email);
   }

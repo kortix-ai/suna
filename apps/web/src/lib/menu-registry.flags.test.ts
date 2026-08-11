@@ -13,7 +13,7 @@ import { menuRegistry } from './menu-registry';
  */
 const root = resolve(import.meta.dir, '..');
 const registrySource = readFileSync(join(root, 'lib/menu-registry.ts'), 'utf8');
-const flagMapSource = readFileSync(join(root, 'lib/use-project-feature-flags.ts'), 'utf8');
+const flagMapSource = readFileSync(join(root, 'lib/use-workspace-feature-flags.ts'), 'utf8');
 const paletteSource = readFileSync(
   join(root, 'features/workspace/command-palette.tsx'),
   'utf8',
@@ -37,13 +37,13 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('Review Center and Voice are reachable from the palette, behind their flags', () => {
-    const review = menuRegistry.find((item) => item.id === 'proj-review');
-    const voice = menuRegistry.find((item) => item.id === 'proj-voice');
+    const review = menuRegistry.find((item) => item.id === 'workspace-review');
+    const voice = menuRegistry.find((item) => item.id === 'workspace-voice');
 
     expect(review?.requiresFlag).toBe('review_center');
-    expect(review?.href).toBe('/projects/{projectId}/customize/review');
+    expect(review?.href).toBe('/workspaces/{workspaceId}/customize/review');
     expect(voice?.requiresFlag).toBe('voice');
-    expect(voice?.href).toBe('/projects/{projectId}/customize/voice');
+    expect(voice?.href).toBe('/workspaces/{workspaceId}/customize/voice');
     // Both must resolve to a real Customize section, or the palette opens the
     // overlay on nothing.
     const sections = readFileSync(join(root, 'lib/customize-sections.ts'), 'utf8');
@@ -57,12 +57,12 @@ describe('menu registry feature-flag gating', () => {
     // entry that opened a blank pane.
     expect(paletteSource).not.toContain('isLlmGatewayAvailable');
     expect(paletteSource).toContain(
-      'if (item.requiresFlag && !projectFlags[item.requiresFlag]) return false;',
+      'if (item.requiresFlag && !workspaceFlags[item.requiresFlag]) return false;',
     );
   });
 
   test('the right sidebar filters on requiresFlag too, fail-closed', () => {
-    expect(sidebarSource).toContain('useProjectFeatureFlags(routeProjectId)');
+    expect(sidebarSource).toContain('useWorkspaceFeatureFlags(routeWorkspaceId)');
     expect(sidebarSource).toContain(
       '(item: MenuItemDef) => !item.requiresFlag || featureFlags[item.requiresFlag]',
     );
@@ -71,10 +71,10 @@ describe('menu registry feature-flag gating', () => {
   });
 });
 
-describe('useProjectFeatureFlags', () => {
+describe('useWorkspaceFeatureFlags', () => {
   test('covers EVERY feature flag key, so a new flag is gateable on day one', () => {
     for (const key of FEATURE_FLAG_KEYS) {
-      expect(flagMapSource).toContain(`useFeatureFlag(projectId, '${key}')`);
+      expect(flagMapSource).toContain(`useFeatureFlag(workspaceId, '${key}')`);
       expect(flagMapSource).toContain(`${key}: `);
     }
   });

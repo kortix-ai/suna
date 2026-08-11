@@ -4,14 +4,14 @@ mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
 const { clampTtlMinutes, mintSetupLink, resolveSetupLink } = await import('./token');
 
-const PROJECT_ID = '11111111-2222-3333-4444-555555555555';
+const WORKSPACE_ID = '11111111-2222-3333-4444-555555555555';
 const T0 = new Date('2026-08-07T12:00:00.000Z');
 const MINUTE_MS = 60_000;
 const DAY_MINUTES = 24 * 60;
 
 function mintSecret(expiresInMinutes?: number) {
   return mintSetupLink(
-    PROJECT_ID,
+    WORKSPACE_ID,
     { kind: 'secret', fields: [{ name: 'DRATA_API_KEY' }], scope: 'runtime', sid: 'sess-1' },
     expiresInMinutes === undefined ? undefined : { expiresInMinutes },
   );
@@ -30,13 +30,13 @@ describe('setup-link TTLs', () => {
 
   test('connector links default to 7 days', () => {
     setSystemTime(T0);
-    const { expiresAt } = mintSetupLink(PROJECT_ID, { kind: 'connector', slug: 'smartlead' });
+    const { expiresAt } = mintSetupLink(WORKSPACE_ID, { kind: 'connector', slug: 'smartlead' });
     expect(expiresAt).toBe(T0.getTime() + 7 * DAY_MINUTES * MINUTE_MS);
   });
 
   test('approval links keep the 24h decision window', () => {
     setSystemTime(T0);
-    const { expiresAt } = mintSetupLink(PROJECT_ID, { kind: 'approval', executionId: 'exec-1' });
+    const { expiresAt } = mintSetupLink(WORKSPACE_ID, { kind: 'approval', executionId: 'exec-1' });
     expect(expiresAt).toBe(T0.getTime() + DAY_MINUTES * MINUTE_MS);
   });
 
@@ -61,7 +61,7 @@ describe('resolveSetupLink', () => {
     const resolved = resolveSetupLink(token);
     expect(resolved.ok).toBe(true);
     if (resolved.ok && resolved.payload.kind === 'secret') {
-      expect(resolved.projectId).toBe(PROJECT_ID);
+      expect(resolved.workspaceId).toBe(WORKSPACE_ID);
       expect(resolved.payload.fields.map((f) => f.name)).toEqual(['DRATA_API_KEY']);
       expect(resolved.payload.sid).toBe('sess-1');
     }

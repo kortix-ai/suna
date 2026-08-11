@@ -1,5 +1,5 @@
 /**
- * AgentsPage — the project's OpenCode agents (web parity: customize/sections
+ * AgentsPage — the workspace's OpenCode agents (web parity: customize/sections
  * agents-view). Lists the agents declared under .kortix/opencode/agents/ and,
  * on tap, shows the agent's markdown source. Read-only; agent authoring flows
  * through a session (to be wired next).
@@ -33,9 +33,9 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
-import type { ProjectAgentEntry } from '@/lib/projects/projects-client';
-import { newConfigPrompt, editConfigPrompt } from '@/lib/projects/configure-prompts';
+import { useWorkspaceDetail, useWorkspaceFile } from '@/lib/workspaces/hooks';
+import type { WorkspaceAgentEntry } from '@/lib/workspaces/workspaces-client';
+import { newConfigPrompt, editConfigPrompt } from '@/lib/workspaces/configure-prompts';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -46,7 +46,7 @@ interface PageTabLike {
 
 interface AgentsPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   /** Start an agent-led config session seeded with `prompt` (New / Edit). */
   onConfigure: (prompt: string) => void;
   onOpenDrawer?: () => void;
@@ -71,14 +71,14 @@ function modeLabel(mode: string | null): string | null {
 // ─── Agent detail (markdown source) ──────────────────────────────────────────
 
 function AgentDetail({
-  projectId,
+  workspaceId,
   agent,
   isDefault,
   onBack,
   onConfigure,
 }: {
-  projectId: string;
-  agent: ProjectAgentEntry;
+  workspaceId: string;
+  agent: WorkspaceAgentEntry;
   isDefault: boolean;
   onBack: () => void;
   onConfigure: (prompt: string) => void;
@@ -88,7 +88,7 @@ function AgentDetail({
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
 
-  const fileQuery = useProjectFile(projectId, agent.path);
+  const fileQuery = useWorkspaceFile(workspaceId, agent.path);
   const body = useMemo(
     () => stripFrontmatter(fileQuery.data?.content ?? ''),
     [fileQuery.data?.content],
@@ -214,7 +214,7 @@ function AgentRow({
   onPress,
   isDark,
 }: {
-  agent: ProjectAgentEntry;
+  agent: WorkspaceAgentEntry;
   isDefault: boolean;
   onPress: () => void;
   isDark: boolean;
@@ -261,7 +261,7 @@ function AgentRow({
 
 export function AgentsPage({
   page,
-  projectId,
+  workspaceId,
   onConfigure,
   onOpenDrawer,
   onOpenRightDrawer,
@@ -272,9 +272,9 @@ export function AgentsPage({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<ProjectAgentEntry | null>(null);
+  const [selected, setSelected] = useState<WorkspaceAgentEntry | null>(null);
 
-  const { data, isLoading, isError, error, refetch } = useProjectDetail(projectId);
+  const { data, isLoading, isError, error, refetch } = useWorkspaceDetail(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -307,7 +307,7 @@ export function AgentsPage({
       <PageContent>
       {selected ? (
         <AgentDetail
-          projectId={projectId}
+          workspaceId={workspaceId}
           agent={selected}
           isDefault={selected.name === defaultAgent}
           onBack={() => setSelected(null)}
@@ -344,7 +344,7 @@ export function AgentsPage({
             ) : filtered.length === 0 ? (
               <View style={{ padding: 40, alignItems: 'center', gap: 14 }}>
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
-                  {agents.length === 0 ? 'No agents in this project yet.' : 'No agents match your search.'}
+                  {agents.length === 0 ? 'No agents in this workspace yet.' : 'No agents match your search.'}
                 </Text>
                 {agents.length === 0 && (
                   <TouchableOpacity

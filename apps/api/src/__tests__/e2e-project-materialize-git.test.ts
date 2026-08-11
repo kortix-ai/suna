@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { materializeRepoContext } from '../projects/git';
+import { materializeRepoContext } from '../workspaces/git';
 
 let root = '';
 let previousCacheDir: string | undefined;
@@ -62,7 +62,7 @@ describe('project git materialization', () => {
     const commit = git(['rev-parse', 'HEAD'], source);
 
     const project = {
-      projectId: '00000000-0000-4000-a000-000000000997',
+      workspaceId: '00000000-0000-4000-a000-000000000997',
       repoUrl: origin,
       defaultBranch: 'main',
       manifestPath: 'kortix.yaml',

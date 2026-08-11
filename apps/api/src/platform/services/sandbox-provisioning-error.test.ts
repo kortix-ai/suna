@@ -1,45 +1,52 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
-import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
+import { networkBoundaryPolicyError } from "../../secrets/network-boundary";
 import {
   INVALID_SECRET_BOUNDARY_POLICY_MESSAGE,
   SANDBOX_PROVIDER_CAPACITY_MESSAGE,
   SANDBOX_PROVIDER_FAILURE_MESSAGE,
   classifySandboxProvisioningFailure,
-} from './sandbox-provisioning-error';
+} from "./sandbox-provisioning-error";
 
-describe('classifySandboxProvisioningFailure', () => {
+describe("classifySandboxProvisioningFailure", () => {
   test.each([
-    'you have reached the maximum number of concurrent E2B sandboxes (8)',
-    'max number of running sandboxes on node reached',
-    'too many sandboxes starting on this node',
-    'No available runners can satisfy the request',
-    '429 Too Many Requests',
-    '500: Failed to place sandbox',
-  ])('maps provider capacity text to one provider-neutral contract: %s', (message) => {
-    expect(classifySandboxProvisioningFailure(new Error(message))).toEqual({
-      category: 'provider-capacity',
-      userMessage: SANDBOX_PROVIDER_CAPACITY_MESSAGE,
-      isCapacity: true,
-      isGitAuth: false,
-    });
-  });
+    "you have reached the maximum number of concurrent E2B sandboxes (8)",
+    "max number of running sandboxes on node reached",
+    "too many sandboxes starting on this node",
+    "No available runners can satisfy the request",
+    "429 Too Many Requests",
+    "500: Failed to place sandbox",
+  ])(
+    "maps provider capacity text to one provider-neutral contract: %s",
+    (message) => {
+      expect(classifySandboxProvisioningFailure(new Error(message))).toEqual({
+        category: "provider-capacity",
+        userMessage: SANDBOX_PROVIDER_CAPACITY_MESSAGE,
+        isCapacity: true,
+        isGitAuth: false,
+      });
+    },
+  );
 
-  test('keeps Git authentication failures separate from provider failures', () => {
+  test("keeps Git authentication failures separate from provider failures", () => {
     const result = classifySandboxProvisioningFailure(
-      new Error('fatal: could not read Username for https://github.com: terminal prompts disabled'),
+      new Error(
+        "fatal: could not read Username for https://github.com: terminal prompts disabled",
+      ),
     );
 
-    expect(result.category).toBe('git-auth');
-    expect(result.userMessage).toContain("project's Git credentials");
+    expect(result.category).toBe("git-auth");
+    expect(result.userMessage).toContain("workspace's Git credentials");
   });
 
-  test('does not expose an unknown provider error to the user', () => {
-    const secretProviderMessage = 'SDK failure: credential=do-not-show';
-    const result = classifySandboxProvisioningFailure(new Error(secretProviderMessage));
+  test("does not expose an unknown provider error to the user", () => {
+    const secretProviderMessage = "SDK failure: credential=do-not-show";
+    const result = classifySandboxProvisioningFailure(
+      new Error(secretProviderMessage),
+    );
 
     expect(result).toEqual({
-      category: 'sandbox-provider',
+      category: "sandbox-provider",
       userMessage: SANDBOX_PROVIDER_FAILURE_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
@@ -47,15 +54,17 @@ describe('classifySandboxProvisioningFailure', () => {
     expect(result.userMessage).not.toContain(secretProviderMessage);
   });
 
-  test('returns an actionable contract when the provider cannot enforce protected delivery', () => {
+  test("returns an actionable contract when the provider cannot enforce protected delivery", () => {
     const result = classifySandboxProvisioningFailure(
-      new Error('Sandbox provider daytona does not support network-boundary secret delivery'),
+      new Error(
+        "Sandbox provider daytona does not support network-boundary secret delivery",
+      ),
     );
 
     expect(result).toEqual({
-      category: 'unsupported-secret-delivery',
+      category: "unsupported-secret-delivery",
       userMessage:
-        'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+        "This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.",
       isCapacity: false,
       isGitAuth: false,
     });
@@ -63,46 +72,49 @@ describe('classifySandboxProvisioningFailure', () => {
 
   // Two secrets claiming the same (host, header) used to land in 'sandbox-provider', whose copy
   // blames the provider and says "Try again" — verified live on dev, where every new session in the
-  // project failed with exactly that. Retrying can never clear a config conflict.
-  test('classifies a host+header collision as an unretryable project config error', () => {
+  // workspace failed with exactly that. Retrying can never clear a config conflict.
+  test("classifies a host+header collision as an unretryable workspace config error", () => {
     const result = classifySandboxProvisioningFailure(
       new Error(
-        'Network-boundary secrets BOUNDARY_TEST and BOUNDARY_TEST2 both target postman-echo.com header authorization',
+        "Network-boundary secrets BOUNDARY_TEST and BOUNDARY_TEST2 both target postman-echo.com header authorization",
       ),
     );
 
-    expect(result.category).toBe('invalid-secret-boundary-policy');
+    expect(result.category).toBe("invalid-secret-boundary-policy");
     expect(result.userMessage).toBe(INVALID_SECRET_BOUNDARY_POLICY_MESSAGE);
     expect(result.isCapacity).toBe(false);
     expect(result.isGitAuth).toBe(false);
   });
 
   test.each([
-    ['Network-boundary secret STRIPE has an invalid consumer'],
-    ['Network-boundary secret STRIPE has no outbound policy'],
-    ['STRIPE: Network-boundary delivery requires exact hosts'],
-    ['STRIPE: Network-boundary delivery cannot enforce path restrictions'],
-    ['STRIPE: invalid header injection'],
-  ])('classifies %s as an unretryable project config error', (message) => {
-    expect(classifySandboxProvisioningFailure(new Error(message)).category).toBe(
-      'invalid-secret-boundary-policy',
-    );
+    ["Network-boundary secret STRIPE has an invalid consumer"],
+    ["Network-boundary secret STRIPE has no outbound policy"],
+    ["STRIPE: Network-boundary delivery requires exact hosts"],
+    ["STRIPE: Network-boundary delivery cannot enforce path restrictions"],
+    ["STRIPE: invalid header injection"],
+  ])("classifies %s as an unretryable workspace config error", (message) => {
+    expect(
+      classifySandboxProvisioningFailure(new Error(message)).category,
+    ).toBe("invalid-secret-boundary-policy");
   });
 
-  // The provider-capability gap and the project-config error are different problems with different
+  // The provider-capability gap and the workspace-config error are different problems with different
   // fixes, so one must never absorb the other.
-  test('keeps the provider capability gap distinct from a bad project policy', () => {
+  test("keeps the provider capability gap distinct from a bad workspace policy", () => {
     expect(
       classifySandboxProvisioningFailure(
-        new Error('Sandbox provider daytona does not support network-boundary secret delivery'),
+        new Error(
+          "Sandbox provider daytona does not support network-boundary secret delivery",
+        ),
       ).category,
-    ).toBe('unsupported-secret-delivery');
+    ).toBe("unsupported-secret-delivery");
   });
 
-  test('leaves an ordinary provider failure unclassified', () => {
+  test("leaves an ordinary provider failure unclassified", () => {
     expect(
-      classifySandboxProvisioningFailure(new Error('upstream returned 500')).category,
-    ).toBe('sandbox-provider');
+      classifySandboxProvisioningFailure(new Error("upstream returned 500"))
+        .category,
+    ).toBe("sandbox-provider");
   });
 
   /**
@@ -110,19 +122,23 @@ describe('classifySandboxProvisioningFailure', () => {
    * `networkBoundaryPolicyError` cannot quietly fall through to "Try again." A hardcoded list would
    * still pass while the new message went unclassified — which is exactly how the collision shipped.
    */
-  test('classifies every message the boundary validator can produce', () => {
+  test("classifies every message the boundary validator can produce", () => {
     const base = {
-      rules: [{ host: 'api.example.com' }],
-      inject: { kind: 'header' as const, name: 'authorization', template: 'Bearer {{secret}}' },
+      rules: [{ host: "api.example.com" }],
+      inject: {
+        kind: "header" as const,
+        name: "authorization",
+        template: "Bearer {{secret}}",
+      },
     };
     const invalidPolicies = [
-      { ...base, backend: 'kortix_fetch' },
-      { ...base, on_no_match: 'allow' },
-      { ...base, tls: 'passthrough' },
-      { ...base, inject: { kind: 'query' as const, name: 'token' } },
-      { ...base, rules: [{ host: '*.example.com' }] },
-      { ...base, rules: [{ host: 'api.example.com', methods: ['GET'] }] },
-      { ...base, rules: [{ host: 'api.example.com', path: '/v1' }] },
+      { ...base, backend: "kortix_fetch" },
+      { ...base, on_no_match: "allow" },
+      { ...base, tls: "passthrough" },
+      { ...base, inject: { kind: "query" as const, name: "token" } },
+      { ...base, rules: [{ host: "*.example.com" }] },
+      { ...base, rules: [{ host: "api.example.com", methods: ["GET"] }] },
+      { ...base, rules: [{ host: "api.example.com", path: "/v1" }] },
     ];
 
     const produced = invalidPolicies
@@ -133,9 +149,10 @@ describe('classifySandboxProvisioningFailure', () => {
     expect(produced).toHaveLength(invalidPolicies.length);
 
     for (const message of produced) {
-      expect(classifySandboxProvisioningFailure(new Error(`STRIPE: ${message}`)).category).toBe(
-        'invalid-secret-boundary-policy',
-      );
+      expect(
+        classifySandboxProvisioningFailure(new Error(`STRIPE: ${message}`))
+          .category,
+      ).toBe("invalid-secret-boundary-policy");
     }
   });
 });

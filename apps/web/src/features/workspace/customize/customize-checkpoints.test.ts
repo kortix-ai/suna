@@ -18,19 +18,19 @@ describe('Customize information architecture', () => {
     expect(customizeSource).not.toContain("section: 'changes'");
     expect(customizeSource).not.toContain("section: 'dev'");
 
-    const git = menuRegistry.find((item) => item.id === 'proj-git');
+    const git = menuRegistry.find((item) => item.id === 'workspace-git');
     expect(git?.label).toBe('Customize · Git');
-    expect(menuRegistry.find((item) => item.id === 'proj-sandbox')?.label).toBe(
+    expect(menuRegistry.find((item) => item.id === 'workspace-sandbox')?.label).toBe(
       'Customize · Sandbox templates',
     );
-    expect(menuRegistry.find((item) => item.id === 'proj-changes')).toBeUndefined();
+    expect(menuRegistry.find((item) => item.id === 'workspace-changes')).toBeUndefined();
   });
 
   test('Files is not a customize rail section — it lives on the standalone files page', () => {
     expect(customizeSource).not.toContain("section: 'files'");
-    const entry = menuRegistry.find((item) => item.id === 'proj-files');
+    const entry = menuRegistry.find((item) => item.id === 'workspace-files');
     expect(entry?.label).toBe('Files');
-    expect(entry?.href).toBe('/projects/{projectId}/files');
+    expect(entry?.href).toBe('/workspaces/{workspaceId}/files');
   });
 
   test('LLM management remains reachable from the Connect rail group', () => {

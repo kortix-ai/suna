@@ -44,7 +44,7 @@ export const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon:
  * The Upgrades section is always reachable (it hosts the one-off prompt runner)
  * and lives pinned at the very bottom of the rail — out of the scrolling nav (see
  * the desktop footer / mobile tail in customize-panel). When a registry upgrade is
- * actually applicable (e.g. the project is still on a v1 manifest) it carries a
+ * actually applicable (e.g. the workspace is still on a v1 manifest) it carries a
  * small attention dot instead of claiming a more prominent slot.
  */
 export const UPGRADE_ITEM: RailItem = {
@@ -57,7 +57,7 @@ export const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', ico
 
 const GROUPS: readonly RailGroup[] = [
   {
-    // Agents graduated to `/projects/<id>/agent` and is no longer an overlay
+    // Agents graduated to `/workspaces/<id>/agent` and is no longer an overlay
     // section. Commands went the other way — its standalone page was deleted
     // (#6169), so it is Build's one static item again. `customize-panel` drops
     // groups whose items all filter out, so if this ever empties again an

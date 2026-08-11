@@ -13,7 +13,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { FolderIcon as Folder } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
-export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function WorkspaceGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const name = (input.name as string) || '';
@@ -45,11 +45,11 @@ export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('project_get', ProjectGetTool);
-ToolRegistry.register('project-get', ProjectGetTool);
-ToolRegistry.register('oc-project_get', ProjectGetTool);
-ToolRegistry.register('oc-project-get', ProjectGetTool);
-ToolRegistry.register('project_update', ProjectGetTool);
-ToolRegistry.register('project-update', ProjectGetTool);
-ToolRegistry.register('oc-project_update', ProjectGetTool);
-ToolRegistry.register('oc-project-update', ProjectGetTool);
+ToolRegistry.register('project_get', WorkspaceGetTool);
+ToolRegistry.register('project-get', WorkspaceGetTool);
+ToolRegistry.register('oc-project_get', WorkspaceGetTool);
+ToolRegistry.register('oc-project-get', WorkspaceGetTool);
+ToolRegistry.register('project_update', WorkspaceGetTool);
+ToolRegistry.register('project-update', WorkspaceGetTool);
+ToolRegistry.register('oc-project_update', WorkspaceGetTool);
+ToolRegistry.register('oc-project-update', WorkspaceGetTool);

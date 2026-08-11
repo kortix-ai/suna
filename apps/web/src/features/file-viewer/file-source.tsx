@@ -51,7 +51,7 @@ export interface BinaryBlobResult {
  * Data-access contract for the shared <FileContentRenderer>.
  *
  * Each surface provides its own implementation — the live workspace (`features/files`)
- * vs. a project git-ref view (`features/project-files`) — so the renderer itself
+ * vs. a workspace git-ref view (`features/workspace-files`) — so the renderer itself
  * stays presentation-only and never imports a feature's hooks or API directly.
  *
  * `useFileContent` / `useBinaryBlob` are React hooks: the renderer calls them

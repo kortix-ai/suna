@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { runPipedreamProxy } from '../connectors/pipedream';
 
-const PD_PROJECT = process.env.PIPEDREAM_PROJECT_ID!;
+const PD_WORKSPACE = process.env.PIPEDREAM_WORKSPACE_ID!;
 
 interface Captured { url: string; method: string; headers: Record<string, string>; body?: string }
 
@@ -53,7 +53,7 @@ describe('Connect Proxy wire format', () => {
     const url = new URL(c.url);
     const b64 = url.pathname.split('/proxy/')[1]!;
     expect(Buffer.from(b64, 'base64url').toString('utf8')).toBe(TARGET); // round-trips the real target
-    expect(url.pathname.startsWith(`/v1/connect/${PD_PROJECT}/proxy/`)).toBe(true);
+    expect(url.pathname.startsWith(`/v1/connect/${PD_WORKSPACE}/proxy/`)).toBe(true);
     expect(url.searchParams.get('account_id')).toBe('apn_acct123');
     expect(url.searchParams.get('external_user_id')).toBe('proj-x:github:user-7');
 

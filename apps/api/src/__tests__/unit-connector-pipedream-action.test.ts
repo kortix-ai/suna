@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { pipedreamConnectUrl, runPipedreamAction } from '../connectors/pipedream';
 
-const PD_PROJECT = process.env.PIPEDREAM_PROJECT_ID!;
+const PD_WORKSPACE = process.env.PIPEDREAM_WORKSPACE_ID!;
 
 interface Captured { url: string; method: string; body?: string }
 
@@ -81,7 +81,7 @@ describe('actions/run configured_props', () => {
     expect(res).toEqual({ status: 200, ok: true, data: { messages: [{ id: 'm1' }] } });
     expect(calls).toHaveLength(1);
     const c = calls[0]!;
-    expect(c.url).toBe(`https://api.pipedream.com/v1/connect/${PD_PROJECT}/actions/run`);
+    expect(c.url).toBe(`https://api.pipedream.com/v1/connect/${PD_WORKSPACE}/actions/run`);
     const body = JSON.parse(c.body!);
     expect(body.id).toBe('gmail-find-email');
     expect(body.external_user_id).toBe('proj-x:gmail:user-7');

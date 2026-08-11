@@ -1,6 +1,6 @@
 'use client';
 
-import { createConnector, getConnectorConfig, type AdminConnector } from '@kortix/sdk';
+import { createConnector, getConnectorConfig, type WorkspaceAdminConnector } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -31,20 +31,20 @@ export function machineSelectionChanged(
 }
 
 export function ComputerConnectorAccount({
-  projectId,
+  workspaceId,
   connector,
   canWrite,
   onChanged,
 }: {
-  projectId: string;
-  connector: AdminConnector;
+  workspaceId: string;
+  connector: WorkspaceAdminConnector;
   canWrite: boolean;
   onChanged: () => void;
 }) {
   const queryClient = useQueryClient();
   const configQuery = useQuery({
-    queryKey: ['connector-config', projectId, connector.slug],
-    queryFn: () => getConnectorConfig(projectId, connector.slug),
+    queryKey: ['connector-config', workspaceId, connector.slug],
+    queryFn: () => getConnectorConfig(workspaceId, connector.slug),
   });
   const savedIds = configQuery.data?.tunnelIds ?? [];
   const [selection, setSelection] = useState<string[] | null>(null);
@@ -52,7 +52,7 @@ export function ComputerConnectorAccount({
 
   const save = useMutation({
     mutationFn: () =>
-      createConnector(projectId, {
+      createConnector(workspaceId, {
         slug: connector.slug,
         name: connector.name,
         provider: 'computer',
@@ -62,7 +62,7 @@ export function ComputerConnectorAccount({
       successToast('Computer Tunnel assignments saved');
       setSelection(null);
       void queryClient.invalidateQueries({
-        queryKey: ['connector-config', projectId, connector.slug],
+        queryKey: ['connector-config', workspaceId, connector.slug],
       });
       onChanged();
     },

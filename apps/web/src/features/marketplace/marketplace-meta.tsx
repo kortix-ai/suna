@@ -35,7 +35,11 @@ const TYPE_META: Record<string, TypeMeta> = {
     Icon: Package,
     tile: 'bg-kortix-yellow/15 text-kortix-yellow',
   },
-  'registry:project': { label: 'Project', Icon: Boxes, tile: 'bg-kortix-blue/10 text-kortix-blue' },
+  'registry:project': {
+    label: 'Workspace',
+    Icon: Boxes,
+    tile: 'bg-kortix-blue/10 text-kortix-blue',
+  },
   'registry:rules': { label: 'Rules', Icon: ScrollText, tile: NEUTRAL },
   'registry:file': { label: 'File', Icon: FileText, tile: NEUTRAL },
 };

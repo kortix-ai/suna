@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { waitForDaemonOpencodeReady } from '../projects/lib/sandbox-daemon-ready';
+import { waitForDaemonOpencodeReady } from '../workspaces/lib/sandbox-daemon-ready';
 
 type HealthBody = { opencode?: string; status?: string };
 

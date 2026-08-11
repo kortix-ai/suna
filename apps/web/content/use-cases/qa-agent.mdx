@@ -51,7 +51,7 @@ deploy, and posts a pass/fail result on the PR.
 <Steps>
 <Step title="Connect GitHub as the trigger">
 
-A signed GitHub webhook points at the project. Every PR opened or updated fires
+A signed GitHub webhook points at the workspace. Every PR opened or updated fires
 it, and each firing spawns a fresh **session** in its own sandbox, seeded with
 the branch under test. One PR maps to one session on one disposable machine, so
 nothing carries over between runs and concurrent PRs run in parallel.

@@ -3,14 +3,14 @@
  * visibility (project_session_grants) uses. Three dashboard options map onto
  * one mechanism:
  *
- *   Project wide   → visibility='project'                 (everyone)
+ *   Workspace wide   → visibility='project'                 (everyone)
  *   Select members → visibility='restricted' + grants     (members and/or groups)
  *   Just me        → visibility='private'                 (owner only)
  *
  * Rule (Marko): empty allow-list = whole project; ≥1 grant = restricted.
  * Pure logic here is unit-tested; DB helpers feed the session CRUD.
  *
- * Project SECRETS no longer use this — secret sharing was retired (a secret is
+ * Workspace SECRETS no longer use this — secret sharing was retired (a secret is
  * always project-wide; see migration 20260706_secrets_v2_identifier_model.sql
  * and projects/secrets.ts). CONNECTORS no longer use this either — a connector
  * is always project-wide visible; the only access gate is the agent-side

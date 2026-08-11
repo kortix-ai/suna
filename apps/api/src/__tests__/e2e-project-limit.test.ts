@@ -1,12 +1,12 @@
 /**
- * E2E for the per-account PROJECT LIMIT — the guard that stops a free account
+ * E2E for the per-account WORKSPACE LIMIT — the guard that stops a free account
  * from creating an unbounded number of projects. Free accounts get 1 project;
- * any paid plan gets the effectively-uncapped `MAX_PROJECTS_PER_ACCOUNT`.
+ * any paid plan gets the effectively-uncapped `MAX_WORKSPACES_PER_ACCOUNT`.
  *
  * This drives the real `POST /v1/projects/provision` handler (and its real
- * `enforceProjectQuota` chokepoint) against a stubbed managed-git backend and a
+ * `enforceWorkspaceQuota` chokepoint) against a stubbed managed-git backend and a
  * db mock with a configurable project count. The limit *number* itself comes
- * from `maxProjectsForAccount` (mocked here to a controllable value — its
+ * from `maxWorkspacesForAccount` (mocked here to a controllable value — its
  * plan→number policy is covered by `unit-project-limit-policy.test.ts`); what
  * this file proves is the enforcement wiring: at-limit → 403 before any repo is
  * created; under-limit → 201.
@@ -19,12 +19,12 @@ import { accountMembers, projectMembers, projects } from '@kortix/db';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
-const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000000201';
 const REPO_OWNER = 'kortix-managed';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 // ─── Per-test knobs ───────────────────────────────────────────────────────────
-let projectLimit = 1; // what maxProjectsForAccount returns for the account
+let projectLimit = 1; // what maxWorkspacesForAccount returns for the account
 let projectCount = 0; // how many projects the account already owns (count(*))
 
 function setTestAuth(userId = USER_ID, userEmail = 'limit@example.test') {
@@ -67,8 +67,8 @@ const stubBackend = {
   seedFiles: async () => { backendCalls.push('seedFiles'); },
 };
 
-const actualGitBackends = await import('../projects/git-backends');
-mock.module('../projects/git-backends', () => ({
+const actualGitBackends = await import('../workspaces/git-backends');
+mock.module('../workspaces/git-backends', () => ({
   ...actualGitBackends,
   hasBackend: (provider: string) => provider === 'github',
   getBackend: () => stubBackend,
@@ -81,10 +81,10 @@ mock.module('../projects/git-backends', () => ({
 }));
 
 // The limit *number* is controlled here; the plan→number policy lives in the
-// real maxProjectsForAccount (see unit-project-limit-policy.test.ts).
+// real maxWorkspacesForAccount (see unit-project-limit-policy.test.ts).
 mock.module('../shared/account-limits', () => ({
-  FREE_TIER_PROJECT_LIMIT: 3,
-  maxProjectsForAccount: async () => projectLimit,
+  FREE_TIER_WORKSPACE_LIMIT: 3,
+  maxWorkspacesForAccount: async () => projectLimit,
   maxConcurrentSessionsForTier: () => Number.MAX_SAFE_INTEGER,
   resolveAccountSessionLimit: async () => ({
     tier: 'free',
@@ -111,18 +111,18 @@ mock.module('../middleware/auth', () => ({
 mockIamEngineAllowAll();
 mockIamMembershipSyncNoop();
 
-const actualGit = await import('../projects/git');
-mock.module('../projects/git', () => ({
+const actualGit = await import('../workspaces/git');
+mock.module('../workspaces/git', () => ({
   ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
-  loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
+  loadWorkspaceConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
   readManifestFromRepo: async () => null,
-  invalidateProjectMirror: () => {},
+  invalidateWorkspaceMirror: () => {},
   listBranches: async () => [],
   remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -154,13 +154,13 @@ mock.module('../snapshots/builder', () => ({
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
   templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
-  kickProjectTemplatePrebuilds: () => {},
+  kickWorkspaceTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
-  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
+  reconcileWorkspaceTemplates: async () => ({ checked: 0, updated: 0 }),
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => 'a'.repeat(40),
-  ensurePerProjectWarmImage: async () => ({
+  ensurePerWorkspaceWarmImage: async () => ({
     snapshotName: 'kortix-ppwarm-test',
     tip: 'a'.repeat(40),
     built: false,
@@ -193,7 +193,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 function projectRowFrom(values: any) {
   return {
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     accountId: values.accountId,
     name: values.name,
     repoUrl: values.repoUrl,
@@ -216,7 +216,7 @@ mock.module('../shared/db', () => ({
       from: (table: unknown) => ({
         where: () => {
           if (table === projects && projection && typeof projection === 'object' && 'count' in projection) {
-            // The enforceProjectQuota count(*) query is awaited directly.
+            // The enforceWorkspaceQuota count(*) query is awaited directly.
             return Promise.resolve([{ count: projectCount }]);
           }
           return {

@@ -1,4 +1,4 @@
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 
 /**
  * The three tabs.
@@ -8,7 +8,7 @@ import type { AdminConnector } from '@kortix/sdk';
  *
  * `attention` became a sort key inside `connected` (`compareConnectors`) plus
  * a badge on the card — a connector that needs setting up is still one of your
- * connectors. `available` was the catalogue minus what the project already
+ * connectors. `available` was the catalogue minus what the workspace already
  * has, which only ever removed cards the other tabs already mark `✓`; see
  * `SCOPES` in `connectors-page.tsx`.
  */
@@ -19,7 +19,7 @@ export type ConnectorScope = 'discover' | 'all' | 'connected';
  * credential (`authSecret`) that was never set. A connector with no declared
  * credential needs nothing, so an unset secret is not a fault there.
  */
-export function connectorNeedsAttention(c: AdminConnector): boolean {
+export function connectorNeedsAttention(c: WorkspaceAdminConnector): boolean {
   if (c.status !== 'active') return true;
   return Boolean(c.authSecret) && !c.secretSet;
 }
@@ -33,7 +33,7 @@ export function connectorNeedsAttention(c: AdminConnector): boolean {
  * site. A connector's `name` is optional and may be whitespace; the slug is
  * the only field guaranteed to be present and non-empty.
  */
-export function connectorDisplayName(connector: Pick<AdminConnector, 'name' | 'slug'>): string {
+export function connectorDisplayName(connector: Pick<WorkspaceAdminConnector, 'name' | 'slug'>): string {
   return connector.name?.trim() || connector.slug;
 }
 
@@ -47,7 +47,7 @@ export function connectorDisplayName(connector: Pick<AdminConnector, 'name' | 's
  * `providerLabel(connector.provider)`; this module stays framework-free.
  */
 export function connectorSummary(
-  connector: Pick<AdminConnector, 'actions'>,
+  connector: Pick<WorkspaceAdminConnector, 'actions'>,
   providerLabel: string,
 ): string {
   const count = connector.actions.length;
@@ -66,14 +66,14 @@ export function connectorSummary(
  * `localeCompare` rather than `<`, so `Ärendehantering` sorts next to `A…`
  * instead of after `Z…`.
  */
-export function compareConnectors(a: AdminConnector, b: AdminConnector): number {
+export function compareConnectors(a: WorkspaceAdminConnector, b: WorkspaceAdminConnector): number {
   const attention = Number(connectorNeedsAttention(b)) - Number(connectorNeedsAttention(a));
   if (attention !== 0) return attention;
   return connectorDisplayName(a).localeCompare(connectorDisplayName(b));
 }
 
 /**
- * The project's own connectors, narrowed by the search box and ordered by
+ * The workspace's own connectors, narrowed by the search box and ordered by
  * `compareConnectors`.
  *
  * There is no `scope` parameter any more. The three catalogue tabs are served
@@ -88,12 +88,12 @@ export function compareConnectors(a: AdminConnector, b: AdminConnector): number 
  * contract. Omitting it narrows the search to slug + name; it never widens it.
  */
 export function filterConnectors(
-  connectors: readonly AdminConnector[],
+  connectors: readonly WorkspaceAdminConnector[],
   opts: {
     query: string;
-    describe?: (connector: AdminConnector) => string;
+    describe?: (connector: WorkspaceAdminConnector) => string;
   },
-): AdminConnector[] {
+): WorkspaceAdminConnector[] {
   const q = opts.query.trim().toLowerCase();
   const matched = connectors.filter((c) => {
     if (!q) return true;

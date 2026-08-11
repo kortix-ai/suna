@@ -131,7 +131,7 @@ export function createApiClient(opts: ClientOptions): ApiClient {
 export interface ClientFromAuthOptions {
   /** Scope every request to this account via `?account_id=`. Opt-in: pass it
    *  only for account-scoped LISTs (e.g. `projects ls`). Project-id routes
-   *  (`/projects/<id>/…`) already determine the account from the id, and
+   *  (`/workspaces/<id>/…`) already determine the account from the id, and
    *  identity calls (`/accounts/me`) must stay account-agnostic — leave it
    *  unset for those. */
   accountId?: string;

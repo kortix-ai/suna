@@ -10,7 +10,7 @@ import { useGitStatus } from '@/features/files/hooks/use-git-status';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { useProjectSession } from '@kortix/sdk/react';
+import { useWorkspaceSession } from '@kortix/sdk/react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -26,7 +26,7 @@ const STATUS_BADGE: Record<string, { letter: string; cls: string; label: string 
 /**
  * Side-panel "Changes" view.
  *
- * Each session runs on its own standalone version of the project (a branch
+ * Each session runs on its own standalone version of the workspace (a branch
  * forked from `base_ref`), so work here never touches the main version until
  * it's explicitly merged. This panel is intentionally NOT a file browser — the
  * full explorer lives in the main Files tab + Customize. Here we only surface:
@@ -49,7 +49,7 @@ export function SessionFilesPanel({
   const tHardcodedUi = useTranslations('hardcodedUi');
   // The git branch == the ROUTE session id; SessionLayout's `sessionId` prop is
   // the OpenCode chat session id (used to message the agent).
-  const { id: projectId, sessionId: gitSessionId } = useParams<{
+  const { id: workspaceId, sessionId: gitSessionId } = useParams<{
     id: string;
     sessionId: string;
   }>();
@@ -61,9 +61,9 @@ export function SessionFilesPanel({
   // with nothing yet) instead of flashing the empty state prematurely.
   const isLoadingChanges = !statusQuery.data && (statusQuery.isLoading || statusQuery.isFetching);
 
-  // `useProjectSession` owns the key, the freshness contract and the fetcher
+  // `useWorkspaceSession` owns the key, the freshness contract and the fetcher
   // for this entry — see its doc comment for why all three readers must agree.
-  const sessionQuery = useProjectSession(projectId, gitSessionId);
+  const sessionQuery = useWorkspaceSession(workspaceId, gitSessionId);
   const baseRef = sessionQuery.data?.base_ref ?? 'main';
 
   const { openPreview } = useFilePreviewStore();

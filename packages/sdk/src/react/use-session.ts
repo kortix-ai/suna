@@ -16,7 +16,7 @@
  * client health poller, and the first turn streams immediately.
  *
  * Call this ONCE per session view (like a provider): it owns the SSE subscription
- * and the `/start` poll for `(projectId, sessionId)`.
+ * and the `/start` poll for `(workspaceId, sessionId)`.
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -38,8 +38,8 @@ import {
   type SessionStartResult,
   isSessionStartError,
   sessionStartKey,
-  startProjectSession,
-} from '../core/rest/projects-client';
+  startWorkspaceSession,
+} from '../core/rest/workspaces-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import {
@@ -66,8 +66,8 @@ import {
 } from './use-opencode-sessions';
 import { unwrap } from './use-opencode-sessions/shared';
 import { usePermissionSelfHeal } from './use-permission-self-heal';
-import { useProjectConfig } from './use-project-config';
-import { useProjectModels } from './use-project-models';
+import { useWorkspaceConfig } from './use-project-config';
+import { useWorkspaceModels } from './use-project-models';
 import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks } from './use-session-picks';
@@ -130,9 +130,9 @@ export function shouldPollSessionStart(
  * How long `/start` can return NEITHER data NOR an error before it counts as
  * "given up" rather than "still working".
  *
- * `startProjectSession` swallows every 5xx/408/429/transport failure into a
+ * `startWorkspaceSession` swallows every 5xx/408/429/transport failure into a
  * `null` result instead of throwing
- * (`core/rest/projects-client/session-sandbox.ts`), so on a persistent
+ * (`core/rest/workspaces-client/session-sandbox.ts`), so on a persistent
  * outage `start.error` and `start.data` both stay `null` forever and
  * `shouldPollSessionStart(null, null)` keeps returning `SESSION_START_POLL_MS`
  * — there is no terminal stage and no error ever produced to observe.
@@ -152,7 +152,7 @@ export function shouldPollSessionStart(
  * rather than understate it. 45s is 30 consecutive empty poll intervals at
  * `SESSION_START_POLL_MS` (1.5s each), but the budget is only ever CHECKED
  * at a poll tick, and `waitMs` (default
- * `15_000`, the server-side long-poll budget passed to `startProjectSession`)
+ * `15_000`, the server-side long-poll budget passed to `startWorkspaceSession`)
  * means a single tick's request can itself take up to ~15s before resolving.
  * So the tick that finally crosses the 45s line can itself land up to one
  * full cycle late: `45_000 + (waitMs + SESSION_START_POLL_MS)` ≈
@@ -207,7 +207,7 @@ export function hasStartGivenUp(
  * - Mid-fetch → keep whatever is already armed; a fetch in flight is not
  *   itself informative either way, and time spent waiting on it still counts.
  *
- * Session-identity resetting (`projectId`/`sessionId` changing under a reused
+ * Session-identity resetting (`workspaceId`/`sessionId` changing under a reused
  * hook instance) is handled by a separate effect, not here — this function
  * has no session id to key on by design, matching the narrow input the
  * `useEffect` actually has on each tick.
@@ -302,6 +302,29 @@ export interface KortixSendErrorConnector {
    * The distinction decides whether a connect button can help at all.
    */
   authorization_strategy: 'project' | 'user';
+}
+
+/** Canonical Workspace connector refusal shape for Workspace hosts. */
+export interface WorkspaceSendErrorConnector
+  extends Omit<KortixSendErrorConnector, 'authorization_strategy'> {
+  authorization_strategy: 'workspace' | 'user';
+}
+
+/**
+ * Convert the published Project compatibility shape and canonical server shape
+ * into the Workspace shape used by current hosts.
+ */
+export function workspaceSendErrorConnectors(
+  connectors: readonly (
+    | KortixSendErrorConnector
+    | WorkspaceSendErrorConnector
+  )[],
+): WorkspaceSendErrorConnector[] {
+  return connectors.map((connector) => ({
+    ...connector,
+    authorization_strategy:
+      connector.authorization_strategy === 'user' ? 'user' : 'workspace',
+  }));
 }
 
 /** Typed failure surfaced by `send` (via `sendError`) and thrown by
@@ -414,13 +437,13 @@ function connectorRefusalConnections(error: unknown): KortixSendErrorConnector[]
     const connection = entry as Record<string, unknown>;
     const strategy = connection.authorization_strategy ?? connection.authorizationStrategy;
     if (typeof connection.id !== 'string' || typeof connection.slug !== 'string') continue;
-    if (strategy !== 'project' && strategy !== 'user') continue;
+    if (strategy !== 'project' && strategy !== 'workspace' && strategy !== 'user') continue;
     connections.push({
       id: connection.id,
       slug: connection.slug,
       name:
         typeof connection.name === 'string' && connection.name ? connection.name : connection.slug,
-      authorization_strategy: strategy,
+      authorization_strategy: strategy === 'workspace' ? 'project' : strategy,
     });
   }
   return connections.length > 0 ? connections : null;
@@ -641,7 +664,7 @@ export interface UseSessionOptions {
    * machinery every host needs. Default true.
    *
    * Set this false when the host mounts its OWN chat surface for the same
-   * `(projectId, sessionId)` (e.g. apps/web's `SessionChat`, which has its own
+   * `(workspaceId, sessionId)` (e.g. apps/web's `SessionChat`, which has its own
    * `useSessionSync` + `useQuestionSelfHeal`): with two callers of `useSession`
    * alive for the same session — this hook (for boot/lifecycle) and the host's
    * chat component — leaving it `true` would double-mount both pollers, running
@@ -675,7 +698,7 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   loadOlder: async () => {},
 };
 
-export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
+export function useSession(workspaceId: string, sessionId: string, options: UseSessionOptions = {}) {
   const queryClient = useQueryClient();
   const titleRefreshAbortRef = useRef<AbortController | null>(null);
   const {
@@ -687,10 +710,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
-  const startEnabled = enabled && !!projectId && !!sessionId;
+  const startEnabled = enabled && !!workspaceId && !!sessionId;
   const start = useQuery({
-    queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId, sessionId, waitMs),
+    queryKey: sessionStartKey(workspaceId, sessionId),
+    queryFn: () => startWorkspaceSession(workspaceId, sessionId, waitMs),
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>
@@ -719,13 +742,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const [startGivenUp, setStartGivenUp] = useState(false);
   // A new session gets a fresh clock AND a fresh give-up verdict. This hook
   // instance is reused across session navigation (see the switch effect
-  // below), and neither may bleed from a DIFFERENT (projectId, sessionId)
+  // below), and neither may bleed from a DIFFERENT (workspaceId, sessionId)
   // into this one's give-up budget. Declared before the arming effect so both
   // clear first, within the same commit, when the session changes.
   useEffect(() => {
     startInconclusiveSinceRef.current = null;
     setStartGivenUp(false);
-  }, [projectId, sessionId]);
+  }, [workspaceId, sessionId]);
   useEffect(() => {
     // `Date.now()` lives here, not in the render body: reading it during
     // render made this impure and a StrictMode/concurrent-render hazard. One
@@ -809,7 +832,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
   const canonicalSession = useCanonicalOpenCodeSession({
-    projectId,
+    workspaceId,
     sessionId,
     pinFromStart: startData?.opencode_session_id ?? null,
     initialPin: initialOpenCodeSessionId,
@@ -822,7 +845,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       titleRefreshAbortRef.current?.abort();
       titleRefreshAbortRef.current = null;
     },
-    [projectId, sessionId],
+    [workspaceId, sessionId],
   );
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
@@ -830,7 +853,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // a falsy/non-canonical session id) — and use a fixed, type-stable empty
   // result instead of whatever it happens to return for that starved call.
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
-    kortixSessionScope: `${projectId}/${sessionId}`,
+    kortixSessionScope: `${workspaceId}/${sessionId}`,
     networkEnabled: switched,
   });
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
@@ -887,9 +910,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const runtimeActionReady = switched && !!rootSessionId;
 
   // 7. Server-side capabilities + per-session picks (all pre-runtime — no sandbox).
-  const models = useProjectModels(projectId);
-  const agents = useVisibleAgents({ projectId });
-  const config = useProjectConfig(projectId);
+  const models = useWorkspaceModels(workspaceId);
+  const agents = useVisibleAgents({ workspaceId });
+  const config = useWorkspaceConfig(workspaceId);
   const picks = useSessionPicks(sessionId);
 
   // 8. Mutations.
@@ -909,7 +932,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     titleRefreshAbortRef.current?.abort();
     const controller = new AbortController();
     titleRefreshAbortRef.current = controller;
-    void reconcileHydratedSessionTitle(queryClient, projectId, sessionId, userMsgCount, {
+    void reconcileHydratedSessionTitle(queryClient, workspaceId, sessionId, userMsgCount, {
       signal: controller.signal,
     }).finally(() => {
       if (titleRefreshAbortRef.current === controller) {
@@ -917,7 +940,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       }
     });
     return () => controller.abort();
-  }, [chatEngine, projectId, queryClient, sessionId, userMsgCount]);
+  }, [chatEngine, workspaceId, queryClient, sessionId, userMsgCount]);
   const [sendState, setSendState] = useState<SendState>(IDLE_SEND_STATE);
   const pending = sendState.pending;
   const pendingBaseCount = useRef(0);
@@ -1087,7 +1110,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   }, [phase, sync.isLoading, sync.messages.length, sessionId, replayStartStash, chatEngine]);
 
   return {
-    projectId,
+    workspaceId,
     sessionId,
     /** Canonical OpenCode root id, or null while resolving. */
     opencodeSessionId: rootSessionId ?? null,

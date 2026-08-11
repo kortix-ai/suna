@@ -20,7 +20,7 @@
 
 export interface CallContext {
   /** The Kortix project this call belongs to. */
-  projectId: string;
+  workspaceId: string;
   /** The Kortix session this call is bound to. Also the LiveKit room name. */
   sessionId: string;
   /**
@@ -85,8 +85,8 @@ export function resolveCallContext(
     );
   }
 
-  const projectId = asNonEmptyString(roomMeta.project_id);
-  if (!projectId) {
+  const workspaceId = asNonEmptyString(roomMeta.project_id);
+  if (!workspaceId) {
     throw new Error('voice-agent: room metadata is missing project_id');
   }
 
@@ -96,7 +96,7 @@ export function resolveCallContext(
   }
 
   return {
-    projectId,
+    workspaceId,
     sessionId,
     callId: asNonEmptyString(roomMeta.call_id) ?? sessionId,
     kortixApiUrl:

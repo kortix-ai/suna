@@ -18,7 +18,7 @@ import { createHmac } from 'node:crypto';
 import {
   buildGitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
-} from '../projects/github';
+} from '../workspaces/github';
 import {
   buildAccountGitHubSetupRedirect,
   resolveGitHubInstallCallbackAction,

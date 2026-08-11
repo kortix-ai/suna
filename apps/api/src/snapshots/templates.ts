@@ -34,9 +34,9 @@ import {
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
-import { metadataMerge } from '../projects/lib/metadata-merge';
-import { readManifest } from '../projects/triggers';
-import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
+import { metadataMerge } from '../workspaces/lib/metadata-merge';
+import { readManifest } from '../workspaces/triggers';
+import { resolveCommitSha, readRepoFile, type GitBackedWorkspace } from '../workspaces/git';
 import { SANDBOX_VERSION, config } from '../config';
 import {
   buildDefaultSandboxTemplate,
@@ -165,8 +165,8 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // per-project warm bakes kept re-downloading Chromium and saturating egress
 // (root cause of the v0.10.11 prod rollback). Two changes: (a) per-project warm
 // bakes now prefer building FROM the already-built default image
-// (buildPerProjectWarmFromBaseDockerfile in dockerfile-layer.ts, wired through
-// ensurePerProjectWarmImage) — Chromium is INHERITED, not re-installed, so
+// (buildPerWorkspaceWarmFromBaseDockerfile in dockerfile-layer.ts, wired through
+// ensurePerWorkspaceWarmImage) — Chromium is INHERITED, not re-installed, so
 // there is no download to miss, no matter what the provider's cache does. This
 // requires the default image to already be `active` on the provider; when it
 // isn't (or the provider can't report an image ref), the builder falls back to
@@ -229,7 +229,7 @@ function readPositiveIntEnv(name: string, fallback: number): number {
 /** Pretty resolved view used by both the boot path and the UI. */
 export interface ResolvedTemplate {
   templateId: string | null; // null only for a synthesized platform default
-  projectId: string | null;
+  workspaceId: string | null;
   slug: string;
   name: string;
   isShared: boolean;
@@ -284,42 +284,42 @@ const templateListCache = new Map<string, { at: number; value: ResolvedTemplate[
 
 /** Invalidate the in-memory template list cache for a project. Called from
  *  the CRUD endpoints after a create / update / delete. */
-export function invalidateTemplateCache(projectId: string): void {
-  templateListCache.delete(projectId);
+export function invalidateTemplateCache(workspaceId: string): void {
+  templateListCache.delete(workspaceId);
 }
 
-export async function listTemplatesForProject(
-  project: GitBackedProject,
+export async function listTemplatesForWorkspace(
+  project: GitBackedWorkspace,
   opts: { forceTomlSync?: boolean } = {},
 ): Promise<ResolvedTemplate[]> {
   // Burst-cache: hot reads return without touching the DB.
   if (!opts.forceTomlSync) {
-    const cached = templateListCache.get(project.projectId);
+    const cached = templateListCache.get(project.workspaceId);
     if (cached && Date.now() - cached.at < TEMPLATE_LIST_TTL_MS) {
       return cached.value;
     }
   }
 
-  const last = tomlSyncCache.get(project.projectId) ?? 0;
+  const last = tomlSyncCache.get(project.workspaceId) ?? 0;
   if (opts.forceTomlSync || Date.now() - last > TOML_SYNC_TTL_MS) {
-    await syncManifestTemplatesForProject(project);
-    tomlSyncCache.set(project.projectId, Date.now());
+    await syncManifestTemplatesForWorkspace(project);
+    tomlSyncCache.set(project.workspaceId, Date.now());
   }
 
   const rows = await db
     .select()
     .from(sandboxTemplates)
-    .where(or(eq(sandboxTemplates.projectId, project.projectId), eq(sandboxTemplates.isShared, true)));
+    .where(or(eq(sandboxTemplates.workspaceId, project.workspaceId), eq(sandboxTemplates.isShared, true)));
 
   if (rows.length === 0) {
     // No DB rows at all — synthesize a platform default so the system still
     // works before migrations seed one.
     const value = [synthesizedDefault()];
-    templateListCache.set(project.projectId, { at: Date.now(), value });
+    templateListCache.set(project.workspaceId, { at: Date.now(), value });
     return value;
   }
 
-  // Project-scoped rows SHADOW shared rows with the same slug. So if a project
+  // Workspace-scoped rows SHADOW shared rows with the same slug. So if a project
   // defines its own `[[sandbox.templates]]` entry with slug
   // "default", that wins over the platform default. Otherwise the platform's
   // shared row is the project's default.
@@ -333,7 +333,7 @@ export async function listTemplatesForProject(
     return a.createdAt.getTime() - b.createdAt.getTime();
   });
   const value = deduped.map(rowToResolved);
-  templateListCache.set(project.projectId, { at: Date.now(), value });
+  templateListCache.set(project.workspaceId, { at: Date.now(), value });
   return value;
 }
 
@@ -350,15 +350,15 @@ export class TemplateNotFoundError extends Error {
 
 /** Resolve a slug → ResolvedTemplate. Throws TemplateNotFoundError if slug missing. */
 export async function resolveTemplateBySlug(
-  project: GitBackedProject,
+  project: GitBackedWorkspace,
   slug: string | undefined,
 ): Promise<ResolvedTemplate> {
   const target = (slug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
 
   // Fast path for the platform default — the overwhelming majority of boots.
   // The default template's identity is a constant (PLATFORM_DEFAULT_USER_DOCKERFILE),
-  // so it does NOT depend on the project's kortix.yaml. `listTemplatesForProject`
-  // would run `syncManifestTemplatesForProject` → `readManifest` → a host-side git
+  // so it does NOT depend on the project's kortix.yaml. `listTemplatesForWorkspace`
+  // would run `syncManifestTemplatesForWorkspace` → `readManifest` → a host-side git
   // fetch of the repo (15-30s cold) on every boot once the 60s TTL lapses — and
   // boots are minutes apart, so it lapses every time. Slug "default" is reserved
   // (the manifest sync skips it and the manifest schema forbids it), so a project
@@ -368,7 +368,7 @@ export async function resolveTemplateBySlug(
     return resolveDefaultTemplate();
   }
 
-  const items = await listTemplatesForProject(project);
+  const items = await listTemplatesForWorkspace(project);
   const match = items.find((t) => t.slug === target);
   if (match) return match;
   throw new TemplateNotFoundError(target);
@@ -385,7 +385,7 @@ export async function resolveTemplateBySlug(
  * as the derived-bake marker it usually is.
  */
 export async function resolveTemplateForBuildSlug(
-  project: GitBackedProject,
+  project: GitBackedWorkspace,
   slug: string | undefined,
 ): Promise<ResolvedTemplate> {
   try {
@@ -418,12 +418,12 @@ export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
  * Used by CRUD operations that must operate on a concrete row.
  */
 export async function getTemplateRow(
-  projectId: string | null,
+  workspaceId: string | null,
   slug: string,
 ): Promise<DbSandboxTemplate | null> {
   const conds = [eq(sandboxTemplates.slug, slug)];
-  if (projectId === null) conds.push(isNull(sandboxTemplates.projectId));
-  else conds.push(eq(sandboxTemplates.projectId, projectId));
+  if (workspaceId === null) conds.push(isNull(sandboxTemplates.workspaceId));
+  else conds.push(eq(sandboxTemplates.workspaceId, workspaceId));
   const [row] = await db
     .select()
     .from(sandboxTemplates)
@@ -442,7 +442,7 @@ export async function getTemplateById(templateId: string): Promise<DbSandboxTemp
 }
 
 export interface CreateTemplateInput {
-  projectId: string;
+  workspaceId: string;
   accountId: string;
   slug: string;
   name?: string;
@@ -461,7 +461,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
   const [row] = await db
     .insert(sandboxTemplates)
     .values({
-      projectId: input.projectId,
+      workspaceId: input.workspaceId,
       accountId: input.accountId,
       slug: input.slug,
       name: input.name || input.slug,
@@ -477,7 +477,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
       providerState: 'missing',
     })
     .returning();
-  invalidateTemplateCache(input.projectId);
+  invalidateTemplateCache(input.workspaceId);
   return row;
 }
 
@@ -491,18 +491,18 @@ export interface UpdateTemplateInput {
   diskGb?: number | null;
 }
 
-/** Patch a template by id. When `expectProjectId` is given, the row must belong
+/** Patch a template by id. When `expectWorkspaceId` is given, the row must belong
  *  to that project or the update is refused (returns null) — a data-layer guard
  *  against cross-tenant mutation so callers can't poison another project's
  *  template by id even if a handler-level ownership check is missing. */
 export async function updateTemplate(
   templateId: string,
   patch: UpdateTemplateInput,
-  expectProjectId?: string,
+  expectWorkspaceId?: string,
 ): Promise<DbSandboxTemplate | null> {
   const row = await getTemplateById(templateId);
   if (!row) return null;
-  if (expectProjectId !== undefined && row.projectId !== expectProjectId) return null;
+  if (expectWorkspaceId !== undefined && row.workspaceId !== expectWorkspaceId) return null;
   if (row.isShared) {
     throw new Error('Shared platform templates are read-only.');
   }
@@ -537,7 +537,7 @@ export async function updateTemplate(
     .set(next)
     .where(eq(sandboxTemplates.templateId, templateId))
     .returning();
-  if (updated?.projectId) invalidateTemplateCache(updated.projectId);
+  if (updated?.workspaceId) invalidateTemplateCache(updated.workspaceId);
   return updated;
 }
 
@@ -546,7 +546,7 @@ export async function deleteTemplate(templateId: string): Promise<boolean> {
   if (!row) return false;
   if (row.isShared) throw new Error('Shared platform templates cannot be deleted.');
   await db.delete(sandboxTemplates).where(eq(sandboxTemplates.templateId, templateId));
-  if (row.projectId) invalidateTemplateCache(row.projectId);
+  if (row.workspaceId) invalidateTemplateCache(row.workspaceId);
   return true;
 }
 
@@ -575,7 +575,7 @@ export async function refreshTemplateState(
  * spec). Used by builder.ts to know what to ask the provider for.
  */
 export async function computeTemplateIdentity(
-  project: GitBackedProject,
+  project: GitBackedWorkspace,
   template: ResolvedTemplate,
 ): Promise<{
   snapshotName: string;
@@ -624,7 +624,7 @@ export async function computeTemplateIdentity(
 }
 
 export async function resolveUserDockerfile(
-  project: GitBackedProject,
+  project: GitBackedWorkspace,
   template: ResolvedTemplate,
 ): Promise<{ dockerfile: string; commit: string | null }> {
   if (template.isShared) return { dockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE, commit: null };
@@ -752,7 +752,7 @@ function synthesizedDefault(): ResolvedTemplate {
   const tpl = buildDefaultSandboxTemplate();
   return {
     templateId: null,
-    projectId: null,
+    workspaceId: null,
     slug: tpl.slug,
     name: tpl.name ?? 'Default',
     isShared: true,
@@ -775,7 +775,7 @@ function synthesizedDefault(): ResolvedTemplate {
 function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
   return {
     templateId: row.templateId,
-    projectId: row.projectId,
+    workspaceId: row.workspaceId,
     slug: row.slug,
     name: row.name,
     isShared: row.isShared,
@@ -799,7 +799,7 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
  * Upsert `sandbox.templates` entries from the project's kortix.yaml into the DB.
  * Best-effort: a broken manifest never blocks the boot path.
  */
-async function syncManifestTemplatesForProject(project: GitBackedProject): Promise<void> {
+async function syncManifestTemplatesForWorkspace(project: GitBackedWorkspace): Promise<void> {
   try {
     const parsed = await readManifest(project);
     const tomlTemplates = extractSandboxTemplates(parsed?.raw ?? null);
@@ -808,7 +808,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
       await db
         .insert(sandboxTemplates)
         .values({
-          projectId: project.projectId,
+          workspaceId: project.workspaceId,
           accountId: null,
           slug: tpl.slug,
           name: tpl.name ?? tpl.slug,
@@ -824,7 +824,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
           providerState: 'missing',
         })
         .onConflictDoUpdate({
-          target: [sandboxTemplates.projectId, sandboxTemplates.slug],
+          target: [sandboxTemplates.workspaceId, sandboxTemplates.slug],
           set: {
             name: tpl.name ?? tpl.slug,
             image: tpl.image ?? null,
@@ -847,7 +847,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
     const [projectRow] = await db
       .select({ metadata: projects.metadata })
       .from(projects)
-      .where(eq(projects.projectId, project.projectId))
+      .where(eq(projects.workspaceId, project.workspaceId))
       .limit(1);
     const meta = (projectRow?.metadata ?? {}) as Record<string, unknown>;
     const current = typeof meta.default_sandbox_slug === 'string' ? meta.default_sandbox_slug : null;
@@ -863,11 +863,11 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
             : metadataMerge({}, ['default_sandbox_slug']),
           updatedAt: new Date(),
         })
-        .where(eq(projects.projectId, project.projectId));
+        .where(eq(projects.workspaceId, project.workspaceId));
     }
   } catch (err) {
     console.warn(
-      `[templates] manifest sync failed for ${project.projectId}:`,
+      `[templates] manifest sync failed for ${project.workspaceId}:`,
       err instanceof Error ? err.message : err,
     );
   }

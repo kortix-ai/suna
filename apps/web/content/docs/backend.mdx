@@ -7,7 +7,7 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
 Use a Kortix API key to start sessions from your server. Each session has one
-Kortix owner, one project, and one cost record.
+Kortix owner, one workspace, and one cost record.
 
 Your application owns its customer identifiers and metadata. Store the
 relationship between your customer and the returned `session_id` in your
@@ -22,11 +22,11 @@ API derives `origin: "backend"` from the credential type.
 ```bash
 export KORTIX_API_URL="https://your-kortix-deployment.com/v1"
 export KORTIX_API_KEY="kortix_pat_…"
-export KORTIX_PROJECT_ID="…"
+export KORTIX_WORKSPACE_ID="…"
 ```
 
 Use a service account when you need an independently managed principal. Grant
-that service account the required project actions before use.
+that service account the required workspace actions before use.
 
 ## 2. Start a session
 
@@ -35,7 +35,7 @@ that service account the required project actions before use.
 ### Create with HTTP
 
 ```bash
-curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
+curl -X POST "$KORTIX_API_URL/workspaces/$KORTIX_WORKSPACE_ID/sessions" \
   -H "Authorization: Bearer $KORTIX_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
@@ -62,7 +62,7 @@ const kortix = createScopedKortix({
   getToken: async () => process.env.KORTIX_API_KEY!,
 });
 
-const session = await kortix.project(projectId).sessions.create({
+const session = await kortix.workspace(workspaceId).sessions.create({
   agent_name: 'support',
   opencode_model: 'kortix/glm-5.2',
   runtime_context: { ticket_id: 'ticket-123' },
@@ -94,25 +94,25 @@ export SESSION_ID="<session-id>"
 | `runtime_context`    | Stores non-secret scalar context. The API rejects credential-like keys, more than 64 entries, or more than 16 KiB.                                      |
 | `connector_bindings` | Maps a connector slug to one strategy-compatible `connection_id`. The credential stays outside the sandbox.                                  |
 | `inherit_unbound`    | Keeps strategy-based default resolution for connectors omitted from an explicit binding map. The default is `false`.                            |
-| `secrets`            | Narrows the selected agent's project-secret grant. An empty list delivers no project secrets. Only backend-origin callers can set it.                   |
+| `secrets`            | Narrows the selected agent's workspace-secret grant. An empty list delivers no workspace secrets. Only backend-origin callers can set it.                   |
 | `require_connectors` | Adds mandatory connectors for this create request. Missing connections return `409 CONNECTOR_CONNECTION_REQUIRED`, and unconfigured slugs return `409 REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`, before the session row is inserted and before sandbox startup. |
 
 ## 3. Configure connectors and connections
 
-A connector defines the tool surface. It contains a project-unique
+A connector defines the tool surface. It contains a workspace-unique
 slug, display name, provider app, authorization strategy, and policies.
 
 A connection stores one connected account or credential for that connector.
 Every connection inherits the connector's policies.
 
-The authorization strategy has two values:
+The canonical API and SDK authorization strategy has two values:
 
-- `project` accepts active project connections.
-- `user` accepts only an active connection owned by the acting project
+- `workspace` accepts active workspace connections.
+- `user` accepts only an active connection owned by the acting workspace
   member.
 
 A service account has no member identity, so it cannot use a member's `user`
-connection. Use `project` connectors for service-account sessions.
+connection. Use `workspace` connectors for service-account sessions.
 A personal access token can use an eligible `user` connection owned by the
 token's member.
 
@@ -122,6 +122,7 @@ connectors:
     name: Gmail read only
     provider: pipedream
     app: gmail
+    # The manifest keeps `project` as a stable compatibility value.
     authorization_strategy: project
     policies:
       - match: search_email
@@ -133,23 +134,27 @@ agents:
     connectors_required: [gmail-read]
 ```
 
-The SDK exposes connections under `project.connectors.connections`:
+The manifest schema continues to use `authorization_strategy: project | user`.
+The canonical Workspace API and SDK translate `workspace` to the persisted
+`project` value. Existing manifests do not require a migration.
+
+The SDK exposes connections under `workspace.connectors.connections`:
 
 ```ts
-const connection = await kortix.project(projectId).connectors.connections.reconcile({
+const connection = await kortix.workspace(workspaceId).connectors.connections.reconcile({
   connector_alias: 'gmail-read',
-  owner_type: 'project',
+  owner_type: 'workspace',
   label: 'Support inbox',
 });
 
 await kortix
-  .project(projectId)
+  .workspace(workspaceId)
   .connectors.connections.updateCredential(connection.connection_id, {
     value: credential,
     kind: 'secret',
   });
 
-await kortix.project(projectId).connectors.connections.activate(connection.connection_id);
+await kortix.workspace(workspaceId).connectors.connections.activate(connection.connection_id);
 ```
 
 For a Pipedream OAuth connection, call `pipedreamConnect()` and
@@ -170,18 +175,18 @@ selection.
 
 ```bash
 curl -sS \
-  "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions/$SESSION_ID/scope" \
+  "$KORTIX_API_URL/workspaces/$KORTIX_WORKSPACE_ID/sessions/$SESSION_ID/scope" \
   -H "Authorization: Bearer $KORTIX_API_KEY"
 ```
 
 ```ts
-const scope = await kortix.session(projectId, sessionId).scope();
+const scope = await kortix.session(workspaceId, sessionId).scope();
 ```
 
 Replace scope with `PUT` or `rescope()`:
 
 ```ts
-const nextScope = await kortix.session(projectId, sessionId).rescope({
+const nextScope = await kortix.session(workspaceId, sessionId).rescope({
   secrets: ['STRIPE_KEY'],
   connector_bindings: {
     'gmail-read': { connection_id: connection.connection_id },
@@ -203,15 +208,15 @@ cost. Every session appears in the list, including sessions with zero cost.
 
 ```bash
 curl -sS \
-  "$KORTIX_API_URL/usage/session-costs?project_id=$KORTIX_PROJECT_ID&limit=25&offset=0" \
+  "$KORTIX_API_URL/usage/session-costs?workspace_id=$KORTIX_WORKSPACE_ID&limit=25&offset=0" \
   -H "Authorization: Bearer $KORTIX_API_KEY"
 
 curl -sS \
-  "$KORTIX_API_URL/usage/session-costs/$SESSION_ID?project_id=$KORTIX_PROJECT_ID" \
+  "$KORTIX_API_URL/usage/session-costs/$SESSION_ID?workspace_id=$KORTIX_WORKSPACE_ID" \
   -H "Authorization: Bearer $KORTIX_API_KEY"
 ```
 
-The list returns session, project, owner, LLM, compute, total, request, token,
+The list returns session, workspace, owner, LLM, compute, total, request, token,
 model, and compute-duration fields. It also returns `reconciliation` for
 account usage that has no session.
 
@@ -225,17 +230,17 @@ Use the SDK for typed reads:
 ```ts
 const page = await kortix.billing.sessionCosts.list({
   accountId,
-  projectId,
+  workspaceId,
   limit: 25,
   offset: 0,
 });
 
 const detail = await kortix.billing.sessionCosts.get(sessionId, {
   accountId,
-  projectId,
+  workspaceId,
 });
 
-const sameDetail = await kortix.session(projectId, sessionId).cost();
+const sameDetail = await kortix.session(workspaceId, sessionId).cost();
 ```
 
 `session.cost()` does not start the session runtime.
@@ -245,7 +250,7 @@ const sameDetail = await kortix.session(projectId, sessionId).cost();
 Await runtime readiness before using the OpenCode REST methods:
 
 ```ts
-const handle = kortix.session(projectId, session.session_id);
+const handle = kortix.session(workspaceId, session.session_id);
 await handle.ensureReady();
 
 const stream = await handle.stream({
@@ -257,7 +262,7 @@ const stream = await handle.stream({
 await handle.send('Summarize the support queue.');
 ```
 
-Use `useSession(projectId, sessionId)` for React hosts. It owns startup,
+Use `useSession(workspaceId, sessionId)` for React hosts. It owns startup,
 readiness, the live event stream, and message synchronization.
 
 ## Idempotent retries
@@ -276,7 +281,7 @@ different secret allowlist, connector binding map, or runtime context returns
 - Connector credentials resolve server-side for each tool call.
 - A connection must match its connector's authorization strategy.
 - Connector policies apply to every connection under that connector.
-- Project guardrails apply above connector-connection policies.
+- Workspace guardrails apply above connector-connection policies.
 - Secret scope can narrow an agent grant. It cannot widen one.
 - Session scope replacement cannot select a connection owned by another
   member.
@@ -291,11 +296,11 @@ different secret allowlist, connector binding map, or runtime context returns
 | `400`                        | `INVALID_SESSION_RUNTIME_CONTEXT`                | Runtime context violates its shape, key, entry, or size limits.                    |
 | `403`                        | `origin_override_forbidden`                      | A non-backend caller supplied a secret allowlist.                                  |
 | `403`                        | `CONNECTOR_NOT_ASSIGNED`                         | The selected agent is not granted the connector.                           |
-| `404` create / `403` rescope | `CONNECTOR_CONNECTION_NOT_FOUND`                    | The connection does not exist in this project or violates the connector's authorization strategy. |
-| `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist contains an unknown project-secret identifier.                |
+| `404` create / `403` rescope | `CONNECTOR_CONNECTION_NOT_FOUND`                    | The connection does not exist in this workspace or violates the connector's authorization strategy. |
+| `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist contains an unknown workspace-secret identifier.                |
 | `409`                        | `CONNECTOR_CONNECTION_REQUIRED`               | A mandatory connector has no valid active connection. Every failing connector is listed in `connector_connections`. |
 | `409`                        | `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`         | A required slug has no configured connector at all. Every failing alias is listed in `connectors`. |
-| `409`                        | `CONNECTOR_NOT_PIPEDREAM`                        | The alias is a connector on the project but not a Pipedream one, so no Quick Connect link exists for it. |
+| `409`                        | `CONNECTOR_NOT_PIPEDREAM`                        | The alias is a connector on the workspace but not a Pipedream one, so no Quick Connect link exists for it. |
 | `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
 | `409` create / `403` rescope | `CONNECTOR_CONNECTION_INACTIVE`                     | The selected connection or connector is inactive.                       |
 | `409`                        | `IDEMPOTENCY_*_CONFLICT`                         | The idempotency key was replayed with a different request body.                    |

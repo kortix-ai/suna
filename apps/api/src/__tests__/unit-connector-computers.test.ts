@@ -11,8 +11,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { computerCatalog, computerLabel } from '../connectors/computers';
-import { extractConnectors } from '../projects/connectors';
-import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../projects/triggers';
+import { extractConnectors } from '../workspaces/connectors';
+import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../workspaces/triggers';
 import {
   handleCall,
   type CallInput,
@@ -123,7 +123,7 @@ function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ)
     loadAction: async () => action,
     resolveCredential: async () => null, // never called — hasAuth is false
     loadPolicies: async () => [],
-    loadProjectPolicies: async () => [],
+    loadWorkspacePolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
     recordExecution: async () => null,
     fetchImpl: async () => {
@@ -139,7 +139,7 @@ function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ)
 
 function input(args: Record<string, unknown>, actionPath = 'fs.read'): CallInput {
   return {
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     accountId: 'acct-1',
     subject: { userId: 'u1', groupIds: [] },
     sessionId: 'sess-1',
@@ -165,7 +165,7 @@ describe('handleCall — computer (tunnel)', () => {
     expect(calls[0]).toEqual({
       accountId: 'acct-1',
       actorUserId: 'u1',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       sessionId: 'sess-1',
       allowedTunnelIds: [
         '11111111-1111-4111-8111-111111111111',

@@ -101,7 +101,7 @@ export function AccountDetailCard({
                 <Users className="size-3.5" />
                 {data?.member_count ?? 0} {(data?.member_count ?? 0) === 1 ? 'member' : 'members'}
               </span>
-              <span>{data?.project_count ?? 0} projects</span>
+              <span>{data?.workspace_count ?? 0} workspaces</span>
               {data?.created_at && <span>Created {relativeTime(data.created_at)}</span>}
               <span className="font-mono">{accountId}</span>
             </p>
@@ -144,7 +144,7 @@ export function AccountDetailCard({
           <p className="text-xs text-muted-foreground">
             {isOwner
               ? 'Owners may need to transfer ownership before leaving.'
-              : 'You will lose access to its projects and members.'}
+              : 'You will lose access to its workspaces and members.'}
           </p>
         </div>
         <LeaveAccountDialog
@@ -178,7 +178,7 @@ function LeaveAccountDialog({
         <DialogHeader>
           <DialogTitle>Leave {name}?</DialogTitle>
           <DialogDescription>
-            You&apos;ll immediately lose access to this account&apos;s projects and members. You can
+            You&apos;ll immediately lose access to this account&apos;s workspaces and members. You can
             be re-invited later.
           </DialogDescription>
         </DialogHeader>

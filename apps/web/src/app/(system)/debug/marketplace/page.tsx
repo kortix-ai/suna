@@ -20,7 +20,7 @@ export default function DebugMarketplacePage() {
 
   return (
     <main className="bg-background text-foreground h-screen" data-testid="marketplace-view">
-      <MarketplaceView projectId="debug-marketplace-project" />
+      <MarketplaceView workspaceId="debug-marketplace-project" />
     </main>
   );
 }

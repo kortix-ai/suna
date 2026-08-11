@@ -1,10 +1,10 @@
 /**
- * Wrapper-mode per-user project ownership — a tiny JSON-file store, gitignored
+ * Wrapper-mode per-user workspace ownership — a tiny JSON-file store, gitignored
  * under `.lumen-data/` (created lazily). Maps `userId` (the login email) to
- * the list of project ids they created THROUGH this wrapper.
+ * the list of workspace ids they created THROUGH this wrapper.
  *
  * This is the whole isolation model: a wrapper end user only ever sees/can-act
- * on projects they themselves provisioned. It's intentionally file-backed and
+ * on workspaces they themselves provisioned. It's intentionally file-backed and
  * synchronous — this is a reference demo for a single Node process, not a
  * production multi-instance deployment. A real deployment would swap this for
  * a real table (keyed the same way) without touching any caller.
@@ -37,34 +37,34 @@ function writeData(data: UsersData): void {
   writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
-// Kortix project ids are UUIDs. Enforced on WRITE (only record what upstream
+// Kortix workspace ids are UUIDs. Enforced on WRITE (only record what upstream
 // actually minted) and on READ (ids from this file end up inside upstream
 // request URLs — see /api/session-costs — so a hand-edited or corrupted store must
 // never be able to steer a request anywhere unexpected).
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function isValidProjectId(projectId: string): boolean {
-  return UUID_RE.test(projectId);
+export function isValidWorkspaceId(workspaceId: string): boolean {
+  return UUID_RE.test(workspaceId);
 }
 
-/** Every project id `userId` owns (created through the wrapper). */
-export function listOwnedProjects(userId: string): string[] {
-  return (readData()[userId] ?? []).filter(isValidProjectId);
+/** Every workspace id `userId` owns (created through the wrapper). */
+export function listOwnedWorkspaces(userId: string): string[] {
+  return (readData()[userId] ?? []).filter(isValidWorkspaceId);
 }
 
-/** Record that `userId` owns `projectId` — called right after a successful `/projects/provision`. */
-export function addOwnedProject(userId: string, projectId: string): void {
-  if (!userId || !isValidProjectId(projectId)) return;
+/** Record that `userId` owns `workspaceId` — called right after a successful `/workspaces/provision`. */
+export function addOwnedWorkspace(userId: string, workspaceId: string): void {
+  if (!userId || !isValidWorkspaceId(workspaceId)) return;
   const data = readData();
   const existing = data[userId] ?? [];
-  if (!existing.includes(projectId)) {
-    data[userId] = [...existing, projectId];
+  if (!existing.includes(workspaceId)) {
+    data[userId] = [...existing, workspaceId];
     writeData(data);
   }
 }
 
-/** True if `userId` owns `projectId`. */
-export function isOwner(userId: string, projectId: string): boolean {
-  return listOwnedProjects(userId).includes(projectId);
+/** True if `userId` owns `workspaceId`. */
+export function isOwner(userId: string, workspaceId: string): boolean {
+  return listOwnedWorkspaces(userId).includes(workspaceId);
 }

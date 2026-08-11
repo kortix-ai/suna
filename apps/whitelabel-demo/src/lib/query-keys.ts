@@ -5,21 +5,21 @@ import type { QueryClient } from '@tanstack/react-query';
  * invalidate exactly what a view reads — the basis for flawless refetching.
  */
 export const qk = {
-  projects: ['projects'] as const,
-  project: (id: string) => ['project', id] as const,
-  projectDetail: (id: string) => ['project-detail', id] as const,
-  sessions: (projectId: string) => ['project-sessions', projectId] as const,
-  session: (projectId: string, sessionId: string) =>
-    ['project-session', projectId, sessionId] as const,
-  sessionScope: (projectId: string, sessionId: string) =>
-    ['project-session-scope', projectId, sessionId] as const,
-  sessionStart: (projectId: string, sessionId: string) =>
-    ['session-start', projectId, sessionId] as const,
-  secrets: (projectId: string) => ['project-secrets', projectId] as const,
-  access: (projectId: string) => ['project-access', projectId] as const,
+  workspaces: ['workspaces'] as const,
+  workspace: (id: string) => ['workspace', id] as const,
+  workspaceDetail: (id: string) => ['workspace-detail', id] as const,
+  sessions: (workspaceId: string) => ['workspace-sessions', workspaceId] as const,
+  session: (workspaceId: string, sessionId: string) =>
+    ['workspace-session', workspaceId, sessionId] as const,
+  sessionScope: (workspaceId: string, sessionId: string) =>
+    ['workspace-session-scope', workspaceId, sessionId] as const,
+  sessionStart: (workspaceId: string, sessionId: string) =>
+    ['session-start', workspaceId, sessionId] as const,
+  secrets: (workspaceId: string) => ['workspace-secrets', workspaceId] as const,
+  access: (workspaceId: string) => ['workspace-access', workspaceId] as const,
 };
 
-/** Invalidate everything a project page depends on after a session mutation. */
-export function invalidateSessions(qc: QueryClient, projectId: string) {
-  qc.invalidateQueries({ queryKey: qk.sessions(projectId) });
+/** Invalidate everything a workspace page depends on after a session mutation. */
+export function invalidateSessions(qc: QueryClient, workspaceId: string) {
+  qc.invalidateQueries({ queryKey: qk.sessions(workspaceId) });
 }

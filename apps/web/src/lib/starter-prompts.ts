@@ -1,6 +1,6 @@
 /**
  * Starter prompts surfaced in the onboarding wizard's "Try your first
- * request" step and on the project home composer suggestions.
+ * request" step and on the workspace home composer suggestions.
  *
  * Each entry maps to a real starter skill that ships with every new Kortix
  * project (`packages/starter/templates/general-knowledge-worker/.kortix/
@@ -41,7 +41,7 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
     label: 'Onboard your agent',
     description: 'Ask about your company, customers, and team — saves it all to memory.',
     prompt:
-      "Onboard me. Ask about my company — what we do, who our customers are, who's on the team, our products, our top priorities. Save what you learn into project memory so you remember it in every future session, and open a change request when you're done so I can review.",
+      "Onboard me. Ask about my company — what we do, who our customers are, who's on the team, our products, our top priorities. Save what you learn into workspace memory so you remember it in every future session, and open a change request when you're done so I can review.",
   },
   {
     id: 'landing-page',

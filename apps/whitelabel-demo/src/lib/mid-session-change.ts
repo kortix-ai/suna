@@ -12,7 +12,7 @@
  *   forwards the prompt. An optional strict operator lock can still return
  *   409 AGENT_SWITCH_REQUIRES_NEW_SESSION for a secret-grant boundary.
  * - SECRETS and CONNECTOR BINDINGS — changeable, with SET semantics:
- *   `PUT /projects/{id}/sessions/{sid}/scope` REPLACES the list with the one
+ *   `PUT /workspaces/{id}/sessions/{sid}/scope` REPLACES the list with the one
  *   sent, and it takes effect from the next prompt (the per-prompt env sync
  *   already re-resolves and re-pushes the whole set).
  *

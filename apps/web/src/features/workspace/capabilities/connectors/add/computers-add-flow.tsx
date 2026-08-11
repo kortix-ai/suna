@@ -27,14 +27,14 @@ import {
 } from '@/features/workspace/customize/sections/connector-connection-form';
 
 export function ComputersAddFlow({
-  projectId,
+  workspaceId,
   open,
   existingSlugs,
   canWrite,
   onClose,
   onAdded,
 }: {
-  projectId: string;
+  workspaceId: string;
   open: boolean;
   existingSlugs: readonly string[];
   canWrite: boolean;
@@ -44,7 +44,7 @@ export function ComputersAddFlow({
   if (!canWrite || !open) return null;
   return (
     <ComputersAddFlowContent
-      projectId={projectId}
+      workspaceId={workspaceId}
       existingSlugs={existingSlugs}
       onClose={onClose}
       onAdded={onAdded}
@@ -53,12 +53,12 @@ export function ComputersAddFlow({
 }
 
 function ComputersAddFlowContent({
-  projectId,
+  workspaceId,
   existingSlugs,
   onClose,
   onAdded,
 }: {
-  projectId: string;
+  workspaceId: string;
   existingSlugs: readonly string[];
   onClose: () => void;
   onAdded: (slug?: string) => void;
@@ -70,12 +70,12 @@ function ComputersAddFlowContent({
 
   const add = useMutation({
     mutationFn: () =>
-      createConnector(projectId, {
+      createConnector(workspaceId, {
         slug,
         name: name.trim(),
         provider: 'computer',
         tunnel_ids: selectedIds,
-        authorization_strategy: 'project',
+        authorization_strategy: 'workspace',
         create_only: true,
       }),
     onSuccess: () => {

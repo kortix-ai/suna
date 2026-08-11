@@ -2,7 +2,7 @@
  * file-viewer — the single, surface-agnostic file content renderer.
  *
  * The renderer is presentation-only. Each surface (the live workspace in
- * `features/files`, a project's git-ref view in `features/project-files`)
+ * `features/files`, a workspace's git-ref view in `features/workspace-files`)
  * provides data access through a <FileSourceProvider>. See ./file-source.
  */
 export {

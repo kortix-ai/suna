@@ -1,14 +1,14 @@
 /**
  * Customize section identifiers + helpers.
  *
- * The /projects/[id]/customize page reads its active section from either the
+ * The /workspaces/[id]/customize page reads its active section from either the
  * path segment (`/customize/agents`) or the legacy `?section=` query param.
  * This module keeps the section enum, the default, and a parser in one spot
  * so the page, the sidebar, and any deep-link helpers all agree on the
  * canonical list.
  *
  * Files, Agents, Connectors, and Skills are NOT customize sections — they are
- * standalone `/projects/[id]/<section>` pages (any member can browse Files;
+ * standalone `/workspaces/[id]/<section>` pages (any member can browse Files;
  * Agents/Connectors/Skills gate on their own read leaf — see
  * capabilities/capability-tab-routes.ts). Commands is the one that came BACK:
  * its standalone page was deleted (#6169), so it lives in this overlay and its
@@ -76,26 +76,26 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
  * Deep links and bookmarks into `/customize/<section>` land on the new page
  * instead of opening the overlay.
  */
-const GRADUATED: Record<string, (projectId: string) => string> = {
-  files: (p) => `/projects/${p}/files`,
-  changes: (p) => `/projects/${p}/files?panel=proposed-changes`,
+const GRADUATED: Record<string, (workspaceId: string) => string> = {
+  files: (p) => `/workspaces/${p}/files`,
+  changes: (p) => `/workspaces/${p}/files?panel=proposed-changes`,
   // The overlay section was `agents`; the route segment is `agent`. Both
   // spellings redirect, because every bookmark and stale href in the wild
   // points at the plural one.
-  agent: (p) => `/projects/${p}/agent`,
-  agents: (p) => `/projects/${p}/agent`,
-  connectors: (p) => `/projects/${p}/connectors`,
-  computers: (p) => `/projects/${p}/connectors`,
-  skills: (p) => `/projects/${p}/skills`,
+  agent: (p) => `/workspaces/${p}/agent`,
+  agents: (p) => `/workspaces/${p}/agent`,
+  connectors: (p) => `/workspaces/${p}/connectors`,
+  computers: (p) => `/workspaces/${p}/connectors`,
+  skills: (p) => `/workspaces/${p}/skills`,
 };
 
 export function legacyCustomizeRedirect(
-  projectId: string,
+  workspaceId: string,
   rawSection: string | null | undefined,
 ): string | null {
   if (!rawSection) return null;
   const build = GRADUATED[rawSection];
-  return build ? build(projectId) : null;
+  return build ? build(workspaceId) : null;
 }
 
 export function parseCustomizeSection(raw: string | null | undefined): CustomizeSection | null {

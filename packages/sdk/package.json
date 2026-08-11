@@ -40,6 +40,7 @@
     "./config": "./src/deprecated/config.ts",
     "./auth": "./src/deprecated/auth.ts",
     "./api-client": "./src/deprecated/api-client.ts",
+    "./workspaces-client": "./src/deprecated/workspaces-client.ts",
     "./projects-client": "./src/deprecated/projects-client.ts",
     "./feature-flags": "./src/deprecated/feature-flags.ts",
     "./fresh-sessions": "./src/deprecated/fresh-sessions.ts",
@@ -95,6 +96,10 @@
       "./api-client": {
         "types": "./dist/deprecated/api-client.d.ts",
         "import": "./dist/deprecated/api-client.js"
+      },
+      "./workspaces-client": {
+        "types": "./dist/deprecated/workspaces-client.d.ts",
+        "import": "./dist/deprecated/workspaces-client.js"
       },
       "./projects-client": {
         "types": "./dist/deprecated/projects-client.d.ts",

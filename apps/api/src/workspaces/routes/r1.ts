@@ -1,0 +1,1092 @@
+import { ACCOUNT_ACTIONS, WORKSPACE_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
+import { deriveRequestContext } from '../../iam/cache';
+import { setContextField } from '../../lib/request-context';
+import { supabaseAuth } from '../../middleware/auth';
+import { auth, errors, json } from '../../openapi';
+import { db } from '../../shared/db';
+import { isPlatformAdmin } from '../../shared/platform-roles';
+import { kickWorkspaceTemplatePrebuilds } from '../../snapshots/builder';
+import { isAccountManager, type WorkspaceRole } from '../access';
+import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
+import {
+  getGitHubAppInstallation,
+  listLinkableGitHubAppInstallations,
+  type GitHubAppInstallation,
+  verifyGitHubAppInstallStatePayload,
+  verifyGitHubInstallationAdmin,
+} from '../github';
+import { getWorkspaceSecretValueForConsumer } from '../secrets';
+import { buildProvisionContext, runProvision } from '../provision-core';
+import { loadWorkspaceTriggers } from '../triggers';
+import { invalidateWorkspaceMirror } from '../git';
+import { createRoute, z } from '@hono/zod-openapi';
+import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import type { Context } from 'hono';
+import type { AppEnv } from '../../types';
+import { enforceWorkspaceQuota, loadWorkspaceForUser, resolveWorkspaceAccount, assertWorkspaceCapability } from '../lib/access';
+import { AnyObject, WorkspaceSchema, workspaceWebhooksApp, workspaceRoutesApp } from '../lib/app';
+import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getWorkspaceGitConnection, getWorkspaceGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveWorkspaceGitAuth, resolveWorkspaceUpstream, withWorkspaceGitAuth } from '../lib/git';
+import { registerGitHubLinkedWorkspace } from '../lib/workspace-registration';
+import { UUID_V4_REGEX, deriveWorkspaceName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeWorkspace } from '../lib/serializers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForWorkspace, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import {
+  consumeWorkspaceWebhookManifestRefreshBudget,
+  createWorkspaceWebhookRateLimitMiddleware,
+} from '../../shared/rate-limit';
+
+workspaceRoutesApp.use('/*', supabaseAuth);
+
+workspaceWebhooksApp.use('/workspaces/:workspaceId/:slug', createWorkspaceWebhookRateLimitMiddleware());
+workspaceWebhooksApp.use('/projects/:workspaceId/:slug', createWorkspaceWebhookRateLimitMiddleware());
+
+const handleWorkspaceWebhook = async (c: Context<AppEnv>) => {
+  const workspaceId = c.req.param('workspaceId');
+  const slug = c.req.param('slug');
+  if (!workspaceId || !UUID_V4_REGEX.test(workspaceId)) {
+    return c.json({ error: 'Invalid workspace id' }, 400);
+  }
+  if (!slug || !/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
+    return c.json({ error: 'Invalid trigger slug' }, 400);
+  }
+
+  const hasCredentialHeader = Boolean(
+    c.req.header('x-kortix-signature') ||
+      c.req.header('x-hub-signature-256') ||
+      c.req.header('x-kortix-token') ||
+      c.req.header('authorization'),
+  );
+  if (!hasCredentialHeader) {
+    return c.json({ error: 'Invalid webhook signature' }, 401);
+  }
+
+  const [workspace] = await db
+    .select()
+    .from(projects)
+    .where(and(
+      eq(projects.workspaceId, workspaceId),
+      eq(projects.status, 'active'),
+    ))
+    .limit(1);
+  if (!workspace) return c.json({ error: 'Not found' }, 404);
+
+  // Trigger CRUD can commit on another API replica. Refresh this replica's
+  // mirror before authentication, but bound the unauthenticated Git work by
+  // Workspace. Rotating source IPs cannot force more than one refresh per 30s.
+  if (consumeWorkspaceWebhookManifestRefreshBudget(workspaceId)) {
+    invalidateWorkspaceMirror(workspaceId);
+  }
+  const { specs } = await loadWorkspaceTriggers(await withWorkspaceGitAuth(workspace));
+  const spec = specs.find((s) => s.slug === slug);
+  if (!spec || spec.type !== 'webhook' || !spec.enabled) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+
+  const rawBody = await c.req.text();
+  const secret = spec.secretEnv
+    ? await getWorkspaceSecretValueForConsumer({
+        workspaceId: workspace.workspaceId,
+        accountId: workspace.accountId,
+        name: spec.secretEnv,
+        consumer: 'connector',
+      })
+    : null;
+  if (!secret) {
+    return c.json({ error: 'Webhook secret is not configured' }, 409);
+  }
+
+  // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).
+  // Fallback, ONLY when no signature header is present: a static shared token in
+  // X-Kortix-Token or Authorization, for sources that can't HMAC-sign their body
+  // (e.g. Better Stack error webhooks — custom headers / basic auth only). Both
+  // paths require knowing the trigger's secret, so security is equivalent to a
+  // shared bearer token; signed senders are unaffected.
+  const signatureHeader =
+    c.req.header('x-kortix-signature') || c.req.header('x-hub-signature-256') || null;
+  const authed = signatureHeader
+    ? verifyWebhookSignature(rawBody, secret, signatureHeader)
+    : verifyWebhookToken(
+        extractWebhookToken(c.req.header('x-kortix-token'), c.req.header('authorization')),
+        secret,
+      );
+  if (!authed) {
+    return c.json({ error: 'Invalid webhook signature' }, 401);
+  }
+
+  (c as any).set('accountId', workspace.accountId);
+
+  const payload = {
+    ...webhookPayload(c, rawBody),
+    trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
+    fired_at: new Date().toISOString(),
+  };
+  const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
+  const deliveryId =
+    c.req.header('x-kortix-delivery-id') ??
+    c.req.header('x-github-delivery') ??
+    c.req.header('x-request-id') ??
+    null;
+  const staticAuthFingerprint =
+    c.req.header('x-kortix-token') ??
+    c.req.header('authorization') ??
+    '';
+  const idempotencyKey = deliveryId
+    ? `trigger:webhook:${workspace.workspaceId}:${spec.slug}:${deliveryId}`
+    : `trigger:webhook:${workspace.workspaceId}:${spec.slug}:${createHash('sha256')
+        .update(rawBody)
+        .update(signatureHeader ?? '')
+        .update(staticAuthFingerprint)
+        .digest('hex')}`;
+
+  // Server-side per-Workspace kill-switch: a paused Workspace ignores inbound
+  // webhooks (acknowledged, not fired) so a repo deployed to two control planes
+  // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForWorkspace.
+  if (triggersPausedForWorkspace(workspace.metadata)) {
+    return c.json(
+      { status: 'skipped', reason: 'triggers are paused server-side for this workspace' },
+      200,
+    );
+  }
+
+  // Payload guard. A non-matching delivery is a successful no-op, NOT an error:
+  // the sender is behaving correctly and must not see a 4xx it would retry. The
+  // canonical use is loop-breaking — a source that reports both directions of a
+  // conversation would otherwise re-fire the agent with the agent's own reply.
+  if (!triggerFilterMatches(spec, payload)) {
+    return c.json({ status: 'skipped', reason: 'delivery did not match the trigger filter' }, 200);
+  }
+
+  const result = await fireGitTrigger({
+    spec,
+    workspace,
+    payload,
+    renderedPrompt,
+    source: 'webhook',
+    idempotencyKey,
+    request: requestAuditContext(c),
+  });
+
+  if (result.status === 'queued') {
+    await markGitTriggerFired(workspace.workspaceId, spec.slug, new Date());
+    return c.json({
+      status: 'queued',
+      command_id: result.commandId ?? null,
+      session_id: result.sessionId ?? null,
+      reason: result.reason ?? null,
+      deduped: result.deduped ?? false,
+    }, 202);
+  }
+  if (result.status === 'failed') {
+    return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
+  }
+  // Stamp runtime last_fired_at so the UI's "last fired N ago" matches the
+  // cron-fire path even when the webhook is the actual source.
+  await markGitTriggerFired(workspace.workspaceId, spec.slug, new Date());
+  return c.json({
+    status: result.deduped ? 'deduped' : 'fired',
+    command_id: result.commandId ?? null,
+    session_id: result.sessionId ?? null,
+    deduped: result.deduped ?? false,
+  }, 202);
+};
+
+workspaceWebhooksApp.post('/workspaces/:workspaceId/:slug', handleWorkspaceWebhook);
+workspaceWebhooksApp.post('/projects/:workspaceId/:slug', handleWorkspaceWebhook);
+
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['workspaces'],
+    summary: 'GET /',
+    ...auth,
+    responses: {
+        200: json(z.array(WorkspaceSchema), 'Workspaces the caller can read'),
+    },
+  }),
+  async (c) => {
+  const scope = await resolveWorkspaceAccount(c);
+  // Reach through `any` for non-typed context keys set by the auth
+  // middleware (the AppEnv only types userId/userEmail).
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+      | string
+      | undefined) ?? undefined;
+  const requestCtx = deriveRequestContext(c);
+
+  // Ask the IAM engine which projects the caller can READ. V2 returns
+  // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
+  // 'all' = account admin/owner (manager on every workspace); 'allow_only'
+  // = enumerated project IDs from direct project_members + group grants;
+  // 'none' = no access.
+  const accessible = await listAccessibleResources(
+    scope.userId,
+    scope.accountId,
+    'project.read',
+    'project',
+    actingTokenId,
+    requestCtx,
+  );
+
+  if (accessible.mode === 'none') return c.json([]);
+
+  // Build the workspace rows plus physical project_members metadata used by
+  // the UI to label effective_role. We still consult project_members
+  // because the IAM engine bridges it into authorize() but doesn't
+  // hand the per-row role back here — and the UI wants the original
+  // manager/editor/viewer label, not just "allowed".
+  const grants = await db
+    .select({ workspaceId: projectMembers.workspaceId, workspaceRole: projectMembers.projectRole })
+    .from(projectMembers)
+    .where(and(
+      eq(projectMembers.accountId, scope.accountId),
+      eq(projectMembers.userId, scope.userId),
+    ));
+  const roleByWorkspace = new Map(
+    grants.map((g) => [g.workspaceId, g.workspaceRole as WorkspaceRole]),
+  );
+
+  const baseWhere = and(
+    eq(projects.accountId, scope.accountId),
+    eq(projects.status, 'active'),
+  );
+
+  let rows: Array<typeof projects.$inferSelect>;
+  if (accessible.mode === 'all') {
+    rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
+  } else {
+    // mode === 'allow_only'. The 'none' case was returned above.
+    if (accessible.allowed.size === 0) return c.json([]);
+    rows = await db
+      .select()
+      .from(projects)
+      .where(and(baseWhere, inArray(projects.workspaceId, [...accessible.allowed])))
+      .orderBy(desc(projects.updatedAt));
+  }
+
+  // Heuristic for effective_role label (UI only, NOT auth):
+  //   - account-manager → 'manager' (legacy owner/admin gets full label)
+  //   - explicit project_members row → that role
+  //   - otherwise → 'member' (engine allowed read but we don't know the
+  //     exact role; safe minimum for UI affordances)
+  const accountManager = isAccountManager(scope.accountRole);
+  return c.json(
+    rows.map((row) => {
+      const workspaceRole = roleByWorkspace.get(row.workspaceId) ?? null;
+      const effectiveRole = accountManager
+        ? 'manager'
+        : workspaceRole ?? 'member';
+      return serializeWorkspace(row, { workspaceRole, effectiveRole });
+    }),
+  );
+},
+);
+
+// POST /v1/workspaces
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['workspaces'],
+    summary: 'POST /',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(WorkspaceSchema, 'The created workspace'),
+        ...errors(400, 409),
+    },
+  }),
+  async (c: any) => {
+  const body = await readBody(c);
+  const scope = await resolveWorkspaceAccount(c, body);
+  // IAM-gated. Engine consults super-admin bypass, direct + group
+  // policies, and legacy owner/admin bridges (in non-strict mode).
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.WORKSPACE_CREATE);
+
+  let repoUrl: string | null;
+  try {
+    repoUrl = normalizeRepoUrl(body.repo_url ?? body.repoUrl);
+  } catch (error) {
+    return c.json({ error: (error as Error).message || 'Invalid repo_url' }, 400);
+  }
+  if (!repoUrl) {
+    return c.json({ error: 'repo_url is required' }, 400);
+  }
+
+  const quota = await enforceWorkspaceQuota(c, scope.accountId);
+  if (quota) return quota;
+
+  const name = normalizeString(body.name) ?? deriveWorkspaceName(repoUrl);
+  const requestedBranch = normalizeString(body.default_branch ?? body.defaultBranch);
+  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
+
+  let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
+  try {
+    imported = await resolveGitHubImport({
+      accountId: scope.accountId,
+      repoUrl,
+      installationId: normalizeString(body.installation_id ?? body.installationId),
+      defaultBranch: requestedBranch,
+    });
+  } catch (error) {
+    if (error instanceof GitHubInstallationRequiredError) {
+      return c.json({
+        error: error.message,
+        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+      }, 409);
+    }
+    return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
+  }
+
+  const row = await registerGitHubLinkedWorkspace({
+    accountId: scope.accountId,
+    userId: scope.userId,
+    repo: imported.repo,
+    installation: imported.installation,
+    name,
+    defaultBranch: imported.defaultBranch,
+    manifestPath,
+  });
+  setContextField('workspaceId', row.workspaceId);
+
+  kickWorkspaceTemplatePrebuilds(
+    {
+      workspaceId: row.workspaceId,
+      repoUrl: row.repoUrl,
+      defaultBranch: row.defaultBranch,
+      manifestPath: row.manifestPath,
+      gitAuthToken: imported.auth.token,
+    },
+    { accountId: scope.accountId, source: 'project-create' },
+  );
+
+  return c.json(serializeWorkspace(row, { workspaceRole: 'manager', effectiveRole: 'manager' }), 201);
+},
+);
+
+// GET /v1/workspaces/managed-git/status
+// Lets the frontend pre-check whether the managed-git "Create project" path
+// (POST /provision) is usable BEFORE the user hits its 503, so the create UI
+// can disable/annotate that option instead of surfacing a raw server error.
+// Self-host deployments with no MANAGED_GIT_* configured are the primary
+// case — the BYO-repo import path (POST / and /create-repo) stays available
+// regardless.
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/managed-git/status',
+    tags: ['workspaces'],
+    summary: 'GET /managed-git/status',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({ configured: z.boolean(), provider: z.string() }),
+        'Whether the managed-git provider is configured on this server',
+      ),
+    },
+  }),
+  async (c: any) => {
+    const provider = process.env.MANAGED_GIT_PROVIDER?.trim() || 'github';
+    const configured = hasBackend(provider) && (await getBackend(provider).isConfigured());
+    return c.json({ configured, provider });
+  },
+);
+
+// POST /v1/workspaces/provision
+// Managed-git "Create project": provisions a repo on the managed backend +
+// scoped per-workspace push token, optionally seeds the starter (web flow), and
+// registers the workspace.
+// Used by the web "Create project" button and `kortix ship` when a working tree
+// has no `origin` remote. BYO-repo projects go through POST / and /create-repo.
+//
+// The actual create logic lives in `../provision-core.ts`'s `runProvision`,
+// shared with the streaming variant of this route — see that file for the
+// idempotency lookup, the quota check, the unique-index-loser rollback, and
+// the seed rollback. This handler only resolves the request scope, gates it
+// on WORKSPACE_CREATE, and turns the result into a single JSON response.
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/provision',
+    tags: ['workspaces'],
+    summary: 'POST /provision',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(z.any(), 'OK'),
+        ...errors(400, 403, 409, 502, 503),
+    },
+  }),
+  async (c: any) => {
+  const ctx = await buildProvisionContext(c);
+  if (!(await authorize(ctx.scope.userId, ctx.scope.accountId, ACCOUNT_ACTIONS.WORKSPACE_CREATE)).allowed) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  const result = await runProvision(ctx, () => {
+    // The JSON route reports one outcome, not progress. Phases are dropped
+    // here on purpose — /provision's response shape is depended on by the CLI
+    // (`kortix ship`) and the SDK and must not change.
+  });
+  return c.json(result.body, result.status);
+},
+);
+
+// POST /v1/workspaces/provision-stream
+// Same create as POST /provision, but reports which phase it is in over
+// Server-Sent Events instead of returning a single response at the end.
+//
+// A SECOND ROUTE rather than a changed one: /provision's single-201 shape is
+// depended on by the CLI (`kortix ship`) and the SDK's provisionWorkspace. Both
+// routes call the SAME `runProvision` — there is exactly one implementation
+// of "create a repo, insert a row, seed it, roll back on failure", and there
+// must stay exactly one. Two copies diverge, and the copy that diverges is
+// the one that leaves an orphaned managed repo behind.
+//
+// Framing is a raw Response + ReadableStream — this codebase's one SSE
+// pattern (see tunnel/routes/permission-requests.ts's GET /stream), not
+// `hono/streaming`'s `streamSSE`, which nothing else in apps/api uses.
+// Unlike that tunnel stream, frames here carry NO `event:` line — see the
+// `write` comment below for why.
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/provision-stream',
+    tags: ['workspaces'],
+    summary: 'POST /provision-stream',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: {
+          description:
+            'A text/event-stream of provision phases, always ending in a terminal ' +
+            '`done` or `error` frame — never a bare close.',
+          content: { 'text/event-stream': { schema: z.any() } },
+        },
+        ...errors(403),
+    },
+  }),
+  async (c: any) => {
+  const ctx = await buildProvisionContext(c);
+  // Same gate as POST /provision, and it MUST run before the stream opens. An
+  // unauthorized caller gets a normal JSON 403 — never a 200 SSE stream that
+  // then carries an error frame; a 200 status has to mean "authorized", or
+  // clients learn to keep reading a 200 body to find out whether they were.
+  if (!(await authorize(ctx.scope.userId, ctx.scope.accountId, ACCOUNT_ACTIONS.WORKSPACE_CREATE)).allowed) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+
+        // Data-only framing: `data: <json>\n\n`, no `event:` line. Every
+        // payload already carries a `type` field ('phase' | 'done' |
+        // 'error') — a discriminated union the SDK switches on. Adding an
+        // `event:` name would duplicate that discriminator in two places
+        // that can drift out of sync with each other. Do not "fix" this by
+        // adding one back.
+        const write = (data: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // The client disconnected. Provisioning has no AbortSignal (see
+            // ProvisionContext in ../provision-core.ts) and keeps running to
+            // completion regardless — cancelling between backend.createRepo
+            // and the DB insert is exactly how an upstream repo gets
+            // orphaned, so a lost reader must not cancel it.
+          }
+        };
+
+        try {
+          const result = await runProvision(ctx, (phase) => write({ type: 'phase', phase }));
+          if (result.status === 201) {
+            write({ type: 'done', workspace: result.body });
+          } else {
+            // `status` alongside the body's `error`/`code` — see
+            // `ProvisionStreamEvent`'s doc comment in the SDK
+            // (`packages/sdk/src/core/rest/projects-client/projects.ts`).
+            // Spread first, explicit field last: `result.body` never carries
+            // a `status` key today, but this ordering means it never could
+            // silently shadow the real one if that changed.
+            write({ type: 'error', ...(result.body as object), status: result.status });
+          }
+        } catch (error) {
+          // The stream must never end in a bare close — that would hand the
+          // client an undefined workspace id. This catch guarantees a
+          // terminal frame even when runProvision THROWS instead of
+          // returning an error result.
+          write({ type: 'error', error: (error as Error).message || 'Failed to provision workspace' });
+        } finally {
+          try { controller.close(); } catch {}
+        }
+      },
+    }),
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    },
+  ) as any;
+},
+);
+
+// POST /v1/workspaces/:workspaceId/git-token
+// Mint a fresh scoped push token for a *managed* project so the CLI
+// can push on a later `kortix ship` without persisting credentials in git config.
+// Returns 409 for BYO projects (they push with the user's own git remote auth).
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/git-token',
+    tags: ['github'],
+    summary: 'POST /:workspaceId/git-token',
+    ...auth,
+      request: {
+        params: z.object({ workspaceId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409, 503),
+    },
+  }),
+  async (c: any) => {
+  const workspaceId = c.req.param('workspaceId');
+  const loaded = await loadWorkspaceForUser(c, workspaceId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // This endpoint hands back a RAW git push credential. project.write is
+  // fold-exempt, so without a leaf gate a read-scoped agent could mint a push
+  // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
+  // can withhold it, and the agent fold requires it in the token's grant.
+  await assertWorkspaceCapability(c, loaded.userId, loaded.row.accountId, workspaceId, WORKSPACE_ACTIONS.WORKSPACE_GITOPS_PUSH);
+
+  const connection = await getWorkspaceGitConnection(workspaceId);
+  const remote = getWorkspaceGitRemote(loaded.row, connection);
+  if (!remote.managed) {
+    return c.json({ error: 'Workspace is not a managed repo' }, 409);
+  }
+
+  // Provider-agnostic: resolve a fresh push credential through the backend seam
+  // (the managed GitHub backend mints an installation token). Never persisted
+  // in the sandbox/CLI git config.
+  const gitAuth = await resolveWorkspaceGitAuth(loaded.row);
+  if (gitAuth.authSource === 'pat') {
+    // This host's managed git runs on an org-wide token. Exporting it to a
+    // client would hand out write access to EVERY managed repo, so we refuse —
+    // clients push through the Kortix git proxy (`git_origin_url`) with their
+    // own Kortix token instead, which needs no provider credential client-side.
+    // Say so explicitly: the old message read as a server misconfiguration and
+    // sent people hunting for GitHub App settings that aren't the problem.
+    return c.json(
+      {
+        error:
+          "This host's managed git uses an org-wide token, which is never exported. " +
+          "Push through the workspace's Kortix git origin instead (git_origin_url) — " +
+          'run `kortix update` if your CLI still asks for a push token.',
+        git_origin_url: serializeWorkspace(loaded.row).git_origin_url,
+      },
+      503,
+    );
+  }
+  const upstream = await resolveWorkspaceUpstream(loaded.row, 'write');
+  const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
+  if (!credential) {
+    return c.json({ error: 'Managed git is not configured / unavailable for this workspace' }, 503);
+  }
+
+  return c.json({
+    push_token: credential.token,
+    git_username: credential.username,
+    repo_id: remote.externalRepoId,
+    repo_url: upstream?.url ?? loaded.row.repoUrl,
+  });
+},
+);
+
+// POST /v1/workspaces/:workspaceId/git/collaborators
+// Invite a GitHub user as a collaborator on a MANAGED repo — lets the workspace
+// creator pull "their" Kortix-managed repo into their own GitHub account and
+// work on it on github.com directly. Managed repos only (the user already owns
+// BYO repos). GitHub sends a pending invite the user accepts.
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/git/collaborators',
+    tags: ['github'],
+    summary: 'POST /:workspaceId/git/collaborators',
+    ...auth,
+      request: {
+        params: z.object({ workspaceId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404, 409, 502),
+    },
+  }),
+  async (c: any) => {
+  const workspaceId = c.req.param('workspaceId');
+  const loaded = await loadWorkspaceForUser(c, workspaceId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Inviting a git collaborator grants a human standing access to the repo —
+  // membership-tier, not plain write. Gate on members.manage so an editor (or a
+  // scoped agent via the fold) can't add external collaborators.
+  await assertWorkspaceCapability(c, loaded.userId, loaded.row.accountId, workspaceId, WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE);
+
+  const body = await readBody(c);
+  const username = normalizeString(body.github_username ?? body.username ?? body.login);
+  if (!username) return c.json({ error: 'github_username is required' }, 400);
+  const permission = normalizeString(body.permission);
+  const scope: GitScope = permission === 'read' || permission === 'pull' ? 'read' : 'write';
+
+  const remote = getWorkspaceGitRemote(loaded.row, await getWorkspaceGitConnection(workspaceId));
+  if (remote.provider !== 'github' || !remote.managed) {
+    return c.json({ error: 'Collaborator invites are only available for managed GitHub repos' }, 409);
+  }
+  const ref = buildConnectionRef(loaded.row, remote);
+  const backend = getBackend(remote.provider);
+  if (!backend.inviteCollaborator) {
+    return c.json({ error: 'This git backend does not support collaborator invites' }, 400);
+  }
+
+  try {
+    const result = await backend.inviteCollaborator(ref, username, scope);
+    return c.json(result);
+  } catch (error) {
+    return c.json({ error: (error as Error).message || 'Failed to invite collaborator' }, 502);
+  }
+},
+);
+
+// GET /v1/workspaces/github/installation?account_id=...
+// Account-scoped GitHub App install state. The client only receives metadata;
+// installation tokens are minted server-side at repo creation time.
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'GET /github/installation',
+    ...auth,
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  async (c: any) => {
+  const scope = await resolveWorkspaceAccount(c);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.WORKSPACE_CREATE);
+
+  const rows = await listAccountGitHubInstallations(scope.accountId);
+  const canManageGit = (await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
+  const installUrl = canManageGit
+    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
+    : null;
+  // No account-level GitHub App installation, but the server has a working
+  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+  // account isn't told "GitHub isn't connected" just because it never
+  // installed an App (see serializeGitHubInstallations).
+  const patFallbackOwner =
+    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+      ? managedGithubOwner()
+      : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
+},
+);
+
+// GET /v1/workspaces/github/installations?account_id=...
+// Vercel-style account Git connections surface. A Kortix account can connect
+// multiple GitHub users/orgs and pick the exact installation during import.
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/github/installations',
+    tags: ['github'],
+    summary: 'GET /github/installations',
+    ...auth,
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  async (c: any) => {
+  const scope = await resolveWorkspaceAccount(c);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.WORKSPACE_CREATE);
+
+  const rows = await listAccountGitHubInstallations(scope.accountId);
+  const canManageGit = (await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
+  const installUrl = canManageGit
+    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
+    : null;
+  // No account-level GitHub App installation, but the server has a working
+  // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
+  // account isn't told "GitHub isn't connected" just because it never
+  // installed an App (see serializeGitHubInstallations).
+  const patFallbackOwner =
+    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+      ? managedGithubOwner()
+      : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
+},
+);
+
+async function upsertAccountGitHubInstallation(
+  accountId: string,
+  installationId: string,
+  installation: GitHubAppInstallation,
+) {
+  const ownerLogin = normalizeString(installation.account?.login);
+  if (!ownerLogin) {
+    throw new Error('GitHub installation did not include an owner account');
+  }
+
+  const ownerType =
+    normalizeString(installation.account?.type) ?? installation.target_type ?? 'Organization';
+  const now = new Date();
+  const [row] = await db
+    .insert(accountGithubInstallations)
+    .values({
+      accountId,
+      installationId,
+      ownerLogin,
+      ownerType,
+      repositorySelection: installation.repository_selection ?? null,
+      permissions: installation.permissions ?? {},
+      metadata: {
+        html_url: installation.html_url ?? null,
+      },
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
+      set: {
+        ownerLogin,
+        ownerType,
+        repositorySelection: installation.repository_selection ?? null,
+        permissions: installation.permissions ?? {},
+        metadata: {
+          html_url: installation.html_url ?? null,
+        },
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  if (!row) throw new Error('Failed to save the GitHub installation');
+  return row;
+}
+
+// POST /v1/workspaces/github/installations/linkable
+// The GitHub OAuth token cannot call GET /user/installations. GitHub restricts
+// that route to GitHub App user tokens. Kortix lists this App's installations
+// with the App JWT, then filters them with the authorized user's identity and
+// active organization-admin memberships.
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/github/installations/linkable',
+    tags: ['github'],
+    summary: 'POST /github/installations/linkable',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'Linkable GitHub App installations'),
+      ...errors(400, 403, 502),
+    },
+  }),
+  async (c: any) => {
+    const body = await readBody(c);
+    const scope = await resolveWorkspaceAccount(c, body);
+    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+    if (!githubUserToken) {
+      return c.json({ error: 'GitHub authorization is required to list installations' }, 400);
+    }
+
+    let linkable;
+    try {
+      linkable = await listLinkableGitHubAppInstallations(githubUserToken);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'Failed to list GitHub App installations',
+        },
+        502,
+      );
+    }
+
+    const linkedRows = await listAccountGitHubInstallations(scope.accountId);
+    const linkedIds = new Set(linkedRows.map((row) => row.installationId));
+    const installUrl = await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
+
+    return c.json({
+      account_id: scope.accountId,
+      github_login: linkable.githubLogin,
+      configured: Boolean(installUrl),
+      install_url: installUrl,
+      installations: linkable.installations.map((installation) => ({
+        installation_id: String(installation.id),
+        owner_login: installation.account?.login ?? null,
+        owner_type: installation.account?.type ?? installation.target_type ?? null,
+        repository_selection: installation.repository_selection ?? null,
+        permissions: installation.permissions ?? {},
+        installation_url: installation.html_url ?? null,
+        linked: linkedIds.has(String(installation.id)),
+      })),
+    });
+  },
+);
+
+// POST /v1/workspaces/github/installations/link
+// This same-origin path links an existing App installation without a GitHub
+// install callback. The API verifies the installation against the App JWT and
+// verifies the authorized GitHub user again before it writes the account row.
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/github/installations/link',
+    tags: ['github'],
+    summary: 'POST /github/installations/link',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'Linked GitHub App installation'),
+      ...errors(400, 403, 502),
+    },
+  }),
+  async (c: any) => {
+    const body = await readBody(c);
+    const scope = await resolveWorkspaceAccount(c, body);
+    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+    const installationId = normalizeString(body.installation_id ?? body.installationId);
+    if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
+    if (!/^[0-9]+$/.test(installationId)) {
+      return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
+    }
+    const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+    if (!githubUserToken) {
+      return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
+    }
+
+    let installation: GitHubAppInstallation;
+    try {
+      installation = await getGitHubAppInstallation(installationId);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'Failed to verify GitHub App installation',
+        },
+        502,
+      );
+    }
+
+    try {
+      await verifyGitHubInstallationAdmin(githubUserToken, installation);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'GitHub administrator verification failed',
+        },
+        403,
+      );
+    }
+
+    try {
+      const row = await upsertAccountGitHubInstallation(
+        scope.accountId,
+        installationId,
+        installation,
+      );
+      return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
+    } catch (error) {
+      return c.json(
+        {
+          error: (error as Error).message || 'Failed to save the GitHub installation',
+        },
+        502,
+      );
+    }
+  },
+);
+
+// POST /v1/workspaces/github/installation
+// Called after GitHub redirects back with installation_id + signed state.
+// We fetch installation metadata with the app JWT instead of trusting client
+// supplied owner information.
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'POST /github/installation',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 403, 502),
+    },
+  }),
+  async (c: any) => {
+  const body = await readBody(c);
+  const state = normalizeString(body.state);
+  if (!state) return c.json({ error: 'state is required' }, 400);
+  const statePayload = verifyGitHubAppInstallStatePayload(state);
+  if (!statePayload?.accountId || !statePayload.nonce) {
+    return c.json({ error: 'invalid GitHub installation state' }, 400);
+  }
+
+  const scope = await resolveWorkspaceAccount(c, { account_id: statePayload.accountId });
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const installationId = normalizeString(body.installation_id ?? body.installationId);
+  if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
+  if (!/^[0-9]+$/.test(installationId)) {
+    return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
+  }
+  const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
+  if (!githubUserToken) {
+    return c.json({ error: 'GitHub authorization is required to link this installation' }, 400);
+  }
+
+  let installation;
+  try {
+    installation = await getGitHubAppInstallation(installationId);
+  } catch (error) {
+    const message = (error as Error).message || 'Failed to verify GitHub App installation';
+    return c.json({ error: message }, 502);
+  }
+
+  try {
+    await verifyGitHubInstallationAdmin(githubUserToken, installation);
+  } catch (error) {
+    const message = (error as Error).message || 'GitHub administrator verification failed';
+    return c.json({ error: message }, 403);
+  }
+
+  const stateStatus = await consumeGitHubInstallationState({
+    accountId: scope.accountId,
+    userId: scope.userId,
+    nonce: statePayload.nonce,
+    installationId,
+  });
+  if (stateStatus === 'invalid') {
+    const existing = await getAccountGitHubInstallation(scope.accountId, installationId);
+    if (existing?.installationId === installationId) {
+      return c.json(serializeGitHubInstallation(existing, scope.accountId, null), 200);
+    }
+    return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
+  }
+
+  try {
+    const row = await upsertAccountGitHubInstallation(
+      scope.accountId,
+      installationId,
+      installation,
+    );
+    return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
+  } catch (error) {
+    return c.json(
+      {
+        error: (error as Error).message || 'Failed to save the GitHub installation',
+      },
+      502,
+    );
+  }
+},
+);
+
+// DELETE /v1/workspaces/github/installation?account_id=...
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'DELETE /github/installation',
+    ...auth,
+      request: {
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  async (c: any) => {
+  const scope = await resolveWorkspaceAccount(c);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
+
+  await db
+    .delete(accountGithubInstallations)
+    .where(installationId
+      ? and(
+          eq(accountGithubInstallations.accountId, scope.accountId),
+          eq(accountGithubInstallations.installationId, installationId),
+        )
+      : eq(accountGithubInstallations.accountId, scope.accountId));
+
+  return c.json({ ok: true });
+},
+);
+
+// DELETE /v1/workspaces/github/installations/:installationId?account_id=...
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/github/installations/{installationId}',
+    tags: ['github'],
+    summary: 'DELETE /github/installations/:installationId',
+    ...auth,
+      request: {
+        params: z.object({ installationId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  async (c: any) => {
+  const scope = await resolveWorkspaceAccount(c);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const installationId = c.req.param('installationId');
+
+  await db
+    .delete(accountGithubInstallations)
+    .where(and(
+      eq(accountGithubInstallations.accountId, scope.accountId),
+      eq(accountGithubInstallations.installationId, installationId),
+    ));
+
+  return c.json({ ok: true });
+},
+);
+
+// POST /v1/workspaces/link-repository
+// Import an existing GitHub repo through the account GitHub App installation.
+// This validates repo access up front and stores a typed project_git_connection.

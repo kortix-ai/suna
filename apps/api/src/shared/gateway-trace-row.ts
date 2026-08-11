@@ -3,7 +3,7 @@ import { stripNullBytes, stripNullBytesDeep } from '@kortix/shared';
 export interface GatewayTraceInput {
   requestId: string;
   accountId: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
   keyId?: string | null;
@@ -60,7 +60,7 @@ export function buildGatewayTraceRow(input: GatewayTraceInput) {
   return {
     requestId: input.requestId,
     accountId: input.accountId,
-    projectId: input.projectId || null,
+    workspaceId: input.workspaceId || null,
     sessionId: input.sessionId || null,
     actorUserId: input.actorUserId || null,
     keyId: input.keyId || null,

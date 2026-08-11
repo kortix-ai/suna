@@ -86,6 +86,6 @@ export function dashboardBase(kortixUrl?: string): string {
 }
 
 /** Web URL for a Kortix session. */
-export function sessionWebUrl(kortixUrl: string | undefined, projectId: string, sessionId: string): string {
-  return `${dashboardBase(kortixUrl)}/projects/${projectId}/sessions/${sessionId}`;
+export function sessionWebUrl(kortixUrl: string | undefined, workspaceId: string, sessionId: string): string {
+  return `${dashboardBase(kortixUrl)}/workspaces/${workspaceId}/sessions/${sessionId}`;
 }

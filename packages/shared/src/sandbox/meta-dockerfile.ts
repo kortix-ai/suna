@@ -95,6 +95,7 @@ COPY --chown=kortix:kortix ${options.catalogPath} /opt/kortix/llm-catalog.json
 COPY --chown=kortix:kortix ${options.managedSkillsPath} /opt/kortix/managed-skills
 
 ENV KORTIX_WORKSPACE=/workspace \\
+    KORTIX_WORKSPACE_AUTO_CLONE=0 \\
     KORTIX_PROJECT_AUTO_CLONE=0 \\
     KORTIX_OPENCODE_PROCESS_TRANSPORT=rest \\
     KORTIX_LLM_CATALOG_FILE=/opt/kortix/llm-catalog.json

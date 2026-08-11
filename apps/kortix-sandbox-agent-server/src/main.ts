@@ -44,7 +44,7 @@ import {
   writeOpenCodeSeedBakedPin,
   writeOpenCodeSessionPin,
 } from './runtime-state'
-import { createProjectEnvStore } from './project-env'
+import { createWorkspaceSecretEnvStore } from './workspace-secret-env'
 import { startProxy } from './proxy'
 import {
   startLlmProxy,
@@ -59,6 +59,7 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
+import { workspaceIdFromEnv } from './workspace-env'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -136,11 +137,11 @@ async function main() {
   // is fixed at spawn time, so the dir has to be known up front. The clone is
   // the boot long-pole; the opencode spawn (binary launch + port bind) is fast
   // and opencode doesn't touch the workspace until its first request anyway.
-  const projectEnv = createProjectEnvStore()
+  const workspaceSecretEnv = createWorkspaceSecretEnvStore()
   if (!agentEnvDirIsTmpfs()) {
     logger.error('[boot] /dev/shm is not tmpfs — agent secret file would persist to disk; check the sandbox runtime mount')
   }
-  if (!writeAgentEnvFile(projectEnv)) {
+  if (!writeAgentEnvFile(workspaceSecretEnv)) {
     logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
   }
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
@@ -157,7 +158,7 @@ async function main() {
   // reconfigured with the resolved dir below, before the process is ever
   // spawned. `reconfigure` only rewrites state read at spawn time, so this is
   // exactly equivalent to constructing it late.
-  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
+  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, workspaceSecretEnv, {
     onStartupMark: bootMark,
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
@@ -181,7 +182,7 @@ async function main() {
       })
     },
   })
-  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  const server = startProxy(cfg, opencode, bootTime, bootState, workspaceSecretEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
   bootMark('proxy-up')
 
@@ -225,7 +226,7 @@ async function main() {
         err: err instanceof Error ? err.message : String(err),
       })
     })
-    opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
+    opencode.reconfigure(cfg, opencodeConfigDir, workspaceSecretEnv)
     await opencode.start().catch((err) => {
       logger.warn('[boot] opencode.start() rejected', {
         err: err instanceof Error ? err.message : String(err),
@@ -400,7 +401,7 @@ async function startSessionRuntime(
       const ctx = sandboxRelayContext(auditRelayToken(process.env))
       if (!ctx) throw new Error('audit relay context is unavailable')
       const response = await fetch(
-        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+        `${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.workspaceId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
@@ -534,9 +535,9 @@ function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
 //
 // ENDPOINT CONTRACT (apps/api, to be added deliberately): GET KORTIX_LLM_CATALOG_URL with
 // `Authorization: Bearer <KORTIX_SANDBOX_TOKEN>` → `{ models: {...} }` ==
-// gatewayModelCatalog(projectId, userId). During seed capture there is NO live
+// gatewayModelCatalog(workspaceId, userId). During seed capture there is NO live
 // sessionSandboxes row (it's a template build), and the token is a type='user'
-// account key, so the route must authorize by validateAccountToken→accountId/projectId,
+// account key, so the route must authorize by validateAccountToken→accountId/workspaceId,
 // NOT by the sandbox-row check clone-credential uses.
 async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   const url = process.env.KORTIX_LLM_CATALOG_URL
@@ -564,8 +565,8 @@ async function runWarmSeedMode(
   bootMark: (label: string) => void,
   staticWeb: ReturnType<typeof startStaticWebServer>,
 ): Promise<void> {
-  const projectEnv = createProjectEnvStore()
-  writeAgentEnvFile(projectEnv)
+  const workspaceSecretEnv = createWorkspaceSecretEnvStore()
+  writeAgentEnvFile(workspaceSecretEnv)
 
   // Scaffold-warm the seed: materialize the image-baked scaffold at /workspace
   // (zero-network) so opencode pays its per-directory project init (git scan +
@@ -627,7 +628,7 @@ async function runWarmSeedMode(
     )
   }
 
-  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv, {
+  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, workspaceSecretEnv, {
     onStartupMark: bootMark,
   onUnplannedRespawn: () => {
       // opencode died on its own and is back. Close whatever turn it was
@@ -653,7 +654,7 @@ async function runWarmSeedMode(
   })
   await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
   bootMark('seed-opencode-spawned')
-  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  const server = startProxy(cfg, opencode, bootTime, bootState, workspaceSecretEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
   bootMark('seed-proxy-ready')
 
@@ -698,7 +699,7 @@ async function runWarmSeedMode(
     void (async () => {
       const t0 = Date.now()
       reloadSessionEnv()
-      writeAgentEnvFile(createProjectEnvStore())
+      writeAgentEnvFile(createWorkspaceSecretEnvStore())
       const cfg2 = loadConfig()
       // Rebuild the proxy/control surface with the fork's cfg; the seed booted
       // tokenless or with seed-only credentials.
@@ -706,7 +707,7 @@ async function runWarmSeedMode(
       bootState.initialOpenCodeSessionRequired =
         (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
-      logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
+      logger.info('[seed] adopting forked session', { trigger, workspaceId: cfg2.workspaceId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
@@ -799,7 +800,7 @@ async function runWarmSeedMode(
         }
       }
       if (!hotSwapped) {
-        opencode.reconfigure(cfg2, adoptedOpencodeConfigDir, projectEnv)
+        opencode.reconfigure(cfg2, adoptedOpencodeConfigDir, workspaceSecretEnv)
         await opencode.restart().catch((err) =>
           logger.warn('[seed] adoption opencode restart failed', { err: (err as Error).message }),
         )
@@ -1228,7 +1229,7 @@ async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: 
  * still heals the pin on the first /ensure-opencode. Never blocks boot.
  */
 async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> {
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const workspaceId = workspaceIdFromEnv()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
   // (it's a sandbox-identity route). Prefer the session token; fall back to the
@@ -1240,9 +1241,9 @@ async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> 
     ''
   ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return
+  if (!workspaceId || !sessionId || !token || !apiUrl) return
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+  const url = `${apiRoot}/workspaces/${encodeURIComponent(workspaceId)}/turn-stream`
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -1355,7 +1356,7 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
 }
 
 type SandboxRelayContext = {
-  projectId: string
+  workspaceId: string
   sessionId: string
   token: string
   apiRoot: string
@@ -1365,7 +1366,7 @@ type SandboxRelayContext = {
 // credential can call the sandbox-identity turn-stream route. This callback is
 // safe for web, CLI, Slack, Teams, and email sessions.
 function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext | null {
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const workspaceId = workspaceIdFromEnv()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
   // (it's a sandbox-identity route). Prefer the session token; fall back to the
@@ -1380,14 +1381,14 @@ function sandboxRelayContext(tokenOverride?: string | null): SandboxRelayContext
           ''
         ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) {
+  if (!workspaceId || !sessionId || !token || !apiUrl) {
     logger.warn('[opencode-events] missing env to relay to apps/api', {
-      hasProject: !!projectId, hasSession: !!sessionId, hasToken: !!token, hasApi: !!apiUrl,
+      hasProject: !!workspaceId, hasSession: !!sessionId, hasToken: !!token, hasApi: !!apiUrl,
     })
     return null
   }
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
-  return { projectId, sessionId, token, apiRoot }
+  return { workspaceId, sessionId, token, apiRoot }
 }
 
 // Question relays remain Slack-only. A web session answers the question tool
@@ -1434,8 +1435,8 @@ async function relayQuestionToApi(
   // channel-specific and stays server-side.
   const ctx = sandboxRelayContext()
   if (!ctx) return
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-question`
+  const { workspaceId, sessionId, token, apiRoot } = ctx
+  const url = `${apiRoot}/workspaces/${encodeURIComponent(workspaceId)}/turn-question`
   logger.info('[opencode-events] relaying question.asked', {
     requestId: req.id, questions: req.questions.length,
   })
@@ -1569,8 +1570,8 @@ export async function relayTurnEndToApi(
     return
   }
 
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+  const { workspaceId, sessionId, token, apiRoot } = ctx
+  const url = `${apiRoot}/workspaces/${encodeURIComponent(workspaceId)}/turn-stream`
   const payload = JSON.stringify({
     session_id: sessionId,
     kind: 'end',

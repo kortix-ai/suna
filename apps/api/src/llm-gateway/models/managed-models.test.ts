@@ -141,7 +141,7 @@ describe('resolvePlatformDefaultModelId — the platform default must always be 
     expect(resolvePlatformDefaultModelId('glm-5.2', noFlagship)).toBe('deepseek-v4-flash');
   });
 
-  test('leaves a BYOK default untouched — it resolves from a project key, not a managed transport', () => {
+  test('leaves a BYOK default untouched — it resolves from a workspace key, not a managed transport', () => {
     expect(resolvePlatformDefaultModelId('anthropic/claude-opus-4-8', lineup)).toBe(
       'anthropic/claude-opus-4-8',
     );

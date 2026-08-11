@@ -10,12 +10,12 @@ import { config } from '../../config';
 import {
   ensureEmailSessionBinding,
   loadEmailInstallConnectionId,
-} from '../../projects/lib/session-connector-bindings';
+} from '../../workspaces/lib/session-connector-bindings';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
-  resolveProjectAutomationActor as resolveLifecycleAutomationActor,
-} from '../../projects/session-lifecycle';
+  resolveWorkspaceAutomationActor as resolveLifecycleAutomationActor,
+} from '../../workspaces/session-lifecycle';
 import { db } from '../../shared/db';
 import { type AgentMailSenderPolicy, loadAgentMailSenderPolicyForInbox } from '../install-store';
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
@@ -25,7 +25,7 @@ import type { AgentMailMessageReceivedEvent } from './types';
 const defaultEmailSessionLifecycle = {
   continueSession: continueLifecycleSession,
   createSession: createLifecycleSession,
-  resolveProjectAutomationActor: resolveLifecycleAutomationActor,
+  resolveWorkspaceAutomationActor: resolveLifecycleAutomationActor,
 };
 
 let emailSessionLifecycle = defaultEmailSessionLifecycle;
@@ -48,27 +48,27 @@ export function setEmailSenderPolicyLoaderForTest(
   emailSenderPolicyLoader = loader;
 }
 
-export async function resolveProjectForAgentMailInbox(inboxId: string): Promise<string | null> {
+export async function resolveWorkspaceForAgentMailInbox(inboxId: string): Promise<string | null> {
   const [row] = await db
-    .select({ projectId: chatInstalls.projectId })
+    .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, inboxId)))
+    .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.platformWorkspaceId, inboxId)))
     .limit(1);
-  return row?.projectId ?? null;
+  return row?.workspaceId ?? null;
 }
 
 export async function dispatchAgentMailEvent(event: AgentMailMessageReceivedEvent): Promise<void> {
   if (!isInboundMessageEvent(event.event_type)) return;
   if (await alreadyHandled(`email:event:${event.event_id}`)) return;
-  const projectId = await resolveProjectForAgentMailInbox(event.message.inbox_id);
-  if (!projectId) {
-    console.warn('[email-webhook] no project install for AgentMail inbox', {
+  const workspaceId = await resolveWorkspaceForAgentMailInbox(event.message.inbox_id);
+  if (!workspaceId) {
+    console.warn('[email-webhook] no workspace install for AgentMail inbox', {
       inboxId: event.message.inbox_id,
       eventId: event.event_id,
     });
     return;
   }
-  const policy = await emailSenderPolicyLoader(projectId, event.message.inbox_id);
+  const policy = await emailSenderPolicyLoader(workspaceId, event.message.inbox_id);
   if (!senderAllowed(event, policy)) {
     console.warn('[email-webhook] sender rejected by AgentMail inbox policy', {
       inboxId: event.message.inbox_id,
@@ -78,11 +78,11 @@ export async function dispatchAgentMailEvent(event: AgentMailMessageReceivedEven
     return;
   }
   if (!(await claimInboundMessage(event))) return;
-  await spawnEmailAgentTurn(projectId, event);
+  await spawnEmailAgentTurn(workspaceId, event);
 }
 
 async function spawnEmailAgentTurn(
-  projectId: string,
+  workspaceId: string,
   event: AgentMailMessageReceivedEvent,
 ): Promise<void> {
   const inboxId = event.message.inbox_id;
@@ -95,7 +95,7 @@ async function spawnEmailAgentTurn(
     .where(
       and(
         eq(chatThreads.platform, 'email'),
-        eq(chatThreads.workspaceId, inboxId),
+        eq(chatThreads.platformWorkspaceId, inboxId),
         eq(chatThreads.threadId, threadId),
       ),
     )
@@ -104,13 +104,13 @@ async function spawnEmailAgentTurn(
   if (existing) {
     if (
       !(await ensureEmailSessionBinding({
-        projectId,
+        workspaceId,
         sessionId: existing.sessionId,
         inboxId,
       }))
     ) {
       console.error('[email-webhook] could not bind existing session to inbox connection', {
-        projectId,
+        workspaceId,
         sessionId: existing.sessionId,
         inboxId,
       });
@@ -129,7 +129,7 @@ async function spawnEmailAgentTurn(
         .where(
           and(
             eq(chatThreads.platform, 'email'),
-            eq(chatThreads.workspaceId, inboxId),
+            eq(chatThreads.platformWorkspaceId, inboxId),
             eq(chatThreads.threadId, threadId),
           ),
         );
@@ -139,35 +139,35 @@ async function spawnEmailAgentTurn(
         .where(
           and(
             eq(chatThreads.platform, 'email'),
-            eq(chatThreads.workspaceId, inboxId),
+            eq(chatThreads.platformWorkspaceId, inboxId),
             eq(chatThreads.threadId, threadId),
           ),
         );
-      await createThreadSession(projectId, event, true);
+      await createThreadSession(workspaceId, event, true);
     }
     return;
   }
 
-  await createThreadSession(projectId, event, false);
+  await createThreadSession(workspaceId, event, false);
 }
 
 async function createThreadSession(
-  projectId: string,
+  workspaceId: string,
   event: AgentMailMessageReceivedEvent,
   revived: boolean,
 ): Promise<void> {
   const inboxId = event.message.inbox_id;
   const threadId = event.message.thread_id;
-  const [project] = await db
+  const [workspace] = await db
     .select()
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
-  if (!project) return;
+  if (!workspace) return;
 
   // An AgentMail inbox is a first-class channel. Its binding selects the
-  // concrete project agent exactly like Slack and Teams bindings do. Older
-  // installs have no binding row and fall through to the project default.
+  // concrete workspace agent exactly like Slack and Teams bindings do. Older
+  // installs have no binding row and fall through to the workspace default.
   const [selection] = await db
     .select({
       agentName: chatChannelBindings.agentName,
@@ -176,16 +176,16 @@ async function createThreadSession(
     .from(chatChannelBindings)
     .where(
       and(
-        eq(chatChannelBindings.projectId, projectId),
+        eq(chatChannelBindings.workspaceId, workspaceId),
         eq(chatChannelBindings.platform, 'email'),
-        eq(chatChannelBindings.workspaceId, inboxId),
+        eq(chatChannelBindings.platformWorkspaceId, inboxId),
       ),
     )
     .limit(1);
 
-  const userId = await emailSessionLifecycle.resolveProjectAutomationActor(project.accountId);
+  const userId = await emailSessionLifecycle.resolveWorkspaceAutomationActor(workspace.accountId);
   if (!userId) {
-    console.warn('[email-webhook] no actor for project', projectId);
+    console.warn('[email-webhook] no actor for workspace', workspaceId);
     return;
   }
 
@@ -193,9 +193,9 @@ async function createThreadSession(
   if (!(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForThreadSession(inboxId, threadId);
     if (sessionId) {
-      if (!(await ensureEmailSessionBinding({ projectId, sessionId, inboxId }))) {
+      if (!(await ensureEmailSessionBinding({ workspaceId, sessionId, inboxId }))) {
         console.error('[email-webhook] could not bind claimed session to inbox connection', {
-          projectId,
+          workspaceId,
           sessionId,
           inboxId,
         });
@@ -212,21 +212,21 @@ async function createThreadSession(
   }
 
   const initialPrompt = renderAgentPrompt(event, revived);
-  const emailConnectionId = await loadEmailInstallConnectionId(projectId, inboxId);
+  const emailConnectionId = await loadEmailInstallConnectionId(workspaceId, inboxId);
   if (!emailConnectionId) {
     console.error('[email-webhook] no active connection for inbox', {
-      projectId,
+      workspaceId,
       inboxId,
     });
     return;
   }
   const result = await emailSessionLifecycle.createSession({
     source: 'email',
-    project,
+    workspace,
     userId,
     requestingPrincipalType: 'human',
     body: {
-      base_ref: project.defaultBranch,
+      base_ref: workspace.defaultBranch,
       agent_name: selection?.agentName || 'default',
       ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       connector_bindings: {
@@ -244,7 +244,7 @@ async function createThreadSession(
       {
         type: 'bind_chat_thread',
         platform: 'email',
-        workspaceId: inboxId,
+        platformWorkspaceId: inboxId,
         threadId,
       },
       {
@@ -279,7 +279,7 @@ async function createThreadSession(
   });
 
   if (result.error) {
-    console.error('[email-webhook] createProjectSession failed', {
+    console.error('[email-webhook] createWorkspaceSession failed', {
       status: result.error.status,
       body: result.error.body,
     });
@@ -347,7 +347,7 @@ async function waitForThreadSession(inboxId: string, threadId: string): Promise<
       .where(
         and(
           eq(chatThreads.platform, 'email'),
-          eq(chatThreads.workspaceId, inboxId),
+          eq(chatThreads.platformWorkspaceId, inboxId),
           eq(chatThreads.threadId, threadId),
         ),
       )
@@ -378,7 +378,7 @@ function emailTurnInstructions(event: AgentMailMessageReceivedEvent): string {
   });
   return [
     'How to work:',
-    '- You are operating an AgentMail inbox assigned to this Kortix project.',
+    '- You are operating an AgentMail inbox assigned to this Kortix workspace.',
     '- Use the Connector MCP meta-tools `connectors`, `discover`, `describe`, and `call`. Connector actions are not direct tools.',
     '- Start with `connectors`. Use `discover` to find an action and `describe` to confirm its input schema before the first call.',
     `- Read the current thread with \`call\`: \`${readThreadCall}\`.`,

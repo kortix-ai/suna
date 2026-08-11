@@ -1,4 +1,4 @@
-import type { AdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
+import type { WorkspaceAdminConnector, DiscoverConnector, PipedreamApp } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -41,20 +41,20 @@ const app = (over: Partial<PipedreamApp> = {}): PipedreamApp => ({
   ...over,
 });
 
-const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
+const conn = (over: Partial<WorkspaceAdminConnector> = {}): WorkspaceAdminConnector =>
   ({
     slug: 'linear',
     name: 'Linear',
     provider: 'mcp',
     status: 'active',
     credentialMode: 'shared',
-    authorizationStrategy: 'project',
+    authorizationStrategy: 'workspace',
     sensitive: false,
     actions: [],
     authSecret: null,
     secretSet: false,
     ...over,
-  }) as AdminConnector;
+  }) as WorkspaceAdminConnector;
 
 describe('normalising the two catalogues', () => {
   test('Computer Tunnels is a native connector catalogue entry', () => {

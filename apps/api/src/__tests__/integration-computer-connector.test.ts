@@ -26,7 +26,7 @@ import { dbConnectorRouterDeps } from '../connectors/db-deps';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 
-let projectId = '';
+let workspaceId = '';
 let accountId = '';
 let otherAccountId = '';
 let studioTunnelId = '';
@@ -44,7 +44,7 @@ const TRAVEL_SLUG = 'travel-computer';
 
 beforeAll(async () => {
   await db.execute(sql`alter type kortix.connector_provider add value if not exists 'computer'`);
-  projectId = crypto.randomUUID();
+  workspaceId = crypto.randomUUID();
   accountId = crypto.randomUUID();
   otherAccountId = crypto.randomUUID();
   await db.insert(accounts).values([
@@ -55,9 +55,9 @@ beforeAll(async () => {
     },
   ]);
   await db.insert(projects).values({
-    projectId,
+    workspaceId,
     accountId,
-    name: `computer-groups-${projectId}`,
+    name: `computer-groups-${workspaceId}`,
     repoUrl: 'https://example.invalid/computer-groups.git',
     metadata: {},
   });
@@ -120,7 +120,7 @@ beforeAll(async () => {
   crossAccountTunnelId = inserted.find((row) => row.name === 'Other Account Mac')!.tunnelId;
   personalTunnelId = inserted.find((row) => row.name === 'Personal Mac')!.tunnelId;
 
-  const created = await dbConnectorRouterDeps.createConnector!(projectId, accountId, {
+  const created = await dbConnectorRouterDeps.createConnector!(workspaceId, accountId, {
     slug: GROUP_SLUG,
     name: 'Team computers',
     provider: 'computer',
@@ -132,7 +132,7 @@ beforeAll(async () => {
   await db.insert(connectors).values({
     connectorId: LEGACY_CONNECTOR_ID,
     accountId,
-    projectId,
+    workspaceId,
     slug: 'computer',
     name: 'Legacy Computers',
     providerType: 'computer',
@@ -151,7 +151,7 @@ beforeAll(async () => {
   await db.insert(connectorConnections).values({
     connectionId: LEGACY_CONNECTION_ID,
     accountId,
-    projectId,
+    workspaceId,
     connectorId: LEGACY_CONNECTOR_ID,
     label: 'Legacy default',
     isDefault: true,
@@ -159,7 +159,7 @@ beforeAll(async () => {
   await db.insert(projectSessions).values({
     sessionId: LEGACY_SESSION_ID,
     accountId,
-    projectId,
+    workspaceId,
     branchName: LEGACY_SESSION_ID,
     createdBy: LEGACY_USER_ID,
     connectorBindingsConfigured: true,
@@ -167,7 +167,7 @@ beforeAll(async () => {
   await db.insert(projectSessionConnectorBindings).values({
     sessionId: LEGACY_SESSION_ID,
     accountId,
-    projectId,
+    workspaceId,
     connectorAlias: 'computer',
     connectorId: LEGACY_CONNECTOR_ID,
     connectionId: LEGACY_CONNECTION_ID,
@@ -181,7 +181,7 @@ afterAll(async () => {
     .delete(projectSessionConnectorBindings)
     .where(eq(projectSessionConnectorBindings.sessionId, LEGACY_SESSION_ID));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, LEGACY_SESSION_ID));
-  if (projectId) await db.delete(projects).where(eq(projects.projectId, projectId));
+  if (workspaceId) await db.delete(projects).where(eq(projects.workspaceId, workspaceId));
   const tunnelIds = [
     studioTunnelId,
     travelTunnelId,
@@ -197,9 +197,9 @@ afterAll(async () => {
 });
 
 describe('grouped Computers connector profiles — real DB', () => {
-  test('a project admin can explicitly grant their personal computer to an organization project', async () => {
+  test('a workspace admin can explicitly grant their personal computer to an organization workspace', async () => {
     const created = await dbConnectorRouterDeps.createConnector!(
-      projectId,
+      workspaceId,
       accountId,
       {
         slug: 'personal-computer',
@@ -215,7 +215,7 @@ describe('grouped Computers connector profiles — real DB', () => {
     const [row] = await db
       .select({ config: connectors.config })
       .from(connectors)
-      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, 'personal-computer')));
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, 'personal-computer')));
     expect(row?.config).toMatchObject({
       tunnel_ids: [personalTunnelId],
       tunnel_account_ids: [LEGACY_USER_ID],
@@ -223,7 +223,7 @@ describe('grouped Computers connector profiles — real DB', () => {
 
     const result = await executeComputerCall({
       accountId,
-      projectId,
+      workspaceId,
       allowedTunnelIds: [personalTunnelId],
       allowedTunnelAccountIds: [LEGACY_USER_ID],
       selector: null,
@@ -242,13 +242,13 @@ describe('grouped Computers connector profiles — real DB', () => {
       },
     });
 
-    const deleted = await dbConnectorRouterDeps.deleteConnector!(projectId, 'personal-computer');
+    const deleted = await dbConnectorRouterDeps.deleteConnector!(workspaceId, 'personal-computer');
     expect(deleted.ok).toBe(true);
   });
 
-  test('a project admin cannot grant a computer owned by another account', async () => {
+  test('a workspace admin cannot grant a computer owned by another account', async () => {
     const created = await dbConnectorRouterDeps.createConnector!(
-      projectId,
+      workspaceId,
       accountId,
       {
         slug: 'forged-computer',
@@ -271,7 +271,7 @@ describe('grouped Computers connector profiles — real DB', () => {
     const [row] = await db
       .select()
       .from(connectors)
-      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, GROUP_SLUG)));
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, GROUP_SLUG)));
     expect(row?.providerType).toBe('computer');
     expect((row?.config as Record<string, unknown>).tunnel_ids).toEqual([
       studioTunnelId,
@@ -292,14 +292,14 @@ describe('grouped Computers connector profiles — real DB', () => {
   });
 
   test('sync synthesis reads the stored profile instead of generating one connector per tunnel', async () => {
-    const specs = await synthesizeComputerConnectors(projectId, []);
+    const specs = await synthesizeComputerConnectors(workspaceId, []);
     expect(specs).toHaveLength(1);
     expect(specs[0]?.slug).toBe(GROUP_SLUG);
     expect(specs[0]?.tunnelIds).toEqual([studioTunnelId, travelTunnelId]);
   });
 
   test('config returns the selected machines through the normal connector API model', async () => {
-    const config = await dbConnectorRouterDeps.getConnectorConfig!(projectId, GROUP_SLUG);
+    const config = await dbConnectorRouterDeps.getConnectorConfig!(workspaceId, GROUP_SLUG);
     expect(config?.provider).toBe('computer');
     expect(config?.tunnelIds).toEqual([studioTunnelId, travelTunnelId]);
   });
@@ -307,7 +307,7 @@ describe('grouped Computers connector profiles — real DB', () => {
   test('list_computers returns only machines assigned to the profile', async () => {
     const result = await executeComputerCall({
       accountId,
-      projectId,
+      workspaceId,
       allowedTunnelIds: [studioTunnelId, travelTunnelId],
       selector: null,
       method: 'list_computers',
@@ -325,7 +325,7 @@ describe('grouped Computers connector profiles — real DB', () => {
   test('assigned selection reaches tunnel authorization while unassigned selection fails first', async () => {
     const assigned = await executeComputerCall({
       accountId,
-      projectId,
+      workspaceId,
       allowedTunnelIds: [studioTunnelId, travelTunnelId],
       selector: studioTunnelId,
       method: 'fs.read',
@@ -336,7 +336,7 @@ describe('grouped Computers connector profiles — real DB', () => {
 
     const unassigned = await executeComputerCall({
       accountId,
-      projectId,
+      workspaceId,
       allowedTunnelIds: [studioTunnelId, travelTunnelId],
       selector: unassignedTunnelId,
       method: 'fs.read',
@@ -352,7 +352,7 @@ describe('grouped Computers connector profiles — real DB', () => {
   test('a cross-account id in a forged allowlist still fails closed', async () => {
     const result = await executeComputerCall({
       accountId,
-      projectId,
+      workspaceId,
       allowedTunnelIds: [crossAccountTunnelId],
       selector: crossAccountTunnelId,
       method: 'fs.read',
@@ -366,13 +366,13 @@ describe('grouped Computers connector profiles — real DB', () => {
   });
 
   test('legacy aggregate is hidden from admin and unbound project principals', async () => {
-    const admin = await dbConnectorRouterDeps.listConnectors(projectId);
+    const admin = await dbConnectorRouterDeps.listConnectors(workspaceId);
     expect(admin.map((connector) => connector.slug)).not.toContain('computer');
 
     const principal = {
       userId: LEGACY_USER_ID,
       accountId,
-      projectId,
+      workspaceId,
       sessionId: null,
       subject: { userId: LEGACY_USER_ID, groupIds: [] },
       agentGrant: null,
@@ -380,14 +380,14 @@ describe('grouped Computers connector profiles — real DB', () => {
     const catalog = await dbConnectorRouterDeps.listCatalog(principal);
     expect(catalog.map((connector) => connector.slug)).not.toContain('computer');
     const deps = dbConnectorRouterDeps.makeGatewayDeps(principal);
-    expect(await deps.loadConnectorBySlug(projectId, 'computer')).toBeNull();
+    expect(await deps.loadConnectorBySlug(workspaceId, 'computer')).toBeNull();
   });
 
   test('legacy aggregate remains callable only for its exact durable session binding', async () => {
     const principal = {
       userId: LEGACY_USER_ID,
       accountId,
-      projectId,
+      workspaceId,
       sessionId: LEGACY_SESSION_ID,
       subject: { userId: LEGACY_USER_ID, groupIds: [] },
       agentGrant: null,
@@ -395,14 +395,14 @@ describe('grouped Computers connector profiles — real DB', () => {
     const catalog = await dbConnectorRouterDeps.listCatalog(principal);
     expect(catalog.map((connector) => connector.slug)).toContain('computer');
     const deps = dbConnectorRouterDeps.makeGatewayDeps(principal);
-    expect(await deps.loadConnectorBySlug(projectId, 'computer')).toMatchObject({
+    expect(await deps.loadConnectorBySlug(workspaceId, 'computer')).toMatchObject({
       connectorId: LEGACY_CONNECTOR_ID,
       tunnelIds: null,
     });
   });
 
   test('multiple profiles can overlap and keep independent policies', async () => {
-    const created = await dbConnectorRouterDeps.createConnector!(projectId, accountId, {
+    const created = await dbConnectorRouterDeps.createConnector!(workspaceId, accountId, {
       slug: TRAVEL_SLUG,
       name: 'Travel computer',
       provider: 'computer',
@@ -411,16 +411,16 @@ describe('grouped Computers connector profiles — real DB', () => {
     });
     expect(created.ok).toBe(true);
     const policyWrite = await dbConnectorRouterDeps.setConnectorPolicies!(
-      projectId,
+      workspaceId,
       accountId,
       TRAVEL_SLUG,
       [{ match: 'fs.read', action: 'block' }],
     );
     expect(policyWrite.ok).toBe(true);
 
-    const groupPolicies = await dbConnectorRouterDeps.getConnectorPolicies!(projectId, GROUP_SLUG);
+    const groupPolicies = await dbConnectorRouterDeps.getConnectorPolicies!(workspaceId, GROUP_SLUG);
     const travelPolicies = await dbConnectorRouterDeps.getConnectorPolicies!(
-      projectId,
+      workspaceId,
       TRAVEL_SLUG,
     );
     expect(groupPolicies?.policies).toEqual([]);
@@ -428,20 +428,20 @@ describe('grouped Computers connector profiles — real DB', () => {
   });
 
   test('updating a profile replaces its allowlist without changing its policy rows', async () => {
-    const updated = await dbConnectorRouterDeps.createConnector!(projectId, accountId, {
+    const updated = await dbConnectorRouterDeps.createConnector!(workspaceId, accountId, {
       slug: TRAVEL_SLUG,
       name: 'Travel and studio',
       provider: 'computer',
       tunnel_ids: [travelTunnelId, studioTunnelId],
     });
     expect(updated.ok).toBe(true);
-    const config = await dbConnectorRouterDeps.getConnectorConfig!(projectId, TRAVEL_SLUG);
+    const config = await dbConnectorRouterDeps.getConnectorConfig!(workspaceId, TRAVEL_SLUG);
     expect(config?.tunnelIds).toEqual([travelTunnelId, studioTunnelId]);
     const [policy] = await db
       .select()
       .from(connectorPolicies)
       .innerJoin(connectors, eq(connectors.connectorId, connectorPolicies.connectorId))
-      .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, TRAVEL_SLUG)));
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.slug, TRAVEL_SLUG)));
     expect(policy?.connector_policies.action).toBe('block');
   });
 
@@ -455,7 +455,7 @@ describe('grouped Computers connector profiles — real DB', () => {
     });
     await executeComputerCall({
       accountId,
-      projectId,
+      workspaceId,
       allowedTunnelIds: [studioTunnelId],
       selector: studioTunnelId,
       method: 'fs.read',
@@ -469,7 +469,7 @@ describe('grouped Computers connector profiles — real DB', () => {
       .from(auditEvents)
       .where(
         and(
-          eq(auditEvents.projectId, projectId),
+          eq(auditEvents.workspaceId, workspaceId),
           eq(auditEvents.resourceId, studioTunnelId),
           eq(auditEvents.action, 'connector.computer.fs.read'),
         ),
@@ -478,12 +478,12 @@ describe('grouped Computers connector profiles — real DB', () => {
   });
 
   test('deleting one profile leaves the other profile intact', async () => {
-    const deleted = await dbConnectorRouterDeps.deleteConnector!(projectId, TRAVEL_SLUG);
+    const deleted = await dbConnectorRouterDeps.deleteConnector!(workspaceId, TRAVEL_SLUG);
     expect(deleted.ok).toBe(true);
     const remaining = await db
       .select({ slug: connectors.slug, config: connectors.config })
       .from(connectors)
-      .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+      .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.providerType, 'computer')));
     expect(
       remaining
         .filter(

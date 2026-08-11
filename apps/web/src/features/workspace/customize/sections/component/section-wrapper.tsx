@@ -31,7 +31,7 @@ type Props = {
   scrollContainerRef?: React.Ref<HTMLDivElement>;
   /**
    * Floating open/collapse control at the top-left of this section. Opt-in —
-   * the project shell no longer mounts a mobile sheet opener, so pages that
+   * the workspace shell no longer mounts a mobile sheet opener, so pages that
    * sit under this wrapper without their own header toggle need this. Default
    * off so existing callers keep their layout.
    */
@@ -39,7 +39,7 @@ type Props = {
 };
 
 /**
- * Absolute top-left opener. Visibility matches project-home / session header:
+ * Absolute top-left opener. Visibility matches workspace-home / session header:
  * always on mobile (sheet has no docked affordance); desktop only while the
  * panel is undocked — the sidebar header already carries collapse when expanded.
  */

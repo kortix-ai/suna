@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 571,
+  "count": 835,
   "routes": [
     {
       "method": "GET",
@@ -268,6 +268,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/groups/:groupId/workspace-grants"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/members/:userId/effective"
     },
     {
@@ -285,6 +289,10 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/iam/members/:userId/super-admin"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/members/:userId/workspace-access"
     },
     {
       "method": "GET",
@@ -540,6 +548,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/workspaces"
+    },
+    {
+      "method": "GET",
       "path": "/v1/admin/api/projects"
     },
     {
@@ -569,6 +581,10 @@
     {
       "method": "POST",
       "path": "/v1/admin/api/sandboxes/:sessionId/migrate"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/workspaces"
     },
     {
       "method": "GET",
@@ -780,111 +796,215 @@
     },
     {
       "method": "POST",
-      "path": "/v1/connectors/projects/:projectId/attachments"
+      "path": "/v1/connectors/projects/:workspaceId/attachments"
     },
     {
       "method": "POST",
-      "path": "/v1/connectors/projects/:projectId/call"
+      "path": "/v1/connectors/projects/:workspaceId/call"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/catalog"
+      "path": "/v1/connectors/projects/:workspaceId/catalog"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/connectors"
+      "path": "/v1/connectors/projects/:workspaceId/connectors"
     },
     {
       "method": "POST",
-      "path": "/v1/connectors/projects/:projectId/connectors"
+      "path": "/v1/connectors/projects/:workspaceId/connectors"
     },
     {
       "method": "DELETE",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug"
     },
     {
       "method": "PUT",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/authorization-strategy"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/config"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/config"
     },
     {
       "method": "POST",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/connect"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/connect"
     },
     {
       "method": "POST",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/connect/finalize"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/connect/finalize"
     },
     {
       "method": "DELETE",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/credential"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/credential"
     },
     {
       "method": "PUT",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/credential"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/credential"
     },
     {
       "method": "PUT",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/credential-mode"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/credential-mode"
     },
     {
       "method": "PUT",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/name"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/name"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policies"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/policies"
     },
     {
       "method": "PUT",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/policies"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/policies"
     },
     {
       "method": "PUT",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/secret-binding"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/secret-binding"
     },
     {
       "method": "PUT",
-      "path": "/v1/connectors/projects/:projectId/connectors/:slug/sensitive"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/:slug/sensitive"
     },
     {
       "method": "POST",
-      "path": "/v1/connectors/projects/:projectId/connectors/auth-discovery"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/auth-discovery"
     },
     {
       "method": "POST",
-      "path": "/v1/connectors/projects/:projectId/connectors/sync"
+      "path": "/v1/connectors/projects/:workspaceId/connectors/sync"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/discover/connectors"
+      "path": "/v1/connectors/projects/:workspaceId/discover/connectors"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/discover/connectors/detail"
+      "path": "/v1/connectors/projects/:workspaceId/discover/connectors/detail"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/pipedream/apps"
+      "path": "/v1/connectors/projects/:workspaceId/pipedream/apps"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/pipedream/sections"
+      "path": "/v1/connectors/projects/:workspaceId/pipedream/sections"
     },
     {
       "method": "GET",
-      "path": "/v1/connectors/projects/:projectId/policies"
+      "path": "/v1/connectors/projects/:workspaceId/policies"
     },
     {
       "method": "PUT",
-      "path": "/v1/connectors/projects/:projectId/policies"
+      "path": "/v1/connectors/projects/:workspaceId/policies"
     },
     {
       "method": "POST",
       "path": "/v1/connectors/webhook/pipedream"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/workspaces/:workspaceId/attachments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/workspaces/:workspaceId/call"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/catalog"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/authorization-strategy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/config"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/connect/finalize"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/credential"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/credential"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/credential-mode"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/name"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/secret-binding"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/:slug/sensitive"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/auth-discovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/connectors/workspaces/:workspaceId/connectors/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/discover/connectors"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/discover/connectors/detail"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/pipedream/apps"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/pipedream/sections"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/connectors/workspaces/:workspaceId/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/connectors/workspaces/:workspaceId/policies"
     },
     {
       "method": "GET",
@@ -1096,855 +1216,855 @@
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:projectId"
+      "path": "/v1/projects/:workspaceId"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/access"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/access-requests"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/access-requests"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/access-requests/:requestId/approve"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/access-requests/:requestId/reject"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/access/:userId"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/access/:userId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/access/invite"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/access/pending-invites"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/access/pending-invites/:inviteId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/access/pending-invites/:inviteId/resend"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/agents/:agentName/config"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/agents/:agentName/config"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/agents/:agentName/scope"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/approvals"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/approvals/:executionId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/approvals/needs-input"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/apps/:appId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId"
+      "path": "/v1/projects/:workspaceId"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/apps/:appId"
+      "path": "/v1/projects/:workspaceId"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/access"
+      "path": "/v1/projects/:workspaceId/access"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/access-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/access-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/access-requests/:requestId/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/access-requests/:requestId/reject"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/access/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/access/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/access/invite"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/access/pending-invites"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/access/pending-invites/:inviteId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/access/pending-invites/:inviteId/resend"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/agents/:agentName/config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/agents/:agentName/config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/agents/:agentName/scope"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/approvals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/approvals/:executionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/approvals/needs-input"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/apps"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/apps"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/apps/:appId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/apps/:appId"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/apps/:appId/access"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/access-session"
+      "path": "/v1/projects/:workspaceId/apps/:appId"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/deployments"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/deployments"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/rollback"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/start"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/stop"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/artifacts"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/artifacts/:artifactId/finalize"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/audit"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/branches"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/change-requests"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/change-requests"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/change-requests/:crId"
+      "path": "/v1/projects/:workspaceId/apps/:appId/access"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/change-requests/:crId"
+      "path": "/v1/projects/:workspaceId/apps/:appId/access"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/change-requests/:crId/close"
+      "path": "/v1/projects/:workspaceId/apps/:appId/access-session"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/change-requests/:crId/diff"
+      "path": "/v1/projects/:workspaceId/apps/:appId/deployments"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/change-requests/:crId/merge"
+      "path": "/v1/projects/:workspaceId/apps/:appId/deployments"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/change-requests/:crId/merge-preview"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/change-requests/:crId/reopen"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/change-requests/:crId/request-changes"
+      "path": "/v1/projects/:workspaceId/apps/:appId/deployments/:deploymentId"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/channels/bindings"
+      "path": "/v1/projects/:workspaceId/apps/:appId/deployments/:deploymentId/logs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/apps/:appId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/apps/:appId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/apps/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/apps/artifacts/:artifactId/finalize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/audit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/branches"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/change-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/change-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/change-requests/:crId"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/channels/bindings/:bindingId"
+      "path": "/v1/projects/:workspaceId/change-requests/:crId"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/channels/email/connect"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/channels/email/installation"
+      "path": "/v1/projects/:workspaceId/change-requests/:crId/close"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/channels/email/installation"
+      "path": "/v1/projects/:workspaceId/change-requests/:crId/diff"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/change-requests/:crId/merge"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/change-requests/:crId/merge-preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/change-requests/:crId/reopen"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/change-requests/:crId/request-changes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/bindings"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/channels/email/installation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/email/mode"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/channels/meet/name"
+      "path": "/v1/projects/:workspaceId/channels/bindings/:bindingId"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/channels/slack/bind-thread"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/slack/connect"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/slack/file"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/slack/file/upload"
+      "path": "/v1/projects/:workspaceId/channels/email/connect"
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:projectId/channels/slack/installation"
+      "path": "/v1/projects/:workspaceId/channels/email/installation"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/channels/slack/installation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/slack/mode"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/teams/connect"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/teams/file"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/teams/file/upload"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/channels/teams/installation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/teams/installation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/teams/manifest"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/teams/mode"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/cli-token"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/cli-token"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/cli-token/:tokenId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/commits"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/commits/:sha"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/commits/:sha/diff"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connect-requests"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/connections"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connections"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/connections/:connectionId/activate"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connections/:connectionId/connect"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connections/:connectionId/connect/finalize"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/connections/:connectionId/credential"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/connections/:connectionId/default"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/application"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/application"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/authorize"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/device"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/device/:sessionId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/discover"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/status"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/connections/:connectionId/revoke"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/connections/all"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connections/me"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/connectors/:slug/oauth2/connection"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/default-agent"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/detail"
+      "path": "/v1/projects/:workspaceId/channels/email/installation"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/experimental"
+      "path": "/v1/projects/:workspaceId/channels/email/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/email/mode"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/channels/meet/name"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/channels/slack/bind-thread"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/channels/slack/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/slack/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/channels/slack/file/upload"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/channels/slack/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/slack/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/slack/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/channels/teams/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/teams/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/channels/teams/file/upload"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/teams/manifest"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/channels/teams/mode"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/cli-token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/cli-token"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/cli-token/:tokenId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/commits"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/commits/:sha"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/commits/:sha/diff"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connect-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/connections"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connections"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/activate"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/connect/finalize"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/credential"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/default"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/oauth2/application"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/oauth2/application"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/oauth2/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/oauth2/device"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/oauth2/device/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/oauth2/discover"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/oauth2/status"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/connections/:connectionId/revoke"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/connections/all"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connections/me"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/connectors/:slug/oauth2/connection"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/default-agent"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/detail"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/features"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/files"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/files/archive"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/files/content"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/files/history"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/files/search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/breakdown"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/budgets"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/gateway/budgets"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/gateway/budgets/:budgetId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/errors"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/keys"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/gateway/keys"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/gateway/keys/:keyId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/logs"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/logs/:logId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/overview"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/gateway/playground"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/gateway/providers/:providerId/verify"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/gateway/routing-policy"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/routing-policy"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/gateway/routing-policy"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/gateway/routing-policy/preview"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/series"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/gateway/sessions"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/git-credential"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/git-token"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/git/clone-credential"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/git/collaborators"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/group-grants"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/group-grants"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/group-grants/:groupId"
+      "path": "/v1/projects/:workspaceId/experimental"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/group-grants/:groupId"
+      "path": "/v1/projects/:workspaceId/features"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/llm-catalog"
+      "path": "/v1/projects/:workspaceId/files"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/llm-catalog/providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/manifest/validate"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/marketplace/install-session"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/model-defaults"
+      "path": "/v1/projects/:workspaceId/files/archive"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/model-defaults"
+      "path": "/v1/projects/:workspaceId/files/content"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/files/history"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/files/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/breakdown"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/budgets"
     },
     {
       "method": "PUT",
-      "path": "/v1/projects/:projectId/model-defaults"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/model-enablement"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/model-picker"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/oauth"
+      "path": "/v1/projects/:workspaceId/gateway/budgets"
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:projectId/oauth/:provider"
+      "path": "/v1/projects/:workspaceId/gateway/budgets/:budgetId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/errors"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/keys"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/oauth/:provider/poll"
+      "path": "/v1/projects/:workspaceId/gateway/keys"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/gateway/keys/:keyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/logs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/logs/:logId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/overview"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/oauth/:provider/start"
+      "path": "/v1/projects/:workspaceId/gateway/playground"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/gateway/providers/:providerId/verify"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/gateway/routing-policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/routing-policy"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/gateway/routing-policy"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/gateway/routing-policy/preview"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/series"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/gateway/sessions"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/git-credential"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/git-token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/git/clone-credential"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/git/collaborators"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/group-grants"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/group-grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/group-grants/:groupId"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/onboarding"
+      "path": "/v1/projects/:workspaceId/group-grants/:groupId"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/resource-grants"
+      "path": "/v1/projects/:workspaceId/llm-catalog"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/llm-catalog/providers"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/resource-grants"
+      "path": "/v1/projects/:workspaceId/manifest/validate"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/marketplace/install-session"
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:projectId/resource-grants/:grantId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/review/bulk"
+      "path": "/v1/projects/:workspaceId/model-defaults"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/review/items"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/review/items"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/review/items/:reviewItemId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/review/items/:reviewItemId/act"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sandbox-health"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/sandbox-provider"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sandbox-provider/transition"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sandbox-templates"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sandbox-templates"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/sandbox-templates/:templateId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/sandbox-templates/:templateId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sandbox-templates/:templateId/build"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sandboxes"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/secret-requests"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/secrets"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/secrets"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/secrets/:identifier/broker"
+      "path": "/v1/projects/:workspaceId/model-defaults"
     },
     {
       "method": "PUT",
-      "path": "/v1/projects/:projectId/secrets/:identifier/strategy"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/secrets/:name"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/secrets/:name/personal"
+      "path": "/v1/projects/:workspaceId/model-defaults"
     },
     {
       "method": "PUT",
-      "path": "/v1/projects/:projectId/secrets/:name/personal"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/secrets/sync"
+      "path": "/v1/projects/:workspaceId/model-enablement"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions"
+      "path": "/v1/projects/:workspaceId/model-picker"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions"
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/oauth"
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:projectId/sessions/:sessionId"
+      "path": "/v1/projects/:workspaceId/oauth/:provider"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId"
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/oauth/:provider/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/oauth/:provider/start"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/sessions/:sessionId"
+      "path": "/v1/projects/:workspaceId/onboarding"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
+      "path": "/v1/projects/:workspaceId/resource-grants"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/audit/events"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/config"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/model"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/previews"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares"
+      "path": "/v1/projects/:workspaceId/resource-grants"
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId"
+      "path": "/v1/projects/:workspaceId/resource-grants/:grantId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/review/bulk"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/question"
+      "path": "/v1/projects/:workspaceId/review/items"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/question"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/reload"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/reload-stream"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
+      "path": "/v1/projects/:workspaceId/review/items"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/scope"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/scope"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/sharing"
+      "path": "/v1/projects/:workspaceId/review/items/:reviewItemId"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/start"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/stop"
+      "path": "/v1/projects/:workspaceId/review/items/:reviewItemId/act"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
+      "path": "/v1/projects/:workspaceId/sandbox-health"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:workspaceId/sandbox-provider"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/voice-transcript"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/warm"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/warm/claim"
+      "path": "/v1/projects/:workspaceId/sandbox-provider/transition"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/snapshots"
+      "path": "/v1/projects/:workspaceId/sandbox-templates"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/snapshots/fix-with-agent"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/snapshots/rebuild"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/triggers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/triggers"
+      "path": "/v1/projects/:workspaceId/sandbox-templates"
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:projectId/triggers/:slug"
+      "path": "/v1/projects/:workspaceId/sandbox-templates/:templateId"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:projectId/triggers/:slug"
+      "path": "/v1/projects/:workspaceId/sandbox-templates/:templateId"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/triggers/:slug/fire"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/triggers/activation"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/turn-question"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/turn-stream"
+      "path": "/v1/projects/:workspaceId/sandbox-templates/:templateId/build"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/version-diff"
+      "path": "/v1/projects/:workspaceId/sandboxes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/secret-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/secrets"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/secrets"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/secrets/:identifier/broker"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/secrets/:identifier/strategy"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/secrets/:name"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/secrets/:name/personal"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/secrets/:name/personal"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/secrets/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/audit"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/audit/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/commit-push"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/config"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/mcp/voice"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/model"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/previews"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/public-shares"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/public-shares"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/public-shares/:shareId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/reload"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/reload-stream"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/restart"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/scope"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/scope"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/sharing"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/stop"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/transcript"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/sessions/:sessionId/voice-transcript"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/warm"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/sessions/warm/claim"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/snapshots"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/snapshots/fix-with-agent"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/snapshots/rebuild"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/triggers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/triggers"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:workspaceId/triggers/:slug"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:workspaceId/triggers/:slug"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/triggers/:slug/fire"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:workspaceId/triggers/activation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/turn-question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/turn-stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/version-diff"
     },
     {
       "method": "POST",
@@ -2208,6 +2328,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/usage/cost-by-workspace"
+    },
+    {
+      "method": "GET",
       "path": "/v1/usage/cost-summary"
     },
     {
@@ -2228,7 +2352,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/projects/:projectId/:slug"
+      "path": "/v1/webhooks/projects/:workspaceId/:slug"
     },
     {
       "method": "POST",
@@ -2244,19 +2368,19 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/slack/:projectId"
+      "path": "/v1/webhooks/slack/:workspaceId"
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/slack/:projectId/commands"
+      "path": "/v1/webhooks/slack/:workspaceId/commands"
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/slack/:projectId/interactivity"
+      "path": "/v1/webhooks/slack/:workspaceId/interactivity"
     },
     {
       "method": "GET",
-      "path": "/v1/webhooks/slack/:projectId/manifest"
+      "path": "/v1/webhooks/slack/:workspaceId/manifest"
     },
     {
       "method": "POST",
@@ -2272,7 +2396,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/teams/:projectId/messages"
+      "path": "/v1/webhooks/teams/:workspaceId/messages"
     },
     {
       "method": "POST",
@@ -2284,7 +2408,939 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/telegram/:projectId"
+      "path": "/v1/webhooks/telegram/:workspaceId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/workspaces/:workspaceId/:slug"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/access"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/access-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/access-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/access-requests/:requestId/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/access-requests/:requestId/reject"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/access/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/access/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/access/invite"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/access/pending-invites"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/access/pending-invites/:inviteId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/access/pending-invites/:inviteId/resend"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/agents/:agentName/config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/agents/:agentName/config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/agents/:agentName/scope"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/approvals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/approvals/:executionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/approvals/needs-input"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/apps"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/apps"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/access"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/access-session"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/deployments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/deployments"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/deployments/:deploymentId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/deployments/:deploymentId/logs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/apps/:appId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/apps/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/apps/artifacts/:artifactId/finalize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/audit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/branches"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/change-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/change-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/change-requests/:crId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/change-requests/:crId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/change-requests/:crId/close"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/change-requests/:crId/diff"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/change-requests/:crId/merge"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/change-requests/:crId/merge-preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/change-requests/:crId/reopen"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/change-requests/:crId/request-changes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/bindings"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/channels/bindings/:bindingId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/channels/email/connect"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/channels/email/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/email/installation"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/channels/email/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/email/mode"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/channels/meet/name"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/channels/slack/bind-thread"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/channels/slack/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/slack/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/channels/slack/file/upload"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/channels/slack/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/slack/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/slack/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/channels/teams/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/teams/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/channels/teams/file/upload"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/teams/manifest"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/channels/teams/mode"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/cli-token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/cli-token"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/cli-token/:tokenId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/commits"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/commits/:sha"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/commits/:sha/diff"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connect-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/connections"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connections"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/activate"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/connect/finalize"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/credential"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/default"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/oauth2/application"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/oauth2/application"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/oauth2/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/oauth2/device"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/oauth2/device/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/oauth2/discover"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/oauth2/status"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/connections/:connectionId/revoke"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/connections/all"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connections/me"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/connectors/:slug/oauth2/connection"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/default-agent"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/detail"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/experimental"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/features"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/files/archive"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/files/content"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/files/history"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/files/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/breakdown"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/budgets"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/gateway/budgets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/gateway/budgets/:budgetId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/errors"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/keys"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/gateway/keys"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/gateway/keys/:keyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/logs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/logs/:logId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/overview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/gateway/playground"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/gateway/providers/:providerId/verify"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/gateway/routing-policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/routing-policy"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/gateway/routing-policy"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/gateway/routing-policy/preview"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/series"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/gateway/sessions"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/git-credential"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/git-token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/git/clone-credential"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/git/collaborators"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/group-grants"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/group-grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/group-grants/:groupId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/group-grants/:groupId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/llm-catalog"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/llm-catalog/providers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/manifest/validate"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/marketplace/install-session"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/model-defaults"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/model-defaults"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/model-defaults"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/model-enablement"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/model-picker"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/oauth"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/oauth/:provider"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/oauth/:provider/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/oauth/:provider/start"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/onboarding"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/resource-grants"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/resource-grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/resource-grants/:grantId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/review/bulk"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/review/items"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/review/items"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/review/items/:reviewItemId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/review/items/:reviewItemId/act"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sandbox-health"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/sandbox-provider"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sandbox-provider/transition"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sandbox-templates"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sandbox-templates"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/sandbox-templates/:templateId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/sandbox-templates/:templateId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sandbox-templates/:templateId/build"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sandboxes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/secret-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/secrets"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/secrets"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/secrets/:identifier/broker"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/secrets/:identifier/strategy"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/secrets/:name"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/secrets/:name/personal"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/secrets/:name/personal"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/secrets/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/audit"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/audit/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/commit-push"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/config"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/mcp/voice"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/model"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/previews"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/public-shares"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/public-shares"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/public-shares/:shareId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/reload"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/reload-stream"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/restart"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/scope"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/scope"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/sharing"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/stop"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/transcript"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/sessions/:sessionId/voice-transcript"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/warm"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/sessions/warm/claim"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/snapshots"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/snapshots/fix-with-agent"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/snapshots/rebuild"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/triggers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/triggers"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/triggers/:slug"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/triggers/:slug"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/triggers/:slug/fire"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/triggers/activation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/turn-question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/turn-stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/version-diff"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/create-repo"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/github/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/github/installation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/github/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/github/installations"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/github/installations/:installationId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/github/installations/link"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/github/installations/linkable"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/github/repositories"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/github/repository-branches"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/link-repository"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/managed-git/status"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/provision"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/provision-stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/suna-migration/eligibility"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/suna-migration/start"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/suna-migration/status"
     }
   ]
 }

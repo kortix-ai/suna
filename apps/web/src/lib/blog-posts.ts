@@ -86,7 +86,7 @@ const agiReadyArchitecture: BlogPostEntry = {
       type: 'ul',
       items: [
         '**Any model, your keys** — Claude, GPT, Gemini, or open-weight GLM and DeepSeek; your subscription, your spend, your data residency.',
-        '**A model-agnostic gateway** — per-project routing chains, ordered fallbacks, and semantic failover where an empty completion is classified as a failure, not a zero-output success.',
+        '**A model-agnostic gateway** — per-workspace routing chains, ordered fallbacks, and semantic failover where an empty completion is classified as a failure, not a zero-output success.',
         '**Self-hosted inference** — run it in your own VPC or on-prem, on your own hardware. The platform never assumes a vendor is reachable.',
       ],
     },
@@ -101,7 +101,7 @@ const agiReadyArchitecture: BlogPostEntry = {
     },
     {
       type: 'code',
-      code: `# kortix.yaml — one file that defines this project.
+      code: `# kortix.yaml — one file that defines this workspace.
 kortix_version: 2
 
 project:
@@ -132,7 +132,7 @@ triggers:
     },
     {
       type: 'p',
-      text: 'Authentication answers who the agent is. Authorization answers what it may do — and the model must never be the final authority on the second question. In Kortix, every session runs under a scoped identity with a single token carrying claims for principal, project, session, and agent grant. Connector credentials are bound server-side and injected at runtime; they never enter the sandbox environment, the transcripts, or the model’s view.',
+      text: 'Authentication answers who the agent is. Authorization answers what it may do — and the model must never be the final authority on the second question. In Kortix, every session runs under a scoped identity with a single token carrying claims for principal, workspace, session, and agent grant. Connector credentials are bound server-side and injected at runtime; they never enter the sandbox environment, the transcripts, or the model’s view.',
     },
     {
       type: 'ul',
@@ -246,7 +246,7 @@ triggers:
     {
       type: 'cta',
       title: 'Build for the jump, not the model.',
-      body: 'Kortix is the Autonomous Company Operating System — open-source, self-hostable, any model. Start one project free.',
+      body: 'Kortix is the Autonomous Company Operating System — open-source, self-hostable, any model. Start one workspace free.',
     },
   ],
 };
@@ -255,7 +255,7 @@ const kortixVsQm: BlogPostEntry = {
   slug: 'kortix-vs-qm',
   title: 'Kortix vs QM: two open agent platforms, two different units of work',
   description:
-    'QM and Kortix both give teams persistent agents, isolated computers, Slack and web access, and self-hosting. The decisive difference is deeper: QM organizes work around people and rooms; Kortix organizes it around git-backed projects and reviewable sessions.',
+    'QM and Kortix both give teams persistent agents, isolated computers, Slack and web access, and self-hosting. The decisive difference is deeper: QM organizes work around people and rooms; Kortix organizes it around git-backed workspaces and reviewable sessions.',
   date: '2026-08-02',
   author: 'marko',
   cover: '/banner.png',
@@ -289,7 +289,7 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'QM starts with the social graph. A person, Slack channel, group message, or project room gets a durable scope. That scope owns memory, files, credentials, schedules, skills, and a computer. Kortix starts with the work graph. A project is a git repository and `kortix.yaml`; each session receives a sandbox and a branch, and durable changes return through a change request.',
+      text: 'QM starts with the social graph. A person, Slack channel, group message, or project room gets a durable scope. That scope owns memory, files, credentials, schedules, skills, and a computer. Kortix starts with the work graph. A workspace is a git repository and `kortix.yaml`; each session receives a sandbox and a branch, and durable changes return through a change request.',
     },
     {
       type: 'callout',
@@ -316,7 +316,7 @@ git project -> session -> isolated computer + session branch
         {
           dimension: 'Primary unit',
           them: 'Person or room scope',
-          kortix: 'Git-backed project and session',
+          kortix: 'Git-backed workspace and session',
           lean: 'both',
         },
         {
@@ -340,12 +340,12 @@ git project -> session -> isolated computer + session branch
         {
           dimension: 'Model routing',
           them: 'Provider selected by deployment or admin',
-          kortix: 'Project gateway, budgets, fallbacks, BYOK',
+          kortix: 'Workspace gateway, budgets, fallbacks, BYOK',
         },
         {
           dimension: 'Collaboration model',
           them: 'Shared room memory and computer',
-          kortix: 'Shared project, isolated session branches',
+          kortix: 'Shared workspace, isolated session branches',
           lean: 'both',
         },
         {
@@ -410,11 +410,11 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix separates operational state from authoritative company configuration. Supabase Postgres stores accounts, projects, sessions, sandboxes, triggers, grants, audit events, usage, and gateway logs. The project repo stores the agents, skills, memory, policies, and runtime configuration people are expected to edit and review. OpenCode state lives outside `/workspace`, so runtime internals do not pollute the company repo.',
+      text: 'Kortix separates operational state from authoritative company configuration. Supabase Postgres stores accounts, workspaces, sessions, sandboxes, triggers, grants, audit events, usage, and gateway logs. The workspace repo stores the agents, skills, memory, policies, and runtime configuration people are expected to edit and review. OpenCode state lives outside `/workspace`, so runtime internals do not pollute the company repo.',
     },
     {
       type: 'p',
-      text: 'The practical consequence is important. QM makes continuity of the colleague and room the default. Kortix makes reproducibility, diff, rollback, and promotion to `main` the default. A QM room can keep accumulating local context. A Kortix project can show exactly which agent changed the company and which person accepted it.',
+      text: 'The practical consequence is important. QM makes continuity of the colleague and room the default. Kortix makes reproducibility, diff, rollback, and promotion to `main` the default. A QM room can keep accumulating local context. A Kortix workspace can show exactly which agent changed the company and which person accepted it.',
     },
     { type: 'h2', text: 'Isolation and lifecycle' },
     {
@@ -436,7 +436,7 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix centers authorization on the principal, project, session, agent grant, and action. Connector credentials are brokered server-side and do not enter the sandbox. Project secrets are different: an explicitly granted secret is injected as a real environment value and can be read by commands in that session. Connector policies decide allow, ask, or block, and durable repo changes still face a deny-by-default merge boundary.',
+      text: 'Kortix centers authorization on the principal, workspace, session, agent grant, and action. Connector credentials are brokered server-side and do not enter the sandbox. Workspace secrets are different: an explicitly granted secret is injected as a real environment value and can be read by commands in that session. Connector policies decide allow, ask, or block, and durable repo changes still face a deny-by-default merge boundary.',
     },
     {
       type: 'callout',
@@ -449,11 +449,11 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix treats `@kortix/sdk` as a public product boundary. `createKortix({ getToken })` returns one client for project and session lifecycle, files, streaming, runtime health, previews, and errors. React hooks, a TypeScript server entry, the real `kortix` CLI, mobile, desktop, and the web app build on that package. The API and OpenCode transport are implementation details for host applications.',
+      text: 'Kortix treats `@kortix/sdk` as a public product boundary. `createKortix({ getToken })` returns one client for workspace and session lifecycle, files, streaming, runtime health, previews, and errors. React hooks, a TypeScript server entry, the real `kortix` CLI, mobile, desktop, and the web app build on that package. The API and OpenCode transport are implementation details for host applications.',
     },
     {
       type: 'p',
-      text: 'This is one of the clearest selection criteria. Choose QM when you primarily deploy and operate the included collaboration product. Choose Kortix when you also need to embed the platform, build another host, automate it from a CLI, or expose project/session primitives to customers.',
+      text: 'This is one of the clearest selection criteria. Choose QM when you primarily deploy and operate the included collaboration product. Choose Kortix when you also need to embed the platform, build another host, automate it from a CLI, or expose workspace/session primitives to customers.',
     },
     { type: 'h2', text: 'Deployment and operations' },
     {
@@ -505,7 +505,7 @@ npm exec qm -- outputs --json`,
       items: [
         '**QM scaling** — durable Postgres stores, background queues, leader leases, multi-instance-safe state, and one computer per active scope. The admin plane exposes sessions, model requests, errors, cost, egress decisions, and audit data.',
         '**Kortix scaling** — provider-balanced sandbox creation, per-account concurrency limits, control-plane-observed sandbox deadlines, idle and orphan reapers, EKS/GitOps for the managed control plane, and one computer per active session. Provider events, boot timelines, gateway request logs, audit events, and compute metering are durable.',
-        '**No honest benchmark winner yet** — the projects publish different tests and target different lifecycles. QM should be faster on repeated tool use in one warm scope. Kortix should isolate parallel work more cleanly and amortize boot through provider snapshots and resume. Those are architectural expectations, not an apples-to-apples measured result.',
+        '**No honest benchmark winner yet** — the workspaces publish different tests and target different lifecycles. QM should be faster on repeated tool use in one warm scope. Kortix should isolate parallel work more cleanly and amortize boot through provider snapshots and resume. Those are architectural expectations, not an apples-to-apples measured result.',
       ],
     },
     { type: 'h2', text: 'Licensing is not a footnote' },
@@ -520,11 +520,11 @@ npm exec qm -- outputs --json`,
     { type: 'h2', text: 'Can you migrate between them?' },
     {
       type: 'p',
-      text: 'There is no drop-in migration because the ownership models differ. A practical QM-to-Kortix migration maps scopes to projects, scope skills and memory to repo files, crons to triggers, keychain entries to connectors or secrets, and active work to sessions. The hard part is deciding which room-local state belongs in version control and which should stay operational data.',
+      text: 'There is no drop-in migration because the ownership models differ. A practical QM-to-Kortix migration maps scopes to workspaces, scope skills and memory to repo files, crons to triggers, keychain entries to connectors or secrets, and active work to sessions. The hard part is deciding which room-local state belongs in version control and which should stay operational data.',
     },
     {
       type: 'p',
-      text: 'A Kortix-to-QM migration maps projects or teams to scopes, imports agents and skills into a deployment layer, converts triggers to crons, and replaces change-request promotion with QM’s scope storage and app-publishing model. That direction loses the automatic branch-per-session review boundary unless you rebuild it as a skill and policy.',
+      text: 'A Kortix-to-QM migration maps workspaces or teams to scopes, imports agents and skills into a deployment layer, converts triggers to crons, and replaces change-request promotion with QM’s scope storage and app-publishing model. That direction loses the automatic branch-per-session review boundary unless you rebuild it as a skill and policy.',
     },
     { type: 'h2', text: 'When to pick which' },
     {
@@ -536,7 +536,7 @@ npm exec qm -- outputs --json`,
     },
     {
       type: 'p',
-      text: 'They could coexist, but no supported connection exists today. QM could own the conversational scope while Kortix runs project sessions and change requests behind it. That adapter would have to preserve identity, grants, delivery provenance, and idempotency across both systems. Treat it as a connector project, not a configuration flag.',
+      text: 'They could coexist, but no supported connection exists today. QM could own the conversational scope while Kortix runs workspace sessions and change requests behind it. That adapter would have to preserve identity, grants, delivery provenance, and idempotency across both systems. Treat it as a connector project, not a configuration flag.',
     },
     { type: 'h2', text: 'The real conclusion' },
     {
@@ -549,8 +549,8 @@ npm exec qm -- outputs --json`,
     },
     {
       type: 'cta',
-      title: 'Put the project model to work.',
-      body: 'Create a Kortix project, start an isolated session, and review the change your agent brings back. Self-host it or use Kortix Cloud.',
+      title: 'Put the workspace model to work.',
+      body: 'Create a Kortix workspace, start an isolated session, and review the change your agent brings back. Self-host it or use Kortix Cloud.',
     },
   ],
 };
@@ -581,7 +581,7 @@ const introducingKortix: BlogPostEntry = {
     { type: 'h2', text: 'A company is a git repo' },
     {
       type: 'p',
-      text: 'In Kortix, a **project** is one git repository. The repo *is* the project: its files, its history, its agents, its automations, its settings — all of it lives in git. Start fresh with a private repo Kortix hosts for you, or bring an existing one on GitHub.',
+      text: 'In Kortix, a **workspace** is backed by one git repository. The repo carries the workspace files, history, agents, automations, and settings. Start fresh with a private repo Kortix hosts for you, or bring an existing one on GitHub.',
     },
     {
       type: 'ul',
@@ -598,11 +598,11 @@ const introducingKortix: BlogPostEntry = {
     { type: 'h2', text: 'kortix.yaml: the single source of truth' },
     {
       type: 'p',
-      text: 'At the root of every project sits one file: `kortix.yaml`. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
+      text: 'At the root of every workspace repo sits one file: `kortix.yaml`. Any repo with a valid manifest at its root can back a Kortix workspace — that file defines what the workspace is allowed to do and how it runs. Here’s a real one:',
     },
     {
       type: 'code',
-      code: `# kortix.yaml — the one file that defines this project.
+      code: `# kortix.yaml — the one file that defines this workspace.
 kortix_version: 2
 
 project:
@@ -683,7 +683,7 @@ connectors:
     },
     {
       type: 'p',
-      text: 'Because it’s all open, you can read exactly how isolation, review, and credential brokering work — not trust a description. No lock-in: your projects are git repos, your config is plain files, and the platform running them is yours to host. (If you’re weighing Kortix against personal open-source agents like OpenClaw or Hermes, [personal AI agents vs a company OS](/blog/personal-ai-agents-vs-company-os) draws that line.)',
+      text: 'Because it’s all open, you can read exactly how isolation, review, and credential brokering work — not trust a description. No lock-in: your workspaces are git repos, your config is plain files, and the platform running them is yours to host. (If you’re weighing Kortix against personal open-source agents like OpenClaw or Hermes, [personal AI agents vs a company OS](/blog/personal-ai-agents-vs-company-os) draws that line.)',
     },
     { type: 'h2', text: 'It compounds' },
     {
@@ -1046,7 +1046,7 @@ const secureAiAgentToolAccess: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Kortix was built around that boundary. Tool access does not belong in a prompt and raw credentials do not belong in an agent sandbox. In Kortix, connections are part of the project operating layer: declared as files, brokered server-side, granted per agent, governed by policy, and reviewed when durable work changes the company. If you want the larger architecture first, read [Introducing Kortix](/blog/introducing-kortix) or the [company OS post](/blog/ai-transformation-company-os).',
+      text: 'Kortix was built around that boundary. Tool access does not belong in a prompt and raw credentials do not belong in an agent sandbox. In Kortix, connections are part of the workspace operating layer: declared as files, brokered server-side, granted per agent, governed by policy, and reviewed when durable work changes the company. If you want the larger architecture first, read [Introducing Kortix](/blog/introducing-kortix) or the [company OS post](/blog/ai-transformation-company-os).',
     },
     {
       type: 'p',
@@ -1079,7 +1079,7 @@ const secureAiAgentToolAccess: BlogPostEntry = {
       type: 'ul',
       items: [
         '**Keep credentials out of the sandbox.** The agent should never receive a third-party API key unless the task truly requires direct process-level access. Connector credentials should be resolved server-side and injected into the upstream request, not into model context.',
-        '**Grant tools per agent.** Connecting Slack, Gmail, Stripe, or GitHub to a project is not the same as letting every agent call it. The support agent and release agent need different reach.',
+        '**Grant tools per agent.** Connecting Slack, Gmail, Stripe, or GitHub to a workspace is not the same as letting every agent call it. The support agent and release agent need different reach.',
         '**Gate individual actions.** Read operations, write operations, deletes, sends, payments, and admin changes should not share one permission bit. Tool names need policy: always run, require approval, or block.',
         '**Make risky calls human-reviewable.** A good agent can prepare the exact action and evidence. The platform should pause at the boundary where a human decision is required.',
         '**Route durable change through review.** If the agent edits the operating layer — agents, skills, triggers, memory, policies, or code — that work should be a diff someone can review, merge, and roll back.',
@@ -1088,7 +1088,7 @@ const secureAiAgentToolAccess: BlogPostEntry = {
     { type: 'h2', text: 'How Kortix models a connector' },
     {
       type: 'p',
-      text: 'Kortix connections are documented in [Connecting your tools](/docs/guides/connecting-tools). A connector can be a one-click Pipedream app, a remote MCP server, an OpenAPI or GraphQL API, a raw HTTP API, a channel such as Slack, or a connected computer. The definition lives with the project; the credential lives on the platform. The agent sees a tool catalog, not a pile of secrets.',
+      text: 'Kortix connections are documented in [Connecting your tools](/docs/guides/connecting-tools). A connector can be a one-click Pipedream app, a remote MCP server, an OpenAPI or GraphQL API, a raw HTTP API, a channel such as Slack, or a connected computer. The definition lives with the workspace; the credential lives on the platform. The agent sees a tool catalog, not a pile of secrets.',
     },
     {
       type: 'code',
@@ -1116,7 +1116,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'That example is deliberately boring. Boring is the point. You should be able to answer “what can this agent call?” by reading the project files, not by reverse-engineering a prompt or inspecting a live process. The [manifest reference](/docs/reference/manifest#connectors) defines connector policies and the [agent governance section](/docs/reference/manifest#agents-v2) defines per-agent grants.',
+      text: 'That example is deliberately boring. Boring is the point. You should be able to answer “what can this agent call?” by reading the workspace files, not by reverse-engineering a prompt or inspecting a live process. The [manifest reference](/docs/reference/manifest#connectors) defines connector policies and the [agent governance section](/docs/reference/manifest#agents-v2) defines per-agent grants.',
     },
     { type: 'h2', text: 'Server-side credentials change the failure mode' },
     {
@@ -1125,7 +1125,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'That is the model behind the Kortix Connector. Every session gets a scoped Connector token. The agent discovers tools, describes their schemas, and calls them through the Kortix API. The gateway enforces the project grant and connector policy, resolves credentials outside the sandbox, runs the request, and audits the call. The [connections guide](/docs/guides/connecting-tools) is explicit: the agent never holds third-party credentials.',
+      text: 'That is the model behind the Kortix Connector. Every session gets a scoped Connector token. The agent discovers tools, describes their schemas, and calls them through the Kortix API. The gateway enforces the workspace grant and connector policy, resolves credentials outside the sandbox, runs the request, and audits the call. The [connections guide](/docs/guides/connecting-tools) is explicit: the agent never holds third-party credentials.',
     },
     {
       type: 'callout',
@@ -1227,7 +1227,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     { type: 'h2', text: 'One client, one repo' },
     {
       type: 'p',
-      text: 'In Kortix, a project is a repo. That repo contains the company’s agents, skills, memory, triggers, connector policy, sandbox definition, and operating instructions. One `kortix.yaml` defines how the workspace runs. Every session happens on an isolated branch. Every persistent change comes back through a change request.',
+      text: 'In Kortix, a workspace is a repo. That repo contains the company’s agents, skills, memory, triggers, connector policy, sandbox definition, and operating instructions. One `kortix.yaml` defines how the workspace runs. Every session happens on an isolated branch. Every persistent change comes back through a change request.',
     },
     {
       type: 'code',
@@ -1243,7 +1243,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'That sounds technical because it is. It is also the reason the workspace can be handed to a client without trapping them in your service team forever. Files can be inspected. Diffs can be reviewed. A successful sales-ops workspace can be forked into a recruiting workspace. A regulated client can run the same pattern in their own VPC or on-prem environment. The [docs](/docs) walk through the project, session, and change request model in detail.',
+      text: 'That sounds technical because it is. It is also the reason the workspace can be handed to a client without trapping them in your service team forever. Files can be inspected. Diffs can be reviewed. A successful sales-ops workspace can be forked into a recruiting workspace. A regulated client can run the same pattern in their own VPC or on-prem environment. The [docs](/docs) walk through the workspace, session, and change request model in detail.',
     },
     { type: 'h2', text: 'The workspace needs five layers' },
     {
@@ -1312,7 +1312,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Those are not abstract use cases for us. Kortix runs internal sweeps for production errors, PR review, docs maintenance, weekly briefs, outbound research, and this SEO/blog loop from the same project-native model: agents with skills, memory, tools, triggers, and a reviewed path for durable changes.',
+      text: 'Those are not abstract use cases for us. Kortix runs internal sweeps for production errors, PR review, docs maintenance, weekly briefs, outbound research, and this SEO/blog loop from the same workspace-native model: agents with skills, memory, tools, triggers, and a reviewed path for durable changes.',
     },
     { type: 'h2', text: 'A quick test for your stack' },
     {
@@ -1393,7 +1393,7 @@ const kortixVsGlean: BlogPostEntry = {
     { type: 'h2', text: 'A runtime that does the work, not just retrieves it' },
     {
       type: 'p',
-      text: 'Kortix is an open agent runtime — the command center where a workforce of agents runs your company, not a search bar over it. Hand a task to a project and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.',
+      text: 'Kortix is an open agent runtime — the command center where a workforce of agents runs your company, not a search bar over it. Hand a task to a workspace and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.',
     },
     {
       type: 'p',
@@ -1406,7 +1406,7 @@ const kortixVsGlean: BlogPostEntry = {
     },
     {
       type: 'callout',
-      text: 'No 100-seat floor, no sales process to start — [see the plans](/pricing). Open-source means you can run one project today and a whole company on it tomorrow — on infrastructure where the data, config, and model belong to you.',
+      text: 'No 100-seat floor, no sales process to start — [see the plans](/pricing). Open-source means you can run one workspace today and a whole company on it tomorrow — on infrastructure where the data, config, and model belong to you.',
     },
     { type: 'h2', text: 'Side by side' },
     {
@@ -1441,7 +1441,7 @@ const kortixVsGlean: BlogPostEntry = {
         {
           dimension: 'Accessible below 100 seats',
           them: 'No — sales-led, large-enterprise floor',
-          kortix: 'Yes — start with one project',
+          kortix: 'Yes — start with one workspace',
         },
         {
           dimension: 'Agents, skills & policies as code',
@@ -1552,7 +1552,7 @@ const kortix = createKortix({
   getToken: async () => process.env.KORTIX_CLI_TOKEN ?? null,
 });
 const connectors = process.env.KORTIX_PROJECT_ID
-  ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
+  ? kortix.workspace(process.env.KORTIX_PROJECT_ID).connectors
   : kortix.connectors;
 
 // The catalog is the contract. Refuse to run if it drifted.
@@ -1612,7 +1612,7 @@ for (const dispute of open.data?.disputes ?? []) {
     {
       type: 'ul',
       items: [
-        '**A project is a git repo.** Not a workspace in our cloud — a repository. `kortix init` turns a directory into one; `kortix ship` pushes it up and runs it. Clone it and you have the whole thing.',
+        '**A workspace is a git repo.** Not a workspace in our cloud — a repository. `kortix init` turns a directory into one; `kortix ship` pushes it up and runs it. Clone it and you have the whole thing.',
         '**`kortix.yaml` is the manifest.** Connectors, triggers, channels, required secrets, policies and where agent config lives — one file, in your repo, in the diff.',
         '**Agents and skills are files.** An agent is a markdown persona. A skill is a `SKILL.md` plus the scripts beside it. There is no console where the real definition secretly lives; the file *is* the definition, which is why an agent can propose an edit to its own configuration as a change request.',
         '**Work lands through review.** A session runs on its own isolated cloud computer on its own branch. It reaches `main` only through a change request someone approves.',
@@ -1757,7 +1757,7 @@ for (const dispute of open.data?.disputes ?? []) {
  *  - HARNESS. OpenCode only. ACP, `kortix_version: 3` and the Claude Code /
  *    Codex / Pi harnesses are not shipped and are never named.
  *  - An agent is an OpenCode agent — markdown is the baseline, not the ceiling.
- *  - NO forking or publishing a company. The project catalog holds exactly one
+ *  - NO forking or publishing a company. The workspace catalog holds exactly one
  *    item, our own starter, and there is no publish route.
  *  - LICENCE: "open source" and stop. CERTIFICATION: never claimed — SOC 2 is
  *    in progress, GDPR is held.
@@ -1782,7 +1782,7 @@ const openSourceAiManagementSystem: BlogPostEntry = {
       { src: '/media/showcase/kortix-showcase-1920.mp4', type: 'video/mp4' },
       { src: '/media/showcase/kortix-showcase-1280.mp4', type: 'video/mp4' },
     ],
-    alt: 'Kortix in the browser: a project and its connectors, agents, skills and schedules, then a session working on a cloud computer and returning a finished deck.',
+    alt: 'Kortix in the browser: a workspace and its connectors, agents, skills and schedules, then a session working on a cloud computer and returning a finished deck.',
     aspectRatio: '1920 / 1200',
   },
   blocks: [
@@ -1802,7 +1802,7 @@ const openSourceAiManagementSystem: BlogPostEntry = {
     { type: 'h2', text: '01 · One git repo that is the company' },
     {
       type: 'p',
-      text: 'A Kortix project is a git repository, and that repository *is* the company. `kortix.yaml` is the Kortix layer: the machine a session boots on, the connectors, the triggers, the secret names, and what each agent may touch. The OpenCode configuration beside it is the runtime the agents think in. Everything past those two files is markdown.',
+      text: 'A Kortix workspace is backed by a git repository, and that repository carries the company configuration. `kortix.yaml` is the Kortix layer: the machine a session boots on, the connectors, the triggers, the secret names, and what each agent may touch. The OpenCode configuration beside it is the runtime the agents think in. Everything past those two files is markdown.',
     },
     {
       type: 'p',
@@ -1846,16 +1846,16 @@ triggers:
     },
     {
       type: 'p',
-      text: 'Note two things that manifest deliberately does not contain. There is no `channels:` block — the v2 validator rejects one, because channel routing is live project state rather than repo configuration, and pretending otherwise would put a lie in your git history. And every omitted grant resolves to `none`: leave a connector out of an agent’s list and that agent does not get it. Deny is the state you fall into by accident, not the one you have to remember.',
+      text: 'Note two things that manifest deliberately does not contain. There is no `channels:` block — the v2 validator rejects one, because channel routing is live workspace state rather than repo configuration, and pretending otherwise would put a lie in your git history. And every omitted grant resolves to `none`: leave a connector out of an agent’s list and that agent does not get it. Deny is the state you fall into by accident, not the one you have to remember.',
     },
     { type: 'h2', text: '02 · Every tool your company already runs on' },
     {
       type: 'p',
-      text: 'Connect a tool once, for the whole project: 3,000+ apps through their own OAuth screens, or your own APIs through an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. Kortix reads the source, works out the authentication, and turns every operation into a tool an agent can call.',
+      text: 'Connect a tool once, for the whole workspace: 3,000+ apps through their own OAuth screens, or your own APIs through an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. Kortix reads the source, works out the authentication, and turns every operation into a tool an agent can call.',
     },
     {
       type: 'p',
-      text: 'The credential never travels. The machine carries exactly one project-scoped Kortix token; the third-party key is decrypted server-side and attached to the outbound request, so the raw key never reaches the sandbox. Every action gets one of three answers — allow, ask, or block — and a rule can read the arguments it was given rather than only the tool name, so “only to this domain” is something you can actually express. An ask returns a signed approval URL immediately. One human decision sends a durable callback into the session, and only the exact approved request can run.',
+      text: 'The credential never travels. The machine carries exactly one workspace-scoped Kortix token; the third-party key is decrypted server-side and attached to the outbound request, so the raw key never reaches the sandbox. Every action gets one of three answers — allow, ask, or block — and a rule can read the arguments it was given rather than only the tool name, so “only to this domain” is something you can actually express. An ask returns a signed approval URL immediately. One human decision sends a durable callback into the session, and only the exact approved request can run.',
     },
     { type: 'h2', text: '03 · Any model. Keep your keys.' },
     {
@@ -1874,7 +1874,7 @@ triggers:
     { type: 'h2', text: '05 · Every session gets its own computer' },
     {
       type: 'p',
-      text: 'Start a session and its own isolated Linux machine boots. It clones the project repo into `/workspace`, cuts a branch named after the session, and starts the harness. The session id, the sandbox id and the branch name are one and the same string. The agent gets the whole machine — a shell, a package manager, a filesystem, the network — and nothing runs on your laptop.',
+      text: 'Start a session and its own isolated Linux machine boots. It clones the workspace repo into `/workspace`, cuts a branch named after the session, and starts the harness. The session id, the sandbox id and the branch name are one and the same string. The agent gets the whole machine — a shell, a package manager, a filesystem, the network — and nothing runs on your laptop.',
     },
     {
       type: 'p',
@@ -1892,11 +1892,11 @@ triggers:
     { type: 'h2', text: 'Where people actually reach it' },
     {
       type: 'p',
-      text: 'Bind a project to Slack and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread: the reply streams into one message, files move both directions, and a decision it needs from you arrives as a card with buttons. A thread is exactly one session — a unique index in the database, not a convention two services agree to honour.',
+      text: 'Bind a workspace to Slack and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread: the reply streams into one message, files move both directions, and a decision it needs from you arrives as a card with buttons. A thread is exactly one session — a unique index in the database, not a convention two services agree to honour.',
     },
     {
       type: 'p',
-      text: 'The honest list is short, because the platform enum is closed at four. **Slack is live.** Microsoft Teams is code-complete behind an operator switch. Email and voice are experimental and opt in per project. Telegram, WhatsApp, SMS and Discord are not channels, in any tense.',
+      text: 'The honest list is short, because the platform enum is closed at four. **Slack is live.** Microsoft Teams is code-complete behind an operator switch. Email and voice are experimental and opt in per workspace. Telegram, WhatsApp, SMS and Discord are not channels, in any tense.',
     },
     { type: 'h2', text: 'When nobody is asking' },
     {
@@ -1910,7 +1910,7 @@ triggers:
     { type: 'h2', text: 'Permissions and secrets, stated precisely' },
     {
       type: 'p',
-      text: 'People, groups and service accounts are all principals, and a permission attaches to a principal for an action on a resource type. A service account is evaluated purely against its own policies — it never inherits the reach of whoever created it. Secrets are sealed with AES-256-GCM under a key derived per project. And a session receives only the intersection of the agent’s declared grant and the role of the person who started it, so an agent can never out-reach the human who launched it.',
+      text: 'People, groups and service accounts are all principals, and a permission attaches to a principal for an action on a resource type. A service account is evaluated purely against its own policies — it never inherits the reach of whoever created it. Secrets are sealed with AES-256-GCM under a key derived per workspace. And a session receives only the intersection of the agent’s declared grant and the role of the person who started it, so an agent can never out-reach the human who launched it.',
     },
     {
       type: 'callout',
@@ -1918,7 +1918,7 @@ triggers:
     },
     {
       type: 'p',
-      text: 'Approval gates get the same treatment. They are **not on by default** — a project that declares no policy block falls back to allowing actions — so the operator sets the default they want and puts an explicit ask on the step that matters. Audit is the one thing that is not optional: recording is never gated, and only reading, exporting and streaming the record are permissions at all.',
+      text: 'Approval gates get the same treatment. They are **not on by default** — a workspace that declares no policy block falls back to allowing actions — so the operator sets the default they want and puts an explicit ask on the step that matters. Audit is the one thing that is not optional: recording is never gated, and only reading, exporting and streaming the record are permissions at all.',
     },
     { type: 'h2', text: 'What it does on an ordinary Tuesday' },
     {
@@ -1942,7 +1942,7 @@ triggers:
     { type: 'h2', text: 'Read every line, then run it on your own box' },
     {
       type: 'p',
-      text: 'All of it is open source. Kortix is developed in the open at [kortix-ai/suna](https://github.com/kortix-ai/suna) — clone the repo, read what you are trusting, fork it if you want it different. Then run that same product on hardware you control. One Docker Compose stack, built from the images the managed cloud runs, so it is the whole platform rather than a cut-down edition, and the database, the file storage, every project repo, the secrets, the policies and the audit record sit on disk you control.',
+      text: 'All of it is open source. Kortix is developed in the open at [kortix-ai/suna](https://github.com/kortix-ai/suna) — clone the repo, read what you are trusting, fork it if you want it different. Then run that same product on hardware you control. One Docker Compose stack, built from the images the managed cloud runs, so it is the whole platform rather than a cut-down edition, and the database, the file storage, every workspace repo, the secrets, the policies and the audit record sit on disk you control.',
     },
     {
       type: 'code',

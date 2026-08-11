@@ -115,10 +115,10 @@ export interface ProjectSecretsResponse {
   manifest_error?: string;
 }
 
-export async function listProjectSecrets(projectId: string) {
+export async function listProjectSecrets(workspaceId: string) {
   return unwrap(
     await backendApi.get<ProjectSecretsResponse>(
-      `/projects/${projectId}/secrets`,
+      `/projects/${workspaceId}/secrets`,
       // Background read fired from member-visible surfaces (model picker, LLM
       // providers, agent editor) — project.secret.read is editor-tier, so a
       // plain member legitimately 403s here. Callers render their own state.
@@ -128,7 +128,7 @@ export async function listProjectSecrets(projectId: string) {
 }
 
 export async function upsertProjectSecret(
-  projectId: string,
+  workspaceId: string,
   input: {
     name: string;
     /** Unique per project. Defaults to `name` when omitted (the simple case —
@@ -146,31 +146,31 @@ export async function upsertProjectSecret(
     value?: string;
   },
 ) {
-  return unwrap(await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input));
+  return unwrap(await backendApi.post<ProjectSecret>(`/projects/${workspaceId}/secrets`, input));
 }
 
 export async function setProjectSecretStrategy(
-  projectId: string,
+  workspaceId: string,
   identifier: string,
   strategy: SecretDeliveryStrategy,
   options: UpdateSecretStrategyOptions = {},
 ) {
   return unwrap(
     await backendApi.put<ProjectSecret>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/strategy`,
+      `/projects/${workspaceId}/secrets/${encodeURIComponent(identifier)}/strategy`,
       { strategy, ...options },
     ),
   );
 }
 
 export async function brokerProjectSecretRequest(
-  projectId: string,
+  workspaceId: string,
   identifier: string,
   input: SecretBrokerRequest,
 ): Promise<SecretBrokerResponse> {
   return unwrap(
     await backendApi.post<SecretBrokerResponse>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/broker`,
+      `/projects/${workspaceId}/secrets/${encodeURIComponent(identifier)}/broker`,
       input,
     ),
   );
@@ -204,51 +204,51 @@ export type ProviderOAuthPoll =
   | { status: 'failed'; error: string };
 
 export async function startProjectProviderOAuth(
-  projectId: string,
+  workspaceId: string,
   provider: string,
   input?: { sharing?: ConnectorSharing },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
-    await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
+    await backendApi.post<ProviderOAuthStart>(`/projects/${workspaceId}/oauth/${provider}/start`, {
       sharing: input?.sharing,
     }),
   );
 }
 
 export async function pollProjectProviderOAuth(
-  projectId: string,
+  workspaceId: string,
   provider: string,
   flowId: string,
 ): Promise<ProviderOAuthPoll> {
   return unwrap(
-    await backendApi.post<ProviderOAuthPoll>(`/projects/${projectId}/oauth/${provider}/poll`, {
+    await backendApi.post<ProviderOAuthPoll>(`/projects/${workspaceId}/oauth/${provider}/poll`, {
       flow_id: flowId,
     }),
   );
 }
 
-export async function deleteProjectProviderOAuth(projectId: string, provider: string) {
+export async function deleteProjectProviderOAuth(workspaceId: string, provider: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
+      `/projects/${workspaceId}/oauth/${encodeURIComponent(provider)}`,
     ),
   );
 }
 
-export async function upsertProjectGitCredential(projectId: string, input: { token: string }) {
+export async function upsertProjectGitCredential(workspaceId: string, input: { token: string }) {
   return unwrap(
     await backendApi.put<{
       configured: boolean;
       provider: string;
       git_connection: ProjectGitConnection;
-    }>(`/projects/${projectId}/git-credential`, input),
+    }>(`/projects/${workspaceId}/git-credential`, input),
   );
 }
 
-export async function deleteProjectSecret(projectId: string, identifier: string) {
+export async function deleteProjectSecret(workspaceId: string, identifier: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}`,
+      `/projects/${workspaceId}/secrets/${encodeURIComponent(identifier)}`,
     ),
   );
 }
@@ -259,23 +259,23 @@ export async function deleteProjectSecret(projectId: string, identifier: string)
  * value or anyone else's override.
  */
 export async function setPersonalProjectSecret(
-  projectId: string,
+  workspaceId: string,
   name: string,
   input: { value?: string; active?: boolean },
 ) {
   return unwrap(
     await backendApi.put<ProjectSecret>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      `/projects/${workspaceId}/secrets/${encodeURIComponent(name)}/personal`,
       input,
     ),
   );
 }
 
 /** Remove the caller's own override for a key (falls back to the shared value). */
-export async function deletePersonalProjectSecret(projectId: string, name: string) {
+export async function deletePersonalProjectSecret(workspaceId: string, name: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      `/projects/${workspaceId}/secrets/${encodeURIComponent(name)}/personal`,
     ),
   );
 }

@@ -22,7 +22,7 @@ Exit codes:
 
 Options:
   --timeout <seconds>   Give up after this long (default 300).
-  --project <id>        Operate on this project id (default: linked).
+  --workspace <id>        Operate on this workspace id (default: linked).
   --host <name>         Operate against a non-default Kortix host.
   --json                Print {settled, blocked, waited_ms} as JSON.
   -h, --help            Show this help.
@@ -63,12 +63,12 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
     process.stdout.write(HELP);
     return rest.length === 0 ? 2 : 0;
   }
-  let projectArg: string | undefined;
+  let workspaceArg: string | undefined;
   let hostArg: string | undefined;
   let timeoutRaw: string | undefined;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    workspaceArg = takeFlagValue(rest, ['--workspace', '--project']);
     hostArg = takeFlagValue(rest, ['--host']);
     timeoutRaw = takeFlagValue(rest, ['--timeout', '-t']);
     json = takeFlagBool(rest, ['--json']);
@@ -89,14 +89,14 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
 
   const found = await locateSessionAnywhere(
     sessionId,
-    { projectArg, hostArg },
+    { workspaceArg, hostArg },
     (host) => `kortix sessions wait-for ${sessionId} --host ${host}`,
   );
   if (!found) return 1;
   const resolved = {
     session: found.located.session,
     auth: found.located.auth,
-    ctx: { projectId: found.located.projectId },
+    ctx: { workspaceId: found.located.workspaceId },
   };
 
   // `completed` is authoritative. A stopped session can be a manual or
@@ -117,7 +117,7 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
   }
 
   const handle = kortixFromAuth(resolved.auth).session(
-    resolved.ctx.projectId,
+    resolved.ctx.workspaceId,
     resolved.session.session_id,
   );
   const startedAt = Date.now();

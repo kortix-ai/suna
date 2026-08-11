@@ -130,7 +130,7 @@ export interface SandboxProviderAdapter {
    * Optional: resolve a registry-addressable image reference for an
    * ALREADY-BUILT snapshot, for use as `BuildableTemplate.baseImageRef` on a
    * later build (the per-project warm FAST PATH — see builder.ts
-   * `ensurePerProjectWarmImage`). Returns null when the snapshot doesn't exist,
+   * `ensurePerWorkspaceWarmImage`). Returns null when the snapshot doesn't exist,
    * the provider has no such reference to give, or on any lookup error — every
    * caller treats null as "fall back to the full rebuild path", never as a
    * hard failure. Absent on providers that don't expose an image reference at

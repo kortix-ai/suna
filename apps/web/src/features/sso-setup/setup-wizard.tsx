@@ -632,7 +632,7 @@ function ImportForm({
   const [claim, setClaim] = useState(config.groupClaimName);
   const [autoCreate, setAutoCreate] = useState(true);
   // Default ON: connecting an IdP should make its groups appear in Kortix
-  // without hand-mapping each claim — the admin just attaches project roles.
+  // without hand-mapping each claim — the admin just attaches workspace roles.
   // (Groups auto-created this way are source='sso' and never annex manual
   // groups; the toggle stays for admins who want mapping-only.)
   const [autoProvision, setAutoProvision] = useState(true);

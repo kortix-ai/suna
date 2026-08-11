@@ -14,6 +14,37 @@ import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
  * re-injected on the next restart.
  */
 describe('mergeProjectEnv — revocation', () => {
+  test('canonical Workspace boot variables initialize the secret store', () => {
+    const bootEnv = {
+      KORTIX_WORKSPACE_SECRETS_REVISION: 'workspace-r1',
+      KORTIX_WORKSPACE_SECRET_NAMES: 'API_KEY',
+      API_KEY: 'workspace-secret',
+    }
+    const store = createProjectEnvStore(bootEnv)
+    expect(store.snapshot()).toMatchObject({
+      revision: 'workspace-r1',
+      names: ['API_KEY'],
+      env: { API_KEY: 'workspace-secret' },
+    })
+  })
+
+  test('canonical Workspace variables win when both rollout generations exist', () => {
+    const bootEnv = {
+      KORTIX_WORKSPACE_SECRETS_REVISION: 'workspace-r2',
+      KORTIX_WORKSPACE_SECRET_NAMES: 'WORKSPACE_KEY',
+      KORTIX_PROJECT_SECRETS_REVISION: 'project-r1',
+      KORTIX_PROJECT_SECRET_NAMES: 'PROJECT_KEY',
+      WORKSPACE_KEY: 'canonical',
+      PROJECT_KEY: 'legacy',
+    }
+    const store = createProjectEnvStore(bootEnv)
+    expect(store.snapshot()).toMatchObject({
+      revision: 'workspace-r2',
+      names: ['WORKSPACE_KEY'],
+      env: { WORKSPACE_KEY: 'canonical' },
+    })
+  })
+
   test('a revoked BOOT secret is cleared, not carried over from process.env', () => {
     const bootEnv = {
       KORTIX_PROJECT_SECRETS_REVISION: 'r1',

@@ -23,7 +23,7 @@ const loadDomMaxFeatures = () => import('@/lib/motion/dom-max').then((mod) => mo
  * Loads `domMax`, not `domAnimation`. This app has real `layout` usage (bare
  * boolean shorthand `<m.div layout>`, easy to miss with a naive grep) spread
  * across general-tab.tsx, queued-messages.tsx, step-connectors.tsx,
- * projects-page.tsx, and review-center.tsx — 10 sites total. A single global
+ * workspaces-page.tsx, and review-center.tsx — 10 sites total. A single global
  * `LazyMotion` at `domAnimation` plus a second, narrower `domMax` boundary
  * around just the sites that need it was considered and rejected: feature
  * loading in framer-motion is a *global* registry

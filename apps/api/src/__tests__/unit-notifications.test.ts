@@ -11,7 +11,7 @@ mock.module('../config', () => ({
   config: mockConfig,
 }));
 
-const { sendAccountInviteEmail, sendProjectAccessRequestEmail } = await import('../accounts/email');
+const { sendAccountInviteEmail, sendWorkspaceAccessRequestEmail } = await import('../accounts/email');
 
 const originalFetch = globalThis.fetch;
 let calls: Array<{ url: string; init: RequestInit }> = [];
@@ -74,12 +74,12 @@ describe('notification emails', () => {
     expect(calls).toHaveLength(0);
   });
 
-  test('sends project access request emails to the Members review surface', async () => {
-    const result = await sendProjectAccessRequestEmail({
+  test('sends Workspace access request emails to the Members review surface', async () => {
+    const result = await sendWorkspaceAccessRequestEmail({
       email: 'manager@example.test',
-      projectName: 'Slack <Auth>',
+      workspaceName: 'Slack <Auth>',
       requesterEmail: 'requester@example.test',
-      reviewUrl: 'https://app.example.test/projects/proj-1/customize/members',
+      reviewUrl: 'https://app.example.test/workspaces/workspace-1/customize/members',
       message: 'Please approve <this account>.',
     });
 
@@ -89,7 +89,10 @@ describe('notification emails', () => {
     expect(payload.to).toEqual([{ email: 'manager@example.test' }]);
     expect(payload.subject).toBe('requester@example.test requested access to Slack <Auth>');
     expect(payload.category).toBe('project-access-request');
-    expect(payload.html).toContain('https://app.example.test/projects/proj-1/customize/members');
+    expect(payload.html).toContain('Review Workspace access');
+    expect(payload.html).toContain(
+      'https://app.example.test/workspaces/workspace-1/customize/members',
+    );
     expect(payload.html).toContain('Slack &lt;Auth&gt;');
     expect(payload.html).toContain('Please approve &lt;this account&gt;.');
   });

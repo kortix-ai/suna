@@ -23,7 +23,7 @@ mock.module('../selection', () => ({
   setChannelAgent: async () => true,
   setChannelConversationPolicy: async () => true,
   setChannelModel: async () => true,
-  listProjectAgents: async () => [],
+  listWorkspaceAgents: async () => [],
   isValidModelId: () => true,
 }));
 mock.module('../model-gate', () => ({ channelModelContext: async () => null }));

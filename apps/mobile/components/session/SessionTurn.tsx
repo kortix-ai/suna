@@ -2473,13 +2473,13 @@ function ToolCard({
       ? tool.state.output
       : '';
     const idMatch = output.match(/proj-[a-z0-9-]+/);
-    const projectId = idMatch ? idMatch[0] : (input.name as string) || (input.project as string) || '';
-    if (!projectId) return null;
+    const workspaceId = idMatch ? idMatch[0] : (input.name as string) || (input.project as string) || '';
+    if (!workspaceId) return null;
 
     const displayName =
       (normalized === 'project_select' ? (input.project as string) : (input.name as string)) ||
-      projectId;
-    return { projectId, displayName };
+      workspaceId;
+    return { workspaceId, displayName };
   }, [tool.tool, tool.state, input]);
 
   const chevronRotation = useSharedValue(0);
@@ -2489,10 +2489,10 @@ function ToolCard({
     if (projectNavTarget) {
       useTabStore
         .getState()
-        .setTabState(`page:project:${projectNavTarget.projectId}`, {
+        .setTabState(`page:project:${projectNavTarget.workspaceId}`, {
           projectName: projectNavTarget.displayName,
         });
-      useTabStore.getState().navigateToPage(`page:project:${projectNavTarget.projectId}`);
+      useTabStore.getState().navigateToPage(`page:project:${projectNavTarget.workspaceId}`);
       return;
     }
     if (!hasExpandable && !isRunning) return;

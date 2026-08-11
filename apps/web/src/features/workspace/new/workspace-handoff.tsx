@@ -21,9 +21,9 @@ const CAPTION_IN = { duration: 0.24, delay: 0.12, ease: EASE_OUT };
  * The bridge between `/new`'s create form and the onboarding wizard.
  *
  * ONE component covers BOTH waiting windows, and that is the whole point:
- * 1. `create` is in flight (`submitting`) — no project id yet.
- * 2. the project exists and `/new?onboarding=<id>` is set, but the wizard is
- *    still `null` while `getProjectDetail` settles.
+ * 1. `create` is in flight (`submitting`) — no workspace id yet.
+ * 2. the workspace exists and `/new?onboarding=<id>` is set, but the wizard is
+ *    still `null` while `getWorkspaceDetail` settles.
  *
  * These used to be two different screens — a phase checklist, then a bare
  * `size-4` spinner with a link — so the moment the create SUCCEEDED was
@@ -51,12 +51,12 @@ const CAPTION_IN = { duration: 0.24, delay: 0.12, ease: EASE_OUT };
  */
 export function WorkspaceHandoff({
   workspaceName,
-  projectId,
+  workspaceId,
 }: {
   workspaceName: string;
-  /** `null` during window 1 — there is nowhere to link to until the project
+  /** `null` during window 1 — there is nowhere to link to until the workspace
    *  exists, so the escape hatch is not rendered at all rather than disabled. */
-  projectId: string | null;
+  workspaceId: string | null;
 }) {
   const reduceMotion = useReducedMotion();
 

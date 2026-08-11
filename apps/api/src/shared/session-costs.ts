@@ -18,14 +18,14 @@ import {
   lt,
   sql,
 } from 'drizzle-orm';
-import { resolveSessionOwnerIdentities } from '../projects/lib/access';
-import type { SessionOwnerIdentity } from '../projects/lib/session-inventory';
+import { resolveSessionOwnerIdentities } from '../workspaces/lib/access';
+import type { SessionOwnerIdentity } from '../workspaces/lib/session-inventory';
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
 
 type NumericValue = number | string | null | undefined;
 type TemporalValue = Date | string | null | undefined;
-type ProjectSessionStatus = typeof projectSessions.$inferSelect.status;
+type WorkspaceSessionStatus = typeof projectSessions.$inferSelect.status;
 
 export class InvalidSessionCostQueryError extends Error {
   constructor(message: string) {
@@ -42,7 +42,7 @@ export interface SessionCostSummary {
   owner_type: 'user' | 'service_account' | 'unknown' | null;
   owner_name: string | null;
   owner_email: string | null;
-  status: ProjectSessionStatus;
+  status: WorkspaceSessionStatus;
   created_at: string;
   updated_at: string;
   last_activity_at: string | null;
@@ -131,10 +131,10 @@ export interface SessionCostListResponse {
 
 interface SessionBaseRow {
   sessionId: string;
-  projectId: string;
+  workspaceId: string;
   projectName: string;
   ownerId: string | null;
-  status: ProjectSessionStatus;
+  status: WorkspaceSessionStatus;
   createdAt: TemporalValue;
   updatedAt: TemporalValue;
 }
@@ -253,7 +253,7 @@ export function assembleSessionCostSummary(input: {
 
   return {
     session_id: input.session.sessionId,
-    project_id: input.session.projectId,
+    project_id: input.session.workspaceId,
     project_name: input.session.projectName,
     owner_id: input.session.ownerId,
     owner_type: ownerType,
@@ -455,7 +455,7 @@ async function loadSessionTotals(
 async function loadReconciliation(
   accountId: string,
   window: CostWindow,
-  projectId?: string,
+  workspaceId?: string,
 ): Promise<SessionCostReconciliation> {
   // The unassigned-cost figure has to describe the same period as the table it
   // sits beside, so it carries the caller's window on the same columns the
@@ -466,7 +466,7 @@ async function loadReconciliation(
     gte(gatewayRequestLogs.createdAt, window.from),
     lt(gatewayRequestLogs.createdAt, window.to),
   ];
-  if (projectId) llmConditions.push(eq(gatewayRequestLogs.projectId, projectId));
+  if (workspaceId) llmConditions.push(eq(gatewayRequestLogs.workspaceId, workspaceId));
 
   const computeConditions: SQL[] = [
     eq(sandboxComputeSessions.accountId, accountId),
@@ -474,7 +474,7 @@ async function loadReconciliation(
     gte(sandboxComputeSessions.startedAt, window.from.toISOString()),
     lt(sandboxComputeSessions.startedAt, window.to.toISOString()),
   ];
-  if (projectId) computeConditions.push(eq(sessionSandboxes.projectId, projectId));
+  if (workspaceId) computeConditions.push(eq(sessionSandboxes.workspaceId, workspaceId));
 
   const [llmResult, computeResult] = await Promise.all([
     db
@@ -579,7 +579,7 @@ export function compareSessionCostRows(sort: CostSort) {
 
 export async function listSessionCosts(input: {
   accountId: string;
-  projectId?: string;
+  workspaceId?: string;
   ownerId?: string;
   window: CostWindow;
   sort: CostSort;
@@ -596,7 +596,7 @@ export async function listSessionCosts(input: {
   const compute = computeAggregateSubquery(input.accountId, window);
 
   const conditions: SQL[] = [eq(projectSessions.accountId, input.accountId)];
-  if (input.projectId) conditions.push(eq(projectSessions.projectId, input.projectId));
+  if (input.workspaceId) conditions.push(eq(projectSessions.workspaceId, input.workspaceId));
   if (input.ownerId) conditions.push(eq(projectSessions.createdBy, input.ownerId));
 
   const totalCostExpression = sql<number>`(coalesce(${llm.llmCost}, 0) + coalesce(${compute.computeCost}, 0))`;
@@ -615,7 +615,7 @@ export async function listSessionCosts(input: {
     db
       .select({
         sessionId: projectSessions.sessionId,
-        projectId: projectSessions.projectId,
+        workspaceId: projectSessions.workspaceId,
         projectName: projects.name,
         ownerId: projectSessions.createdBy,
         status: projectSessions.status,
@@ -635,7 +635,7 @@ export async function listSessionCosts(input: {
         computeLastAt: compute.lastAt,
       })
       .from(projectSessions)
-      .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+      .innerJoin(projects, eq(projects.workspaceId, projectSessions.workspaceId))
       .leftJoin(llm, eq(llm.sessionId, projectSessions.sessionId))
       .leftJoin(compute, eq(compute.sessionId, projectSessions.sessionId))
       .where(and(...conditions))
@@ -646,7 +646,7 @@ export async function listSessionCosts(input: {
       .select({ total: count() })
       .from(projectSessions)
       .where(and(...conditions)),
-    loadReconciliation(input.accountId, window, input.projectId),
+    loadReconciliation(input.accountId, window, input.workspaceId),
   ]);
 
   const ownerIds = sessionRows
@@ -818,19 +818,19 @@ async function loadLedgerEntries(
 
 export async function getSessionCostRecord(input: {
   accountId: string;
-  projectId?: string;
+  workspaceId?: string;
   sessionId: string;
 }): Promise<SessionCostDetail | null> {
   const conditions: SQL[] = [
     eq(projectSessions.accountId, input.accountId),
     eq(projectSessions.sessionId, input.sessionId),
   ];
-  if (input.projectId) conditions.push(eq(projectSessions.projectId, input.projectId));
+  if (input.workspaceId) conditions.push(eq(projectSessions.workspaceId, input.workspaceId));
 
   const [session] = await db
     .select({
       sessionId: projectSessions.sessionId,
-      projectId: projectSessions.projectId,
+      workspaceId: projectSessions.workspaceId,
       projectName: projects.name,
       ownerId: projectSessions.createdBy,
       status: projectSessions.status,
@@ -838,7 +838,7 @@ export async function getSessionCostRecord(input: {
       updatedAt: projectSessions.updatedAt,
     })
     .from(projectSessions)
-    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .innerJoin(projects, eq(projects.workspaceId, projectSessions.workspaceId))
     .where(and(...conditions))
     .limit(1);
   if (!session) return null;
@@ -863,9 +863,9 @@ export async function getSessionCostRecord(input: {
   };
 }
 
-export async function listProjectGatewaySessionSpend(input: {
+export async function listWorkspaceGatewaySessionSpend(input: {
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   days: number;
 }): Promise<{ window_days: number; sessions: LegacyGatewaySessionRow[] }> {
   const [llmRows, computeRows] = await Promise.all([
@@ -883,7 +883,7 @@ export async function listProjectGatewaySessionSpend(input: {
       .where(
         and(
           eq(gatewayRequestLogs.accountId, input.accountId),
-          eq(gatewayRequestLogs.projectId, input.projectId),
+          eq(gatewayRequestLogs.workspaceId, input.workspaceId),
           sql`${gatewayRequestLogs.sessionId} is not null`,
           sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${input.days})`,
         ),
@@ -902,7 +902,7 @@ export async function listProjectGatewaySessionSpend(input: {
         and(
           eq(sandboxComputeSessions.accountId, input.accountId),
           eq(sessionSandboxes.accountId, input.accountId),
-          eq(sessionSandboxes.projectId, input.projectId),
+          eq(sessionSandboxes.workspaceId, input.workspaceId),
           sql`${sandboxComputeSessions.sessionId} is not null`,
           sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${input.days})`,
         ),

@@ -1,18 +1,18 @@
 /**
  * Wrapper-mode runtime ownership.
  *
- * The store maps one opaque runtime external id to its Kortix project id.
+ * The store maps one opaque runtime external id to its Kortix workspace id.
  * The BFF records the mapping from an authenticated session `/start`
- * response. Runtime proxy requests then reuse the existing project ownership
+ * response. Runtime proxy requests then reuse the existing workspace ownership
  * check. Unknown runtime ids fail closed.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { isValidProjectId } from './users';
+import { isValidWorkspaceId } from './users';
 
 interface RuntimeEntry {
-  projectId: string;
+  workspaceId: string;
   recordedAt: number;
 }
 
@@ -42,11 +42,11 @@ function isValidRuntimeId(runtimeId: string): boolean {
   return RUNTIME_ID_RE.test(runtimeId);
 }
 
-export function recordRuntimeProject(runtimeId: string, projectId: string): void {
-  if (!isValidRuntimeId(runtimeId) || !isValidProjectId(projectId)) return;
+export function recordRuntimeWorkspace(runtimeId: string, workspaceId: string): void {
+  if (!isValidRuntimeId(runtimeId) || !isValidWorkspaceId(workspaceId)) return;
 
   const data = readData();
-  data[runtimeId] = { projectId, recordedAt: Date.now() };
+  data[runtimeId] = { workspaceId, recordedAt: Date.now() };
 
   const entries = Object.entries(data);
   if (entries.length > MAX_RUNTIME_ENTRIES) {
@@ -59,8 +59,8 @@ export function recordRuntimeProject(runtimeId: string, projectId: string): void
   writeData(data);
 }
 
-export function resolveRuntimeProject(runtimeId: string): string | null {
+export function resolveRuntimeWorkspace(runtimeId: string): string | null {
   if (!isValidRuntimeId(runtimeId)) return null;
   const entry = readData()[runtimeId];
-  return entry && isValidProjectId(entry.projectId) ? entry.projectId : null;
+  return entry && isValidWorkspaceId(entry.workspaceId) ? entry.workspaceId : null;
 }

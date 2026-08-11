@@ -1,0 +1,65 @@
+'use client';
+
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { listFiles } from '../api/runtime-files';
+import { useWorkspaceContext } from '../context';
+import type { FileNode } from '@/features/file-browser/types';
+
+export const fileListKeys = {
+  all: ['workspace-files', 'list'] as const,
+  dir: (workspaceId: string, ref: string, dirPath: string) =>
+    ['workspace-files', 'list', workspaceId, ref, dirPath] as const,
+};
+
+/**
+ * Fetch the directory listing for a path on the active project.
+ *
+ * Uses GET /v1/projects/:workspaceId/files (recursive list, filtered client-side
+ * down to immediate children of `dirPath`).
+ */
+export function useFileList(
+  dirPath: string,
+  options?: { enabled?: boolean },
+) {
+  const ctx = useWorkspaceContext();
+  const workspaceId = ctx?.workspaceId ?? '';
+  const ref = ctx?.ref ?? '';
+
+  return useQuery<FileNode[]>({
+    queryKey: fileListKeys.dir(workspaceId, ref, dirPath),
+    queryFn: () => listFiles(workspaceId, ref, dirPath),
+    enabled: !!workspaceId && !!ref && !!dirPath && options?.enabled !== false,
+    staleTime: 5_000,
+    gcTime: 2 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: (failureCount, error: Error) => {
+      // `error` is whatever the queryFn rejected with — React Query does not
+      // guarantee it's an `Error` with a string `message`, so guard before
+      // calling `.includes` (a non-string `message` previously crashed here
+      // with `TypeError: t.message.includes is not a function`).
+      const msg = typeof error?.message === 'string' ? error.message : '';
+      if (msg.includes('404') || msg.includes('403')) return false;
+      return failureCount < 3;
+    },
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
+  });
+}
+
+export function useInvalidateFileList() {
+  const queryClient = useQueryClient();
+  const ctx = useWorkspaceContext();
+  const workspaceId = ctx?.workspaceId ?? '';
+  const ref = ctx?.ref ?? '';
+
+  return (dirPath?: string) => {
+    if (dirPath) {
+      queryClient.invalidateQueries({
+        queryKey: fileListKeys.dir(workspaceId, ref, dirPath),
+      });
+    } else {
+      queryClient.invalidateQueries({
+        queryKey: fileListKeys.all,
+      });
+    }
+  };
+}

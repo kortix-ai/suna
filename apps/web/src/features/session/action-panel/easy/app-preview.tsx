@@ -174,7 +174,7 @@ export function AppPreview({
   }, [current, name, port]);
 
   const shareLink = usePublicShareLink({
-    projectId: shareContext?.projectId,
+    workspaceId: shareContext?.workspaceId,
     sessionId: shareContext?.sessionId,
     input: shareInput,
   });

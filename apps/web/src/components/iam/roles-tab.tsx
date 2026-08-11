@@ -473,7 +473,7 @@ function RoleDialog({
   const [keyTouched, setKeyTouched] = useState(isEdit);
   const [description, setDescription] = useState(role?.description ?? '');
   const [resourceType, setResourceType] = useState<ResourceType>(
-    role?.resource_type ?? prefill?.resourceType ?? 'project',
+    role?.resource_type ?? prefill?.resourceType ?? 'workspace',
   );
   const [selected, setSelected] = useState<Set<string>>(() => new Set(prefill?.actions ?? []));
   const [search, setSearch] = useState('');
@@ -671,7 +671,7 @@ function RoleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="project">Project</SelectItem>
+                <SelectItem value="workspace">Workspace</SelectItem>
                 <SelectItem value="account">Account</SelectItem>
               </SelectContent>
             </Select>

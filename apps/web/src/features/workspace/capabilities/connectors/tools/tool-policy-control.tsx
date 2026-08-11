@@ -21,7 +21,7 @@ export interface ToolPolicyControlProps {
   label: string;
   /** A write is in flight, or the caller may not write. */
   disabled?: boolean;
-  /** Set when a project rule decides this tool: disables the group and says why. */
+  /** Set when a workspace rule decides this tool: disables the group and says why. */
   lockedReason?: string;
   /** Shown while `value` is `'default'` — what following the default DOES. */
   defaultHint?: string;
@@ -40,7 +40,7 @@ export interface ToolPolicyControlProps {
  * `transition-property: transform` does not cover — the press would snap. The
  * explicit list also replaces `Button`'s base `transition-all`
  * (`button.tsx:8`), which the polish rules treat as a defect. Same override,
- * same reason, as `project-icon-field.tsx:217`.
+ * same reason, as `workspace-icon-field.tsx:217`.
  */
 export function ToolPolicyControl({
   value,

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 
 import { TemplateSessionInstallDialog } from './template-session-install-dialog';
 
-/** "Use this template" — opens a guided install *session* in the project, where an
+/** "Use this template" — opens a guided install *session* in the workspace, where an
  *  agent sets the automation up conversationally (via the marketplace
  *  install-session). The button is gated at the page level by KORTIX_TEMPLATES_ENABLED. */
 export function UseTemplateButton({

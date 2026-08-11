@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { perProjectWarmImageName, proj8 } from './ppwarm-names';
+import { perWorkspaceWarmImageName, proj8 } from './ppwarm-names';
 import { QUOTA_GC_ORG_HIGH_WATER, ppwarmTpl8, selectSnapshotsToReap, type SnapshotLike } from './quota-gc-select';
 
 const NOW = Date.parse('2026-07-25T00:00:00Z');
@@ -27,7 +27,7 @@ const BASE = 'kortix-default-r1';
 
 describe('ppwarmTpl8', () => {
   test('parses the tpl8 segment of a new-format name', () => {
-    const name = perProjectWarmImageName(PROJ, 'tip1', BASE, 'custom-tpl');
+    const name = perWorkspaceWarmImageName(PROJ, 'tip1', BASE, 'custom-tpl');
     const expectedTpl8 = name.split('-')[3];
     expect(ppwarmTpl8(name)).toBe(expectedTpl8);
   });
@@ -43,9 +43,9 @@ describe('ppwarmTpl8', () => {
 
 describe('selectSnapshotsToReap — ppwarm superseded-tip rule is template-scoped', () => {
   test('a second template does not supersede — or get superseded by — the default', () => {
-    const defaultCur = perProjectWarmImageName(PROJ, 'tip2', BASE, 'default');
-    const defaultOld = perProjectWarmImageName(PROJ, 'tip1', BASE, 'default');
-    const customCur = perProjectWarmImageName(PROJ, 'tip2', BASE, 'custom-tpl');
+    const defaultCur = perWorkspaceWarmImageName(PROJ, 'tip2', BASE, 'default');
+    const defaultOld = perWorkspaceWarmImageName(PROJ, 'tip1', BASE, 'default');
+    const customCur = perWorkspaceWarmImageName(PROJ, 'tip2', BASE, 'custom-tpl');
 
     const all = padToOrgSize(
       [

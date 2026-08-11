@@ -1,0 +1,220 @@
+/**
+ * Deprecated Project-named root exports.
+ *
+ * The canonical root exports the Workspace client. This compatibility barrel
+ * keeps each published Project name reachable without re-exporting duplicate
+ * account, billing, connector, and runtime declarations.
+ */
+export {
+  archiveProject,
+  createProject,
+  createProjectRepo,
+  fetchProjectsForAccountWithToken,
+  getProject,
+  getProjectDetail,
+  getProjectGitToken,
+  getProjectLlmCatalog,
+  getProjectLlmCatalogProviders,
+  getProjectModelPicker,
+  getProjectSandboxProviderTransition,
+  isManagedGithubProject,
+  listProjects,
+  listProjectsForAccount,
+  provisionProject,
+  provisionProjectStream,
+  provisionProjectWithToken,
+  setProjectOnboardingComplete,
+  setProjectOnboardingProfile,
+  updateProject,
+  updateProjectSandboxProvider,
+  validateProjectManifest,
+  type CreateProjectRepoInput,
+  type KortixProject,
+  type ProjectConfigSummary,
+  type ProjectDetail,
+  type ProjectGitToken,
+  type ProjectGlyph,
+  type ProjectInput,
+  type ProjectLlmCatalogProvider,
+  type ProjectLlmCatalogProvidersResponse,
+  type ProjectLlmCatalogResponse,
+  type ProvisionProjectInput,
+  type ProvisionProjectWithTokenResult,
+  type UpdateProjectSandboxProviderResult,
+} from './projects';
+export {
+  approveProjectAccessRequest,
+  attachGroupToProject,
+  createProjectResourceGrant,
+  deleteProjectResourceGrant,
+  detachGroupFromProject,
+  inviteProjectMember,
+  listPendingProjectInvites,
+  listProjectAccess,
+  listProjectAccessRequests,
+  listProjectGroupGrants,
+  listProjectResourceGrants,
+  rejectProjectAccessRequest,
+  requestProjectAccess,
+  resendPendingProjectInvite,
+  revokePendingProjectInvite,
+  revokeProjectAccess,
+  updateProjectAccess,
+  updateProjectGroupGrant,
+  type InviteProjectMemberResult,
+  type PendingProjectInvite,
+  type ProjectAccessMember,
+  type ProjectAccessRequest,
+  type ProjectAccessResponse,
+  type ProjectAgentResourceItem,
+  type ProjectGroupAccessSource,
+  type ProjectGroupGrant,
+  type ProjectResourceGrant,
+  type ProjectResourceGrantsResponse,
+  type ProjectResourceItem,
+  type RequestProjectAccessResult,
+  type ResendProjectInviteResult,
+} from './access';
+export {
+  brokerProjectSecretRequest,
+  deletePersonalProjectSecret,
+  deleteProjectProviderOAuth,
+  deleteProjectSecret,
+  listProjectSecrets,
+  pollProjectProviderOAuth,
+  setPersonalProjectSecret,
+  setProjectSecretStrategy,
+  startProjectProviderOAuth,
+  upsertProjectGitCredential,
+  upsertProjectSecret,
+  type ProjectSecret,
+  type ProjectSecretsResponse,
+} from './secrets';
+export { ensureProjectConnectorConnection } from './connectors';
+export {
+  listProjectPolicies,
+  setProjectPolicies,
+  type ProjectPoliciesResponse,
+  type ProjectPolicy,
+} from './policies';
+export {
+  getProjectSandboxHealth,
+  listProjectSandboxTemplates,
+  listProjectSandboxes,
+  listProjectSnapshots,
+  rebuildProjectSnapshot,
+  type ProjectSandboxHealth,
+  type ProjectSnapshotBuild,
+  type ProjectSnapshotStatus,
+  type ProjectSnapshotsResponse,
+} from './sandbox';
+export {
+  fetchProjectArchive,
+  listProjectFiles,
+  readProjectFile,
+  searchProjectFiles,
+  type ProjectFileSearchMatch,
+  type ProjectFileSearchResponse,
+} from './files';
+export {
+  getProjectCommit,
+  getProjectCommitDiff,
+  getProjectFileHistory,
+  listProjectBranches,
+  listProjectCommits,
+  type ProjectBranch,
+  type ProjectBranchesResponse,
+  type ProjectCommit,
+  type ProjectCommitDetail,
+  type ProjectCommitDiffResponse,
+  type ProjectCommitFile,
+  type ProjectCommitsResponse,
+  type ProjectFileHistoryResponse,
+} from './git-history';
+export {
+  claimWarmProjectSession,
+  createProjectSession,
+  deleteProjectSession,
+  ensureWarmProjectSession,
+  getProjectSession,
+  getProjectSessionConfigState,
+  getProjectSessionScope,
+  listProjectSessions,
+  reloadProjectSessionConfig,
+  reloadProjectSessionConfigStream,
+  restartProjectSession,
+  setProjectSessionModel,
+  setProjectSessionScope,
+  setProjectSessionSharing,
+  stopProjectSession,
+  updateProjectSession,
+  type ClaimWarmProjectSessionInput,
+  type CreateProjectSessionInput,
+  type ProjectOpenCodeSession,
+  type ProjectSession,
+  type ProjectSessionStatus,
+  type WarmProjectSessionResult,
+  type WarmProjectSessionWorkspaceRefresh,
+} from './sessions';
+export {
+  createProjectTrigger,
+  deleteProjectTrigger,
+  fireProjectTrigger,
+  listProjectTriggers,
+  setProjectTriggersActivation,
+  updateProjectTrigger,
+  type CreateProjectTriggerInput,
+  type FireProjectTriggerResponse,
+  type ProjectTrigger,
+  type ProjectTriggerListing,
+  type ProjectTriggerParseError,
+  type ProjectTriggerSessionMode,
+  type ProjectTriggerType,
+  type UpdateProjectTriggerInput,
+} from './triggers';
+export {
+  projectSessionStartSeed,
+  startProjectSession,
+  type ProjectSessionSandbox,
+  type ProjectSessionSandboxStatus,
+} from './session-sandbox';
+export { setProjectModelEnablement } from './model-enablement';
+export {
+  updateProjectDefaultAgent,
+  type UpdateProjectDefaultAgentResponse,
+} from './agent-config';
+export {
+  listCostByProject,
+  type ListCostByProjectOptions,
+  type ProjectCostExportOptions,
+  type ProjectCostPage,
+  type ProjectCostRow,
+  type ProjectCostSort,
+} from './session-costs';
+export type { GatewayProjectRoutingPolicy } from './gateway';
+export {
+  listGroupProjectGrants,
+  listMemberProjectAccess,
+  type GroupProjectGrant,
+  type MemberProjectAccess,
+} from './iam';
+export {
+  createProjectCliToken,
+  listProjectCliTokens,
+  revokeProjectCliToken,
+  type CreatedProjectCliToken,
+  type ProjectCliToken,
+  type ProjectCliTokenListResponse,
+} from './tokens';
+export { listProjectAudit } from './audit';
+export {
+  requestProjectConnector,
+  requestProjectSecret,
+  type RequestProjectConnectorInput,
+  type RequestProjectSecretInput,
+} from './setup-links';
+export type {
+  ProjectFileEntry,
+  ProjectGitConnection,
+  ProjectRole,
+} from './shared';

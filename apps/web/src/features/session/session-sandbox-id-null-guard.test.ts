@@ -2,29 +2,29 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { ProjectSession } from '@kortix/sdk';
-import { projectSessionStartSeed } from '@kortix/sdk';
+import type { WorkspaceSession } from '@kortix/sdk';
+import { workspaceSessionStartSeed } from '@kortix/sdk';
 
 // Regression for Better Stack pattern e6d0e044 —
 // `TypeError: Cannot read properties of null (reading 'slice')` thrown on the
 // co-worker session page (`/projects/:id/sessions/:sessionId`). A render-path
 // `.slice()` on `sandbox.sandbox_id` crashed when `sandbox` was truthy but
 // `sandbox_id` resolved to `null`. The null reached the page through a
-// `projectSessionStartSeed` cache seed: the
+// `workspaceSessionStartSeed` cache seed: the
 // `project_sessions.sandbox_id` column is nullable (legacy Suna-migration rows
 // are minted with it null and provisioning only writes `sandbox_url`), so the
-// seed produced a `ProjectSessionSandbox` carrying a `null` `sandbox_id`, which
+// seed produced a `WorkspaceSessionSandbox` carrying a `null` `sandbox_id`, which
 // `useSession` then handed straight to the page.
 
 const pageSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+  join(import.meta.dir, '../../app/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx'),
   'utf8',
 );
 
-function runningSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
+function runningSession(overrides: Partial<WorkspaceSession> = {}): WorkspaceSession {
   return {
     session_id: 'S1',
-    project_id: 'P1',
+    workspace_id: 'P1',
     account_id: 'acct-1',
     branch_name: 'S1',
     base_ref: 'main',
@@ -42,7 +42,7 @@ function runningSession(overrides: Partial<ProjectSession> = {}): ProjectSession
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-02T00:00:00Z',
     ...overrides,
-  } satisfies ProjectSession;
+  } satisfies WorkspaceSession;
 }
 
 describe('session-page sandbox_id null guard (BS e6d0e044)', () => {
@@ -61,9 +61,9 @@ describe('session-page sandbox_id null guard (BS e6d0e044)', () => {
     );
   });
 
-  test('projectSessionStartSeed drops a running row whose sandbox_id is null (the producer guard)', () => {
+  test('workspaceSessionStartSeed drops a running row whose sandbox_id is null (the producer guard)', () => {
     // Happy path: a normal running row with all fields set seeds a ready sandbox.
-    const seeded = projectSessionStartSeed(runningSession());
+    const seeded = workspaceSessionStartSeed(runningSession());
     expect(seeded).not.toBeNull();
     expect(seeded?.sandbox?.sandbox_id).toBe('sbx-db-1');
 
@@ -73,9 +73,9 @@ describe('session-page sandbox_id null guard (BS e6d0e044)', () => {
     // (migration rows are minted null and never back-filled), so the runtime
     // path is exercised through a cast here.
     expect(
-      projectSessionStartSeed(runningSession({ sandbox_id: null as unknown as string })),
+      workspaceSessionStartSeed(runningSession({ sandbox_id: null as unknown as string })),
     ).toBeNull();
     // An empty-string id is equally invalid (the label would render "session ").
-    expect(projectSessionStartSeed(runningSession({ sandbox_id: '' }))).toBeNull();
+    expect(workspaceSessionStartSeed(runningSession({ sandbox_id: '' }))).toBeNull();
   });
 });

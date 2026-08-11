@@ -72,14 +72,14 @@ export function AgentSelector({
     );
   }, [primaryAgents, search]);
 
-  // The platform coordinator is not a project agent — it renders in its own
+  // The platform coordinator is not a workspace agent — it renders in its own
   // group so the split between platform-owned and repo-declared agents is
   // visible at a glance.
   const filteredMeta = useMemo(
     () => filteredPrimary.filter((a) => isMetaAgentName(a.name)),
     [filteredPrimary],
   );
-  const filteredProject = useMemo(
+  const filteredWorkspace = useMemo(
     () => filteredPrimary.filter((a) => !isMetaAgentName(a.name)),
     [filteredPrimary],
   );
@@ -190,7 +190,7 @@ export function AgentSelector({
         />
 
         <CommandList className="max-h-[320px]">
-          {/* Platform coordinator — separated from the project's own agents. */}
+          {/* Platform coordinator — separated from the workspace's own agents. */}
           {filteredMeta.length > 0 && (
             <CommandGroup heading="Platform" forceMount>
               {filteredMeta.map((agent) => renderAgentItem(agent, true))}
@@ -198,9 +198,9 @@ export function AgentSelector({
           )}
 
           {/* Project agents */}
-          {filteredProject.length > 0 && (
+          {filteredWorkspace.length > 0 && (
             <CommandGroup heading="Agents" forceMount>
-              {filteredProject.map((agent) => renderAgentItem(agent, false))}
+              {filteredWorkspace.map((agent) => renderAgentItem(agent, false))}
             </CommandGroup>
           )}
 

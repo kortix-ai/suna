@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { ONBOARDING_PARAM, onboardingPath, readOnboardingParam } from './onboarding-param';
 
 describe('readOnboardingParam', () => {
-  test('returns the project id', () => {
+  test('returns the workspace id', () => {
     expect(readOnboardingParam(new URLSearchParams('onboarding=proj_1'))).toBe('proj_1');
   });
 
@@ -26,7 +26,7 @@ describe('readOnboardingParam', () => {
 });
 
 describe('onboardingPath', () => {
-  test('builds the /new path carrying the project id', () => {
+  test('builds the /new path carrying the workspace id', () => {
     expect(onboardingPath('proj_1')).toBe('/new?onboarding=proj_1');
   });
 

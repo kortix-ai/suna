@@ -11,18 +11,18 @@ session lifecycle in depth.
 ## The client
 
 `createKortix(config)` returns one client. Every method is a typed call to
-the platform API. The `project(id)` and `session(pid, sid)` handles bind ids
-so you never repeat them.
+the platform API. The `workspace(id)` and `session(workspaceId, sessionId)`
+handles bind ids so you never repeat them.
 
 ```ts
 const kortix = createKortix({ backendUrl, getToken });
 
 kortix.accounts; // account / team operations
 kortix.accountInvites; // invite accept/decline by token alone
-kortix.projects; // top-level project operations
+kortix.workspaces; // top-level Workspace operations
 kortix.connectors; // Connector calls scoped by an agent-minted token
-kortix.project(id); // id-bound project handle
-kortix.session(pid, sid); // id-bound session handle → see Sessions
+kortix.workspace(id); // id-bound Workspace handle
+kortix.session(workspaceId, sessionId); // id-bound session handle → see Sessions
 kortix.github; // GitHub App install + repo linking
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
@@ -52,7 +52,7 @@ kortix.runtime(); // OpenCode REST compatibility client
 | method | what |
 | --- | --- |
 | `tokens.list(accountId?)` | list your API keys |
-| `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, projectId? }` |
+| `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, workspaceId? }` |
 | `tokens.revoke(tokenId, accountId?)` | revoke one |
 
 `accounts.audit` is the enterprise reconstruction log. It combines authenticated
@@ -60,11 +60,11 @@ API requests with semantic session, connector, approval, and computer events.
 
 | method | what |
 | --- | --- |
-| `audit.log(accountId, filters?)` | list events by project, session, actor, source, outcome, request, correlation, resource, action, or time |
+| `audit.log(accountId, filters?)` | list events by workspace, session, actor, source, outcome, request, correlation, resource, action, or time |
 | `audit.export(accountId, filters?)` | export the same filtered event stream as CSV or JSONL |
 | `audit.webhooks.list/create/update/remove(...)` | manage signed SIEM webhooks for the centralized stream |
 
-Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome`,
+Each event includes `workspace_id`, `session_id`, `actor_type`, `source`, `outcome`,
 `request_id`, `trace_id`, and `correlation_id` when the action supplies them.
 The API does not store request bodies, prompts, secrets, credentials, or raw
 connector arguments in the centralized event. Connector events can include a
@@ -78,49 +78,53 @@ Reached by invite token alone — the invitee may not be a member yet.
 | --- | --- |
 | `describe(inviteId)` · `accept(inviteId)` · `decline(inviteId)` | preview · accept · decline an invite |
 
-### Projects — `kortix.projects`
+### Workspaces — `kortix.workspaces`
 
 | method | what |
 | --- | --- |
-| `list()` · `listForAccount(accountId)` | your projects · projects in an account |
+| `list()` · `listForAccount(accountId)` | your workspaces · workspaces in an account |
 | `get(id)` · `detail(id)` | summary · full detail |
 | `create(input)` · `createRepo(input)` | from an existing `repo_url` · new empty GitHub repo |
-| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id?, idempotency_key? }` |
+| `provision(input)` | new workspace on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id?, idempotency_key? }` |
 | `update(id, input)` · `archive(id)` | update settings · archive |
 | `llmCatalog(id)` · `modelPicker(id)` | full · compact model catalog for a selector |
 | `sandboxTemplates(id)` · `sandboxHealth(id)` | sandbox build templates · build health |
 | `sessions(id)` · `createSession(id, input?)` | list visible sessions · create a session |
 
-`provision` creates a new project; it does not start an existing project's
+`kortix.projects` and `kortix.project(id)` remain available as deprecated
+compatibility surfaces. They retain the legacy `project_id` wire shape and
+`/v1/projects` routes. New integrations use the Workspace surfaces above.
+
+`provision` creates a new workspace; it does not start an existing workspace's
 sandbox. Start a session instead — see [Sessions](/docs/sdk/sessions).
 
 Send `idempotency_key` when a retry is possible — a reload, a second tab, a
 timeout you retried. `provision` mints a brand-new managed repo per call, so
-without a key those all create real duplicate projects. Reuse one key for every
-attempt at a single logical create and the repeats return the project the first
-attempt made (201, same `project_id`, `push_token: null`). The key identifies the
+without a key those all create real duplicate workspaces. Reuse one key for every
+attempt at a single logical create and the repeats return the workspace the first
+attempt made (201, same `workspace_id`, `push_token: null`). The key identifies the
 attempt, not the payload — reusing one with a different `name` returns the first
-project and ignores the new value, so mint a fresh key per distinct create.
-Creating a second project with the same **name** and no key still works.
+workspace and ignores the new value, so mint a fresh key per distinct create.
+Creating a second workspace with the same **name** and no key still works.
 
 A repeat that arrives while the first call is still provisioning gets `409` with
-`code: 'provision_in_flight'` rather than a `project_id` that call may still roll
+`code: 'provision_in_flight'` rather than a `workspace_id` that call may still roll
 back. Retry with the same key.
 
-`project(id).sessions.list({ scope: 'project' })` is a manager-only inventory:
+`workspace(id).sessions.list({ scope: 'workspace' })` is a manager-only inventory:
 private, unavailable, and soft-deleted sessions, with ownership and
 runtime-state metadata.
 
 ### GitHub — `kortix.github`
 
-Account-scoped GitHub App install and repo linking, not project-scoped.
+Account-scoped GitHub App install and repo linking, not workspace-scoped.
 
 | method | what |
 | --- | --- |
 | `getInstallation(accountId)` · `listInstallations(accountId)` | this account's install · installs the user can reach |
 | `saveInstallation(input)` · `deleteInstallation(accountId, installationId?)` | record · unlink an install |
 | `listRepositories(accountId, installationId?)` · `listRepositoryBranches(...)` | repos the install can see · branches and the GitHub default |
-| `linkRepository(input)` | import a repo as a project |
+| `linkRepository(input)` | import a repo as a workspace |
 
 ### Billing — `kortix.billing`
 
@@ -139,7 +143,7 @@ the customer portal, and credit purchases are Stripe flows, app-owned.
 | `subscription.scheduleDowngrade(...)` · `cancelScheduledChange(...)` · `prorationPreview(...)` | schedule · cancel · preview a plan change |
 | `credits.purchase(input)` · `credits.autoTopupSettings(...)` · `credits.configureAutoTopup(...)` | one-off purchase · read · configure auto-topup |
 
-`sessionCosts.list()` accepts `accountId`, `projectId`, `limit`, and `offset`.
+`sessionCosts.list()` accepts `accountId`, `workspaceId`, `limit`, and `offset`.
 Each row combines finalized LLM cost and billed sandbox compute cost.
 `sessionCosts.get()` adds model usage and the discriminated LLM/compute ledger.
 The list includes a reconciliation total for cost without a session.
@@ -147,7 +151,7 @@ The list includes a reconciliation total for cost without a session.
 ### Sandbox shares — `kortix.sandboxShares`
 
 Public share links for one exposed sandbox port. Sandbox-scoped, not
-project-scoped.
+workspace-scoped.
 
 | method | what |
 | --- | --- |
@@ -157,8 +161,8 @@ project-scoped.
 
 ### Marketplace catalog — `kortix.marketplace`
 
-Public catalog browsing, read-only — distinct from `project(id).marketplace`,
-which installs an item onto a project.
+Public catalog browsing, read-only — distinct from `workspace(id).marketplace`,
+which installs an item onto a workspace.
 
 | method | what |
 | --- | --- |
@@ -166,46 +170,46 @@ which installs an item onto a project.
 | `marketplaces()` · `featured()` | all · featured marketplaces |
 | `sources.list()` · `sources.add(input)` · `sources.remove(id)` | list · add · remove a source |
 
-### The project handle — `kortix.project(id)`
+### The Workspace handle — `kortix.workspace(id)`
 
-Binds the project id; every sub-resource hangs off it.
+Binds the Workspace id. Every sub-resource hangs off it.
 
 ```ts
-const p = kortix.project(projectId);
-await p.detail();
-await p.update({ name });
-await p.llmCatalog();
+const workspace = kortix.workspace(workspaceId);
+await workspace.detail();
+await workspace.update({ name });
+await workspace.llmCatalog();
 ```
 
 | method | what |
 | --- | --- |
 | `get` · `detail` · `update` · `archive` | read · full detail · update · archive |
 | `llmCatalog` · `modelPicker` · `sandboxHealth` | model and sandbox-build reads |
-| `onboardingComplete` | mark project onboarding done |
+| `onboardingComplete` | mark Workspace onboarding done |
 | `validateManifest(raw)` | validate a `kortix.yaml` (or legacy `kortix.toml`) manifest server-side |
 | `gitToken()` | mint a fresh scoped git push token (`409` for a bring-your-own repo) |
 | `setAgentScope(agentName, scope)` | bind an agent's allowed secrets and connectors |
 
-#### `p.tokens` — project-scoped API keys
+#### `workspace.tokens` — Workspace-scoped API keys
 
 Auto-minted at session create as `KORTIX_CLI_TOKEN`; can also be minted by hand.
 
 | method | what |
 | --- | --- |
-| `list()` | project API keys |
+| `list()` | Workspace API keys |
 | `create(input?)` | mint a new one |
 | `revoke(tokenId)` | revoke one |
 
-#### `p.setupLinks` — agent-minted setup links
+#### `workspace.setupLinks` — agent-minted setup links
 
 A link a person opens to enter a secret or connect an app, without full
-project access.
+Workspace access.
 
 | method | what |
 | --- | --- |
 | `requestSecret(input)` · `requestConnector(input)` | link to collect a secret · connect an app |
 
-#### `p.secrets` — project secrets
+#### `workspace.secrets` — Workspace secrets
 
 | method | what |
 | --- | --- |
@@ -220,7 +224,7 @@ project access.
 the session. Managed consumers use `broker`. The HTTPS broker method requires a
 session-scoped token and an active session handle.
 
-#### `p.access` — members, invites, requests
+#### `workspace.access` — members, invites, requests
 
 | method | what |
 | --- | --- |
@@ -230,8 +234,8 @@ session-scoped token and an active session handle.
 | `resendInvite(inviteId)` · `revokeInvite(inviteId)` · `approveRequest(id)` · `rejectRequest(id)` | resend/revoke an invite · approve/reject a request |
 | `groupGrants()` · `attachGroupGrant(...)` · `updateGroupGrant(...)` · `detachGroupGrant(...)` | list, grant, change, or remove an IAM group grant |
 
-`p.access.resourceGrants` grants a member or group access to one resource (an
-agent, a skill, a secret) instead of the whole project.
+`workspace.access.resourceGrants` grants a member or group access to one resource
+(an agent, a skill, or a secret) instead of the whole Workspace.
 
 | method | what |
 | --- | --- |
@@ -239,7 +243,7 @@ agent, a skill, a secret) instead of the whole project.
 | `resourceGrants.create(input)` | grant a member or group access to a resource |
 | `resourceGrants.remove(grantId)` | revoke a resource grant |
 
-#### `p.connectors` — tool connectors
+#### `workspace.connectors` — tool connectors
 
 | method | what |
 | --- | --- |
@@ -252,20 +256,23 @@ agent, a skill, a secret) instead of the whole project.
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
 | `remove(connectorId)` · `sync()` | delete a connector · re-sync connectors |
 | `setName(connectorId, name)` · `setSensitive(connectorId, sensitive)` | rename · mark it sensitive (extra approval gating) |
-| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` connection ownership |
+| `setAuthorizationStrategy(slug, strategy)` | select `workspace` or `user` connection ownership |
 | `setCredentialMode(connectorId, mode)` · `setCredential(connectorId, input)` | switch source · set the credential value |
 | `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
 | `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
 | `connections.updateCredential(connectionId, input)` | rotate a connection credential |
 | `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
 
-`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under Customize → Feature flags → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
+`workspace.connectors.discover` browses the direct-connector catalog. It is
+**experimental** and off by default. Enable it per Workspace under Customize →
+Feature flags → "Connectors API Discover". Easy Connect (Pipedream) remains the
+default connector marketplace.
 
 | method | what |
 | --- | --- |
 | `discover.list(query?, cursor?)` · `discover.detail(id)` | search OpenAPI/MCP/GraphQL/CLI entries · one entry's detail |
 
-`p.connectors.pipedream` is the optional managed-OAuth path; `listApps`
+`workspace.connectors.pipedream` is the optional managed-OAuth path; `listApps`
 returns OAuth apps only. Connect API-key apps directly instead.
 
 | method | what |
@@ -280,13 +287,13 @@ stay encrypted and resolve per request.
 `connections` is the only active authorization facade. The retired
 `authorizations` and `profiles` names are not part of the current SDK surface.
 
-#### `p.policies` — project policies
+#### `workspace.policies` — Workspace policies
 
 | method | what |
 | --- | --- |
-| `list()` · `set(policies)` | the project's policies · replace the set |
+| `list()` · `set(policies)` | the Workspace policies · replace the set |
 
-#### `p.triggers` — cron and webhook automations
+#### `workspace.triggers` — cron and webhook automations
 
 A trigger starts an agent action on a schedule or an inbound webhook. See
 [Triggers](/docs/connect/triggers) for session strategy and payload
@@ -299,7 +306,7 @@ templating.
 | `update(triggerId, input)` | edit a trigger |
 | `remove(triggerId)` | delete a trigger |
 | `fire(triggerId)` | run it now |
-| `setActivation(paused)` | pause or resume every trigger on the project |
+| `setActivation(paused)` | pause or resume every trigger on the Workspace |
 
 `create(input)` takes `{ name, type: 'cron' | 'webhook', prompt_template,
 slug?, agent?, model?, enabled?, session_mode?, session_id?, cron?, run_at?,
@@ -307,9 +314,9 @@ timezone?, secret_env? }`. `name` and `prompt_template` are required.
 `cron`/`run_at` are mutually exclusive (`type: 'cron'`); `secret_env` (the
 webhook HMAC secret) applies to `type: 'webhook'`.
 
-#### `p.marketplace` / `p.registry` — installed items
+#### `workspace.marketplace` / `workspace.registry` — installed items
 
-Installs a catalog item's files onto the project's default branch.
+Installs a catalog item's files onto the Workspace default branch.
 `registry.*` is an identical alias of `marketplace.*`.
 
 | method | what |
@@ -318,9 +325,9 @@ Installs a catalog item's files onto the project's default branch.
 | `marketplace.updates()` · `marketplace.update(name)` · `marketplace.updateAll()` | available updates · update one · update all |
 | `marketplace.remove(name)` | uninstall an item |
 
-#### `p.files` — repo files (read)
+#### `workspace.files` — repo files (read)
 
-Read-only access to the project's git tree. To read and write files inside a
+Read-only access to the Workspace git tree. To read and write files inside a
 running session, use the session's file operations — see
 [Files](#files) under Modules below.
 
@@ -330,7 +337,7 @@ running session, use the session's file operations — see
 | `search(query)` | search the repo |
 | `archive(options?)` · `history(path)` | download a tarball · a file's git history |
 
-#### `p.git` — history
+#### `workspace.git` — history
 
 | method | what |
 | --- | --- |
@@ -338,7 +345,7 @@ running session, use the session's file operations — see
 | `commit(sha)` · `commitDiff(sha)` | one commit · its diff |
 | `branches()` · `versionDiff(from, to)` | branches · diff between two refs |
 
-#### `p.changeRequests` — lifecycle and merge
+#### `workspace.changeRequests` — lifecycle and merge
 
 A change request (CR) is how a session's work merges into the default branch.
 
@@ -350,11 +357,11 @@ A change request (CR) is how a session's work merges into the default branch.
 | `close(crId, input?)` · `reopen(crId, input?)` | close without merging · reopen a closed one |
 | `requestChanges(crId, input)` | record feedback, optionally delivered back to the originating session |
 
-#### `p.sessions` — and the session handle
+#### `workspace.sessions` — and the session handle
 
 | method | what |
 | --- | --- |
-| `list()` | the project's sessions |
+| `list()` | the Workspace sessions |
 | `create(input?)` | create a session |
 | `session(sid)` | the session handle (same as `kortix.session(id, sid)`) |
 
@@ -366,7 +373,7 @@ Each value names a `connection_id`. It also accepts `secrets` for
 backend-origin secret narrowing and `require_connectors` for mandatory
 connectors.
 
-#### `p.approvals` — the connector approval inbox
+#### `workspace.approvals` — the connector approval inbox
 
 Pending connector-gated actions awaiting a decision — backs the
 permission-approval UX (`APPROVE` / `ASK` / `BLOCK`).
@@ -376,10 +383,10 @@ permission-approval UX (`APPROVE` / `ASK` / `BLOCK`).
 | `list(options?)` · `sessionsNeedingInput(options?)` | pending approvals · sessions blocked on a decision |
 | `resolve(executionId, decision, scope?)` | approve or deny one — `decision: 'approve' \| 'deny'`, `scope: 'once' \| 'session' \| 'session_all'` |
 
-#### `p.gateway` — LLM observability
+#### `workspace.gateway` — LLM observability
 
 Request logs, cost/latency rollups, budgets, and gateway API keys for this
-project's model traffic.
+Workspace model traffic.
 
 | method | what |
 | --- | --- |
@@ -395,7 +402,7 @@ A routing policy holds a default model, a vision model, and an ordered
 fallback chain, each model attempted at most once; `fallbackOn` is
 `transient` or `any-error`.
 
-#### `p.channels` — Slack / email / voice
+#### `workspace.channels` — Slack / email / voice
 
 Connector surfaces that let an agent act as a Slack app, an email address,
 or join a realtime voice call.
@@ -409,51 +416,52 @@ or join a realtime voice call.
 | `email.connect(input)` · `email.disconnect(...)` · `email.updatePolicy(input)` | connect · disconnect · update the send/reply policy |
 | `voice.setBotName(name)` | rename the bot in a live call |
 
-#### `p.modelDefaults` — default model preferences
+#### `workspace.modelDefaults` — default model preferences
 
-Account, agent, and project-scoped model defaults, resolved by the gateway.
+Account, agent, and Workspace-scoped model defaults, resolved by the gateway.
 
 | method | what |
 | --- | --- |
 | `get()` · `set(input)` · `clear(params)` | read · set a default · clear an override |
 
-#### `p.setDefaultAgent` — project default agent
+#### `workspace.setDefaultAgent` — Workspace default agent
 
-`p.setDefaultAgent(agentName)` checks that the agent is declared and enabled,
-then sets it as `default_agent` in the project's `kortix.yaml`. New sessions
+`workspace.setDefaultAgent(agentName)` checks that the agent is declared and
+enabled, then sets it as `default_agent` in the Workspace `kortix.yaml`. New sessions
 prefer this agent unless a user picks another one.
 
-#### `p.updateFeatureFlag` — feature flags
+#### `workspace.updateFeatureFlag` — feature flags
 
-`p.updateFeatureFlag(feature, enabled)` turns one feature flag on or off for the
-project. Pass `enabled: null` to clear the override and fall back to the
-platform default. It calls the canonical `PATCH /v1/projects/:id/features`.
+`workspace.updateFeatureFlag(feature, enabled)` turns one feature flag on or off
+for the Workspace. Pass `enabled: null` to clear the override and fall back to
+the platform default. It calls `PATCH /v1/workspaces/:id/features`.
 
 `feature` is one of `FEATURE_FLAG_KEYS` (exported from `@kortix/sdk`, typed as
-`FeatureFlagKey`). The caller needs the project's `project.customize.write`
-permission; the route answers `403` otherwise.
+`FeatureFlagKey`). The caller needs the `project.customize.write` IAM action.
+That wire action remains stable for compatibility. The route answers `403`
+otherwise.
 
 Every flag-gated route rejects the same way while the flag is off: HTTP `403`
 with `{ error, code: "feature_disabled", feature }`. Use `isFeatureDisabledError(error)`
 to branch on it and `featureDisabledKey(error)` to read the flag key — never
 match on the message text.
 
-`p.updateExperimentalFeature(feature, enabled)` is the **deprecated** alias. It
-keeps calling the deprecated route alias `PATCH /v1/projects/:id/experimental`
+`workspace.updateExperimentalFeature(feature, enabled)` is the **deprecated** alias. It
+keeps calling the deprecated route alias `PATCH /v1/workspaces/:id/experimental`
 so consumers pinned to an older deployed API keep working. Use
-`p.updateFeatureFlag` in new code.
+`workspace.updateFeatureFlag` in new code.
 
-#### `p.sandbox` — templates and snapshot builds
+#### `workspace.sandbox` — templates and snapshot builds
 
-Sandbox build config beyond `sandboxHealth`/`sandboxTemplates` on the project
+Sandbox build config beyond `sandboxHealth`/`sandboxTemplates` on the Workspace
 handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 
 | method | what |
 | --- | --- |
-| `list()` · `snapshots()` | sandboxes for this project · built snapshots |
+| `list()` · `snapshots()` | sandboxes for this Workspace · built snapshots |
 | `rebuildSnapshot(slug?)` · `fixWithAgent()` | rebuild a snapshot · ask an agent to fix a broken build |
 | `createTemplate(input)` · `updateTemplate(...)` · `removeTemplate(...)` · `buildTemplate(...)` | add · edit · delete · build a template |
-| `setProvider(provider)` | request a provider switch. `null` (or the platform default / the already-active provider) applies immediately; switching to a different enabled provider starts a durable prepare→verify→activate transition — the current provider keeps serving while the target warm image is built and verified, then activated. The return is a tagged union: `kind:'project'` (immediate) or `kind:'preparation'` (poll `getProjectSandboxProviderTransition()` until `activated`/`failed`) |
+| `setProvider(provider)` | request a provider switch. `null` (or the platform default / the already-active provider) applies immediately; switching to a different enabled provider starts a durable prepare→verify→activate transition — the current provider keeps serving while the target warm image is built and verified, then activated. The return is a tagged union: `kind:'workspace'` (immediate) or `kind:'preparation'` (poll `getWorkspaceSandboxProviderTransition()` until `activated`/`failed`) |
 
 ### Escape hatch
 
@@ -462,7 +470,8 @@ sandbox.
 On a client created by `createScopedKortix` (`@kortix/sdk/server`), it **throws**
 — the process-global "active" runtime is another request's sandbox in a
 multi-tenant server, a cross-tenant leak. Use the session-scoped
-`kortix.session(pid, sid).runtime` (call `ensureReady()` first) instead, which
+`kortix.session(workspaceId, sessionId).runtime` (call `ensureReady()` first)
+instead, which
 resolves that session's own sandbox.
 
 ## Modules
@@ -494,7 +503,7 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | Session runtime | Health probe and preview/proxy URL builders |
 | OpenCode client | The typed OpenCode REST client and its full type surface |
 | Auth | `authenticatedFetch` and token accessors |
-| Projects REST | The raw REST functions the facade wraps |
+| Workspaces REST | The raw REST functions the facade wraps |
 | API client | `backendApi`, the low-level typed HTTP client |
 | Turns | Message-to-turn grouping, cost, and status math — see [Turns](#turns) |
 | Transcripts | `formatTranscript`, a client-side Markdown export |
@@ -541,7 +550,7 @@ const { data } = await client.session.list({ limit: 100 });
 ```
 
 `getClient()` returns the typed OpenCode v2 compatibility client for the active sandbox,
-with auth already injected. Prefer `kortix.session(pid, sid).runtime`, the
+with auth already injected. Prefer `kortix.session(workspaceId, sessionId).runtime`, the
 same client scoped to one session, over the global `getClient()` when your
 host runs more than one session.
 
@@ -591,7 +600,7 @@ import { createScopedKortix } from '@kortix/sdk/server';
 
 export async function handler(req: Request) {
   const kortix = createScopedKortix({ backendUrl, getToken: () => tokenFor(req) });
-  return kortix.projects.list();
+  return kortix.workspaces.list();
 }
 ```
 
@@ -601,7 +610,7 @@ bundle — it statically pulls in `node:async_hooks`.
 
 A scoped client's top-level `runtime()` throws (it would resolve another
 tenant's sandbox). Reach a specific session's runtime via
-`kortix.session(pid, sid).runtime` after `await s.ensureReady()`.
+`kortix.session(workspaceId, sessionId).runtime` after `await s.ensureReady()`.
 
 ### Deprecated aliases
 

@@ -50,7 +50,7 @@ flow(
   'SEC-4',
   {
     domain: 'security',
-    routes: ['GET /v1/projects/:projectId/secrets', 'POST /v1/projects/:projectId/secrets'],
+    routes: ['GET /v1/projects/:workspaceId/secrets', 'POST /v1/projects/:workspaceId/secrets'],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -58,16 +58,16 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/secrets',
+          '/v1/projects/:workspaceId/secrets',
           { name: 'ke2e_inject_probe', value: 'super-secret-value' },
-          { params: { projectId: p.id } },
+          { params: { workspaceId: p.id } },
         );
       r.status([200, 201]);
     });
     await ctx.step('list secrets returns NAMES only — no plaintext values leak', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/secrets', { params: { projectId: p.id } });
+        .get('/v1/projects/:workspaceId/secrets', { params: { workspaceId: p.id } });
       r.status(200);
       // The stored value must never be reflected anywhere in the response.
       if (r.text().includes('super-secret-value')) {
@@ -80,9 +80,9 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/projects/:projectId/secrets',
+            '/v1/projects/:workspaceId/secrets',
             { name: 'KORTIX_TOKEN', value: 'attacker-controlled' },
-            { params: { projectId: p.id } },
+            { params: { workspaceId: p.id } },
           );
         r.status(400);
       },
@@ -90,7 +90,7 @@ flow(
     await ctx.step("NONMEMBER cannot read the project's secret env → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/secrets', { params: { projectId: p.id } });
+        .get('/v1/projects/:workspaceId/secrets', { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -206,9 +206,9 @@ flow(
     routes: [
       'GET /v1/accounts/:accountId',
       'PATCH /v1/accounts/:accountId',
-      'GET /v1/projects/:projectId',
-      'PATCH /v1/projects/:projectId',
-      'DELETE /v1/projects/:projectId',
+      'GET /v1/projects/:workspaceId',
+      'PATCH /v1/projects/:workspaceId',
+      'DELETE /v1/projects/:workspaceId',
     ],
   },
   async (ctx) => {
@@ -233,25 +233,25 @@ flow(
     await ctx.step('NONMEMBER GET a foreign project → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+        .get('/v1/projects/:workspaceId', { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step('NONMEMBER PATCH a foreign project → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .patch('/v1/projects/:projectId', { name: 'ke2e-hijack' }, { params: { projectId: p.id } });
+        .patch('/v1/projects/:workspaceId', { name: 'ke2e-hijack' }, { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step('NONMEMBER DELETE a foreign project → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .del('/v1/projects/:projectId', { params: { projectId: p.id } });
+        .del('/v1/projects/:workspaceId', { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step('IDOR: random project id → 403/404 (no enumeration)', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId', { params: { projectId: NIL_UUID } });
+        .get('/v1/projects/:workspaceId', { params: { workspaceId: NIL_UUID } });
       r.status([403, 404]);
     });
   },
@@ -266,9 +266,9 @@ flow(
   {
     domain: 'security',
     routes: [
-      'POST /v1/projects/:projectId/cli-token',
-      'DELETE /v1/projects/:projectId/cli-token/:tokenId',
-      'GET /v1/projects/:projectId',
+      'POST /v1/projects/:workspaceId/cli-token',
+      'DELETE /v1/projects/:workspaceId/cli-token/:tokenId',
+      'GET /v1/projects/:workspaceId',
       'GET /v1/accounts/me',
       'GET /v1/projects',
       'GET /v1/accounts/:accountId',
@@ -285,9 +285,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/cli-token',
+          '/v1/projects/:workspaceId/cli-token',
           { name: ctx.fixtures.name('sec-d-pat') },
-          { params: { projectId: projA.id } },
+          { params: { workspaceId: projA.id } },
         );
       r.status(201).body().exists('$.secret_key').has('$.project_id', projA.id);
       const j = r.json<{ secret_key: string; token_id: string }>();
@@ -296,7 +296,7 @@ flow(
     });
     const pat = () => ctx.client.withBearer(secret, 'PAT_PROJ');
     await ctx.step('allowed: GET its own project → 200', async () => {
-      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projA.id } });
+      const r = await pat().get('/v1/projects/:workspaceId', { params: { workspaceId: projA.id } });
       r.status(200);
     });
     await ctx.step('allowed: self-identity probe GET /accounts/me → 200', async () => {
@@ -304,7 +304,7 @@ flow(
       r.status(200);
     });
     await ctx.step('denied: a DIFFERENT project → 403', async () => {
-      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projB.id } });
+      const r = await pat().get('/v1/projects/:workspaceId', { params: { workspaceId: projB.id } });
       r.status(403);
     });
     await ctx.step('denied: enumerate /projects → 403', async () => {
@@ -328,8 +328,8 @@ flow(
       r.status([401, 403]);
     });
     await ctx.step('revoke the project token → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
-        params: { projectId: projA.id, tokenId },
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:workspaceId/cli-token/:tokenId', {
+        params: { workspaceId: projA.id, tokenId },
       });
       r.status(200);
     });
@@ -371,8 +371,8 @@ flow(
       'POST /v1/billing/webhooks/stripe',
       'POST /v1/billing/webhooks/revenuecat',
       'POST /v1/webhooks/slack',
-      'POST /v1/webhooks/telegram/:projectId',
-      'POST /v1/webhooks/projects/:projectId/:slug',
+      'POST /v1/webhooks/telegram/:workspaceId',
+      'POST /v1/webhooks/projects/:workspaceId/:slug',
     ],
   },
   async (ctx) => {
@@ -418,10 +418,10 @@ flow(
     });
     await ctx.step('Telegram webhook, wrong secret token → 4xx', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post(
-        '/v1/webhooks/telegram/:projectId',
+        '/v1/webhooks/telegram/:workspaceId',
         { update_id: 1 },
         {
-          params: { projectId: NIL_UUID },
+          params: { workspaceId: NIL_UUID },
           headers: { 'x-telegram-bot-api-secret-token': 'wrong' },
         },
       );
@@ -429,10 +429,10 @@ flow(
     });
     await ctx.step('project webhook, unsigned/unknown → 4xx', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post(
-        '/v1/webhooks/projects/:projectId/:slug',
+        '/v1/webhooks/projects/:workspaceId/:slug',
         { hello: 'world' },
         {
-          params: { projectId: NIL_UUID, slug: 'ke2e-no-such-trigger' },
+          params: { workspaceId: NIL_UUID, slug: 'ke2e-no-such-trigger' },
         },
       );
       r.status([400, 401, 403, 404]);

@@ -30,7 +30,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     branchFetchDelaySec: 0,
     defaultOpencodeConfigDir: DEFAULT_DIR,
     autoClone: true,
-    projectId: undefined,
+    workspaceId: undefined,
     apiUrl: undefined,
     repoUrl: undefined,
     branchName: undefined,

@@ -46,7 +46,7 @@ const fakeDb: any = {
       where: () => ({
         limit: async () => [
           {
-            projectId: 'project-1',
+            workspaceId: 'project-1',
             accountId: 'account-1',
             name: 'Connector test',
             repoUrl: 'https://example.test/connectors.git',
@@ -67,14 +67,14 @@ const fakeDb: any = {
 };
 
 mock.module('../shared/db', () => ({ db: fakeDb }));
-mock.module('../projects/lib/git', () => ({
-  withProjectGitAuth: async (project: Record<string, unknown>) => ({
+mock.module('../workspaces/lib/git', () => ({
+  withWorkspaceGitAuth: async (project: Record<string, unknown>) => ({
     ...project,
     gitAuthToken: 'test-token',
     gitAuthHeaders: {},
   }),
 }));
-mock.module('../projects/index', () => ({
+mock.module('../workspaces/index', () => ({
   loadManifestForEdit: async () => {
     const manifest = {
       schemaVersion: 2,
@@ -137,7 +137,7 @@ mock.module('../projects/index', () => ({
 // whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('./sync', () => ({
   ...realConnectorSync,
-  syncProjectConnectors: async () => {
+  syncWorkspaceConnectors: async () => {
     syncCalls += 1;
     return { synced: storedConnectors.length, errors: [] };
   },
@@ -150,7 +150,7 @@ const {
   setConnectorNameInManifest,
   setConnectorPoliciesInManifest,
   setConnectorSensitiveInManifest,
-  setProjectPoliciesInManifest,
+  setWorkspacePoliciesInManifest,
   upsertConnectorInManifest,
 } = await import('./manifest-crud');
 const { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } = await import(
@@ -366,7 +366,7 @@ describe('every connector manifest mutation retries one revision conflict', () =
     ],
     [
       'project connector policies',
-      () => setProjectPoliciesInManifest('project-1', 'account-1', [], 'risk'),
+      () => setWorkspacePoliciesInManifest('project-1', 'account-1', [], 'risk'),
     ],
   ];
 

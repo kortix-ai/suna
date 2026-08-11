@@ -14,7 +14,10 @@ import {
 import { resolvePreset, type CostRange } from '@/components/ui/date-range-picker';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
-import { buildCostByProjectQuery, buildCostSummaryQuery } from '@/hooks/billing/use-cost-explorer';
+import {
+  buildCostByWorkspaceQuery,
+  buildCostSummaryQuery,
+} from '@/hooks/billing/use-cost-explorer';
 import {
   buildSessionCostDetailQuery,
   buildSessionCostsListQuery,
@@ -40,16 +43,16 @@ const NOW = new Date('2026-08-01T12:00:00.000Z');
 // ── Pure function: parseExplorerState — the brief's own canonical tests ────
 
 describe('parseExplorerState', () => {
-  test('defaults to the 30 day preset at the projects level', () => {
+  test('defaults to the 30 day preset at the workspaces level', () => {
     const state = parseExplorerState(new URLSearchParams(), NOW);
     expect(state.range.preset).toBe('30d');
-    expect(state.projectId).toBeNull();
+    expect(state.workspaceId).toBeNull();
     expect(state.sessionId).toBeNull();
   });
 
-  test('reads the project and session levels', () => {
-    const state = parseExplorerState(new URLSearchParams('project=p1&session=s1'), NOW);
-    expect(state.projectId).toBe('p1');
+  test('reads the workspace and session levels', () => {
+    const state = parseExplorerState(new URLSearchParams('workspace=p1&session=s1'), NOW);
+    expect(state.workspaceId).toBe('p1');
     expect(state.sessionId).toBe('s1');
   });
 
@@ -65,7 +68,7 @@ describe('parseExplorerState', () => {
     expect(parseExplorerState(new URLSearchParams('range=forever'), NOW).range.preset).toBe('30d');
   });
 
-  test('ignores a session without a project', () => {
+  test('ignores a session without a workspace', () => {
     expect(parseExplorerState(new URLSearchParams('session=s1'), NOW).sessionId).toBeNull();
   });
 
@@ -158,9 +161,9 @@ describe('nextClockAnchor', () => {
   // Object identity, not just value equality: identity is what keeps the
   // resolved window — and every query key derived from it — stable.
   test('returns the SAME object for the same key, and never re-reads the clock', () => {
-    const held: ClockAnchor = { key: 'project=p1', now: NOW };
+    const held: ClockAnchor = { key: 'workspace=p1', now: NOW };
     let reads = 0;
-    const anchor = nextClockAnchor(held, 'project=p1', () => {
+    const anchor = nextClockAnchor(held, 'workspace=p1', () => {
       reads += 1;
       return new Date();
     });
@@ -171,8 +174,8 @@ describe('nextClockAnchor', () => {
   test('re-reads the clock when the URL changes, so the window advances on navigation', () => {
     const held: ClockAnchor = { key: '', now: NOW };
     const later = new Date(NOW.getTime() + 60_000);
-    const anchor = nextClockAnchor(held, 'project=p1', () => later);
-    expect(anchor).toEqual({ key: 'project=p1', now: later });
+    const anchor = nextClockAnchor(held, 'workspace=p1', () => later);
+    expect(anchor).toEqual({ key: 'workspace=p1', now: later });
   });
 
   // The empty search string is the explorer's own default landing URL. It must
@@ -192,8 +195,8 @@ describe('explorerClockKey', () => {
   const key = (search: string) => explorerClockKey(new URLSearchParams(search));
 
   test('a drill-down does not change the key', () => {
-    expect(key('project=p1')).toBe(key(''));
-    expect(key('project=p1&session=s1')).toBe(key(''));
+    expect(key('workspace=p1')).toBe(key(''));
+    expect(key('workspace=p1&session=s1')).toBe(key(''));
   });
 
   test('an explicit preset change does change the key', () => {
@@ -211,7 +214,7 @@ describe('explorerClockKey', () => {
   // more. None of it is the explorer's window.
   test('an unrelated param never disturbs the key', () => {
     expect(key('tab=transactions')).toBe(key(''));
-    expect(key('range=7d&tab=transactions&project=p1')).toBe(key('range=7d'));
+    expect(key('range=7d&tab=transactions&workspace=p1')).toBe(key('range=7d'));
   });
 });
 
@@ -238,14 +241,14 @@ describe('clock reads across a navigation sequence', () => {
     return { reads, windows: seen.size };
   }
 
-  test('drilling projects -> sessions -> session reads the clock once', () => {
-    expect(walk(['', 'project=p1', 'project=p1&session=s1'])).toEqual({ reads: 1, windows: 1 });
+  test('drilling workspaces -> sessions -> session reads the clock once', () => {
+    expect(walk(['', 'workspace=p1', 'workspace=p1&session=s1'])).toEqual({ reads: 1, windows: 1 });
   });
 
   // The whole point of finding 2: one window across the drill-down means the
   // three levels reconcile under the label they all show ("Last 30 days").
   test('Back up the hierarchy returns to the SAME window, so the cache still holds', () => {
-    expect(walk(['', 'project=p1', 'project=p1&session=s1', 'project=p1', ''])).toEqual({
+    expect(walk(['', 'workspace=p1', 'workspace=p1&session=s1', 'workspace=p1', ''])).toEqual({
       reads: 1,
       windows: 1,
     });
@@ -256,7 +259,7 @@ describe('clock reads across a navigation sequence', () => {
   });
 
   test('a range change while drilled in re-reads once, not once per level', () => {
-    expect(walk(['project=p1', 'range=7d&project=p1', 'range=7d&project=p1&session=s1'])).toEqual({
+    expect(walk(['workspace=p1', 'range=7d&workspace=p1', 'range=7d&workspace=p1&session=s1'])).toEqual({
       reads: 2,
       windows: 2,
     });
@@ -267,7 +270,7 @@ describe('clock reads across a navigation sequence', () => {
   // any of them is ever promoted to a search param, this test is the tripwire
   // that says "and now it moves the window".
   test('repeated renders at one URL never re-read', () => {
-    expect(walk(['project=p1', 'project=p1', 'project=p1', 'project=p1'])).toEqual({
+    expect(walk(['workspace=p1', 'workspace=p1', 'workspace=p1', 'workspace=p1'])).toEqual({
       reads: 1,
       windows: 1,
     });
@@ -343,7 +346,7 @@ describe('useExplorerClockAnchor (rendered)', () => {
   // cannot widen it. Drill-down params are present here and must not appear in
   // the key — proven by the settle behaviour being identical either way.
   test('drill-down params do not change how the hook settles', () => {
-    expect(renderAnchor('range=7d&project=p1&session=s1')).toMatchObject({
+    expect(renderAnchor('range=7d&workspace=p1&session=s1')).toMatchObject({
       parentInvocations: 2,
       childInvocations: 1,
     });
@@ -405,13 +408,13 @@ function renderAcrossNavigation(from: string, to: string): Date[] {
 }
 
 describe('useExplorerClockAnchor across a URL change (rendered)', () => {
-  test('drilling into a project keeps the very same instant', () => {
-    const seen = renderAcrossNavigation('range=7d', 'range=7d&project=p1');
+  test('drilling into a workspace keeps the very same instant', () => {
+    const seen = renderAcrossNavigation('range=7d', 'range=7d&workspace=p1');
     expect(seen.every((instant) => instant === seen[0])).toBe(true);
   });
 
   test('drilling into a session keeps the very same instant', () => {
-    const seen = renderAcrossNavigation('range=7d&project=p1', 'range=7d&project=p1&session=s1');
+    const seen = renderAcrossNavigation('range=7d&workspace=p1', 'range=7d&workspace=p1&session=s1');
     expect(seen.every((instant) => instant === seen[0])).toBe(true);
   });
 
@@ -441,7 +444,7 @@ describe('serializeExplorerState', () => {
   test('omits the default preset and null levels', () => {
     const params = serializeExplorerState({
       range: resolvePreset('30d', NOW),
-      projectId: null,
+      workspaceId: null,
       sessionId: null,
     });
     expect(params.toString()).toBe('');
@@ -451,7 +454,7 @@ describe('serializeExplorerState', () => {
     const range = { preset: 'custom', from: '2026-07-01T00:00:00.000Z', to: '2026-07-08T00:00:00.000Z' } as const;
     expect(
       parseExplorerState(
-        serializeExplorerState({ range, projectId: 'p1', sessionId: null }),
+        serializeExplorerState({ range, workspaceId: 'p1', sessionId: null }),
         NOW,
       ).range,
     ).toEqual(range);
@@ -463,35 +466,35 @@ describe('serializeExplorerState', () => {
   test('a non-default preset IS serialized', () => {
     const params = serializeExplorerState({
       range: resolvePreset('7d', NOW),
-      projectId: null,
+      workspaceId: null,
       sessionId: null,
     });
     expect(params.get('range')).toBe('7d');
   });
 
-  // Mutation target: "stop ignoring a session without a project". Even if a
-  // caller hands this function a malformed state (sessionId set, projectId
+  // Mutation target: "stop ignoring a session without a workspace". Even if a
+  // caller hands this function a malformed state (sessionId set, workspaceId
   // not), the wire format must never carry a dangling `session` param — L3
   // cannot resolve its parent crumb from that.
-  test('never emits session without project, even from a malformed state', () => {
+  test('never emits session without workspace, even from a malformed state', () => {
     const params = serializeExplorerState({
       range: resolvePreset('30d', NOW),
-      projectId: null,
+      workspaceId: null,
       sessionId: 's1',
     } as ExplorerState);
     expect(params.has('session')).toBe(false);
   });
 
-  test('project and session both round-trip together', () => {
-    const state: ExplorerState = { range: resolvePreset('30d', NOW), projectId: 'p1', sessionId: 's1' };
+  test('workspace and session both round-trip together', () => {
+    const state: ExplorerState = { range: resolvePreset('30d', NOW), workspaceId: 'p1', sessionId: 's1' };
     const parsed = parseExplorerState(serializeExplorerState(state), NOW);
-    expect(parsed.projectId).toBe('p1');
+    expect(parsed.workspaceId).toBe('p1');
     expect(parsed.sessionId).toBe('s1');
   });
 });
 
 // ── Pure function: buildBreadcrumbCrumbs ────────────────────────────────────
-// `Usage › <project> › <session prefix>` — each non-current crumb's `target`
+// `Usage › <workspace> › <session prefix>` — each non-current crumb's `target`
 // is the state that clicking it should push. Structural assertions on
 // `target`, not just crumb count/labels, so a broken "clear the deeper
 // level" guard fails a test rather than passing on label text alone (see the
@@ -500,37 +503,37 @@ describe('serializeExplorerState', () => {
 const range = resolvePreset('30d', NOW);
 
 describe('buildBreadcrumbCrumbs', () => {
-  test('at the projects level, renders a single current Usage crumb', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: null, sessionId: null }, null);
+  test('at the workspaces level, renders a single current Usage crumb', () => {
+    const crumbs = buildBreadcrumbCrumbs({ range, workspaceId: null, sessionId: null }, null);
     expect(crumbs).toHaveLength(1);
     expect(crumbs[0]).toMatchObject({ key: 'usage', label: 'Usage', current: true });
   });
 
-  test('at the sessions level, Usage is a clickable crumb that clears the project', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'p1', sessionId: null }, 'Alpha');
+  test('at the sessions level, Usage is a clickable crumb that clears the workspace', () => {
+    const crumbs = buildBreadcrumbCrumbs({ range, workspaceId: 'p1', sessionId: null }, 'Alpha');
     expect(crumbs).toHaveLength(2);
 
     const usage = crumbs[0]!;
     expect(usage.current).toBe(false);
-    expect(usage.target).toEqual({ range, projectId: null, sessionId: null });
+    expect(usage.target).toEqual({ range, workspaceId: null, sessionId: null });
 
-    const project = crumbs[1]!;
-    expect(project).toMatchObject({ key: 'project', label: 'Alpha', current: true });
+    const workspace = crumbs[1]!;
+    expect(workspace).toMatchObject({ key: 'workspace', label: 'Alpha', current: true });
   });
 
-  test('at the session level, the project crumb clears the session but keeps the project', () => {
+  test('at the session level, the workspace crumb clears the session but keeps the workspace', () => {
     const crumbs = buildBreadcrumbCrumbs(
-      { range, projectId: 'p1', sessionId: 'session-abcdefgh-long-tail' },
+      { range, workspaceId: 'p1', sessionId: 'session-abcdefgh-long-tail' },
       'Alpha',
     );
     expect(crumbs).toHaveLength(3);
 
     const usage = crumbs[0]!;
-    expect(usage.target).toEqual({ range, projectId: null, sessionId: null });
+    expect(usage.target).toEqual({ range, workspaceId: null, sessionId: null });
 
-    const project = crumbs[1]!;
-    expect(project.current).toBe(false);
-    expect(project.target).toEqual({ range, projectId: 'p1', sessionId: null });
+    const workspace = crumbs[1]!;
+    expect(workspace.current).toBe(false);
+    expect(workspace.target).toEqual({ range, workspaceId: 'p1', sessionId: null });
 
     const session = crumbs[2]!;
     expect(session.current).toBe(true);
@@ -542,7 +545,7 @@ describe('buildBreadcrumbCrumbs', () => {
   test('every crumb target preserves the active (non-default) range', () => {
     const customRange = { preset: 'custom', from: 'F', to: 'T' } as const;
     const crumbs = buildBreadcrumbCrumbs(
-      { range: customRange, projectId: 'p1', sessionId: 's1' },
+      { range: customRange, workspaceId: 'p1', sessionId: 's1' },
       'Alpha',
     );
     for (const crumb of crumbs) {
@@ -550,9 +553,12 @@ describe('buildBreadcrumbCrumbs', () => {
     }
   });
 
-  test('falls back to a truncated project id when no label has loaded yet', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'project-without-a-loaded-name', sessionId: null }, null);
-    expect(crumbs[1]!.label).toBe('project-w');
+  test('falls back to a truncated workspace id when no label has loaded yet', () => {
+    const crumbs = buildBreadcrumbCrumbs(
+      { range, workspaceId: 'ws_1234567890', sessionId: null },
+      null,
+    );
+    expect(crumbs[1]!.label).toBe('ws_123456');
   });
 });
 
@@ -560,18 +566,18 @@ describe('buildBreadcrumbCrumbs', () => {
 //
 // Which crumb gets the leading back chevron. The crumb MODEL is unchanged by
 // this — the reported problem ("when you click on any user, you get confused
-// about where to click to go back to see all the projects") is affordance, not
+// about where to click to go back to see all the workspaces") is affordance, not
 // routing — so this is the one new decision the rendering makes, and it is
 // pulled out as a pure function rather than inlined as `index === 0`.
 
 describe('firstClickableCrumbIndex', () => {
-  test('at the projects level there is nowhere up, so no crumb carries the chevron', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: null, sessionId: null }, null);
+  test('at the workspaces level there is nowhere up, so no crumb carries the chevron', () => {
+    const crumbs = buildBreadcrumbCrumbs({ range, workspaceId: null, sessionId: null }, null);
     expect(firstClickableCrumbIndex(crumbs)).toBe(-1);
   });
 
   test('at the sessions level the Usage crumb carries it', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'p1', sessionId: null }, 'Alpha');
+    const crumbs = buildBreadcrumbCrumbs({ range, workspaceId: 'p1', sessionId: null }, 'Alpha');
     expect(firstClickableCrumbIndex(crumbs)).toBe(0);
     expect(crumbs[0]!.key).toBe('usage');
   });
@@ -579,7 +585,7 @@ describe('firstClickableCrumbIndex', () => {
   // Two crumbs are clickable at the session level. Only the shallowest gets
   // the chevron — one "go up" target, not a row of them.
   test('at the session level only the shallowest clickable crumb carries it', () => {
-    const crumbs = buildBreadcrumbCrumbs({ range, projectId: 'p1', sessionId: 's1' }, 'Alpha');
+    const crumbs = buildBreadcrumbCrumbs({ range, workspaceId: 'p1', sessionId: 's1' }, 'Alpha');
     expect(crumbs.filter((crumb) => !crumb.current)).toHaveLength(2);
     expect(firstClickableCrumbIndex(crumbs)).toBe(0);
   });
@@ -590,7 +596,7 @@ describe('firstClickableCrumbIndex', () => {
   test('skips a leading current crumb rather than assuming index 0 is clickable', () => {
     const crumbs = [
       { key: 'usage', label: 'Usage', current: true, target: {} },
-      { key: 'project', label: 'Alpha', current: false, target: {} },
+      { key: 'workspace', label: 'Alpha', current: false, target: {} },
     ] as unknown as ExplorerCrumb[];
     expect(firstClickableCrumbIndex(crumbs)).toBe(1);
   });
@@ -615,7 +621,7 @@ describe('firstClickableCrumbIndex', () => {
 //   parseExplorerState re-reads the clock      -> 'a later now does move the window'
 //   nextClockAnchor early return deleted       -> 'returns the SAME object for the same key'
 //   explorerClockKey returns params.toString() -> 'a drill-down does not change the key'
-//   the hook bypasses explorerClockKey         -> 'drilling into a project keeps the very same instant'
+//   the hook bypasses explorerClockKey         -> 'drilling into a workspace keeps the very same instant'
 //   the hook stops holding (body gutted)       -> 'two parent passes, one child render'
 //   any level re-resolves its own window       -> that level's 'custom range … verbatim'
 //
@@ -633,7 +639,7 @@ describe('firstClickableCrumbIndex', () => {
 // closes into a self-sustaining loop — one request per mounted query per
 // cycle, for as long as the tab is open:
 //
-//     window   projects level (2 queries)   sessions level (3 queries)
+//     window   workspaces level (2 queries)   sessions level (3 queries)
 //     100 ms   140 requests                 252 requests
 //     200 ms   318 requests                 501 requests
 //     800 ms   1330 requests                2010 requests
@@ -656,7 +662,7 @@ describe('firstClickableCrumbIndex', () => {
 // scheduler. The wiring the component itself does is pinned separately below.
 
 /** Long enough for a loop to be unmistakable: on the unfixed code this window
- *  produced 318 requests at the projects level, against the 2 asserted here. */
+ *  produced 318 requests at the workspaces level, against the 2 asserted here. */
 const REQUEST_WINDOW_MS = 150;
 /** Bail out rather than hang if the loop ever returns. */
 const REQUEST_CAP = 1_000;
@@ -731,11 +737,11 @@ async function countRequests(
 }
 
 const empty = async () => ({}) as never;
-const costSources = { summary: empty, byProject: empty };
-const sessionSources = { list: empty, get: empty, projects: empty };
+const costSources = { summary: empty, byWorkspace: empty };
+const sessionSources = { list: empty, get: empty, workspaces: empty };
 
 describe('cost explorer request count', () => {
-  test('the projects level fetches each of its two queries exactly once', async () => {
+  test('the workspaces level fetches each of its two queries exactly once', async () => {
     const counts = await countRequests('', [
       {
         name: 'cost-summary',
@@ -743,25 +749,25 @@ describe('cost explorer request count', () => {
           buildCostSummaryQuery({ accountId: 'acct', from: range.from, to: range.to }, costSources),
       },
       {
-        name: 'cost-by-project',
+        name: 'cost-by-workspace',
         build: (range) =>
-          buildCostByProjectQuery(
+          buildCostByWorkspaceQuery(
             { accountId: 'acct', from: range.from, to: range.to, sort: 'total_desc', offset: 0 },
             costSources,
           ),
       },
     ]);
 
-    expect(counts).toEqual({ 'cost-summary': 1, 'cost-by-project': 1 });
+    expect(counts).toEqual({ 'cost-summary': 1, 'cost-by-workspace': 1 });
   });
 
   test('the sessions level fetches each of its three queries exactly once', async () => {
-    const counts = await countRequests('project=p1', [
+    const counts = await countRequests('workspace=p1', [
       {
         name: 'cost-summary',
         build: (range) =>
           buildCostSummaryQuery(
-            { accountId: 'acct', projectId: 'p1', from: range.from, to: range.to },
+            { accountId: 'acct', workspaceId: 'p1', from: range.from, to: range.to },
             costSources,
           ),
       },
@@ -769,7 +775,7 @@ describe('cost explorer request count', () => {
         name: 'owner-catalog',
         build: (range) =>
           buildSessionCostsListQuery(
-            { accountId: 'acct', projectId: 'p1', limit: 100, offset: 0, from: range.from, to: range.to, sort: 'total_desc' },
+            { accountId: 'acct', workspaceId: 'p1', limit: 100, offset: 0, from: range.from, to: range.to, sort: 'total_desc' },
             sessionSources,
           ),
       },
@@ -777,7 +783,7 @@ describe('cost explorer request count', () => {
         name: 'session-list',
         build: (range) =>
           buildSessionCostsListQuery(
-            { accountId: 'acct', projectId: 'p1', limit: 25, offset: 0, from: range.from, to: range.to, sort: 'total_desc' },
+            { accountId: 'acct', workspaceId: 'p1', limit: 25, offset: 0, from: range.from, to: range.to, sort: 'total_desc' },
             sessionSources,
           ),
       },
@@ -792,12 +798,12 @@ describe('cost explorer request count', () => {
   // the selected window) — it is mounted alongside to pin that it stays at one
   // request and never becomes window-keyed by accident.
   test('the session ledger level fetches each of its two queries exactly once', async () => {
-    const counts = await countRequests('project=p1&session=s1', [
+    const counts = await countRequests('workspace=p1&session=s1', [
       {
         name: 'cost-summary',
         build: (range) =>
           buildCostSummaryQuery(
-            { accountId: 'acct', projectId: 'p1', sessionId: 's1', from: range.from, to: range.to },
+            { accountId: 'acct', workspaceId: 'p1', sessionId: 's1', from: range.from, to: range.to },
             costSources,
           ),
       },
@@ -805,7 +811,7 @@ describe('cost explorer request count', () => {
         name: 'session-detail',
         build: () =>
           buildSessionCostDetailQuery(
-            { accountId: 'acct', projectId: 'p1', sessionId: 's1' },
+            { accountId: 'acct', workspaceId: 'p1', sessionId: 's1' },
             sessionSources,
           ),
       },
@@ -892,9 +898,9 @@ const CUSTOM_SEARCH = 'range=custom&from=2026-07-01T00:00:00.000Z&to=2026-07-08T
 const CUSTOM_WINDOW = '2026-07-01T00:00:00.000Z|2026-07-08T00:00:00.000Z';
 
 const LEVELS = [
-  { name: 'projects', drill: '', keys: ['projects', 'summary', 'by-project'] },
-  { name: 'sessions', drill: 'project=p1', keys: ['projects', 'summary', 'list', 'list'] },
-  { name: 'session ledger', drill: 'project=p1&session=s1', keys: ['projects', 'summary', 'detail'] },
+  { name: 'workspaces', drill: '', keys: ['workspaces', 'summary', 'by-workspace'] },
+  { name: 'sessions', drill: 'workspace=p1', keys: ['workspaces', 'summary', 'list', 'list'] },
+  { name: 'session ledger', drill: 'workspace=p1&session=s1', keys: ['workspaces', 'summary', 'detail'] },
 ] as const;
 
 for (const level of LEVELS) {
@@ -930,7 +936,7 @@ for (const level of LEVELS) {
 // ── The breadcrumb's affordance ────────────────────────────────────────────
 //
 // Jay, using the shipped feature: "when you click on any user, you get
-// confused about where to click to go back to see all the projects."
+// confused about where to click to go back to see all the workspaces."
 //
 // The crumb model already routed correctly — `buildBreadcrumbCrumbs` above is
 // tested for it — so nothing here touches the model or the URL state. What was
@@ -990,13 +996,13 @@ function chevronCount(html: string): number {
 
 describe('CostExplorer breadcrumb affordance', () => {
   test('a parent crumb is a real button, so it is keyboard reachable', () => {
-    const crumbs = breadcrumbHtml(renderExplorerHtml('project=p1'));
+    const crumbs = breadcrumbHtml(renderExplorerHtml('workspace=p1'));
     expect(crumbs).toContain('<button');
     expect(crumbs).toContain('type="button"');
   });
 
   test('a parent crumb underlines and changes colour on hover, and shows a focus ring', () => {
-    const crumbs = breadcrumbHtml(renderExplorerHtml('project=p1'));
+    const crumbs = breadcrumbHtml(renderExplorerHtml('workspace=p1'));
     const button = crumbs.match(/<button[^>]*>/)![0];
     expect(button).toContain('hover:underline');
     expect(button).toContain('hover:text-foreground');
@@ -1011,7 +1017,7 @@ describe('CostExplorer breadcrumb affordance', () => {
   // `py-2.5` on the crumb (10px + a 20px text line box + 10px = 40px) and
   // `-my-2.5` on the list, which gives the padding back to the layout.
   test('crumb hit areas are enlarged and the enlargement is cancelled at the list', () => {
-    const crumbs = breadcrumbHtml(renderExplorerHtml('project=p1'));
+    const crumbs = breadcrumbHtml(renderExplorerHtml('workspace=p1'));
     expect(crumbs.match(/<button[^>]*>/)![0]).toContain('py-2.5');
     expect(crumbs).toMatch(/<ol[^>]*class="[^"]*-my-2\.5/);
   });
@@ -1024,18 +1030,18 @@ describe('CostExplorer breadcrumb affordance', () => {
   // renders its own `<svg>` between every pair of crumbs, so a nav-wide count
   // measures separators and would move with the drill-down depth.
   test('exactly one back chevron renders at the sessions level', () => {
-    expect(chevronCount(renderExplorerHtml('project=p1'))).toBe(1);
+    expect(chevronCount(renderExplorerHtml('workspace=p1'))).toBe(1);
   });
 
   test('still exactly one back chevron at the session level, where two crumbs are clickable', () => {
-    const html = renderExplorerHtml('project=p1&session=s1');
+    const html = renderExplorerHtml('workspace=p1&session=s1');
     // Two clickable crumbs …
     expect(crumbButtons(html)).toHaveLength(2);
     // … and one chevron across both of them.
     expect(chevronCount(html)).toBe(1);
   });
 
-  test('no back chevron at the projects level — there is nowhere up', () => {
+  test('no back chevron at the workspaces level — there is nowhere up', () => {
     const html = renderExplorerHtml('');
     expect(crumbButtons(html)).toHaveLength(0);
     expect(chevronCount(html)).toBe(0);
@@ -1044,7 +1050,7 @@ describe('CostExplorer breadcrumb affordance', () => {
   // The current level must stay non-interactive. A crumb that pushes the state
   // it is already in is a control that does nothing.
   test('the current crumb stays a BreadcrumbPage, never a button', () => {
-    const crumbs = breadcrumbHtml(renderExplorerHtml('project=p1'));
+    const crumbs = breadcrumbHtml(renderExplorerHtml('workspace=p1'));
     expect(crumbs).toContain('aria-current="page"');
     const pageMatch = crumbs.match(/<span[^>]*aria-current="page"[^>]*>[\s\S]*?<\/span>/);
     expect(pageMatch).not.toBeNull();
@@ -1055,7 +1061,7 @@ describe('CostExplorer breadcrumb affordance', () => {
   // "Back" button beside it would be a duplicate with its own state to keep
   // right.
   test('no separate Back button is added anywhere on the page', () => {
-    const html = renderExplorerHtml('project=p1&session=s1');
+    const html = renderExplorerHtml('workspace=p1&session=s1');
     expect(html).not.toMatch(/>\s*Back\s*</);
   });
 });
@@ -1074,8 +1080,8 @@ describe('CostExplorer breadcrumb affordance', () => {
 // passed a constant would pass. That is not a realistic hazard (there is no
 // clock left to read), but it is the boundary.
 //
-// Both of this suite's standing failures — `project-sidebar-header.test.ts:36`
-// and `project-switcher-control.test.ts:56` — are `toContain('<className
+// Both of this suite's standing failures — `workspace-sidebar-header.test.ts:36`
+// and `workspace-switcher-control.test.ts:56` — are `toContain('<className
 // literal>')` on correct components. This assertion is a different shape (a
 // count of a hazard, not an appearance), which is why it survives renames and
 // reformatting, but it is still text and it is kept to the minimum that earns

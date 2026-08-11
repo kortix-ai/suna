@@ -3,15 +3,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
-import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
-import { getProjectModelPicker } from '../core/rest/projects-client';
-import { setProjectModelEnablement } from '../core/rest/projects-client/model-enablement';
+import type { WorkspaceLlmCatalogResponse } from '../core/rest/workspaces-client';
+import { getWorkspaceModelPicker } from '../core/rest/workspaces-client';
+import { setWorkspaceModelEnablement } from '../core/rest/workspaces-client/model-enablement';
 import { applyEnablementToProviderList } from './provider-selection';
 import type { ProviderListResponse } from './use-opencode-sessions';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
-type ProjectModelPicker = ProjectLlmCatalogResponse;
+type ProjectModelPicker = WorkspaceLlmCatalogResponse;
 
 export interface UseModelEnablement {
   /** True while the project has made no exceptions to the catalog default. */
@@ -37,29 +37,29 @@ export interface UseModelEnablement {
  * list would stop tracking "the latest", and every future model would arrive
  * switched off.
  */
-export function useModelEnablement(projectId: string | null | undefined): UseModelEnablement {
+export function useModelEnablement(workspaceId: string | null | undefined): UseModelEnablement {
   const queryClient = useQueryClient();
-  // Same entry `useProjectModels` reads and the routing-policy save
-  // invalidates — see `qk.project.modelPicker`'s doc comment.
-  const queryKey = useMemo(() => qk.project.modelPicker(projectId ?? ''), [projectId]);
+  // Same entry `useWorkspaceModels` reads and the routing-policy save
+  // invalidates — see `qk.workspace.modelPicker`'s doc comment.
+  const queryKey = useMemo(() => qk.workspace.modelPicker(workspaceId ?? ''), [workspaceId]);
   // The session picker does NOT render from the query above — it renders from
   // the gateway provider list (`useOpenCodeProviders`), a SECOND cache of the
   // same `/model-picker` payload with `staleTime: Infinity`. Every write must
   // restamp + invalidate it too, or the composer keeps offering the
   // pre-toggle list until a hard refresh.
-  const providersKey = useMemo(() => ['project-providers', projectId, 'gateway'], [projectId]);
+  const providersKey = useMemo(() => ['workspace-providers', workspaceId, 'gateway'], [workspaceId]);
 
   const { data } = useQuery({
     queryKey,
-    queryFn: () => getProjectModelPicker(projectId as string),
-    enabled: !!projectId,
+    queryFn: () => getWorkspaceModelPicker(workspaceId as string),
+    enabled: !!workspaceId,
     ...contract('config'),
     retry: false,
   });
 
   const mutation = useMutation({
     mutationFn: (next: Record<string, boolean>) =>
-      setProjectModelEnablement(projectId as string, next),
+      setWorkspaceModelEnablement(workspaceId as string, next),
     // Apply the new flags to the cached picker payload up front. Every surface
     // reads `enabled` off THIS query — the switch and the session picker both —
     // so without it the UI sits on the pre-toggle answer until the round trip

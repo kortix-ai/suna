@@ -19,7 +19,7 @@ function baseConfig(workspace: string): Config {
     branchFetchDelaySec: 0.25,
     defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
-    projectId: 'project-1',
+    workspaceId: 'project-1',
     apiUrl: 'http://api.test/v1',
     repoUrl: undefined,
     branchName: undefined,
@@ -45,7 +45,20 @@ async function makeDeck(workspace: string, name: string): Promise<string> {
   return presDir
 }
 
-const tick = () => new Promise<void>((r) => setTimeout(r, 5))
+async function waitForConversion(
+  app: ReturnType<typeof createPresentationRouter>,
+  format: string,
+  presentationPath: string,
+  timeoutMs = 2_000,
+): Promise<Response> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const response = await post(app, format, presentationPath)
+    if (response.status !== 202) return response
+    await new Promise<void>((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error(`conversion stayed pending for more than ${timeoutMs}ms`)
+}
 
 /** A runner that returns null scripts dir is never needed; a present one suffices. */
 const scriptsPresent = async () => '/fake/scripts'
@@ -201,9 +214,7 @@ describe('presentation convert router', () => {
     expect(calls).toBe(1)
 
     release()
-    await tick()
-
-    const r3 = await post(app, 'pptx', presDir)
+    const r3 = await waitForConversion(app, 'pptx', presDir)
     expect(r3.status).toBe(200)
     expect(res_contentType(r3)).toContain('presentationml.presentation')
     expect((await r3.arrayBuffer()).byteLength).toBe(4)
@@ -223,9 +234,8 @@ describe('presentation convert router', () => {
 
     const r1 = await post(app, 'pdf', presDir)
     expect(r1.status).toBe(202)
-    await tick()
 
-    const r2 = await post(app, 'pdf', presDir)
+    const r2 = await waitForConversion(app, 'pdf', presDir)
     expect(r2.status).toBe(500)
     expect(((await r2.json()) as { error?: string }).error).toContain('no valid slides')
     expect(calls).toBe(1)
@@ -233,7 +243,8 @@ describe('presentation convert router', () => {
     // Error was surfaced + cleared → a later request starts a fresh conversion.
     const r3 = await post(app, 'pdf', presDir)
     expect(r3.status).toBe(202)
-    await tick()
+    const r4 = await waitForConversion(app, 'pdf', presDir)
+    expect(r4.status).toBe(500)
     expect(calls).toBe(2)
   })
 

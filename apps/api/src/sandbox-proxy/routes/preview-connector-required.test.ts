@@ -21,7 +21,7 @@ const ACTIVE_RECORD = {
   status: 'active',
   serviceKey: 'svc-key',
   sessionId: 'sess-1',
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   accountId: 'acct-1',
   externalId: 'ext-1',
   sandboxId: 'sbx-1',
@@ -68,13 +68,13 @@ mock.module('../../shared/preview-ownership', () => ({
 }));
 let authorizeAllowed = true;
 mock.module('../../iam', () => ({
-  PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
+  WORKSPACE_ACTIONS: { WORKSPACE_AGENT_READ: 'project.agent.read' },
   authorize: async () =>
     authorizeAllowed
       ? { allowed: true, reason: 'project_role' }
       : { allowed: false, reason: 'resource_scope_insufficient' },
 }));
-mock.module('../../projects/lib/prompt-connector-preflight', () => ({
+mock.module('../../workspaces/lib/prompt-connector-preflight', () => ({
   PromptConnectorPreflightUnresolved,
   missingPromptConnectorConnections: async (input: {
     sessionAgent: string;
@@ -87,23 +87,23 @@ mock.module('../../projects/lib/prompt-connector-preflight', () => ({
 }));
 
 let envSyncCalls = 0;
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../workspaces/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {
     envSyncCalls += 1;
   },
 }));
 let remintCalls = 0;
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../workspaces/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => {
     remintCalls += 1;
     return { action: 'skip' };
   },
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../workspaces/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../workspaces/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 mock.module('../backend', () => ({

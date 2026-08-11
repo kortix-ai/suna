@@ -6,14 +6,14 @@
  * today by the CODEX_AUTH_JSON per-user provider login.
  */
 import { describe, expect, test } from 'bun:test';
-import { buildSecretView } from '../projects/lib/serializers';
+import { buildSecretView } from '../workspaces/lib/serializers';
 
 const OTHER = 'u-other';
 
 function sharedRow(overrides: Partial<Record<string, unknown>> = {}): any {
   return {
     secretId: 's-1',
-    projectId: 'p-1',
+    workspaceId: 'p-1',
     identifier: 'STRIPE_KEY',
     name: 'STRIPE_KEY',
     valueEnc: 'enc',
@@ -30,7 +30,7 @@ function sharedRow(overrides: Partial<Record<string, unknown>> = {}): any {
 function personalRow(overrides: Partial<Record<string, unknown>> = {}): any {
   return {
     secretId: 's-p',
-    projectId: 'p-1',
+    workspaceId: 'p-1',
     identifier: 'CODEX_AUTH_JSON',
     name: 'CODEX_AUTH_JSON',
     valueEnc: 'enc',

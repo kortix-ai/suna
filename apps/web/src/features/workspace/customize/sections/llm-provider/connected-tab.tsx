@@ -8,9 +8,9 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { qk, refreshWorkspaceProviderState } from '@kortix/sdk/react';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
-import { deleteProjectProviderOAuth, deleteProjectSecret } from '@kortix/sdk';
+import { deleteWorkspaceProviderOAuth, deleteWorkspaceSecret } from '@kortix/sdk';
 import {
   PlugIcon as Plug,
   PlusIcon as Plus,
@@ -22,13 +22,13 @@ import { useMemo, useState } from 'react';
 import { providerCredentialSummary, providerDisconnectPlan } from './utils';
 
 export function ConnectedTab({
-  projectId,
+  workspaceId,
   connectedProviders,
   search,
   onAddProvider,
   canWrite = false,
 }: {
-  projectId: string;
+  workspaceId: string;
   connectedProviders: LlmProviderEntry[];
   search: string;
   onAddProvider: () => void;
@@ -43,17 +43,17 @@ export function ConnectedTab({
       const plan = providerDisconnectPlan(provider);
       await Promise.all([
         ...(plan.oauthProvider
-          ? [deleteProjectProviderOAuth(projectId, plan.oauthProvider)]
+          ? [deleteWorkspaceProviderOAuth(workspaceId, plan.oauthProvider)]
           : []),
-        ...plan.secretNames.map((name) => deleteProjectSecret(projectId, name)),
+        ...plan.secretNames.map((name) => deleteWorkspaceSecret(workspaceId, name)),
       ]);
       return provider;
     },
     onSuccess: (provider) => {
       successToast(`${provider.label} disconnected`);
       setConfirmId(null);
-      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-      refreshProjectProviderState(queryClient, projectId);
+      queryClient.invalidateQueries({ queryKey: qk.workspace.secrets(workspaceId) });
+      refreshWorkspaceProviderState(queryClient, workspaceId);
     },
     onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to disconnect'),
   });
@@ -80,8 +80,8 @@ export function ConnectedTab({
           )}
           description={
             canWrite
-              ? 'Connect an LLM provider to give this project its own models. Keys are encrypted and shared with everyone on the project.'
-              : 'No LLM providers have been connected to this project yet.'
+              ? 'Connect an LLM provider to give this workspace its own models. Keys are encrypted and shared with everyone in the workspace.'
+              : 'No LLM providers have been connected to this workspace yet.'
           }
           action={
             canWrite ? (

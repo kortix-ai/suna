@@ -1,8 +1,8 @@
 'use client';
 
 import {
-  type AdminConnector,
-  type ConnectorAuthorizationStrategy,
+  type WorkspaceAdminConnector,
+  type WorkspaceConnectorAuthorizationStrategy,
   deleteConnector,
 } from '@kortix/sdk';
 import { TrashIcon } from '@phosphor-icons/react';
@@ -17,13 +17,13 @@ import { connectorAuthorizationStrategyIsEditable } from '@/features/workspace/c
 import { AuthorizationStrategyField } from '@/features/workspace/customize/sections/connector-connection-modal';
 
 export interface ConnectorSettingsProps {
-  projectId: string;
-  connector: AdminConnector;
+  workspaceId: string;
+  connector: WorkspaceAdminConnector;
   displayName: string;
   canWrite: boolean;
   /** The authorization owner is mid-update — freeze the Remove control too. */
   strategyUpdating: boolean;
-  onAuthorizationStrategyChange: (next: ConnectorAuthorizationStrategy) => void;
+  onAuthorizationStrategyChange: (next: WorkspaceConnectorAuthorizationStrategy) => void;
   onRemoved: () => void;
 }
 
@@ -38,7 +38,7 @@ export interface ConnectorSettingsProps {
  * Renaming is not here — it lives in the modal header (`HeaderName`).
  */
 export function ConnectorSettings({
-  projectId,
+  workspaceId,
   connector,
   displayName,
   canWrite,
@@ -50,7 +50,7 @@ export function ConnectorSettings({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const remove = useMutation({
-    mutationFn: () => deleteConnector(projectId, connector.slug),
+    mutationFn: () => deleteConnector(workspaceId, connector.slug),
     onSuccess: () => {
       successToast(`Removed ${displayName}`);
       onRemoved();

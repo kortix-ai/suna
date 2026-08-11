@@ -20,7 +20,7 @@ export interface NotFoundAction {
  *
  * Chrome-free on purpose: the marketing `not-found.tsx` wraps it in the
  * Navbar + hero background + footer, while the dashboard `not-found.tsx`
- * drops it inside the project shell. Same content, two frames.
+ * drops it inside the workspace shell. Same content, two frames.
  */
 export function NotFoundCard({
   title,

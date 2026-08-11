@@ -83,7 +83,7 @@ export function serializeAuditEvent(row: AuditEventRow) {
     event_id: row.eventId,
     occurred_at: row.occurredAt.toISOString(),
     account_id: row.accountId,
-    project_id: row.projectId,
+    project_id: row.workspaceId,
     session_id: row.sessionId,
     opencode_session_id: row.opencodeSessionId,
     turn_id: row.turnId,

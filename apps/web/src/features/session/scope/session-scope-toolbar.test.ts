@@ -41,11 +41,11 @@ const catalog = (
       {
         slug: 'mail',
         name: 'Mail',
-        authorization_strategy: 'project',
+        authorization_strategy: 'workspace',
         connections: [
           {
             connection_id: 'connection-mail',
-            label: 'Project mail',
+            label: 'Workspace mail',
             is_default: true,
           },
         ],
@@ -74,7 +74,7 @@ describe('createNewSessionScopeInitialization', () => {
   test('commits an unrestricted (null) secrets scope before the first prompt', () => {
     // `null` is the no-override state — the session inherits the agent's grant,
     // exactly like a server-created session. `[]` would be an explicit "inject
-    // zero project secrets", which silently denied every browser-created session
+    // zero workspace secrets", which silently denied every browser-created session
     // its grant. Connector access previews every visible default connection.
     // Untouched defaults remain server-resolved until the user changes them.
     expect(createNewSessionScopeInitialization(catalog())).toEqual({

@@ -58,7 +58,7 @@ export interface FlatModel {
   /** When models.dev last refreshed this model's own entry. */
   lastUpdated?: string;
   /**
-   * Whether the project OFFERS this model. Server-owned per-project
+   * Whether the workspace OFFERS this model. Server-owned per-workspace
    * enablement, resolved by the API and enforced by the gateway — the session
    * picker renders the enabled ones and "Manage models" switches on this flag.
    * Neither re-derives it. Undefined on catalogs that don't carry enablement
@@ -99,7 +99,7 @@ interface OpencodeCatalogModel {
  * The point of naming the shape at all is that it keeps `provider` and the
  * models.dev passthrough fields type-checked end to end: this file used to
  * recover all of them with `(model as any)` casts because
- * `ProjectLlmCatalogResponse` never declared them.
+ * `WorkspaceLlmCatalogResponse` never declared them.
  */
 type LooseModel = OpencodeCatalogModel & Partial<GatewayCatalogModel>;
 

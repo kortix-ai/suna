@@ -166,7 +166,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'llm_gateway',
     name: 'LLM Gateway',
     description:
-      'Route this project through the managed Kortix LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the project setting.',
+      'Route this workspace through the managed Kortix LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the workspace setting.',
     stability: 'experimental',
     // Master kill switch: when off, the feature disappears and every project
     // falls back to native OpenCode provider behavior.

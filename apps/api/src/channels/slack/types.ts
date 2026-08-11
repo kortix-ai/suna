@@ -16,7 +16,7 @@ export interface LiveTurn {
   steps: StreamTaskChunk[];
   expiry: number;
   finalized: boolean;
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
   teamId: string;
   originatingEvent: SlackEvent;
@@ -31,14 +31,14 @@ export interface PendingAsk {
   messageTs: string | null;
   token: string;
   sessionId: string;
-  projectId: string;
+  workspaceId: string;
   teamId: string;
   originatingEvent: SlackEvent;
 }
 
-export type ProjectResolution =
-  | { kind: 'project'; projectId: string }
-  | { kind: 'ambiguous'; projectIds: string[] }
+export type WorkspaceResolution =
+  | { kind: 'workspace'; workspaceId: string }
+  | { kind: 'ambiguous'; workspaceIds: string[] }
   | { kind: 'pending' }
   | { kind: 'none' };
 
@@ -46,8 +46,8 @@ export type SlashResponse = { response_type: 'ephemeral' | 'in_channel'; text?: 
 
 export type EventClass = 'mention' | 'dm' | 'follow_up' | 'ignore';
 
-export interface HomeProjectRow { projectId: string; name: string; repoUrl: string }
-export interface HomeRecentRow { projectId: string; lastMessageAt: Date; threadId: string }
+export interface HomeWorkspaceRow { workspaceId: string; name: string; repoUrl: string }
+export interface HomeRecentRow { workspaceId: string; lastMessageAt: Date; threadId: string }
 
 export interface SlackEnvelope {
   type: string;

@@ -78,7 +78,7 @@ describe('secretDeliveryPresentation', () => {
 });
 
 describe('networkBoundaryAvailability', () => {
-  test('requires the project itself to run on Platinum', () => {
+  test('requires the workspace itself to run on Platinum', () => {
     expect(
       networkBoundaryAvailability({
         available_sandbox_providers: ['daytona', 'platinum'],
@@ -87,21 +87,21 @@ describe('networkBoundaryAvailability', () => {
     ).toBe('available');
   });
 
-  test('reports a platform-capable but unpinned project separately', () => {
-    // The live dev state: Platinum is offered, the project runs on Daytona, so
+  test('reports a platform-capable but unpinned workspace separately', () => {
+    // The live dev state: Platinum is offered, the workspace runs on Daytona, so
     // no header is injected.
     expect(
       networkBoundaryAvailability({
         available_sandbox_providers: ['daytona', 'platinum'],
         default_sandbox_provider: null,
       }),
-    ).toBe('project_not_pinned');
+    ).toBe('workspace_not_pinned');
     expect(
       networkBoundaryAvailability({
         available_sandbox_providers: ['daytona', 'platinum'],
         default_sandbox_provider: 'daytona',
       }),
-    ).toBe('project_not_pinned');
+    ).toBe('workspace_not_pinned');
   });
 
   test('reports a deployment without Platinum as unsupported', () => {
@@ -117,9 +117,9 @@ describe('networkBoundaryAvailability', () => {
 });
 
 describe('networkBoundaryBlockedReason', () => {
-  test('names the exact fix for an unpinned project', () => {
-    expect(networkBoundaryBlockedReason('project_not_pinned')).toBe(
-      'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
+  test('names the exact fix for an unpinned workspace', () => {
+    expect(networkBoundaryBlockedReason('workspace_not_pinned')).toBe(
+      'This workspace does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
     );
   });
 
@@ -130,7 +130,7 @@ describe('networkBoundaryBlockedReason', () => {
 });
 
 describe('secretDeliveryOptions', () => {
-  test('offers the HTTPS broker and enables network delivery when the project runs on Platinum', () => {
+  test('offers the HTTPS broker and enables network delivery when the workspace runs on Platinum', () => {
     const options = secretDeliveryOptions('runtime', 'available', 'available');
     expect(options.map(({ strategy, disabled }) => ({ strategy, disabled }))).toEqual([
       { strategy: 'runtime', disabled: false },
@@ -149,11 +149,11 @@ describe('secretDeliveryOptions', () => {
     });
   });
 
-  test('disables network delivery on an unpinned project and states the fix', () => {
-    expect(secretDeliveryOptions('runtime', 'available', 'project_not_pinned')[2]).toMatchObject({
+  test('disables network delivery on an unpinned workspace and states the fix', () => {
+    expect(secretDeliveryOptions('runtime', 'available', 'workspace_not_pinned')[2]).toMatchObject({
       disabled: true,
       disabledReason:
-        'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
+        'This workspace does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
     });
   });
 
@@ -424,7 +424,7 @@ describe('connector secret bindings', () => {
       provider: 'openapi' as const,
       status: 'needs_auth' as const,
       credentialMode: 'shared' as const,
-      authorizationStrategy: 'project' as const,
+      authorizationStrategy: 'workspace' as const,
       requestAuthType: 'bearer' as const,
       sensitive: false,
       actions: [],
@@ -439,7 +439,7 @@ describe('connector secret bindings', () => {
       provider: 'openapi' as const,
       status: 'active' as const,
       credentialMode: 'shared' as const,
-      authorizationStrategy: 'project' as const,
+      authorizationStrategy: 'workspace' as const,
       requestAuthType: 'bearer' as const,
       sensitive: false,
       actions: [],
@@ -454,13 +454,13 @@ describe('connector secret bindings', () => {
       provider: 'http' as const,
       status: 'active' as const,
       credentialMode: 'shared' as const,
-      authorizationStrategy: 'project' as const,
+      authorizationStrategy: 'workspace' as const,
       requestAuthType: 'api_key' as const,
       sensitive: false,
       actions: [],
       authSecret: 'credential',
       secretIdentifier: 'API_KEY',
-      credentialSource: 'project_secret' as const,
+      credentialSource: 'workspace_secret' as const,
       secretSet: true,
     },
   ];

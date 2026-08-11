@@ -3,14 +3,14 @@
  * per-model breakdown, per-session rollup, error rollup, recent request
  * logs, budgets, and gateway API keys. All reads.
  *
- * Run (from packages/sdk):  bun run playground/gateway/17-gateway-observability.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/gateway/17-gateway-observability.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("gateway-observability", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
-  const gateway = kortix.project(projectId).gateway;
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
+  const gateway = kortix.project(workspaceId).gateway;
 
   const overview = await gateway.overview(7);
   console.log(`✓ overview(7d): ${JSON.stringify(overview).slice(0, 250)}…`);

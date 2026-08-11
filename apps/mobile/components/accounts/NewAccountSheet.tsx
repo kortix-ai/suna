@@ -21,9 +21,9 @@ import { Text } from '@/components/ui/text';
 import { SheetTextInput } from '@/components/ui/SheetInput';
 import { useToast } from '@/components/ui/toast-provider';
 import { getSheetBg } from '@/lib/theme-colors';
-import { useCreateAccount } from '@/lib/projects/hooks';
+import { useCreateAccount } from '@/lib/workspaces/hooks';
 import { haptics } from '@/lib/haptics';
-import type { KortixAccount } from '@/lib/projects/projects-client';
+import type { KortixAccount } from '@/lib/workspaces/workspaces-client';
 import { InitialsAvatar, PrimaryButton, accountColors } from './account-shared';
 
 interface NewAccountSheetProps {
@@ -103,7 +103,7 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
               {preview || 'Your account name'}
             </Text>
             <Text style={{ fontSize: 12.5, lineHeight: 17, color: c.muted, marginTop: 2 }}>
-              A shared workspace for your team and projects.
+              A shared account for your team and workspaces.
             </Text>
           </View>
         </View>

@@ -65,7 +65,7 @@ export async function executeTunnelRpc(input: {
   /** Physical machine owner. Defaults to the audit/project account. */
   tunnelOwnerAccountId?: string;
   accountId: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
   method: string;
@@ -169,7 +169,7 @@ export async function executeTunnelRpc(input: {
   const auditLogId = await startAuditLog({
     tunnelId,
     accountId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     sessionId: input.sessionId,
     actorUserId: input.actorUserId,
     actorType: input.sessionId ? 'agent' : input.actorUserId ? 'human' : 'system',
@@ -421,7 +421,7 @@ export type ComputerCallOutcome =
  */
 export async function executeComputerCall(input: {
   accountId: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
   /** Null is accepted only for legacy aggregate rows and means all account machines. */
@@ -452,7 +452,7 @@ export async function executeComputerCall(input: {
     tunnelId: resolved.tunnelId,
     tunnelOwnerAccountId: resolved.tunnelOwnerAccountId,
     accountId: input.accountId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     sessionId: input.sessionId,
     actorUserId: input.actorUserId,
     method: input.method,

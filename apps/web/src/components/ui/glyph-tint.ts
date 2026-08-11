@@ -1,5 +1,5 @@
 /**
- * The tint a project's GLYPH wears.
+ * The tint a workspace's GLYPH wears.
  *
  * Same treatment as an emoji tile — a pale `--color-glyph-fill-*` under a 1px
  * `--color-glyph-ring-*` inset ring — so a glyph project and an emoji project
@@ -11,7 +11,7 @@
  * of its own, so the colour the user picked has to be visible somewhere the eye
  * lands, and a 1px ring alone is too quiet to carry it.
  */
-import { PROJECT_GLYPH_COLORS, type ProjectGlyphColor } from '@kortix/shared';
+import { WORKSPACE_GLYPH_COLORS, type WorkspaceGlyphColor } from '@kortix/shared';
 
 /**
  * Every class below is a LITERAL string. Do not build one with a template
@@ -26,7 +26,7 @@ import { PROJECT_GLYPH_COLORS, type ProjectGlyphColor } from '@kortix/shared';
  * 1px border of their own (EntityAvatar's base class list, Button's `outline`
  * variant) and it would sit outside the inset ring as a grey second edge.
  */
-const TINT: Record<ProjectGlyphColor, string> = {
+const TINT: Record<WorkspaceGlyphColor, string> = {
   grey: 'border-0 bg-glyph-fill-grey inset-ring-1 inset-ring-glyph-ring-grey',
   red: 'border-0 bg-glyph-fill-red inset-ring-1 inset-ring-glyph-ring-red',
   orange: 'border-0 bg-glyph-fill-orange inset-ring-1 inset-ring-glyph-ring-orange',
@@ -45,7 +45,7 @@ const TINT: Record<ProjectGlyphColor, string> = {
  * `bg-glyph-fill-*` on specificity, so hovering the trigger would wipe the tint
  * to a neutral wash. Restating the fill at the same modifier is what holds it.
  */
-const TINT_HOVER: Record<ProjectGlyphColor, string> = {
+const TINT_HOVER: Record<WorkspaceGlyphColor, string> = {
   grey: 'hover:bg-glyph-fill-grey',
   red: 'hover:bg-glyph-fill-red',
   orange: 'hover:bg-glyph-fill-orange',
@@ -57,7 +57,7 @@ const TINT_HOVER: Record<ProjectGlyphColor, string> = {
 };
 
 /** The glyph's own colour — the ring token, not the fill. */
-const FOREGROUND: Record<ProjectGlyphColor, string> = {
+const FOREGROUND: Record<WorkspaceGlyphColor, string> = {
   grey: 'text-glyph-ring-grey',
   red: 'text-glyph-ring-red',
   orange: 'text-glyph-ring-orange',
@@ -77,11 +77,11 @@ const FOREGROUND: Record<ProjectGlyphColor, string> = {
  * outside the palette, so this only fires on stale cached data or a hand-edited
  * row — exactly the cases where failing quietly and legibly is right.
  */
-const FALLBACK: ProjectGlyphColor = 'grey';
+const FALLBACK: WorkspaceGlyphColor = 'grey';
 
-function resolve(color: string): ProjectGlyphColor {
-  return (PROJECT_GLYPH_COLORS as readonly string[]).includes(color)
-    ? (color as ProjectGlyphColor)
+function resolve(color: string): WorkspaceGlyphColor {
+  return (WORKSPACE_GLYPH_COLORS as readonly string[]).includes(color)
+    ? (color as WorkspaceGlyphColor)
     : FALLBACK;
 }
 

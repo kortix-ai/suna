@@ -446,8 +446,8 @@ export function useAdminAccountLedger(accountId: string | null, limit = 50) {
   });
 }
 
-export interface AdminAccountProject {
-  projectId: string;
+export interface AdminAccountWorkspace {
+  workspaceId: string;
   name: string;
   status: string | null;
   repoUrl: string | null;
@@ -460,6 +460,24 @@ export interface AdminAccountProject {
   lastSessionAt: string | null;
 }
 
+/** @deprecated Use `AdminAccountWorkspace`. */
+export type AdminAccountProject = AdminAccountWorkspace;
+
+export function useAdminAccountWorkspaces(accountId: string | null) {
+  return useQuery<{ workspaces: AdminAccountWorkspace[] }>({
+    queryKey: ['admin', 'accounts', accountId, 'workspaces'],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const response = await backendApi.get<{ workspaces: AdminAccountWorkspace[] }>(
+        `/admin/api/accounts/${accountId}/workspaces`,
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+  });
+}
+
+/** @deprecated Use `useAdminAccountWorkspaces`. */
 export function useAdminAccountProjects(accountId: string | null) {
   return useQuery<{ projects: AdminAccountProject[] }>({
     queryKey: ['admin', 'accounts', accountId, 'projects'],

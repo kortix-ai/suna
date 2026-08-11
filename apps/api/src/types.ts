@@ -85,8 +85,8 @@ export interface AuthVariables {
   apiKeyType?: 'user' | 'sandbox';
   keyId?: string;
   sandboxId?: string;
-  /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */
-  tokenProjectId?: string;
+  /** Set for project-scoped CLI PATs — enforced against the URL :workspaceId. */
+  tokenWorkspaceId?: string;
   /** Set for session-scoped sandbox connector PATs. */
   sessionId?: string;
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */

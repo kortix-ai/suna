@@ -47,7 +47,7 @@ const SCRIPT: Stage<ComputerState>[] = [
       },
       {
         line: ok(t('sandbox ready · branch '), t(SESSION, 'faded')),
-        state: { phase: 'running', done: ['Machine booted'], doing: 'Cloning the project repo' },
+        state: { phase: 'running', done: ['Machine booted'], doing: 'Cloning the workspace repo' },
         pause: 800,
       },
       {
@@ -65,7 +65,7 @@ const FACTS = [
   {
     icon: CpuIcon,
     title: 'Its own isolated machine',
-    sub: 'booted from your project image, with your tools already on it',
+    sub: 'booted from your workspace image, with your tools already on it',
   },
   {
     icon: GitBranchIcon,

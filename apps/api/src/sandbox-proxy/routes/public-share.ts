@@ -83,7 +83,7 @@ publicShareApp.get('/:token', async (c) => {
     share: {
       share_id: row.shareId,
       session_id: row.sessionId,
-      project_id: row.projectId,
+      project_id: row.workspaceId,
       resource_type: row.resourceType,
       label: row.label,
       port: row.port,

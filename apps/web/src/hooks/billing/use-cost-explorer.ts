@@ -1,53 +1,53 @@
 import {
   getCostSummary,
-  listCostByProject,
+  listCostByWorkspace,
   type CostSummary,
   type GetCostSummaryOptions,
-  type ListCostByProjectOptions,
-  type ProjectCostPage,
-  type ProjectCostSort,
+  type ListCostByWorkspaceOptions,
+  type WorkspaceCostPage,
+  type WorkspaceCostSort,
 } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
 import { useBillingAccountId } from '@/stores/billing-account-context';
 
-/** Rows per page for the account-wide project cost rollup (`GET
- *  /usage/cost-by-project`) — mirrors `SESSION_COST_PAGE_SIZE` in
+/** Rows per page for the account-wide workspace cost rollup (`GET
+ *  /usage/cost-by-workspace`) — mirrors `SESSION_COST_PAGE_SIZE` in
  *  `use-session-costs.ts`. */
 export const COST_PAGE_SIZE = 25;
 const COST_EXPLORER_STALE_TIME_MS = 30_000;
 
 export interface CostExplorerSources {
   summary(options?: GetCostSummaryOptions): Promise<CostSummary>;
-  byProject(options?: ListCostByProjectOptions): Promise<ProjectCostPage>;
+  byWorkspace(options?: ListCostByWorkspaceOptions): Promise<WorkspaceCostPage>;
 }
 
 const sdkSources: CostExplorerSources = {
   summary: getCostSummary,
-  byProject: listCostByProject,
+  byWorkspace: listCostByWorkspace,
 };
 
 export interface CostSummaryQueryInput {
   accountId?: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   from?: string;
   to?: string;
 }
 
-export interface CostByProjectQueryInput {
+export interface CostByWorkspaceQueryInput {
   accountId?: string;
   from?: string;
   to?: string;
-  sort?: ProjectCostSort;
+  sort?: WorkspaceCostSort;
   offset: number;
 }
 
 /**
- * Account/project/session spend summary — powers the totals, trend series
- * and top-models breakdown at whichever level of the Project -> Sessions ->
+ * Account/workspace/session spend summary — powers the totals, trend series
+ * and top-models breakdown at whichever level of the Workspace -> Sessions ->
  * Session drill-down the caller is on. The query key carries every scope
- * input (account, project, session, window) so switching levels or changing
+ * input (account, workspace, session, window) so switching levels or changing
  * the date window refetches instead of serving a stale page under the new
  * heading.
  */
@@ -57,14 +57,14 @@ export function buildCostSummaryQuery(
 ) {
   const keyInput = {
     accountId: input.accountId ?? null,
-    projectId: input.projectId ?? null,
+    workspaceId: input.workspaceId ?? null,
     sessionId: input.sessionId ?? null,
     from: input.from,
     to: input.to,
   };
   const options: GetCostSummaryOptions = {
     accountId: input.accountId,
-    projectId: input.projectId ?? undefined,
+    workspaceId: input.workspaceId ?? undefined,
     sessionId: input.sessionId ?? undefined,
     from: input.from,
     to: input.to,
@@ -79,12 +79,12 @@ export function buildCostSummaryQuery(
 }
 
 /**
- * Account-wide project cost rollup — powers the top-level "by project" table
+ * Account-wide workspace cost rollup — powers the top-level "by workspace" table
  * of the cost explorer. The query key carries the window, sort and offset so
  * paging, re-sorting or changing the date window all refetch.
  */
-export function buildCostByProjectQuery(
-  input: CostByProjectQueryInput,
+export function buildCostByWorkspaceQuery(
+  input: CostByWorkspaceQueryInput,
   sources: CostExplorerSources = sdkSources,
 ) {
   const keyInput = {
@@ -94,7 +94,7 @@ export function buildCostByProjectQuery(
     sort: input.sort,
     offset: input.offset,
   };
-  const options: ListCostByProjectOptions = {
+  const options: ListCostByWorkspaceOptions = {
     accountId: input.accountId,
     from: input.from,
     to: input.to,
@@ -104,15 +104,15 @@ export function buildCostByProjectQuery(
   };
 
   return {
-    queryKey: ['cost-explorer', 'by-project', keyInput] as const,
-    queryFn: () => sources.byProject(options),
+    queryKey: ['cost-explorer', 'by-workspace', keyInput] as const,
+    queryFn: () => sources.byWorkspace(options),
     enabled: Boolean(input.accountId),
     staleTime: COST_EXPLORER_STALE_TIME_MS,
   };
 }
 
 export function useCostSummary(input: {
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   from?: string;
   to?: string;
@@ -121,7 +121,7 @@ export function useCostSummary(input: {
   return useQuery(
     buildCostSummaryQuery({
       accountId,
-      projectId: input.projectId ?? null,
+      workspaceId: input.workspaceId ?? null,
       sessionId: input.sessionId ?? null,
       from: input.from,
       to: input.to,
@@ -129,15 +129,15 @@ export function useCostSummary(input: {
   );
 }
 
-export function useCostByProject(input: {
+export function useCostByWorkspace(input: {
   from?: string;
   to?: string;
-  sort?: ProjectCostSort;
+  sort?: WorkspaceCostSort;
   offset: number;
 }) {
   const accountId = useBillingAccountId();
   return useQuery(
-    buildCostByProjectQuery({
+    buildCostByWorkspaceQuery({
       accountId,
       from: input.from,
       to: input.to,

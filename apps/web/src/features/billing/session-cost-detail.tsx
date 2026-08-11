@@ -110,14 +110,14 @@ export function SessionCostDetailContent({
             {detail.session_id}
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
-            {detail.project_name}
+            {detail.workspace_name}
             {detail.owner_name || detail.owner_email
               ? ` · ${detail.owner_name ?? detail.owner_email}`
               : ''}
           </p>
         </div>
         <Button variant="outline" size="sm" asChild>
-          <Link href={`/projects/${detail.project_id}/sessions/${detail.session_id}`}>
+          <Link href={`/workspaces/${detail.workspace_id}/sessions/${detail.session_id}`}>
             Open session
             <ExternalLink className="size-3.5" />
           </Link>

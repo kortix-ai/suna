@@ -3,14 +3,14 @@
  *
  * Two upstream surfaces, deliberately not interchangeable:
  *
- * - READ is the per-SESSION audit (`GET /projects/{id}/sessions/{sid}/audit`),
- *   not the project-wide approval inbox. The inbox is manager-scoped and
+ * - READ is the per-SESSION audit (`GET /workspaces/{id}/sessions/{sid}/audit`),
+ *   not the workspace-wide approval inbox. The inbox is manager-scoped and
  *   returns every end-user's pending gate; in wrapper mode ONE operator
  *   credential makes every call, so that inbox would hand this browser other
  *   Lumen users' execution ids — and an execution id is all the resolve route
  *   needs. The per-session audit is bounded to the session already on screen,
  *   so it is the only read that cannot leak across end-users.
- * - RESOLVE is `POST /projects/{id}/approvals/{executionId}` — the only route
+ * - RESOLVE is `POST /workspaces/{id}/approvals/{executionId}` — the only route
  *   that decides a gate.
  *
  * `audit_access` is an Enterprise entitlement: without it the trail degrades to
@@ -20,15 +20,15 @@
  */
 
 import { serverErrorBody } from '@/lib/api-error-body';
-import type { SessionAudit } from '@kortix/sdk';
+import type { WorkspaceSessionAudit } from '@kortix/sdk';
 
-type AuditAction = SessionAudit['actions'][number];
+type AuditAction = WorkspaceSessionAudit['actions'][number];
 
 /** One gated action still waiting on a human decision. */
 export interface PendingApprovalRow {
   executionId: string;
   /** `${connector}.${action}` when the connector is known — the fully-qualified
-   *  tool path a project policy matches on. Falls back to the bare action. */
+   *  tool path a workspace policy matches on. Falls back to the bare action. */
   action: string;
   /** read | write | destructive | null. */
   risk: string | null;
@@ -70,7 +70,7 @@ function isPending(action: AuditAction): boolean {
 }
 
 export function sessionApprovalsView(
-  audit: SessionAudit | null | undefined,
+  audit: WorkspaceSessionAudit | null | undefined,
 ): SessionApprovalsView {
   const actions = audit?.actions ?? [];
   return {
@@ -143,7 +143,7 @@ export function approvalFailure(err: unknown): ApprovalFailure {
     return {
       kind: 'not_permitted',
       title: 'Not allowed to resolve this',
-      detail: serverText || 'Only a project manager or the session launcher can resolve this.',
+      detail: serverText || 'Only a workspace manager or the session launcher can resolve this.',
     };
   }
   return {

@@ -48,8 +48,8 @@ export const WORKSPACE_MODE_LABEL: Record<(typeof WORKSPACE_MODES)[number], stri
   branch: 'Branch',
 };
 export const WORKSPACE_MODE_HELP: Record<(typeof WORKSPACE_MODES)[number], string> = {
-  runtime: 'Edits the live project files directly.',
-  read: 'Reads the project files. Cannot change them.',
+  runtime: 'Edits the live workspace files directly.',
+  read: 'Reads the workspace files. Cannot change them.',
   branch: 'Works on its own branch. You review and merge the result.',
 };
 export const PERMISSION_ACTIONS = ['allow', 'ask', 'deny'] as const;
@@ -111,7 +111,7 @@ export const PERMISSION_KEY_LABEL: Record<string, string> = {
   list: 'List folders',
   bash: 'Run shell commands',
   task: 'Hand work to a subagent',
-  external_directory: 'Reach outside the project',
+  external_directory: 'Reach outside the workspace',
   lsp: 'Use the language server',
   todowrite: 'Keep a todo list',
   question: 'Ask you a question mid-run',
@@ -128,7 +128,7 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
   list: 'List directory contents.',
   bash: 'Run shell commands.',
   task: 'Launch a subagent to run a task.',
-  external_directory: 'Access paths outside this project workspace.',
+  external_directory: 'Access paths outside this workspace workspace.',
   lsp: 'Use language-server tooling — go-to-definition, diagnostics.',
   todowrite: "Maintain the session's todo list.",
   question: 'Ask the user a clarifying question mid-run.',
@@ -140,12 +140,12 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
 /**
  * The grantable `kortix_cli` action catalog, grouped for the picker. MUST stay
  * in sync with `GRANTABLE_KORTIX_CLI_ACTIONS` in @kortix/manifest-schema (=
- * PROJECT_ACTIONS in apps/api iam/actions.ts — every project-scoped action,
+ * WORKSPACE_ACTIONS in apps/api iam/actions.ts — every project-scoped action,
  * including the manager-tier leaves project.delete / project.members.manage /
- * project.gateway.keys.manage, still reachable via a project's `manager`
+ * project.gateway.keys.manage, still reachable via a workspace's `manager`
  * role). Mirrored here (not imported) because the manifest-schema/api
  * packages aren't in the web bundle — same mirror discipline as
- * apps/web/src/lib/project-actions.ts. Kept in sync by
+ * apps/web/src/lib/workspace-actions.ts. Kept in sync by
  * agent-editor.test.tsx's drift guard against the real
  * `GRANTABLE_KORTIX_CLI_ACTIONS` constant.
  *
@@ -157,7 +157,7 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  * `iam/engine-v2.ts`'s `computeTokenScope`).
  */
 export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
-  { group: 'Project', actions: ['project.read', 'project.write', 'project.delete'] },
+  { group: 'Workspace', actions: ['project.read', 'project.write', 'project.delete'] },
   { group: 'Change requests', actions: ['project.cr.open', 'project.cr.merge'] },
   {
     group: 'Sessions',

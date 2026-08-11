@@ -39,7 +39,7 @@ function withPanel(node: ReactNode, over: Partial<SessionPanelValue> = {}) {
 
 // `EasyPanel` calls `useSessionAudit` (react-query) unconditionally for its
 // Terminal/Audit footer row's pending-count pill — `enabled: false` when no
-// projectId/projectSessionId is passed (as none of these tests pass one), but
+// workspaceId/workspaceSessionId is passed (as none of these tests pass one), but
 // the hook still needs a `QueryClientProvider` ancestor even though no query
 // actually fires under a static render (same requirement as
 // `show-tool.test.tsx`'s `useFileContent`).
@@ -148,7 +148,7 @@ describe('panel mode gate', () => {
 describe('EasyPanel home has no Terminal/Audit footer row', () => {
   test('neither label renders in the card column', () => {
     const html = renderToStaticMarkup(
-      withQueryClient(withPanel(<EasyPanel />, { projectSessionId: 'ps1' })),
+      withQueryClient(withPanel(<EasyPanel />, { workspaceSessionId: 'ps1' })),
     );
     expect(html).not.toContain('>Terminal<');
     expect(html).not.toContain('>Audit<');

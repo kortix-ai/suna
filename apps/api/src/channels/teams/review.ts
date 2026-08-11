@@ -21,10 +21,10 @@ export async function postTeamsReviewCard(
     botId: handle.botId,
     fromId: handle.fromId,
     tenantId: handle.tenantId,
-    projectId: handle.projectId,
+    workspaceId: handle.workspaceId,
   };
-  const viewUrl = handle.projectId
-    ? `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${handle.projectId}/review`
+  const viewUrl = handle.workspaceId
+    ? `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/workspaces/${handle.workspaceId}/review`
     : undefined;
 
   const posted = await sendCard(

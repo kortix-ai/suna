@@ -1,9 +1,9 @@
-import type { ProjectSecret } from '@kortix/sdk';
+import type { WorkspaceSecret } from '@kortix/sdk';
 
 /**
- * Which of a project's secret rows a session allowlist may actually name.
+ * Which of a workspace's secret rows a session allowlist may actually name.
  *
- * `GET /projects/{id}/secrets` lists rows of EVERY scope, but session create
+ * `GET /workspaces/{id}/secrets` lists rows of EVERY scope, but session create
  * validates `secrets:` against runtime-scoped rows only. Allowlisting anything
  * else fails the create with 404 SECRET_IDENTIFIER_NOT_FOUND — pointing at a
  * row the user can see listed right there, which reads like a platform bug
@@ -61,7 +61,7 @@ export type SecretScope =
   /** Reserved `KORTIX_*` row the platform manages. */
   | 'platform';
 
-export function secretScope(secret: Pick<ProjectSecret, 'name' | 'system'>): SecretScope {
+export function secretScope(secret: Pick<WorkspaceSecret, 'name' | 'system'>): SecretScope {
   const key = secret.name.toUpperCase();
   if (secret.system || key.startsWith('KORTIX_')) return 'platform';
   if (CHANNEL_INSTALL_KEYS.includes(key)) return 'channel_install';
@@ -76,12 +76,12 @@ export function secretScope(secret: Pick<ProjectSecret, 'name' | 'system'>): Sec
 }
 
 /** May this row be named in a session's `secrets:` allowlist? */
-export function isAllowlistable(secret: Pick<ProjectSecret, 'name' | 'system'>): boolean {
+export function isAllowlistable(secret: Pick<WorkspaceSecret, 'name' | 'system'>): boolean {
   return secretScope(secret) === 'runtime';
 }
 
 /** The rows a new-session allowlist may offer, in list order. */
-export function selectAllowlistableSecrets<T extends Pick<ProjectSecret, 'name' | 'system'>>(
+export function selectAllowlistableSecrets<T extends Pick<WorkspaceSecret, 'name' | 'system'>>(
   items: T[] | undefined,
 ): T[] {
   return (items ?? []).filter(isAllowlistable);
@@ -93,7 +93,7 @@ export function scopeExplanation(scope: SecretScope): string | null {
     return 'Written by a channel install and resolved server-side — it is never injected into a sandbox, so a session allowlist cannot name it.';
   }
   if (scope === 'platform') {
-    return 'Managed by Kortix. It is not a project secret you can grant, rotate, or remove.';
+    return 'Managed by Kortix. It is not a workspace secret you can grant, rotate, or remove.';
   }
   return null;
 }

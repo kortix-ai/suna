@@ -3,7 +3,7 @@
  *
  * The legacy account-level sandbox lifecycle API was removed. This adapter
  * keeps older instance UI call sites pointed at the supported project-session
- * endpoints under /projects/:projectId/sessions/:sessionId.
+ * endpoints under /projects/:workspaceId/sessions/:sessionId.
  *
  * This module was split into focused submodules for maintainability. The barrel
  * below re-exports the exact original public surface; shared internal helpers in

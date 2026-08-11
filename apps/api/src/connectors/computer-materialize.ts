@@ -17,8 +17,8 @@
 import { connectors, projects, tunnelConnections } from '@kortix/db';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 
-import type { ConnectorSpec } from '../projects/connectors';
-import { MANIFEST_FILENAME } from '../projects/triggers';
+import type { ConnectorSpec } from '../workspaces/connectors';
+import { MANIFEST_FILENAME } from '../workspaces/triggers';
 import { db } from '../shared/db';
 import { COMPUTER_SLUG, computerLabel } from './computers';
 
@@ -92,17 +92,17 @@ function isExplicitProfile(configValue: unknown): boolean {
 
 /**
  * Return every explicit DB-backed Computers profile for normal materialization.
- * No tunnel row means no implicit connector. Project access begins only after a
+ * No tunnel row means no implicit connector. Workspace access begins only after a
  * connector profile is created.
  */
 export async function synthesizeComputerConnectors(
-  projectId: string,
+  workspaceId: string,
   declared: ConnectorSpec[],
 ): Promise<ConnectorSpec[]> {
   const [proj] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
   if (!proj) return [];
 
@@ -113,7 +113,7 @@ export async function synthesizeComputerConnectors(
       config: connectors.config,
     })
     .from(connectors)
-    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+    .where(and(eq(connectors.workspaceId, workspaceId), eq(connectors.providerType, 'computer')));
   if (rows.length === 0) return [];
 
   const declaredSlugs = new Set(declared.map((spec) => spec.slug));

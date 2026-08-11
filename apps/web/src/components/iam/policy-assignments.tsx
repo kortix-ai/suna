@@ -1,7 +1,7 @@
 'use client';
 
 // Policy assignment surface. Binds a principal (member or group) to a
-// CUSTOM role at a scope (whole account or a single project). Allow-only,
+// CUSTOM role at a scope (whole account or a single workspace). Allow-only,
 // v1 — no deny effect, no conditions, no token principals, no project_group
 // scope (the backend rejects/ignores them).
 
@@ -57,11 +57,7 @@ import {
   listRoles,
   listServiceAccountsApi,
 } from '@/lib/iam-client';
-import {
-  type KortixProject,
-  listAccountMembers,
-  listProjectsForAccount,
-} from '@kortix/sdk';
+import { type KortixWorkspace, listAccountMembers, listWorkspacesForAccount } from '@kortix/sdk';
 
 // Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
 // sync with apps/api/src/accounts/iam/helpers.ts ENTITLEMENT_LABEL.rbac.
@@ -121,9 +117,9 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
     staleTime: 30_000,
   });
 
-  const projectsQuery = useQuery({
-    queryKey: ['account-projects', accountId],
-    queryFn: () => listProjectsForAccount(accountId),
+  const workspacesQuery = useQuery({
+    queryKey: ['account-workspaces', accountId],
+    queryFn: () => listWorkspacesForAccount(accountId),
     staleTime: 30_000,
   });
 
@@ -157,11 +153,11 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
     return map;
   }, [serviceAccountsQuery.data]);
 
-  const projectNameById = useMemo(() => {
+  const workspaceNameById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const p of projectsQuery.data ?? []) map.set(p.project_id, p.name);
+    for (const p of workspacesQuery.data ?? []) map.set(p.workspace_id, p.name);
     return map;
-  }, [projectsQuery.data]);
+  }, [workspacesQuery.data]);
 
   const deleteMutation = useMutation({
     mutationFn: (policyId: string) => deletePolicy(accountId, policyId),
@@ -193,13 +189,13 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
 
   function scopeLabel(p: IamPolicy): string {
     if (p.scope_type === 'account') return 'Whole account';
-    if (p.scope_type === 'project') {
-      // Resolve to the human project name; fall back to the raw id so an admin
-      // can still copy-verify which project a project-scoped assignment targets
-      // even if the projects list hasn't loaded (or the project is gone).
+    if (p.scope_type === 'workspace') {
+      // Resolve to the human workspace name; fall back to the raw id so an admin
+      // can still copy-verify which workspace a workspace-scoped assignment targets
+      // even if the workspaces list hasn't loaded (or the workspace is gone).
       const id = p.scope_id ?? '';
-      const name = id ? projectNameById.get(id) : undefined;
-      return `Project ${name ?? id}`.trim();
+      const name = id ? workspaceNameById.get(id) : undefined;
+      return `Workspace ${name ?? id}`.trim();
     }
     return p.scope_type;
   }
@@ -208,7 +204,7 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
   // dialog's pickers. If any fail, the surface can't render trustworthy rows
   // (a bare id everywhere) or offer a working create flow — so we treat the
   // whole panel as errored and let one Retry refetch them all.
-  const lookupQueries = [rolesQuery, membersQuery, groupsQuery, agentsQuery, projectsQuery];
+  const lookupQueries = [rolesQuery, membersQuery, groupsQuery, agentsQuery, workspacesQuery];
   const hasError = policiesQuery.isError || lookupQueries.some((q) => q.isError);
   const errorMessage =
     (policiesQuery.error as Error | undefined)?.message ??
@@ -352,8 +348,8 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
         groups={groupsQuery.data ?? []}
         agents={agentsQuery.data ?? []}
         serviceAccounts={serviceAccountsQuery.data ?? []}
-        projects={projectsQuery.data ?? []}
-        projectsLoading={projectsQuery.isLoading}
+        workspaces={workspacesQuery.data ?? []}
+        workspacesLoading={workspacesQuery.isLoading}
         onCreated={() => {
           queryClient.invalidateQueries({ queryKey: ['iam-policies', accountId] });
           setCreateOpen(false);
@@ -385,7 +381,7 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
 // ─── Create dialog ────────────────────────────────────────────────────────
 
 type PrincipalType = 'member' | 'group' | 'token';
-type ScopeType = 'account' | 'project';
+type ScopeType = 'account' | 'workspace';
 
 function CreateAssignmentDialog({
   accountId,
@@ -397,8 +393,8 @@ function CreateAssignmentDialog({
   groups,
   agents,
   serviceAccounts,
-  projects,
-  projectsLoading,
+  workspaces,
+  workspacesLoading,
   onCreated,
 }: {
   accountId: string;
@@ -410,8 +406,8 @@ function CreateAssignmentDialog({
   groups: Array<{ group_id: string; name: string }>;
   agents: AgentIdentity[];
   serviceAccounts: ServiceAccount[];
-  projects: KortixProject[];
-  projectsLoading: boolean;
+  workspaces: KortixWorkspace[];
+  workspacesLoading: boolean;
   onCreated: () => void;
 }) {
   // `service_account` is a UI-only principal type — a standalone (non-agent)
@@ -420,7 +416,7 @@ function CreateAssignmentDialog({
   const [principalId, setPrincipalId] = useState('');
   const [roleId, setRoleId] = useState('');
   const [scopeType, setScopeType] = useState<ScopeType>('account');
-  const [projectId, setProjectId] = useState('');
+  const [workspaceId, setWorkspaceId] = useState('');
   const [expires, setExpires] = useState('');
 
   // Only custom roles are bindable via policies; built-ins 400 the backend.
@@ -431,7 +427,7 @@ function CreateAssignmentDialog({
     setPrincipalId('');
     setRoleId('');
     setScopeType('account');
-    setProjectId('');
+    setWorkspaceId('');
     setExpires('');
   }
 
@@ -446,7 +442,7 @@ function CreateAssignmentDialog({
         principalType: principalType === 'service_account' ? 'token' : principalType,
         principalId,
         scopeType,
-        scopeId: scopeType === 'project' ? projectId.trim() : null,
+        scopeId: scopeType === 'workspace' ? workspaceId.trim() : null,
         roleId,
         expires_at: expiresIso,
       });
@@ -460,9 +456,9 @@ function CreateAssignmentDialog({
   });
 
   const principalValid = !!principalId;
-  // The project is now chosen from a Select populated with real project ids,
+  // The workspace is now chosen from a Select populated with real workspace ids,
   // so "has a value" is sufficient — no UUID shape check needed.
-  const scopeValid = scopeType === 'account' || !!projectId;
+  const scopeValid = scopeType === 'account' || !!workspaceId;
   const isValid = principalValid && !!roleId && scopeValid;
 
   return (
@@ -491,15 +487,15 @@ function CreateAssignmentDialog({
                 const next = v as PrincipalType;
                 setPrincipalType(next);
                 setPrincipalId('');
-                // Agents are project-scoped — switch to project scope and make
-                // the admin pick the project FIRST, then its agents. Member /
+                // Agents are workspace-scoped — switch to workspace scope and make
+                // the admin pick the workspace FIRST, then its agents. Member /
                 // group default back to account scope.
                 if (next === 'token') {
-                  setScopeType('project');
+                  setScopeType('workspace');
                 } else {
                   setScopeType('account');
                 }
-                setProjectId('');
+                setWorkspaceId('');
               }}
               disabled={mutation.isPending}
             >
@@ -519,30 +515,30 @@ function CreateAssignmentDialog({
             </Select>
           </div>
 
-          {/* Agents live IN a project — pick the project first, then its agents. */}
+          {/* Agents live IN a workspace — pick the workspace first, then its agents. */}
           {principalType === 'token' && (
             <div className="space-y-1.5">
-              <Label htmlFor="assignment-agent-project">Project</Label>
-              {projectsLoading ? (
-                <p className="text-muted-foreground text-xs">Loading projects…</p>
-              ) : projects.length === 0 ? (
-                <p className="text-muted-foreground text-xs">No projects in this account yet.</p>
+              <Label htmlFor="assignment-agent-workspace">Workspace</Label>
+              {workspacesLoading ? (
+                <p className="text-muted-foreground text-xs">Loading workspaces…</p>
+              ) : workspaces.length === 0 ? (
+                <p className="text-muted-foreground text-xs">No workspaces in this account yet.</p>
               ) : (
                 <Select
-                  value={projectId}
+                  value={workspaceId}
                   onValueChange={(pid) => {
-                    setProjectId(pid);
-                    setScopeType('project');
+                    setWorkspaceId(pid);
+                    setScopeType('workspace');
                     setPrincipalId('');
                   }}
                   disabled={mutation.isPending}
                 >
-                  <SelectTrigger id="assignment-agent-project">
-                    <SelectValue placeholder="Select a project" />
+                  <SelectTrigger id="assignment-agent-workspace">
+                    <SelectValue placeholder="Select a workspace" />
                   </SelectTrigger>
                   <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.project_id} value={p.project_id}>
+                    {workspaces.map((p) => (
+                      <SelectItem key={p.workspace_id} value={p.workspace_id}>
                         {p.name}
                       </SelectItem>
                     ))}
@@ -550,7 +546,7 @@ function CreateAssignmentDialog({
                 </Select>
               )}
               <p className="text-muted-foreground text-xs">
-                Agents are project-scoped — choose the project first.
+                Agents are workspace-scoped — choose the workspace first.
               </p>
             </div>
           )}
@@ -570,17 +566,17 @@ function CreateAssignmentDialog({
               onValueChange={(id) => {
                 setPrincipalId(id);
                 // An agent's standing role is almost always scoped to its own
-                // project — prefill it so the admin doesn't paste a UUID. They
-                // can still switch to account scope or another project.
+                // workspace — prefill it so the admin doesn't paste a UUID. They
+                // can still switch to account scope or another workspace.
                 if (principalType === 'token') {
                   const agent = agents.find((a) => a.service_account_id === id);
-                  if (agent?.project_id) {
-                    setScopeType('project');
-                    setProjectId(agent.project_id);
+                  if (agent?.workspace_id) {
+                    setScopeType('workspace');
+                    setWorkspaceId(agent.workspace_id);
                   }
                 }
               }}
-              disabled={mutation.isPending || (principalType === 'token' && !projectId)}
+              disabled={mutation.isPending || (principalType === 'token' && !workspaceId)}
             >
               <SelectTrigger id="assignment-principal">
                 <SelectValue
@@ -591,9 +587,9 @@ function CreateAssignmentDialog({
                         ? 'Select a group'
                         : principalType === 'service_account'
                           ? 'Select a service account'
-                          : projectId
+                          : workspaceId
                             ? 'Select an agent'
-                            : 'Select a project first'
+                            : 'Select a workspace first'
                   }
                 />
               </SelectTrigger>
@@ -626,21 +622,23 @@ function CreateAssignmentDialog({
                           ));
                         })()
                       : (() => {
-                          // Agents are filtered to the project chosen above.
-                          if (!projectId)
+                          // Agents are filtered to the workspace chosen above.
+                          if (!workspaceId)
                             return (
                               <SelectItem value="__none" disabled>
-                                Select a project first
+                                Select a workspace first
                               </SelectItem>
                             );
-                          const projectAgents = agents.filter((a) => a.project_id === projectId);
-                          if (projectAgents.length === 0)
+                          const workspaceAgents = agents.filter(
+                            (a) => a.workspace_id === workspaceId,
+                          );
+                          if (workspaceAgents.length === 0)
                             return (
                               <SelectItem value="__none" disabled>
-                                No agents in this project
+                                No agents in this workspace
                               </SelectItem>
                             );
-                          return projectAgents.map((a) => (
+                          return workspaceAgents.map((a) => (
                             <SelectItem key={a.service_account_id} value={a.service_account_id}>
                               {a.agent_name ?? a.name}
                             </SelectItem>
@@ -672,8 +670,8 @@ function CreateAssignmentDialog({
             )}
           </div>
 
-          {/* Scope + project picker — member/group only. An agent's scope IS
-              the project chosen above, so these are hidden for agents. */}
+          {/* Scope + workspace picker — member/group only. An agent's scope IS
+              the workspace chosen above, so these are hidden for agents. */}
           {principalType !== 'token' && (
             <>
               <div className="space-y-1.5">
@@ -683,10 +681,10 @@ function CreateAssignmentDialog({
                   onValueChange={(v) => {
                     const next = v as ScopeType;
                     setScopeType(next);
-                    // Switching back to account scope clears any picked project so
+                    // Switching back to account scope clears any picked workspace so
                     // a stale id can't ride along (createPolicy nulls scopeId on
                     // account scope, but keep local state honest too).
-                    if (next === 'account') setProjectId('');
+                    if (next === 'account') setWorkspaceId('');
                   }}
                   disabled={mutation.isPending}
                 >
@@ -695,39 +693,41 @@ function CreateAssignmentDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="account">Whole account</SelectItem>
-                    <SelectItem value="project">A specific project</SelectItem>
+                    <SelectItem value="workspace">A specific workspace</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {scopeType === 'project' && (
+              {scopeType === 'workspace' && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="assignment-project">Project</Label>
-                  {projectsLoading ? (
-                    <p className="text-muted-foreground text-xs">Loading projects…</p>
-                  ) : projects.length === 0 ? (
+                  <Label htmlFor="assignment-workspace">Workspace</Label>
+                  {workspacesLoading ? (
+                    <p className="text-muted-foreground text-xs">Loading workspaces…</p>
+                  ) : workspaces.length === 0 ? (
                     <p className="text-muted-foreground text-xs">
-                      No projects in this account yet.
+                      No workspaces in this account yet.
                     </p>
                   ) : (
                     <Select
-                      value={projectId}
-                      onValueChange={setProjectId}
+                      value={workspaceId}
+                      onValueChange={setWorkspaceId}
                       disabled={mutation.isPending}
                     >
-                      <SelectTrigger id="assignment-project">
-                        <SelectValue placeholder="Select a project" />
+                      <SelectTrigger id="assignment-workspace">
+                        <SelectValue placeholder="Select a workspace" />
                       </SelectTrigger>
                       <SelectContent>
-                        {projects.map((p) => (
-                          <SelectItem key={p.project_id} value={p.project_id}>
+                        {workspaces.map((p) => (
+                          <SelectItem key={p.workspace_id} value={p.workspace_id}>
                             {p.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   )}
-                  <p className="text-muted-foreground text-xs">The project this role applies to.</p>
+                  <p className="text-muted-foreground text-xs">
+                    The workspace this role applies to.
+                  </p>
                 </div>
               )}
             </>

@@ -190,7 +190,7 @@ describe('kortix projects use', () => {
 
     const code = await runProjects(['use', 'proj_x']);
     expect(code).toBe(0);
-    // The by-id GET is NOT account-scoped (the project may be in any account).
+    // The by-id GET is NOT account-scoped (the workspace may be in any account).
     expect(requests).toContain('https://api.test/v1/projects/proj_x');
     // Default project recorded …
     expect(defaultProject()).toEqual({ project_id: 'proj_x', account_id: 'account_2', name: 'Beta' });

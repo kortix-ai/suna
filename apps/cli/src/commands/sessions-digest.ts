@@ -1,21 +1,21 @@
 import type { ApiClient } from '../api/client.ts';
-import type { ProjectSession } from '../api/types.ts';
+import type { WorkspaceSession } from '../api/types.ts';
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-type CtxOpts = { projectArg?: string; hostArg?: string };
+type CtxOpts = { workspaceArg?: string; hostArg?: string };
 
 const DIGEST_HELP = help`Usage: kortix sessions digest [options]
 
 Compact review of recent sessions for reflection / handoff. It lists sessions
 in a time window and, for running sessions, reads the live OpenCode transcript
-through the project sessions API. Tool calls are compressed to name/status only;
+through the workspace sessions API. Tool calls are compressed to name/status only;
 tool inputs and outputs are intentionally stripped so the digest stays readable.
 
   --since <when>       Window start (default 7d). Examples: 24h, 7d,
@@ -25,7 +25,7 @@ tool inputs and outputs are intentionally stripped so the digest stays readable.
                        (default 700).
   --all                Ignore --since and include every listable session.
   --json               Emit structured JSON for scripting.
-  --project <id>       Operate on this project id (default: linked).
+  --workspace <id>       Operate on this workspace id (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 
@@ -85,7 +85,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
     return 0;
   }
 
-  let projectArg: string | undefined;
+  let workspaceArg: string | undefined;
   let hostArg: string | undefined;
   let sinceRaw: string | undefined;
   let messageLimitRaw: string | undefined;
@@ -93,7 +93,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   let json = false;
   let all = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    workspaceArg = takeFlagValue(rest, ['--workspace', '--project']);
     hostArg = takeFlagValue(rest, ['--host']);
     sinceRaw = takeFlagValue(rest, ['--since']);
     messageLimitRaw = takeFlagValue(rest, ['--messages', '--limit', '-n']);
@@ -126,14 +126,14 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
     return 2;
   }
 
-  const opts: CtxOpts = { projectArg, hostArg };
-  const ctx = await resolveProjectContext(opts);
+  const opts: CtxOpts = { workspaceArg, hostArg };
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
 
-  let sessions: ProjectSession[];
+  let sessions: WorkspaceSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(
-      `/projects/${ctx.projectId}/sessions`,
+    sessions = await ctx.client.get<WorkspaceSession[]>(
+      `/workspaces/${ctx.workspaceId}/sessions`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -147,7 +147,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   await mapLimit(filtered, 6, async (s) => {
     digests.set(
       s.session_id,
-      await buildDigest(s, ctx.client, ctx.projectId, messageLimit, maxChars),
+      await buildDigest(s, ctx.client, ctx.workspaceId, messageLimit, maxChars),
     );
   });
   const out = filtered.map((s) => digests.get(s.session_id)!).filter(Boolean);
@@ -173,9 +173,9 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
 }
 
 async function buildDigest(
-  s: ProjectSession,
+  s: WorkspaceSession,
   client: ApiClient,
-  projectId: string,
+  workspaceId: string,
   messageLimit: number,
   maxChars: number,
 ): Promise<SessionDigest> {
@@ -186,7 +186,7 @@ async function buildDigest(
   }
   try {
     const transcript = await client.get<unknown>(
-      `/projects/${projectId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
+      `/workspaces/${workspaceId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
     );
     base.transcript = sanitizeTranscript(transcript, s.opencode_session_id);
     return base;
@@ -250,7 +250,7 @@ function sanitizeCompactMessage(raw: unknown): CompactMessage {
   };
 }
 
-function baseDigest(s: ProjectSession): SessionDigest {
+function baseDigest(s: WorkspaceSession): SessionDigest {
   return {
     session: {
       session_id: s.session_id,
@@ -344,7 +344,7 @@ function summarizeTools(tools: CompactToolCall[]): string {
   return parts.length > 12 ? `${parts.slice(0, 12).join(', ')}, … +${parts.length - 12}` : parts.join(', ');
 }
 
-function opencodeTitles(s: ProjectSession): string[] {
+function opencodeTitles(s: WorkspaceSession): string[] {
   const raw = s.metadata?.opencode_sessions;
   if (!Array.isArray(raw)) return [];
   return raw
@@ -356,7 +356,7 @@ function opencodeTitles(s: ProjectSession): string[] {
     .filter((t): t is string => Boolean(t));
 }
 
-function isInWindow(s: ProjectSession, since: Date): boolean {
+function isInWindow(s: WorkspaceSession, since: Date): boolean {
   return Date.parse(s.updated_at) >= since.getTime() || Date.parse(s.created_at) >= since.getTime();
 }
 

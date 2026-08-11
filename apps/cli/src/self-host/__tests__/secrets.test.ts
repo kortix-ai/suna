@@ -226,7 +226,7 @@ const CLI_ENTRY = resolve(import.meta.dir, '..', '..', 'index.ts');
 // `--instance` name. `env set`/`env rotate` (unlike every other
 // command self-host-cli.test.ts exercises) shell out to real `docker
 // compose` to decide whether anything needs restarting — and the Compose
-// *project name* is derived only from `--instance` (see composeProject()),
+// *workspace name* is derived only from `--instance` (see composeProject()),
 // not from KORTIX_SELF_HOST_CONFIG_DIR. Using the default instance name here
 // would target the SAME Docker Compose project as a real `kortix self-host`
 // deployment a developer has actually running on this machine, which is

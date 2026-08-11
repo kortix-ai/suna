@@ -1,5 +1,5 @@
 /**
- * Pure, testable sorting for the project members list. Extracted from the
+ * Pure, testable sorting for the workspace members list. Extracted from the
  * members page so the role-rank fallback — which prevents NaN comparisons when
  * a member has a role outside the known set — can be unit-tested.
  */

@@ -99,13 +99,396 @@ export function filterSpecPaths<T extends { paths?: Record<string, unknown> }>(
   return { ...doc, paths: kept };
 }
 
+const WORKSPACE_COMPATIBILITY_PREFIXES = [
+  { legacy: '/v1/projects', canonical: '/v1/workspaces' },
+  { legacy: '/v1/connectors/projects', canonical: '/v1/connectors/workspaces' },
+] as const;
+const WORKSPACE_FIELD_NAMES: Readonly<Record<string, string>> = {
+  project_id: 'workspace_id',
+  project_role: 'workspace_role',
+  effective_project_role: 'effective_workspace_role',
+  project: 'workspace',
+  projects: 'workspaces',
+};
+const PROJECT_FIELD_NAMES = Object.fromEntries(
+  Object.entries(WORKSPACE_FIELD_NAMES).map(([project, workspace]) => [workspace, project]),
+) as Readonly<Record<string, string>>;
+
+const WORKSPACE_VALUE_KEYS = new Set([
+  'authorization_strategy',
+  'authorizationStrategy',
+  'connectionOwnerType',
+  'kind',
+  'mode',
+  'owner_type',
+  'policy_source',
+  'scope',
+  'source',
+  'visibility',
+]);
+
+function workspaceSchemaName(name: string): string {
+  const replaced = name.replaceAll('Projects', 'Workspaces').replaceAll('Project', 'Workspace');
+  return replaced === name ? `Workspace${name}` : replaced;
+}
+
+function projectSchemaName(name: string): string {
+  const replaced = name.replaceAll('Workspaces', 'Projects').replaceAll('Workspace', 'Project');
+  return replaced === name ? `Project${name}` : replaced;
+}
+
+function workspaceHumanText(value: string): string {
+  return value
+    .replaceAll('Projects', 'Workspaces')
+    .replaceAll('projects', 'workspaces')
+    .replaceAll('Project', 'Workspace')
+    .replaceAll('project', 'workspace');
+}
+
+function matchesPrefix(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+function compatibilityPrefixForLegacyPath(path: string) {
+  return WORKSPACE_COMPATIBILITY_PREFIXES.find(({ legacy }) => matchesPrefix(path, legacy));
+}
+
+function compatibilityPrefixForCanonicalPath(path: string) {
+  return WORKSPACE_COMPATIBILITY_PREFIXES.find(({ canonical }) => matchesPrefix(path, canonical));
+}
+
+function isCanonicalWorkspacePath(path: string): boolean {
+  return WORKSPACE_COMPATIBILITY_PREFIXES.some(({ canonical }) => matchesPrefix(path, canonical));
+}
+
+const OPENAPI_OPERATION_KEYS = new Set([
+  'get',
+  'put',
+  'post',
+  'delete',
+  'options',
+  'head',
+  'patch',
+  'trace',
+]);
+
+function deprecateLegacyPathItem(item: unknown): unknown {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+  const target: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(item as Record<string, unknown>)) {
+    target[key] =
+      OPENAPI_OPERATION_KEYS.has(key) && value && typeof value === 'object' && !Array.isArray(value)
+        ? { ...(value as Record<string, unknown>), deprecated: true }
+        : value;
+  }
+  return target;
+}
+
+/** Keep the deprecated Project contract source-compatible for generated clients.
+ * Route handlers use `workspaceId` internally, but the published legacy path
+ * parameter remains `projectId` until the Project namespace is removed. */
+function toLegacyProjectSpecValue(
+  value: unknown,
+  parentKey?: string,
+  parent?: Record<string, unknown>,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((child) => toLegacyProjectSpecValue(child, parentKey, parent));
+  }
+  if (typeof value === 'string') {
+    if (parentKey === 'name' && parent?.in === 'path' && value === 'workspaceId') {
+      return 'projectId';
+    }
+    return value;
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  const source = value as Record<string, unknown>;
+  const target: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(source)) {
+    target[key] = toLegacyProjectSpecValue(child, key, source);
+  }
+  return target;
+}
+
+function toProjectSpecValue(
+  value: unknown,
+  schemaNames: ReadonlyMap<string, string>,
+  parentKey?: string,
+  parent?: Record<string, unknown>,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((child) => toProjectSpecValue(child, schemaNames, parentKey, parent));
+  }
+  if (typeof value === 'string') {
+    if (parentKey === '$ref') {
+      const prefix = '#/components/schemas/';
+      if (value.startsWith(prefix)) {
+        const name = value.slice(prefix.length);
+        return `${prefix}${schemaNames.get(name) ?? name}`;
+      }
+      return value;
+    }
+    if (parentKey === 'required') return PROJECT_FIELD_NAMES[value] ?? value;
+    if (parentKey === 'tags' && value === 'workspaces') return 'projects';
+    if (parentKey === 'name' && parent?.in === 'path' && value === 'workspaceId') {
+      return 'projectId';
+    }
+    if (parentKey === 'summary' || parentKey === 'description' || parentKey === 'title') {
+      return value
+        .replaceAll('Workspaces', 'Projects')
+        .replaceAll('workspaces', 'projects')
+        .replaceAll('Workspace', 'Project')
+        .replaceAll('workspace', 'project');
+    }
+    if (parentKey === 'dashboard_url') return value.replace('/workspaces/', '/projects/');
+    if (
+      value === 'workspace' &&
+      (parentKey === 'enum' || parentKey === 'const' || (parentKey && WORKSPACE_VALUE_KEYS.has(parentKey)))
+    ) {
+      return 'project';
+    }
+    return value;
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  const source = value as Record<string, unknown>;
+  const target: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(source)) {
+    const projectKey = PROJECT_FIELD_NAMES[key] ?? key;
+    if (projectKey !== key && Object.hasOwn(source, projectKey)) continue;
+    target[projectKey] = toProjectSpecValue(child, schemaNames, projectKey, source);
+  }
+  return target;
+}
+
+function collectSchemaReferences(
+  value: unknown,
+  schemas: Record<string, unknown>,
+  names: Set<string>,
+): void {
+  if (Array.isArray(value)) {
+    for (const child of value) collectSchemaReferences(child, schemas, names);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+
+  const record = value as Record<string, unknown>;
+  const ref = record.$ref;
+  const prefix = '#/components/schemas/';
+  if (typeof ref === 'string' && ref.startsWith(prefix)) {
+    const name = ref.slice(prefix.length);
+    if (!names.has(name)) {
+      names.add(name);
+      collectSchemaReferences(schemas[name], schemas, names);
+    }
+  }
+  for (const child of Object.values(record)) collectSchemaReferences(child, schemas, names);
+}
+
+function toWorkspaceSpecValue(
+  value: unknown,
+  schemaNames: ReadonlyMap<string, string>,
+  parentKey?: string,
+  parent?: Record<string, unknown>,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((child) => toWorkspaceSpecValue(child, schemaNames, parentKey, parent));
+  }
+  if (typeof value === 'string') {
+    if (parentKey === '$ref') {
+      const prefix = '#/components/schemas/';
+      if (value.startsWith(prefix)) {
+        const name = value.slice(prefix.length);
+        return `${prefix}${schemaNames.get(name) ?? name}`;
+      }
+      return value;
+    }
+    if (parentKey === 'required') return WORKSPACE_FIELD_NAMES[value] ?? value;
+    if (parentKey === 'tags' && value === 'projects') return 'workspaces';
+    if (parentKey === 'name' && parent?.in === 'path' && value === 'projectId') {
+      return 'workspaceId';
+    }
+    if (parentKey === 'summary' || parentKey === 'description' || parentKey === 'title') {
+      return workspaceHumanText(value);
+    }
+    if (parentKey === 'dashboard_url') return value.replace('/projects/', '/workspaces/');
+    if (
+      value === 'project' &&
+      (parentKey === 'enum' || parentKey === 'const' || (parentKey && WORKSPACE_VALUE_KEYS.has(parentKey)))
+    ) {
+      return 'workspace';
+    }
+    return value;
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  const source = value as Record<string, unknown>;
+  const target: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(source)) {
+    const workspaceKey = WORKSPACE_FIELD_NAMES[key] ?? key;
+    if (workspaceKey !== key && Object.hasOwn(source, workspaceKey)) continue;
+    target[workspaceKey] = toWorkspaceSpecValue(child, schemaNames, workspaceKey, source);
+  }
+  return target;
+}
+
+/**
+ * Publish the canonical Workspace namespace without removing the Project API.
+ *
+ * Runtime mounts the same handlers at both prefixes. The OpenAPI registry does
+ * not duplicate a sub-router's definitions when that sub-router is mounted a
+ * second time, so the served document needs the same compatibility projection
+ * as the runtime response middleware. Project paths and schemas remain intact
+ * for existing integrations; Workspace paths use canonical parameter and JSON
+ * field names.
+ */
+export function addWorkspaceCompatibilityPaths<
+  T extends {
+    paths?: Record<string, any>;
+    components?: { schemas?: Record<string, any> };
+  },
+>(doc: T): T & { paths?: Record<string, any> } {
+  if (!doc.paths) return doc;
+
+  const canonicalEntries = Object.entries(doc.paths).filter(([path]) =>
+    isCanonicalWorkspacePath(path),
+  );
+  if (canonicalEntries.length > 0) {
+    const schemas = doc.components?.schemas ?? {};
+    const referencedSchemas = new Set<string>();
+    for (const [, item] of canonicalEntries) {
+      collectSchemaReferences(item, schemas, referencedSchemas);
+    }
+
+    const schemaNames = new Map<string, string>();
+    const reservedNames = new Set(Object.keys(schemas));
+    for (const name of referencedSchemas) {
+      let candidate = projectSchemaName(name);
+      if (reservedNames.has(candidate) || [...schemaNames.values()].includes(candidate)) {
+        candidate = `ProjectCompatibility${name}`;
+      }
+      schemaNames.set(name, candidate);
+      reservedNames.add(candidate);
+    }
+
+    const workspacePaths: Record<string, any> = {};
+    const otherPaths: Record<string, any> = {};
+    const legacyPaths: Record<string, any> = {};
+    for (const [path, item] of Object.entries(doc.paths)) {
+      const canonicalPrefix = compatibilityPrefixForCanonicalPath(path);
+      if (canonicalPrefix) {
+        // Some route definitions predate the canonical mount and still carry
+        // Project tags or human-readable Project text. Normalize the served
+        // Workspace operation even when the registry already contains the
+        // canonical path. Keep the registry document immutable, and derive
+        // the deprecated Project operation from the original entry below.
+        workspacePaths[path] = toWorkspaceSpecValue(item, new Map());
+        const legacyPath = path
+          .replace(canonicalPrefix.canonical, canonicalPrefix.legacy)
+          .replaceAll('{workspaceId}', '{projectId}');
+        legacyPaths[legacyPath] = deprecateLegacyPathItem(
+          toProjectSpecValue(item, schemaNames),
+        );
+      } else if (!compatibilityPrefixForLegacyPath(path)) {
+        otherPaths[path] = item;
+      }
+    }
+
+    if (!doc.components?.schemas || referencedSchemas.size === 0) {
+      return { ...doc, paths: { ...workspacePaths, ...otherPaths, ...legacyPaths } };
+    }
+    const projectSchemas: Record<string, unknown> = {};
+    for (const name of referencedSchemas) {
+      const projectName = schemaNames.get(name);
+      if (!projectName || schemas[name] === undefined) continue;
+      projectSchemas[projectName] = toProjectSpecValue(schemas[name], schemaNames);
+    }
+    return {
+      ...doc,
+      paths: { ...workspacePaths, ...otherPaths, ...legacyPaths },
+      components: {
+        ...doc.components,
+        schemas: { ...schemas, ...projectSchemas },
+      },
+    };
+  }
+
+  const schemas = doc.components?.schemas ?? {};
+  const referencedSchemas = new Set<string>();
+  for (const [path, item] of Object.entries(doc.paths)) {
+    if (compatibilityPrefixForLegacyPath(path)) {
+      collectSchemaReferences(item, schemas, referencedSchemas);
+    }
+  }
+
+  const schemaNames = new Map<string, string>();
+  const reservedNames = new Set(Object.keys(schemas));
+  for (const name of referencedSchemas) {
+    let candidate = workspaceSchemaName(name);
+    if (reservedNames.has(candidate) || [...schemaNames.values()].includes(candidate)) {
+      candidate = `WorkspaceCompatibility${name}`;
+    }
+    schemaNames.set(name, candidate);
+    reservedNames.add(candidate);
+  }
+
+  const workspacePaths: Record<string, any> = {};
+  for (const [path, item] of Object.entries(doc.paths)) {
+    if (isCanonicalWorkspacePath(path)) workspacePaths[path] = item;
+  }
+  for (const [path, item] of Object.entries(doc.paths)) {
+    const prefixes = compatibilityPrefixForLegacyPath(path);
+    if (!prefixes) continue;
+    const workspacePath = path
+      .replace(prefixes.legacy, prefixes.canonical)
+      .replaceAll('{projectId}', '{workspaceId}');
+    if (Object.hasOwn(doc.paths, workspacePath)) continue;
+    workspacePaths[workspacePath] = toWorkspaceSpecValue(item, schemaNames) as any;
+  }
+  // JSON object order is presentation order in Scalar. Put the canonical
+  // namespace first, while retaining every legacy Project path unchanged.
+  const otherPaths: Record<string, any> = {};
+  const legacyPaths: Record<string, any> = {};
+  for (const [path, item] of Object.entries(doc.paths)) {
+    if (isCanonicalWorkspacePath(path)) continue;
+    if (compatibilityPrefixForLegacyPath(path)) {
+      const legacyPath = path.replaceAll('{workspaceId}', '{projectId}');
+      legacyPaths[legacyPath] = toLegacyProjectSpecValue(deprecateLegacyPathItem(item));
+    } else {
+      otherPaths[path] = item;
+    }
+  }
+  const paths = { ...workspacePaths, ...otherPaths, ...legacyPaths };
+
+  if (!doc.components?.schemas || referencedSchemas.size === 0) {
+    return { ...doc, paths };
+  }
+
+  const workspaceSchemas: Record<string, unknown> = {};
+  for (const name of referencedSchemas) {
+    const workspaceName = schemaNames.get(name);
+    if (!workspaceName || schemas[name] === undefined) continue;
+    workspaceSchemas[workspaceName] = toWorkspaceSpecValue(schemas[name], schemaNames);
+  }
+
+  return {
+    ...doc,
+    paths,
+    components: {
+      ...doc.components,
+      schemas: { ...schemas, ...workspaceSchemas },
+    },
+  };
+}
+
 /** Register security + serve the spec (/v1/openapi.json) and Scalar UI (/v1/docs). */
 export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: string): void {
   app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', {
     type: 'http',
     scheme: 'bearer',
     description:
-      'Supabase user JWT, or a Kortix token: PAT (`kortix_pat_…`), API key (`kortix_…`), service account (`kortix_sa_…`), or (LLM Gateway inference routes only) a project gateway key (`kortix_gw_…`).',
+      'Supabase user JWT, or a Kortix token: PAT (`kortix_pat_…`), API key (`kortix_…`), service account (`kortix_sa_…`), or (LLM Gateway inference routes only) a workspace gateway key (`kortix_gw_…`).',
   });
 
   // Serve the same document `doc31` would (getOpenAPI31Document is exactly what
@@ -126,7 +509,7 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
       },
       servers: [{ url: new URL(c.req.url).origin }],
     });
-    return c.json(filterSpecPaths(document));
+    return c.json(addWorkspaceCompatibilityPaths(filterSpecPaths(document)));
   });
 
   app.get('/v1/docs', Scalar({ url: '/v1/openapi.json', pageTitle: 'Kortix API' }));

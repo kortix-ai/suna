@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getProjectDetail } from '../core/rest/projects-client';
+import { getWorkspaceDetail } from '../core/rest/workspaces-client';
 import { qk } from './query-keys';
 import { contract } from './query-contracts';
 
@@ -17,30 +17,35 @@ import { contract } from './query-contracts';
  * One accessor makes that structurally impossible rather than merely currently
  * invalidated. Do not reintroduce a `??` fallback to another source here.
  */
-export function useProjectName(projectId: string | undefined): string | undefined {
+export function useWorkspaceName(workspaceId: string | undefined): string | undefined {
   const { data } = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: Boolean(projectId),
+    queryKey: qk.workspace.detail(workspaceId ?? ''),
+    queryFn: () => getWorkspaceDetail(workspaceId as string),
+    enabled: Boolean(workspaceId),
     ...contract('config'),
   });
-  return data?.project?.name;
+  return data?.workspace?.name;
 }
 
 /**
- * The owning account id, read off the SAME `qk.project.detail(id)` entry
+ * The owning account id, read off the SAME `qk.workspace.detail(id)` entry
  * `useProjectName` reads — every capability surface already mounts that
  * observer, so this shares the cache instead of adding a fetch. Previously
  * lived in `apps/web`'s `project-detail-query.ts` as a host-local hook; moved
- * here because `qk.project.detail` + `contract('config')` is SDK-owned
+ * here because `qk.workspace.detail` + `contract('config')` is SDK-owned
  * wiring, not something a host should hand-roll a second time.
  */
-export function useProjectAccountId(projectId: string | undefined): string | undefined {
+export function useWorkspaceAccountId(workspaceId: string | undefined): string | undefined {
   const { data } = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: Boolean(projectId),
+    queryKey: qk.workspace.detail(workspaceId ?? ''),
+    queryFn: () => getWorkspaceDetail(workspaceId as string),
+    enabled: Boolean(workspaceId),
     ...contract('config'),
   });
-  return data?.project?.account_id;
+  return data?.workspace?.account_id;
 }
+
+/** @deprecated Use `useWorkspaceName`. */
+export const useProjectName = useWorkspaceName;
+/** @deprecated Use `useWorkspaceAccountId`. */
+export const useProjectAccountId = useWorkspaceAccountId;

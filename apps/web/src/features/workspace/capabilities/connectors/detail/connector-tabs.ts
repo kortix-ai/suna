@@ -1,4 +1,4 @@
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 
 export type ConnectorTab = 'accounts' | 'tools' | 'settings';
 
@@ -26,7 +26,7 @@ export const CONNECTOR_TAB_LABEL: Record<ConnectorTab, string> = {
  *   they connect their own account.
  */
 export function connectorTabs(
-  connector: AdminConnector,
+  connector: WorkspaceAdminConnector,
   caps: { canWrite: boolean },
 ): ConnectorTab[] {
   const present = new Set<ConnectorTab>();

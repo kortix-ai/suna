@@ -3,10 +3,10 @@
 /**
  * The live "Files changed" + diff for a Change Request. Kept OUT of the friendly
  * review detail (the priority there is plain language, not code) — it lives one
- * click away in its own modal via `ChangeFilesModal`. Reuses the project-files
+ * click away in its own modal via `ChangeFilesModal`. Reuses the workspace-files
  * diff stack (DiffRenderer + useChangeRequestDiff) so the review shows the REAL
  * branch state and updates as the agent revises. Connected mode only (needs a cr
- * id + ProjectFilesProvider, which the connected inbox provides).
+ * id + WorkspaceFilesProvider, which the connected inbox provides).
  */
 
 import { Button } from '@/components/ui/button';
@@ -21,8 +21,8 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat } from '@/components/ui/status';
-import { DiffRenderer } from '@/features/project-files/components/diff-renderer';
-import { useChangeRequestDiff } from '@/features/project-files/hooks/use-change-requests';
+import { DiffRenderer } from '@/features/workspace-files/components/diff-renderer';
+import { useChangeRequestDiff } from '@/features/workspace-files/hooks/use-change-requests';
 import { cn } from '@/lib/utils';
 import {
   ArrowUpRightIcon as ArrowUpRight,

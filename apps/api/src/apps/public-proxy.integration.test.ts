@@ -44,7 +44,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-00000000a901';
-const PROJECT_ID = '00000000-0000-4000-a000-00000000a902';
+const WORKSPACE_ID = '00000000-0000-4000-a000-00000000a902';
 const APP_ID = '00000000-0000-4000-a000-00000000a903';
 const ARTIFACT_ID = '00000000-0000-4000-a000-00000000a904';
 const DEPLOYMENT_ID = '00000000-0000-4000-a000-00000000a905';
@@ -55,10 +55,10 @@ async function cleanup(): Promise<void> {
   const db = testDb();
   await db.update(apps)
     .set({ activeDeploymentId: null })
-    .where(eq(apps.projectId, PROJECT_ID));
-  await db.delete(apps).where(eq(apps.projectId, PROJECT_ID));
-  await db.delete(appArtifacts).where(eq(appArtifacts.projectId, PROJECT_ID));
-  await db.delete(projects).where(eq(projects.projectId, PROJECT_ID));
+    .where(eq(apps.workspaceId, WORKSPACE_ID));
+  await db.delete(apps).where(eq(apps.workspaceId, WORKSPACE_ID));
+  await db.delete(appArtifacts).where(eq(appArtifacts.workspaceId, WORKSPACE_ID));
+  await db.delete(projects).where(eq(projects.workspaceId, WORKSPACE_ID));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
 }
 
@@ -66,7 +66,7 @@ async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running
   const db = testDb();
   await db.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'App lifecycle race test' });
   await db.insert(projects).values({
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     accountId: ACCOUNT_ID,
     name: 'App lifecycle race test',
     repoUrl: 'https://example.test/app-lifecycle-race.git',
@@ -75,7 +75,7 @@ async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running
   await db.insert(apps).values({
     appId: APP_ID,
     accountId: ACCOUNT_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     slug: 'app-lifecycle-race',
     name: 'App lifecycle race',
     routeKey: ROUTE_KEY,
@@ -86,7 +86,7 @@ async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running
   await db.insert(appArtifacts).values({
     artifactId: ARTIFACT_ID,
     accountId: ACCOUNT_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     kind: 'oci_image',
     status: 'ready',
     imageReference: 'docker.io/library/nginx:alpine',
@@ -101,7 +101,7 @@ async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running
     hostingType: 'sandbox',
     hostingProvider: 'platinum',
     runtimeVersion: 'test',
-    createdBy: PROJECT_ID,
+    createdBy: WORKSPACE_ID,
     buildSpec: {
       source: {
         kind: 'oci_image',

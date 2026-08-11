@@ -18,7 +18,7 @@ describe('white-label SDK boundary', () => {
       const legacy = 'server-store';
       const runtime = '/p/sandbox-1/8000/global/event';
       session.previewUrl(3000);
-      fetch('/api/kortix/projects');
+      fetch('/api/kortix/workspaces');
       export const View = () => <button><Loader2 className="animate-spin" /></button>;
     `;
 
@@ -52,14 +52,14 @@ describe('white-label SDK boundary', () => {
   });
 
   test('detects provider names embedded inside legacy identifiers', () => {
-    const fixture = `useCanonicalOpenCodeSession(projectId);`;
+    const fixture = `useCanonicalOpenCodeSession(workspaceId);`;
     expect(scanSource(fixture).map((violation) => violation.rule)).toContain(
       'provider-term',
     );
   });
 
   test('rejects dynamic fetch targets in client code', () => {
-    const fixture = `fetch(resolveRuntimeEndpoint(projectId));`;
+    const fixture = `fetch(resolveRuntimeEndpoint(workspaceId));`;
     expect(scanSource(fixture).map((violation) => violation.rule)).toContain(
       'raw-kortix-fetch',
     );
@@ -74,7 +74,7 @@ describe('white-label SDK boundary', () => {
 
   test('rejects raw Kortix transport in application tests', () => {
     const fixture = `
-      await fetch(app.baseUrl + '/api/kortix/projects');
+      await fetch(app.baseUrl + '/api/kortix/workspaces');
       const result = await fetch(\`\${app.baseUrl}/api/kortix/p/\${runtime}/8000/status\`);
     `;
 
@@ -111,9 +111,9 @@ describe('white-label SDK boundary', () => {
     );
   });
 
-  test('project settings render the server-provided experimental catalog', () => {
+  test('workspace settings render the server-provided experimental catalog', () => {
     const source = readFileSync(
-      resolve(import.meta.dir, '../../src/app/projects/[id]/settings/page.tsx'),
+      resolve(import.meta.dir, '../../src/app/workspaces/[id]/settings/page.tsx'),
       'utf8',
     );
 

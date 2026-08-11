@@ -15,7 +15,7 @@ import { type ReactNode, useState } from 'react';
  *
  * `summary` is what the axis is set to RIGHT NOW, and for an axis nobody
  * touched that string names its real source — "Agent default" for secrets (the
- * agent's grant), "Project default" for connectors (the project's default
+ * agent's grant), "Workspace default" for connectors (the workspace's default
  * connections) — never "none". `overridden` is what earns the badge: a session
  * should look inherited until the user deliberately takes it off the default.
  */

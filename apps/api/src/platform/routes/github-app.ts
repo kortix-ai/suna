@@ -37,7 +37,7 @@ import {
   managedGithubInstallId,
   managedGithubOwner,
   managedGithubToken,
-} from '../../projects/git-backends/github';
+} from '../../workspaces/git-backends/github';
 import {
   buildGitHubAppInstallUrl,
   getGitHubAppInstallation,
@@ -46,7 +46,7 @@ import {
   signGitHubAppJwt,
   type GitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
-} from '../../projects/github';
+} from '../../workspaces/github';
 import type { AppEnv } from '../../types';
 import {
   managedGithubAppConfig,

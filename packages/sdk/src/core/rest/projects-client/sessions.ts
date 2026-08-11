@@ -1,9 +1,16 @@
 // Project sessions — session CRUD, sharing, public shares, preview candidates.
 
-import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { type ApiClientOptions, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { type ConnectorSharing, unwrap } from './shared';
 import type { AuditEvent } from './audit';
+import {
+  requestSessionConfigReloadStream,
+  type SessionReloadPhase,
+  type SessionReloadStreamEvent as GenericSessionReloadStreamEvent,
+} from '../workspaces-client/session-reload-stream';
+
+export type { SessionReloadPhase } from '../workspaces-client/session-reload-stream';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -92,7 +99,7 @@ export interface PendingSessionPrompt {
 }
 
 /**
- * Public body for POST /projects/:projectId/sessions.
+ * Public body for POST /projects/:workspaceId/sessions.
  *
  * Session create immediately begins runtime provisioning; it is not a deferred
  * metadata-only create. Callers that rotate project secrets or connector
@@ -170,13 +177,13 @@ export interface ProjectOpenCodeSession {
 
 /** @param options.scope - `project` asks for the manager-only full inventory. */
 export async function listProjectSessions(
-  projectId: string,
+  workspaceId: string,
   options?: { scope?: 'visible' | 'project' },
 ) {
   const params = new URLSearchParams();
   if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
   const query = params.size > 0 ? `?${params}` : '';
-  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
+  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${workspaceId}/sessions${query}`));
 }
 
 /**
@@ -184,13 +191,13 @@ export async function listProjectSessions(
  * project manager only. Reuses the connector/secret sharing intent shape.
  */
 export async function setProjectSessionSharing(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   intent: ConnectorSharing,
 ) {
   return unwrap(
     await backendApi.put<ProjectSession>(
-      `/projects/${projectId}/sessions/${sessionId}/sharing`,
+      `/projects/${workspaceId}/sessions/${sessionId}/sharing`,
       intent,
     ),
   );
@@ -242,44 +249,44 @@ export interface CreateSessionPublicShareInput {
   expires_at?: string | null;
 }
 
-export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
+export async function getSessionPreviewCandidates(workspaceId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<{ candidates: SessionPreviewCandidate[] }>(
-      `/projects/${projectId}/sessions/${sessionId}/previews`,
+      `/projects/${workspaceId}/sessions/${sessionId}/previews`,
     ),
   );
 }
 
-export async function listSessionPublicShares(projectId: string, sessionId: string) {
+export async function listSessionPublicShares(workspaceId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<{ shares: SessionPublicShare[] }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      `/projects/${workspaceId}/sessions/${sessionId}/public-shares`,
       { showErrors: false },
     ),
   );
 }
 
 export async function createSessionPublicShare(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   input: CreateSessionPublicShareInput,
 ) {
   return unwrap(
     await backendApi.post<{ share: SessionPublicShare }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      `/projects/${workspaceId}/sessions/${sessionId}/public-shares`,
       input,
     ),
   );
 }
 
 export async function revokeSessionPublicShare(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   shareId: string,
 ) {
   return unwrap(
     await backendApi.delete<{ share: SessionPublicShare }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares/${shareId}`,
+      `/projects/${workspaceId}/sessions/${sessionId}/public-shares/${shareId}`,
     ),
   );
 }
@@ -292,9 +299,9 @@ export async function revokeSessionPublicShare(
  * establish a commit barrier for writes raced against this request; it only
  * provisions/resumes idempotently and reports readiness.
  */
-export async function createProjectSession(projectId: string, input?: CreateProjectSessionInput) {
+export async function createProjectSession(workspaceId: string, input?: CreateProjectSessionInput) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),
+    await backendApi.post<ProjectSession>(`/projects/${workspaceId}/sessions`, input ?? {}),
   );
   // Mark freshly-created EMPTY sessions so the session page shows the instant
   // typeable shell instead of the resume loader. THE chokepoint for every empty
@@ -308,20 +315,20 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   return session;
 }
 
-export async function ensureWarmProjectSession(projectId: string) {
+export async function ensureWarmProjectSession(workspaceId: string) {
   const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}),
+    await backendApi.post<WarmProjectSessionResult>(`/projects/${workspaceId}/sessions/warm`, {}),
   );
   markSessionFresh(result.session.session_id);
   return result;
 }
 
 export async function claimWarmProjectSession(
-  projectId: string,
+  workspaceId: string,
   input: ClaimWarmProjectSessionInput,
 ) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions/warm/claim`, input, {
+    await backendApi.post<ProjectSession>(`/projects/${workspaceId}/sessions/warm/claim`, input, {
       showErrors: false,
     }),
   );
@@ -330,12 +337,12 @@ export async function claimWarmProjectSession(
 }
 
 export async function getProjectSession(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   options?: { showErrors?: boolean },
 ) {
   return unwrap(
-    await backendApi.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, {
+    await backendApi.get<ProjectSession>(`/projects/${workspaceId}/sessions/${sessionId}`, {
       showErrors: options?.showErrors,
     }),
   );
@@ -393,7 +400,7 @@ export interface SessionAudit {
 /** Canonical session timeline plus the governed connector approval projection.
  * Visible to anyone who can see the session (its launcher + project managers). */
 export async function getSessionAudit(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   limit?: number,
   options?: { showErrors?: boolean; cursor?: string; includeEvents?: boolean },
@@ -405,7 +412,7 @@ export async function getSessionAudit(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionAudit>(
-      `/projects/${projectId}/sessions/${sessionId}/audit${qs ? `?${qs}` : ''}`,
+      `/projects/${workspaceId}/sessions/${sessionId}/audit${qs ? `?${qs}` : ''}`,
       {
         showErrors: options?.showErrors,
       },
@@ -441,7 +448,7 @@ export interface SessionTranscript {
 }
 
 export async function getSessionTranscript(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   options?: { limit?: number; chars?: number },
 ) {
@@ -451,7 +458,7 @@ export async function getSessionTranscript(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionTranscript>(
-      `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
+      `/projects/${workspaceId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
     ),
   );
 }
@@ -487,7 +494,7 @@ export interface VoiceTranscript {
  *  `/transcript`). Returns `{ turns: [] }` for a session that never made a
  *  voice call — not a 404, since "no call yet" is the common case. */
 export async function getVoiceTranscript(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   options?: { cursor?: number; limit?: number; showErrors?: boolean },
 ) {
@@ -497,14 +504,14 @@ export async function getVoiceTranscript(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<VoiceTranscript>(
-      `/projects/${projectId}/sessions/${sessionId}/voice-transcript${qs ? `?${qs}` : ''}`,
+      `/projects/${workspaceId}/sessions/${sessionId}/voice-transcript${qs ? `?${qs}` : ''}`,
       { showErrors: options?.showErrors },
     ),
   );
 }
 
 export async function updateProjectSession(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   input: {
     name?: string;
@@ -512,30 +519,30 @@ export async function updateProjectSession(
   },
 ) {
   return unwrap(
-    await backendApi.patch<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, input),
+    await backendApi.patch<ProjectSession>(`/projects/${workspaceId}/sessions/${sessionId}`, input),
   );
 }
 
-export async function deleteProjectSession(projectId: string, sessionId: string) {
+export async function deleteProjectSession(workspaceId: string, sessionId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}`),
+    await backendApi.delete<{ ok: boolean }>(`/projects/${workspaceId}/sessions/${sessionId}`),
   );
 }
 
-export async function restartProjectSession(projectId: string, sessionId: string) {
+export async function restartProjectSession(workspaceId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/restart`,
+      `/projects/${workspaceId}/sessions/${sessionId}/restart`,
       {},
     ),
   );
 }
 
 /** Manual pause: stops the running sandbox in place, resumable via start(). */
-export async function stopProjectSession(projectId: string, sessionId: string) {
+export async function stopProjectSession(workspaceId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/stop`,
+      `/projects/${workspaceId}/sessions/${sessionId}/stop`,
       {},
     ),
   );
@@ -582,12 +589,12 @@ export interface SessionConfigState {
  * has a meaning ("could not tell"), and that is the caller's to render.
  */
 export async function getProjectSessionConfigState(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
 ): Promise<SessionConfigState> {
   return unwrap(
     await backendApi.get<SessionConfigState>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/config`,
+      `/projects/${workspaceId}/sessions/${encodeURIComponent(sessionId)}/config`,
       { showErrors: false },
     ),
   );
@@ -641,39 +648,8 @@ export interface SessionReloadResult {
   detail: string;
 }
 
-/** Server-observed boundaries for a live session-config reload. */
-export type SessionReloadPhase =
-  | 'checking-session'
-  | 'refreshing-workspace'
-  | 'compiling-config'
-  | 'applying-config'
-  | 'confirming-config';
-
 /** One frame from the streamed session-config reload route. */
-export type SessionReloadStreamEvent =
-  | { type: 'phase'; phase: SessionReloadPhase }
-  | { type: 'done'; result: SessionReloadResult }
-  | {
-      type: 'error';
-      error: string;
-      code?: string;
-      status?: number;
-      reason?: string;
-    };
-
-function parseSessionReloadStreamFrame(frame: string): SessionReloadStreamEvent | null {
-  const dataLines = frame
-    .split('\n')
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).replace(/^ /, ''));
-  if (dataLines.length === 0) return null;
-
-  try {
-    return JSON.parse(dataLines.join('\n')) as SessionReloadStreamEvent;
-  } catch (cause) {
-    throw new Error('reloadProjectSessionConfigStream received an invalid SSE frame', { cause });
-  }
-}
+export type SessionReloadStreamEvent = GenericSessionReloadStreamEvent<SessionReloadResult>;
 
 /**
  * Recompile the agent config from git and push it into a RUNNING session.
@@ -689,13 +665,13 @@ function parseSessionReloadStreamFrame(frame: string): SessionReloadStreamEvent 
  * and would double up on every other failure the caller already reports.
  */
 export async function reloadProjectSessionConfig(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   input: { refresh_repo?: boolean; force?: boolean } = {},
 ): Promise<SessionReloadResult> {
   return unwrap(
     await backendApi.post<SessionReloadResult>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload`,
+      `/projects/${workspaceId}/sessions/${encodeURIComponent(sessionId)}/reload`,
       input,
       { showErrors: false },
     ),
@@ -714,70 +690,20 @@ export async function reloadProjectSessionConfig(
  * Requires a `fetch` implementation with a readable response body. React Native
  * callers must use {@link reloadProjectSessionConfig} instead.
  */
-export async function reloadProjectSessionConfigStream(
+/** @deprecated Use {@link reloadWorkspaceSessionConfigStream}. */
+export function reloadProjectSessionConfigStream(
   projectId: string,
   sessionId: string,
   input: { refresh_repo?: boolean; force?: boolean },
   onEvent: (event: SessionReloadStreamEvent) => void,
   options: ApiClientOptions = {},
 ): Promise<SessionReloadResult> {
-  const response = await backendApi.postStream(
+  return requestSessionConfigReloadStream<SessionReloadResult>(
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload-stream`,
     input,
+    onEvent,
     options,
   );
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-      code?: string;
-      reason?: string;
-    } | null;
-    throw new ApiError(body?.error || `Reload failed: HTTP ${response.status}`, {
-      status: response.status,
-      code: body?.code,
-      data: body,
-    });
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('Reload stream is unavailable on this runtime (no response body)');
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let settled: SessionReloadResult | null = null;
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let boundary = buffer.indexOf('\n\n');
-      while (boundary !== -1) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf('\n\n');
-
-        const event = parseSessionReloadStreamFrame(frame);
-        if (!event) continue;
-        onEvent(event);
-        if (event.type === 'error') {
-          throw new ApiError(event.error, {
-            status: event.status,
-            code: event.code,
-            data: { reason: event.reason },
-          });
-        }
-        if (event.type === 'done') settled = event.result;
-      }
-    }
-  } finally {
-    reader.cancel().catch(() => {});
-  }
-
-  if (!settled) throw new Error('Reload stream ended without a result');
-  return settled;
 }
 
 /**
@@ -861,12 +787,12 @@ export interface SessionScope {
 export type SessionScopeResult = SessionScope;
 
 export async function getProjectSessionScope(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
 ): Promise<SessionScope> {
   return unwrap(
     await backendApi.get<SessionScope>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+      `/projects/${workspaceId}/sessions/${encodeURIComponent(sessionId)}/scope`,
     ),
   );
 }
@@ -876,13 +802,13 @@ export async function getProjectSessionScope(
  * there, and takes effect from the next prompt.
  */
 export async function setProjectSessionScope(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   scope: SessionScopeInput,
 ): Promise<SessionScope> {
   return unwrap(
     await backendApi.put<SessionScope>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+      `/projects/${workspaceId}/sessions/${encodeURIComponent(sessionId)}/scope`,
       scope,
     ),
   );
@@ -907,13 +833,13 @@ export interface SessionModelChangeResult {
 }
 
 export async function setProjectSessionModel(
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   opencodeModel: string,
 ): Promise<SessionModelChangeResult> {
   return unwrap(
     await backendApi.put<SessionModelChangeResult>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
+      `/projects/${workspaceId}/sessions/${encodeURIComponent(sessionId)}/model`,
       { opencode_model: opencodeModel },
     ),
   );

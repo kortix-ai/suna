@@ -207,7 +207,7 @@ interface SelfHostEnv {
   KORTIX_GITHUB_APP_SLUG: string;
   KORTIX_GITHUB_TOKEN: string;
   KORTIX_GITHUB_OWNER: string;
-  // Managed git: the backend that provisions project repos. The API reads these
+  // Managed git: the backend that provisions workspace repos. The API reads these
   // MANAGED_GIT_* vars (KORTIX_GITHUB_* alone don't reach it), so the wizard sets
   // both. Without it, project create/CRUD fails "provider github not configured".
   MANAGED_GIT_PROVIDER: string;
@@ -486,7 +486,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
 
   if (!gitProviderConfigured(env)) {
     process.stdout.write(
-      `${C.dim}  note     managed git not configured yet — connect GitHub in the dashboard (Settings → Git) before creating projects.${C.reset}\n\n`,
+      `${C.dim}  note     managed git not configured yet — connect GitHub in the dashboard (Settings → Git) before creating workspaces.${C.reset}\n\n`,
     );
   }
 
@@ -1660,7 +1660,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 async function selfHostConnectGithub(_args: string[], _flags: GlobalFlags): Promise<number> {
   process.stdout.write(
     `\n  ${C.yellow}kortix self-host connect-github is deprecated.${C.reset}\n` +
-      `  ${C.dim}GitHub (projects) is configured in the dashboard: Settings → Git.${C.reset}\n\n`,
+      `  ${C.dim}GitHub (workspaces) is configured in the dashboard: Settings → Git.${C.reset}\n\n`,
   );
   return 0;
 }
@@ -1769,7 +1769,7 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
   // Pipedream (optional, default skip): the ONE other env-only credential
   // that belongs here — the platform-level OAuth app Pipedream issues per
   // operator, not a per-user connection (those live in the DB and are
-  // configured per-project in the app). Never gates init/start either way;
+  // configured per-workspace in the app). Never gates init/start either way;
   // KORTIX_PUBLIC_CONNECTORS_ENABLED is re-derived from whatever ends up set
   // here on every write (see normalizeFullSupabaseEnv), so skipping just
   // leaves connectors hidden in the frontend rather than half-configured.
@@ -1783,7 +1783,7 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
       env.CONNECTOR_AUTH_PROVIDER = 'pipedream';
       env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
       env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
-      env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
+      env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream workspace ID', env.PIPEDREAM_PROJECT_ID);
       env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
       env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
     }
@@ -2033,7 +2033,7 @@ function renderConnectionSummary(env: SelfHostEnv): void {
  */
 function renderAfterStartNote(): void {
   process.stdout.write(
-    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (projects) · connect your model key in the app (BYOK) · optional: connectors, SMTP — all in the dashboard.${C.reset}\n\n`,
+    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (workspaces) · connect your model key in the app (BYOK) · optional: connectors, SMTP — all in the dashboard.${C.reset}\n\n`,
   );
 }
 
@@ -2076,8 +2076,8 @@ async function ensurePort(
 function composeHasRunningServices(instance: string): boolean {
   if (!existsSync(composePath(instance)) || !existsSync(envPath(instance))) return false;
   // `docker compose ps` reparses the entire generated stack and can take long
-  // enough to hit the CLI/test timeout even when this project has no
-  // containers. Compose already labels every container with the project name,
+  // enough to hit the CLI/test timeout even when this workspace has no
+  // containers. Compose already labels every container with the workspace name,
   // so a bounded `docker ps` label lookup is the exact, cheaper question here:
   // "does this instance currently have at least one running container?"
   const result = spawnSync(

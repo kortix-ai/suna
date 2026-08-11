@@ -51,6 +51,8 @@ export const AccountDetailSchema = z
     account_id: z.string(),
     name: z.string(),
     member_count: z.number(),
+    workspace_count: z.number(),
+    /** @deprecated Use workspace_count. */
     project_count: z.number(),
     role: z.string(),
     /** Account-wide MFA enforcement flag — drives the members-list MFA badges. */
@@ -66,6 +68,8 @@ export const AccountMemberSchema = z
     email: z.string().nullable(),
     account_role: z.string(),
     is_super_admin: z.boolean(),
+    explicit_workspace_count: z.number(),
+    /** @deprecated Use explicit_workspace_count. */
     explicit_project_count: z.number(),
     groups: z.array(z.object({ group_id: z.string(), name: z.string() })),
     active_pat_count: z.number(),
@@ -289,7 +293,7 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
 // is stamped so subsequent calls are no-ops. Errors are swallowed — auto-claim is
 // best-effort and must never block account listing.
 //
-// Project invites (the ones carrying bootstrap grants) are deliberately left
+// Workspace invites (the ones carrying bootstrap grants) are deliberately left
 // untouched: they must go through the explicit accept/decline dialog so the
 // recipient consents AND the project_members grant actually gets applied. See
 // the per-invite skip in the loop below.
@@ -311,7 +315,7 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
       );
 
     for (const invite of pending) {
-      // Project invites carry bootstrap grants and MUST go through the explicit
+      // Workspace invites carry bootstrap grants and MUST go through the explicit
       // accept flow (POST /account-invites/:id/accept) — that's the only path
       // that applies the project_members grants. Silently auto-claiming one here
       // stamps accepted_at and adds the account membership but never grants

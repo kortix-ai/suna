@@ -11,7 +11,7 @@ import { withPipedreamOverlayEscape } from '@/hooks/connectors/use-pipedream-con
 /**
  * Connect the PROJECT's shared account for a Pipedream connector — the 1-click
  * "App" flow. Sibling of `usePipedreamConnectMember` (private, per-user) and
- * `usePipedreamConnectProject` (a labelled additional project connection).
+ * `usePipedreamConnectWorkspace` (a labelled additional workspace connection).
  *
  * Lifted out of `customize/sections/connectors-view.tsx`, which is 5,219 lines
  * and 50 components. That module exported this hook beside its components, so
@@ -20,13 +20,13 @@ import { withPipedreamOverlayEscape } from '@/hooks/connectors/use-pipedream-con
  * module and its 55 imports (`HighlightedCode`, `PoliciesPanel`,
  * `DiscoverCatalogue`, `ConnectorConnectionModal`) into its route chunk.
  */
-export function usePipedreamConnect(projectId: string, slug: string, onConnected: () => void) {
+export function usePipedreamConnect(workspaceId: string, slug: string, onConnected: () => void) {
   return useMutation({
     mutationFn: async () => {
-      const { token, app } = await pipedreamConnect(projectId, slug);
+      const { token, app } = await pipedreamConnect(workspaceId, slug);
       if (!token || !app) throw new Error('App connect is not configured');
       const pd = createFrontendClient({
-        externalUserId: `${projectId}:${slug}`,
+        externalUserId: `${workspaceId}:${slug}`,
         tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
       });
       const release = withPipedreamOverlayEscape();
@@ -46,7 +46,7 @@ export function usePipedreamConnect(projectId: string, slug: string, onConnected
         release();
       }
       if (!connected) return { connected: false };
-      await pipedreamFinalize(projectId, slug);
+      await pipedreamFinalize(workspaceId, slug);
       return { connected: true };
     },
     onSuccess: (res) => {

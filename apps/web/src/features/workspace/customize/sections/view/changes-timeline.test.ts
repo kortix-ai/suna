@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { ChangeRequest } from '@/features/project-files/api/change-requests';
-import type { ProjectCommit } from '@kortix/sdk';
+import type { WorkspaceChangeRequest } from '@/features/workspace-files/api/change-requests';
+import type { WorkspaceCommit } from '@kortix/sdk';
 import {
   KORTIX_AGENT_EMAIL,
   buildTimeline,
@@ -21,7 +21,7 @@ function localIso(year: number, month: number, day: number): string {
 
 const REF = new Date(2026, 5, 25, 15);
 
-function commit(overrides: Partial<ProjectCommit> = {}): ProjectCommit {
+function commit(overrides: Partial<WorkspaceCommit> = {}): WorkspaceCommit {
   return {
     hash: 'abc123',
     short_hash: 'abc123',
@@ -38,11 +38,11 @@ function commit(overrides: Partial<ProjectCommit> = {}): ProjectCommit {
   };
 }
 
-function changeRequest(overrides: Partial<ChangeRequest> = {}): ChangeRequest {
+function changeRequest(overrides: Partial<WorkspaceChangeRequest> = {}): WorkspaceChangeRequest {
   return {
     cr_id: 'cr-1',
     account_id: 'acct',
-    project_id: 'proj',
+    workspace_id: 'proj',
     number: 1,
     title: 'Add feature',
     description: '',

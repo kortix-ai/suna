@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
+import { canonicalConnectorAlias } from '../workspaces/lib/session-connector-bindings';
 import { agentMayUseConnector, canonicalizeGrantConnectors } from './agent-scope';
-import { grantFromLoadedAgents } from '../projects/agents';
+import { grantFromLoadedAgents } from '../workspaces/agents';
 
 /**
  * A grant is compared at THREE gates that historically used three different

@@ -5,15 +5,16 @@ import {
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
 import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
-  LAST_PROJECT_COOKIE,
-  PROJECT_LANDING_PATH,
+  LAST_WORKSPACE_COOKIE,
+  WORKSPACE_LANDING_PATH,
   resolveDefaultLandingPath,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
+import { canonicalWorkspacePath } from '@/lib/workspace-routing';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -134,11 +135,12 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
 // these route prefixes — plus /auth/* for sign-in — are allowed to render
 // inside the desktop window. Every other route (the marketing homepage, blog,
 // pricing, careers, contact, legal, help, docs, share, design-system, … which
-// all live at root-level slugs) is bounced to /projects. Docs and external
+// all live at root-level slugs) is bounced to /workspaces. Docs and external
 // links are opened in the user's real browser by the Tauri shell, never shown
 // in-app. Keep this an allowlist, not a blocklist — new marketing slugs must
 // stay blocked by default.
 const DESKTOP_ALLOWED_ROUTES = [
+  '/workspaces',
   '/projects',
   '/new',
   '/accounts',
@@ -255,6 +257,15 @@ export async function middleware(request: NextRequest) {
     return finalizeEnvironmentAccess(NextResponse.next());
   }
 
+  // Project URLs are compatibility inputs. Keep the complete suffix and query
+  // while moving the visible URL onto the canonical Workspace namespace.
+  const canonicalPath = canonicalWorkspacePath(pathname);
+  if (canonicalPath) {
+    const url = request.nextUrl.clone();
+    url.pathname = canonicalPath;
+    return NextResponse.redirect(url, 308);
+  }
+
   // ── Terms of Service → public Drive file (permanent 308) ────────────────
   // The Terms document moved to an externally-owned Google Drive file. Both
   // the new stable path (`/legal/terms`) and the legacy tab query
@@ -350,12 +361,12 @@ export async function middleware(request: NextRequest) {
     if (!isAllowed) {
       // Into the latest project, not the list — the desktop shell has no
       // marketing surface, so this bounce IS the user's default destination.
-      // The landing door, not the remembered project: this gate runs BEFORE the
+      // The landing door, not the remembered workspace: this gate runs BEFORE the
       // Supabase user is fetched below, so there is no identity here to check
       // the cookie against — and an unowned cookie read is exactly the bug that
       // sent one account into another account's project. The door re-resolves.
       return finalizeEnvironmentAccess(
-        NextResponse.redirect(new URL(PROJECT_LANDING_PATH, request.url)),
+        NextResponse.redirect(new URL(WORKSPACE_LANDING_PATH, request.url)),
       );
     }
   }
@@ -499,17 +510,17 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // The default destination is a PROJECT, not the projects list. When the
-  // browser remembers which project was open last we jump straight there;
+  // The default destination is a workspace, not the workspaces list. When the
+  // browser remembers which workspace was open last we jump straight there;
   // otherwise the id-free landing door resolves (or provisions) one behind an
   // instant paint. The cookie is browser-written, so `resolveDefaultLandingPath`
-  // only accepts a well-formed project id and falls back to the door.
+  // only accepts a well-formed workspace id and falls back to the door.
   const defaultLandingPath = resolveDefaultLandingPath(
-    request.cookies.get(LAST_PROJECT_COOKIE)?.value,
+    request.cookies.get(LAST_WORKSPACE_COOKIE)?.value,
     user?.id,
   );
 
-  // FAST PATH: authenticated users hitting the homepage go straight to a project.
+  // FAST PATH: authenticated users hitting the homepage go straight to a workspace.
   if (pathname === '/' && user) {
     return finalizeEnvironmentAccess(
       redirectPreservingSession(new URL(defaultLandingPath, request.url)),

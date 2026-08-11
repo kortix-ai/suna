@@ -111,7 +111,7 @@ mock.module('../shared/preview-ownership', () => ({
   canAccessSandboxSession: async () => true,
   // Not exercised by this suite (no project-scoped PATs here) — stub so the
   // real module's shape stays satisfied for anything that imports it.
-  resolveSandboxProjectId: async () => null,
+  resolveSandboxWorkspaceId: async () => null,
   clearPreviewOwnershipCache: () => {},
   invalidatePreviewCacheForUser: () => {},
 }));

@@ -13,7 +13,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
+const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 const OWNER_ACCOUNT = 'acct-owner';
 const OTHER_ACCOUNT = 'acct-other';
 
@@ -75,10 +75,10 @@ mock.module('../iam/dispatcher', () => ({
   },
 }));
 
-const { authorizeGitProxy } = await import('../projects/lib/git');
+const { authorizeGitProxy } = await import('../workspaces/lib/git');
 
 beforeEach(() => {
-  projectRow = { projectId: PROJECT_ID, accountId: OWNER_ACCOUNT, status: 'active' };
+  projectRow = { workspaceId: WORKSPACE_ID, accountId: OWNER_ACCOUNT, status: 'active' };
   patResult = { isValid: true, accountId: OWNER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
   apiKeyResult = { isValid: false };
   sandboxRow = null;
@@ -88,7 +88,7 @@ beforeEach(() => {
 
 describe('authorizeGitProxy — CLI PAT', () => {
   test('a PAT on the owning account is allowed without an IAM round-trip', async () => {
-    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_pat_x', WORKSPACE_ID, 'write');
     expect(res.ok).toBe(true);
     expect(authorizeCalls).toHaveLength(0);
   });
@@ -99,7 +99,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
       accountId: OWNER_ACCOUNT,
       userId: 'user-1',
       tokenId: 'tok-1',
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: 'sandbox-1',
     };
     sandboxRow = {
@@ -107,7 +107,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
       sessionMetadata: { workspace_mode: 'runtime' },
     };
 
-    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
+    const res = await authorizeGitProxy('kortix_pat_x', WORKSPACE_ID, 'read');
 
     expect(res).toMatchObject({
       ok: false,
@@ -120,10 +120,10 @@ describe('authorizeGitProxy — CLI PAT', () => {
     patResult = { isValid: true, accountId: OTHER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
     authorizeAllowed = true;
 
-    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_pat_x', WORKSPACE_ID, 'write');
 
     expect(res.ok).toBe(true);
-    // Evaluated against the PROJECT's account, not the token's, and threading
+    // Evaluated against the WORKSPACE's account, not the token's, and threading
     // the acting token so the agent-grant fold fires.
     expect(authorizeCalls).toEqual([
       {
@@ -139,7 +139,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
     patResult = { isValid: true, accountId: OTHER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
     authorizeAllowed = false;
 
-    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_pat_x', WORKSPACE_ID, 'write');
 
     expect(res).toMatchObject({ ok: false, status: 403 });
   });
@@ -148,7 +148,7 @@ describe('authorizeGitProxy — CLI PAT', () => {
     patResult = { isValid: true, accountId: OTHER_ACCOUNT, userId: 'user-1', tokenId: 'tok-1' };
     authorizeAllowed = true;
 
-    await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'read');
+    await authorizeGitProxy('kortix_pat_x', WORKSPACE_ID, 'read');
 
     expect(authorizeCalls[0]?.action).toBe('project.gitops.read');
   });
@@ -158,11 +158,11 @@ describe('authorizeGitProxy — CLI PAT', () => {
       isValid: true,
       accountId: OWNER_ACCOUNT,
       userId: 'user-1',
-      projectId: 'other-project',
+      workspaceId: 'other-project',
     };
     authorizeAllowed = true;
 
-    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_pat_x', WORKSPACE_ID, 'write');
 
     expect(res).toMatchObject({ ok: false, status: 403 });
     expect(authorizeCalls).toHaveLength(0);
@@ -171,16 +171,16 @@ describe('authorizeGitProxy — CLI PAT', () => {
   test('an invalid PAT is 401, never a capability lookup', async () => {
     patResult = { isValid: false, error: 'revoked' };
 
-    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_pat_x', WORKSPACE_ID, 'write');
 
     expect(res).toMatchObject({ ok: false, status: 401 });
     expect(authorizeCalls).toHaveLength(0);
   });
 
   test('an archived project is 404 regardless of the token', async () => {
-    projectRow = { projectId: PROJECT_ID, accountId: OWNER_ACCOUNT, status: 'archived' };
+    projectRow = { workspaceId: WORKSPACE_ID, accountId: OWNER_ACCOUNT, status: 'archived' };
 
-    const res = await authorizeGitProxy('kortix_pat_x', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_pat_x', WORKSPACE_ID, 'write');
 
     expect(res).toMatchObject({ ok: false, status: 404 });
   });
@@ -192,7 +192,7 @@ describe('authorizeGitProxy — account API key', () => {
     apiKeyResult = { isValid: true, accountId: OTHER_ACCOUNT, type: 'user' };
     authorizeAllowed = true; // would pass IF the fallback applied — it must not
 
-    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_abc', WORKSPACE_ID, 'write');
 
     expect(res).toMatchObject({ ok: false, status: 403 });
     expect(authorizeCalls).toHaveLength(0);
@@ -202,13 +202,13 @@ describe('authorizeGitProxy — account API key', () => {
     patResult = { isValid: false };
     apiKeyResult = { isValid: true, accountId: OWNER_ACCOUNT, type: 'user' };
 
-    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_abc', WORKSPACE_ID, 'write');
 
     expect(res.ok).toBe(true);
   });
 
   test('a non-Kortix credential is 401', async () => {
-    const res = await authorizeGitProxy('ghp_something', PROJECT_ID, 'read');
+    const res = await authorizeGitProxy('ghp_something', WORKSPACE_ID, 'read');
     expect(res).toMatchObject({ ok: false, status: 401 });
   });
 });
@@ -230,7 +230,7 @@ describe('authorizeGitProxy — sandbox token', () => {
       sessionMetadata: { workspace_mode: 'runtime' },
     };
 
-    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
+    const res = await authorizeGitProxy('kortix_abc', WORKSPACE_ID, 'read');
 
     expect(res).toMatchObject({
       ok: false,
@@ -245,7 +245,7 @@ describe('authorizeGitProxy — sandbox token', () => {
       sessionMetadata: { workspace_mode: 'branch' },
     };
 
-    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'write');
+    const res = await authorizeGitProxy('kortix_abc', WORKSPACE_ID, 'write');
 
     expect(res.ok).toBe(true);
   });
@@ -253,7 +253,7 @@ describe('authorizeGitProxy — sandbox token', () => {
   test('legacy sessions without a workspace mode retain Git access', async () => {
     sandboxRow = { sandboxId: 'sandbox-1', sessionMetadata: {} };
 
-    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
+    const res = await authorizeGitProxy('kortix_abc', WORKSPACE_ID, 'read');
 
     expect(res.ok).toBe(true);
   });

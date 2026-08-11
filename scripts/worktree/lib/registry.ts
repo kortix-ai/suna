@@ -15,7 +15,7 @@ const LOCK_PATH = join(WT_HOME, 'registry.lock');
 
 export interface SlotEntry {
   slot: number;
-  projectId: string;
+  workspaceId: string;
   path: string;
   branch: string;
   ports: Ports;

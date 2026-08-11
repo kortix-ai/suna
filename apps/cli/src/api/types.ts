@@ -1,5 +1,5 @@
 // Response shapes for the API endpoints the CLI talks to. Keep in sync with
-// apps/api/src/accounts/index.ts and apps/api/src/projects/index.ts.
+// apps/api/src/accounts/index.ts and apps/api/src/workspaces/index.ts.
 
 export interface AccountMembership {
   account_id: string;
@@ -13,6 +13,8 @@ export interface MeResponse {
   email: string;
   token_context?: {
     auth_type: string | null;
+    workspace_id?: string | null;
+    /** @deprecated Use `workspace_id`. */
     project_id: string | null;
     session_id: string | null;
     agent: string | null;
@@ -23,8 +25,8 @@ export interface MeResponse {
   accounts: AccountMembership[];
 }
 
-export interface ProjectSummary {
-  project_id: string;
+export interface WorkspaceSummary {
+  workspace_id: string;
   account_id: string;
   name: string;
   repo_url: string;
@@ -37,23 +39,29 @@ export interface ProjectSummary {
   last_opened_at: string | null;
   created_at: string;
   updated_at: string;
-  /** Web dashboard URL for this project (server-provided; not the API host). */
+  /** Web dashboard URL for this workspace (server-provided; not the API host). */
   dashboard_url?: string;
+}
+
+/** @deprecated Use `WorkspaceSummary`. */
+export interface ProjectSummary extends Omit<WorkspaceSummary, 'workspace_id'> {
+  project_id: string;
+  workspace_id?: string;
 }
 
 // ── Secrets ───────────────────────────────────────────────────────────────
 
-export interface ProjectSecret {
-  /** Unique per project — the handle an agent's `secrets` grant references. */
+export interface WorkspaceSecret {
+  /** Unique per workspace — the handle an agent's `secrets` grant references. */
   identifier: string;
   secret_id: string;
-  project_id: string;
+  workspace_id: string;
   /** The env var KEY injected into the sandbox. Not unique — see `identifier`. */
   name: string;
   created_by: string;
   created_at: string;
   updated_at: string;
-  /** Whether the shared/project value exists. Mirrors the API + SDK field. */
+  /** Whether the shared/workspace value exists. Mirrors the API + SDK field. */
   configured: boolean;
   /** Which value is effective for the requesting user. */
   effective_source: 'mine' | 'shared' | 'none';
@@ -74,13 +82,24 @@ export interface ProjectSecret {
   requires_rotation?: boolean;
 }
 
-export interface ProjectSecretsResponse {
-  items: ProjectSecret[];
+export interface WorkspaceSecretsResponse {
+  items: WorkspaceSecret[];
   required: string[];
   optional: string[];
   manifest_status: 'loaded' | 'missing' | 'error';
   manifest_path: string | null;
   manifest_error?: string;
+}
+
+/** @deprecated Use `WorkspaceSecret`. */
+export interface ProjectSecret extends Omit<WorkspaceSecret, 'workspace_id'> {
+  project_id: string;
+  workspace_id?: string;
+}
+
+/** @deprecated Use `WorkspaceSecretsResponse`. */
+export interface ProjectSecretsResponse extends Omit<WorkspaceSecretsResponse, 'items'> {
+  items: ProjectSecret[];
 }
 
 // ── Provider OAuth ───────────────────────────────────────────────────────
@@ -122,10 +141,10 @@ export type OauthPollResponse =
 
 // ── Sessions ──────────────────────────────────────────────────────────────
 
-export interface ProjectSession {
+export interface WorkspaceSession {
   session_id: string;
   account_id: string;
-  project_id: string;
+  workspace_id: string;
   branch_name: string;
   base_ref: string;
   sandbox_provider: string;
@@ -144,9 +163,15 @@ export interface ProjectSession {
   updated_at: string;
 }
 
+/** @deprecated Use `WorkspaceSession`. */
+export interface ProjectSession extends Omit<WorkspaceSession, 'workspace_id'> {
+  project_id: string;
+  workspace_id?: string;
+}
+
 // ── Triggers ──────────────────────────────────────────────────────────────
 
-export interface ProjectTrigger {
+export interface WorkspaceTrigger {
   slug: string;
   path: string;
   name: string;
@@ -163,14 +188,20 @@ export interface ProjectTrigger {
   webhook_url: string | null;
 }
 
-export interface ProjectTriggersResponse {
-  triggers: ProjectTrigger[];
-  // Server-side per-project activation state. When true, the platform won't
-  // auto-run ANY of this project's triggers (cron sweep skips, webhooks ignored)
+export interface WorkspaceTriggersResponse {
+  triggers: WorkspaceTrigger[];
+  // Server-side per-workspace activation state. When true, the platform won't
+  // auto-run ANY of this workspace's triggers (cron sweep skips, webhooks ignored)
   // regardless of each trigger's own `enabled`. Toggle with `triggers pause/resume`.
   triggers_paused?: boolean;
   errors: Array<{ path: string; error: string }>;
 }
+
+/** @deprecated Use `WorkspaceTrigger`. */
+export type ProjectTrigger = WorkspaceTrigger;
+
+/** @deprecated Use `WorkspaceTriggersResponse`. */
+export type ProjectTriggersResponse = WorkspaceTriggersResponse;
 
 export interface TriggerFireResponse {
   status: 'queued' | 'fired';

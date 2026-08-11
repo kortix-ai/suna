@@ -1,0 +1,148 @@
+import { describe, expect, it } from 'bun:test';
+
+import { createNewSessionScopeInitialization } from '@/features/session/scope/session-scope-toolbar';
+
+import { buildNewSessionCreateInput } from './new-session-create';
+
+describe('buildNewSessionCreateInput', () => {
+  it('binds the picked agent as agent_name so it matches the first prompt', () => {
+    // The whole bug: the composer sends agent="veyris" on the first prompt, so
+    // the session MUST be created bound to "veyris" — otherwise the proxy 409s
+    // (AGENT_SWITCH_REQUIRES_NEW_SESSION) and the task never starts.
+    expect(buildNewSessionCreateInput({ agent: 'veyris' })).toEqual({
+      agent_name: 'veyris',
+    });
+  });
+
+  it('carries the sandbox slug through alongside the agent', () => {
+    expect(buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' })).toEqual({
+      agent_name: 'builder',
+      sandbox_slug: 'node22',
+    });
+  });
+
+  it('forces the fixed meta sandbox when the meta agent is selected', () => {
+    expect(buildNewSessionCreateInput({ agent: 'meta', sandbox_slug: 'node22' })).toEqual({
+      agent_name: 'meta',
+      sandbox_slug: 'meta',
+    });
+  });
+
+  it('binds only the sandbox slug when no agent is picked', () => {
+    expect(buildNewSessionCreateInput({ sandbox_slug: 'node22' })).toEqual({
+      sandbox_slug: 'node22',
+    });
+  });
+
+  it('returns undefined when there is nothing to override', () => {
+    // No agent and the default sandbox → omit the create overrides entirely.
+    expect(buildNewSessionCreateInput({})).toBeUndefined();
+    expect(buildNewSessionCreateInput()).toBeUndefined();
+  });
+
+  it('ignores an empty-string agent (never binds agent_name="")', () => {
+    // An empty agent must NOT become agent_name:"" — that would mismatch the
+    // proxy's `?? "default"` and 409 the first prompt.
+    expect(buildNewSessionCreateInput({ agent: '' })).toBeUndefined();
+  });
+
+  it('binds the complete committed connector selection at creation', () => {
+    expect(
+      buildNewSessionCreateInput({
+        agent: 'builder',
+        scope: {
+          draft: {
+            secrets: ['MAIL_TOKEN'],
+            connector_bindings: {
+              mail: { connection_id: 'connection-mail-private' },
+            },
+          },
+          availability: { secrets: true, connector_bindings: true },
+        },
+      }),
+    ).toEqual({
+      agent_name: 'builder',
+      connector_bindings: {
+        mail: { connection_id: 'connection-mail-private' },
+      },
+      inherit_unbound: false,
+    });
+  });
+
+  it('leaves untouched connector defaults to server-side resolution', () => {
+    const initialization = createNewSessionScopeInitialization({
+      secrets: { status: 'ready', items: [] },
+      connector_connections: {
+        status: 'ready',
+        items: [
+          {
+            slug: 'computer',
+            name: 'Computer',
+            authorization_strategy: 'workspace',
+            connections: [
+              {
+                connection_id: 'connection-computer-default',
+                label: 'Project computer',
+                is_default: true,
+              },
+            ],
+          },
+          {
+            slug: 'gmail',
+            name: 'Gmail',
+            authorization_strategy: 'user',
+            connections: [
+              {
+                connection_id: 'connection-gmail-default',
+                label: 'Personal Gmail',
+                is_default: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(
+      buildNewSessionCreateInput({
+        agent: 'kortix',
+        scope: initialization.commit,
+      }),
+    ).toEqual({
+      agent_name: 'kortix',
+    });
+  });
+
+  it('keeps an explicit empty connector selection fail-closed', () => {
+    expect(
+      buildNewSessionCreateInput({
+        agent: 'kortix',
+        scope: {
+          draft: {
+            connector_bindings: {},
+          },
+          availability: { secrets: true, connector_bindings: true },
+        },
+      }),
+    ).toEqual({
+      agent_name: 'kortix',
+      connector_bindings: {},
+      inherit_unbound: false,
+    });
+  });
+
+  it('does not bind connectors when their catalog was unavailable', () => {
+    expect(
+      buildNewSessionCreateInput({
+        scope: {
+          draft: {
+            connector_bindings: {
+              mail: { connection_id: 'connection-mail-private' },
+            },
+          },
+          availability: { secrets: true, connector_bindings: false },
+        },
+      }),
+    ).toBeUndefined();
+  });
+});

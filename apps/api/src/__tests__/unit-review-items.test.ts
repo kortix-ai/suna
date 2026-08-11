@@ -11,7 +11,7 @@ import {
   isSubmittableKind,
   serializeReviewItem,
   statusesForSegment,
-} from '../projects/review-items';
+} from '../workspaces/review-items';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;
 type ConnectorCallRow = typeof connectorCalls.$inferSelect;
@@ -56,7 +56,7 @@ describe('serializeReviewItem', () => {
   const base: ReviewItemRow = {
     reviewItemId: 'rv-1',
     accountId: 'acc-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     originSessionId: 'sess-1',
     kind: 'output',
     status: 'needs_you',
@@ -113,7 +113,7 @@ describe('collectInboxItems connector-call preview authorization', () => {
   const execution: ConnectorCallRow = {
     executionId: 'exec-sensitive',
     accountId: 'acc-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     connectorId: null,
     connectionId: null,
     actionPath: 'gmail.send_email',

@@ -7,14 +7,16 @@ import type { Capabilities, Env } from './env';
 
 export type Capability = keyof Capabilities;
 
-export type ProjectRole = 'user' | 'editor' | 'manager';
+export type WorkspaceRole = 'user' | 'editor' | 'manager';
+/** @deprecated Use WorkspaceRole. */
+export type ProjectRole = WorkspaceRole;
 
 /** A provisioned identity with the data flows assert against. */
 export interface Principal extends Identity {
   userId?: string;
   email?: string;
   accountId?: string;
-  projectId?: string;
+  workspaceId?: string;
   role?: string;
 }
 
@@ -39,15 +41,18 @@ export interface Principals {
   accountId: string;
 }
 
-export interface CreatedProject {
+export interface CreatedWorkspace {
   id: string;
   name: string;
   slug?: string;
 }
 
+/** @deprecated Use CreatedWorkspace. */
+export type CreatedProject = CreatedWorkspace;
+
 export interface CreatedSession {
   id: string;
-  projectId: string;
+  workspaceId: string;
 }
 
 /** A team account with member/role provisioning, for IAM + access flows. */
@@ -57,7 +62,7 @@ export interface TeamFixture {
   /** Synthesize a user, add to this account at the given role, return its principal. */
   addMember(role: 'admin' | 'member'): Promise<Principal>;
   /** Grant a project role to an account member (PUT access). */
-  grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
+  grantProjectRole(workspaceId: string, userId: string, role: ProjectRole): Promise<void>;
   /** Create a project owned by this team account. */
   project(opts?: {
     name?: string;
@@ -95,8 +100,11 @@ export interface Fixtures {
    * mutate the project's base branch or project-wide Git configuration.
    */
   sharedSeededProject(): Promise<CreatedProject>;
-  /** Create a session in a project (provisions a real sandbox). */
-  session(project: CreatedProject, opts?: { prompt?: string }): Promise<CreatedSession>;
+  /** Create a session in a workspace (provisions a real sandbox). */
+  session(
+    workspace: CreatedProject,
+    opts?: { prompt?: string; provider?: string },
+  ): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;
   /** Create a team account with member/role helpers (auto-torn-down). */
@@ -140,7 +148,7 @@ export interface FlowContext {
   env: Env;
   /** A unit of capture/timing/assertion. */
   step<T>(name: string, fn: () => Promise<T>): Promise<T>;
-  /** Register a resource for LIFO teardown. `meta` carries parent ids (e.g. projectId for a session). */
+  /** Register a resource for LIFO teardown. `meta` carries parent ids (e.g. workspaceId for a session). */
   track(kind: string, id: string, meta?: Record<string, any>): void;
   /** Self-skip the flow with a reason (counts as skip, not fail). */
   skip(reason: string): never;

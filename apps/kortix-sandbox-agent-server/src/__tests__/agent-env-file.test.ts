@@ -20,6 +20,25 @@ function shPath() {
 }
 
 describe('writeAgentEnvFile', () => {
+  test('uses the canonical Workspace boot allowlist when rendering revocations', () => {
+    const store = createProjectEnvStore({
+      KORTIX_WORKSPACE_SECRET_NAMES: 'API_KEY,OLD',
+      API_KEY: 'v1',
+      OLD: 'gone-soon',
+    } as NodeJS.ProcessEnv)
+    store.apply({ revision: 'r2', env: { API_KEY: 'v2' }, names: ['API_KEY'] })
+
+    const sh = shPath()
+    writeAgentEnvFile(store, {
+      sh,
+      bootEnv: { KORTIX_WORKSPACE_SECRET_NAMES: 'API_KEY,OLD' } as NodeJS.ProcessEnv,
+    })
+
+    const body = readFileSync(sh, 'utf8')
+    expect(body).toContain("export API_KEY='v2'")
+    expect(body).toContain('unset OLD')
+  })
+
   test('writes a 0600 shell file that exports each secret', () => {
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',

@@ -43,7 +43,7 @@ function hashToken(token: string): string {
 
 export interface MintJoinLinkInput {
   callId: string;
-  projectId: string;
+  workspaceId: string;
   ttlSeconds?: number;
 }
 
@@ -58,7 +58,7 @@ export async function mintJoinLink(input: MintJoinLinkInput): Promise<{ token: s
   await db.insert(voiceJoinLinks).values({
     tokenHash: hashToken(token),
     callId: input.callId,
-    projectId: input.projectId,
+    workspaceId: input.workspaceId,
     expiresAt,
   });
 
@@ -66,7 +66,7 @@ export async function mintJoinLink(input: MintJoinLinkInput): Promise<{ token: s
 }
 
 export type ResolvedJoinLink =
-  | { ok: true; callId: string; projectId: string }
+  | { ok: true; callId: string; workspaceId: string }
   | { ok: false; status: 404 | 410; error: string };
 
 /**
@@ -92,7 +92,7 @@ export async function resolveJoinLink(token: string | undefined | null): Promise
     return { ok: false, status: 410, error: 'This link has expired' };
   }
 
-  return { ok: true, callId: row.callId, projectId: row.projectId };
+  return { ok: true, callId: row.callId, workspaceId: row.workspaceId };
 }
 
 /** Whether a string LOOKS like one of our tokens -- cheap, no DB round trip.

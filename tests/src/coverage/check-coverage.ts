@@ -47,6 +47,25 @@ function normalize(method: string, path: string): string {
   return `${method.toUpperCase()} ${segs.join("/")}`;
 }
 
+export function workspaceCompatibilityRoute(
+  method: string,
+  path: string,
+): string | null {
+  const namespacePairs = [
+    ["/v1/projects", "/v1/workspaces"],
+    ["/v1/connectors/projects", "/v1/connectors/workspaces"],
+  ] as const;
+  for (const [legacy, canonical] of namespacePairs) {
+    if (path === legacy || path.startsWith(`${legacy}/`)) {
+      return normalize(method, path.replace(legacy, canonical));
+    }
+    if (path === canonical || path.startsWith(`${canonical}/`)) {
+      return normalize(method, path.replace(canonical, legacy));
+    }
+  }
+  return null;
+}
+
 function parseRouteString(raw: string): Route | null {
   const m = raw.trim().match(/^([A-Za-z]+)\s+(\/\S*)$/);
   if (!m) return null;
@@ -72,7 +91,16 @@ async function readBaseline(): Promise<Baseline> {
 }
 
 function allowSet(entries: AllowEntry[]): Set<string> {
-  return new Set(entries.map((e) => normalize(e.method, e.path)));
+  const routes = new Set<string>();
+  for (const entry of entries) {
+    routes.add(normalize(entry.method, entry.path));
+    const workspaceRoute = workspaceCompatibilityRoute(
+      entry.method,
+      entry.path,
+    );
+    if (workspaceRoute) routes.add(workspaceRoute);
+  }
+  return routes;
 }
 
 export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> {
@@ -105,6 +133,16 @@ export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> 
       }
       const key = normalize(parsed.method, parsed.path);
       declared.set(key, [...(declared.get(key) ?? []), f.id]);
+      const workspaceRoute = workspaceCompatibilityRoute(
+        parsed.method,
+        parsed.path,
+      );
+      if (workspaceRoute && manifestSet.has(workspaceRoute)) {
+        declared.set(workspaceRoute, [
+          ...(declared.get(workspaceRoute) ?? []),
+          f.id,
+        ]);
+      }
     }
   }
 

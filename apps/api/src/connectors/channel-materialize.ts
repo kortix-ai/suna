@@ -18,8 +18,8 @@ import { resolveFeatureFlag } from '../feature-flags/registry';
  * existing install token (resolved server-side at call time) — no copy, no
  * connection_credentials row, no migration. See KORTIX-206.
  */
-import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
-import { MANIFEST_FILENAME } from '../projects/triggers';
+import type { ChannelPlatform, ConnectorSpec } from '../workspaces/connectors';
+import { MANIFEST_FILENAME } from '../workspaces/triggers';
 import { db } from '../shared/db';
 import { channelDefaultSlug, channelLabel } from './channels';
 
@@ -75,7 +75,7 @@ function channelAlreadyDeclared(
  * `channel` connector (or anything already using the slug) keeps full control.
  */
 export async function synthesizeChannelConnectors(
-  projectId: string,
+  workspaceId: string,
   declared: ConnectorSpec[],
 ): Promise<ConnectorSpec[]> {
   const specs: ConnectorSpec[] = [];
@@ -88,14 +88,14 @@ export async function synthesizeChannelConnectors(
   // shadow the built-in Slack CLI's channel catalog.
   const slackSlug = channelDefaultSlug('slack');
   if (!channelAlreadyDeclared(declared, 'slack', slackSlug)) {
-    const install = await loadSlackInstall(projectId).catch(() => null);
+    const install = await loadSlackInstall(workspaceId).catch(() => null);
     if (install) specs.push(channelSpec('slack', slackSlug));
   }
 
   const [project] = await db
     .select({ metadata: projects.metadata })
     .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projects.workspaceId, workspaceId))
     .limit(1);
 
   // Teams — gated on the per-project `teams` feature flag, then the
@@ -103,7 +103,7 @@ export async function synthesizeChannelConnectors(
   if (project && resolveFeatureFlag(project.metadata, 'teams')) {
     const teamsSlug = channelDefaultSlug('teams');
     if (!channelAlreadyDeclared(declared, 'teams', teamsSlug)) {
-      const install = await loadTeamsInstall(projectId).catch(() => null);
+      const install = await loadTeamsInstall(workspaceId).catch(() => null);
       if (install) specs.push(channelSpec('teams', teamsSlug));
     }
   }
@@ -124,7 +124,7 @@ export async function synthesizeChannelConnectors(
     return specs;
   }
 
-  const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
+  const emailInstalls = await listAgentMailInstalls(workspaceId).catch(() => []);
   const canonicalEmailSlug = channelDefaultSlug('email');
   if (emailInstalls.length > 0 && !channelAlreadyDeclared(declared, 'email', canonicalEmailSlug)) {
     specs.push(channelSpec('email', canonicalEmailSlug, channelLabel('email')));

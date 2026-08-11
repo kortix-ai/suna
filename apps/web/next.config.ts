@@ -366,6 +366,18 @@ const nextConfig = (): NextConfig => ({
 
   async redirects() {
     return [
+      // Project was the former product name. Preserve saved documentation links
+      // while publishing Workspace as the only canonical documentation path.
+      {
+        source: '/docs/project/:path*',
+        destination: '/docs/workspace/:path*',
+        permanent: true,
+      },
+      {
+        source: '/docs/project',
+        destination: '/docs/workspace',
+        permanent: true,
+      },
       // Canonical self-host doc lives at /docs/self-hosting (fumadocs derives
       // the slug from content/docs/self-hosting.mdx). The CLI, README, and
       // most people say "self-host" (no -ing) out loud and in links, which

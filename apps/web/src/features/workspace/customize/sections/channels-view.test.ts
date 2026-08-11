@@ -33,7 +33,7 @@ describe('Channels view — connect in place', () => {
   });
 
   test('keeps Email behind its feature flag and uses the reserved inbox slug', () => {
-    expect(channelsSource).toContain("useFeatureFlag(projectId, 'agentmail_email')");
+    expect(channelsSource).toContain("useFeatureFlag(workspaceId, 'agentmail_email')");
     expect(channelsSource).toContain("EMAIL_CONNECTOR_SLUG = 'kortix_email'");
     expect(channelsSource).toMatch(/emailChannelEnabled \? \(\s*<EmailChannelRow/);
   });
@@ -53,21 +53,21 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain('useUpdateChannelBinding');
   });
 
-  test('agent picker reuses the shared AgentSelector (same component as chat input/schedules), offering a project-default entry plus visible agents', () => {
+  test('agent picker reuses the shared AgentSelector and offers a workspace-default entry', () => {
     expect(channelsSource).toContain("from '@/features/session/session-chat-input'");
     expect(channelsSource).toContain('<AgentSelector');
     expect(channelsSource).toContain('useVisibleAgents');
-    expect(channelsSource).toContain('Project default');
+    expect(channelsSource).toContain('Workspace default');
   });
 
-  test('model override reuses the shared ModelSelector (not a hand-rolled input) and labels the unset state "Project default"', () => {
+  test('model override reuses ModelSelector and labels the unset state "Workspace default"', () => {
     expect(channelsSource).toContain("from '@/features/session/model-selector'");
     expect(channelsSource).toContain('<ModelSelector');
-    expect(channelsSource).toContain('unsetLabel="Project default"');
+    expect(channelsSource).toContain('unsetLabel="Workspace default"');
   });
 
   test('join-policy picker covers all three conversation policies', () => {
-    expect(channelsSource).toContain("value: 'project_open'");
+    expect(channelsSource).toContain("value: 'workspace_open'");
     expect(channelsSource).toContain("value: 'owner_only'");
     expect(channelsSource).toContain("value: 'owner_approval'");
   });
@@ -93,10 +93,10 @@ describe('Channels view — Microsoft Teams is a uniform channel row', () => {
     expect(channelsSource).toContain('useDisconnectTeams');
   });
 
-  test('keeps Teams behind the per-project `teams` experimental flag, exactly like Email', () => {
-    expect(channelsSource).toContain("const teamsFlag = useFeatureFlag(projectId, 'teams');");
+  test('keeps Teams behind the per-workspace `teams` experimental flag, exactly like Email', () => {
+    expect(channelsSource).toContain("const teamsFlag = useFeatureFlag(workspaceId, 'teams');");
     expect(channelsSource).toContain('const teamsChannelEnabled = teamsFlag.enabled;');
-    // The view used to read the flag off the project SUMMARY query, one hop
+    // The view used to read the flag off the workspace SUMMARY query, one hop
     // shallower than every sibling. That divergence is gone.
     expect(channelsSource).not.toContain('?.experimental?.');
     expect(channelsSource).toMatch(/teamsChannelEnabled \? \(\s*<TeamsChannelRow/);

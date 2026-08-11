@@ -4,14 +4,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MigrateToV2ButtonView } from './migrate-to-v2-button';
 
 describe('MigrateToV2ButtonView — v1/v2 visibility', () => {
-  test('renders the action when the project is v1', () => {
+  test('renders the action when the workspace is v1', () => {
     const html = renderToStaticMarkup(
       <MigrateToV2ButtonView visible pending={false} onClick={() => {}} />,
     );
     expect(html).toContain('Migrate to v2');
   });
 
-  test('renders nothing once the project is v2', () => {
+  test('renders nothing once the workspace is v2', () => {
     const html = renderToStaticMarkup(
       <MigrateToV2ButtonView visible={false} pending={false} onClick={() => {}} />,
     );

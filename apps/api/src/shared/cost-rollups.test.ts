@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
-import { type SQL, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import type { ProjectCostRow } from './cost-rollups';
+import type { WorkspaceCostRow } from './cost-rollups';
 import type { CostSort } from './cost-window';
 
 type QueryRecord = {
@@ -86,10 +86,10 @@ mock.module('./db', () => ({
 const {
   buildCostSeries,
   getCostSummary,
-  listCostByProject,
-  mergeProjectCostRows,
+  listCostByWorkspace,
+  mergeWorkspaceCostRows,
   previousWindow,
-  sortProjectRows,
+  sortWorkspaceRows,
 } = await import('./cost-rollups');
 
 const accountId = '00000000-0000-4000-a000-000000000001';
@@ -104,13 +104,13 @@ beforeEach(() => {
   resultForQuery = () => [];
 });
 
-describe('mergeProjectCostRows', () => {
+describe('mergeWorkspaceCostRows', () => {
   test('sums llm and compute into one row per project', () => {
-    const rows = mergeProjectCostRows(
-      [{ projectId: 'p1', llmCost: 12.4, sessionCount: 41, lastAt: '2026-07-31T00:00:00.000Z' }],
+    const rows = mergeWorkspaceCostRows(
+      [{ workspaceId: 'p1', llmCost: 12.4, sessionCount: 41, lastAt: '2026-07-31T00:00:00.000Z' }],
       [
         {
-          projectId: 'p1',
+          workspaceId: 'p1',
           computeCost: 34.02,
           sessionCount: 41,
           lastAt: '2026-07-31T05:00:00.000Z',
@@ -130,11 +130,11 @@ describe('mergeProjectCostRows', () => {
   });
 
   test('includes a project that has compute cost but no llm cost', () => {
-    const rows = mergeProjectCostRows(
+    const rows = mergeWorkspaceCostRows(
       [],
       [
         {
-          projectId: 'p2',
+          workspaceId: 'p2',
           computeCost: 2.14,
           sessionCount: 18,
           lastAt: '2026-07-29T00:00:00.000Z',
@@ -146,8 +146,8 @@ describe('mergeProjectCostRows', () => {
   });
 
   test('falls back to the project id when the name is unknown', () => {
-    const rows = mergeProjectCostRows(
-      [{ projectId: 'p9', llmCost: 1, sessionCount: 1, lastAt: null }],
+    const rows = mergeWorkspaceCostRows(
+      [{ workspaceId: 'p9', llmCost: 1, sessionCount: 1, lastAt: null }],
       [],
       names,
     );
@@ -155,17 +155,17 @@ describe('mergeProjectCostRows', () => {
   });
 
   test('takes the larger session count across both sources', () => {
-    const rows = mergeProjectCostRows(
-      [{ projectId: 'p1', llmCost: 1, sessionCount: 3, lastAt: null }],
-      [{ projectId: 'p1', computeCost: 1, sessionCount: 7, lastAt: null }],
+    const rows = mergeWorkspaceCostRows(
+      [{ workspaceId: 'p1', llmCost: 1, sessionCount: 3, lastAt: null }],
+      [{ workspaceId: 'p1', computeCost: 1, sessionCount: 7, lastAt: null }],
       names,
     );
     expect(rows[0].session_count).toBe(7);
   });
 
   test('ignores a row with no project id instead of grouping it under "null"', () => {
-    const rows = mergeProjectCostRows(
-      [{ projectId: null, llmCost: 99, sessionCount: 5, lastAt: null }],
+    const rows = mergeWorkspaceCostRows(
+      [{ workspaceId: null, llmCost: 99, sessionCount: 5, lastAt: null }],
       [],
       names,
     );
@@ -173,8 +173,8 @@ describe('mergeProjectCostRows', () => {
   });
 });
 
-describe('sortProjectRows', () => {
-  const baseRow: ProjectCostRow = {
+describe('sortWorkspaceRows', () => {
+  const baseRow: WorkspaceCostRow = {
     project_id: 'p1',
     project_name: 'Alpha',
     session_count: 1,
@@ -183,7 +183,7 @@ describe('sortProjectRows', () => {
     total_cost: 0,
     last_activity_at: null,
   };
-  const row = (overrides: Partial<ProjectCostRow>): ProjectCostRow => ({
+  const row = (overrides: Partial<WorkspaceCostRow>): WorkspaceCostRow => ({
     ...baseRow,
     ...overrides,
   });
@@ -193,7 +193,7 @@ describe('sortProjectRows', () => {
       row({ project_id: 'p1', total_cost: 1 }),
       row({ project_id: 'p2', total_cost: 5 }),
     ];
-    expect(sortProjectRows(rows, 'total_desc').map((r) => r.project_id)).toEqual(['p2', 'p1']);
+    expect(sortWorkspaceRows(rows, 'total_desc').map((r) => r.project_id)).toEqual(['p2', 'p1']);
   });
 
   test('total_asc ranks the cheapest project first', () => {
@@ -201,7 +201,7 @@ describe('sortProjectRows', () => {
       row({ project_id: 'p1', total_cost: 1 }),
       row({ project_id: 'p2', total_cost: 5 }),
     ];
-    expect(sortProjectRows(rows, 'total_asc').map((r) => r.project_id)).toEqual(['p1', 'p2']);
+    expect(sortWorkspaceRows(rows, 'total_asc').map((r) => r.project_id)).toEqual(['p1', 'p2']);
   });
 
   test('recent ranks the most recently active project first', () => {
@@ -209,7 +209,7 @@ describe('sortProjectRows', () => {
       row({ project_id: 'p1', last_activity_at: '2026-07-01T00:00:00.000Z' }),
       row({ project_id: 'p2', last_activity_at: '2026-07-05T00:00:00.000Z' }),
     ];
-    expect(sortProjectRows(rows, 'recent').map((r) => r.project_id)).toEqual(['p2', 'p1']);
+    expect(sortWorkspaceRows(rows, 'recent').map((r) => r.project_id)).toEqual(['p2', 'p1']);
   });
 
   test('name_asc ranks alphabetically by project name', () => {
@@ -217,7 +217,7 @@ describe('sortProjectRows', () => {
       row({ project_id: 'p1', project_name: 'Zeta' }),
       row({ project_id: 'p2', project_name: 'Alpha' }),
     ];
-    expect(sortProjectRows(rows, 'name_asc').map((r) => r.project_id)).toEqual(['p2', 'p1']);
+    expect(sortWorkspaceRows(rows, 'name_asc').map((r) => r.project_id)).toEqual(['p2', 'p1']);
   });
 
   test('every sort breaks ties on project_id ascending, never leaving order unstable', () => {
@@ -227,7 +227,7 @@ describe('sortProjectRows', () => {
         row({ project_id: 'zz', project_name: 'Same', total_cost: 1, last_activity_at: null }),
         row({ project_id: 'aa', project_name: 'Same', total_cost: 1, last_activity_at: null }),
       ];
-      expect(sortProjectRows(tied, sort).map((r) => r.project_id)).toEqual(['aa', 'zz']);
+      expect(sortWorkspaceRows(tied, sort).map((r) => r.project_id)).toEqual(['aa', 'zz']);
     }
   });
 
@@ -237,19 +237,19 @@ describe('sortProjectRows', () => {
       row({ project_id: 'p2', total_cost: 5 }),
     ];
     const original = [...rows];
-    sortProjectRows(rows, 'total_desc');
+    sortWorkspaceRows(rows, 'total_desc');
     expect(rows).toEqual(original);
   });
 });
 
-describe('listCostByProject', () => {
+describe('listCostByWorkspace', () => {
   const costWindow = {
     from: new Date('2026-07-01T00:00:00.000Z'),
     to: new Date('2026-07-08T00:00:00.000Z'),
   };
 
   test('windows the LLM aggregate on created_at and the compute aggregate on started_at', async () => {
-    await listCostByProject({
+    await listCostByWorkspace({
       accountId,
       window: costWindow,
       sort: 'total_desc',
@@ -286,7 +286,7 @@ describe('listCostByProject', () => {
   });
 
   test('reaches project_id through the project_sessions primary key, not a scan', async () => {
-    await listCostByProject({
+    await listCostByWorkspace({
       accountId,
       window: costWindow,
       sort: 'total_desc',
@@ -304,12 +304,12 @@ describe('listCostByProject', () => {
       '"kortix"."project_sessions"."session_id" = "kortix"."sandbox_compute_sessions"."session_id"',
     );
     expect(computeAggregate?.calls.find((call) => call.method === 'groupBy')?.args).toEqual([
-      projectSessions.projectId,
+      projectSessions.workspaceId,
     ]);
   });
 
   test('scopes the project name lookup to the account', async () => {
-    await listCostByProject({
+    await listCostByWorkspace({
       accountId,
       window: costWindow,
       sort: 'total_desc',
@@ -328,13 +328,13 @@ describe('listCostByProject', () => {
       if (table === gatewayRequestLogs) {
         return [
           {
-            projectId: 'p1',
+            workspaceId: 'p1',
             llmCost: '1',
             sessionCount: 2,
             lastAt: new Date('2026-07-02T00:00:00.000Z'),
           },
           {
-            projectId: 'p2',
+            workspaceId: 'p2',
             llmCost: '5',
             sessionCount: 1,
             lastAt: new Date('2026-07-03T00:00:00.000Z'),
@@ -344,7 +344,7 @@ describe('listCostByProject', () => {
       if (table === sandboxComputeSessions) {
         return [
           {
-            projectId: 'p1',
+            workspaceId: 'p1',
             computeCost: '2',
             sessionCount: 2,
             lastAt: '2026-07-02T01:00:00.000Z',
@@ -353,14 +353,14 @@ describe('listCostByProject', () => {
       }
       if (table === projects) {
         return [
-          { projectId: 'p1', name: 'Alpha' },
-          { projectId: 'p2', name: 'Beta' },
+          { workspaceId: 'p1', name: 'Alpha' },
+          { workspaceId: 'p2', name: 'Beta' },
         ];
       }
       return [];
     };
 
-    const firstPage = await listCostByProject({
+    const firstPage = await listCostByWorkspace({
       accountId,
       window: costWindow,
       sort: 'total_desc',
@@ -375,7 +375,7 @@ describe('listCostByProject', () => {
       expect.objectContaining({ project_id: 'p2', project_name: 'Beta', total_cost: 5 }),
     ]);
 
-    const secondPage = await listCostByProject({
+    const secondPage = await listCostByWorkspace({
       accountId,
       window: costWindow,
       sort: 'total_desc',
@@ -390,7 +390,7 @@ describe('listCostByProject', () => {
 
   test('returns an empty page with total 0 and a null next_offset when nothing matches', async () => {
     resultForQuery = () => [];
-    const page = await listCostByProject({
+    const page = await listCostByWorkspace({
       accountId,
       window: costWindow,
       sort: 'total_desc',
@@ -482,7 +482,7 @@ describe('getCostSummary', () => {
     from: new Date('2026-07-01T00:00:00.000Z'),
     to: new Date('2026-07-08T00:00:00.000Z'),
   };
-  const projectId = '00000000-0000-4000-a000-000000000002';
+  const workspaceId = '00000000-0000-4000-a000-000000000002';
   const sessionId = 'session-summary-test';
 
   function llmTotalsRecord() {
@@ -526,14 +526,14 @@ describe('getCostSummary', () => {
         'cost' in query.fields,
     );
   }
-  function llmProjectIdsRecord() {
+  function llmWorkspaceIdsRecord() {
     return queryRecords.find(
-      (query) => query.table === gatewayRequestLogs && 'projectId' in query.fields,
+      (query) => query.table === gatewayRequestLogs && 'workspaceId' in query.fields,
     );
   }
-  function computeProjectIdsRecord() {
+  function computeWorkspaceIdsRecord() {
     return queryRecords.find(
-      (query) => query.table === sandboxComputeSessions && 'projectId' in query.fields,
+      (query) => query.table === sandboxComputeSessions && 'workspaceId' in query.fields,
     );
   }
 
@@ -601,7 +601,7 @@ describe('getCostSummary', () => {
   });
 
   test('scopes every query to project_id when provided, joining compute through project_sessions', async () => {
-    await getCostSummary({ accountId, projectId, window });
+    await getCostSummary({ accountId, workspaceId, window });
 
     const llmWhere = renderWhere(llmTotalsRecord());
     expect(llmWhere.sql).toContain('"project_id" = $');
@@ -609,7 +609,7 @@ describe('getCostSummary', () => {
       accountId,
       '2026-07-01T00:00:00.000Z',
       '2026-07-08T00:00:00.000Z',
-      projectId,
+      workspaceId,
     ]);
 
     const computeRecord = computeTotalsRecord();
@@ -623,7 +623,7 @@ describe('getCostSummary', () => {
       accountId,
       '2026-07-01T00:00:00.000Z',
       '2026-07-08T00:00:00.000Z',
-      projectId,
+      workspaceId,
     ]);
   });
 
@@ -713,7 +713,7 @@ describe('getCostSummary', () => {
 
     // The LLM side reads project_id directly off gateway_request_logs — no
     // join needed, it is already a column on that table.
-    const llmIds = llmProjectIdsRecord();
+    const llmIds = llmWorkspaceIdsRecord();
     expect(llmIds?.calls.map((call) => call.method)).toEqual(['where', 'groupBy']);
     expect(renderWhere(llmIds).sql).toContain('"project_id" is not null');
     expect(renderWhere(llmIds).params).toEqual([
@@ -725,9 +725,9 @@ describe('getCostSummary', () => {
     // The compute side has no project_id column of its own: this query
     // always joins project_sessions to reach it, unconditionally — unlike
     // computeTotals/computeDaily/computePrior, which join only when
-    // projectId scopes the query down to one project. This query carries no
+    // workspaceId scopes the query down to one project. This query carries no
     // money, so there is nothing for that join to silently undercount.
-    const computeIds = computeProjectIdsRecord();
+    const computeIds = computeWorkspaceIdsRecord();
     expect(computeIds?.calls.map((call) => call.method)).toEqual(['innerJoin', 'where', 'groupBy']);
     expect(renderJoinOn(computeIds, 'innerJoin')).toBe(
       '"kortix"."project_sessions"."session_id" = "kortix"."sandbox_compute_sessions"."session_id"',
@@ -747,9 +747,9 @@ describe('getCostSummary', () => {
           { provider: 'bedrock', model: 'anthropic/claude-sonnet-5', cost: '10', requestCount: 4 },
         ];
       }
-      if (table === gatewayRequestLogs && 'projectId' in fields) {
-        // Project p1 has LLM activity in the window.
-        return [{ projectId: 'p1' }];
+      if (table === gatewayRequestLogs && 'workspaceId' in fields) {
+        // Workspace p1 has LLM activity in the window.
+        return [{ workspaceId: 'p1' }];
       }
       if (table === gatewayRequestLogs && Object.keys(fields).length === 1 && 'cost' in fields) {
         return [{ cost: '4' }];
@@ -760,11 +760,11 @@ describe('getCostSummary', () => {
       if (table === sandboxComputeSessions && 'day' in fields) {
         return [{ day: '2026-07-03', cost: '5' }];
       }
-      if (table === sandboxComputeSessions && 'projectId' in fields) {
+      if (table === sandboxComputeSessions && 'workspaceId' in fields) {
         // p1 again (both sources touch it) plus p2, which has ONLY compute
         // spend in this window and zero gateway_request_logs rows — the
         // scenario a count(distinct) on the LLM side alone would miss.
-        return [{ projectId: 'p1' }, { projectId: 'p2' }];
+        return [{ workspaceId: 'p1' }, { workspaceId: 'p2' }];
       }
       if (
         table === sandboxComputeSessions &&
@@ -811,9 +811,9 @@ describe('getCostSummary', () => {
 
   test('counts a project with compute spend and zero LLM calls in the window', async () => {
     resultForQuery = (fields, table) => {
-      if (table === gatewayRequestLogs && 'projectId' in fields) return [];
-      if (table === sandboxComputeSessions && 'projectId' in fields) {
-        return [{ projectId: 'compute-only-project' }];
+      if (table === gatewayRequestLogs && 'workspaceId' in fields) return [];
+      if (table === sandboxComputeSessions && 'workspaceId' in fields) {
+        return [{ workspaceId: 'compute-only-project' }];
       }
       return [];
     };

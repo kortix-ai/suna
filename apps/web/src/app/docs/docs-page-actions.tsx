@@ -54,7 +54,7 @@ export function DocsPageActions({
     {
       key: 'kortix',
       label: 'Open in Kortix',
-      href: `/projects/start?q=${encodedPrompt}`,
+      href: `/workspaces/start?q=${encodedPrompt}`,
       icon: Kortix,
     },
     {

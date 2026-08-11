@@ -4,16 +4,16 @@
  * featured marketplaces + one catalog item detail, and the Pipedream easy-
  * connect app catalog.
  *
- * Run (from packages/sdk):  bun run playground/projects/33-models-and-search.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/projects/33-models-and-search.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("models-and-search", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
-  const project = kortix.project(projectId);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
+  const project = kortix.project(workspaceId);
 
-  const catalog = await kortix.projects.llmCatalog(projectId);
+  const catalog = await kortix.projects.llmCatalog(workspaceId);
   console.log(
     `✓ llmCatalog(): ${Object.keys(catalog.models).length} model(s): ${Object.keys(catalog.models).join(", ")}`,
   );

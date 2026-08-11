@@ -34,11 +34,11 @@ const allEditorSources = [...sectionSources, editorSource, primitivesSource, gra
 
 describe('agent environment editor', () => {
   test('loads sandbox templates and exposes the Environment field', () => {
-    expect(editorSource).toContain('listProjectSandboxTemplates(projectId)');
+    expect(editorSource).toContain('listWorkspaceSandboxTemplates(workspaceId)');
     expect(editorSource).toContain('options.set(initial.sandbox, initial.sandbox)');
     expect(accessFieldsSource).toContain('label="Environment"');
     expect(accessFieldsSource).toContain("set('sandbox'");
-    expect(accessFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain('Workspace default');
   });
 });
 
@@ -165,8 +165,8 @@ describe('mode pickers use the shared component library', () => {
   // The control these replaced hid "unset" behind clicking the already-active
   // segment. Every inherit-capable picker must now NAME that option.
   test('every inherit-capable picker names its inherit option', () => {
-    expect(accessFieldsSource).toContain('Project default');
-    expect(basicsFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain('Workspace default');
+    expect(basicsFieldsSource).toContain('Workspace default');
     expect(permissionEditorSource).toContain('inheritLabel');
     expect(permissionEditorSource).toContain('inheritLabel="Inherit"');
   });
@@ -212,7 +212,7 @@ describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
   });
 
   // The three manager-tier project leaves are grantable again — reachable via
-  // a project's `manager` role, so an agent can carry them too.
+  // a workspace's `manager` role, so an agent can carry them too.
   test('the three manager-tier project leaves are present', () => {
     expect(all).toContain('project.delete');
     expect(all).toContain('project.members.manage');

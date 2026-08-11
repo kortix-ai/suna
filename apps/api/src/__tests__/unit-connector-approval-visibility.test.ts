@@ -54,15 +54,15 @@ function makeDeps(o: { projectPolicies?: Policy[]; defaultMode?: DefaultMode } =
     loadAction: async () => SEND_EMAIL,
     resolveCredential: async () => 'token-123',
     loadPolicies: async () => [],
-    loadProjectPolicies: async () => o.projectPolicies ?? [],
+    loadWorkspacePolicies: async () => o.projectPolicies ?? [],
     loadDefaultMode: async () => o.defaultMode ?? 'risk',
     enforcePolicies: true,
     recordExecution: async (r) => {
       records.push(r);
       return 'exec-1';
     },
-    mintApprovalLink: ({ projectId, executionId }) =>
-      `https://app.example.com/approve/ksl_${projectId}_${executionId}`,
+    mintApprovalLink: ({ workspaceId, executionId }) =>
+      `https://app.example.com/approve/ksl_${workspaceId}_${executionId}`,
     fetchImpl: async () => ({ status: 200, ok: true, text: async () => '{"id":"m_1"}' }),
   };
   return { deps, records };
@@ -70,7 +70,7 @@ function makeDeps(o: { projectPolicies?: Policy[]; defaultMode?: DefaultMode } =
 
 function input(args: Record<string, unknown>): CallInput {
   return {
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     accountId: 'acct-1',
     subject: { userId: 'user-1', groupIds: [] },
     // No sessionId: skips the in-session HOLD so the call returns the pending

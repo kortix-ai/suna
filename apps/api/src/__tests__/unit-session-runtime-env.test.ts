@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
-import { buildSessionRuntimeEnv } from '../projects/lib/session-runtime-env';
+import { buildPlatformMetaOpenCodeConfig } from '../workspaces/lib/platform-meta-agent';
+import { buildSessionRuntimeEnv } from '../workspaces/lib/session-runtime-env';
 
 const base = {
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   sessionId: 'sess-1',
   repoUrl: 'https://github.com/kortix/project.git',
   baseRef: 'main',

@@ -26,7 +26,7 @@
 export const hero = {
   eyebrow: 'Agent computer',
   title: 'Every session gets its own computer.',
-  sub: 'Start a session and its own isolated Linux machine boots, clones your project repo, and cuts a fresh branch named after that session. The agent gets the whole machine. Only what it commits survives.',
+  sub: 'Start a session and its own isolated Linux machine boots, clones your workspace repo, and cuts a fresh branch named after that session. The agent gets the whole machine. Only what it commits survives.',
   ctaPrimary: 'Start a session',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
@@ -49,12 +49,12 @@ export const boot = {
     {
       n: '00',
       title: 'The machine comes up',
-      body: 'A Linux machine boots from the sandbox image your project declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.',
+      body: 'A Linux machine boots from the sandbox image your workspace declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.',
     },
     {
       n: '01',
       title: 'The repo clones',
-      body: 'The machine clones the project repo into /workspace. Your agents, skills, memory, connectors and triggers arrive with it, because all of them are files in that repo.',
+      body: 'The machine clones the workspace repo into /workspace. Your agents, skills, memory, connectors and triggers arrive with it, because all of them are files in that repo.',
     },
     {
       n: '02',
@@ -117,12 +117,12 @@ export const parallel = {
 
 export const declared = {
   eyebrow: 'Declared in the repo',
-  title: 'The machine is a file in your project.',
+  title: 'The machine is a file in your workspace.',
   sub: 'The sandbox image, its CPU and memory, and which agent gets which machine are declared in kortix.yaml. Change the file, open a change request, and every session started after it boots the new machine.',
   yaml: {
     title: 'kortix.yaml',
     lines: [
-      '# the machine every session of this project boots',
+      '# the machine every session of this workspace boots',
       'kortix_version: 2',
       'runtime: opencode',
       '',
@@ -164,7 +164,7 @@ export const declared = {
     ],
   },
   notes: [
-    'One image per project, or a named image per agent.',
+    'One image per workspace, or a named image per agent.',
     'The default image already carries the Kortix runtime layer.',
     'Change the image the way you change any other file: in a change request.',
   ],
@@ -176,7 +176,11 @@ export const files = {
   sub: 'Agents, skills, memory, connectors and triggers are not rows in a database you cannot see. They are files and config in the repo the machine cloned — readable by a person, editable by an agent, versioned like code.',
   tree: [
     { path: 'your-company/', note: '', depth: 0 },
-    { path: 'kortix.yaml', note: 'sandbox image, triggers, channels, connectors, secrets', depth: 1 },
+    {
+      path: 'kortix.yaml',
+      note: 'sandbox image, triggers, channels, connectors, secrets',
+      depth: 1,
+    },
     { path: '.kortix/opencode/', note: 'the runtime your agents think in', depth: 1 },
     { path: 'agents/', note: 'one OpenCode agent per file', depth: 2 },
     { path: 'skills/', note: 'how this company does a specific job', depth: 2 },

@@ -28,14 +28,14 @@ import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import {
-  getProjectDetail,
-  type ProjectConfigSummary,
-  updateProjectDefaultAgent,
+  getWorkspaceDetail,
+  type WorkspaceConfigSummary,
+  updateWorkspaceDefaultAgent,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useWorkspaceAccountId } from '@kortix/sdk/react';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
@@ -58,7 +58,7 @@ import { EntityDetailModal } from '@/features/workspace/capabilities/shared/enti
 import { AgentDetailAside } from './agent-detail-aside';
 import { type AgentMode, filterAgents } from './agent-filter';
 
-type Agent = ProjectConfigSummary['agents'][number];
+type Agent = WorkspaceConfigSummary['agents'][number];
 type ModeFilter = AgentMode | 'all';
 
 const MODE_FILTERS: ReadonlyArray<{ value: ModeFilter; label: string }> = [
@@ -68,14 +68,14 @@ const MODE_FILTERS: ReadonlyArray<{ value: ModeFilter; label: string }> = [
 ];
 
 /**
- * /projects/[id]/agent — the standalone Agents catalog, and the same page body
+ * /workspaces/[id]/agent — the standalone Agents catalog, and the same page body
  * shape as Skills: header + search + filter tabs, a card grid, and a detail
  * modal. It replaces the Customize overlay's master-detail Agents section,
  * which packed a list, a source pane and a settings aside into one fixed
  * three-column shell.
  *
- * Reads `config.agents` off the shared `['project-detail', projectId]` query,
- * so this page and everything else showing a project's agents cannot disagree
+ * Reads `config.agents` off the shared `['project-detail', workspaceId]` query,
+ * so this page and everything else showing a workspace's agents cannot disagree
  * about what they are. `toArray` because the API can return the field as
  * `undefined` for a repo-less / capability-gated / config-build-failure
  * project, and `.filter` on that throws into prod Sentry.
@@ -87,13 +87,13 @@ const MODE_FILTERS: ReadonlyArray<{ value: ModeFilter; label: string }> = [
  * shut. See `shared/detail-selection.ts` for why `open` follows the selection
  * alone.
  */
-export function AgentsPage({ projectId }: { projectId: string }) {
-  // `accountId` skips useProjectCan's own getProject and lets the IAM probe
+export function AgentsPage({ workspaceId }: { workspaceId: string }) {
+  // `accountId` skips useWorkspaceCan's own getWorkspace and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
-  const accountId = useProjectAccountId(projectId);
+  const accountId = useWorkspaceAccountId(workspaceId);
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE, { accountId }).allowed === true;
-  const configure = useConfigureThread(projectId);
+    useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE, { accountId }).allowed === true;
+  const configure = useConfigureThread(workspaceId);
 
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<ModeFilter>('all');
@@ -103,8 +103,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   const [editorOpen, setEditorOpen] = useState(false);
 
   const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
     ...contract('config'),
   });
   const config = detailQuery.data?.config ?? null;
@@ -205,7 +205,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             </TabsList>
           </Tabs>
           {config ? (
-            <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
+            <DefaultAgentSelector workspaceId={workspaceId} config={config} canWrite={canWrite} />
           ) : null}
         </>
       }
@@ -255,7 +255,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         ))}
       </CatalogGrid>
       <EntityDetailModal
-        projectId={projectId}
+        workspaceId={workspaceId}
         entity={detail.record}
         kind="agent"
         open={detail.open}
@@ -266,7 +266,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         aside={
           detail.record && config ? (
             <AgentDetailAside
-              projectId={projectId}
+              workspaceId={workspaceId}
               agent={detail.record}
               config={config}
               onEditConfig={() => setEditorOpen(true)}
@@ -276,7 +276,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         paneOverride={
           editorOpen && detail.record && config ? (
             <AgentEditorPanel
-              projectId={projectId}
+              workspaceId={workspaceId}
               agentName={detail.record.name}
               skillsOptions={toArray(config.skills).map((skill) => ({
                 id: skill.name,
@@ -338,7 +338,7 @@ function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolea
  * a file is a value, not a status, and the modal now prints the real source
  * path under the title — which says the same thing and is clickable-accurate.
  */
-function AgentDetailMeta({ agent, config }: { agent: Agent; config: ProjectConfigSummary }) {
+function AgentDetailMeta({ agent, config }: { agent: Agent; config: WorkspaceConfigSummary }) {
   const mode = agent.mode?.toLowerCase();
   return (
     <>
@@ -363,7 +363,7 @@ function AgentDetailMeta({ agent, config }: { agent: Agent; config: ProjectConfi
 }
 
 /**
- * Which agent a new chat in this project starts with. Rides the filter row
+ * Which agent a new chat in this workspace starts with. Rides the filter row
  * rather than a banner of its own — it is one setting, and giving it a titled
  * block above the grid would outweigh the list it belongs to.
  *
@@ -371,12 +371,12 @@ function AgentDetailMeta({ agent, config }: { agent: Agent; config: ProjectConfi
  * no control instead of one that cannot persist.
  */
 function DefaultAgentSelector({
-  projectId,
+  workspaceId,
   config,
   canWrite,
 }: {
-  projectId: string;
-  config: ProjectConfigSummary;
+  workspaceId: string;
+  config: WorkspaceConfigSummary;
   canWrite: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -384,14 +384,14 @@ function DefaultAgentSelector({
   const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
   const current = config.open_code_default_agent;
   const mutation = useMutation({
-    mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
+    mutationFn: (agentName: string) => updateWorkspaceDefaultAgent(workspaceId, agentName),
     onSuccess: async (result) => {
-      successToast(`${result.default_agent} is now the project default`);
-      // One invalidation, not two: the project CONFIG is a `select` projection
-      // over this same `qk.project.detail(id)` entry (`useProjectConfig`), not
+      successToast(`${result.default_agent} is now the workspace default`);
+      // One invalidation, not two: the workspace CONFIG is a `select` projection
+      // over this same `qk.workspace.detail(id)` entry (`useWorkspaceConfig`), not
       // its own fetch. The retired standalone `['project-config', id]` slot no
       // longer exists, so a second call for it would invalidate nothing.
-      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+      await queryClient.invalidateQueries({ queryKey: qk.workspace.detail(workspaceId) });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
   });

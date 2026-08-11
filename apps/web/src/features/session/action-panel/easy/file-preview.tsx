@@ -27,7 +27,7 @@ import {
 import { isBrowserViewable } from '@/features/files/api/runtime-files';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/workspace-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
 import {

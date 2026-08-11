@@ -21,7 +21,7 @@ import { useAppHome } from '@/lib/onboarding/use-app-home';
  *
  * Self-host without Pipedream configured never initiates this OAuth flow, so
  * this route should never legitimately be hit there — but guard it anyway
- * (a stale bookmark/link) by bouncing to /projects instead of confirming a
+ * (a stale bookmark/link) by bouncing to /workspaces instead of confirming a
  * "connection" for a feature that isn't enabled.
  */
 export default function ConnectionsPage() {

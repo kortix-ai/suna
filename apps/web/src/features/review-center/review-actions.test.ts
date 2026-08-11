@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   bulkSkipMessage,
-  crChangeRequestId,
   connectorCallId,
+  crChangeRequestId,
   formatItemAge,
   formatItemAgeLong,
   isQuickDecidableApproval,
@@ -35,14 +35,14 @@ describe('crChangeRequestId', () => {
 
 describe('itemDeepLink', () => {
   test('builds the session route when both ids are present', () => {
-    expect(itemDeepLink('proj-1', 'sess-1')).toBe('/projects/proj-1/sessions/sess-1');
+    expect(itemDeepLink('proj-1', 'sess-1')).toBe('/workspaces/proj-1/sessions/sess-1');
   });
   test('is null without a session id (nothing to deep-link into)', () => {
     expect(itemDeepLink('proj-1', undefined)).toBeNull();
     expect(itemDeepLink('proj-1', null)).toBeNull();
     expect(itemDeepLink('proj-1', '')).toBeNull();
   });
-  test('is null without a project id', () => {
+  test('is null without a workspace id', () => {
     expect(itemDeepLink('', 'sess-1')).toBeNull();
   });
 });

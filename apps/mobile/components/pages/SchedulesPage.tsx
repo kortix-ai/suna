@@ -41,13 +41,13 @@ import { SearchListHeader } from '@/components/ui/search-list-header';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { AgentPickerField, ModelPickerField } from './TriggerAgentModelFields';
 import {
-  useProjectTriggers,
-  useCreateProjectTrigger,
-  useUpdateProjectTrigger,
-  useDeleteProjectTrigger,
-  useFireProjectTrigger,
-} from '@/lib/projects/hooks';
-import type { ProjectTrigger } from '@/lib/projects/projects-client';
+  useWorkspaceTriggers,
+  useCreateWorkspaceTrigger,
+  useUpdateWorkspaceTrigger,
+  useDeleteWorkspaceTrigger,
+  useFireWorkspaceTrigger,
+} from '@/lib/workspaces/hooks';
+import type { WorkspaceTrigger } from '@/lib/workspaces/workspaces-client';
 import {
   CRON_PRESETS,
   DEFAULT_CRON,
@@ -56,7 +56,7 @@ import {
   describeCron,
   describeRunAt,
   relativeTime,
-} from '@/lib/projects/triggers-format';
+} from '@/lib/workspaces/triggers-format';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -67,7 +67,7 @@ interface PageTabLike {
 
 interface SchedulesPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -79,17 +79,17 @@ const MONO = 'Menlo';
 // ─── Create schedule ──────────────────────────────────────────────────────────
 
 function ScheduleCreateSheet({
-  projectId,
+  workspaceId,
   onClose,
   isDark,
 }: {
-  projectId: string;
+  workspaceId: string;
   onClose: () => void;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const create = useCreateProjectTrigger(projectId);
+  const create = useCreateWorkspaceTrigger(workspaceId);
 
   const [mode, setMode] = useState<'recurring' | 'once'>('recurring');
   const [cron, setCron] = useState(DEFAULT_CRON);
@@ -214,8 +214,8 @@ function ScheduleCreateSheet({
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 14, marginBottom: 6 }}>Prompt</Text>
         <BottomSheetTextInput value={prompt} onChangeText={setPrompt} placeholder="What should the agent do when this fires?" placeholderTextColor={muted} multiline style={[input, { height: 96, paddingTop: 10, textAlignVertical: 'top' }]} />
 
-        <AgentPickerField projectId={projectId} value={agent} onChange={setAgent} isDark={isDark} />
-        <ModelPickerField projectId={projectId} value={model} onChange={setModel} isDark={isDark} />
+        <AgentPickerField workspaceId={workspaceId} value={agent} onChange={setAgent} isDark={isDark} />
+        <ModelPickerField workspaceId={workspaceId} value={model} onChange={setModel} isDark={isDark} />
 
         {err && (
           <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
@@ -237,21 +237,21 @@ function ScheduleCreateSheet({
 // ─── Schedule detail ──────────────────────────────────────────────────────────
 
 function ScheduleDetailSheet({
-  projectId,
+  workspaceId,
   trigger,
   onClose,
   isDark,
 }: {
-  projectId: string;
-  trigger: ProjectTrigger;
+  workspaceId: string;
+  trigger: WorkspaceTrigger;
   onClose: () => void;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
-  const fire = useFireProjectTrigger(projectId);
-  const update = useUpdateProjectTrigger(projectId);
-  const del = useDeleteProjectTrigger(projectId);
+  const fire = useFireWorkspaceTrigger(workspaceId);
+  const update = useUpdateWorkspaceTrigger(workspaceId);
+  const del = useDeleteWorkspaceTrigger(workspaceId);
   const [prompt, setPrompt] = useState(trigger.prompt_template);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -373,8 +373,8 @@ function ScheduleDetailSheet({
           </TouchableOpacity>
         )}
 
-        <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} isDark={isDark} />
-        <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} isDark={isDark} />
+        <AgentPickerField workspaceId={workspaceId} value={trigger.agent} onChange={handleAgentChange} isDark={isDark} />
+        <ModelPickerField workspaceId={workspaceId} value={trigger.model} onChange={handleModelChange} isDark={isDark} />
 
         {/* Metadata */}
         <View style={{ marginTop: 22, borderRadius: 12, borderWidth: 1, borderColor: border, paddingHorizontal: 14 }}>
@@ -397,7 +397,7 @@ function ScheduleDetailSheet({
 
 export function SchedulesPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -411,7 +411,7 @@ export function SchedulesPage({
   const addSheetRef = React.useRef<BottomSheetModal>(null);
   const detailSheetRef = React.useRef<BottomSheetModal>(null);
 
-  const { data, isLoading, isError, error, refetch } = useProjectTriggers(projectId);
+  const { data, isLoading, isError, error, refetch } = useWorkspaceTriggers(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -469,7 +469,7 @@ export function SchedulesPage({
           {isLoading ? (
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
           ) : forbidden ? (
-            <View style={{ padding: 40, alignItems: 'center' }}><Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>You don't have access to this project's schedules.</Text></View>
+            <View style={{ padding: 40, alignItems: 'center' }}><Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>You don't have access to this workspace's schedules.</Text></View>
           ) : isError ? (
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(error as Error)?.message ?? 'Failed to load schedules'}</Text>
@@ -523,7 +523,7 @@ export function SchedulesPage({
         keyboardBlurBehavior="restore"
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
-        <ScheduleCreateSheet projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} isDark={isDark} />
+        <ScheduleCreateSheet workspaceId={workspaceId} onClose={() => addSheetRef.current?.dismiss()} isDark={isDark} />
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -538,7 +538,7 @@ export function SchedulesPage({
         backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
       >
         {selected ? (
-          <ScheduleDetailSheet projectId={projectId} trigger={selected} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
+          <ScheduleDetailSheet workspaceId={workspaceId} trigger={selected} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
         ) : (
           <View style={{ height: 1 }} />
         )}

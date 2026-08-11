@@ -36,7 +36,7 @@ import {
 import { Text } from '@/components/ui/text';
 import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
-import { useAccountGroups } from '@/lib/projects/hooks';
+import { useAccountGroups } from '@/lib/workspaces/hooks';
 import {
   useAccountMembers,
   useAccountInvites,
@@ -49,7 +49,7 @@ import {
   useAddGroupMembers,
 } from '@/lib/accounts/hooks';
 import type { AccountDetail, AccountMember, AccountInvitation } from '@/lib/accounts/accounts-client';
-import type { AccountRole } from '@/lib/projects/projects-client';
+import type { AccountRole } from '@/lib/workspaces/workspaces-client';
 import {
   accountColors,
   ACCOUNT_ROLE_LABEL,
@@ -65,7 +65,7 @@ const ACCOUNT_ROLES: AccountRole[] = ['owner', 'admin', 'member'];
 const ROLE_BLURB: Record<AccountRole, string> = {
   owner: 'Full control + can delete the account.',
   admin: 'Everything except account deletion.',
-  member: 'No implicit project access.',
+  member: 'No implicit workspace access.',
 };
 
 const memberLabel = (m: { email: string | null; user_id: string }) => m.email || m.user_id;
@@ -276,7 +276,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
                     </View>
                     <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 3 }} numberOfLines={1}>
                       Joined {formatDate(m.joined_at)}
-                      {m.account_role === 'member' && typeof m.explicit_project_count === 'number' ? ` · ${m.explicit_project_count} project${m.explicit_project_count === 1 ? '' : 's'}` : ''}
+                      {m.account_role === 'member' && typeof m.explicit_workspace_count === 'number' ? ` · ${m.explicit_workspace_count} workspace${m.explicit_workspace_count === 1 ? '' : 's'}` : ''}
                     </Text>
                   </View>
                   <RolePill role={m.account_role} isDark={isDark} />
@@ -492,9 +492,9 @@ function MemberSheet({ account, member, isSelf, can, sorted, onClose, isDark }: 
     ]);
   };
   const doLeave = () => {
-    Alert.alert('Leave team', `You'll lose access to ${account.name} and its projects.`, [
+    Alert.alert('Leave team', `You'll lose access to ${account.name} and its workspaces.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Leave', style: 'destructive', onPress: () => { haptics.medium(); leave.mutate(undefined, { onSuccess: () => { haptics.success(); onClose(); router.replace('/projects'); }, onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to leave team.') }); } },
+      { text: 'Leave', style: 'destructive', onPress: () => { haptics.medium(); leave.mutate(undefined, { onSuccess: () => { haptics.success(); onClose(); router.replace('/workspaces'); }, onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to leave team.') }); } },
     ]);
   };
 

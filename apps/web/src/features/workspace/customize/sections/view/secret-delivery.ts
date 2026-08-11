@@ -1,9 +1,9 @@
 import type {
-  AdminConnector,
   SecretConsumer,
   SecretDeliveryStatus,
   SecretDeliveryStrategy,
   SecretEgressPolicy,
+  WorkspaceAdminConnector,
 } from '@kortix/sdk';
 
 export type ConnectorBindingOption = {
@@ -23,7 +23,7 @@ export function brokerConsumerForSecret(consumer?: SecretConsumer | null): Broke
 }
 
 export function connectorBindingOptions(
-  connectors: readonly AdminConnector[],
+  connectors: readonly WorkspaceAdminConnector[],
   secretIdentifier: string,
 ): ConnectorBindingOption[] {
   return connectors.map((connector) => {
@@ -33,12 +33,13 @@ export function connectorBindingOptions(
     if (!connector.authSecret || connector.provider === 'channel') {
       disabled = true;
       description = 'This connector manages authentication through its platform connection.';
-    } else if (connector.authorizationStrategy !== 'project') {
+    } else if (connector.authorizationStrategy !== 'workspace') {
       disabled = true;
-      description = 'Change authorization ownership to Project before binding a project secret.';
+      description =
+        'Change authorization ownership to Workspace before binding a workspace secret.';
     } else if (connector.credentialSource === 'stored') {
       disabled = true;
-      description = 'Disconnect the stored connector credential before using a project secret.';
+      description = 'Disconnect the stored connector credential before using a workspace secret.';
     } else if (connector.secretIdentifier && !selected) {
       disabled = true;
       description = `Already uses ${connector.secretIdentifier}. Unbind it there first.`;
@@ -48,7 +49,7 @@ export function connectorBindingOptions(
 }
 
 export function connectorBindingChanges(
-  connectors: readonly AdminConnector[],
+  connectors: readonly WorkspaceAdminConnector[],
   secretIdentifier: string,
   selectedSlugs: readonly string[],
 ): { bind: string[]; unbind: string[] } {
@@ -128,22 +129,22 @@ export function secretDeliveryPresentation(
   return PRESENTATIONS[strategy];
 }
 
-export type NetworkBoundaryAvailability = 'available' | 'project_not_pinned' | 'unsupported';
+export type NetworkBoundaryAvailability = 'available' | 'workspace_not_pinned' | 'unsupported';
 
 /**
- * Network-boundary delivery is injected by the Platinum provider itself, so the
- * PROJECT has to run on Platinum. A deployment that merely offers Platinum is
+ * Network-boundary delivery is injected by the Platinum provider itself. The
+ * workspace must run on Platinum. A deployment that merely offers Platinum is
  * not enough: on any other provider nothing injects the header and the secret
  * is silently dead.
  */
 export function networkBoundaryAvailability(
-  project?: {
+  workspace?: {
     available_sandbox_providers?: readonly string[] | null;
     default_sandbox_provider?: string | null;
   } | null,
 ): NetworkBoundaryAvailability {
-  if (!project?.available_sandbox_providers?.includes('platinum')) return 'unsupported';
-  return project.default_sandbox_provider === 'platinum' ? 'available' : 'project_not_pinned';
+  if (!workspace?.available_sandbox_providers?.includes('platinum')) return 'unsupported';
+  return workspace.default_sandbox_provider === 'platinum' ? 'available' : 'workspace_not_pinned';
 }
 
 /** Why network-boundary delivery cannot run here, and how to fix it. */
@@ -152,7 +153,7 @@ export function networkBoundaryBlockedReason(
 ): string | null {
   if (availability === 'available') return null;
   if (availability === 'unsupported') return 'Not available in this deployment.';
-  return 'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.';
+  return 'This workspace does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.';
 }
 
 export type SecretDeliveryOption = SecretDeliveryPresentation & {

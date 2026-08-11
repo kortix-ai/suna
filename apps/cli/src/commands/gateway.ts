@@ -1,25 +1,25 @@
 import {
   emitJson,
-  resolveProjectContext,
+  resolveWorkspaceContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// The LLM-gateway control-plane for the linked project: how it ROUTES
+// The LLM-gateway control-plane for the linked workspace: how it ROUTES
 // (default model / fallback / vision), METERS (spend budgets), EXPOSES itself
 // (external gateway API keys), and is OBSERVED (usage / request logs) — plus a
 // playground to test a model end to end. Deliberately its own command, not a
 // `providers` subcommand: `providers` connects CREDENTIALS (a one-time input),
 // while this configures ongoing gateway behavior. The split mirrors the API's
 // own taxonomy — `/oauth` + `/secrets` (credentials) vs `/gateway/*` (this).
-// Every handler wraps one `/projects/:id/gateway/*` route 1:1, so the CLI
-// stays a thin, faithful client (see apps/api/src/projects/routes/gateway.ts).
+// Every handler wraps one `/workspaces/:id/gateway/*` route 1:1, so the CLI
+// stays a thin, faithful client (see apps/api/src/workspaces/routes/gateway.ts).
 
 const HELP = help`Usage: kortix gateway <subcommand> [options]
 
-Configure and inspect the LLM gateway for the linked Kortix project — the
+Configure and inspect the LLM gateway for the linked Kortix workspace — the
 layer that routes every model request, meters spend, and exposes an
 OpenAI-compatible endpoint. (Connect provider credentials with
 \`kortix providers\`; pick per-agent models with \`kortix agents\`.)
@@ -28,14 +28,14 @@ Routing:
   routing [get]                     Show the effective default model, fallback
                                     chain, and vision fallback (+ where each
                                     resolves from). --json.
-  routing set [flags]               Update the project routing policy:
+  routing set [flags]               Update the workspace routing policy:
     --default-model <id>              Default model ("" to clear).
     --vision-model <id>               Vision fallback for image requests that
                                       use a text-only default model.
     --fallback <id,id,…>              Fallback chain ("" to clear).
     --fallback-on transient|any-error
     --file <path|->                   Full policy JSON (stdin with -).
-  routing reset                     Drop the project policy (fall back to
+  routing reset                     Drop the workspace policy (fall back to
                                     account/platform defaults).
   routing preview <model> [--image] Resolve what a request would route to.
 
@@ -58,13 +58,13 @@ Observability:
   test <model…> [--prompt <text>]   Run a prompt through one or more models.
 
 Global options:
-  --project <id>     Operate on this project id (default: linked or \$KORTIX_PROJECT_ID).
+  --workspace <id>     Operate on this workspace id (default: linked or \$KORTIX_WORKSPACE_ID).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output (read subcommands).
   -h, --help         Show this help.
 `;
 
-type CtxOpts = { projectArg?: string; hostArg?: string };
+type CtxOpts = { workspaceArg?: string; hostArg?: string };
 
 export async function runGateway(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
@@ -75,17 +75,17 @@ export async function runGateway(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   let json = false;
-  let projectFlag: string | undefined;
+  let workspaceFlag: string | undefined;
   let hostFlag: string | undefined;
   try {
     json = takeFlagBool(rest, ['--json']);
-    projectFlag = takeFlagValue(rest, ['--project']);
+    workspaceFlag = takeFlagValue(rest, ['--workspace', '--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
+  const ctxOpts: CtxOpts = { workspaceArg: workspaceFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'routing':
@@ -139,12 +139,12 @@ function takeAction(rest: string[], fallback: string): string {
 
 // ── Routing policy ──────────────────────────────────────────────────────────
 // The default model / fallback chain / vision model the gateway applies for
-// this project (GET/PUT/DELETE /gateway/routing-policy). Read shows the
-// EFFECTIVE resolution (project → account → platform) so it's clear where each
+// this workspace (GET/PUT/DELETE /gateway/routing-policy). Read shows the
+// EFFECTIVE resolution (workspace → account → platform) so it's clear where each
 // value comes from.
 
 interface RoutingPolicyDoc {
-  project: {
+  workspace: {
     defaultModel: string | null;
     visionModel: string | null;
     defaultFallback: { models: string[]; fallbackOn: string } | null;
@@ -165,9 +165,9 @@ export async function gatewayRouting(
   json: boolean,
 ): Promise<number> {
   const action = takeAction(rest, 'get');
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/routing-policy`;
+  const base = `/workspaces/${ctx.workspaceId}/gateway/routing-policy`;
 
   try {
     if (action === 'get' || action === 'show') {
@@ -220,10 +220,10 @@ export async function gatewayRouting(
         // without clobbering the rest.
         const current = await ctx.client.get<RoutingPolicyDoc>(base);
         body = {
-          defaultModel: current.project.defaultModel,
-          visionModel: current.project.visionModel,
-          defaultFallback: current.project.defaultFallback,
-          rules: current.project.rules,
+          defaultModel: current.workspace.defaultModel,
+          visionModel: current.workspace.visionModel,
+          defaultFallback: current.workspace.defaultFallback,
+          rules: current.workspace.rules,
         };
         if (defaultModel !== undefined) body.defaultModel = defaultModel || null;
         if (visionModel !== undefined) body.visionModel = visionModel || null;
@@ -236,7 +236,7 @@ export async function gatewayRouting(
             ? {
                 models,
                 fallbackOn:
-                  fallbackOn ?? current.project.defaultFallback?.fallbackOn ?? 'transient',
+                  fallbackOn ?? current.workspace.defaultFallback?.fallbackOn ?? 'transient',
               }
             : null;
         } else if (fallbackOn !== undefined && body.defaultFallback) {
@@ -269,15 +269,15 @@ function renderRouting(doc: RoutingPolicyDoc): number {
       `  vision fallback ${e.visionModel} ${C.dim}(used when the default model cannot see images)${C.reset}\n` +
       `  fallback        ${fb}\n`,
   );
-  if (doc.project.rules.length) {
+  if (doc.workspace.rules.length) {
     process.stdout.write(`\n  ${C.dim}PER-MODEL RULES${C.reset}\n`);
-    for (const r of doc.project.rules) {
+    for (const r of doc.workspace.rules) {
       process.stdout.write(`  ${r.model} → ${r.fallbackModels.join(' → ')} (${r.fallbackOn})\n`);
     }
   }
   if (!doc.capabilities.write) {
     process.stdout.write(
-      `\n  ${C.dim}(read-only — you lack customize-write on this project)${C.reset}\n`,
+      `\n  ${C.dim}(read-only — you lack customize-write on this workspace)${C.reset}\n`,
     );
   }
   process.stdout.write('\n');
@@ -288,16 +288,16 @@ function renderRouting(doc: RoutingPolicyDoc): number {
 
 export async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/budgets`;
+  const base = `/workspaces/${ctx.workspaceId}/gateway/budgets`;
 
   try {
     if (action === 'ls' || action === 'list') {
       const data = await ctx.client.get<any>(base);
       if (json) return outJson(data);
       process.stdout.write(
-        `\n  ${C.dim}PROJECT SPEND (this month)${C.reset}  ${money(data.project_spend?.cost)} · ${data.project_spend?.requests ?? 0} req\n`,
+        `\n  ${C.dim}WORKSPACE SPEND (this month)${C.reset}  ${money(data.workspace_spend?.cost)} · ${data.workspace_spend?.requests ?? 0} req\n`,
       );
       if (data.budgets?.length) {
         process.stdout.write(`\n  ${C.dim}BUDGETS${C.reset}\n`);
@@ -360,9 +360,9 @@ export async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean
 
 export async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
   const action = takeAction(rest, 'ls');
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/keys`;
+  const base = `/workspaces/${ctx.workspaceId}/gateway/keys`;
 
   try {
     if (action === 'ls' || action === 'list') {
@@ -414,7 +414,7 @@ export async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean):
 // ── Usage / analytics ───────────────────────────────────────────────────────
 
 export async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promise<number> {
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   let days: string | undefined;
   try {
@@ -425,8 +425,8 @@ export async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean)
   const q = days ? `?days=${encodeURIComponent(days)}` : '';
   try {
     const [overview, breakdown] = await Promise.all([
-      ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/overview${q}`),
-      ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/breakdown${q}`),
+      ctx.client.get<any>(`/workspaces/${ctx.workspaceId}/gateway/overview${q}`),
+      ctx.client.get<any>(`/workspaces/${ctx.workspaceId}/gateway/breakdown${q}`),
     ]);
     if (json) return outJson({ overview, breakdown });
     process.stdout.write(
@@ -459,14 +459,14 @@ export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean):
   } catch (err) {
     return fail((err as Error).message);
   }
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   // `gateway logs <logId|requestId>` fetches one row's full request/response detail.
   const id = rest.find((a) => !a.startsWith('-'));
   try {
     if (id) {
       const row = await ctx.client.get<any>(
-        `/projects/${ctx.projectId}/gateway/logs/${encodeURIComponent(id)}`,
+        `/workspaces/${ctx.workspaceId}/gateway/logs/${encodeURIComponent(id)}`,
       );
       return outJson(row);
     }
@@ -475,7 +475,7 @@ export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean):
     if (failed) params.set('ok', 'false');
     const qs = params.toString();
     const data = await ctx.client.get<any>(
-      `/projects/${ctx.projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
+      `/workspaces/${ctx.workspaceId}/gateway/logs${qs ? `?${qs}` : ''}`,
     );
     if (json) return outJson(data);
     if (!data.logs?.length) {
@@ -510,10 +510,10 @@ export async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean):
   }
   const models = rest.filter((a) => !a.startsWith('-'));
   if (!models.length) return fail('pass at least one model id');
-  const ctx = await resolveProjectContext(opts);
+  const ctx = await resolveWorkspaceContext(opts);
   if (!ctx) return 1;
   try {
-    const data = await ctx.client.post<any>(`/projects/${ctx.projectId}/gateway/playground`, {
+    const data = await ctx.client.post<any>(`/workspaces/${ctx.workspaceId}/gateway/playground`, {
       prompt: prompt ?? 'Reply with exactly: pong',
       models,
     });

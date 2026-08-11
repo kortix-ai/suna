@@ -4,7 +4,7 @@
  * Start a session with its initial scope chosen up front.
  *
  * The sidebar used to create sessions with nothing but an id, which quietly
- * made "the project default agent, the agent's full secret grant, the default
+ * made "the workspace default agent, the agent's full secret grant, the default
  * connection for every connector" the only session shape this app could
  * produce. This is where that initial choice happens.
  *
@@ -48,18 +48,18 @@ import {
   buildSessionCreateInput,
 } from '@/lib/session-overrides';
 import { generateSessionId } from '@kortix/sdk';
-import { useProjectConfig, useVisibleAgents } from '@kortix/sdk/react';
+import { useWorkspaceConfig, useVisibleAgents } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
 export function NewSessionDialog({
-  projectId,
+  workspaceId,
   trigger,
   initialAgent = null,
 }: {
-  projectId: string;
+  workspaceId: string;
   trigger: React.ReactNode;
   /** Pre-picked agent — used when a refused agent switch sends someone here. */
   initialAgent?: string | null;
@@ -81,7 +81,7 @@ export function NewSessionDialog({
             page that renders the sidebar. */}
         {open && (
           <NewSessionForm
-            projectId={projectId}
+            workspaceId={workspaceId}
             initialAgent={initialAgent}
             onDone={() => setOpen(false)}
           />
@@ -92,11 +92,11 @@ export function NewSessionDialog({
 }
 
 function NewSessionForm({
-  projectId,
+  workspaceId,
   initialAgent,
   onDone,
 }: {
-  projectId: string;
+  workspaceId: string;
   initialAgent: string | null;
   onDone: () => void;
 }) {
@@ -116,12 +116,12 @@ function NewSessionForm({
     null,
   );
 
-  const agents = useVisibleAgents({ projectId });
-  const config = useProjectConfig(projectId);
-  const connectors = useConnectorBindingChoices(projectId);
+  const agents = useVisibleAgents({ workspaceId });
+  const config = useWorkspaceConfig(workspaceId);
+  const connectors = useConnectorBindingChoices(workspaceId);
   const secrets = useQuery({
-    queryKey: qk.secrets(projectId),
-    queryFn: () => kortix.project(projectId).secrets.list(),
+    queryKey: qk.secrets(workspaceId),
+    queryFn: () => kortix.workspace(workspaceId).secrets.list(),
     retry: false,
   });
 
@@ -134,8 +134,8 @@ function NewSessionForm({
   // Default to NOTHING checked rather than everything.
   //
   // Pre-checking every listed row looks helpful and makes create fail on two
-  // ordinary projects. `GET /secrets` lists rows of every scope, but create
-  // validates the allowlist against runtime-scoped rows only — so a project with
+  // ordinary workspaces. `GET /secrets` lists rows of every scope, but create
+  // validates the allowlist against runtime-scoped rows only — so a workspace with
   // a Teams/Slack install (whose install rows are `scope:'connector'`) gets
   // 404 SECRET_IDENTIFIER_NOT_FOUND. And two identifiers may legally share one
   // env KEY, which is exactly the 409 SECRET_IDENTIFIER_KEY_COLLISION the server
@@ -156,7 +156,7 @@ function NewSessionForm({
   const start = useMutation({
     mutationFn: async () => {
       const sessionId = generateSessionId();
-      await kortix.project(projectId).sessions.create(
+      await kortix.workspace(workspaceId).sessions.create(
         buildSessionCreateInput(overrides, {
           sessionId,
         }),
@@ -164,9 +164,9 @@ function NewSessionForm({
       return sessionId;
     },
     onSuccess: (sessionId) => {
-      invalidateSessions(qc, projectId);
+      invalidateSessions(qc, workspaceId);
       onDone();
-      router.push(`/projects/${projectId}/sessions/${sessionId}`);
+      router.push(`/workspaces/${workspaceId}/sessions/${sessionId}`);
     },
     onError: (err) => {
       // Each KaaB refusal has a distinct code and a different person who can
@@ -203,7 +203,7 @@ function NewSessionForm({
           />
           {agents.length === 0 && (
             <span className="text-xs text-muted-foreground">
-              This project runs its default agent.
+              This workspace runs its default agent.
             </span>
           )}
         </div>
@@ -256,7 +256,7 @@ function NewSessionForm({
             ))}
             {checked.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                This session will receive no project secrets at all.
+                This session will receive no workspace secrets at all.
               </p>
             )}
           </div>
@@ -269,7 +269,7 @@ function NewSessionForm({
             <Label>Connections</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Which shared account each connector acts as. Sessions started here
-              can only use project connections.
+              can only use workspace connections.
             </p>
           </div>
           <ConnectorBindingFields
@@ -285,7 +285,7 @@ function NewSessionForm({
           />
           {/* Where the options in that picker come from — including why an
               alias can be listed with nothing to choose. */}
-          <CallSnippet id="connections.list" context={{ projectId }} />
+          <CallSnippet id="connections.list" context={{ workspaceId }} />
         </section>
       )}
 
@@ -294,14 +294,14 @@ function NewSessionForm({
       <CallSnippet
         id="session.create"
         context={{
-          projectId,
+          workspaceId,
           overrides,
         }}
       />
 
       {requirement && (
         <ConnectRequiredCard
-          projectId={projectId}
+          workspaceId={workspaceId}
           requirement={requirement}
           onRetry={() => {
             setRequirement(null);

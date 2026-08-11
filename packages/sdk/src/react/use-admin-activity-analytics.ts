@@ -39,7 +39,9 @@ export interface AdminActivityDay {
   activeUsers: number;
   /** Accounts created that day. */
   newAccounts: number;
-  /** Distinct projects that had a session created in them that day. */
+  /** Distinct workspaces that had a session created in them that day. */
+  activeWorkspaces: number;
+  /** @deprecated Use `activeWorkspaces`. */
   activeProjects: number;
 }
 
@@ -56,12 +58,48 @@ export interface AdminActivitySummary {
   /** ...in the last 30 days. */
   mau: number;
   totalAccounts: number;
+  totalWorkspaces: number;
+  /** @deprecated Use `totalWorkspaces`. */
   totalProjects: number;
 }
 
 export interface AdminActivityAnalytics {
   days: AdminActivityDay[];
   summary: AdminActivitySummary;
+}
+
+type AdminActivityDayWire = Omit<AdminActivityDay, 'activeWorkspaces' | 'activeProjects'> & {
+  activeWorkspaces?: number;
+  activeProjects?: number;
+};
+
+type AdminActivitySummaryWire = Omit<
+  AdminActivitySummary,
+  'totalWorkspaces' | 'totalProjects'
+> & {
+  totalWorkspaces?: number;
+  totalProjects?: number;
+};
+
+interface AdminActivityAnalyticsWire {
+  days: AdminActivityDayWire[];
+  summary: AdminActivitySummaryWire;
+}
+
+function normalizeAdminActivityAnalytics(
+  data: AdminActivityAnalyticsWire,
+): AdminActivityAnalytics {
+  return {
+    days: data.days.map((day) => {
+      const activeWorkspaces = day.activeWorkspaces ?? day.activeProjects ?? 0;
+      return { ...day, activeWorkspaces, activeProjects: activeWorkspaces };
+    }),
+    summary: {
+      ...data.summary,
+      totalWorkspaces: data.summary.totalWorkspaces ?? data.summary.totalProjects ?? 0,
+      totalProjects: data.summary.totalProjects ?? data.summary.totalWorkspaces ?? 0,
+    },
+  };
 }
 
 /** One UTC day of credit burn. All amounts are positive USD magnitudes. */
@@ -130,11 +168,11 @@ export function useAdminActivityAnalytics(days: number = ADMIN_ANALYTICS_DEFAULT
   return useQuery<AdminActivityAnalytics>({
     queryKey: ['admin', 'analytics', 'activity', window],
     queryFn: async () => {
-      const response = await backendApi.get<AdminActivityAnalytics>(
+      const response = await backendApi.get<AdminActivityAnalyticsWire>(
         `/admin/analytics/activity?days=${window}`,
       );
       if (response.error) throw new Error(response.error.message);
-      return response.data!;
+      return normalizeAdminActivityAnalytics(response.data!);
     },
     staleTime: ANALYTICS_STALE_TIME_MS,
     placeholderData: (previousData) => previousData,

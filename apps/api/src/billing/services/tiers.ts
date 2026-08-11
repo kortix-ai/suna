@@ -94,7 +94,7 @@ export const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
 export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT = 20;
 
 // Sensible caps for the per-seat plan. Effectively uncapped for normal use.
-export const MAX_PROJECTS_PER_ACCOUNT = 200;
+export const MAX_WORKSPACES_PER_ACCOUNT = 200;
 export const MAX_CONCURRENT_SANDBOXES_PER_SEAT = 3;
 export const MAX_SEATS_PER_ACCOUNT = 100;
 

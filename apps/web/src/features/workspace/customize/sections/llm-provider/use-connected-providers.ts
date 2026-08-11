@@ -4,7 +4,7 @@ import { isManagedProviderEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { getManagedModel, isProviderAuthSatisfied } from '@kortix/llm-catalog';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { getWorkspaceDetail, listWorkspaceSecrets } from '@kortix/sdk';
 import { contract, qk, useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -18,22 +18,22 @@ import { isProviderStateLoading } from './provider-loading-state';
 import { useLlmProviderCatalogRevision } from './use-live-catalog';
 import { buildCodexProvider } from './utils';
 
-export function useConnectedProviders(projectId: string, enabled: boolean) {
+export function useConnectedProviders(workspaceId: string, enabled: boolean) {
   // Re-renders this hook when LlmCatalogBootstrap's fetch lands (module
   // bindings are reassigned, not mutated — a plain memo dependency array
   // won't otherwise notice). See use-live-catalog.ts.
   const catalogRevision = useLlmProviderCatalogRevision();
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+  const workspaceDetailQuery = useQuery({
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
     ...contract('config'),
     enabled,
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const llmGatewayEnabled = isLlmGatewayEnabled(workspaceDetailQuery.data?.workspace);
 
   const secretsQuery = useQuery({
-    queryKey: qk.project.secrets(projectId),
-    queryFn: () => listProjectSecrets(projectId),
+    queryKey: qk.workspace.secrets(workspaceId),
+    queryFn: () => listWorkspaceSecrets(workspaceId),
     ...contract('config'),
     enabled,
   });
@@ -46,7 +46,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
 
   // The managed Kortix gateway exists only for projects that explicitly opt
   // into the LLM Gateway. Native OpenCode projects should show only providers
-  // backed by project secrets, even if an old running sandbox still exposes a
+  // backed by workspace secrets, even if an old running sandbox still exposes a
   // stale `kortix` provider.
   const runtimeProvidersQuery = useRuntimeProviders();
   const { data: ocProviders } = runtimeProvidersQuery;
@@ -116,7 +116,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   }, [secretNames, kortixProvider, ocProviders, catalogRevision]);
 
   const providerStateLoading = isProviderStateLoading({
-    projectDetailLoading: projectDetailQuery.isLoading,
+    workspaceDetailLoading: workspaceDetailQuery.isLoading,
     secretsLoading: secretsQuery.isLoading,
   });
 

@@ -2,10 +2,10 @@
 
 /**
  * The generic "Migrate to v2" action — a session-backed button usable from
- * any Customize surface (Settings' project-level card here; the Agents
+ * any Customize surface (Settings' workspace-level card here; the Agents
  * section's own v1 hint owns its own placement). Self-contained: fetches its
  * own v1/v2 read (reusing the shared `project-detail` query key) and hides
- * itself once the project is on v2 or the read hasn't resolved yet.
+ * itself once the workspace is on v2 or the read hasn't resolved yet.
  */
 
 import type { ButtonProps } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { ArrowCircleUpIcon as ArrowUpCircle } from '@phosphor-icons/react';
 
-import { useProjectManifestVersion } from './manifest-version';
+import { useWorkspaceManifestVersion } from './manifest-version';
 import { useMigrateToV2 } from './use-migrate-to-v2';
 
 /** Presentational only — no hooks, no data fetching. Kept separate from
@@ -54,18 +54,18 @@ export function MigrateToV2ButtonView({
 }
 
 export function MigrateToV2Button({
-  projectId,
+  workspaceId,
   size,
   variant,
   className,
 }: {
-  projectId: string;
+  workspaceId: string;
   size?: ButtonProps['size'];
   variant?: ButtonProps['variant'];
   className?: string;
 }) {
-  const { version, isLoading } = useProjectManifestVersion(projectId);
-  const migrate = useMigrateToV2(projectId);
+  const { version, isLoading } = useWorkspaceManifestVersion(workspaceId);
+  const migrate = useMigrateToV2(workspaceId);
 
   return (
     <MigrateToV2ButtonView

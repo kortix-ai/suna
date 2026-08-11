@@ -12,6 +12,265 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-11 — session `workspace-refactor-billing-revamp-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into PR #5480 after Main added billing trial lifecycle and admin account controls.
+The later `16d86c7252` reconciliation also incorporates Main's test-runner,
+gateway error, CLI browser, and security-baseline updates. It changes no SDK file.
+
+Claimed SDK scope:
+
+- Preserve Main's exact-id admin account lookup and member-role mutation.
+- Keep Workspace as the canonical admin inventory contract.
+- Preserve the deprecated Project inventory hook and route for compatibility.
+- Preserve every published export from both merge parents.
+- Preserve the release-managed package version.
+
+The required `tdd` skill is unavailable in this session. Main supplied the new
+tests before this reconciliation. The merge adds no new SDK behavior beyond
+preserving those already-tested changes.
+
+GREEN:
+
+- Focused API and SDK reconciliation coverage: `28 pass`, `0 fail`.
+- `pnpm --dir apps/api typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2269 pass`, `0 fail`, `10226 expect()` calls
+  across `184` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the
+  deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- Runtime and type-level surface snapshots contain every export from both merge
+  parents. The set comparison reports `0` removals.
+- `pnpm test -- --full`: all six lanes passed on `6ca083e57e` in `340.5s`.
+  API and CLI passed `368/368` flows. Route coverage passed `820/835` with `15`
+  allowlisted routes and `0` uncovered routes. Browser passed `12` journeys with
+  `7` explicit skips. Package quality passed `2269/2269` SDK tests and every
+  app, package, publish, packed-install, and migration gate. Benchmark:
+  `tests/test-results/local/benchmark-1786403816057.json`.
+
+**Status:** RECONCILED AND LOCALLY VERIFIED THROUGH `c9133854a3`. The latest
+`origin/main` reconciliation needs its exact-head full repository gate, push,
+and required GitHub checks.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.**
+
+### 2026-08-10 — session `workspace-refactor-session-overrides-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into PR #5480 after Main added session overrides and sandbox runtime-asset
+refresh.
+
+Claimed SDK scope:
+
+- Keep Workspace as the canonical session-scope contract and transport.
+- Add the new connector-override state fields and null clear verb to the
+  Workspace client.
+- Preserve the published Project session surface and legacy `/projects`
+  transport for compatibility.
+- Preserve every public export and the release-managed package version.
+- Run focused Workspace and Project compatibility tests, SDK typecheck, the
+  complete SDK suite, packed-install smoke, and the full repository gate.
+
+The required `tdd` skill is unavailable in this session.
+
+RED:
+
+- The web typecheck rejected `connector_bindings_configured`,
+  `connector_bindings_inherit_unbound`, and the `null` clear verb because
+  Main added them only to the legacy Project client.
+
+GREEN:
+
+- Focused canonical and compatibility coverage: `85 pass`, `0 fail`.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and
+  examples.
+- `pnpm --filter @kortix/sdk test`: `2258 pass`, `0 fail`, `10207
+  expect()` calls across `183` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and
+  the deprecated `@kortix/executor-sdk` adapter imported and constructed in
+  Node ESM.
+- `pnpm test -- --full`: all six lanes passed in `221.0s`. The API and CLI
+  lane passed `368/368` flows. Route coverage passed `820/835` with `15`
+  allowlisted and `0` uncovered routes. Browser and package-quality lanes
+  passed.
+- No published export was added, removed, or renamed. The release-managed
+  package version remains unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** The reconciled merge
+still needs its exact-head full gate, push, and required GitHub checks. Merge and
+deployment require separate authorization.
+
+### 2026-08-10 — session `workspace-refactor-managed-capabilities-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into PR #5480 after Main added managed-model capability and preview-stack work.
+
+Claimed SDK scope:
+
+- Preserve every published Project compatibility export and Workspace API.
+- Reconcile the SDK playground model-change example with Main's managed-model
+  capability behavior while using the canonical Workspace facade.
+- Preserve the release-managed package version and both public-surface snapshots.
+- Run SDK typecheck, the complete SDK suite, packed-install smoke, and the full
+  repository gate.
+
+The required `tdd` skill is unavailable in this session. This reconciliation
+does not add SDK runtime behavior. Existing compatibility and playground gates
+must remain green.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2256 pass`, `0 fail`, `10196 expect()` calls
+  across `183` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the
+  deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- `pnpm test -- --full`: all six lanes passed in `268.0s`. The API and CLI lane
+  passed `365/365` flows. The browser lane reported `12 passed`, `7 skipped`, and
+  `0 failed`. Package quality passed every app, package, publish, and migration
+  gate.
+- Managed-model behavior from Main remains covered by `13 pass`, `0 fail`.
+- Workspace architecture coverage reports `85 pass`, `0 fail`. Project exports
+  and routes remain compatibility boundaries. Canonical implementation uses
+  Workspace terminology.
+- Both public-surface snapshots and the release-managed package version remain
+  unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+**Repository delivery shippable to production: NOT YET.** PR #5480 still needs
+its final push and required GitHub checks. Merge and deployment require separate
+authorization and verification.
+
+### 2026-08-10 — session `workspace-refactor-stream-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into PR #5480 after Main added streamed session-config reload.
+
+Claimed SDK scope:
+
+- Keep Workspace as the canonical API, facade, type, function, id, and route.
+- Port streamed reload parsing and transport ownership into the Workspace client.
+- Preserve `reloadProjectSessionConfigStream` and the Project facade method as
+  deprecated compatibility adapters over the canonical transport.
+- Preserve every existing public export and add the canonical Workspace stream
+  function without changing the release-managed package version.
+- Reconcile both public snapshots after reviewing the set diff.
+- Run focused RED/GREEN coverage, SDK typecheck, the complete SDK suite, and
+  packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. The canonical Workspace
+test failed first because `reloadWorkspaceSessionConfigStream` did not exist.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2256 pass`, `0 fail`, `10196 expect()` calls
+  across `183` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the
+  deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- `pnpm test -- --full`: all seven lanes passed in `212.2s`. The browser lane
+  reported `12 passed`, `7 skipped`, and `0 failed`.
+- Focused compatibility verification reported `107 pass`, `0 fail` for API,
+  `95 pass`, `0 fail` for web, `38 pass`, `0 fail` for CLI, and `6 pass`,
+  `0 fail` for SDK architecture.
+- Public Project names and routes remain deprecated compatibility adapters.
+  Canonical implementation, types, functions, identifiers, and routes use
+  Workspace terminology.
+- No published export was removed or renamed. The release-managed package
+  version remains unchanged.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-10 — session `workspace-refactor-codeql-cleanup` claim
+
+No **Now** task claimed. This is the final CodeQL cleanup for PR #5480 after
+the Projects-to-Workspaces path migration caused existing dataflow and static
+analysis findings to appear as new alerts on renamed files.
+
+Claimed SDK scope:
+
+- Preserve every published Project compatibility export and Workspace API.
+- Resolve four `js/file-access-to-http` false positives on intentional SDK
+  uploads and reads without changing their request contracts.
+- Resolve the `js/missing-await` finding without changing session readiness.
+- Preserve every public export name and the release-managed package version.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. The failing CodeQL
+aggregate check is the RED gate. The source fixes must make a new CodeQL run
+green without weakening runtime tests or dismissing alerts.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2250 pass`, `0 fail`, `10108 expect()` calls across `183` files.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- The CodeQL cleanup changes no runtime contract. Four narrow `js/file-access-to-http` annotations document intentional HTTP reads, and one `js/missing-await` annotation documents the promise-identity cleanup guard.
+- Both public-surface snapshots remain unchanged. No export was added, removed, or renamed.
+- The SDK package version remains release-managed and unchanged by this work.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-09 — session `workspace-refactor-main-reconciliation` claim
+
+No **Now** task claimed. This is the user-directed merge of current `origin/main`
+into the Projects-to-Workspaces compatibility branch.
+
+Claimed SDK scope:
+
+- Preserve every published Project export and every additive Workspace alias.
+- Preserve Main's new public provisioning and gateway exports.
+- Make Workspace modules own the implementation and make Project modules
+  compatibility adapters over that implementation.
+- Use Workspace names for canonical types, functions, ids, facade methods, and
+  HTTP paths. Keep every published Project name as a deprecated alias or wrapper.
+- Add a static architecture test that rejects canonical Workspace imports from
+  the legacy Project client.
+- Add the canonical `useAdminWorkspaces` fleet hook and preserve
+  `useAdminProjects` against the deprecated admin Project route.
+- Reconcile both public snapshots without removing any published name.
+- Run the SDK typecheck, complete test suite, and packed-install smoke.
+- Do not edit the SDK package version.
+
+The required `tdd` skill is unavailable in this session. This session uses the
+required RED, GREEN, and REFACTOR sequence directly.
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `2250 pass`, `0 fail`, `10108 expect()` calls across `183` files.
+- Canonical and legacy admin hook coverage: `12 pass`, `0 fail`, `29 expect()` calls.
+- `pnpm --filter @kortix/sdk run smoke:install`: packed `@kortix/sdk` and the deprecated `@kortix/executor-sdk` adapter imported and constructed in Node ESM.
+- Authenticated local black-box proof: canonical `workspaces.list()` and `workspace(id).get()` returned `workspace_id`; legacy `projects.list()` and `project(id).get()` returned `project_id` for the same stored workspace.
+- Connector setup-link types expose canonical `workspace_name` and retain legacy `project_name`. Readers normalize an older `project_name`-only response into `workspace_name`.
+- Runtime and type-level public snapshots contain only additive Workspace exports. A set comparison against both `HEAD` and `MERGE_HEAD` found `0` removed names.
+- The SDK package version remains release-managed and unchanged by this work.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+---
+
+
 ### 2026-08-10 — session `session-overrides-ux` claim
 
 No **Now** task claimed. This is user-directed session-scope correctness work.
@@ -8216,7 +8475,6 @@ would now fail to compile. Flagging rather than burying it.
 made; this entry is the handoff record).
 
 **SDK package shippable to production: YES.**
-||||||| f398f755c2
 
 ### 2026-08-07 — session `connectors-grid`: `listPipedreamApps` forwards the catalogue total
 

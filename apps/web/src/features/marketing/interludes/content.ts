@@ -85,8 +85,7 @@ export const asking = {
   panel: {
     title: 'Ask',
     label: 'Input',
-    footer:
-      'You set allow, ask or block per action. Merge stays default-deny for agents.',
+    footer: 'You set allow, ask or block per action. Merge stays default-deny for agents.',
   },
   modes: [
     {
@@ -137,7 +136,7 @@ export const owning = {
     title: 'your-company/',
     label: 'Repo',
     footer:
-      'The layout a new project ships with. Omitted grants resolve to none — reach is declared, never inherited.',
+      'The layout a new workspace ships with. Omitted grants resolve to none — reach is declared, never inherited.',
   },
   tree: [
     { depth: 0, name: 'kortix.yaml', note: 'agents, grants, triggers' },

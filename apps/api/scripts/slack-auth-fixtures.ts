@@ -10,11 +10,17 @@ type State =
   | 'linked-no-access'
   | 'linked-pending';
 
-const workspaceId = process.env.SLACK_AUTH_WORKSPACE_ID || 'T07FUFNT3RV';
+const slackWorkspaceId = process.env.SLACK_AUTH_WORKSPACE_ID || 'T07FUFNT3RV';
 const slackUserId = process.env.SLACK_AUTH_USER_ID || 'U07G2D722TY';
 const accountId = process.env.SLACK_AUTH_FIXTURE_ACCOUNT_ID || '95788432-f5df-4ffe-af9e-0ed4e03cf96e';
-const projectId = process.env.SLACK_AUTH_FIXTURE_PROJECT_ID || 'b4a01f33-d46c-4a96-8a1d-0a265e48978f';
-const projectName = process.env.SLACK_AUTH_FIXTURE_PROJECT_NAME || 'Slack Auth No Access Project';
+const workspaceId =
+  process.env.SLACK_AUTH_FIXTURE_WORKSPACE_ID ??
+  process.env.SLACK_AUTH_FIXTURE_PROJECT_ID ??
+  'b4a01f33-d46c-4a96-8a1d-0a265e48978f';
+const workspaceName =
+  process.env.SLACK_AUTH_FIXTURE_WORKSPACE_NAME ??
+  process.env.SLACK_AUTH_FIXTURE_PROJECT_NAME ??
+  'Slack Auth No Access Workspace';
 const repoUrl = process.env.SLACK_AUTH_FIXTURE_REPO_URL || 'https://github.com/octocat/Spoon-Knife.git';
 const password = process.env.SLACK_AUTH_FIXTURE_PASSWORD || 'SlackFixture123!';
 const supabaseUrl = (process.env.SUPABASE_URL || 'http://127.0.0.1:54321').replace(/\/+$/, '');
@@ -82,7 +88,7 @@ async function ensureBaseRows() {
   `;
   await sql`
     insert into kortix.projects (project_id, account_id, name, repo_url, default_branch, status)
-    values (${projectId}, ${accountId}, ${projectName}, ${repoUrl}, 'main', 'active')
+    values (${workspaceId}, ${accountId}, ${workspaceName}, ${repoUrl}, 'main', 'active')
     on conflict (project_id) do update
     set account_id = excluded.account_id,
         name = excluded.name,
@@ -92,13 +98,13 @@ async function ensureBaseRows() {
   `;
   await sql`
     insert into kortix.chat_installs (platform, workspace_id, project_id)
-    values ('slack', ${workspaceId}, ${projectId})
+    values ('slack', ${slackWorkspaceId}, ${workspaceId})
     on conflict (platform, workspace_id, project_id) do nothing
   `;
 }
 
 async function ensureMembership(userId: string, spec: (typeof users)[FixtureUserKey]) {
-  await sql`delete from kortix.project_members where account_id = ${accountId} and project_id = ${projectId} and user_id = ${userId}`;
+  await sql`delete from kortix.project_members where account_id = ${accountId} and project_id = ${workspaceId} and user_id = ${userId}`;
   await sql`delete from kortix.account_members where account_id = ${accountId} and user_id = ${userId}`;
 
   if (spec.accountRole) {
@@ -112,7 +118,7 @@ async function ensureMembership(userId: string, spec: (typeof users)[FixtureUser
   if (spec.projectRole) {
     await sql`
       insert into kortix.project_members (account_id, project_id, user_id, project_role, granted_by)
-      values (${accountId}, ${projectId}, ${userId}, ${spec.projectRole}, ${userId})
+      values (${accountId}, ${workspaceId}, ${userId}, ${spec.projectRole}, ${userId})
       on conflict (project_id, user_id) do update
       set project_role = excluded.project_role,
           updated_at = now()
@@ -133,7 +139,7 @@ async function ensureUsers() {
 async function linkSlack(userId: string) {
   await sql`
     insert into kortix.chat_user_identities (platform, workspace_id, platform_user_id, user_id, linked_at, revoked_at)
-    values ('slack', ${workspaceId}, ${slackUserId}, ${userId}, now(), null)
+    values ('slack', ${slackWorkspaceId}, ${slackUserId}, ${userId}, now(), null)
     on conflict (platform, workspace_id, platform_user_id) do update
     set user_id = excluded.user_id,
         linked_at = now(),
@@ -146,7 +152,7 @@ async function unlinkSlack() {
     update kortix.chat_user_identities
     set revoked_at = now()
     where platform = 'slack'
-      and workspace_id = ${workspaceId}
+      and workspace_id = ${slackWorkspaceId}
       and platform_user_id = ${slackUserId}
       and revoked_at is null
   `;
@@ -158,7 +164,7 @@ async function deleteOpenRequestsFor(userId: string) {
     set status = 'rejected',
         reviewed_at = coalesce(reviewed_at, now()),
         updated_at = now()
-    where project_id = ${projectId}
+    where project_id = ${workspaceId}
       and requester_user_id = ${userId}
       and status = 'pending'
   `;
@@ -166,10 +172,10 @@ async function deleteOpenRequestsFor(userId: string) {
 
 async function ensurePendingRequest(userId: string, email: string) {
   await sql`delete from kortix.account_members where account_id = ${accountId} and user_id = ${userId}`;
-  await sql`delete from kortix.project_members where account_id = ${accountId} and project_id = ${projectId} and user_id = ${userId}`;
+  await sql`delete from kortix.project_members where account_id = ${accountId} and project_id = ${workspaceId} and user_id = ${userId}`;
   await sql`
     insert into kortix.project_access_requests (account_id, project_id, requester_user_id, requester_email, message)
-    values (${accountId}, ${projectId}, ${userId}, ${email}, 'Slack auth fixture: pending project access request')
+    values (${accountId}, ${workspaceId}, ${userId}, ${email}, 'Slack auth fixture: pending project access request')
     on conflict do nothing
   `;
 }
@@ -207,7 +213,7 @@ async function setPolicy(channelId: string, policy: string) {
   }
   await sql`
     insert into kortix.chat_channel_bindings (platform, workspace_id, channel_id, project_id, conversation_policy)
-    values ('slack', ${workspaceId}, ${channelId}, ${projectId}, ${policy})
+    values ('slack', ${slackWorkspaceId}, ${channelId}, ${workspaceId}, ${policy})
     on conflict (platform, workspace_id, channel_id) do update
     set project_id = excluded.project_id,
         conversation_policy = excluded.conversation_policy,
@@ -219,12 +225,12 @@ async function inventory() {
   const data = {
     project: await sql`
       select project_id, account_id, name, repo_url, status
-      from kortix.projects where project_id = ${projectId}
+      from kortix.projects where project_id = ${workspaceId}
     `,
     slackIdentity: await sql`
       select workspace_id, platform_user_id, user_id, linked_at, revoked_at
       from kortix.chat_user_identities
-      where platform = 'slack' and workspace_id = ${workspaceId} and platform_user_id = ${slackUserId}
+      where platform = 'slack' and workspace_id = ${slackWorkspaceId} and platform_user_id = ${slackUserId}
     `,
     users: await sql`
       select u.id::text as user_id,
@@ -233,26 +239,26 @@ async function inventory() {
              pm.project_role,
              exists (
                select 1 from kortix.project_access_requests par
-               where par.project_id = ${projectId}
+               where par.project_id = ${workspaceId}
                  and par.requester_user_id = u.id
                  and par.status = 'pending'
              ) as pending_request
       from auth.users u
       left join kortix.account_members am on am.user_id = u.id and am.account_id = ${accountId}
-      left join kortix.project_members pm on pm.user_id = u.id and pm.project_id = ${projectId}
+      left join kortix.project_members pm on pm.user_id = u.id and pm.project_id = ${workspaceId}
       where u.email = any(${Object.values(users).map((u) => u.email)})
       order by u.email
     `,
     pendingRequests: await sql`
       select request_id, requester_user_id, requester_email, status, message, created_at
       from kortix.project_access_requests
-      where project_id = ${projectId} and status = 'pending'
+      where project_id = ${workspaceId} and status = 'pending'
       order by created_at desc
     `,
     channelBindings: await sql`
       select workspace_id, channel_id, project_id, agent_name, opencode_model, conversation_policy
       from kortix.chat_channel_bindings
-      where platform = 'slack' and workspace_id = ${workspaceId}
+      where platform = 'slack' and workspace_id = ${slackWorkspaceId}
       order by channel_id
     `,
   };
@@ -278,7 +284,8 @@ Usage:
 
 Workspace: configured by SLACK_AUTH_WORKSPACE_ID or the fixture default
 Slack user: configured by SLACK_AUTH_USER_ID or the fixture default
-Project: configured by SLACK_AUTH_FIXTURE_PROJECT_ID or the fixture default
+Workspace: configured by SLACK_AUTH_FIXTURE_WORKSPACE_ID, the deprecated
+SLACK_AUTH_FIXTURE_PROJECT_ID fallback, or the fixture default
 Fixture password: set by SLACK_AUTH_FIXTURE_PASSWORD or the local fixture default
 `);
 }

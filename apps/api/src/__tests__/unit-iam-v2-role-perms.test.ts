@@ -2,14 +2,14 @@
 // if a test here breaks, that's a deliberate scope change, not a bug.
 
 import { describe, test, expect } from 'bun:test';
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
+import { ACCOUNT_ACTIONS, WORKSPACE_ACTIONS } from '../iam/actions';
 import {
   ACCOUNT_ROLE_PERMS,
-  PROJECT_ROLE_PERMS,
+  WORKSPACE_ROLE_PERMS,
   accountRoleAllows,
   projectRoleAllows,
-  maxProjectRole,
-  implicitProjectRoleForAccount,
+  maxWorkspaceRole,
+  implicitWorkspaceRoleForAccount,
 } from '../iam/role-perms';
 
 describe('IAM V2 — account role table', () => {
@@ -43,19 +43,19 @@ describe('IAM V2 — account role table', () => {
   });
 
   test('admin can create projects, member cannot', () => {
-    expect(accountRoleAllows('admin', ACCOUNT_ACTIONS.PROJECT_CREATE)).toBe(true);
-    expect(accountRoleAllows('member', ACCOUNT_ACTIONS.PROJECT_CREATE)).toBe(false);
+    expect(accountRoleAllows('admin', ACCOUNT_ACTIONS.WORKSPACE_CREATE)).toBe(true);
+    expect(accountRoleAllows('member', ACCOUNT_ACTIONS.WORKSPACE_CREATE)).toBe(false);
   });
 });
 
 describe('IAM V2 — project role table', () => {
   test('manager ⊇ editor ⊇ member', () => {
-    for (const a of PROJECT_ROLE_PERMS.member) {
-      expect(PROJECT_ROLE_PERMS.editor.has(a)).toBe(true);
-      expect(PROJECT_ROLE_PERMS.manager.has(a)).toBe(true);
+    for (const a of WORKSPACE_ROLE_PERMS.member) {
+      expect(WORKSPACE_ROLE_PERMS.editor.has(a)).toBe(true);
+      expect(WORKSPACE_ROLE_PERMS.manager.has(a)).toBe(true);
     }
-    for (const a of PROJECT_ROLE_PERMS.editor) {
-      expect(PROJECT_ROLE_PERMS.manager.has(a)).toBe(true);
+    for (const a of WORKSPACE_ROLE_PERMS.editor) {
+      expect(WORKSPACE_ROLE_PERMS.manager.has(a)).toBe(true);
     }
   });
 
@@ -67,51 +67,51 @@ describe('IAM V2 — project role table', () => {
     // (The old `viewer` tier folded into `member`, which adds trigger.fire on
     // top of read+run. review.submit is not a "write": it's the agent
     // producing output for a human to decide on, not a project customization —
-    // see PROJECT_REVIEW_SUBMIT vs PROJECT_REVIEW_ACT in actions.ts.)
-    for (const a of PROJECT_ROLE_PERMS.member) {
+    // see WORKSPACE_REVIEW_SUBMIT vs WORKSPACE_REVIEW_ACT in actions.ts.)
+    for (const a of WORKSPACE_ROLE_PERMS.member) {
       expect(a).toMatch(/\.(read|start|stop|fire|submit)$/);
     }
     // Can start / run / stop sessions (the floor role must be able to USE Kortix).
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
+    expect(projectRoleAllows('member', WORKSPACE_ACTIONS.WORKSPACE_SESSION_START)).toBe(true);
+    expect(projectRoleAllows('member', WORKSPACE_ACTIONS.WORKSPACE_SESSION_STOP)).toBe(true);
     // ...and can FIRE the project's triggers (operate its automations).
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
+    expect(projectRoleAllows('member', WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_FIRE)).toBe(true);
     // ...but cannot customize the project in any way.
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(false);
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
+    expect(projectRoleAllows('member', WORKSPACE_ACTIONS.WORKSPACE_WRITE)).toBe(false);
+    expect(projectRoleAllows('member', WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_CREATE)).toBe(false);
+    expect(projectRoleAllows('member', WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE)).toBe(false);
+    expect(projectRoleAllows('member', WORKSPACE_ACTIONS.WORKSPACE_DELETE)).toBe(false);
   });
 
   test('editor can fire and write triggers but not manage members or delete project', () => {
-    expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
-    expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);
-    expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(true);
-    expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
-    expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
+    expect(projectRoleAllows('editor', WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_FIRE)).toBe(true);
+    expect(projectRoleAllows('editor', WORKSPACE_ACTIONS.WORKSPACE_TRIGGER_CREATE)).toBe(true);
+    expect(projectRoleAllows('editor', WORKSPACE_ACTIONS.WORKSPACE_WRITE)).toBe(true);
+    expect(projectRoleAllows('editor', WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE)).toBe(false);
+    expect(projectRoleAllows('editor', WORKSPACE_ACTIONS.WORKSPACE_DELETE)).toBe(false);
   });
 
   test('only manager can delete project or manage members', () => {
-    expect(projectRoleAllows('manager', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(true);
-    expect(projectRoleAllows('manager', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(true);
-    expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
+    expect(projectRoleAllows('manager', WORKSPACE_ACTIONS.WORKSPACE_DELETE)).toBe(true);
+    expect(projectRoleAllows('manager', WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE)).toBe(true);
+    expect(projectRoleAllows('editor', WORKSPACE_ACTIONS.WORKSPACE_DELETE)).toBe(false);
+    expect(projectRoleAllows('member', WORKSPACE_ACTIONS.WORKSPACE_MEMBERS_MANAGE)).toBe(false);
   });
 });
 
 describe('IAM V2 — role helpers', () => {
-  test('maxProjectRole picks the stronger role', () => {
-    expect(maxProjectRole('member', 'member')).toBe('member');
-    expect(maxProjectRole('member', 'editor')).toBe('editor');
-    expect(maxProjectRole('editor', 'member')).toBe('editor');
-    expect(maxProjectRole('editor', 'manager')).toBe('manager');
-    expect(maxProjectRole('manager', 'editor')).toBe('manager');
+  test('maxWorkspaceRole picks the stronger role', () => {
+    expect(maxWorkspaceRole('member', 'member')).toBe('member');
+    expect(maxWorkspaceRole('member', 'editor')).toBe('editor');
+    expect(maxWorkspaceRole('editor', 'member')).toBe('editor');
+    expect(maxWorkspaceRole('editor', 'manager')).toBe('manager');
+    expect(maxWorkspaceRole('manager', 'editor')).toBe('manager');
   });
 
   test('implicit project role: owner/admin get manager, member gets none', () => {
-    expect(implicitProjectRoleForAccount('owner')).toBe('manager');
-    expect(implicitProjectRoleForAccount('admin')).toBe('manager');
-    expect(implicitProjectRoleForAccount('member')).toBeNull();
+    expect(implicitWorkspaceRoleForAccount('owner')).toBe('manager');
+    expect(implicitWorkspaceRoleForAccount('admin')).toBe('manager');
+    expect(implicitWorkspaceRoleForAccount('member')).toBeNull();
   });
 });
 
@@ -123,29 +123,29 @@ describe('IAM V2 — no unknown actions', () => {
   // file tree or view secret values). Member must NOT gain any write leaf.
   test('per-capability leaves preserve the editor/member capability surface', () => {
     const writeLeaves = [
-      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
-      PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
-      PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
-      PROJECT_ACTIONS.PROJECT_FILE_WRITE,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
-      PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
-      PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_AGENT_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_SKILL_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_COMMAND_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_FILE_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_GITOPS_PUSH,
+      WORKSPACE_ACTIONS.WORKSPACE_GITOPS_MERGE,
+      WORKSPACE_ACTIONS.WORKSPACE_SECRET_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE,
     ];
     // Reads the floor member role keeps.
     const memberReadLeaves = [
-      PROJECT_ACTIONS.PROJECT_AGENT_READ,
-      PROJECT_ACTIONS.PROJECT_SKILL_READ,
-      PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
-      PROJECT_ACTIONS.PROJECT_GITOPS_READ,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_AGENT_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_SKILL_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_COMMAND_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_GITOPS_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_READ,
     ];
     // Sensitive reads that are now editor-tier (member is denied).
     const editorReadLeaves = [
-      PROJECT_ACTIONS.PROJECT_FILE_READ,
-      PROJECT_ACTIONS.PROJECT_SECRET_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_FILE_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_SECRET_READ,
     ];
     for (const a of writeLeaves) {
       expect(projectRoleAllows('editor', a)).toBe(true);
@@ -168,12 +168,12 @@ describe('IAM V2 — no unknown actions', () => {
   test('every role action is a known action key', () => {
     const known = new Set<string>([
       ...Object.values(ACCOUNT_ACTIONS),
-      ...Object.values(PROJECT_ACTIONS),
+      ...Object.values(WORKSPACE_ACTIONS),
     ]);
     for (const role of Object.values(ACCOUNT_ROLE_PERMS)) {
       for (const a of role) expect(known.has(a)).toBe(true);
     }
-    for (const role of Object.values(PROJECT_ROLE_PERMS)) {
+    for (const role of Object.values(WORKSPACE_ROLE_PERMS)) {
       for (const a of role) expect(known.has(a)).toBe(true);
     }
   });

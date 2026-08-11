@@ -14,18 +14,18 @@ import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import type { SandboxRuntimeHealth } from '../projects/runtime-inspection';
+import type { SandboxRuntimeHealth } from '../workspaces/runtime-inspection';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
-const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000000201';
 const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
-const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
+const WORKSPACE_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
-const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
-const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
+const WORKSPACE_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
+const WORKSPACE_SA_TOKEN = 'kortix_sa_backend_wrapper';
 const SESSION_BOUND_PAT = 'kortix_pat_session_connector';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
@@ -79,7 +79,7 @@ let deniedIamAction: string | null = null;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   userId: string;
   provider?: string;
   extraEnvVars?: Record<string, string>;
@@ -87,11 +87,11 @@ let lastProvisionInput: {
 } | null = null;
 
 const projectRow: typeof projects.$inferSelect = {
-  projectId: PROJECT_ID,
+  workspaceId: WORKSPACE_ID,
   accountId: ACCOUNT_ID,
   sandboxProviderGeneration: 0,
   secretDefaultStrategy: 'runtime' as const,
-  name: 'Contract Project',
+  name: 'Contract Workspace',
   repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
@@ -142,7 +142,7 @@ function resetState() {
   sessionRow = {
     sessionId: SESSION_ID,
     accountId: ACCOUNT_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     branchName: SESSION_ID,
     baseRef: 'main',
     sandboxProvider: 'daytona',
@@ -178,7 +178,7 @@ const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
   ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
-    if (c.req.header('Authorization') === `Bearer ${PROJECT_SANDBOX_TOKEN}`) {
+    if (c.req.header('Authorization') === `Bearer ${WORKSPACE_SANDBOX_TOKEN}`) {
       c.set('userId', ACCOUNT_ID);
       c.set('userEmail', '');
       c.set('authType', 'apiKey');
@@ -188,12 +188,12 @@ mock.module('../middleware/auth', () => ({
       await next();
       return;
     }
-    if (c.req.header('Authorization') === `Bearer ${PROJECT_RUNTIME_PAT}`) {
+    if (c.req.header('Authorization') === `Bearer ${WORKSPACE_RUNTIME_PAT}`) {
       c.set('userId', USER_ID);
       c.set('userEmail', '');
       c.set('authType', 'pat');
       c.set('accountId', ACCOUNT_ID);
-      c.set('tokenProjectId', PROJECT_ID);
+      c.set('tokenWorkspaceId', WORKSPACE_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000901');
       await next();
       return;
@@ -203,7 +203,7 @@ mock.module('../middleware/auth', () => ({
       c.set('userEmail', '');
       c.set('authType', 'pat');
       c.set('accountId', ACCOUNT_ID);
-      c.set('tokenProjectId', PROJECT_ID);
+      c.set('tokenWorkspaceId', WORKSPACE_ID);
       c.set('sessionId', SESSION_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
       c.set('agentGrant', {
@@ -220,18 +220,18 @@ mock.module('../middleware/auth', () => ({
       c.set('userEmail', '');
       c.set('authType', 'pat');
       c.set('accountId', ACCOUNT_ID);
-      c.set('tokenProjectId', PROJECT_ID);
+      c.set('tokenWorkspaceId', WORKSPACE_ID);
       c.set('sessionId', SESSION_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
       await next();
       return;
     }
-    if (c.req.header('Authorization') === `Bearer ${PROJECT_SA_TOKEN}`) {
+    if (c.req.header('Authorization') === `Bearer ${WORKSPACE_SA_TOKEN}`) {
       c.set('userId', USER_ID);
       c.set('userEmail', '');
       c.set('authType', 'service_account');
       c.set('accountId', ACCOUNT_ID);
-      c.set('tokenProjectId', PROJECT_ID);
+      c.set('tokenWorkspaceId', WORKSPACE_ID);
       c.set('iamTokenId', '00000000-0000-4000-a000-000000000902');
       await next();
       return;
@@ -249,7 +249,7 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-mock.module('../projects/git', () => ({
+mock.module('../workspaces/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
@@ -260,7 +260,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   grepRepoFiles: async () => [],
-  loadProjectConfig: async () => ({}),
+  loadWorkspaceConfig: async () => ({}),
   readRepoFile: async () => '',
   // connector/sync.ts imports these from the same barrel; a wholesale module mock
   // that omits them makes the whole file fail to LOAD with a SyntaxError, which
@@ -271,7 +271,7 @@ mock.module('../projects/git', () => ({
   // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
   // exercises get no compiled agent config, matching their pre-compiler behavior.
   readManifestFromRepo: async () => null,
-  invalidateProjectMirror: () => {},
+  invalidateWorkspaceMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
@@ -315,13 +315,13 @@ mock.module('../snapshots/builder', () => ({
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
   templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
-  kickProjectTemplatePrebuilds: () => {},
+  kickWorkspaceTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
-  reconcileProjectTemplates: async () => undefined,
+  reconcileWorkspaceTemplates: async () => undefined,
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => 'a'.repeat(40),
-  ensurePerProjectWarmImage: async () => ({
+  ensurePerWorkspaceWarmImage: async () => ({
     snapshotName: 'kortix-ppwarm-test',
     tip: 'a'.repeat(40),
     built: false,
@@ -330,7 +330,7 @@ mock.module('../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
-mock.module('../projects/github', () => ({
+mock.module('../workspaces/github', () => ({
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: TEST_GITHUB_OWNER,
     repo:
@@ -449,13 +449,13 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-const realRuntimeInspection = await import('../projects/runtime-inspection');
-mock.module('../projects/runtime-inspection', () => ({
+const realRuntimeInspection = await import('../workspaces/runtime-inspection');
+mock.module('../workspaces/runtime-inspection', () => ({
   ...realRuntimeInspection,
   inspectSandboxRuntime: async () => runtimeInspectionHealth,
 }));
 
-mock.module('../projects/opencode-mapping', () => ({
+mock.module('../workspaces/opencode-mapping', () => ({
   pickCanonicalRoot: () => 'ses_root_existing',
   resolveRootSessionId: () => 'ses_root_existing',
   sandboxOpencodeEndpoint: async () => null,
@@ -522,7 +522,7 @@ mockIamEngineAllowAll((action) => {
 mockIamMembershipSyncNoop();
 
 mock.module('../repositories/account-tokens', () => ({
-  createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),
+  createAccountToken: async () => ({ secretKey: WORKSPACE_RUNTIME_PAT }),
   listAccountTokens: async () => [],
   revokeAccountToken: async () => true,
   validateAccountToken: async () => null,
@@ -540,9 +540,9 @@ mock.module('../shared/account-limits', () => ({
     source: 'tier',
   }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
-  maxProjectsForAccount: async () => 100,
+  maxWorkspacesForAccount: async () => 100,
   accountEntitledToLlmGateway: async () => true,
-  FREE_TIER_PROJECT_LIMIT: 1,
+  FREE_TIER_WORKSPACE_LIMIT: 1,
   clearAccountLimitCache: () => undefined,
 }));
 
@@ -648,7 +648,7 @@ mock.module('../shared/db', () => ({
         returning: async () => {
           if (table === projectGitConnections) {
             const existingIndex = gitConnectionRows.findIndex(
-              (row) => row.projectId === values.projectId,
+              (row) => row.workspaceId === values.workspaceId,
             );
             const now = new Date('2026-01-02T00:00:00Z');
             const row = {
@@ -657,7 +657,7 @@ mock.module('../shared/db', () => ({
                   ? gitConnectionRows[existingIndex]!.connectionId
                   : '00000000-0000-4000-a000-000000000501',
               accountId: values.accountId,
-              projectId: values.projectId,
+              workspaceId: values.workspaceId,
               provider: values.provider,
               repoUrl: values.repoUrl,
               repoOwner: values.repoOwner ?? null,
@@ -684,7 +684,7 @@ mock.module('../shared/db', () => ({
           }
           if (table === projectGitCredentials) {
             const existingIndex = gitCredentialRows.findIndex(
-              (row) => row.projectId === values.projectId && row.provider === values.provider,
+              (row) => row.workspaceId === values.workspaceId && row.provider === values.provider,
             );
             const now = new Date('2026-01-02T00:00:00Z');
             const row = {
@@ -693,7 +693,7 @@ mock.module('../shared/db', () => ({
                   ? gitCredentialRows[existingIndex]!.credentialId
                   : '00000000-0000-4000-a000-000000000601',
               accountId: values.accountId,
-              projectId: values.projectId,
+              workspaceId: values.workspaceId,
               provider: values.provider,
               authMethod: values.authMethod ?? 'token',
               valueEnc: values.valueEnc,
@@ -721,7 +721,7 @@ mock.module('../shared/db', () => ({
           sessionRow = {
             sessionId: values.sessionId,
             accountId: values.accountId,
-            projectId: values.projectId,
+            workspaceId: values.workspaceId,
             branchName: values.branchName,
             baseRef: values.baseRef,
             sandboxProvider: values.sandboxProvider,
@@ -755,7 +755,7 @@ mock.module('../shared/db', () => ({
             returning: async () => {
               if (table === projectGitConnections) {
                 const existingIndex = gitConnectionRows.findIndex(
-                  (row) => row.projectId === values.projectId,
+                  (row) => row.workspaceId === values.workspaceId,
                 );
                 const now = new Date('2026-01-02T00:00:00Z');
                 const row = {
@@ -764,7 +764,7 @@ mock.module('../shared/db', () => ({
                       ? gitConnectionRows[existingIndex]!.connectionId
                       : '00000000-0000-4000-a000-000000000501',
                   accountId: values.accountId,
-                  projectId: values.projectId,
+                  workspaceId: values.workspaceId,
                   provider: values.provider,
                   repoUrl: values.repoUrl,
                   repoOwner: values.repoOwner ?? null,
@@ -791,7 +791,7 @@ mock.module('../shared/db', () => ({
               }
               if (table === projectGitCredentials) {
                 const existingIndex = gitCredentialRows.findIndex(
-                  (row) => row.projectId === values.projectId && row.provider === values.provider,
+                  (row) => row.workspaceId === values.workspaceId && row.provider === values.provider,
                 );
                 const now = new Date('2026-01-02T00:00:00Z');
                 const row = {
@@ -800,7 +800,7 @@ mock.module('../shared/db', () => ({
                       ? gitCredentialRows[existingIndex]!.credentialId
                       : '00000000-0000-4000-a000-000000000601',
                   accountId: values.accountId,
-                  projectId: values.projectId,
+                  workspaceId: values.workspaceId,
                   provider: values.provider,
                   authMethod: values.authMethod ?? 'token',
                   valueEnc: values.valueEnc,
@@ -814,7 +814,7 @@ mock.module('../shared/db', () => ({
               }
               if (table !== projectSecrets) return [];
               const existingIndex = secretRows.findIndex(
-                (row) => row.projectId === values.projectId && row.name === values.name,
+                (row) => row.workspaceId === values.workspaceId && row.name === values.name,
               );
               const now = new Date('2026-01-02T00:00:00Z');
               const row: typeof projectSecrets.$inferSelect = {
@@ -822,7 +822,7 @@ mock.module('../shared/db', () => ({
                   existingIndex >= 0
                     ? secretRows[existingIndex]!.secretId
                     : '00000000-0000-4000-a000-000000000401',
-                projectId: values.projectId!,
+                workspaceId: values.workspaceId!,
                 identifier: values.identifier ?? values.name!,
                 name: values.name!,
                 valueEnc: (set.valueEnc ?? values.valueEnc)!,
@@ -971,15 +971,17 @@ mock.module('../shared/db', () => ({
 }));
 
 const { projectsApp } = await import('../projects/index');
-const { encryptProjectSecret } = await import('../projects/secrets');
-const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { workspacesApp } = await import('../workspaces/index');
+const { encryptWorkspaceSecret } = await import('../workspaces/secrets');
+const { resumeStoppedSandbox } = await import('../workspaces/routes/shared');
 const { applyStoppedState, reconcileSandboxStoppedByExternalId } = await import(
-  '../projects/reaping/sandbox-state-sync'
+  '../workspaces/reaping/sandbox-state-sync'
 );
 
 function createApp() {
   const app = new Hono();
   app.route('/v1/projects', projectsApp);
+  app.route('/v1/workspaces', workspacesApp);
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       return c.json({ error: true, message: err.message, status: err.status }, err.status);
@@ -1038,7 +1040,7 @@ describe('project session API contract', () => {
   test('creates an omitted-agent session with the meta REST runtime', async () => {
     enableMetaAgent();
     const app = createApp();
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
@@ -1062,7 +1064,7 @@ describe('project session API contract', () => {
       extraEnvVars: {
         KORTIX_AGENT_NAME: 'meta',
         KORTIX_META_AGENT: '1',
-        KORTIX_PROJECT_AUTO_CLONE: '0',
+        KORTIX_WORKSPACE_AUTO_CLONE: '0',
       },
     });
   });
@@ -1070,7 +1072,7 @@ describe('project session API contract', () => {
     enableMetaAgent();
     sessionRow = { ...sessionRow!, agentName: 'meta' };
     const app = createApp();
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1092,7 +1094,7 @@ describe('project session API contract', () => {
     enableMetaAgent();
     sessionRow = { ...sessionRow!, agentName: 'meta' };
     const app = createApp();
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1112,7 +1114,7 @@ describe('project session API contract', () => {
   test('a non-meta session-bound caller may still spawn the meta coordinator', async () => {
     enableMetaAgent();
     const app = createApp();
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1133,7 +1135,7 @@ describe('project session API contract', () => {
     deniedIamAction = 'project.session.read';
     const app = createApp();
 
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`);
 
     expect(response.status).toBe(403);
     expect(assertedIamActions).toContain('project.session.read');
@@ -1152,7 +1154,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'original-provider-identity',
         baseUrl: null,
@@ -1222,7 +1224,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'platinum-resume-race',
         baseUrl: null,
@@ -1269,7 +1271,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'platinum-rejected-wake',
         baseUrl: null,
@@ -1310,7 +1312,7 @@ describe('project session API contract', () => {
     expect(Date.parse(String(failureMetadata.runtimeWakeRetryAfterAt))).toBeGreaterThan(Date.now());
 
     const response = await createApp().request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      `/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`,
       { method: 'POST' },
     );
     expect(response.status).toBe(200);
@@ -1334,7 +1336,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'platinum-single-flight-wake',
         baseUrl: null,
@@ -1385,7 +1387,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'platinum-cancelled-wake',
         baseUrl: null,
@@ -1432,7 +1434,7 @@ describe('project session API contract', () => {
   test('upserts and lists project secrets without exposing secret values', async () => {
     const app = createApp();
 
-    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const writeRes = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1449,7 +1451,7 @@ describe('project session API contract', () => {
     expect(written.value_enc).toBeUndefined();
     expect(secretRows[0]?.valueEnc).not.toContain('sk-live-secret');
 
-    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
+    const listRes = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`);
     expect(listRes.status).toBe(200);
     const listed = await listRes.json();
     const openAiSecret = listed.items.find((item: any) => item.name === 'OPENAI_API_KEY');
@@ -1461,7 +1463,7 @@ describe('project session API contract', () => {
     expect(Array.isArray(listed.required)).toBe(true);
     expect(Array.isArray(listed.optional)).toBe(true);
 
-    const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
+    const deleteRes = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets/openai_api_key`, {
       method: 'DELETE',
     });
     expect(deleteRes.status).toBe(200);
@@ -1477,7 +1479,7 @@ describe('project session API contract', () => {
       Authorization: `Bearer ${SESSION_AGENT_PAT}`,
     };
 
-    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const writeRes = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ name: 'ANTHROPIC_API_KEY', value: 'test-secret' }),
@@ -1488,7 +1490,7 @@ describe('project session API contract', () => {
       configured: true,
     });
 
-    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const listRes = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       headers,
     });
     expect(listRes.status).toBe(200);
@@ -1509,14 +1511,14 @@ describe('project session API contract', () => {
     };
     const app = createApp();
 
-    const before = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
+    const before = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`);
     expect(before.status).toBe(200);
     const beforeBody = await before.json();
     expect(
       beforeBody.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN'),
     ).toBeUndefined();
 
-    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
+    const writeRes = await app.request(`/v1/projects/${WORKSPACE_ID}/git-credential`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: 'gitlab-project-token' }),
@@ -1540,7 +1542,7 @@ describe('project session API contract', () => {
     expect(gitConnectionRows).toHaveLength(1);
 
     const deleteRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/secrets/KORTIX_GIT_AUTH_TOKEN`,
+      `/v1/projects/${WORKSPACE_ID}/secrets/KORTIX_GIT_AUTH_TOKEN`,
       {
         method: 'DELETE',
       },
@@ -1548,7 +1550,7 @@ describe('project session API contract', () => {
     expect(deleteRes.status).toBe(403);
     expect(secretRows).toHaveLength(0);
 
-    const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const createRes = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
@@ -1567,7 +1569,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: sessionRow!.sessionId,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: null,
         baseUrl: null,
@@ -1580,8 +1582,8 @@ describe('project session API contract', () => {
       },
     ];
 
-    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+    const cloneRes = await app.request(`/v1/projects/${WORKSPACE_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${WORKSPACE_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1597,7 +1599,7 @@ describe('project session API contract', () => {
 
   test('derives session origin from the caller token without session attribution fields', async () => {
     const app = createApp();
-    const bodySpoof = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const bodySpoof = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1609,7 +1611,7 @@ describe('project session API contract', () => {
     expect(bodySpoof.status).toBe(201);
     expect(((await bodySpoof.json()) as { origin: string }).origin).toBe('user');
 
-    const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const userRes = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
@@ -1621,11 +1623,11 @@ describe('project session API contract', () => {
     expect(userBody).not.toHaveProperty('origin_ref');
     expect(lastSessionInsertValues).not.toHaveProperty('originRef');
 
-    const backendRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const backendRes = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_SA_TOKEN}`,
+        Authorization: `Bearer ${WORKSPACE_SA_TOKEN}`,
       },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
@@ -1636,11 +1638,11 @@ describe('project session API contract', () => {
     expect(backendBody).not.toHaveProperty('origin_ref');
     expect(lastSessionInsertValues).not.toHaveProperty('originRef');
 
-    const patRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const patRes = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        Authorization: `Bearer ${WORKSPACE_RUNTIME_PAT}`,
       },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
@@ -1658,7 +1660,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: null,
         baseUrl: null,
@@ -1672,39 +1674,46 @@ describe('project session API contract', () => {
     ];
     const app = createApp();
 
-    const projectRes = await app.request(`/v1/projects/${PROJECT_ID}`, {
-      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
-    });
-    expect(projectRes.status).toBe(403);
-    expect(await projectRes.json()).toMatchObject({
-      message: 'session workspace does not allow repository access',
-    });
+    for (const [namespace, noun] of [
+      ['workspaces', 'workspace'],
+      ['projects', 'project'],
+    ] as const) {
+      const entityRes = await app.request(`/v1/${namespace}/${WORKSPACE_ID}`, {
+        headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
+      });
+      expect(entityRes.status).toBe(403);
+      expect(await entityRes.json()).toMatchObject({
+        message: `session ${noun} does not allow repository access`,
+      });
 
-    const patCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
-    });
-    expect(patCloneRes.status).toBe(403);
-    expect(await patCloneRes.json()).toMatchObject({
-      message: 'session workspace does not allow repository access',
-    });
-
-    const sandboxCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-    });
-    expect(sandboxCloneRes.status).toBe(403);
-    expect(await sandboxCloneRes.json()).toMatchObject({
-      error: 'sandbox workspace does not allow repository access',
-    });
-
-    for (const suffix of ['diff', 'merge-preview']) {
-      const crRes = await app.request(
-        `/v1/projects/${PROJECT_ID}/change-requests/00000000-0000-4000-a000-000000000801/${suffix}`,
+      const patCloneRes = await app.request(
+        `/v1/${namespace}/${WORKSPACE_ID}/git/clone-credential`,
         { headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` } },
       );
-      expect(crRes.status).toBe(403);
-      expect(await crRes.json()).toMatchObject({
-        message: 'session workspace does not allow repository access',
+      expect(patCloneRes.status).toBe(403);
+      expect(await patCloneRes.json()).toMatchObject({
+        message: `session ${noun} does not allow repository access`,
       });
+
+      const sandboxCloneRes = await app.request(
+        `/v1/${namespace}/${WORKSPACE_ID}/git/clone-credential`,
+        { headers: { Authorization: `Bearer ${WORKSPACE_SANDBOX_TOKEN}` } },
+      );
+      expect(sandboxCloneRes.status).toBe(403);
+      expect(await sandboxCloneRes.json()).toMatchObject({
+        error: `sandbox ${noun} does not allow repository access`,
+      });
+
+      for (const suffix of ['diff', 'merge-preview']) {
+        const crRes = await app.request(
+          `/v1/${namespace}/${WORKSPACE_ID}/change-requests/00000000-0000-4000-a000-000000000801/${suffix}`,
+          { headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` } },
+        );
+        expect(crRes.status).toBe(403);
+        expect(await crRes.json()).toMatchObject({
+          message: `session ${noun} does not allow repository access`,
+        });
+      }
     }
   });
 
@@ -1719,11 +1728,11 @@ describe('project session API contract', () => {
       },
       { provider: 'daytona', base_ref: 'main', origin_ref: 'legacy-reference' },
     ]) {
-      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+          Authorization: `Bearer ${WORKSPACE_RUNTIME_PAT}`,
         },
         body: JSON.stringify(body),
       });
@@ -1736,7 +1745,7 @@ describe('project session API contract', () => {
     const app = createApp();
 
     // Seed a runtime secret so the allowlist has a valid identifier to name.
-    const seed = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const seed = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'GMAIL_TOKEN', value: 'g' }),
@@ -1744,7 +1753,7 @@ describe('project session API contract', () => {
     expect(seed.status).toBe(200);
 
     // A non-backend (human/supabase) caller may NOT narrow secrets.
-    const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const forbidden = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1759,11 +1768,11 @@ describe('project session API contract', () => {
     });
 
     // A backend (PAT) caller naming an unknown identifier fails fast at create.
-    const unknown = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const unknown = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        Authorization: `Bearer ${WORKSPACE_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
         provider: 'daytona',
@@ -1777,11 +1786,11 @@ describe('project session API contract', () => {
     });
 
     // A backend caller with a valid identifier → 201, allowlist persisted + echoed.
-    const ok = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const ok = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        Authorization: `Bearer ${WORKSPACE_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
         provider: 'daytona',
@@ -1793,11 +1802,11 @@ describe('project session API contract', () => {
     expect((await ok.json()).secrets_allowlist).toEqual(['GMAIL_TOKEN']);
 
     // An empty allowlist (inject ZERO project secrets) is a valid backend request.
-    const zero = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const zero = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        Authorization: `Bearer ${WORKSPACE_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
         provider: 'daytona',
@@ -1812,10 +1821,10 @@ describe('project session API contract', () => {
   test('rejects an allowlist whose identifiers collide on one env key (409, not a bricked session)', async () => {
     const mk = (identifier: string, value: string) => ({
       secretId: crypto.randomUUID(),
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       identifier,
       name: 'GOOGLE_MAPS_API_KEY',
-      valueEnc: encryptProjectSecret(PROJECT_ID, value),
+      valueEnc: encryptWorkspaceSecret(WORKSPACE_ID, value),
       scope: 'runtime' as const,
       ownerUserId: null,
       description: null,
@@ -1833,11 +1842,11 @@ describe('project session API contract', () => {
     secretRows = [mk('GMAPS_PRIMARY', 'a'), mk('GMAPS_BACKUP', 'b')];
     const app = createApp();
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        Authorization: `Bearer ${WORKSPACE_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
         provider: 'daytona',
@@ -1858,7 +1867,7 @@ describe('project session API contract', () => {
       ['GMAIL_TOKEN', 'g-secret'],
       ['STRIPE_SECRET', 's-secret'],
     ] as const) {
-      const w = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      const w = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1871,11 +1880,11 @@ describe('project session API contract', () => {
       expect(w.status).toBe(200);
     }
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        Authorization: `Bearer ${WORKSPACE_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
         provider: 'daytona',
@@ -1901,11 +1910,11 @@ describe('project session API contract', () => {
     expect(env.GMAIL_TOKEN).toBe('g-secret');
     expect(env.STRIPE_SECRET).toBeUndefined();
 
-    const res2 = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res2 = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        Authorization: `Bearer ${WORKSPACE_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
         provider: 'daytona',
@@ -1925,7 +1934,7 @@ describe('project session API contract', () => {
 
     lastSessionListWhere = null;
     const first = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=legacy-reference`,
+      `/v1/projects/${WORKSPACE_ID}/sessions?end_user_ref=legacy-reference`,
     );
     expect(first.status).toBe(200);
     expect(renderWhere().sql).not.toContain('origin_ref');
@@ -1933,7 +1942,7 @@ describe('project session API contract', () => {
 
     lastSessionListWhere = null;
     const second = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?origin_ref=legacy-reference`,
+      `/v1/projects/${WORKSPACE_ID}/sessions?origin_ref=legacy-reference`,
     );
     expect(second.status).toBe(200);
     expect(renderWhere().sql).not.toContain('origin_ref');
@@ -1946,10 +1955,10 @@ describe('project session API contract', () => {
     secretRows = [
       {
         secretId: '00000000-0000-4000-a000-000000000402',
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         identifier: 'KORTIX_GIT_AUTH_TOKEN',
         name: 'KORTIX_GIT_AUTH_TOKEN',
-        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-git-token'),
+        valueEnc: encryptWorkspaceSecret(WORKSPACE_ID, 'legacy-git-token'),
         scope: 'runtime',
         ownerUserId: null,
         description: null,
@@ -1967,7 +1976,7 @@ describe('project session API contract', () => {
     ];
     const app = createApp();
 
-    const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const createRes = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
@@ -1983,7 +1992,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: sessionRow!.sessionId,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: null,
         baseUrl: null,
@@ -1996,8 +2005,8 @@ describe('project session API contract', () => {
       },
     ];
 
-    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+    const cloneRes = await app.request(`/v1/projects/${WORKSPACE_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${WORKSPACE_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -2013,7 +2022,7 @@ describe('project session API contract', () => {
 
   test('rejects reserved platform secret names', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2074,7 +2083,7 @@ describe('project session API contract', () => {
     ];
 
     for (const { body, message } of forbiddenBodies) {
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
+      const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -2087,19 +2096,19 @@ describe('project session API contract', () => {
   test('returns deterministic read errors for invalid or missing sessions and pending sandboxes', async () => {
     const app = createApp();
 
-    const listSessions = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
+    const listSessions = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`);
     expect(listSessions.status).toBe(200);
     const sessions = await listSessions.json();
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({
       session_id: SESSION_ID,
-      project_id: PROJECT_ID,
+      project_id: WORKSPACE_ID,
       branch_name: SESSION_ID,
       sandbox_id: SESSION_ID,
       status: 'provisioning',
     });
 
-    const inventory = await app.request(`/v1/projects/${PROJECT_ID}/sessions?scope=project`);
+    const inventory = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions?scope=project`);
     expect(inventory.status).toBe(200);
     expect((await inventory.json())[0]).toMatchObject({
       session_id: SESSION_ID,
@@ -2112,24 +2121,24 @@ describe('project session API contract', () => {
       deleted_by: null,
     });
 
-    const readSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
+    const readSession = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}`);
     expect(readSession.status).toBe(200);
     expect(await readSession.json()).toMatchObject({
       session_id: SESSION_ID,
-      project_id: PROJECT_ID,
+      project_id: WORKSPACE_ID,
       branch_name: SESSION_ID,
       sandbox_id: SESSION_ID,
       status: 'provisioning',
     });
 
-    const invalidSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/not-a-uuid`);
+    const invalidSession = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/not-a-uuid`);
     expect(invalidSession.status).toBe(400);
     expect(await invalidSession.json()).toMatchObject({
       error: 'Invalid session id',
     });
 
     const invalidSandbox = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/not-a-uuid/start`,
+      `/v1/projects/${WORKSPACE_ID}/sessions/not-a-uuid/start`,
       { method: 'POST' },
     );
     expect(invalidSandbox.status).toBe(400);
@@ -2140,7 +2149,7 @@ describe('project session API contract', () => {
     // /start is idempotent: a session with no usable sandbox yet returns a
     // readiness payload (stage='provisioning'), not a 404 — the client polls it.
     const pendingSandbox = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      `/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`,
       { method: 'POST' },
     );
     expect(pendingSandbox.status).toBe(200);
@@ -2151,7 +2160,7 @@ describe('project session API contract', () => {
     });
 
     sessionRow = null;
-    const missingSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
+    const missingSession = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}`);
     expect(missingSession.status).toBe(404);
     expect(await missingSession.json()).toMatchObject({ error: 'Not found' });
   });
@@ -2168,7 +2177,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: null,
         baseUrl: null,
@@ -2186,7 +2195,7 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2216,7 +2225,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'e2b',
         externalId: null,
         baseUrl: null,
@@ -2238,7 +2247,7 @@ describe('project session API contract', () => {
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const response = await app.request(
-        `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+        `/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`,
         { method: 'POST' },
       );
       expect(response.status).toBe(200);
@@ -2272,7 +2281,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'e2b',
         externalId: null,
         baseUrl: null,
@@ -2292,7 +2301,7 @@ describe('project session API contract', () => {
       },
     ];
 
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
 
@@ -2323,7 +2332,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: null,
         baseUrl: null,
@@ -2345,7 +2354,7 @@ describe('project session API contract', () => {
       },
     ];
 
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
 
@@ -2375,7 +2384,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: null,
         baseUrl: null,
@@ -2393,7 +2402,7 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2422,7 +2431,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: null,
         baseUrl: null,
@@ -2442,7 +2451,7 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2472,7 +2481,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: 'box-existing',
         baseUrl: null,
@@ -2486,7 +2495,7 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2513,7 +2522,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: 'box-existing',
         baseUrl: null,
@@ -2527,7 +2536,7 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2555,7 +2564,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: 'box-stuck-stopped',
         baseUrl: null,
@@ -2572,7 +2581,7 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2602,7 +2611,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-status-unknown',
         baseUrl: null,
@@ -2623,7 +2632,7 @@ describe('project session API contract', () => {
       bootError: null,
     };
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2654,7 +2663,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-fresh-eventual-404',
         baseUrl: null,
@@ -2671,7 +2680,7 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'removed';
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2704,7 +2713,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: 'box-original-archived',
         baseUrl: null,
@@ -2724,7 +2733,7 @@ describe('project session API contract', () => {
       releaseProviderStart = resolve;
     });
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2762,7 +2771,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-deleted',
         baseUrl: null,
@@ -2777,7 +2786,7 @@ describe('project session API contract', () => {
     providerStatus = 'removed';
     providerRecoveryEnabled = true;
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -2817,7 +2826,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-restorable',
         status: 'stopped',
@@ -2833,7 +2842,7 @@ describe('project session API contract', () => {
     providerRecoveryEnabled = true;
     providerRecoveryStatus = 'recovering';
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
 
@@ -2852,7 +2861,7 @@ describe('project session API contract', () => {
     expect(computeReopenCalls).toBe(0);
 
     providerStatus = 'running';
-    const ready = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const ready = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(ready.status).toBe(200);
@@ -2879,7 +2888,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-single-flight',
         status: 'active',
@@ -2898,11 +2907,11 @@ describe('project session API contract', () => {
       releaseProviderRecovery = resolve;
     });
 
-    const first = app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const first = app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     await flushUntil(() => providerRecoveryCalls === 1);
-    const second = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const second = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
 
@@ -2935,7 +2944,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-delete-race',
         status: 'active',
@@ -2954,7 +2963,7 @@ describe('project session API contract', () => {
       releaseProviderRecovery = resolve;
     });
 
-    const request = app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const request = app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     await flushUntil(() => providerRecoveryCalls === 1);
@@ -2995,7 +3004,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-opencode-dead',
         baseUrl: null,
@@ -3015,7 +3024,7 @@ describe('project session API contract', () => {
     providerStatus = 'running';
     opencodeEnsureReason = 'unreachable';
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -3045,7 +3054,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-deleted',
         baseUrl: null,
@@ -3060,7 +3069,7 @@ describe('project session API contract', () => {
     providerStatus = 'removed';
     providerRecoveryEnabled = true;
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/restart`, {
       method: 'POST',
     });
     expect(res.status).toBe(409);
@@ -3099,7 +3108,7 @@ describe('project session API contract', () => {
     };
     sessionSandboxRows = [];
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/restart`, {
       method: 'POST',
     });
 
@@ -3111,7 +3120,7 @@ describe('project session API contract', () => {
       agentName: 'meta',
       extraEnvVars: {
         KORTIX_META_AGENT: '1',
-        KORTIX_PROJECT_AUTO_CLONE: '0',
+        KORTIX_WORKSPACE_AUTO_CLONE: '0',
       },
     });
   });
@@ -3128,7 +3137,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-restart-restorable',
         status: 'stopped',
@@ -3144,7 +3153,7 @@ describe('project session API contract', () => {
     providerRecoveryEnabled = true;
     providerRecoveryStatus = 'recovering';
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/restart`, {
       method: 'POST',
     });
 
@@ -3180,7 +3189,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: 'box-missing-on-start',
         baseUrl: null,
@@ -3197,7 +3206,7 @@ describe('project session API contract', () => {
       status: 404,
     });
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/restart`, {
       method: 'POST',
     });
     expect(res.status).toBe(202);
@@ -3223,7 +3232,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-restarted-status-unknown',
         baseUrl: null,
@@ -3241,7 +3250,7 @@ describe('project session API contract', () => {
       bootError: null,
     };
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/restart`, {
       method: 'POST',
     });
     expect(res.status).toBe(202);
@@ -3266,7 +3275,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'platinum',
         externalId: 'box-accepted-start-then-removed',
         baseUrl: null,
@@ -3281,7 +3290,7 @@ describe('project session API contract', () => {
     providerStatus = 'unknown';
     providerStatusAfterStart = 'removed';
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/restart`, {
       method: 'POST',
     });
     expect(res.status).toBe(202);
@@ -3310,7 +3319,7 @@ describe('project session API contract', () => {
     };
     sessionSandboxRows = [];
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -3339,7 +3348,7 @@ describe('project session API contract', () => {
       attachment_names: ['parcel.geojson'],
     };
 
-    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const response = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3358,7 +3367,7 @@ describe('project session API contract', () => {
 
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3381,7 +3390,7 @@ describe('project session API contract', () => {
 
   test('rejects unknown providers before creating a git branch', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'justavps' }),
@@ -3404,7 +3413,7 @@ describe('project session API contract', () => {
         consumer: 'sandbox',
       },
     ] as const) {
-      const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      const writeRes = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -3417,7 +3426,7 @@ describe('project session API contract', () => {
       expect(row.valueEnc).not.toContain('local-build-value');
     }
 
-    const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const createRes = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3436,12 +3445,12 @@ describe('project session API contract', () => {
     expect(env.OPENAI_API_KEY).toBeUndefined();
     expect(env.LOCAL_BUILD_SECRET).toBe('local-build-value');
 
-    expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
+    expect(env.KORTIX_WORKSPACE_ID).toBe(WORKSPACE_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
     const expectedRepoUrl =
       process.env.KORTIX_GIT_PROXY === 'true'
         ? new URL(
-            `/v1/git/${PROJECT_ID}.git`,
+            `/v1/git/${WORKSPACE_ID}.git`,
             process.env.KORTIX_URL ?? 'https://test.kortix.local',
           ).toString()
         : projectRow.repoUrl;
@@ -3460,7 +3469,7 @@ describe('project session API contract', () => {
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
-    const shadowRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+    const shadowRes = await app.request(`/v1/projects/${WORKSPACE_ID}/secrets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'KORTIX_TOKEN', value: 'phishy' }),
@@ -3471,7 +3480,7 @@ describe('project session API contract', () => {
   test('inherits the project environment branch and preserves the session/sandbox invariant', async () => {
     projectRow.defaultBranch = 'dev';
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3515,7 +3524,7 @@ describe('project session API contract', () => {
       risk_score: 0.25,
       optional: null,
     };
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ runtime_context: runtimeContext }),
@@ -3543,7 +3552,7 @@ describe('project session API contract', () => {
       { payload: 'é'.repeat(9_000) },
     ]) {
       sessionRow = null;
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ runtime_context: runtimeContext }),
@@ -3561,7 +3570,7 @@ describe('project session API contract', () => {
     const app = createApp();
     sessionRow = null;
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ initial_prompt: 'noop', arbitrary_env: 'nope' }),
@@ -3592,7 +3601,7 @@ describe('project session API contract', () => {
     };
     sessionSandboxRows = [];
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
@@ -3619,7 +3628,7 @@ describe('project session API contract', () => {
     };
     sessionSandboxRows = [];
 
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/restart`, {
       method: 'POST',
     });
     expect(res.status).toBe(202);
@@ -3648,7 +3657,7 @@ describe('project session API contract', () => {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
+        workspaceId: WORKSPACE_ID,
         provider: 'daytona',
         externalId: null,
         baseUrl: null,
@@ -3667,7 +3676,7 @@ describe('project session API contract', () => {
     ];
 
     const response = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      `/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}/restart`,
       { method: 'POST' },
     );
 
@@ -3684,7 +3693,7 @@ describe('project session API contract', () => {
   test('accepts a client-created session branch without recreating it server-side', async () => {
     const app = createApp();
     const clientSessionId = '11111111-1111-4111-a111-111111111111';
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3706,7 +3715,7 @@ describe('project session API contract', () => {
 
   test('stops a session without deleting its preserved branch row', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}`, {
       method: 'DELETE',
     });
 
@@ -3716,7 +3725,7 @@ describe('project session API contract', () => {
     expect(sessionRow?.branchName).toBe(SESSION_ID);
 
     sessionRow = null;
-    const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
+    const missing = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions/${SESSION_ID}`, {
       method: 'DELETE',
     });
     expect(missing.status).toBe(404);
@@ -3726,7 +3735,7 @@ describe('project session API contract', () => {
   test('rejects concurrent session cap before creating a git branch', async () => {
     activeSessionCount = 1;
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: 'daytona' }),

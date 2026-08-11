@@ -37,11 +37,11 @@ const SERVER_URL_WAIT_MS = 15_000;
  */
 export function SessionTerminalPanel({
   sessionId,
-  projectSessionId,
+  workspaceSessionId,
   hidden,
 }: {
   sessionId: string;
-  projectSessionId?: string;
+  workspaceSessionId?: string;
   hidden?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -210,7 +210,7 @@ export function SessionTerminalPanel({
 
   return (
     <div className="flex h-full w-full flex-col bg-[#0f0f14]">
-      {projectSessionId && <SessionTerminalConnectBar projectSessionId={projectSessionId} />}
+      {workspaceSessionId && <SessionTerminalConnectBar workspaceSessionId={workspaceSessionId} />}
       <div className="relative min-h-0 flex-1">{content}</div>
     </div>
   );

@@ -35,7 +35,10 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
 ];
 
 const CREDIT_EXAMPLES: { label: string; body: string }[] = [
-  { label: 'Free start', body: '200 credits covers sandbox runtime for early projects and demos.' },
+  {
+    label: 'Free start',
+    body: '200 credits covers sandbox runtime for early workspaces and demos.',
+  },
   {
     label: 'Managed models are optional',
     body: 'Kortix-managed models remain available when you need them. Their token-based usage draws from pooled Team credits.',
@@ -49,7 +52,7 @@ const CREDIT_EXAMPLES: { label: string; body: string }[] = [
 const FAQ: [string, string][] = [
   [
     'What does Free include?',
-    'Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
+    'Free includes 200 credits each month for sandbox compute and 1 workspace. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
   ],
   [
     'What does a Team seat include?',

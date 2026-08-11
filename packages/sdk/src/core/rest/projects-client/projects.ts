@@ -347,8 +347,8 @@ export async function listProjectsForAccount(accountId?: string) {
   return unwrap(await backendApi.get<KortixProject[]>(`/projects${query}`));
 }
 
-export async function getProject(projectId: string, options?: ApiClientOptions) {
-  return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`, options));
+export async function getProject(workspaceId: string, options?: ApiClientOptions) {
+  return unwrap(await backendApi.get<KortixProject>(`/projects/${workspaceId}`, options));
 }
 
 /**
@@ -356,12 +356,12 @@ export async function getProject(projectId: string, options?: ApiClientOptions) 
  * creator pull "their" Kortix-managed repo into their own GitHub account.
  */
 export async function inviteRepoCollaborator(
-  projectId: string,
+  workspaceId: string,
   githubUsername: string,
   permission: 'read' | 'write' = 'write',
 ) {
   return unwrap(
-    await backendApi.post<RepoCollaboratorInvite>(`/projects/${projectId}/git/collaborators`, {
+    await backendApi.post<RepoCollaboratorInvite>(`/projects/${workspaceId}/git/collaborators`, {
       github_username: githubUsername,
       permission,
     }),
@@ -384,11 +384,11 @@ export interface ManifestValidationResult {
  * verdict is in the body.
  */
 export async function validateProjectManifest(
-  projectId: string,
+  workspaceId: string,
   raw: string,
 ): Promise<ManifestValidationResult> {
   return unwrap(
-    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, {
+    await backendApi.post<ManifestValidationResult>(`/projects/${workspaceId}/manifest/validate`, {
       raw,
     }),
     'Failed to validate manifest',
@@ -408,9 +408,9 @@ export interface ProjectGitToken {
  * `kortix ship` without persisting credentials in git config). Throws (409)
  * for BYO projects — they push with the user's own git remote auth.
  */
-export async function getProjectGitToken(projectId: string): Promise<ProjectGitToken> {
+export async function getProjectGitToken(workspaceId: string): Promise<ProjectGitToken> {
   return unwrap(
-    await backendApi.post<ProjectGitToken>(`/projects/${projectId}/git-token`, {}),
+    await backendApi.post<ProjectGitToken>(`/projects/${workspaceId}/git-token`, {}),
     'Failed to mint git token',
   );
 }
@@ -424,9 +424,9 @@ export function isManagedGithubProject(project: {
   return git?.provider === 'github' && git?.managed === true;
 }
 
-export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
+export async function getProjectDetail(workspaceId: string, options?: ApiClientOptions) {
   const detail = unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
+    await backendApi.get<ProjectDetail>(`/projects/${workspaceId}/detail`, {
       showErrors: false,
       ...options,
     }),
@@ -440,9 +440,9 @@ export async function getProjectDetail(projectId: string, options?: ApiClientOpt
   };
 }
 
-export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
+export async function getProjectLlmCatalog(workspaceId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/llm-catalog`, {
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${workspaceId}/llm-catalog`, {
       showErrors: false,
       ...options,
     }),
@@ -454,9 +454,9 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
  * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
  * runtime models.dev projection used to configure OpenCode sandboxes.
  */
-export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
+export async function getProjectModelPicker(workspaceId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/model-picker`, {
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${workspaceId}/model-picker`, {
       showErrors: false,
       ...options,
     }),
@@ -489,10 +489,10 @@ export interface ProjectLlmCatalogProvidersResponse {
  * native (non-gateway) projects too — see the route's doc comment
  * (apps/api/src/projects/routes/r4.ts, `/llm-catalog/providers`).
  */
-export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
+export async function getProjectLlmCatalogProviders(workspaceId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<ProjectLlmCatalogProvidersResponse>(
-      `/projects/${projectId}/llm-catalog/providers`,
+      `/projects/${workspaceId}/llm-catalog/providers`,
       { showErrors: false, ...options },
     ),
   );
@@ -751,8 +751,8 @@ export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
  * `null` to REMOVE the project's emoji, omit the key to leave it as it is.
  * Everything else ignores an empty value.
  */
-export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
+export async function updateProject(workspaceId: string, input: Partial<ProjectInput>) {
+  return unwrap(await backendApi.patch<KortixProject>(`/projects/${workspaceId}`, input));
 }
 
 /**
@@ -762,12 +762,12 @@ export async function updateProject(projectId: string, input: Partial<ProjectInp
  * Hits the CANONICAL `PATCH /projects/:id/features` route.
  */
 export async function updateFeatureFlag(
-  projectId: string,
+  workspaceId: string,
   feature: FeatureFlagKey,
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/features`, {
+    await backendApi.patch<KortixProject>(`/projects/${workspaceId}/features`, {
       feature,
       enabled,
     }),
@@ -782,12 +782,12 @@ export async function updateFeatureFlag(
  * `/projects/:id/experimental`. Changing its wire path would break them.
  */
 export async function updateExperimentalFeature(
-  projectId: string,
+  workspaceId: string,
   feature: FeatureFlagKey,
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/experimental`, {
+    await backendApi.patch<KortixProject>(`/projects/${workspaceId}/experimental`, {
       feature,
       enabled,
     }),
@@ -846,12 +846,12 @@ export type UpdateProjectSandboxProviderResult =
  *  `kind:'project'` immediate result, or a `kind:'preparation'` transition the
  *  caller polls via {@link getProjectSandboxProviderTransition}. */
 export async function updateProjectSandboxProvider(
-  projectId: string,
+  workspaceId: string,
   provider: SandboxProviderName | null,
 ): Promise<UpdateProjectSandboxProviderResult> {
   return unwrap(
     await backendApi.patch<UpdateProjectSandboxProviderResult>(
-      `/projects/${projectId}/sandbox-provider`,
+      `/projects/${workspaceId}/sandbox-provider`,
       { provider },
     ),
   );
@@ -886,12 +886,12 @@ export interface SandboxProviderTransitionState {
  *  poll this until `latest` reaches a terminal status (activated / failed /
  *  superseded / cancelled) — or `latest` is null (no live transition). */
 export async function getProjectSandboxProviderTransition(
-  projectId: string,
+  workspaceId: string,
   options?: ApiClientOptions,
 ) {
   return unwrap(
     await backendApi.get<SandboxProviderTransitionState>(
-      `/projects/${projectId}/sandbox-provider/transition`,
+      `/projects/${workspaceId}/sandbox-provider/transition`,
       { showErrors: false, ...options },
     ),
   );
@@ -904,15 +904,15 @@ export async function getProjectSandboxProviderTransition(
  * `listProjectSnapshots`.
  */
 export async function updateTemplateWarmPool(
-  projectId: string,
+  workspaceId: string,
   input: { slug: string; enabled?: boolean; size?: number },
 ) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input));
+  return unwrap(await backendApi.patch<KortixProject>(`/projects/${workspaceId}/warm-pool`, input));
 }
 
-export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
+export async function setProjectOnboardingComplete(workspaceId: string, completed: boolean) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { completed }),
+    await backendApi.patch<KortixProject>(`/projects/${workspaceId}/onboarding`, { completed }),
   );
 }
 
@@ -947,14 +947,14 @@ export interface OnboardingProfile {
  * `completed` from a survey save would end onboarding the moment the user
  * answered the first question.
  */
-export async function setProjectOnboardingProfile(projectId: string, profile: OnboardingProfile) {
+export async function setProjectOnboardingProfile(workspaceId: string, profile: OnboardingProfile) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { profile }),
+    await backendApi.patch<KortixProject>(`/projects/${workspaceId}/onboarding`, { profile }),
   );
 }
 
-export async function archiveProject(projectId: string) {
-  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
+export async function archiveProject(workspaceId: string) {
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${workspaceId}`));
 }
 
 // ── Server-side explicit-token variants ──────────────────────────────────────

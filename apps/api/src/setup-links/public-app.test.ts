@@ -3,11 +3,11 @@ import { connectors, projectSessions, projects } from '@kortix/db';
 
 mock.module('../config', () => ({ config: { API_KEY_SECRET: 'test-pepper' } }));
 
-const realSecrets = await import('../projects/secrets');
+const realSecrets = await import('../workspaces/secrets');
 const writes: Array<Record<string, unknown>> = [];
-mock.module('../projects/secrets', () => ({
+mock.module('../workspaces/secrets', () => ({
   ...realSecrets,
-  writeSharedProjectSecret: async (input: Record<string, unknown>) => {
+  writeSharedWorkspaceSecret: async (input: Record<string, unknown>) => {
     writes.push(input);
   },
 }));
@@ -40,14 +40,14 @@ mock.module('../shared/rate-limit', () => ({
 }));
 
 const propagated: string[] = [];
-mock.module('../projects/lib/sandbox-env-sync', () => ({
-  propagateProjectSecretsToActiveSandboxes: async (projectId: string) => {
-    propagated.push(projectId);
+mock.module('../workspaces/lib/sandbox-env-sync', () => ({
+  propagateWorkspaceSecretsToActiveSandboxes: async (workspaceId: string) => {
+    propagated.push(workspaceId);
   },
 }));
 
 const enqueued: Array<Record<string, unknown>> = [];
-mock.module('../projects/session-lifecycle', () => ({
+mock.module('../workspaces/session-lifecycle', () => ({
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     enqueued.push(input);
   },
@@ -76,14 +76,14 @@ const { setupLinksPublicApp, secretSubmittedPrompt, connectorConnectedPrompt } =
   './public-app'
 );
 
-const PROJECT_ID = '11111111-2222-3333-4444-555555555555';
+const WORKSPACE_ID = '11111111-2222-3333-4444-555555555555';
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const CONNECTOR_ID = '99999999-8888-7777-6666-555555555555';
 const T0 = new Date('2026-08-07T12:00:00.000Z');
 
 function mintToken(opts?: { expiresInMinutes?: number; sid?: string | null }) {
   return mintSetupLink(
-    PROJECT_ID,
+    WORKSPACE_ID,
     {
       kind: 'secret',
       fields: [{ name: 'DRATA_API_KEY' }],
@@ -100,7 +100,7 @@ async function flushNotification() {
 }
 
 function mintConnectorToken(opts?: { sid?: string | null; app?: string | null }) {
-  return mintSetupLink(PROJECT_ID, {
+  return mintSetupLink(WORKSPACE_ID, {
     kind: 'connector',
     slug: 'smartlead',
     app: opts?.app === undefined ? 'smartlead' : opts.app,
@@ -138,6 +138,8 @@ describe('GET /secret/:token', () => {
     const res = await setupLinksPublicApp.request(`/secret/${mintToken()}`);
     expect(res.status).toBe(200);
     const body = await res.json();
+    expect(body.workspace_name).toBe('Kortix Company');
+    expect(body.project_name).toBe('Kortix Company');
     expect(body.fields).toEqual([{ name: 'DRATA_API_KEY', label: null, description: null }]);
     expect(body.expires_at).toBe(new Date(T0.getTime() + 7 * 24 * 60 * 60_000).toISOString());
   });
@@ -157,6 +159,16 @@ describe('GET /secret/:token', () => {
   });
 });
 
+describe('GET /connectors/:token', () => {
+  test('returns canonical Workspace identity and the legacy Project alias', async () => {
+    const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.workspace_name).toBe('Kortix Company');
+    expect(body.project_name).toBe('Kortix Company');
+  });
+});
+
 describe('POST /secret/:token', () => {
   function submit(token: string, values: Record<string, string> = { DRATA_API_KEY: 'v-1' }) {
     return setupLinksPublicApp.request(`/secret/${token}`, {
@@ -172,12 +184,12 @@ describe('POST /secret/:token', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, saved: ['DRATA_API_KEY'] });
     expect(writes).toHaveLength(1);
-    expect(propagated).toEqual([PROJECT_ID]);
+    expect(propagated).toEqual([WORKSPACE_ID]);
     await flushNotification();
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0]).toMatchObject({
       source: 'system:secret-submitted',
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: SESSION_ID,
       accountId: 'acct-1',
       actorUserId: 'user-1',
@@ -238,7 +250,7 @@ describe('POST /connectors/:token/finalize', () => {
   test('an expired token → 410', async () => {
     pipedreamOn = true;
     const token = mintSetupLink(
-      PROJECT_ID,
+      WORKSPACE_ID,
       { kind: 'connector', slug: 'smartlead', app: 'smartlead', uid: 'user-1', sid: SESSION_ID },
       { expiresInMinutes: 1 },
     ).token;
@@ -311,7 +323,7 @@ describe('POST /connectors/:token/finalize', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ connected: true });
     expect(finalizeCalls[0]).toMatchObject({
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       slug: 'smartlead',
       app: 'smartlead',
       connectorId: CONNECTOR_ID,
@@ -321,7 +333,7 @@ describe('POST /connectors/:token/finalize', () => {
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0]).toMatchObject({
       source: 'system:connector-connected',
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       sessionId: SESSION_ID,
       accountId: 'acct-1',
       actorUserId: 'user-1',

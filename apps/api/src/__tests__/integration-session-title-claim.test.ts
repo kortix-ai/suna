@@ -13,29 +13,29 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
-import type { ProjectSessionRow } from '../projects/lib/serializers';
-import { projectSessionMetadataMerge } from '../projects/lib/session-metadata-merge';
-import { persistTitle } from '../projects/session-title-generate';
+import type { WorkspaceSessionRow } from '../workspaces/lib/serializers';
+import { workspaceSessionMetadataMerge } from '../workspaces/lib/session-metadata-merge';
+import { persistTitle } from '../workspaces/session-title-generate';
 import { db } from '../shared/db';
 import { getPublicSessionInfo } from '../shared/public-session-share-view';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const USER = crypto.randomUUID();
 
 let n = 0;
-async function seed(metadata: Record<string, unknown>): Promise<ProjectSessionRow> {
+async function seed(metadata: Record<string, unknown>): Promise<WorkspaceSessionRow> {
   n += 1;
   const sessionId = `title-cas-${n}-${crypto.randomUUID().slice(0, 8)}`;
   await db.insert(projectSessions).values({
     sessionId,
     accountId: ACCOUNT,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     branchName: sessionId,
     createdBy: USER,
     metadata,
   });
-  return { sessionId, accountId: ACCOUNT, projectId: PROJECT, metadata } as ProjectSessionRow;
+  return { sessionId, accountId: ACCOUNT, workspaceId: WORKSPACE, metadata } as WorkspaceSessionRow;
 }
 
 async function metadataOf(sessionId: string): Promise<Record<string, unknown>> {
@@ -49,7 +49,7 @@ async function metadataOf(sessionId: string): Promise<Record<string, unknown>> {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'title-cas-test' });
   await db.insert(projects).values({
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     name: 'p',
     repoUrl: 'https://example.com/p.git',
@@ -168,7 +168,7 @@ describe('persistTitle — compare-and-set', () => {
     await persistTitle(row, 'Generated Title');
     await db
       .update(projectSessions)
-      .set({ metadata: projectSessionMetadataMerge({ provisioning_error: 'boom' }) })
+      .set({ metadata: workspaceSessionMetadataMerge({ provisioning_error: 'boom' }) })
       .where(eq(projectSessions.sessionId, row.sessionId));
 
     const metadata = await metadataOf(row.sessionId);
@@ -179,7 +179,7 @@ describe('persistTitle — compare-and-set', () => {
 
   test('the CAS is scoped to the exact session/project/account triple', async () => {
     const row = await seed({});
-    await persistTitle({ ...row, accountId: crypto.randomUUID() } as ProjectSessionRow, 'Wrong');
+    await persistTitle({ ...row, accountId: crypto.randomUUID() } as WorkspaceSessionRow, 'Wrong');
     expect((await metadataOf(row.sessionId)).name).toBeUndefined();
   });
 

@@ -7,9 +7,9 @@
  * Simple Hey" on the left and "Greeting" on top, and renaming changed only the
  * left one.
  */
+import { getSessionDisplayTitle } from '@/features/workspace/workspace-sidebar/workspace-session-list-helpers';
+import type { WorkspaceSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import type { ProjectSession } from '@kortix/sdk';
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 
 const SRC = await Bun.file(new URL('./session-site-header.tsx', import.meta.url).pathname).text();
 
@@ -20,7 +20,7 @@ function code(): string {
     .join('\n');
 }
 
-function session(over: Partial<ProjectSession>): ProjectSession {
+function session(over: Partial<WorkspaceSession>): WorkspaceSession {
   return {
     session_id: '3f9a1c2b-0000-0000-0000-000000000000',
     branch_name: 'feature/some-branch-name',
@@ -28,13 +28,13 @@ function session(over: Partial<ProjectSession>): ProjectSession {
     name: null,
     metadata: {},
     ...over,
-  } as unknown as ProjectSession;
+  } as unknown as WorkspaceSession;
 }
 
 describe('the header renders the sidebar name', () => {
-  test('uses the sidebar helper, not opencode\'s title', () => {
+  test("uses the sidebar helper, not opencode's title", () => {
     const src = code();
-    expect(src).toContain('getSessionDisplayTitle(projectSession)');
+    expect(src).toContain('getSessionDisplayTitle(workspaceSession)');
     // The regression shape: the raw prop back in the label.
     expect(src).not.toContain('truncate">{sessionTitle}<');
   });
@@ -45,10 +45,12 @@ describe('the header renders the sidebar name', () => {
     expect(code()).toContain('sessionLabel={headerTitle}');
   });
 
-  test('still falls back to the prop without a project session', () => {
-    // The share viewer and instant shell render this header with no project
+  test('still falls back to the prop without a workspace session', () => {
+    // The share viewer and instant shell render this header with no workspace
     // session; hardcoding the helper would blank the title there.
-    expect(code()).toContain('projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle');
+    expect(code()).toContain(
+      'workspaceSession ? getSessionDisplayTitle(workspaceSession) : sessionTitle',
+    );
   });
 });
 

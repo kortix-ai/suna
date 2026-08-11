@@ -1,22 +1,22 @@
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { CONNECTOR_TABS, connectorTabs } from './connector-tabs';
 
-const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
+const conn = (over: Partial<WorkspaceAdminConnector> = {}): WorkspaceAdminConnector =>
   ({
     slug: 'linear',
     name: 'Linear',
     provider: 'mcp',
     status: 'active',
     credentialMode: 'shared',
-    authorizationStrategy: 'project',
+    authorizationStrategy: 'workspace',
     sensitive: false,
     actions: [],
     authSecret: 'T',
     secretSet: true,
     ...over,
-  }) as AdminConnector;
+  }) as WorkspaceAdminConnector;
 
 // Order is THE invariant of the tab model, so it is pinned longhand, position
 // by position, against literals — never against `CONNECTOR_TABS`, which
@@ -89,7 +89,7 @@ describe('connectorTabs', () => {
   // combination of the three inputs the function reads, not just the eight
   // cases spelled out above.
   test('every provider × permission combination is a subsequence of the canonical order', () => {
-    const providers: AdminConnector['provider'][] = [
+    const providers: WorkspaceAdminConnector['provider'][] = [
       'pipedream',
       'mcp',
       'openapi',
@@ -101,7 +101,7 @@ describe('connectorTabs', () => {
     ];
     for (const provider of providers) {
       for (const canWrite of [true, false]) {
-        for (const authorizationStrategy of ['project', 'user'] as const) {
+        for (const authorizationStrategy of ['workspace', 'user'] as const) {
           const tabs = connectorTabs(conn({ provider, authorizationStrategy }), { canWrite });
           const positions = tabs.map((tab) => CONNECTOR_TABS.indexOf(tab));
           expect(positions).toEqual([...positions].sort((a, b) => a - b));

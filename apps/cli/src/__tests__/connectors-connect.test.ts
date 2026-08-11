@@ -65,7 +65,7 @@ describe('kortix connectors connect', () => {
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/projects/project-1/connect-requests',
+        url: 'https://api.test/v1/workspaces/project-1/connect-requests',
         method: 'POST',
         body: { slug: 'github' },
       },
@@ -141,7 +141,7 @@ describe('kortix connectors connections', () => {
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/projects/project-1/connections',
+        url: 'https://api.test/v1/workspaces/project-1/connections',
         method: 'GET',
         body: undefined,
       },
@@ -153,7 +153,7 @@ describe('kortix connectors connections', () => {
     });
   });
 
-  test('creates a project connection with canonical fields', async () => {
+  test('creates a workspace connection with canonical fields', async () => {
     const code = await runConnectors([
       'connections',
       'add',
@@ -169,7 +169,7 @@ describe('kortix connectors connections', () => {
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/projects/project-1/connections',
+        url: 'https://api.test/v1/workspaces/project-1/connections',
         method: 'POST',
         body: {
           connector_alias: 'github',
@@ -189,7 +189,7 @@ describe('kortix connectors connections', () => {
 
     expect(await runConnectors(['connections', 'ls', '--all', '--json'])).toBe(0);
     expect(requests[0]).toEqual({
-      url: 'https://api.test/v1/projects/project-1/connections/all',
+      url: 'https://api.test/v1/workspaces/project-1/connections/all',
       method: 'GET',
       body: undefined,
     });
@@ -209,7 +209,7 @@ describe('kortix connectors connections', () => {
       ]),
     ).toBe(0);
     expect(requests[0]).toEqual({
-      url: 'https://api.test/v1/projects/project-1/connections/me',
+      url: 'https://api.test/v1/workspaces/project-1/connections/me',
       method: 'POST',
       body: {
         connector_alias: 'github',
@@ -242,22 +242,22 @@ describe('kortix connectors connections', () => {
 
     expect(requests.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/credential`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/credential`,
         method: 'PUT',
         body: { value: 'secret-value' },
       },
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/revoke`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/revoke`,
         method: 'PUT',
         body: {},
       },
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/activate`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/activate`,
         method: 'PUT',
         body: {},
       },
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/default`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/default`,
         method: 'PUT',
         body: {},
       },
@@ -290,7 +290,7 @@ describe('kortix connectors connections', () => {
     expect(await runConnectors(['connections', 'finalize', connectionId, '--json'])).toBe(0);
     expect(requests).toEqual([
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/connect`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/connect`,
         method: 'POST',
         body: {
           success_redirect_uri: 'https://app.test/success',
@@ -298,7 +298,7 @@ describe('kortix connectors connections', () => {
         },
       },
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/connect/finalize`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/connect/finalize`,
         method: 'POST',
         body: {},
       },

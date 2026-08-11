@@ -1,6 +1,6 @@
 import type {
   ConnectionCredentialInput,
-  ConnectorDraftInput,
+  WorkspaceConnectorDraftInput,
   OAuth2ApplicationInput,
   OAuth2ClientCredentials,
   OAuth2TokenEndpointAuthMethod,
@@ -159,32 +159,32 @@ export function mergeOAuth2DiscoveryMetadata(
 }
 
 export async function createConnectorWithOptionalOAuth2(
-  projectId: string,
-  draft: ConnectorDraftInput,
+  workspaceId: string,
+  draft: WorkspaceConnectorDraftInput,
   oauth2: OAuth2CredentialForm | null,
   deps: {
     createConnector: (
-      projectId: string,
-      draft: ConnectorDraftInput,
+      workspaceId: string,
+      draft: WorkspaceConnectorDraftInput,
     ) => Promise<Awaited<ReturnType<typeof import('@kortix/sdk').createConnector>>>;
-    deleteConnector: (projectId: string, slug: string) => Promise<unknown>;
+    deleteConnector: (workspaceId: string, slug: string) => Promise<unknown>;
     setConnectorCredential: (
-      projectId: string,
+      workspaceId: string,
       slug: string,
       credential: ConnectionCredentialInput,
     ) => Promise<unknown>;
   },
 ): Promise<{ syncError: string | null; credentialStored: boolean }> {
-  const created = await deps.createConnector(projectId, createOnlyConnectorDraft(draft));
+  const created = await deps.createConnector(workspaceId, createOnlyConnectorDraft(draft));
   const syncError = connectorSyncErrorForSlug(created, draft.slug);
   if (syncError) return { syncError, credentialStored: false };
   if (!oauth2) return { syncError: null, credentialStored: false };
 
   try {
-    await deps.setConnectorCredential(projectId, draft.slug, buildOAuth2CredentialInput(oauth2));
+    await deps.setConnectorCredential(workspaceId, draft.slug, buildOAuth2CredentialInput(oauth2));
   } catch (credentialError) {
     try {
-      await deps.deleteConnector(projectId, draft.slug);
+      await deps.deleteConnector(workspaceId, draft.slug);
     } catch (rollbackError) {
       const credentialMessage =
         credentialError instanceof Error ? credentialError.message : String(credentialError);

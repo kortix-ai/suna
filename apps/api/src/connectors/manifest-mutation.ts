@@ -1,4 +1,4 @@
-import { commitManifest, loadManifestForEdit } from '../projects/lib/triggers';
+import { commitManifest, loadManifestForEdit } from '../workspaces/lib/triggers';
 
 export type ManifestMutationResult =
   | { ok: true; commitMessage: string | null }
@@ -9,7 +9,7 @@ export type ManifestCommitResult =
   | { ok: false; error: string; status: number };
 
 type EditableManifest = Awaited<ReturnType<typeof loadManifestForEdit>>;
-type ManifestProject = Parameters<typeof loadManifestForEdit>[0];
+type ManifestWorkspace = Parameters<typeof loadManifestForEdit>[0];
 
 function isRevisionConflict(result: ManifestCommitResult): boolean {
   return (
@@ -21,7 +21,7 @@ function isRevisionConflict(result: ManifestCommitResult): boolean {
 
 /** Reload and retry one manifest compare-and-swap conflict. */
 export async function mutateManifestWithRetry(
-  project: ManifestProject,
+  project: ManifestWorkspace,
   operation: string,
   mutate: (manifest: EditableManifest) => ManifestMutationResult | Promise<ManifestMutationResult>,
 ): Promise<ManifestCommitResult> {

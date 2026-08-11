@@ -33,7 +33,7 @@ import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { getProjectDetail } from '@kortix/sdk';
+import { getWorkspaceDetail } from '@kortix/sdk';
 import { contract, qk, type ProviderListResponse } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { resolveAvailableSelectedModel } from './model-availability';
@@ -88,8 +88,8 @@ export interface ModelDefaultControls {
   agentName?: string;
   onSetAccountDefault: (model: ModelRef) => void;
   onSetAgentDefault?: (model: ModelRef) => void;
-  /** When set (in-project picker), pin the model as this project's default. */
-  onSetProjectDefault?: (model: ModelRef) => void;
+  /** When set (in-project picker), pin the model as this workspace's default. */
+  onSetWorkspaceDefault?: (model: ModelRef) => void;
 }
 
 export interface ModelSelectorProps {
@@ -101,8 +101,8 @@ export interface ModelSelectorProps {
   /**
    * Trigger label shown when `selectedModel` is null. Defaults to "No model"
    * (the chat-input/schedule meaning: falls back to the agent/account/platform
-   * chain). Pass e.g. "Project default" where null specifically means "inherit
-   * the project's configured default" so the pill never implies nothing was
+   * chain). Pass e.g. "Workspace default" where null specifically means "inherit
+   * the workspace's configured default" so the pill never implies nothing was
    * chosen when something concrete will actually run.
    */
   unsetLabel?: string;
@@ -136,26 +136,26 @@ export function ModelSelector({
   } = useModelConnectionGate(models);
 
   // When mounted under /projects/[id]/..., route model filtering to the
-  // per-project gateway catalog. On every other route (instance dashboard,
+  // per-workspace gateway catalog. On every other route (instance dashboard,
   // /milano, /berlin, etc.) we filter to native (non-gateway) models.
   const params = useParams<{ id?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: !!projectId,
+  const workspaceId = typeof params?.id === 'string' ? params.id : null;
+  const workspaceDetailQuery = useQuery({
+    queryKey: qk.workspace.detail(workspaceId ?? ''),
+    queryFn: () => getWorkspaceDetail(workspaceId as string),
+    enabled: !!workspaceId,
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const llmGatewayEnabled = isLlmGatewayEnabled(workspaceDetailQuery.data?.workspace);
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);
 
   // NOTE: the picker deliberately derives NO availability of its own. Which
-  // models a project can call (connected BYOK providers, plan entitlement) and
+  // models a workspace can call (connected BYOK providers, plan entitlement) and
   // which of those it offers are both resolved server-side by `/model-picker`
   // — the route this list already comes from. Re-deriving either here from
-  // project secrets + account tier is what let this view disagree with both
+  // workspace secrets + account tier is what let this view disagree with both
   // the "Manage models" tab and the gateway.
 
   const availableSelectedModel = entitlementsPending
@@ -177,7 +177,7 @@ export function ModelSelector({
 
   // ── Filtered + grouped models ──
 
-  // The list is exactly what the project OFFERS. `enabled` is resolved by the
+  // The list is exactly what the workspace OFFERS. `enabled` is resolved by the
   // server (`/model-picker`), so the picker applies no visibility rule of its
   // own — a second, client-only filter here is precisely what made "Manage
   // models" report 15 of 15 shown while this rendered 3. Turn a model on in
@@ -452,17 +452,17 @@ export function ModelSelector({
                   <Star className="size-3.5 shrink-0" />
                   Set as my default model
                 </button>
-                {defaultControls.onSetProjectDefault ? (
+                {defaultControls.onSetWorkspaceDefault ? (
                   <button
                     type="button"
                     onClick={() => {
-                      defaultControls.onSetProjectDefault?.(availableSelectedModel);
+                      defaultControls.onSetWorkspaceDefault?.(availableSelectedModel);
                       setOpen(false);
                     }}
                     className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
                   >
                     <FolderGit2 className="size-3.5 shrink-0" />
-                    Set as this project&apos;s default
+                    Set as this workspace&apos;s default
                   </button>
                 ) : null}
                 {defaultControls.agentName && defaultControls.onSetAgentDefault ? (

@@ -26,26 +26,25 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { ShareOption, SubjectPicker } from '@/features/workspace/shared/sharing-picker';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
 import {
   CLIPBOARD_IFRAME_ALLOW,
   INTERACTIVE_PREVIEW_IFRAME_SANDBOX,
 } from '@/lib/security/iframe-sandbox';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import { cn } from '@/lib/utils';
 import {
   createAppAccessSession,
-  type App,
-  type AppAccessConfig,
-  type AppAccessMode,
+  type WorkspaceApp,
+  type WorkspaceAppAccessConfig,
+  type WorkspaceAppAccessMode,
   type AppDeployment,
 } from '@kortix/sdk';
 import {
-  qk,
   useAppAccess,
   useAppDeployments,
   useFeatureFlag,
-  useProjectApps,
+  useWorkspaceApps,
 } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
@@ -78,7 +77,7 @@ function deploymentTone(
   return 'muted';
 }
 
-function appCommand(app: App): string {
+function appCommand(app: WorkspaceApp): string {
   return `kortix apps deploy . --app ${app.app_id}`;
 }
 
@@ -87,7 +86,7 @@ function AppPreview({
   url,
   accessError,
 }: {
-  app: App;
+  app: WorkspaceApp;
   url: string | null;
   accessError: boolean;
 }) {
@@ -155,27 +154,27 @@ function AppPreview({
   );
 }
 
-export function AppsView({ projectId }: { projectId: string }) {
+export function AppsView({ workspaceId }: { workspaceId: string }) {
   // One gating primitive, fail-closed. Apps NEVER enables itself from here:
   // activation lives only in Customize → Feature flags, so this page has no
   // mutation and no self-enable button.
-  const appsGate = useFeatureFlag(projectId, 'apps');
-  const apps = useProjectApps(appsGate.enabled ? projectId : null);
+  const appsGate = useFeatureFlag(workspaceId, 'apps');
+  const apps = useWorkspaceApps(appsGate.enabled ? workspaceId : null);
   const searchParams = useSearchParams();
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+    useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE).allowed === true;
 
   useEffect(() => {
     const target = searchParams.get('open_app');
     if (!target || !apps.data) return;
     const app = apps.data.find((item) => item.app_id === target);
     if (!app) return;
-    void createAppAccessSession(projectId, app.app_id)
+    void createAppAccessSession(workspaceId, app.app_id)
       .then((session) => window.location.replace(session.url))
       .catch((error) =>
         errorToast(error instanceof Error ? error.message : 'App access denied'),
       );
-  }, [apps.data, projectId, searchParams]);
+  }, [apps.data, workspaceId, searchParams]);
 
   return (
     <CustomizeSectionWrapper
@@ -236,7 +235,7 @@ export function AppsView({ projectId }: { projectId: string }) {
       ) : apps.data?.length ? (
         <ul className="grid gap-4 md:grid-cols-2">
           {apps.data.map((app) => (
-            <AppRow key={app.app_id} projectId={projectId} app={app} canWrite={canWrite} />
+            <AppRow key={app.app_id} workspaceId={workspaceId} app={app} canWrite={canWrite} />
           ))}
         </ul>
       ) : (
@@ -259,7 +258,7 @@ export function AppsView({ projectId }: { projectId: string }) {
           }
         >
           <span className="text-muted-foreground block text-xs text-pretty">
-            Run this in a linked project. A v2 <code className="text-foreground">kortix.yaml</code>{' '}
+            Run this in a linked workspace. A v2 <code className="text-foreground">kortix.yaml</code>{' '}
             can define build, resources, environment, and secret mappings.
           </span>
           <code className="text-foreground mt-2 block overflow-x-auto font-mono text-xs">
@@ -272,10 +271,18 @@ export function AppsView({ projectId }: { projectId: string }) {
   );
 }
 
-function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; canWrite: boolean }) {
-  const apps = useProjectApps(projectId);
-  const deployments = useAppDeployments(projectId, app.app_id);
-  const access = useAppAccess(projectId, app.app_id);
+function AppRow({
+  workspaceId,
+  app,
+  canWrite,
+}: {
+  workspaceId: string;
+  app: WorkspaceApp;
+  canWrite: boolean;
+}) {
+  const apps = useWorkspaceApps(workspaceId);
+  const deployments = useAppDeployments(workspaceId, app.app_id);
+  const access = useAppAccess(workspaceId, app.app_id);
   const [expanded, setExpanded] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
@@ -470,7 +477,7 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
       />
       {accessOpen ? (
         <AppAccessModal
-          projectId={projectId}
+          workspaceId={workspaceId}
           app={app}
           access={access}
           open={accessOpen}
@@ -481,23 +488,23 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
   );
 }
 
-const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }> = {
+const ACCESS_COPY: Record<WorkspaceAppAccessMode, { label: string; desc: string }> = {
   private: { label: 'Only you', desc: 'Only the App creator can open it' },
-  project: { label: 'Whole team', desc: 'Every member of this project' },
+  workspace: { label: 'Whole team', desc: 'Every member of this workspace' },
   restricted: { label: 'Select members', desc: 'Chosen members and groups' },
   public: { label: 'Public', desc: 'Anyone with the URL' },
   password: { label: 'Password', desc: 'Anyone with the App password' },
 };
 
 function AppAccessModal({
-  projectId,
+  workspaceId,
   app,
   access,
   open,
   onOpenChange,
 }: {
-  projectId: string;
-  app: App;
+  workspaceId: string;
+  app: WorkspaceApp;
   access: ReturnType<typeof useAppAccess>;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -538,7 +545,7 @@ function AppAccessModal({
         ) : access.policy.data ? (
           <AppAccessForm
             key={access.policy.data.revision}
-            projectId={projectId}
+            workspaceId={workspaceId}
             policy={access.policy.data}
             update={access.update}
             onSaved={() => onOpenChange(false)}
@@ -550,17 +557,17 @@ function AppAccessModal({
 }
 
 function AppAccessForm({
-  projectId,
+  workspaceId,
   policy,
   update,
   onSaved,
 }: {
-  projectId: string;
-  policy: AppAccessConfig;
+  workspaceId: string;
+  policy: WorkspaceAppAccessConfig;
   update: ReturnType<typeof useAppAccess>['update'];
   onSaved: () => void;
 }) {
-  const [mode, setMode] = useState<AppAccessMode>(policy.mode);
+  const [mode, setMode] = useState<WorkspaceAppAccessMode>(policy.mode);
   const [memberIds, setMemberIds] = useState<string[]>(policy.member_ids);
   const [groupIds, setGroupIds] = useState<string[]>(policy.group_ids);
   const [password, setPassword] = useState('');
@@ -586,10 +593,10 @@ function AppAccessForm({
       <ModalBody className="max-h-[65vh] space-y-4 overflow-y-auto">
         <RadioGroup
           value={mode}
-          onValueChange={(value) => setMode(value as AppAccessMode)}
+          onValueChange={(value) => setMode(value as WorkspaceAppAccessMode)}
           className="space-y-2"
         >
-          {(Object.keys(ACCESS_COPY) as AppAccessMode[]).map((value) => (
+          {(Object.keys(ACCESS_COPY) as WorkspaceAppAccessMode[]).map((value) => (
             <ShareOption
               key={value}
               value={value}
@@ -600,7 +607,7 @@ function AppAccessForm({
         </RadioGroup>
         {mode === 'restricted' ? (
           <SubjectPicker
-            projectId={projectId}
+            workspaceId={workspaceId}
             memberIds={memberIds}
             groupIds={groupIds}
             onChange={(members, groups) => {

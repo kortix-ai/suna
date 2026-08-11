@@ -1,5 +1,5 @@
-import type { ResolvedProjectSecret } from '../projects/secrets';
-import { isReservedSandboxEnvName } from '../projects/lib/sandbox-env-names';
+import type { ResolvedWorkspaceSecret } from '../workspaces/secrets';
+import { isReservedSandboxEnvName } from '../workspaces/lib/sandbox-env-names';
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const SECRET_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -7,9 +7,9 @@ const NEVER_DELIVER = new Set(['SLACK_SIGNING_SECRET', 'SLACK_BOT_TOKEN']);
 
 export interface AppRuntimeEnvironmentInput {
   environment?: Record<string, string>;
-  /** Runtime environment key -> project secret identifier. */
+  /** Runtime environment key -> workspace secret identifier. */
   secrets?: Record<string, string>;
-  availableSecrets: ResolvedProjectSecret[];
+  availableSecrets: ResolvedWorkspaceSecret[];
 }
 
 function assertDestination(name: string): void {

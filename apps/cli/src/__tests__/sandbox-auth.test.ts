@@ -5,20 +5,21 @@ import { join } from 'node:path';
 
 import { activeHost } from '../api/config.ts';
 import { createApiClient } from '../api/client.ts';
-import { resolveProjectContext } from '../command-helpers.ts';
-import { connectorProjectContext } from '../connector-gateway/gateway.ts';
+import { resolveWorkspaceContext } from '../command-helpers.ts';
+import { connectorWorkspaceContext } from '../connector-gateway/gateway.ts';
 import { resolveProjectId } from '../project-link.ts';
 
 // These tests pin the contract the platform relies on when it injects auth
 // into a session sandbox: KORTIX_CLI_TOKEN carries the session connector PAT,
 // KORTIX_API_URL already includes the `/v1` mount, and
-// KORTIX_PROJECT_ID selects the project — all read with zero config files.
+// KORTIX_PROJECT_ID selects the workspace — all read with zero config files.
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
+  'KORTIX_WORKSPACE_ID',
   'BASH_ENV',
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
@@ -78,7 +79,7 @@ describe('in-sandbox auth resolution', () => {
       expect(host?.token).toBe('kortix_pat_from_file');
       expect(host?.url).toBe('https://dev-api.kortix.com/v1');
       expect(resolveProjectId()).toBe('proj-from-file');
-      expect(connectorProjectContext().projectId).toBe('proj-from-file');
+      expect(connectorWorkspaceContext().workspaceId).toBe('proj-from-file');
       expect(process.env.NOT_ALLOWLISTED).toBeUndefined();
       expect(process.env.AGENTMAIL_API_KEY).toBeUndefined();
     } finally {
@@ -90,15 +91,21 @@ describe('in-sandbox auth resolution', () => {
     process.env.KORTIX_TOKEN = 'kortix_sb_sandboxkey';
     // With no CLI/connector token and a missing config file we fall through to
     // the default (logged-out) host — crucially, the sandbox key is never
-    // adopted as the active token. `resolveProjectContext` treats an empty
+    // adopted as the active token. `resolveWorkspaceContext` treats an empty
     // token as "not logged in".
     expect(activeHost()?.token || '').not.toBe('kortix_sb_sandboxkey');
     expect(activeHost()?.token || '').toBe('');
   });
 
-  it('reads the project id from KORTIX_PROJECT_ID', () => {
+  it('reads the workspace id from KORTIX_PROJECT_ID', () => {
     process.env.KORTIX_PROJECT_ID = 'proj-xyz';
     expect(resolveProjectId()).toBe('proj-xyz');
+  });
+
+  it('prefers the canonical KORTIX_WORKSPACE_ID', () => {
+    process.env.KORTIX_PROJECT_ID = 'legacy-project';
+    process.env.KORTIX_WORKSPACE_ID = 'canonical-workspace';
+    expect(resolveProjectId()).toBe('canonical-workspace');
   });
 
   it('lets connector management commands override KORTIX_PROJECT_ID with --project', () => {
@@ -106,7 +113,7 @@ describe('in-sandbox auth resolution', () => {
     process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
     process.env.KORTIX_PROJECT_ID = 'proj-from-env';
 
-    expect(connectorProjectContext('proj-from-flag').projectId).toBe('proj-from-flag');
+    expect(connectorWorkspaceContext('proj-from-flag').workspaceId).toBe('proj-from-flag');
   });
 });
 
@@ -114,7 +121,7 @@ describe('env token vs .kortix/link.json host', () => {
   // A repo may carry a committed link.json naming a host (per-repo binding).
   // Inside a session sandbox that named host has no stored credentials, so
   // the platform-injected env token must outrank it — otherwise every
-  // project-scoped command dies with "host not logged in".
+  // workspace-scoped command dies with "host not logged in".
   let dir: string;
   let savedCwd: string;
 
@@ -139,21 +146,21 @@ describe('env token vs .kortix/link.json host', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('resolveProjectContext uses the env token even when link.json names a host', async () => {
+  it('resolveWorkspaceContext uses the env token even when link.json names a host', async () => {
     process.env.KORTIX_CLI_TOKEN = 'kortix_pat_cli';
     process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
-    const ctx = await resolveProjectContext();
+    const ctx = await resolveWorkspaceContext();
     expect(ctx).not.toBeNull();
     expect(ctx?.auth.token).toBe('kortix_pat_cli');
     expect(ctx?.auth.api_base).toBe('https://tunnel.example/v1');
     // Project still comes from the link — only the HOST binding is overridden.
-    expect(ctx?.projectId).toBe('proj-from-link');
+    expect(ctx?.workspaceId).toBe('proj-from-link');
   });
 
   it('without an env token the link host is still honored (and fails logged-out)', async () => {
     // Config file points at a nonexistent path → the named host has no token →
     // the pre-existing behavior (refuse with "not logged in") is preserved.
-    const ctx = await resolveProjectContext();
+    const ctx = await resolveWorkspaceContext();
     expect(ctx).toBeNull();
   });
 
@@ -161,7 +168,7 @@ describe('env token vs .kortix/link.json host', () => {
     process.env.KORTIX_CLI_TOKEN = 'kortix_pat_cli';
     // 'nonexistent-host' has no credentials → context resolution must fail
     // rather than silently falling back to the env token the caller did not ask for.
-    const ctx = await resolveProjectContext({ hostArg: 'nonexistent-host' });
+    const ctx = await resolveWorkspaceContext({ hostArg: 'nonexistent-host' });
     expect(ctx).toBeNull();
   });
 });

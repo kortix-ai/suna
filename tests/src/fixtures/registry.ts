@@ -18,7 +18,7 @@ export class ResourceStack {
 
   constructor(
     private admin: Client,
-    private deleteDatabaseProject?: (projectId: string) => Promise<void>,
+    private deleteDatabaseProject?: (workspaceId: string) => Promise<void>,
   ) {}
 
   push(kind: string, id: string, meta?: Record<string, any>): void {
@@ -40,8 +40,8 @@ export class ResourceStack {
   private async delete(r: TrackedResource): Promise<void> {
     switch (r.kind) {
       case "session":
-        await this.admin.del("/v1/projects/:projectId/sessions/:id", {
-          params: { projectId: r.meta?.projectId, id: r.id },
+        await this.admin.del("/v1/projects/:workspaceId/sessions/:id", {
+          params: { workspaceId: r.meta?.workspaceId, id: r.id },
         });
         break;
       case "sandbox-template":
@@ -100,6 +100,10 @@ export class ResourceStack {
       case "opencode-session":
         // Lives inside the ephemeral sandbox; reclaimed when the session/sandbox
         // is deleted. Tracked only for report context — no standalone teardown.
+        break;
+      case "cli-sandbox":
+        // Every CliSandbox is disposed by its flow's `finally` block. Keep the
+        // tracked row for report context without reporting a false resource leak.
         break;
       default:
         log.warn(`no teardown handler for resource kind "${r.kind}" (${r.id})`);

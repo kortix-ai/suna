@@ -165,8 +165,8 @@ describe('isInheritedFromGroupOnly', () => {
     expect(
       isInheritedFromGroupOnly({
         has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'member',
+        workspace_role: null,
+        effective_workspace_role: 'member',
         group_sources: [{ group_name: 'Users', role: 'member' }],
       }),
     ).toBe(true);
@@ -176,8 +176,8 @@ describe('isInheritedFromGroupOnly', () => {
     expect(
       isInheritedFromGroupOnly({
         has_implicit_access: true,
-        project_role: null,
-        effective_project_role: 'manager',
+        workspace_role: null,
+        effective_workspace_role: 'manager',
         group_sources: [{ group_name: 'Users', role: 'member' }],
       }),
     ).toBe(false);
@@ -187,8 +187,8 @@ describe('isInheritedFromGroupOnly', () => {
     expect(
       isInheritedFromGroupOnly({
         has_implicit_access: false,
-        project_role: 'editor',
-        effective_project_role: 'editor',
+        workspace_role: 'editor',
+        effective_workspace_role: 'editor',
         group_sources: [{ group_name: 'Users', role: 'member' }],
       }),
     ).toBe(false);
@@ -198,8 +198,8 @@ describe('isInheritedFromGroupOnly', () => {
     expect(
       isInheritedFromGroupOnly({
         has_implicit_access: false,
-        project_role: null,
-        effective_project_role: null,
+        workspace_role: null,
+        effective_workspace_role: null,
         group_sources: [],
       }),
     ).toBe(false);
@@ -209,8 +209,8 @@ describe('isInheritedFromGroupOnly', () => {
     expect(
       isInheritedFromGroupOnly({
         has_implicit_access: false,
-        project_role: null,
-        effective_project_role: null,
+        workspace_role: null,
+        effective_workspace_role: null,
       }),
     ).toBe(false);
   });
@@ -221,8 +221,8 @@ describe('inheritedFromGroupSummary', () => {
     expect(
       inheritedFromGroupSummary({
         has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'member',
+        workspace_role: null,
+        effective_workspace_role: 'member',
         group_sources: [{ group_name: 'Users', role: 'member' }],
       }),
     ).toBe('Inherited Member via Users');
@@ -232,8 +232,8 @@ describe('inheritedFromGroupSummary', () => {
     expect(
       inheritedFromGroupSummary({
         has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'editor',
+        workspace_role: null,
+        effective_workspace_role: 'editor',
         group_sources: [
           { group_name: 'Engineering', role: 'editor' },
           { group_name: 'Users', role: 'member' },
@@ -246,8 +246,8 @@ describe('inheritedFromGroupSummary', () => {
     expect(
       inheritedFromGroupSummary({
         has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'manager',
+        workspace_role: null,
+        effective_workspace_role: 'manager',
         group_sources: [
           { group_name: 'A', role: 'manager' },
           { group_name: 'B', role: 'editor' },
@@ -261,8 +261,8 @@ describe('inheritedFromGroupSummary', () => {
     expect(
       inheritedFromGroupSummary({
         has_implicit_access: true,
-        project_role: null,
-        effective_project_role: 'manager',
+        workspace_role: null,
+        effective_workspace_role: 'manager',
         group_sources: [],
       }),
     ).toBeNull();
@@ -272,8 +272,8 @@ describe('inheritedFromGroupSummary', () => {
     expect(
       inheritedFromGroupSummary({
         has_implicit_access: false,
-        project_role: null,
-        effective_project_role: 'member',
+        workspace_role: null,
+        effective_workspace_role: 'member',
       }),
     ).toBeNull();
   });

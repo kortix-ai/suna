@@ -10,7 +10,7 @@ mock.module('../config', () => ({
     KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: 1,
     KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
     KORTIX_PROXY_REQS_PER_MIN: 1,
-    KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN: 1,
+    KORTIX_WORKSPACE_WEBHOOK_REQS_PER_MIN: 1,
     KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: 1,
   },
 }));
@@ -30,7 +30,7 @@ const {
   createInviteAcceptRateLimitMiddleware,
   createSandboxProxyRateLimitMiddleware,
   createPublicSessionShareRateLimitMiddleware,
-  createProjectWebhookRateLimitMiddleware,
+  createWorkspaceWebhookRateLimitMiddleware,
   resetRateLimiters,
 } = await import('../shared/rate-limit');
 const { sessionLlmPolicyForTier } = await import('../shared/account-limits');
@@ -167,8 +167,8 @@ describe('audited rate limits', () => {
 
   test('limits project webhooks by project and client IP without database audit work', async () => {
     const app = new Hono();
-    app.use('/v1/webhooks/projects/:projectId/:slug', createProjectWebhookRateLimitMiddleware());
-    app.post('/v1/webhooks/projects/:projectId/:slug', (c) => c.json({ ok: true }));
+    app.use('/v1/webhooks/projects/:workspaceId/:slug', createWorkspaceWebhookRateLimitMiddleware());
+    app.post('/v1/webhooks/projects/:workspaceId/:slug', (c) => c.json({ ok: true }));
 
     const headers = { 'X-Forwarded-For': '203.0.113.40' };
     const first = await app.request('/v1/webhooks/projects/project-1/hook', {
@@ -186,11 +186,11 @@ describe('audited rate limits', () => {
     expect(await second.json()).toMatchObject({ error: 'rate_limit_exceeded' });
     expect(auditRows).toHaveLength(0);
 
-    const otherProject = await app.request('/v1/webhooks/projects/project-2/hook', {
+    const otherWorkspace = await app.request('/v1/webhooks/projects/project-2/hook', {
       method: 'POST',
       headers,
     });
-    expect(otherProject.status).toBe(200);
+    expect(otherWorkspace.status).toBe(200);
   });
 
   test('scales session LLM router policy by tier', () => {

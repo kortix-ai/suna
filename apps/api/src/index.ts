@@ -53,7 +53,7 @@ import {
   isDaytonaTransientProviderError,
   primeDaytonaTransientClassifier,
 } from './shared/daytona-transient';
-import { GitOperationError, isGitOperationError } from './projects/git/mirror';
+import { isGitOperationError } from './workspaces/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -89,27 +89,28 @@ import { runtimeAssetsApp } from './runtime-assets';
 import { oauthApp } from './oauth';
 import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
 import {
-  projectWebhooksApp,
-  projectsApp,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
+  startWorkspaceTriggerScheduler,
+  stopWorkspaceTriggerScheduler,
   getTriggerSchedulerHealth,
-} from './projects';
-import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+} from './workspaces';
+import { workspaceRoutesApp } from './workspaces/lib/app';
+import { workspaceResponseCompatibility } from './workspaces/compat';
+import { projectWebhooksApp } from './projects';
+import { projectRequestCompatibility, projectResponseCompatibility } from './projects/compat';
+import { startWorkspaceMaintenance, stopWorkspaceMaintenance } from './workspaces/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import {
   startSunaMigrationWorker,
   stopSunaMigrationWorker,
-} from './projects/suna-migration/suna-migration-worker';
+} from './workspaces/suna-migration/suna-migration-worker';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
 import {
   startProviderTransitionWorker,
   stopProviderTransitionWorker,
-} from './projects/provider-transition/provider-transition-worker';
+} from './workspaces/provider-transition/provider-transition-worker';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
@@ -237,12 +238,12 @@ app.use('*', async (c, next) => {
       const path = c.req.path;
       const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
       if (projectSessionMatch && UUID_PATH_SEGMENT_RE.test(projectSessionMatch[1])) {
-        setContextField('projectId', projectSessionMatch[1]);
+        setContextField('workspaceId', projectSessionMatch[1]);
         setContextField('sessionId', projectSessionMatch[2]);
       } else {
         const projectMatch = path.match(/\/projects\/([^/]+)/);
         if (projectMatch && UUID_PATH_SEGMENT_RE.test(projectMatch[1])) {
-          setContextField('projectId', projectMatch[1]);
+          setContextField('workspaceId', projectMatch[1]);
         }
       }
       const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) || path.match(/\/p\/([^/]+)/);
@@ -814,14 +815,18 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
-registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
-// Voice routes are registered BEFORE projectsApp: Hono matches in registration
-// order, and projectsApp's auth middleware would otherwise claim the worker's
+// Voice routes are registered before the typed Workspace registry: Hono matches
+// in registration order, and its auth middleware would otherwise claim the worker's
 // MCP callback (/sessions/:id/mcp/voice) and reject it with a generic 401
 // before its own per-call HMAC check ever runs. The worker is not a Kortix
 // session and cannot present session auth.
+app.use('/v1/projects/*', projectRequestCompatibility);
+app.use('/v1/projects/*', projectResponseCompatibility);
+app.use('/v1/workspaces/*', workspaceResponseCompatibility);
+app.route('/v1/workspaces', voiceMcpRoutes); // Canonical Workspace twin for the voice-worker MCP.
+app.route('/v1/workspaces', workspaceRoutesApp); // Canonical Workspace namespace.
 app.route('/v1/projects', voiceMcpRoutes);
-app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+app.route('/v1/projects', workspaceRoutesApp); // Deprecated Project compatibility namespace.
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // /v1/skills — the kortix-managed system skills (how Kortix itself works), served
@@ -848,17 +853,19 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /mana
 // so it is intentionally NOT wrapped in combinedAuth.
 {
   const { gitProxyApp } = await import('./git-proxy');
-  app.route('/v1/git', gitProxyApp); // /v1/git/:projectId(.git)/{info/refs,git-upload-pack,git-receive-pack}
+  app.route('/v1/git', gitProxyApp); // /v1/git/:workspaceId(.git)/{info/refs,git-upload-pack,git-receive-pack}
 }
 
 // Connector — unified connector layer. Gateway routes (/catalog, /call) use
 // KORTIX_CLI_TOKEN (validated inside the router); admin routes
-// (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
+// (/workspaces/:id/connectors*) need user auth, so combinedAuth runs first.
 {
-  const { connectorApp } = await import('./connectors');
+  const { connectorApp, legacyConnectorApp } = await import('./connectors');
+  app.use('/v1/connectors/workspaces/*', combinedAuth);
   app.use('/v1/connectors/projects/*', combinedAuth);
   app.use('/v1/connectors/connect-status', combinedAuth); // deployment capability flag (authed)
   app.route('/v1/connectors', connectorApp);
+  app.route('/v1/connectors', legacyConnectorApp);
 }
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
@@ -874,12 +881,12 @@ const {
   emailWebhookApp,
 } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
-app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:workspaceId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
 app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
-app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:workspaceId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
@@ -1261,7 +1268,7 @@ console.log(`
 ║    /v1/router     (search, LLM, proxy)                    ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
-║    /v1/projects   (Git-backed projects)                    ║
+║    /v1/workspaces (Git-backed workspaces)                  ║
 ║    /v1/setup      (setup & env management)                 ║
 ║    /v1/tunnel     (reverse-tunnel to local machines)         ║
 ║    /v1/p         (sandbox proxy — local + cloud)            ║
@@ -1337,8 +1344,8 @@ let singletonWorkersRunning = false;
 async function startSingletonWorkers() {
   if (singletonWorkersRunning) return;
   singletonWorkersRunning = true;
-  startProjectMaintenance();
-  startProjectTriggerScheduler();
+  startWorkspaceMaintenance();
+  startWorkspaceTriggerScheduler();
   // Mint the global platform-default sandbox image once per leadership term so
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
@@ -1361,8 +1368,8 @@ async function startSingletonWorkers() {
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
   singletonWorkersRunning = false;
-  stopProjectTriggerScheduler();
-  stopProjectMaintenance();
+  stopWorkspaceTriggerScheduler();
+  stopWorkspaceMaintenance();
   stopSunaMigrationWorker();
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();

@@ -21,9 +21,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * one-time CLI install. Expanded, it shows the full two-step flow:
  * 1. install, 2. `kortix sessions connect <id>`.
  */
-export function SessionTerminalConnectBar({ projectSessionId }: { projectSessionId: string }) {
+export function SessionTerminalConnectBar({ workspaceSessionId }: { workspaceSessionId: string }) {
   const [expanded, setExpanded] = useState(false);
-  const connectCmd = `kortix sessions connect ${projectSessionId}`;
+  const connectCmd = `kortix sessions connect ${workspaceSessionId}`;
   const installCmd = useDeploymentCliInstallCommand(undefined);
 
   return (

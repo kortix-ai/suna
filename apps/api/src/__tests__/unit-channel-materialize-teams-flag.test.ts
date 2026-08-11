@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  * no `teams` connector until it opts in.
  */
 
-let projectMetadata: unknown = {};
+let workspaceMetadata: unknown = {};
 let hasTeamsInstall = true;
 
 mock.module('../shared/db', () => ({
@@ -15,7 +15,7 @@ mock.module('../shared/db', () => ({
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: async () => [{ metadata: projectMetadata }],
+          limit: async () => [{ metadata: workspaceMetadata }],
         }),
       }),
     }),
@@ -34,7 +34,7 @@ const teamsSpecs = async () =>
   (await synthesizeChannelConnectors('p-1', [])).filter((s) => s.platform === 'teams');
 
 beforeEach(() => {
-  projectMetadata = {};
+  workspaceMetadata = {};
   hasTeamsInstall = true;
 });
 
@@ -44,7 +44,7 @@ describe('synthesizeChannelConnectors — Teams is gated on the `teams` experime
   });
 
   test('opting into `teams` materializes the connector for a project with an install', async () => {
-    projectMetadata = { experimental: { teams: true } };
+    workspaceMetadata = { experimental: { teams: true } };
     const specs = await teamsSpecs();
     expect(specs).toHaveLength(1);
     expect(specs[0]!.provider).toBe('channel');
@@ -52,12 +52,12 @@ describe('synthesizeChannelConnectors — Teams is gated on the `teams` experime
   });
 
   test('an explicit `teams: false` keeps the connector off', async () => {
-    projectMetadata = { experimental: { teams: false } };
+    workspaceMetadata = { experimental: { teams: false } };
     expect(await teamsSpecs()).toEqual([]);
   });
 
   test('the flag alone is not enough — the install is still required', async () => {
-    projectMetadata = { experimental: { teams: true } };
+    workspaceMetadata = { experimental: { teams: true } };
     hasTeamsInstall = false;
     expect(await teamsSpecs()).toEqual([]);
   });

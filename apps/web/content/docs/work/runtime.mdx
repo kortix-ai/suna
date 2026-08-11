@@ -39,7 +39,7 @@ An open dashboard tab, preview, SSE connection, or health poll does not create a
 ### Branch model
 
 - The session branch is named after the session id (a UUID). `KORTIX_SESSION_ID` and `KORTIX_BRANCH_NAME` carry the same value.
-- Kortix cuts the branch from `base_ref`, which defaults to the project's default branch, at session-create time.
+- Kortix cuts the branch from `base_ref`, which defaults to the Workspace default branch, at session-create time.
 - Triggers create their session branch the same way an interactive session does.
 - Nothing writes the default branch directly. Only a merged [change request](/docs/work/change-requests) does.
 
@@ -47,14 +47,14 @@ An open dashboard tab, preview, SSE connection, or health poll does not create a
 
 Use **Ask Agent: Sync Branch & Reload** from the session command palette when the base branch changed. The agent inspects the session branch, preserves local work, fetches the latest `base_ref`, resolves conflicts, runs the relevant tests, and commits the reconciliation. Kortix does not choose one side of a conflict or reset the working tree.
 
-The agent finishes with `kortix sessions reload "$KORTIX_SESSION_ID" --project "$KORTIX_PROJECT_ID" --no-repo --force --yes`. `--no-repo` is required because the agent already reconciled the branch. The reload replaces the OpenCode runtime after the replacement becomes healthy. It ends the current turn, so send `continue` after the runtime returns.
+The agent finishes with `kortix sessions reload "$KORTIX_SESSION_ID" --workspace "$KORTIX_WORKSPACE_ID" --no-repo --force --yes`. `--no-repo` is required because the agent already reconciled the branch. The reload replaces the OpenCode runtime after the replacement becomes healthy. It ends the current turn, so send `continue` after the runtime returns.
 
 The session header reports each server-confirmed reload phase in real time. A web reload checks the session, compiles the agent config, applies and validates the runtime replacement, then confirms the active config. It does not refresh the repository. The CLI can refresh the repository unless you pass `--no-repo`.
 
 ## Layout inside the sandbox
 
 ```
-/workspace                       ← WORKDIR. The project repo is cloned here.
+/workspace                       ← WORKDIR. The Workspace repo is cloned here.
 /workspace/.kortix/              ← Repo-internal Kortix folder (Dockerfile + opencode config dir).
 /usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
 /usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
@@ -65,15 +65,16 @@ OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`. Its object store neve
 
 ## Injected environment
 
-Kortix injects these variables at boot, alongside your project's [secrets](/docs/project/secrets), which arrive as plain environment variables.
+Kortix injects these variables at boot, alongside the Workspace [secrets](/docs/workspace/secrets), which arrive as plain environment variables.
 
 | Variable | What |
 | --- | --- |
-| `KORTIX_PROJECT_ID` | UUID of this project. |
+| `KORTIX_WORKSPACE_ID` | UUID of this Workspace. |
+| `KORTIX_PROJECT_ID` | Deprecated alias for `KORTIX_WORKSPACE_ID`. |
 | `KORTIX_SESSION_ID` | UUID of this session. Also the branch name. |
 | `KORTIX_BRANCH_NAME` | Same value as `KORTIX_SESSION_ID`. |
-| `KORTIX_REPO_URL` | Clone URL for the project repo. |
-| `KORTIX_DEFAULT_BRANCH` | The project's default branch. |
+| `KORTIX_REPO_URL` | Clone URL for the Workspace repo. |
+| `KORTIX_DEFAULT_BRANCH` | The Workspace default branch. |
 | `KORTIX_BASE_REF` | The ref this session branched from. |
 | `KORTIX_SERVICE_PORT` | `8000` — the daemon's external port. |
 | `KORTIX_API_URL` | The platform API base (`.../v1`). |
@@ -81,7 +82,8 @@ Kortix injects these variables at boot, alongside your project's [secrets](/docs
 | `KORTIX_OPENCODE_MODEL` | The model to run, when set. |
 | `KORTIX_INITIAL_PROMPT` | The first prompt, when a trigger spawned the session. |
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
-| `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
+| `KORTIX_WORKSPACE_SECRET_NAMES` | Comma-separated names of the Workspace secrets. |
+| `KORTIX_PROJECT_SECRET_NAMES` | Deprecated alias for `KORTIX_WORKSPACE_SECRET_NAMES`. |
 | `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
 | `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. Tells the daemon to create the OpenCode root on cold boot. |
 | `KORTIX_LLM_API_KEY`, `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key and base URL. Injected only on plans that use Kortix's managed model access. |
@@ -105,17 +107,23 @@ Four tokens can appear in a sandbox. They carry two different identities.
 | --- | --- | --- |
 | `KORTIX_SANDBOX_TOKEN` | The sandbox's own service key. | Signs the daemon's control-surface requests (the `X-Kortix-User-Context` header) and authenticates sandbox-identity routes: clone-credential, turn-stream, execution leases, turn-question. |
 | `KORTIX_TOKEN` | Back-compat alias for `KORTIX_SANDBOX_TOKEN`. | Same value, same use, kept for daemons built before the rename. Do not depend on it — a future release drops this alias and repurposes `KORTIX_TOKEN` to mean the session token instead. |
-| `KORTIX_CLI_TOKEN` | A project-scoped [personal access token](/docs/sdk/auth) (PAT). | Lets the in-sandbox `kortix` CLI act as the launching user, scoped to the project. |
+| `KORTIX_CLI_TOKEN` | A Workspace-scoped [personal access token](/docs/sdk/auth) (PAT). | Lets the in-sandbox `kortix` CLI act as the launching user, scoped to the Workspace. |
 
-`KORTIX_SANDBOX_TOKEN` is not a project API token. The `kortix` CLI does not read it, and project-scoped API routes reject it. Use `KORTIX_CLI_TOKEN` for any call that should act as the launching user.
+`KORTIX_SANDBOX_TOKEN` is not a Workspace API token. The `kortix` CLI does not
+read it, and Workspace-scoped API routes reject it. Use `KORTIX_CLI_TOKEN` for
+any call that should act as the launching user.
 
 ## Pushing from a session
 
-The daemon fetches a short-lived clone credential from `GET /v1/projects/:id/git/clone-credential`, authenticated with `KORTIX_SANDBOX_TOKEN`. No static git token sits in the environment. With that credential, `git push origin HEAD` sends commits to the session branch. Landing on the default branch requires a merged [change request](/docs/work/change-requests).
+The daemon fetches a short-lived clone credential from
+`GET /v1/workspaces/:id/git/clone-credential`, authenticated with
+`KORTIX_SANDBOX_TOKEN`. No static git token sits in the environment. With that
+credential, `git push origin HEAD` sends commits to the session branch. Landing
+on the default branch requires a merged [change request](/docs/work/change-requests).
 
 ## The agent runtime
 
-The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
+The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the Workspace config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/workspace/agents) for how a session picks an agent and its config.
 
 ## The daemon control surface
 
@@ -145,7 +153,7 @@ Every sandbox boots from an image built in two layers. Your Dockerfile defines t
 └─────────────────────────────────────────┘
 ```
 
-If your project has no Dockerfile, Kortix builds sessions from a bare `ubuntu:24.04` image plus the runtime layer below.
+If the Workspace has no Dockerfile, Kortix builds sessions from a bare `ubuntu:24.04` image plus the runtime layer below.
 
 ### Declare a template
 
@@ -160,7 +168,11 @@ sandbox:
   default: dev
 ```
 
-Set exactly one of `dockerfile` or `image` on each entry. Dockerfile paths must stay inside the repository. Set `default` to the template slug your sessions should use; omit it to use the platform default image. Older projects on `kortix.toml` follow the same fields — see [legacy `kortix.toml`](/docs/project/legacy-toml). Full field list: [manifest reference](/docs/project/manifest).
+Set exactly one of `dockerfile` or `image` on each entry. Dockerfile paths must
+stay inside the repository. Set `default` to the template slug your sessions
+should use. Omit it to use the platform default image. Older Workspaces on
+`kortix.toml` follow the same fields. See [legacy `kortix.toml`](/docs/workspace/legacy-toml).
+Full field list: [manifest reference](/docs/workspace/manifest).
 
 ### What the runtime layer adds
 
@@ -184,7 +196,7 @@ Everything you install in your own Dockerfile stays on `PATH`. Kortix does not r
 | Don't claim port `8000`. | Reserved for the daemon's reverse proxy. Run dev servers on other ports. |
 | `FROM` a Debian or Ubuntu base. | The runtime layer runs `apt-get`. Alpine, Fedora, and Arch fail the build. |
 | Don't run `apt-get clean` without `rm -rf /var/lib/apt/lists/*`. | The runtime layer re-runs `apt-get update`; a broken cache breaks the build. |
-| Don't bake credentials into the image. | Declare the name in `env:` and set the value as a project secret. Kortix injects it at session start. |
+| Don't bake credentials into the image. | Declare the name in `env:` and set the value as a Workspace secret. Kortix injects it at session start. |
 
 ### Hardware spec
 

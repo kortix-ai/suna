@@ -1,6 +1,5 @@
 'use client';
 
-
 import {
   ArrowLeftIcon as ArrowLeft,
   CubeIcon as Boxes,
@@ -25,7 +24,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 interface NavItem {
   href: string;
@@ -48,8 +47,8 @@ export function AdminSidebar() {
       icon: Users,
     },
     {
-      href: '/admin/projects',
-      label: 'Projects',
+      href: '/admin/workspaces',
+      label: 'Workspaces',
       icon: FolderKanban,
     },
     {
@@ -81,9 +80,7 @@ export function AdminSidebar() {
           </div>
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">Admin</span>
-            <span className="text-muted-foreground text-xs">
-              {'Kortix console'}
-            </span>
+            <span className="text-muted-foreground text-xs">{'Kortix console'}</span>
           </div>
         </Link>
       </SidebarHeader>
@@ -105,12 +102,10 @@ export function AdminSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip={'Leave admin console'}
-              onClick={() => router.push(PROJECT_LANDING_PATH)}
+              onClick={() => router.push(WORKSPACE_LANDING_PATH)}
             >
               <ArrowLeft />
-              <span>
-                {'Back to app'}
-              </span>
+              <span>{'Back to app'}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

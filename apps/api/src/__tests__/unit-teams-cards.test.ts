@@ -93,11 +93,11 @@ describe('interactive cards', () => {
     expect(a[0]?.url).toBe('https://app/teams/login/tok');
   });
 
-  test('request-access card carries an Execute action with the projectId', () => {
+  test('request-access card carries an Execute action with the workspaceId', () => {
     const a = actions(buildRequestAccessCard('proj-1'));
     expect(a[0]?.type).toBe('Action.Execute');
     expect(a[0]?.verb).toBe('teams_request_access');
-    expect(a[0]?.data?.projectId).toBe('proj-1');
+    expect(a[0]?.data?.workspaceId).toBe('proj-1');
   });
 
   test('select card renders one per-row Execute action, marks the current option', () => {

@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import {
   enabledTemplateBuildProviders,
   observeTemplateProviderCoverage,
-  resolveConfiguredProjectProviderPin,
+  resolveConfiguredWorkspaceProviderPin,
   resolveRoutedTemplateState,
-  resolveUsableProjectProviderPin,
+  resolveUsableWorkspaceProviderPin,
   SANDBOX_TEMPLATE_PROVIDERS,
 } from './provider-coverage';
 
@@ -109,19 +109,19 @@ describe('sandbox template provider coverage', () => {
 
   test('only treats a usable explicit project pin as pinned', () => {
     const enabled = (provider: string) => provider !== 'e2b';
-    expect(resolveUsableProjectProviderPin({}, enabled)).toBeNull();
-    expect(resolveUsableProjectProviderPin({ default_sandbox_provider: 'platinum' }, enabled))
+    expect(resolveUsableWorkspaceProviderPin({}, enabled)).toBeNull();
+    expect(resolveUsableWorkspaceProviderPin({ default_sandbox_provider: 'platinum' }, enabled))
       .toBe('platinum');
-    expect(resolveUsableProjectProviderPin({ default_sandbox_provider: 'e2b' }, enabled))
+    expect(resolveUsableWorkspaceProviderPin({ default_sandbox_provider: 'e2b' }, enabled))
       .toBeNull();
-    expect(resolveUsableProjectProviderPin({ default_sandbox_provider: 'bogus' }, enabled))
+    expect(resolveUsableWorkspaceProviderPin({ default_sandbox_provider: 'bogus' }, enabled))
       .toBeNull();
   });
 
   test('retains a valid configured pin for presentation while unavailable', () => {
-    expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'e2b' }))
+    expect(resolveConfiguredWorkspaceProviderPin({ default_sandbox_provider: 'e2b' }))
       .toBe('e2b');
-    expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'managed' }))
+    expect(resolveConfiguredWorkspaceProviderPin({ default_sandbox_provider: 'managed' }))
       .toBeNull();
     expect(resolveRoutedTemplateState([
       { provider: 'e2b', available: false, state: null },

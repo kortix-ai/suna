@@ -15,7 +15,7 @@ import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
 import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
-import { normalizeProjectRole } from '../iam/role-perms';
+import { normalizeWorkspaceRole } from '../iam/role-perms';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -90,7 +90,7 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   const g = raw as Record<string, unknown>;
   if (typeof g.project_id !== 'string' || !UUID_RE.test(g.project_id)) return null;
   if (typeof g.role !== 'string') return null;
-  const role = normalizeProjectRole(g.role);
+  const role = normalizeWorkspaceRole(g.role);
   if (!role) return null;
   // expires_at is optional; when present must parse to a real date.
   let expiresAt: string | null = null;
@@ -166,14 +166,14 @@ async function applyBootstrapGrants(
         .insert(projectMembers)
         .values({
           accountId: invite.accountId,
-          projectId: g.project_id,
+          workspaceId: g.project_id,
           userId,
           projectRole: g.role,
           grantedBy: invite.invitedBy,
           expiresAt: g.expires_at ? new Date(g.expires_at) : null,
         })
         .onConflictDoUpdate({
-          target: [projectMembers.projectId, projectMembers.userId],
+          target: [projectMembers.workspaceId, projectMembers.userId],
           set: {
             projectRole: g.role,
             grantedBy: invite.invitedBy,

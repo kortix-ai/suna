@@ -53,6 +53,7 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain(
       'COPY --chown=kortix:kortix artifacts/managed-skills /opt/kortix/managed-skills',
     );
+    expect(dockerfile).toContain('KORTIX_WORKSPACE_AUTO_CLONE=0');
     expect(dockerfile).toContain('KORTIX_PROJECT_AUTO_CLONE=0');
     expect(dockerfile).toContain('KORTIX_OPENCODE_PROCESS_TRANSPORT=rest');
 

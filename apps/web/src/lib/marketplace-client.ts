@@ -61,13 +61,13 @@ export interface DependencyItem {
   description: string | null;
 }
 
-export interface ProjectAgent {
+export interface WorkspaceAgent {
   name: string;
   title: string;
   description: string | null;
 }
 
-export interface ProjectTrigger {
+export interface WorkspaceTrigger {
   slug: string;
   description: string | null;
   agent: string | null;
@@ -78,8 +78,8 @@ export interface MarketplaceItemDetail extends MarketplaceItem {
   readme: string | null;
   dependencyItems: DependencyItem[];
   /** For a `registry:project`: its agents + triggers (parsed from kortix.yaml). */
-  projectAgents?: ProjectAgent[];
-  projectTriggers?: ProjectTrigger[];
+  workspaceAgents?: WorkspaceAgent[];
+  workspaceTriggers?: WorkspaceTrigger[];
 }
 
 export interface InstallResult {
@@ -149,7 +149,7 @@ export async function listMarketplaceItems(params?: {
   };
 }
 
-export function defaultProjectMarketplaceItems(
+export function defaultWorkspaceMarketplaceItems(
   items: MarketplaceItem[] | undefined,
 ): MarketplaceItem[] {
   return (items ?? [])
@@ -161,9 +161,9 @@ export function defaultProjectMarketplaceItems(
     );
 }
 
-export async function listDefaultProjectMarketplaceItems(): Promise<MarketplaceItem[]> {
+export async function listDefaultWorkspaceMarketplaceItems(): Promise<MarketplaceItem[]> {
   const page = await listMarketplaceItems({ source: 'kortix', type: 'skill' });
-  return defaultProjectMarketplaceItems(page.items);
+  return defaultWorkspaceMarketplaceItems(page.items);
 }
 
 export interface MarketplaceSummary {
@@ -235,17 +235,17 @@ export async function getMarketplaceItemFile(
 }
 
 /** Install ANY marketplace item (skill/agent/command/tool, or a whole
- *  `registry:project`) into a project via an agent session instead of a
+ *  `registry:project`) into a workspace via an agent session instead of a
  *  deterministic file commit — the session installs it and wires up whatever
  *  it needs (connectors, secrets), or for a `registry:project` merges it into
  *  an existing project's kortix.yaml, which isn't safe to do deterministically.
  *  Starts a session with a constructed prompt; the caller should navigate into
  *  `session_id` to watch it work. */
 export async function installMarketplaceItemAsSession(
-  projectId: string,
+  workspaceId: string,
   id: string,
 ): Promise<{ session_id: string }> {
-  return createMarketplaceInstallSession(projectId, id);
+  return createMarketplaceInstallSession(workspaceId, id);
 }
 
 // ── "Add a marketplace" sources ─────────────────────────────────────────────

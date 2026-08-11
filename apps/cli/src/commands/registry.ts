@@ -42,7 +42,7 @@ Subcommands:
 Options:
   --out <path>        build: where to write (default: ./registry.json).
   --root <dir>        build: repo root to scan (default: cwd).
-  --name <name>       build: registry name (default: project name).
+  --name <name>       build: registry name (default: workspace name).
   --homepage <url>    build: registry homepage.
   --stdout            build: print to stdout instead of writing a file.
   --query <text>      search: case-insensitive filter over name/title/desc.
@@ -258,7 +258,7 @@ async function registryView(argv: string[], json: boolean): Promise<number> {
   }
   const envKeys = Object.keys(it.envVars ?? {});
   if (envKeys.length) process.stdout.write(`\n  ${C.dim}Secrets:${C.reset} ${envKeys.join(', ')}\n`);
-  process.stdout.write(`\n  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import "${address}"${C.reset}\n`);
+  process.stdout.write(`\n  ${C.dim}Add to a workspace:${C.reset} ${C.dim}start a session and ask the agent to import "${address}"${C.reset}\n`);
   return 0;
 }
 
@@ -277,5 +277,5 @@ function printItemTable(registryName: string, items: RegistryItem[]): void {
       `  ${C.cyan}${it.name.padEnd(nameWidth)}${C.reset}  ${C.faded}${kind.padEnd(8)}${C.reset}  ${C.dim}${trimmed}${C.reset}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}Add one to a project:${C.reset} ${C.dim}start a session and ask the agent to import ${registryName}/<name>${C.reset}\n`);
+  process.stdout.write(`\n  ${C.dim}Add one to a workspace:${C.reset} ${C.dim}start a session and ask the agent to import ${registryName}/<name>${C.reset}\n`);
 }

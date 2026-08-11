@@ -1,14 +1,14 @@
 'use client';
 
 import {
-  type AdminConnector,
-  type ConnectorAuthorizationStrategy,
+  type WorkspaceAdminConnector,
+  type WorkspaceConnectorAuthorizationStrategy,
   listConnections,
   listPipedreamApps,
   setConnectorAuthorizationStrategy,
   setConnectorName,
 } from '@kortix/sdk';
-import { useProjectAccountId } from '@kortix/sdk/react';
+import { useWorkspaceAccountId } from '@kortix/sdk/react';
 import { CheckIcon, KeyIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -37,9 +37,9 @@ import {
   ConnectorAppIcon,
   ConnectorStatusBadge,
 } from '@/features/workspace/capabilities/connectors/connector-identity';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useNewWorkspaceSession } from '@/hooks/workspaces/use-new-workspace-session';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import { cn } from '@/lib/utils';
 
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -52,10 +52,10 @@ import { CONNECTOR_TAB_LABEL, type ConnectorTab, connectorTabs } from './connect
 import { ConnectorTools } from './connector-tools';
 
 export interface ConnectorModalProps {
-  projectId: string;
+  workspaceId: string;
   /** The connector to show, or `null` when it has not resolved yet. `open` is
    *  driven by the SELECTION, not by this — see `shared/detail-selection.ts`. */
-  connector: AdminConnector | null;
+  connector: WorkspaceAdminConnector | null;
   canWrite: boolean;
   open: boolean;
   /** Open on a selection whose record is still loading — `?c=<slug>` on a cold
@@ -82,7 +82,7 @@ export interface ConnectorModalProps {
  * `Modal`/`ModalContent` (which would replay the open animation).
  */
 export function ConnectorModal({
-  projectId,
+  workspaceId,
   connector,
   canWrite,
   open,
@@ -101,7 +101,7 @@ export function ConnectorModal({
         {connector ? (
           <ConnectorModalBody
             key={connector.slug}
-            projectId={projectId}
+            workspaceId={workspaceId}
             connector={connector}
             canWrite={canWrite}
             onChanged={onChanged}
@@ -161,14 +161,14 @@ function ConnectorModalSkeleton() {
 }
 
 function ConnectorModalBody({
-  projectId,
+  workspaceId,
   connector,
   canWrite,
   onChanged,
   onRemoved,
 }: {
-  projectId: string;
-  connector: AdminConnector;
+  workspaceId: string;
+  connector: WorkspaceAdminConnector;
   canWrite: boolean;
   onChanged: () => void;
   onRemoved: () => void;
@@ -176,8 +176,8 @@ function ConnectorModalBody({
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
-  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-  const connected = usesProjectAuthorization && connector.secretSet;
+  const usesWorkspaceAuthorization = connector.authorizationStrategy === 'workspace';
+  const connected = usesWorkspaceAuthorization && connector.secretSet;
   const displayName = connectorDisplayName(connector);
 
   const tabs = connectorTabs(connector, { canWrite });
@@ -187,27 +187,27 @@ function ConnectorModalBody({
   const [credOpen, setCredOpen] = useState(false);
 
   const connectionsQuery = useQuery({
-    queryKey: ['connections', projectId],
-    queryFn: () => listConnections(projectId),
+    queryKey: ['connections', workspaceId],
+    queryFn: () => listConnections(workspaceId),
     staleTime: 30_000,
     enabled: !isChannel && !isComputer,
   });
-  const projectConnection = connectionsQuery.data?.connections.find(
-    (p) => p.connector_alias === connector.slug && p.owner_type === 'project' && p.is_default,
+  const workspaceConnection = connectionsQuery.data?.connections.find(
+    (p) => p.connector_alias === connector.slug && p.owner_type === 'workspace' && p.is_default,
   );
   const myPrivateConnection = connectionsQuery.data?.connections.find(
     (p) => p.connector_alias === connector.slug && p.owner_type === 'member',
   );
 
-  const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
+  const reconnect = usePipedreamConnect(workspaceId, connector.slug, onChanged);
 
   // Best-effort catalogue description. Never blocks first paint — the header
   // renders without it, then fills in. That is the main open-latency fix:
   // previously this query sat in the critical path of feeling "ready".
   const appDescriptionQuery = useQuery({
-    queryKey: ['connector-app-description', projectId, connector.slug, displayName],
+    queryKey: ['connector-app-description', workspaceId, connector.slug, displayName],
     queryFn: async () => {
-      const result = await listPipedreamApps(projectId, displayName);
+      const result = await listPipedreamApps(workspaceId, displayName);
       const match = result.apps.find(
         (app) =>
           foldKey(app.slug) === foldKey(connector.slug) ||
@@ -220,29 +220,29 @@ function ConnectorModalBody({
   });
   const appDescription = isPipedream ? (appDescriptionQuery.data ?? null) : null;
 
-  // `accountId` rides the qk.project.detail(id) cache the connectors page
+  // `accountId` rides the qk.workspace.detail(id) cache the connectors page
   // already filled, so the connections probe resolves on the modal's first
-  // render instead of after its own getProject round-trip.
-  const accountId = useProjectAccountId(projectId);
+  // render instead of after its own getWorkspace round-trip.
+  const accountId = useWorkspaceAccountId(workspaceId);
   const canManageConnections =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE, { accountId })
+    useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_CONNECTIONS_MANAGE, { accountId })
       .allowed === true;
 
-  const newSession = useNewProjectSession(projectId);
+  const newSession = useNewWorkspaceSession(workspaceId);
   const startPrivateSession = () => {
     newSession({ create: { require_connectors: [connector.slug] } });
   };
 
   const [authorizationStrategyAwaitingRefresh, setAuthorizationStrategyAwaitingRefresh] =
-    useState<ConnectorAuthorizationStrategy | null>(null);
+    useState<WorkspaceConnectorAuthorizationStrategy | null>(null);
   useEffect(() => {
     if (authorizationStrategyAwaitingRefresh === connector.authorizationStrategy) {
       setAuthorizationStrategyAwaitingRefresh(null);
     }
   }, [authorizationStrategyAwaitingRefresh, connector.authorizationStrategy]);
   const updateAuthorizationStrategy = useMutation({
-    mutationFn: (next: ConnectorAuthorizationStrategy) =>
-      setConnectorAuthorizationStrategy(projectId, connector.slug, next),
+    mutationFn: (next: WorkspaceConnectorAuthorizationStrategy) =>
+      setConnectorAuthorizationStrategy(workspaceId, connector.slug, next),
     onSuccess: (result, next) => {
       const syncError = result.sync?.errors.find((error) => error.slug === connector.slug);
       if (syncError) {
@@ -252,7 +252,7 @@ function ConnectorModalBody({
         onChanged();
         return;
       }
-      successToast(`Authorization owner set to ${next === 'project' ? 'Project' : 'User'}`);
+      successToast(`Authorization owner set to ${next === 'workspace' ? 'Workspace' : 'User'}`);
       onChanged();
     },
     onError: (error: Error) => {
@@ -271,7 +271,7 @@ function ConnectorModalBody({
     Boolean(connector.authSecret) &&
     !connected &&
     !isChannel &&
-    usesProjectAuthorization;
+    usesWorkspaceAuthorization;
   const showReconnectCta = canWrite && Boolean(connector.authSecret) && connected && !isChannel;
 
   return (
@@ -283,7 +283,7 @@ function ConnectorModalBody({
         <div className="min-w-0 flex-1 space-y-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <HeaderName
-              projectId={projectId}
+              workspaceId={workspaceId}
               slug={connector.slug}
               displayName={displayName}
               canWrite={canWrite}
@@ -412,7 +412,7 @@ function ConnectorModalBody({
                 />
               ) : (
                 <ConnectorAccounts
-                  projectId={projectId}
+                  workspaceId={workspaceId}
                   connector={connector}
                   displayName={displayName}
                   canWrite={canWrite}
@@ -428,7 +428,7 @@ function ConnectorModalBody({
 
             <TabsContent value="tools">
               <ConnectorTools
-                projectId={projectId}
+                workspaceId={workspaceId}
                 connector={connector}
                 displayName={displayName}
                 canWrite={canWrite}
@@ -439,7 +439,7 @@ function ConnectorModalBody({
 
             <TabsContent value="settings">
               <ConnectorSettings
-                projectId={projectId}
+                workspaceId={workspaceId}
                 connector={connector}
                 displayName={displayName}
                 canWrite={canWrite}
@@ -457,11 +457,11 @@ function ConnectorModalBody({
       </ModalBody>
 
       <SetCredentialModal
-        projectId={projectId}
+        workspaceId={workspaceId}
         connector={credOpen ? connector : null}
         connectionId={
-          usesProjectAuthorization
-            ? (projectConnection?.connection_id ?? null)
+          usesWorkspaceAuthorization
+            ? (workspaceConnection?.connection_id ?? null)
             : (myPrivateConnection?.connection_id ?? null)
         }
         authorizationStrategy={connector.authorizationStrategy}
@@ -480,14 +480,14 @@ function ConnectorModalBody({
  * keeps an accessible name for the dialog during the edit.
  */
 function HeaderName({
-  projectId,
+  workspaceId,
   slug,
   displayName,
   canWrite,
   disabled,
   onChanged,
 }: {
-  projectId: string;
+  workspaceId: string;
   slug: string;
   displayName: string;
   canWrite: boolean;
@@ -503,7 +503,7 @@ function HeaderName({
   }, [displayName]);
 
   const rename = useMutation({
-    mutationFn: () => setConnectorName(projectId, slug, draft.trim()),
+    mutationFn: () => setConnectorName(workspaceId, slug, draft.trim()),
     onSuccess: () => {
       successToast('Renamed');
       setEditing(false);

@@ -1,11 +1,14 @@
 import { z } from 'zod'
 
+import { workspaceIdFromEnv } from './workspace-env'
+
 /**
  * Env contract for kortix-sandbox-agent-server.
  *
- * Names must stay aligned with apps/api/src/projects/index.ts: the API
- * passes KORTIX_PROJECT_AUTO_CLONE / KORTIX_REPO_URL / KORTIX_BRANCH_NAME /
- * KORTIX_DEFAULT_BRANCH / KORTIX_PROJECT_ID / KORTIX_API_URL /
+ * Names must stay aligned with apps/api/src/workspaces/lib/session-runtime-env.ts:
+ * the API passes KORTIX_WORKSPACE_AUTO_CLONE / KORTIX_REPO_URL /
+ * KORTIX_BRANCH_NAME / KORTIX_DEFAULT_BRANCH / KORTIX_WORKSPACE_ID /
+ * KORTIX_API_URL /
  * KORTIX_SERVICE_PORT to Daytona at sandbox creation time. The provider layer
  * injects the sandbox credential as KORTIX_SANDBOX_TOKEN (with KORTIX_TOKEN kept
  * as a back-compat alias for daemons baked before the rename). It is the daemon's
@@ -49,7 +52,8 @@ const Schema = z.object({
   KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: z
     .string()
     .default('/ephemeral/kortix-master/opencode'),
-  KORTIX_PROJECT_AUTO_CLONE: BoolFlag.default(false),
+  KORTIX_WORKSPACE_AUTO_CLONE: BoolFlag.default(false),
+  KORTIX_WORKSPACE_ID: z.string().optional(),
   KORTIX_PROJECT_ID: z.string().optional(),
   KORTIX_API_URL: z.string().optional(),
   KORTIX_REPO_URL: z.string().optional(),
@@ -101,7 +105,7 @@ export type Config = {
   branchFetchDelaySec: number
   defaultOpencodeConfigDir: string
   autoClone: boolean
-  projectId: string | undefined
+  workspaceId: string | undefined
   apiUrl: string | undefined
   repoUrl: string | undefined
   branchName: string | undefined
@@ -128,7 +132,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_BRANCH_FETCH_ATTEMPTS: env.KORTIX_BRANCH_FETCH_ATTEMPTS,
     KORTIX_BRANCH_FETCH_DELAY: env.KORTIX_BRANCH_FETCH_DELAY,
     KORTIX_DEFAULT_OPENCODE_CONFIG_DIR: env.KORTIX_DEFAULT_OPENCODE_CONFIG_DIR,
-    KORTIX_PROJECT_AUTO_CLONE: env.KORTIX_PROJECT_AUTO_CLONE,
+    // Canonical name wins. The legacy fallback keeps self-hosted APIs and
+    // existing sandbox images interoperable during rolling upgrades.
+    KORTIX_WORKSPACE_AUTO_CLONE:
+      env.KORTIX_WORKSPACE_AUTO_CLONE ?? env.KORTIX_PROJECT_AUTO_CLONE,
+    KORTIX_WORKSPACE_ID: env.KORTIX_WORKSPACE_ID,
     KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID,
     KORTIX_API_URL: env.KORTIX_API_URL,
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
@@ -154,8 +162,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     branchFetchAttempts: parsed.KORTIX_BRANCH_FETCH_ATTEMPTS,
     branchFetchDelaySec: parsed.KORTIX_BRANCH_FETCH_DELAY,
     defaultOpencodeConfigDir: parsed.KORTIX_DEFAULT_OPENCODE_CONFIG_DIR,
-    autoClone: parsed.KORTIX_PROJECT_AUTO_CLONE,
-    projectId: parsed.KORTIX_PROJECT_ID,
+    autoClone: parsed.KORTIX_WORKSPACE_AUTO_CLONE,
+    workspaceId: workspaceIdFromEnv(env),
     apiUrl: parsed.KORTIX_API_URL,
     repoUrl: parsed.KORTIX_REPO_URL,
     branchName: parsed.KORTIX_BRANCH_NAME,

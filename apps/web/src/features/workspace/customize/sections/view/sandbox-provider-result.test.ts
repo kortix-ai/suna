@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { QueryClient } from '@tanstack/react-query';
 import type {
-  KortixProject,
-  SandboxProviderTransitionState,
-  UpdateProjectSandboxProviderResult,
+  KortixWorkspace,
+  WorkspaceSandboxProviderTransitionState,
+  UpdateWorkspaceSandboxProviderResult,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
@@ -30,10 +30,10 @@ function fakeQueryClient() {
   return { client, setCalls, invalidateCalls };
 }
 
-const projectResult = (): UpdateProjectSandboxProviderResult =>
+const workspaceResult = (): UpdateWorkspaceSandboxProviderResult =>
   ({
-    kind: 'project',
-    project_id: 'p1',
+    kind: 'workspace',
+    workspace_id: 'p1',
     account_id: 'a1',
     name: 'Proj',
     repo_url: 'https://example.test/r.git',
@@ -45,12 +45,12 @@ const projectResult = (): UpdateProjectSandboxProviderResult =>
     created_at: 'now',
     updated_at: 'now',
     default_sandbox_provider: 'daytona',
-  } as unknown as UpdateProjectSandboxProviderResult);
+  } as unknown as UpdateWorkspaceSandboxProviderResult);
 
-const preparationResult = (): UpdateProjectSandboxProviderResult => ({
+const preparationResult = (): UpdateWorkspaceSandboxProviderResult => ({
   kind: 'preparation',
   transition_id: 't1',
-  project_id: 'p1',
+  workspace_id: 'p1',
   status: 'building',
   source_provider: 'daytona',
   target_provider: 'platinum',
@@ -70,29 +70,29 @@ const preparationResult = (): UpdateProjectSandboxProviderResult => ({
 });
 
 describe('applySandboxProviderResult (FIX-L)', () => {
-  test('immediate kind:project → writes the project cache (with the discriminant stripped)', () => {
+  test('immediate kind:workspace → writes the workspace cache (with the discriminant stripped)', () => {
     const { client, setCalls, invalidateCalls } = fakeQueryClient();
-    const kind = applySandboxProviderResult(client, 'p1', projectResult());
-    expect(kind).toBe('project');
-    const summaryKey = qk.project.summary('p1');
-    const projectWrite = setCalls.find(
+    const kind = applySandboxProviderResult(client, 'p1', workspaceResult());
+    expect(kind).toBe('workspace');
+    const summaryKey = qk.workspace.summary('p1');
+    const workspaceWrite = setCalls.find(
       (c) => Array.isArray(c.key) && JSON.stringify(c.key) === JSON.stringify(summaryKey),
     );
-    expect(projectWrite).toBeDefined();
-    const cached = projectWrite!.value as KortixProject & { kind?: string };
-    expect(cached.project_id).toBe('p1');
+    expect(workspaceWrite).toBeDefined();
+    const cached = workspaceWrite!.value as KortixWorkspace & { kind?: string };
+    expect(cached.workspace_id).toBe('p1');
     expect(cached.default_sandbox_provider).toBe('daytona');
-    expect('kind' in cached).toBe(false); // discriminant stripped from the cached project
+    expect('kind' in cached).toBe(false); // discriminant stripped from the cached workspace
     expect(invalidateCalls.length).toBeGreaterThan(0);
   });
 
-  test('kind:preparation → NEVER writes the project cache (no PreparationView clobber)', () => {
+  test('kind:preparation → NEVER writes the workspace cache (no PreparationView clobber)', () => {
     const { client, setCalls } = fakeQueryClient();
     const kind = applySandboxProviderResult(client, 'p1', preparationResult());
     expect(kind).toBe('preparation');
-    // The core guarantee: a preparation result touches NO cache — it is not a project.
+    // The core guarantee: a preparation result touches NO cache — it is not a workspace.
     expect(setCalls).toHaveLength(0);
-    const summaryKey = qk.project.summary('p1');
+    const summaryKey = qk.workspace.summary('p1');
     expect(
       setCalls.some(
         (c) => Array.isArray(c.key) && JSON.stringify(c.key) === JSON.stringify(summaryKey),
@@ -112,12 +112,12 @@ describe('isSandboxProviderTransitionTerminal', () => {
   });
 });
 
-function stateWith(status: string): SandboxProviderTransitionState {
+function stateWith(status: string): WorkspaceSandboxProviderTransitionState {
   return {
     active_provider: 'daytona',
     latest: {
       transition_id: 't1',
-      project_id: 'p1',
+      workspace_id: 'p1',
       status,
       source_provider: 'daytona',
       target_provider: 'platinum',
@@ -137,7 +137,7 @@ describe('pollSandboxProviderTransition (FIX-L)', () => {
   test('polls until a terminal status, then settles with the terminal state', async () => {
     const seq = [stateWith('building'), stateWith('building'), stateWith('activated')];
     let i = 0;
-    let settled: SandboxProviderTransitionState | null | undefined;
+    let settled: WorkspaceSandboxProviderTransitionState | null | undefined;
     const result = await pollSandboxProviderTransition('p1', {
       fetchState: async () => seq[Math.min(i++, seq.length - 1)],
       baseDelayMs: 0,
@@ -153,7 +153,7 @@ describe('pollSandboxProviderTransition (FIX-L)', () => {
   });
 
   test('a 404 / read error is terminal (nothing to poll) → settles with null', async () => {
-    let settledCalledWith: SandboxProviderTransitionState | null | undefined = undefined;
+    let settledCalledWith: WorkspaceSandboxProviderTransitionState | null | undefined = undefined;
     const result = await pollSandboxProviderTransition('p1', {
       fetchState: async () => {
         throw new Error('404 Not Found');

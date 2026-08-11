@@ -1,4 +1,4 @@
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,20 +10,20 @@ import {
   filterConnectors,
 } from './connector-filter';
 
-const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
+const conn = (over: Partial<WorkspaceAdminConnector> = {}): WorkspaceAdminConnector =>
   ({
     slug: 'linear',
     name: 'Linear',
     provider: 'mcp',
     status: 'active',
     credentialMode: 'shared',
-    authorizationStrategy: 'project',
+    authorizationStrategy: 'workspace',
     sensitive: false,
     actions: [],
     authSecret: 'LINEAR_TOKEN',
     secretSet: true,
     ...over,
-  }) as AdminConnector;
+  }) as WorkspaceAdminConnector;
 
 describe('connectorNeedsAttention', () => {
   test('a healthy connected connector is fine', () => {
@@ -47,13 +47,13 @@ describe('the landing tab is Discovery, unconditionally', () => {
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '');
 
-  // `defaultConnectorScope(connectors)` opened a project that already had
+  // `defaultConnectorScope(connectors)` opened a workspace that already had
   // connectors on its own list, which put the least useful tab in front of the
   // user most often — someone opening this page is usually here to ADD a
   // connector, and the ones they have are one click away. It also made the
   // landing tab depend on a query, so the page could settle onto a different
   // tab than it first rendered.
-  test('the default scope is a constant, not derived from the project', () => {
+  test('the default scope is a constant, not derived from the workspace', () => {
     expect(page).toContain("const scope: ConnectorScope = scopeChoice ?? 'discover';");
     expect(page).not.toContain('defaultConnectorScope');
   });
@@ -65,7 +65,7 @@ describe('the landing tab is Discovery, unconditionally', () => {
 });
 
 describe('connectorSummary', () => {
-  const actions = (n: number) => Array.from({ length: n }, () => ({})) as AdminConnector['actions'];
+  const actions = (n: number) => Array.from({ length: n }, () => ({})) as WorkspaceAdminConnector['actions'];
 
   test('reads as tool count then provider', () => {
     expect(connectorSummary(conn({ actions: actions(2) }), 'MCP')).toBe('2 tools · MCP');
@@ -107,7 +107,7 @@ describe('compareConnectors', () => {
 describe('filterConnectors', () => {
   const all = [conn(), conn({ slug: 'gmail', name: 'Gmail', status: 'error' })];
 
-  // There is no `scope` any more — this list is only ever the project's own
+  // There is no `scope` any more — this list is only ever the workspace's own
   // connectors, and it is never partitioned.
   test('returns every added connector, healthy or not', () => {
     expect(filterConnectors(all, { query: '' })).toHaveLength(2);
@@ -119,7 +119,7 @@ describe('filterConnectors', () => {
     expect(filterConnectors(all, { query: 'GMA' }).map((c) => c.slug)).toEqual(['gmail']);
   });
   test('query matches the description the card actually shows', () => {
-    const describe_ = (c: AdminConnector) => connectorSummary(c, 'OpenAPI');
+    const describe_ = (c: WorkspaceAdminConnector) => connectorSummary(c, 'OpenAPI');
     expect(filterConnectors(all, { query: 'openapi', describe: describe_ })).toHaveLength(2);
   });
   test('does not mutate the caller’s array', () => {

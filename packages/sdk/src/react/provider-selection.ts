@@ -6,7 +6,7 @@ import {
 } from '@kortix/llm-catalog';
 import type { ProviderListResponse as SdkProviderListResponse } from '@opencode-ai/sdk/v2/client';
 
-import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
+import type { WorkspaceLlmCatalogResponse } from '../core/rest/workspaces-client';
 
 export type ProviderListResponse = SdkProviderListResponse;
 
@@ -136,7 +136,7 @@ export function filterToNativeProviders(providers: ProviderListResponse): Provid
   };
 }
 
-export function mergeProjectSecretConnectedProviders(
+export function mergeWorkspaceSecretConnectedProviders(
   providers: ProviderListResponse,
   secretNames: Set<string>,
   providerCredentials: Array<{ id: string; authRequirement: ProviderAuthRequirement }>,
@@ -165,6 +165,9 @@ export function mergeProjectSecretConnectedProviders(
   return { ...normalized, connected: [...connected] };
 }
 
+/** @deprecated Use `mergeWorkspaceSecretConnectedProviders`. */
+export const mergeProjectSecretConnectedProviders = mergeWorkspaceSecretConnectedProviders;
+
 export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<string>): Set<string> {
   const ids = new Set<string>();
   for (const provider of LLM_PROVIDER_CREDENTIALS) {
@@ -182,7 +185,7 @@ export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<stri
  * Restamp `enabled` on a gateway ProviderListResponse from an overrides map
  * (`wireModelId -> enabled`), touching only the models the map names. Pure —
  * returns a new list. Used to optimistically update the cached
- * `['project-providers', :id, 'gateway']` query when "Manage models" writes an
+ * `['workspace-providers', :id, 'gateway']` query when "Manage models" writes an
  * override, so the session picker (which renders from THAT cache, staleTime
  * Infinity) reflects the toggle without waiting for the refetch.
  */
@@ -207,8 +210,8 @@ export function applyEnablementToProviderList(
   } as unknown as ProviderListResponse;
 }
 
-export function projectLlmCatalogToProviderList(
-  catalog: ProjectLlmCatalogResponse,
+export function workspaceLlmCatalogToProviderList(
+  catalog: WorkspaceLlmCatalogResponse,
 ): ProviderListResponse {
   const models = Object.fromEntries(
     Object.entries(catalog.models ?? {}).filter(
@@ -229,3 +232,6 @@ export function projectLlmCatalogToProviderList(
     ],
   } as unknown as ProviderListResponse;
 }
+
+/** @deprecated Use `workspaceLlmCatalogToProviderList`. */
+export const projectLlmCatalogToProviderList = workspaceLlmCatalogToProviderList;

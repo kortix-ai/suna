@@ -1,15 +1,15 @@
-import type { ProjectConfigSummary } from '@kortix/sdk';
+import type { WorkspaceConfigSummary } from '@kortix/sdk';
 
-export type SkillScope = 'project' | 'kortix';
-type Skill = ProjectConfigSummary['skills'][number];
+export type SkillScope = 'workspace' | 'kortix';
+type Skill = WorkspaceConfigSummary['skills'][number];
 
 /**
  * The `kortix-*` family is platform runtime, force-injected into every session
  * at boot. It reads the same in every project and is not meaningfully editable
- * here, so it filters separately from the project's own skills.
+ * here, so it filters separately from the workspace's own skills.
  */
 export function skillScope(name: string): SkillScope {
-  return name.startsWith('kortix-') ? 'kortix' : 'project';
+  return name.startsWith('kortix-') ? 'kortix' : 'workspace';
 }
 
 export function filterSkills(

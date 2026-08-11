@@ -24,7 +24,7 @@ import {
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
-  'machines:read': 'View your project session sandboxes',
+  'machines:read': 'View your workspace session sandboxes',
 };
 
 export default function OAuthConsentPage() {

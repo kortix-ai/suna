@@ -3,7 +3,7 @@
 /**
  * The approval gate, in the session it belongs to.
  *
- * A project policy can mark a connector action `require_approval`; the agent's
+ * A workspace policy can mark a connector action `require_approval`; the agent's
  * turn then ENDS on a pending gate and nothing else happens until a person
  * decides. Until this panel existed the wrapper's operator had no way to see
  * that from Lumen — the session simply looked idle, and the only way to clear
@@ -37,8 +37,8 @@ import { useState } from 'react';
 
 /** Query key kept local: `lib/query-keys.ts` is shared by every panel and this
  *  is the only reader of the session audit. */
-const auditKey = (projectId: string, sessionId: string) =>
-  ['session-approvals', projectId, sessionId] as const;
+const auditKey = (workspaceId: string, sessionId: string) =>
+  ['session-approvals', workspaceId, sessionId] as const;
 
 const RISK_BADGE: Record<string, string> = {
   destructive: 'bg-destructive/15 text-destructive',
@@ -47,10 +47,10 @@ const RISK_BADGE: Record<string, string> = {
 };
 
 export function SessionApprovals({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   const qc = useQueryClient();
@@ -58,8 +58,8 @@ export function SessionApprovals({
   const [deciding, setDeciding] = useState<string | null>(null);
 
   const audit = useQuery({
-    queryKey: auditKey(projectId, sessionId),
-    queryFn: () => kortix.session(projectId, sessionId).audit(50, { showErrors: false }),
+    queryKey: auditKey(workspaceId, sessionId),
+    queryFn: () => kortix.session(workspaceId, sessionId).audit(50, { showErrors: false }),
     // A gate can appear at any point in a turn and the agent is blocked until
     // it clears, so this polls rather than waiting for a navigation.
     refetchInterval: 8_000,
@@ -68,12 +68,12 @@ export function SessionApprovals({
 
   const resolve = useMutation({
     mutationFn: (input: { executionId: string; decision: 'approve' | 'deny' }) =>
-      kortix.project(projectId).approvals.resolve(input.executionId, input.decision),
+      kortix.workspace(workspaceId).approvals.resolve(input.executionId, input.decision),
     onMutate: (input) => {
       setFailure(null);
       setDeciding(input.executionId);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: auditKey(projectId, sessionId) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: auditKey(workspaceId, sessionId) }),
     // A refused resolve is the interesting case, not an edge case: name it
     // instead of collapsing every 403/409 into "something went wrong".
     onError: (err) => setFailure(approvalFailure(err)),
@@ -177,7 +177,7 @@ export function SessionApprovals({
             actually waiting. */}
         <CallSnippet
           id="approval.resolve"
-          context={{ projectId, executionId: view.pending[0]?.executionId }}
+          context={{ workspaceId, executionId: view.pending[0]?.executionId }}
         />
 
         {failure && (

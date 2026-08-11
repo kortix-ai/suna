@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import { MIGRATE_TO_V2_PROMPT } from './migration-prompt';
-import { PROJECT_UPGRADES, applicableUpgrades, buildOneOffUpgradePrompt } from './upgrade-defs';
+import { WORKSPACE_UPGRADES, applicableUpgrades, buildOneOffUpgradePrompt } from './upgrade-defs';
 
-describe('PROJECT_UPGRADES registry', () => {
+describe('WORKSPACE_UPGRADES registry', () => {
   test('the v2 migration applies to v1 projects only', () => {
     expect(applicableUpgrades({ manifestVersion: 1 }).map((u) => u.id)).toContain('manifest-v2');
     expect(applicableUpgrades({ manifestVersion: 2 }).map((u) => u.id)).not.toContain(
@@ -16,12 +16,12 @@ describe('PROJECT_UPGRADES registry', () => {
   });
 
   test('the v2 entry carries the real migration prompt, not a copy', () => {
-    const entry = PROJECT_UPGRADES.find((u) => u.id === 'manifest-v2');
+    const entry = WORKSPACE_UPGRADES.find((u) => u.id === 'manifest-v2');
     expect(entry?.prompt).toBe(MIGRATE_TO_V2_PROMPT);
   });
 
   test('every registry entry is fully described', () => {
-    for (const u of PROJECT_UPGRADES) {
+    for (const u of WORKSPACE_UPGRADES) {
       expect(u.id.length).toBeGreaterThan(0);
       expect(u.title.length).toBeGreaterThan(0);
       expect(u.description.length).toBeGreaterThan(0);

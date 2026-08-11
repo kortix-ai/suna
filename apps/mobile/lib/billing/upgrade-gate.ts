@@ -68,7 +68,7 @@ export function createApiRequestError(
  * `createApiRequestError` puts them flat on the error. Read both shapes so
  * this keeps working for code paths now backed by the SDK (e.g.
  * `lib/projects/projects-client.ts`'s SDK-re-exported functions) as well as
- * the mobile-native ones (`startProjectSession`, `lib/platform/client.ts`).
+ * the mobile-native ones (`startWorkspaceSession`, `lib/platform/client.ts`).
  */
 interface SdkBillingErrorLike {
   status?: number;

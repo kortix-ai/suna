@@ -11,7 +11,7 @@
  */
 
 import {
-  type SessionPublicShare,
+  type WorkspaceSessionPublicShare,
   listSessionPublicShares,
   revokeSessionPublicShare,
 } from '@kortix/sdk';
@@ -19,8 +19,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 
-export function publicSharesQueryKey(projectId: string, sessionId: string) {
-  return ['session-public-shares', projectId, sessionId] as const;
+export function publicSharesQueryKey(workspaceId: string, sessionId: string) {
+  return ['session-public-shares', workspaceId, sessionId] as const;
 }
 
 export type ShareListState = 'loading' | 'error' | 'empty' | 'list';
@@ -44,22 +44,22 @@ export function shareListState(input: {
 }
 
 /** A share that is still handing out access right now. */
-export function isShareLive(share: SessionPublicShare, now: number = Date.now()): boolean {
+export function isShareLive(share: WorkspaceSessionPublicShare, now: number = Date.now()): boolean {
   if (share.revoked_at) return false;
   if (!share.expires_at) return true;
   const expiresAt = new Date(share.expires_at).getTime();
   return Number.isNaN(expiresAt) ? true : expiresAt > now;
 }
 
-export function useSessionPublicShares(projectId?: string, sessionId?: string) {
+export function useSessionPublicShares(workspaceId?: string, sessionId?: string) {
   const query = useQuery({
-    queryKey: publicSharesQueryKey(projectId ?? '', sessionId ?? ''),
+    queryKey: publicSharesQueryKey(workspaceId ?? '', sessionId ?? ''),
     queryFn: async () => {
-      if (!projectId || !sessionId) return { shares: [] };
-      return listSessionPublicShares(projectId, sessionId);
+      if (!workspaceId || !sessionId) return { shares: [] };
+      return listSessionPublicShares(workspaceId, sessionId);
     },
-    enabled: !!projectId && !!sessionId,
-    // The list 403s for a project member who neither created the session nor
+    enabled: !!workspaceId && !!sessionId,
+    // The list 403s for a workspace member who neither created the session nor
     // has manage rights. That is a settled answer, not a blip, so retrying it
     // three times on every panel mount just multiplies a guaranteed failure.
     retry: false,
@@ -76,18 +76,18 @@ export function useSessionPublicShares(projectId?: string, sessionId?: string) {
   };
 }
 
-export function useRevokePublicShare(projectId?: string, sessionId?: string) {
+export function useRevokePublicShare(workspaceId?: string, sessionId?: string) {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: async (shareId: string) => {
-      if (!projectId || !sessionId) throw new Error('No session to revoke from');
-      return revokeSessionPublicShare(projectId, sessionId, shareId);
+      if (!workspaceId || !sessionId) throw new Error('No session to revoke from');
+      return revokeSessionPublicShare(workspaceId, sessionId, shareId);
     },
     onSuccess: () => {
-      if (projectId && sessionId) {
+      if (workspaceId && sessionId) {
         void queryClient.invalidateQueries({
-          queryKey: publicSharesQueryKey(projectId, sessionId),
+          queryKey: publicSharesQueryKey(workspaceId, sessionId),
         });
       }
       successToast('Link revoked');

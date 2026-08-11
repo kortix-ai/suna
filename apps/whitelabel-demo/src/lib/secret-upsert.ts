@@ -1,10 +1,10 @@
-import type { ProjectSecret } from '@kortix/sdk';
+import type { WorkspaceSecret } from '@kortix/sdk';
 import { normalizeSecretKey } from './secret-collisions';
 
 /**
  * What a secret write actually does, decided before it is sent.
  *
- * `POST /projects/{id}/secrets` is one endpoint for three different acts, and
+ * `POST /workspaces/{id}/secrets` is one endpoint for three different acts, and
  * the caller is the only one who knows which was intended:
  *
  * - CREATE   — a new identifier. Needs a value.
@@ -23,7 +23,7 @@ import { normalizeSecretKey } from './secret-collisions';
  */
 
 export interface SecretDraft {
-  /** Unique per project. What grants and session allowlists reference. */
+  /** Unique per workspace. What grants and session allowlists reference. */
   identifier: string;
   /** The env KEY injected into the sandbox. Not unique. */
   name: string;
@@ -37,7 +37,7 @@ export type SecretWriteIntent =
 
 /**
  * The identifier a user gets for free while they only type a KEY. Untouched, an
- * identifier IS the key — the simple case, and the one every migrated project
+ * identifier IS the key — the simple case, and the one every migrated workspace
  * is already in.
  */
 export function defaultIdentifier(name: string): string {
@@ -55,7 +55,7 @@ export function normalizeSecretDraft(draft: SecretDraft): SecretDraft {
 }
 
 export function secretWriteIntent(
-  items: ProjectSecret[] | undefined,
+  items: WorkspaceSecret[] | undefined,
   draft: SecretDraft,
 ): SecretWriteIntent {
   const { identifier, name } = normalizeSecretDraft(draft);
@@ -83,7 +83,7 @@ export function buildSecretUpsertInput(draft: SecretDraft): {
  * turns the rotate into the 409 retarget above.
  */
 export function buildSecretRotateInput(
-  secret: Pick<ProjectSecret, 'identifier' | 'name'>,
+  secret: Pick<WorkspaceSecret, 'identifier' | 'name'>,
   value: string,
 ): { identifier: string; name: string; value: string } {
   return buildSecretUpsertInput({ identifier: secret.identifier, name: secret.name, value });

@@ -88,13 +88,13 @@ flow(
 
 flow(
   "GH-6",
-  { domain: "git", routes: ["PUT /v1/projects/:projectId/git-credential"] },
+  { domain: "git", routes: ["PUT /v1/projects/:workspaceId/git-credential"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .put("/v1/projects/:projectId/git-credential", { token: "ghp_x" }, { params: { projectId: p.id } });
+        .put("/v1/projects/:workspaceId/git-credential", { token: "ghp_x" }, { params: { workspaceId: p.id } });
       r.status(401);
     });
     await ctx.step("missing token (server-managed already) → 400/409", async () => {
@@ -102,19 +102,19 @@ flow(
       // with no token in the body 400s ("token is required").
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/git-credential", {}, { params: { projectId: p.id } });
+        .put("/v1/projects/:workspaceId/git-credential", {}, { params: { workspaceId: p.id } });
       r.status([400, 409]);
     });
     await ctx.step("set BYO credential → ok / managed conflict 409", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/git-credential", { token: "ghp_byo_token", provider: "gitlab" }, { params: { projectId: p.id } });
+        .put("/v1/projects/:workspaceId/git-credential", { token: "ghp_byo_token", provider: "gitlab" }, { params: { workspaceId: p.id } });
       r.status([200, 409]);
     });
     await ctx.step("NONMEMBER cannot set credential → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .put("/v1/projects/:projectId/git-credential", { token: "ghp_x" }, { params: { projectId: p.id } });
+        .put("/v1/projects/:workspaceId/git-credential", { token: "ghp_x" }, { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -122,31 +122,31 @@ flow(
 
 flow(
   "GH-7",
-  { domain: "git", routes: ["POST /v1/projects/:projectId/git-token"] },
+  { domain: "git", routes: ["POST /v1/projects/:workspaceId/git-token"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git-token", {}, { params: { workspaceId: p.id } });
       r.status(401);
     });
     await ctx.step("OWNER mints push token → 200 / 409 BYO / 503 unconfigured", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git-token", {}, { params: { workspaceId: p.id } });
       r.status([200, 409, 503]);
     });
     await ctx.step("unknown project → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: UNKNOWN } });
+        .post("/v1/projects/:workspaceId/git-token", {}, { params: { workspaceId: UNKNOWN } });
       r.status(404);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git-token", {}, { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -154,13 +154,13 @@ flow(
 
 flow(
   "GH-11",
-  { domain: "git", routes: ["GET /v1/projects/:projectId/git/clone-credential"] },
+  { domain: "git", routes: ["GET /v1/projects/:workspaceId/git/clone-credential"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
+        .get("/v1/projects/:workspaceId/git/clone-credential", { params: { workspaceId: p.id } });
       r.status(401);
     });
     await ctx.step("user JWT is not a runtime token → 403", async () => {
@@ -168,13 +168,13 @@ flow(
       // a plain user JWT is rejected.
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
+        .get("/v1/projects/:workspaceId/git/clone-credential", { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("account PAT (not project-scoped) → 403", async () => {
       const r = await ctx.client
         .as(ctx.P.PAT_ACCT)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
+        .get("/v1/projects/:workspaceId/git/clone-credential", { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -182,19 +182,19 @@ flow(
 
 flow(
   "GH-12",
-  { domain: "git", routes: ["POST /v1/projects/:projectId/git/collaborators"] },
+  { domain: "git", routes: ["POST /v1/projects/:workspaceId/git/collaborators"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/git/collaborators", { github_username: "octocat" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git/collaborators", { github_username: "octocat" }, { params: { workspaceId: p.id } });
       r.status(401);
     });
     await ctx.step("missing github_username → 400 (or managed-only 409)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git/collaborators", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git/collaborators", {}, { params: { workspaceId: p.id } });
       r.status([400, 409]);
     });
     await ctx.step("invite collaborator → managed-only 409 / 502 upstream / 200", async () => {
@@ -202,13 +202,13 @@ flow(
       // GitHub API call has no install locally → 502.
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git/collaborators", { github_username: "octocat", permission: "write" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git/collaborators", { github_username: "octocat", permission: "write" }, { params: { workspaceId: p.id } });
       r.status([200, 400, 409, 502]);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/git/collaborators", { github_username: "octocat" }, { params: { projectId: p.id } });
+        .post("/v1/projects/:workspaceId/git/collaborators", { github_username: "octocat" }, { params: { workspaceId: p.id } });
       r.status([403, 404]);
     });
   },

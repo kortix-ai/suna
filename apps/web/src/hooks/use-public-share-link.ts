@@ -25,12 +25,12 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { publicSharesQueryKey } from './use-session-public-shares';
 
 export interface PublicShareLinkTarget {
-  projectId?: string;
+  workspaceId?: string;
   sessionId?: string;
   input: CreateSessionPublicShareInput | null;
 }
 
-export function usePublicShareLink({ projectId, sessionId, input }: PublicShareLinkTarget) {
+export function usePublicShareLink({ workspaceId, sessionId, input }: PublicShareLinkTarget) {
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,10 +44,10 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (!projectId || !sessionId || !input) {
+      if (!workspaceId || !sessionId || !input) {
         throw new Error('Nothing is selected to share');
       }
-      const result = await createSessionPublicShare(projectId, sessionId, input);
+      const result = await createSessionPublicShare(workspaceId, sessionId, input);
       if (!result.share.public_path) {
         throw new Error('Share link was not returned');
       }
@@ -58,9 +58,9 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
     onSuccess: () => {
       // The management list is the only way to revoke a link, so it must never
       // lag behind a mint — a link you can't see is a link you can't revoke.
-      if (projectId && sessionId) {
+      if (workspaceId && sessionId) {
         void queryClient.invalidateQueries({
-          queryKey: publicSharesQueryKey(projectId, sessionId),
+          queryKey: publicSharesQueryKey(workspaceId, sessionId),
         });
       }
       setCopied(true);
@@ -77,6 +77,6 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
     copyLink: () => mutation.mutate(),
     isPending: mutation.isPending,
     copied,
-    canShare: !!projectId && !!sessionId && !!input,
+    canShare: !!workspaceId && !!sessionId && !!input,
   };
 }

@@ -29,11 +29,12 @@ export interface TeamsManifest {
 
 const BOT_COMMANDS = [
   { title: '/help', description: 'Show what Kortix can do' },
-  { title: '/status', description: 'Show the effective project, agent and model' },
+  { title: '/status', description: 'Show the effective workspace, agent and model' },
   { title: '/login', description: 'Connect your Kortix account' },
   { title: '/models', description: 'Pick the model for this conversation' },
   { title: '/agents', description: 'Pick the agent for this conversation' },
-  { title: '/projects', description: 'List connected projects' },
+  { title: '/workspaces', description: 'List connected workspaces' },
+  { title: '/projects', description: 'Legacy alias for /workspaces' },
 ];
 
 export interface BuildTeamsManifestConfig {

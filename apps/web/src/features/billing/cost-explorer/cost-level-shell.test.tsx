@@ -15,7 +15,7 @@ const summaryWithChartableSeries = {
     request_count: 100,
     compute_seconds: 3600,
     session_count: 41,
-    project_count: 3,
+    workspace_count: 3,
   },
   previous: { total_cost: 37.74 },
   series: [

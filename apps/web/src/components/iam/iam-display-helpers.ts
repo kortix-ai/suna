@@ -1,5 +1,5 @@
 // Pure helpers for IAM V2 list rendering. Extracted from groups-tab,
-// group-detail page, project Members page so the precedence + sort logic
+// group-detail page and Workspace Members page so the precedence + sort logic
 // can be unit-tested without spinning up React or a query client.
 //
 // Three small problems, one file:
@@ -11,13 +11,13 @@
 //   2. Floating the current user to the top of the "Add members" picker
 //      so self-add is a one-click action.
 //
-//   3. Labelling a project Members row that has access only via a group
+//   3. Labelling a workspace Members row that has access only via a group
 //      ("Inherited Editor via Engineering + 1 more").
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-// `member` is the project floor role; `viewer` was folded into it and is no
+// `member` is the workspace floor role; `viewer` was folded into it and is no
 // longer emitted by the API.
-export type ProjectRole = 'manager' | 'editor' | 'member';
+export type WorkspaceRole = 'manager' | 'editor' | 'member';
 
 export interface AccountMeta {
   email: string | null;
@@ -100,30 +100,30 @@ export function floatCurrentUserFirst<T extends { user_id: string }>(
   return [me, ...eligible.slice(0, idx), ...eligible.slice(idx + 1)];
 }
 
-// ─── Project Members → inherited-via-group label ─────────────────────────
+// ─── Workspace Members → inherited-via-group label ───────────────────────
 
-const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
+const WORKSPACE_ROLE_LABEL: Record<WorkspaceRole, string> = {
   manager: 'Manager',
   editor: 'Editor',
   member: 'Member',
 };
 
-export interface ProjectAccessRowInput {
+export interface WorkspaceAccessRowInput {
   has_implicit_access: boolean;
-  project_role: ProjectRole | null;
-  effective_project_role: ProjectRole | null;
-  group_sources?: Array<{ group_name: string; role: ProjectRole }>;
+  workspace_role: WorkspaceRole | null;
+  effective_workspace_role: WorkspaceRole | null;
+  group_sources?: Array<{ group_name: string; role: WorkspaceRole }>;
 }
 
 /**
  * True when the row's only access path is a group attachment (no
  * implicit Manager, no direct project_members row).
  */
-export function isInheritedFromGroupOnly(row: ProjectAccessRowInput): boolean {
+export function isInheritedFromGroupOnly(row: WorkspaceAccessRowInput): boolean {
   return (
     !row.has_implicit_access &&
-    !row.project_role &&
-    row.effective_project_role !== null &&
+    !row.workspace_role &&
+    row.effective_workspace_role !== null &&
     (row.group_sources?.length ?? 0) > 0
   );
 }
@@ -131,8 +131,8 @@ export function isInheritedFromGroupOnly(row: ProjectAccessRowInput): boolean {
 /**
  * "Expires in 3d" / "Expires tomorrow" / "Expired" — the inline label
  * that shows up next to a time-bounded grant. Past = "Expired" (renders
- * red in the row); future = "Expires in …" (amber). Used by the project
- * Members card + the group detail's Project access card.
+ * red in the row); future = "Expires in …" (amber). Used by the workspace
+ * Members card + the group detail's Workspace access card.
  */
 export function formatExpiry(iso: string): string {
   const ms = new Date(iso).getTime() - Date.now();
@@ -153,13 +153,13 @@ export function formatExpiry(iso: string): string {
  * isn't group-inherited (caller falls back to the "No access" / "Granted
  * {date}" / "Implicit account access" copy).
  */
-export function inheritedFromGroupSummary(row: ProjectAccessRowInput): string | null {
+export function inheritedFromGroupSummary(row: WorkspaceAccessRowInput): string | null {
   if (!isInheritedFromGroupOnly(row)) return null;
   const sources = row.group_sources!;
   const head = sources[0];
   const rest = sources.length - 1;
   // Fallback guards against a stale `viewer` value from cache — it folds to Member.
-  const label = PROJECT_ROLE_LABEL[row.effective_project_role!] ?? 'Member';
+  const label = WORKSPACE_ROLE_LABEL[row.effective_workspace_role!] ?? 'Member';
   return rest > 0
     ? `Inherited ${label} via ${head.group_name} + ${rest} more`
     : `Inherited ${label} via ${head.group_name}`;

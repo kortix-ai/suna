@@ -3,13 +3,13 @@ import { usageEvents } from '@kortix/db';
 import { type SQL, and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { PROJECT_ACTIONS } from '../../iam/actions';
+import { WORKSPACE_ACTIONS } from '../../iam/actions';
 import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
-import { assertProjectCapability, loadProjectForUser } from '../../projects/lib/access';
+import { assertWorkspaceCapability, loadWorkspaceForUser } from '../../workspaces/lib/access';
 import { CSV_ROW_CAP, toCsv } from '../../shared/cost-csv';
-import { getCostSummary, listCostByProject } from '../../shared/cost-rollups';
+import { getCostSummary, listCostByWorkspace } from '../../shared/cost-rollups';
 import {
   type CostSort,
   type CostWindow,
@@ -47,25 +47,25 @@ usageApp.use('*', rejectSandboxTokens);
 
 async function resolveSessionCostAccountId(
   c: Context<AppEnv>,
-  projectId?: string,
+  workspaceId?: string,
 ): Promise<string> {
   const tokenAccountId = c.get('accountId');
   if (tokenAccountId) return tokenAccountId;
 
-  if (c.req.query('account_id') || !projectId) {
+  if (c.req.query('account_id') || !workspaceId) {
     return resolveScopedAccountId(c, 'query');
   }
 
-  const loaded = await loadProjectForUser(c, projectId, 'read');
+  const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
   if (!loaded) {
-    throw new HTTPException(404, { message: 'Project not found' });
+    throw new HTTPException(404, { message: 'Workspace not found' });
   }
-  await assertProjectCapability(
+  await assertWorkspaceCapability(
     c,
     loaded.userId,
     loaded.row.accountId,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    workspaceId,
+    WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_SPEND_READ,
   );
   return loaded.row.accountId;
 }
@@ -114,6 +114,9 @@ const UsageQuerySchema = z
 const SessionCostSummarySchema = z
   .object({
     session_id: z.string(),
+    workspace_id: z.string(),
+    workspace_name: z.string(),
+    // Retained response aliases for existing direct API consumers.
     project_id: z.string(),
     project_name: z.string(),
     owner_id: z.string().nullable(),
@@ -232,6 +235,7 @@ const SessionCostListResponseSchema = z
 const SessionCostListQuerySchema = z
   .object({
     account_id: z.string().optional(),
+    workspace_id: z.string().optional(),
     project_id: z.string().optional(),
     owner_id: z.string().optional(),
     from: z.string().optional(),
@@ -246,11 +250,12 @@ const SessionCostListQuerySchema = z
 const SessionCostDetailQuerySchema = z
   .object({
     account_id: z.string().optional(),
+    workspace_id: z.string().optional(),
     project_id: z.string().optional(),
   })
   .openapi('SessionCostDetailQuery');
 
-const ProjectCostRowSchema = z
+const WorkspaceCostRowSchema = z
   .object({
     project_id: z.string(),
     project_name: z.string(),
@@ -260,25 +265,78 @@ const ProjectCostRowSchema = z
     total_cost: z.number(),
     last_activity_at: z.string().nullable(),
   })
-  .openapi('ProjectCostRow');
+  .openapi('WorkspaceCostRow');
 
-const ProjectCostPageSchema = z
+const WorkspaceCostPageSchema = z
   .object({
-    projects: z.array(ProjectCostRowSchema),
+    projects: z.array(WorkspaceCostRowSchema),
     total: z.number(),
     limit: z.number(),
     offset: z.number(),
     next_offset: z.number().nullable(),
   })
-  .openapi('ProjectCostPage');
+  .openapi('WorkspaceCostPage');
+
+const CanonicalWorkspaceCostRowSchema = z
+  .object({
+    workspace_id: z.string(),
+    workspace_name: z.string(),
+    session_count: z.number(),
+    llm_cost: z.number(),
+    compute_cost: z.number(),
+    total_cost: z.number(),
+    last_activity_at: z.string().nullable(),
+  })
+  .openapi('CanonicalWorkspaceCostRow');
+
+const CanonicalWorkspaceCostPageSchema = z
+  .object({
+    workspaces: z.array(CanonicalWorkspaceCostRowSchema),
+    total: z.number(),
+    limit: z.number(),
+    offset: z.number(),
+    next_offset: z.number().nullable(),
+  })
+  .openapi('CanonicalWorkspaceCostPage');
 
 // The route's allowed sorts — all four CostSort members. Unlike
 // SESSION_COST_SORTS, this includes name_asc: a project rollup has a name to
-// sort on, so sortProjectRows never hits its `never`-typed default branch.
+// sort on, so sortWorkspaceRows never hits its `never`-typed default branch.
 // `as const` (not `: readonly CostSort[]`) so the same array satisfies both
 // z.enum()'s non-empty-tuple requirement below and parseCostSort()'s
 // `readonly CostSort[]` parameter.
-const PROJECT_COST_SORTS = ['total_desc', 'total_asc', 'recent', 'name_asc'] as const;
+const WORKSPACE_COST_SORTS = ['total_desc', 'total_asc', 'recent', 'name_asc'] as const;
+
+const WorkspaceCostQuerySchema = z
+  .object({
+    account_id: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    sort: z.enum(WORKSPACE_COST_SORTS).optional(),
+    limit: z.string().optional(),
+    offset: z.string().optional(),
+    format: z.enum(['csv']).optional(),
+  })
+  .openapi('WorkspaceCostQuery');
+
+function readWorkspaceIdQuery(c: Context<AppEnv>): string | undefined {
+  const workspaceId = c.req.query('workspace_id') || undefined;
+  const projectId = c.req.query('project_id') || undefined;
+  if (workspaceId && projectId && workspaceId !== projectId) {
+    throw new HTTPException(400, {
+      message: 'workspace_id and deprecated project_id must match when both are supplied',
+    });
+  }
+  return workspaceId ?? projectId;
+}
+
+function withWorkspaceIdentity<T extends { project_id: string; project_name: string }>(row: T) {
+  return {
+    ...row,
+    workspace_id: row.project_id,
+    workspace_name: row.project_name,
+  };
+}
 
 const CostSummaryTotalsSchema = z
   .object({
@@ -436,7 +494,7 @@ usageApp.openapi(
     tags: ['usage'],
     summary: 'List session costs for one account',
     description:
-      'Lists every project session, including zero-cost sessions, with LLM and billed ' +
+      'Lists every workspace session, including zero-cost sessions, with LLM and billed ' +
       'compute totals over a date window. LLM cost is windowed on request time ' +
       '(created_at); compute cost is windowed on the billing window start (started_at). ' +
       'Bounds are half-open [from, to) and always UTC; an absent from/to defaults to the ' +
@@ -444,7 +502,7 @@ usageApp.openapi(
       '`reconciliation` covers spend the account cannot attribute to any session in the ' +
       'same window: per-session totals attribute LLM cost by session_id, but ' +
       '`reconciliation` attributes it by the nullable gateway_request_logs.project_id, ' +
-      'because by definition no session_id match exists. A project-scoped ' +
+      'because by definition no session_id match exists. A workspace-scoped ' +
       'reconciliation figure and the per-session table beside it can therefore ' +
       'legitimately disagree.',
     ...auth,
@@ -482,17 +540,17 @@ usageApp.openapi(
       throw error;
     }
 
-    const projectId = c.req.query('project_id') || undefined;
+    const workspaceId = readWorkspaceIdQuery(c);
     const ownerId = c.req.query('owner_id') || undefined;
-    const accountId = await resolveSessionCostAccountId(c, projectId);
+    const accountId = await resolveSessionCostAccountId(c, workspaceId);
 
     if (c.req.query('format') === 'csv') {
-      // Same filtered query as the JSON branch (accountId, projectId, ownerId,
+      // Same filtered query as the JSON branch (accountId, workspaceId, ownerId,
       // window, sort) — only limit/offset differ, because a CSV export wants
       // up to CSV_ROW_CAP rows in one shot, not one paginated page of it.
       const page = await listSessionCosts({
         accountId,
-        projectId,
+        workspaceId,
         ownerId,
         window: parsed.window,
         sort: parsed.sort,
@@ -535,7 +593,8 @@ usageApp.openapi(
       });
     }
 
-    return c.json(await listSessionCosts({ accountId, projectId, ownerId, ...parsed }));
+    const page = await listSessionCosts({ accountId, workspaceId, ownerId, ...parsed });
+    return c.json({ ...page, sessions: page.sessions.map(withWorkspaceIdentity) });
   },
 );
 
@@ -558,60 +617,24 @@ usageApp.openapi(
     },
   }),
   async (c) => {
-    const projectId = c.req.query('project_id') || undefined;
-    const accountId = await resolveSessionCostAccountId(c, projectId);
+    const workspaceId = readWorkspaceIdQuery(c);
+    const accountId = await resolveSessionCostAccountId(c, workspaceId);
     const detail = await getSessionCostRecord({
       accountId,
-      projectId,
+      workspaceId,
       sessionId: c.req.param('sessionId'),
     });
     if (!detail) {
       throw new HTTPException(404, { message: 'Session not found' });
     }
-    return c.json(detail);
+    return c.json(withWorkspaceIdentity(detail));
   },
 );
 
-usageApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/cost-by-project',
-    tags: ['usage'],
-    summary: 'Roll up spend by project over a date window',
-    description:
-      'Groups LLM and billed compute spend by project. LLM is windowed on request time ' +
-      '(created_at); compute is windowed on the billing window start (started_at). Bounds ' +
-      'are half-open [from, to) and always UTC; an absent from/to defaults to the trailing ' +
-      '30 days. Paging happens in memory: an account has tens to hundreds of projects, not ' +
-      'the tens of thousands a session list can reach.',
-    ...auth,
-    request: {
-      query: z
-        .object({
-          account_id: z.string().optional(),
-          from: z.string().optional(),
-          to: z.string().optional(),
-          sort: z.enum(PROJECT_COST_SORTS).optional(),
-          limit: z.string().optional(),
-          offset: z.string().optional(),
-          format: z.enum(['csv']).optional(),
-        })
-        .openapi('ProjectCostQuery'),
-    },
-    responses: {
-      200: {
-        description:
-          'Project spend rollup, or (format=csv) the same filtered rows as a CSV ' +
-          'attachment capped at CSV_ROW_CAP.',
-        content: {
-          'application/json': { schema: ProjectCostPageSchema },
-          'text/csv': { schema: z.string() },
-        },
-      },
-      ...errors(400, 401, 403),
-    },
-  }),
-  async (c) => {
+async function handleWorkspaceCostRollup(
+  c: Context<AppEnv>,
+  representation: 'workspace' | 'project',
+): Promise<Response> {
     let accountId: string;
     let window: CostWindow;
     let sort: CostSort;
@@ -628,7 +651,7 @@ usageApp.openapi(
       // before input validation, not after.
       accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
       window = parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') });
-      sort = parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc');
+      sort = parseCostSort(c.req.query('sort'), WORKSPACE_COST_SORTS, 'total_desc');
       ({ limit, offset } = parseCostPagination({
         limit: c.req.query('limit'),
         offset: c.req.query('offset'),
@@ -644,17 +667,18 @@ usageApp.openapi(
       // Same filtered query as the JSON branch (accountId, window, sort) —
       // only limit/offset differ, because a CSV export wants up to
       // CSV_ROW_CAP rows in one shot, not one paginated page of it.
-      const page = await listCostByProject({
+      const page = await listCostByWorkspace({
         accountId,
         window,
         sort,
         limit: CSV_ROW_CAP,
         offset: 0,
       });
+      const canonical = representation === 'workspace';
       const body = toCsv(
         [
-          'project_id',
-          'project_name',
+          canonical ? 'workspace_id' : 'project_id',
+          canonical ? 'workspace_name' : 'project_name',
           'sessions',
           'llm_cost_usd',
           'compute_cost_usd',
@@ -673,13 +697,72 @@ usageApp.openapi(
       );
       return c.body(body, 200, {
         'content-type': 'text/csv; charset=utf-8',
-        'content-disposition': 'attachment; filename="kortix-cost-by-project.csv"',
+        'content-disposition': `attachment; filename="kortix-cost-by-${representation}.csv"`,
         'x-kortix-row-cap': String(CSV_ROW_CAP),
       });
     }
 
-    return c.json(await listCostByProject({ accountId, window, sort, limit, offset }));
-  },
+    const page = await listCostByWorkspace({ accountId, window, sort, limit, offset });
+    if (representation === 'project') return c.json(page);
+    return c.json({
+      workspaces: page.projects
+        .map(withWorkspaceIdentity)
+        .map(({ project_id, project_name, ...row }) => row),
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+      next_offset: page.next_offset,
+    });
+}
+
+usageApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/cost-by-workspace',
+    tags: ['usage'],
+    summary: 'Roll up spend by workspace over a date window',
+    description:
+      'Groups LLM and billed compute spend by Workspace. Bounds are half-open [from, to) ' +
+      'and always UTC. An absent from/to defaults to the trailing 30 days.',
+    ...auth,
+    request: { query: WorkspaceCostQuerySchema },
+    responses: {
+      200: {
+        description:
+          'Workspace spend rollup, or (format=csv) the same filtered rows as a CSV attachment.',
+        content: {
+          'application/json': { schema: CanonicalWorkspaceCostPageSchema },
+          'text/csv': { schema: z.string() },
+        },
+      },
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c) => handleWorkspaceCostRollup(c, 'workspace'),
+);
+
+usageApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/cost-by-project',
+    tags: ['usage'],
+    summary: 'Deprecated: roll up spend by project over a date window',
+    description: 'Deprecated compatibility alias for GET /v1/usage/cost-by-workspace.',
+    deprecated: true,
+    ...auth,
+    request: { query: WorkspaceCostQuerySchema },
+    responses: {
+      200: {
+        description: 'Legacy Project spend rollup or CSV export.',
+        content: {
+          'application/json': { schema: WorkspaceCostPageSchema },
+          'text/csv': { schema: z.string() },
+        },
+      },
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c) => handleWorkspaceCostRollup(c, 'project'),
 );
 
 usageApp.openapi(
@@ -689,19 +772,21 @@ usageApp.openapi(
     tags: ['usage'],
     summary: 'Spend totals, daily series and model breakdown over a date window',
     description:
-      'Scoped to the account, or to one project or session when project_id / session_id is ' +
+      'Scoped to the account, or to one workspace or session when workspace_id / session_id is ' +
       'supplied. LLM is windowed on request time (created_at); compute is windowed on the ' +
       'billing window start (started_at), never last_billed_at. Bounds are half-open ' +
       '[from, to) and always UTC; an absent from/to defaults to the trailing 30 days. Day ' +
       'buckets in `series` are UTC and gap days are zero-filled, never omitted. `previous` ' +
       'covers the equally long window immediately before [from, to). The account-scoped ' +
-      '(no project_id / session_id) `totals.total_cost` covers ALL account spend in the ' +
-      'window, including compute cost not attributable to any project.',
+      '(no workspace_id / session_id) `totals.total_cost` covers ALL account spend in the ' +
+      'window, including compute cost not attributable to any workspace. The deprecated ' +
+      'project_id query alias remains accepted.',
     ...auth,
     request: {
       query: z
         .object({
           account_id: z.string().optional(),
+          workspace_id: z.string().optional(),
           project_id: z.string().optional(),
           session_id: z.string().optional(),
           from: z.string().optional(),
@@ -713,12 +798,12 @@ usageApp.openapi(
   }),
   async (c) => {
     try {
-      const projectId = c.req.query('project_id') || undefined;
-      const accountId = await resolveSessionCostAccountId(c, projectId);
+      const workspaceId = readWorkspaceIdQuery(c);
+      const accountId = await resolveSessionCostAccountId(c, workspaceId);
       return c.json(
         await getCostSummary({
           accountId,
-          projectId,
+          workspaceId,
           sessionId: c.req.query('session_id') || undefined,
           window: parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') }),
         }),

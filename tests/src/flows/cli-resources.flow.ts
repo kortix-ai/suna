@@ -1,5 +1,6 @@
 /**
- * Real-process coverage for the project-scoped CLI resource commands.
+ * Real-process coverage for the workspace-scoped CLI resource commands and
+ * their deprecated Project compatibility aliases.
  *
  * Each command starts apps/cli/src/index.ts in an isolated process. The flows
  * assert exit status, JSON/stdout, local files, and API read-back state.
@@ -39,6 +40,8 @@ flow(
     domain: 'cli',
     routes: [
       'GET /v1/accounts/me',
+      'GET /v1/workspaces',
+      'GET /v1/workspaces/:workspaceId',
       'GET /v1/projects',
       'GET /v1/projects/:projectId',
       'DELETE /v1/projects/:projectId',
@@ -48,6 +51,33 @@ flow(
     const project = await ctx.fixtures.project();
     const sandbox = await authenticatedCli(ctx, 'projects');
     try {
+      await ctx.step('kortix workspaces ls --json uses the canonical Workspace shape', async () => {
+        const result = await sandbox.run(['workspaces', 'ls', '--json']);
+        const workspaces = parseJson<Array<{ workspace_id: string }>>(
+          result,
+          'kortix workspaces ls',
+        );
+        if (!workspaces.some((item) => item.workspace_id === project.id)) {
+          throw new Error(`workspaces ls omitted ${project.id}`);
+        }
+        if (result.stdout.includes('project_id')) {
+          throw new Error(`workspaces ls leaked the legacy Project shape: ${result.stdout}`);
+        }
+      });
+
+      await ctx.step('kortix workspaces info <id> returns the canonical Workspace URL', async () => {
+        const item = parseJson<{ workspace_id: string; dashboard_url?: string }>(
+          await sandbox.run(['workspaces', 'info', project.id, '--json']),
+          'kortix workspaces info',
+        );
+        if (item.workspace_id !== project.id) {
+          throw new Error(`workspaces info returned ${item.workspace_id}`);
+        }
+        if (!item.dashboard_url?.includes(`/workspaces/${project.id}`)) {
+          throw new Error(`workspaces info returned the wrong URL: ${item.dashboard_url}`);
+        }
+      });
+
       await ctx.step('kortix projects ls --json lists the run-owned project', async () => {
         const projects = parseJson<Array<{ project_id: string }>>(
           await sandbox.run(['projects', 'ls', '--json']),
@@ -66,18 +96,41 @@ flow(
         if (item.project_id !== project.id) throw new Error(`projects info returned ${item.project_id}`);
       });
 
-      await ctx.step('kortix projects link and unlink write and remove .kortix/link.json', async () => {
+      await ctx.step('canonical and legacy link commands preserve their own wire shapes', async () => {
         requireExit(
           await sandbox.run(['init', 'linked', '-y', '--no-git']),
           0,
           'kortix init',
         );
         sandbox.enter('linked');
+
+        requireExit(await sandbox.run(['workspaces', 'link', project.id]), 0, 'kortix workspaces link');
+        const workspaceLink = JSON.parse(sandbox.readFile('.kortix/link.json')) as {
+          workspace_id: string;
+          project_id?: string;
+        };
+        if (
+          workspaceLink.workspace_id !== project.id ||
+          workspaceLink.project_id !== project.id
+        ) {
+          throw new Error(`workspace link has the wrong shape: ${JSON.stringify(workspaceLink)}`);
+        }
+        requireExit(await sandbox.run(['workspaces', 'unlink']), 0, 'kortix workspaces unlink');
+        if (sandbox.exists('.kortix/link.json')) throw new Error('workspaces unlink left link.json behind');
+
         requireExit(await sandbox.run(['projects', 'link', project.id]), 0, 'kortix projects link');
         const link = JSON.parse(sandbox.readFile('.kortix/link.json')) as { project_id: string };
         if (link.project_id !== project.id) throw new Error(`link points at ${link.project_id}`);
         requireExit(await sandbox.run(['projects', 'unlink']), 0, 'kortix projects unlink');
         if (sandbox.exists('.kortix/link.json')) throw new Error('projects unlink left link.json behind');
+      });
+
+      await ctx.step('kortix workspaces open prints the canonical dashboard URL', async () => {
+        const result = await sandbox.run(['workspaces', 'open', project.id]);
+        requireExit(result, 0, 'kortix workspaces open');
+        if (!result.stdout.includes(`/workspaces/${project.id}`)) {
+          throw new Error(`workspaces open printed the wrong URL: ${result.stdout}`);
+        }
       });
 
       await ctx.step('kortix projects open prints the dashboard URL without changing state', async () => {

@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { Env } from "../core/env";
-import type { CreatedProject } from "../core/types";
+import type { CreatedWorkspace } from "../core/types";
 
-interface ProjectDb {
+interface WorkspaceDb {
   query(text: string, values?: unknown[]): Promise<unknown>;
   end(): Promise<void>;
 }
 
-export type OpenProjectDb = (databaseUrl: string) => Promise<ProjectDb>;
+export type OpenWorkspaceDb = (databaseUrl: string) => Promise<WorkspaceDb>;
 
-async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
+async function openWorkspaceDb(databaseUrl: string): Promise<WorkspaceDb> {
   const local =
     databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
   const { Client } = await import("pg");
@@ -24,18 +24,18 @@ async function openProjectDb(databaseUrl: string): Promise<ProjectDb> {
 function assertDatabaseFixtureAllowed(env: Env, action: string): string {
   if (env.target === "prod") {
     throw new Error(
-      `refusing to ${action} a database-only project against production`,
+      `refusing to ${action} a database-only workspace against production`,
     );
   }
   if (!env.databaseUrl) {
     throw new Error(
-      "KE2E_DATABASE_URL is required for database-only project fixtures",
+      "KE2E_DATABASE_URL is required for database-only workspace fixtures",
     );
   }
   return env.databaseUrl;
 }
 
-export async function createDatabaseProject(
+export async function createDatabaseWorkspace(
   env: Env,
   input: {
     accountId: string;
@@ -45,10 +45,10 @@ export async function createDatabaseProject(
     appsEnabled?: boolean;
     metadata?: Record<string, unknown>;
   },
-  open: OpenProjectDb = openProjectDb,
-): Promise<CreatedProject> {
+  open: OpenWorkspaceDb = openWorkspaceDb,
+): Promise<CreatedWorkspace> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "create");
-  const projectId = randomUUID();
+  const workspaceId = randomUUID();
   const client = await open(databaseUrl);
   try {
     await client.query(
@@ -90,7 +90,7 @@ export async function createDatabaseProject(
          $3::uuid
        FROM inserted_project`,
       [
-        projectId,
+        workspaceId,
         input.accountId,
         input.userId,
         input.name,
@@ -106,14 +106,14 @@ export async function createDatabaseProject(
   } finally {
     await client.end();
   }
-  return { id: projectId, name: input.name };
+  return { id: workspaceId, name: input.name };
 }
 
-export async function mergeDatabaseProjectMetadata(
+export async function mergeDatabaseWorkspaceMetadata(
   env: Env,
-  projectId: string,
+  workspaceId: string,
   metadata: Record<string, unknown>,
-  open: OpenProjectDb = openProjectDb,
+  open: OpenWorkspaceDb = openWorkspaceDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "update metadata for");
   const client = await open(databaseUrl);
@@ -122,7 +122,7 @@ export async function mergeDatabaseProjectMetadata(
       `UPDATE kortix.projects
        SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
        WHERE project_id = $1::uuid`,
-      [projectId, JSON.stringify(metadata)],
+      [workspaceId, JSON.stringify(metadata)],
     );
   } finally {
     await client.end();
@@ -132,11 +132,11 @@ export async function mergeDatabaseProjectMetadata(
 export async function createDatabaseSession(
   env: Env,
   input: {
-    projectId: string;
+    workspaceId: string;
     accountId: string;
     userId: string;
   },
-  open: OpenProjectDb = openProjectDb,
+  open: OpenWorkspaceDb = openWorkspaceDb,
 ): Promise<string> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "create a session for");
   const sessionId = randomUUID();
@@ -157,7 +157,7 @@ export async function createDatabaseSession(
          'session/' || $1,
          $4::uuid
        )`,
-      [sessionId, input.accountId, input.projectId, input.userId],
+      [sessionId, input.accountId, input.workspaceId, input.userId],
     );
   } finally {
     await client.end();
@@ -165,10 +165,10 @@ export async function createDatabaseSession(
   return sessionId;
 }
 
-export async function deleteDatabaseProject(
+export async function deleteDatabaseWorkspace(
   env: Env,
-  projectId: string,
-  open: OpenProjectDb = openProjectDb,
+  workspaceId: string,
+  open: OpenWorkspaceDb = openWorkspaceDb,
 ): Promise<void> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "delete");
   const client = await open(databaseUrl);
@@ -176,9 +176,18 @@ export async function deleteDatabaseProject(
     await client.query(
       `DELETE FROM kortix.projects
        WHERE project_id = $1::uuid`,
-      [projectId],
+      [workspaceId],
     );
   } finally {
     await client.end();
   }
 }
+
+/** @deprecated Use OpenWorkspaceDb. */
+export type OpenProjectDb = OpenWorkspaceDb;
+/** @deprecated Use createDatabaseWorkspace. */
+export const createDatabaseProject = createDatabaseWorkspace;
+/** @deprecated Use mergeDatabaseWorkspaceMetadata. */
+export const mergeDatabaseProjectMetadata = mergeDatabaseWorkspaceMetadata;
+/** @deprecated Use deleteDatabaseWorkspace. */
+export const deleteDatabaseProject = deleteDatabaseWorkspace;

@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import {
   prepareInPlaceRestartMetadata,
   staleOpencodeReadyReason,
-} from '../projects/session-lifecycle/readiness-clocks';
+} from '../workspaces/session-lifecycle/readiness-clocks';
 
 const source = readFileSync(
-  new URL('../projects/session-lifecycle/actions.ts', import.meta.url),
+  new URL('../workspaces/session-lifecycle/actions.ts', import.meta.url),
   'utf8',
 );
 

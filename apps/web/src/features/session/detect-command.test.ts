@@ -14,21 +14,21 @@ function cmd(name: string, template: unknown, extra: Partial<Command> = {}): Com
 
 describe('detectCommandFromText', () => {
   test('matches a normal string template by its prefix', () => {
-    const commands = [cmd('build', 'build the project now please $ARGUMENTS')];
-    expect(detectCommandFromText('build the project now please --force', commands)).toEqual({
+    const commands = [cmd('build', 'build the workspace now please $ARGUMENTS')];
+    expect(detectCommandFromText('build the workspace now please --force', commands)).toEqual({
       name: 'build',
       args: '--force',
     });
   });
 
   test('returns undefined when no command matches', () => {
-    const commands = [cmd('build', 'build the project now please $ARGUMENTS')];
+    const commands = [cmd('build', 'build the workspace now please $ARGUMENTS')];
     expect(detectCommandFromText('something completely unrelated', commands)).toBeUndefined();
   });
 
   test('returns undefined for empty input', () => {
     expect(
-      detectCommandFromText('', [cmd('build', 'build the project now please $ARGUMENTS')]),
+      detectCommandFromText('', [cmd('build', 'build the workspace now please $ARGUMENTS')]),
     ).toBeUndefined();
     expect(detectCommandFromText('text')).toBeUndefined();
   });
@@ -43,11 +43,11 @@ describe('detectCommandFromText', () => {
       cmd('broken-number', 42),
       cmd('broken-array', ['a', 'b']),
       cmd('broken-bool', true),
-      cmd('good', 'build the project now please $ARGUMENTS'),
+      cmd('good', 'build the workspace now please $ARGUMENTS'),
     ];
 
     // Must not throw — non-string templates are skipped, the good one still matches.
-    const result = detectCommandFromText('build the project now please --force', commands);
+    const result = detectCommandFromText('build the workspace now please --force', commands);
     expect(result).toEqual({ name: 'good', args: '--force' });
   });
 
@@ -56,16 +56,16 @@ describe('detectCommandFromText', () => {
       cmd('broken-object', { path: 'onboarding.md' }),
       cmd('broken-number', 42),
     ];
-    expect(detectCommandFromText('build the project now please', commands)).toBeUndefined();
+    expect(detectCommandFromText('build the workspace now please', commands)).toBeUndefined();
   });
 
   test('skips null/undefined templates without throwing', () => {
     const commands: Command[] = [
       cmd('null-template', null),
       cmd('undefined-template', undefined),
-      cmd('good', 'build the project now please $ARGUMENTS'),
+      cmd('good', 'build the workspace now please $ARGUMENTS'),
     ];
-    expect(detectCommandFromText('build the project now please', commands)).toEqual({
+    expect(detectCommandFromText('build the workspace now please', commands)).toEqual({
       name: 'good',
       args: undefined,
     });

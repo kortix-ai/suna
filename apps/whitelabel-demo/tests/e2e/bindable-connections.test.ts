@@ -5,7 +5,7 @@ const connection = (over: Record<string, unknown> = {}) =>
   ({
     connection_id: 'p1',
     connector_alias: 'gmail',
-    owner_type: 'project',
+    owner_type: 'workspace',
     owner_id: null,
     label: 'Support',
     status: 'active',
@@ -15,7 +15,7 @@ const connection = (over: Record<string, unknown> = {}) =>
   }) as never;
 
 describe('selectBindableConnections', () => {
-  test('offers project connections for the requested connector', () => {
+  test('offers workspace connections for the requested connector', () => {
     const rows = selectBindableConnections([connection()], 'gmail');
     expect(rows.map((r) => r.label)).toEqual(['Support']);
   });

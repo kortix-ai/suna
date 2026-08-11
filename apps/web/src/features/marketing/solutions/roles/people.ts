@@ -99,7 +99,7 @@ export const people: RoleContent = {
 
   reach: {
     title: 'The calendar, the inbox, the applicant system.',
-    sub: 'People systems hold the most sensitive data in the company, so the mechanism matters more here than anywhere else on this site. Connect each once for the project; the credential is decrypted on our side and attached to the outbound call.',
+    sub: 'People systems hold the most sensitive data in the company, so the mechanism matters more here than anywhere else on this site. Connect each once for the workspace; the credential is decrypted on our side and attached to the outbound call.',
     rows: [
       {
         k: 'Google Workspace and Outlook',
@@ -107,7 +107,7 @@ export const people: RoleContent = {
       },
       {
         k: 'Greenhouse and other applicant systems',
-        v: 'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the project. Read the pipeline and the scorecard, write back stage and scheduling. Whether it may write at all is your grant to make.',
+        v: 'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the workspace. Read the pipeline and the scorecard, write back stage and scheduling. Whether it may write at all is your grant to make.',
       },
       {
         k: 'Notion and Google Drive',
@@ -119,7 +119,7 @@ export const people: RoleContent = {
       },
       {
         k: 'Who the connection acts as',
-        v: 'One project-managed connection the team shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all. For People systems the second is usually the right answer.',
+        v: 'One workspace-managed connection the team shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all. For People systems the second is usually the right answer.',
       },
     ],
     footnote:
@@ -163,7 +163,7 @@ export const people: RoleContent = {
       {
         id: 'gates',
         k: 'Approval gates are off until you set them',
-        v: 'The shipped default is permissive — an action runs unless you have said otherwise. For a People project, setting every message to a candidate or an employee to Ask is the first change to make. It is not already done for you.',
+        v: 'The shipped default is permissive — an action runs unless you have said otherwise. For a People workspace, setting every message to a candidate or an employee to Ask is the first change to make. It is not already done for you.',
       },
       {
         id: 'scope',
@@ -173,7 +173,7 @@ export const people: RoleContent = {
       {
         id: 'creds',
         k: 'Connector credentials never enter the machine',
-        v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. Your applicant-system credential is decrypted server-side and attached to the outbound request, then thrown away.',
+        v: 'The sandbox carries one workspace-scoped Kortix token and no third-party keys. Your applicant-system credential is decrypted server-side and attached to the outbound request, then thrown away.',
       },
       {
         id: 'sovereign',

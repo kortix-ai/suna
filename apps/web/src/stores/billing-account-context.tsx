@@ -15,7 +15,7 @@ import * as React from 'react';
  *
  * `resolved === false` is a *third* state, and it is not the same as `null`:
  * it means "this surface owns an account, we just don't know its id yet"
- * (the project shell before `project-detail` lands). Billing queries wait it
+ * (the workspace shell before `project-detail` lands). Billing queries wait it
  * out rather than fetch the primary account as a stand-in — see
  * `shouldQueryAccountState`.
  */

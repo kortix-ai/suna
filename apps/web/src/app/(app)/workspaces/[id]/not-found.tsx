@@ -1,0 +1,64 @@
+'use client';
+
+import { useTranslations } from 'next-intl';
+
+import { ArrowLeftIcon as ArrowLeft, BookOpenIcon as BookOpen } from '@phosphor-icons/react';
+import { usePathname } from 'next/navigation';
+import { useMemo } from 'react';
+
+import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state';
+import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+
+/**
+ * Dashboard 404 — the not-found boundary for `/workspaces/[id]/*`.
+ *
+ * Same `<NotFoundCard />` as the marketing 404, but framed by the workspace
+ * shell (sidebar + tab bar) so a mistyped project sub-route still feels like
+ * you're inside the workspace. The "back" action returns to the workspace home
+ * rather than the marketing site.
+ *
+ * not-found boundaries don't receive route params, so the workspace id is read
+ * back off the pathname (`/workspaces/<id>/…`).
+ */
+export default function WorkspaceNotFound() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const pathname = usePathname();
+
+  const workspaceId = useMemo(() => {
+    const segments = pathname?.split('/').filter(Boolean) ?? [];
+    return segments[0] === 'workspaces' ? segments[1] : undefined;
+  }, [pathname]);
+
+  const card = (
+    <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4 py-16 sm:px-6">
+      <NotFoundNoise />
+      <NotFoundCard
+        actions={[
+          {
+            href: workspaceId ? `/workspaces/${workspaceId}` : WORKSPACE_LANDING_PATH,
+            label: tHardcodedUi.raw('appNotFound.line100JsxTextReturnHome'),
+            icon: <ArrowLeft className="h-4 w-4" />,
+          },
+          {
+            href: '/docs',
+            label: 'Documentation',
+            icon: <BookOpen className="h-4 w-4" />,
+            variant: 'outline',
+          },
+        ]}
+      />
+    </div>
+  );
+
+  // Fall back to a bare card if we somehow can't recover the workspace id — the
+  // shell needs one to mount its sidebar.
+  if (!workspaceId) {
+    return (
+      <div className="bg-background relative flex min-h-dvh w-full flex-col items-center justify-center">
+        {card}
+      </div>
+    );
+  }
+
+  return card;
+}

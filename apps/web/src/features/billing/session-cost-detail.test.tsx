@@ -7,8 +7,8 @@ import { SessionCostDetailContent } from './session-cost-detail';
 
 const detail = {
   session_id: 'session-detail',
-  project_id: 'project-detail',
-  project_name: 'Research workflows',
+  workspace_id: 'project-detail',
+  workspace_name: 'Research workflows',
   owner_id: 'owner-1',
   owner_type: 'user',
   owner_name: 'Session owner',
@@ -88,7 +88,7 @@ describe('SessionCostDetailContent', () => {
     expect(html).toContain('request-1');
     expect(html).toContain('2m');
     expect(html).toContain('2 vCPU');
-    expect(html).toContain('href="/projects/project-detail/sessions/session-detail"');
+    expect(html).toContain('href="/workspaces/project-detail/sessions/session-detail"');
   });
 
   test('renders loading and error states without stale detail', () => {

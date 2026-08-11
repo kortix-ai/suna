@@ -23,7 +23,7 @@ import * as realSnapshotProviders from './providers';
 
 const HEALTHY_TEMPLATE = {
   templateId: 'tpl-1',
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   slug: 'default',
   name: 'Default',
   isShared: true,
@@ -69,7 +69,7 @@ const ANOTHER_HEALTHY_TEMPLATE = {
 const mockTemplatesList: any[] = [];
 
 mock.module('./templates', () => ({
-  listTemplatesForProject: async () => mockTemplatesList,
+  listTemplatesForWorkspace: async () => mockTemplatesList,
   computeTemplateIdentity: async (_project: any, template: any) => {
     // Simulate the exact error from resolveUserDockerfile when the Dockerfile
     // is empty or gets stripped to empty by normalizeUserDockerfileForSnapshot.

@@ -106,7 +106,7 @@ beforeEach(() => {
   continueCalls = [];
   createCalls = [];
   setEmailSessionLifecycleForTest({
-    resolveProjectAutomationActor: async () => 'user-1',
+    resolveWorkspaceAutomationActor: async () => 'user-1',
     continueSession: async (input) => {
       continueCalls.push({
         sessionId: input.sessionId,
@@ -239,12 +239,12 @@ describe('AgentMail provisioning idempotency', () => {
     const alpha = agentMailProvisioningClientIds('project-1', 'veyris_email_alpha');
     const alphaRetry = agentMailProvisioningClientIds('project-1', 'VEYRIS_EMAIL_ALPHA');
     const beta = agentMailProvisioningClientIds('project-1', 'veyris_email_beta');
-    const otherProject = agentMailProvisioningClientIds('project-2', 'veyris_email_alpha');
+    const otherWorkspace = agentMailProvisioningClientIds('project-2', 'veyris_email_alpha');
 
     expect(alphaRetry).toEqual(alpha);
     expect(beta.inbox).not.toBe(alpha.inbox);
     expect(beta.webhook).not.toBe(alpha.webhook);
-    expect(otherProject.inbox).not.toBe(alpha.inbox);
+    expect(otherWorkspace.inbox).not.toBe(alpha.inbox);
     expect(alpha.inbox).toMatch(/^kortix-inbox-[a-f0-9]{40}$/);
     expect(alpha.webhook).toMatch(/^kortix-webhook-[a-f0-9]{40}$/);
   });
@@ -316,13 +316,13 @@ describe('dispatchAgentMailEvent', () => {
   test('first message creates one project-visible session bound to the email thread', async () => {
     dbResults = [
       [{ eventId: 'email:event:evt-1' }],
-      [{ projectId: 'proj-1' }],
+      [{ workspaceId: 'proj-1' }],
       [],
       [{ eventId: 'email:msg:inb-1:msg-1' }],
       [],
       [
         {
-          projectId: 'proj-1',
+          workspaceId: 'proj-1',
           accountId: 'acc-1',
           defaultBranch: 'main',
           name: 'Support',
@@ -348,7 +348,7 @@ describe('dispatchAgentMailEvent', () => {
       {
         type: 'bind_chat_thread',
         platform: 'email',
-        workspaceId: 'inb-1',
+        platformWorkspaceId: 'inb-1',
         threadId: 'thr-1',
       },
       expect.objectContaining({
@@ -382,13 +382,13 @@ describe('dispatchAgentMailEvent', () => {
     };
     dbResults = [
       [{ eventId: 'email:event:evt-unwrapped' }],
-      [{ projectId: 'proj-1' }],
+      [{ workspaceId: 'proj-1' }],
       [],
       [{ eventId: 'email:msg:inb-1:msg-unwrapped' }],
       [],
       [
         {
-          projectId: 'proj-1',
+          workspaceId: 'proj-1',
           accountId: 'acc-1',
           defaultBranch: 'main',
           name: 'Support',
@@ -421,7 +421,7 @@ describe('dispatchAgentMailEvent', () => {
     };
     dbResults = [
       [{ eventId: 'email:event:evt-unauth' }],
-      [{ projectId: 'proj-1' }],
+      [{ workspaceId: 'proj-1' }],
       [],
       [{ eventId: 'email:msg:inb-1:msg-unauth' }],
       [{ sessionId: 'sess-1' }],
@@ -449,7 +449,7 @@ describe('dispatchAgentMailEvent', () => {
   test('known thread routes a new email into the existing session', async () => {
     dbResults = [
       [{ eventId: 'email:event:evt-1' }],
-      [{ projectId: 'proj-1' }],
+      [{ workspaceId: 'proj-1' }],
       [],
       [{ eventId: 'email:msg:inb-1:msg-1' }],
       [{ sessionId: 'sess-1' }],
@@ -485,7 +485,7 @@ describe('dispatchAgentMailEvent', () => {
     }));
     dbResults = [
       [{ eventId: 'email:event:evt-1' }],
-      [{ projectId: 'proj-1' }],
+      [{ workspaceId: 'proj-1' }],
       // If dispatch moves past policy enforcement, these sentinels would let
       // it claim the inbound message and create a new thread/session.
       [],

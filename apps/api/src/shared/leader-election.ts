@@ -88,7 +88,7 @@ export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): bool
   const on = (v: string | undefined) => v !== 'false';
   return (
     on(env.KORTIX_TRIGGER_SCHEDULER_ENABLED) ||
-    on(env.KORTIX_PROJECT_MAINTENANCE_ENABLED) ||
+    on(env.KORTIX_WORKSPACE_MAINTENANCE_ENABLED) ||
     on(env.KORTIX_LEGACY_MIGRATION_WORKER_ENABLED) ||
     on(env.KORTIX_SUNA_MIGRATION_WORKER_ENABLED)
   );

@@ -2,9 +2,9 @@
 
 /**
  * The git / changes view for the white-label workbench. A single panel with two
- * tabs — "Commits" (the project's git history + session commit + base compare)
+ * tabs — "Commits" (the workspace's git history + session commit + base compare)
  * and "Change requests" (Kortix's native PR layer). Everything routes through the
- * `@kortix/sdk` facade: `kortix.project(id).git.*`, `.changeRequests.*`, and the
+ * `@kortix/sdk` facade: `kortix.workspace(id).git.*`, `.changeRequests.*`, and the
  * session-scoped `kortix.session(id, sid).commit()`. No raw HTTP.
  *
  * This file is a thin composer: the `Tabs` shell delegating to the extracted
@@ -17,10 +17,10 @@ import { ChangeRequestsView } from './changes/change-requests-view';
 import { CommitsView } from './changes/commits-view';
 
 export function ChangesPanel({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   return (
@@ -40,13 +40,13 @@ export function ChangesPanel({
           value="commits"
           className="min-h-0 flex-1 overflow-hidden p-3 data-[state=inactive]:hidden"
         >
-          <CommitsView projectId={projectId} sessionId={sessionId} />
+          <CommitsView workspaceId={workspaceId} sessionId={sessionId} />
         </TabsContent>
         <TabsContent
           value="change-requests"
           className="min-h-0 flex-1 overflow-hidden p-3 data-[state=inactive]:hidden"
         >
-          <ChangeRequestsView projectId={projectId} sessionId={sessionId} />
+          <ChangeRequestsView workspaceId={workspaceId} sessionId={sessionId} />
         </TabsContent>
       </Tabs>
     </div>

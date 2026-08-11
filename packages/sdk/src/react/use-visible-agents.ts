@@ -30,13 +30,13 @@ function hideProjectOnly(a: Agent): boolean {
  * Returns only visible agents (non-hidden, non-subagent).
  * Use this for agent selectors in UI where users pick which agent to use.
  *
- * Pass `projectId` for a SERVER-SIDE fetch (the project config is source of
+ * Pass `workspaceId` for a SERVER-SIDE fetch (the project config is source of
  * truth, works before any sandbox runtime exists) — preferred for selectors.
  * Pass `directory` to scope the sandbox-runtime fetch to a project instead.
  */
 export function useVisibleAgents(options?: {
   directory?: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
 }): Agent[] {
   const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(
@@ -51,7 +51,7 @@ export function useVisibleAgents(options?: {
  */
 export function useAllVisibleAgents(options?: {
   directory?: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
 }): Agent[] {
   const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(

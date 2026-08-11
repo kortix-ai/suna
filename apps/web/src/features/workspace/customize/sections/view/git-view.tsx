@@ -8,7 +8,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { getEnv } from '@/lib/env-config';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
-import { getProjectDetail, type KortixProject, type ProjectGitConnection } from '@kortix/sdk';
+import { getWorkspaceDetail, type KortixWorkspace, type WorkspaceGitConnection } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -26,16 +26,16 @@ import { useState } from 'react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { providerLabel, repositoryWebUrl } from './git-view-helpers';
 
-type ProjectWithOrigin = KortixProject & { git_origin_url?: string };
+type WorkspaceWithOrigin = KortixWorkspace & { git_origin_url?: string };
 
-function proxyUrl(project: ProjectWithOrigin): string {
-  if (project.git_origin_url) return project.git_origin_url;
+function proxyUrl(workspace: WorkspaceWithOrigin): string {
+  if (workspace.git_origin_url) return workspace.git_origin_url;
   const configured = getEnv().BACKEND_URL.replace(/\/+$/, '');
   const base = configured.startsWith('http')
     ? configured
     : `${typeof window === 'undefined' ? '' : window.location.origin}${configured}`;
   const versioned = base.endsWith('/v1') ? base : `${base}/v1`;
-  return `${versioned}/git/${project.project_id}.git`;
+  return `${versioned}/git/${workspace.workspace_id}.git`;
 }
 
 function CopyValue({ value, label }: { value: string; label: string }) {
@@ -92,7 +92,7 @@ function CopyValue({ value, label }: { value: string; label: string }) {
 function ConnectionSummary({
   connection,
 }: {
-  connection: ProjectGitConnection | null | undefined;
+  connection: WorkspaceGitConnection | null | undefined;
 }) {
   const connected = connection?.status === 'connected';
   const webUrl = connection?.repo_url
@@ -175,11 +175,11 @@ function SummaryRow({
   );
 }
 
-export function GitView({ projectId }: { projectId: string }) {
+export function GitView({ workspaceId }: { workspaceId: string }) {
   const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
   const detail = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
     ...contract('config'),
   });
 
@@ -213,7 +213,7 @@ export function GitView({ projectId }: { projectId: string }) {
             <div>
               <h3 className="text-foreground text-sm font-medium">Repository</h3>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                The provider and repository backing every project session.
+                The provider and repository backing every workspace session.
               </p>
             </div>
             <ConnectionSummary connection={detail.data.git_connection} />
@@ -228,7 +228,7 @@ export function GitView({ projectId }: { projectId: string }) {
               </p>
             </div>
             <CopyValue value={installCommand} label="Install command" />
-            <CopyValue value={`kortix projects clone ${projectId}`} label="Clone command" />
+            <CopyValue value={`kortix workspaces clone ${workspaceId}`} label="Clone command" />
             <p className="text-muted-foreground text-xs">
               Then run <code className="text-foreground font-mono">kortix init --force</code> and{' '}
               <code className="text-foreground font-mono">kortix env pull</code> inside the cloned
@@ -245,7 +245,7 @@ export function GitView({ projectId }: { projectId: string }) {
               </p>
             </div>
             <CopyValue
-              value={proxyUrl(detail.data.project as ProjectWithOrigin)}
+              value={proxyUrl(detail.data.workspace as WorkspaceWithOrigin)}
               label="Proxy URL"
             />
           </section>

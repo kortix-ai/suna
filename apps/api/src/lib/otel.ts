@@ -88,7 +88,7 @@ export async function emitOtelSpan(input: OTelSpanInput): Promise<boolean> {
     path: ctx.path,
     user_id: ctx.userId,
     account_id: ctx.accountId,
-    project_id: ctx.projectId,
+    project_id: ctx.workspaceId,
     session_id: ctx.sessionId,
     sandbox_id: ctx.sandboxId,
     ...input.attributes,

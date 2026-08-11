@@ -1,8 +1,8 @@
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
-import { applyVerdict, getReviewItemById } from '../../projects/review-items';
+import { applyVerdict, getReviewItemById } from '../../workspaces/review-items';
 import { setChannelAgent, setChannelModel } from '../slack/selection';
-import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
+import { resolveConversationWorkspace, setConversationWorkspace, teamsChannelCtx } from './binding';
 import { buildNoticeCard } from './cards';
 import {
   createTeamsAccessRequest,
@@ -46,7 +46,7 @@ export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise
     case 'teams_set_agent':
       return handleSetAgent(activity, action.data);
     case 'teams_pick_project':
-      return handlePickProject(activity, action.data);
+      return handlePickWorkspace(activity, action.data);
     case 'teams_answer':
       return handleAnswer(activity, action.data);
     case 'teams_review':
@@ -73,7 +73,7 @@ async function handleSetModel(
   const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
   if (!model) {
     await setChannelModel(ctx, null);
-    return cardResponse(buildNoticeCard('Model reset to the project default.', '✅'));
+    return cardResponse(buildNoticeCard('Model reset to the workspace default.', '✅'));
   }
   const stored = toOpencodeModelRef(model);
   await setChannelModel(ctx, stored);
@@ -90,25 +90,29 @@ async function handleSetAgent(
   const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
   if (!agent) {
     await setChannelAgent(ctx, null);
-    return cardResponse(buildNoticeCard('Agent reset to the project default.', '✅'));
+    return cardResponse(buildNoticeCard('Agent reset to the workspace default.', '✅'));
   }
   const res = await setChannelAgent(ctx, agent);
   if (!res.ok && res.reason === 'unknown_agent') {
-    return cardResponse(buildNoticeCard(`\`${agent}\` isn't a declared agent in this project.`));
+    return cardResponse(buildNoticeCard(`\`${agent}\` isn't a declared agent in this workspace.`));
   }
   return cardResponse(buildNoticeCard(`Agent set to ${agent}.`, '✅'));
 }
 
-async function handlePickProject(
+async function handlePickWorkspace(
   activity: TeamsActivity,
   data: Record<string, unknown>,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
-  const projectId = typeof data.projectId === 'string' ? data.projectId : null;
-  if (!convo || !projectId) return cardResponse(buildNoticeCard("I couldn't switch project."));
-  const switched = await setConversationProject({ tenantId: convo.tenantId, conversationId: convo.conversationId, projectId });
-  if (!switched) return cardResponse(buildNoticeCard("That project isn't connected to this Teams tenant."));
-  return cardResponse(buildNoticeCard('This conversation now runs the selected project.', '✅'));
+  const workspaceId = typeof data.workspaceId === 'string'
+    ? data.workspaceId
+    : typeof data.projectId === 'string'
+      ? data.projectId
+      : null;
+  if (!convo || !workspaceId) return cardResponse(buildNoticeCard("I couldn't switch workspace."));
+  const switched = await setConversationWorkspace({ tenantId: convo.tenantId, conversationId: convo.conversationId, workspaceId });
+  if (!switched) return cardResponse(buildNoticeCard("That workspace isn't connected to this Teams tenant."));
+  return cardResponse(buildNoticeCard('This conversation now runs the selected workspace.', '✅'));
 }
 
 async function handleAnswer(
@@ -119,8 +123,8 @@ async function handleAnswer(
   const answer = typeof data.answer === 'string' ? data.answer : '';
   if (!convo || !answer) return cardResponse(buildNoticeCard("I couldn't record that answer."));
 
-  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const workspaceId = await resolveConversationWorkspace(convo.tenantId, convo.conversationId);
+  if (!workspaceId) return cardResponse(buildNoticeCard("This conversation isn't connected to a workspace."));
 
   const synthetic: TeamsActivity = {
     ...activity,
@@ -129,7 +133,7 @@ async function handleAnswer(
     id: `${activity.id ?? 'answer'}:answer`,
   };
   void createOrJoinTeamsConversationSession({
-    projectId,
+    workspaceId,
     tenantId: convo.tenantId,
     conversationId: convo.conversationId,
     activity: synthetic,
@@ -159,13 +163,13 @@ async function handleReview(
     return cardResponse(buildNoticeCard('Connect your Kortix account (`/login`) to act on reviews.'));
   }
 
-  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const workspaceId = await resolveConversationWorkspace(convo.tenantId, convo.conversationId);
+  if (!workspaceId) return cardResponse(buildNoticeCard("This conversation isn't connected to a workspace."));
 
-  const item = await getReviewItemById(reviewItemId, projectId);
+  const item = await getReviewItemById(reviewItemId, workspaceId);
   if (!item) return cardResponse(buildNoticeCard('That review item no longer exists.'));
 
-  await applyVerdict(reviewItemId, projectId, { verdict, feedback: null, actingUserId: identity.userId });
+  await applyVerdict(reviewItemId, workspaceId, { verdict, feedback: null, actingUserId: identity.userId });
 
   const decisionLine =
     verdict === 'approve'
@@ -180,7 +184,7 @@ async function handleReview(
     id: `${activity.id ?? 'review'}:review`,
   };
   void createOrJoinTeamsConversationSession({
-    projectId,
+    workspaceId,
     tenantId: convo.tenantId,
     conversationId: convo.conversationId,
     activity: synthetic,
@@ -197,17 +201,17 @@ async function handleRequestAccess(
 ): Promise<TeamsInvokeResponse> {
   const tenantId = tenantOf(activity);
   const userId = teamsUserId(activity);
-  const projectId = typeof data.projectId === 'string' ? data.projectId : null;
-  if (!tenantId || !userId || !projectId) {
+  const workspaceId = typeof data.workspaceId === 'string' ? data.workspaceId : null;
+  if (!tenantId || !userId || !workspaceId) {
     return cardResponse(buildNoticeCard("I couldn't file that request. Try again from the prompt."));
   }
 
-  const outcome = await createTeamsAccessRequest({ tenantId, teamsUserId: userId, projectId });
+  const outcome = await createTeamsAccessRequest({ tenantId, teamsUserId: userId, workspaceId });
   switch (outcome.status) {
     case 'created':
     case 'pending':
       await notifyAdminsOfTeamsAccessRequest({
-        projectId,
+        workspaceId,
         accountId: outcome.accountId,
         requesterUserId: outcome.requesterUserId,
       });
@@ -216,7 +220,7 @@ async function handleRequestAccess(
       return cardResponse(buildNoticeCard("You already have access — send your message again and I'll pick it up."));
     case 'no-identity':
       return cardResponse(buildNoticeCard('Connect your Kortix account first, then request access.'));
-    case 'no-project':
-      return cardResponse(buildNoticeCard("I couldn't find that project."));
+    case 'no-workspace':
+      return cardResponse(buildNoticeCard("I couldn't find that workspace."));
   }
 }

@@ -1,7 +1,7 @@
-import type { ProjectConfigSummary } from '@kortix/sdk';
+import type { WorkspaceConfigSummary } from '@kortix/sdk';
 
 export type AgentMode = 'primary' | 'subagent';
-type Agent = ProjectConfigSummary['agents'][number];
+type Agent = WorkspaceConfigSummary['agents'][number];
 
 /**
  * Whether an agent belongs in a mode filter.

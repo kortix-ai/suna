@@ -10,16 +10,16 @@ import { serverErrorBody } from './api-error-body';
  * Two codes carry it and they are NOT interchangeable:
  *
  * - `CONNECTOR_CONNECTION_REQUIRED` (409) — the connector exists on the
- *   project and nothing is connected to it that this caller may use. The body
+ *   workspace and nothing is connected to it that this caller may use. The body
  *   carries `connector_connections`, each with an `authorization_strategy`, and
  *   that strategy is the whole answer to "who can fix this":
- *     • `project` — one shared connection serves the project. Anyone who can
+ *     • `workspace` — one shared connection serves the workspace. Anyone who can
  *       mint a setup link can connect it once, for everyone.
  *     • `user` — the connection must belong to the ACCOUNT THE SESSION RUNS AS.
  *       A wrapper runs every end-user's session under one operator credential,
  *       so no end-user can ever satisfy this themselves.
  * - `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE` (409) — the alias is not a
- *   connector on this project at all. Nobody can connect their way out of that;
+ *   connector on this workspace at all. Nobody can connect their way out of that;
  *   it takes a manifest change.
  *
  * `CONNECTOR_AUTHORIZATION_REQUIRED` — which this app used to classify, and which
@@ -30,20 +30,20 @@ import { serverErrorBody } from './api-error-body';
  * degrades to the generic path instead of showing confident nonsense.
  */
 
-export type ConnectorAuthorizationStrategy = 'project' | 'user';
+export type ConnectorAuthorizationStrategy = 'workspace' | 'user';
 
 export type ConnectorRemedy =
-  /** `project` strategy — one shared connection unblocks everyone. */
+  /** `workspace` strategy — one shared connection unblocks everyone. */
   | 'shared_connection'
   /** `user` strategy — only the session's own account can connect it. */
   | 'own_account'
-  /** The alias is not a connector on this project. */
+  /** The alias is not a connector on this workspace. */
   | 'not_configured'
   /** The refusal named the connector but not how it authorizes. */
   | 'unknown';
 
 export interface RequiredConnector {
-  /** The project alias/slug — what `require_connectors` and the manifest name. */
+  /** The workspace alias/slug — what `require_connectors` and the manifest name. */
   alias: string;
   /** Display name from the manifest; falls back to the alias. */
   name: string;
@@ -64,11 +64,11 @@ function text(value: unknown): string | null {
 }
 
 function strategyOf(value: unknown): ConnectorAuthorizationStrategy | null {
-  return value === 'project' || value === 'user' ? value : null;
+  return value === 'workspace' || value === 'user' ? value : null;
 }
 
 function remedyOf(strategy: ConnectorAuthorizationStrategy | null): ConnectorRemedy {
-  if (strategy === 'project') return 'shared_connection';
+  if (strategy === 'workspace') return 'shared_connection';
   if (strategy === 'user') return 'own_account';
   return 'unknown';
 }
@@ -158,8 +158,8 @@ export interface ConnectorRemedyCopy {
   /**
    * Whether this app can mint a connect link for this connector itself.
    *
-   * True ONLY for the `project` strategy: `POST /projects/{id}/connect-requests`
-   * is reachable through the wrapper proxy (it is a `projects/{id}/…` route)
+   * True ONLY for the `workspace` strategy: `POST /workspaces/{id}/connect-requests`
+   * is reachable through the wrapper proxy (it is a `workspaces/{id}/…` route)
    * and refuses any other strategy outright with
    * `CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH`. Offering the button anywhere
    * else would be offering a 409.
@@ -183,10 +183,10 @@ export function connectorRemedy(
 
   if (remedy === 'not_configured') {
     return {
-      headline: `${name} is not set up on this project`,
-      explanation: `This session declares ${alias}, but the project has no ${alias} connector for an account to be connected to. Connecting something will not change that.`,
+      headline: `${name} is not set up on this workspace`,
+      explanation: `This session declares ${alias}, but the workspace has no ${alias} connector for an account to be connected to. Connecting something will not change that.`,
       unblockedBy: [
-        `Whoever maintains this project adds "${alias}" to its agent manifest and redeploys.`,
+        `Whoever maintains this workspace adds "${alias}" to its agent manifest and redeploys.`,
       ],
       canMintConnectLink: false,
     };
@@ -195,7 +195,7 @@ export function connectorRemedy(
   if (remedy === 'shared_connection') {
     return {
       headline: `Connect ${name} to start this session`,
-      explanation: `This session needs ${name} and cannot start without it. ${name} is shared across the project — one connected account serves everyone here, so connecting it once unblocks this session and every other one that needs it.`,
+      explanation: `This session needs ${name} and cannot start without it. ${name} is shared across the workspace — one connected account serves everyone here, so connecting it once unblocks this session and every other one that needs it.`,
       unblockedBy: [
         `Open a connect link and sign in to ${name} once.`,
         `Or ask a teammate who already uses ${name} here to connect it.`,
@@ -211,7 +211,7 @@ export function connectorRemedy(
         explanation: `This session needs ${name} and cannot start without it. ${name} authorizes one person at a time, and sessions here run under this app's own Kortix credential rather than yours — so there is nothing it can connect on your behalf, and a link would only ever reconnect that same account.`,
         unblockedBy: [
           `The operator of this app connects ${name} for the account it runs sessions as.`,
-          `Or the project switches ${alias} to a shared (project) authorization, which anyone can then connect once with a link.`,
+          `Or the workspace switches ${alias} to a shared (workspace) authorization, which anyone can then connect once with a link.`,
         ],
         canMintConnectLink: false,
       };
@@ -229,7 +229,7 @@ export function connectorRemedy(
       explanation: `This session needs ${name} and cannot start without it. ${name} authorizes one person at a time, so it has to be connected by the account this app runs sessions as — which is not something the session can do for itself.`,
       unblockedBy: [
         `${name} is connected for the account this app runs sessions as.`,
-        `Or the project switches ${alias} to a shared (project) authorization, which anyone can then connect once with a link.`,
+        `Or the workspace switches ${alias} to a shared (workspace) authorization, which anyone can then connect once with a link.`,
       ],
       canMintConnectLink: false,
     };
@@ -239,7 +239,7 @@ export function connectorRemedy(
     headline: `Connect ${name} to start this session`,
     explanation: `This session needs ${name} and cannot start without it. The refusal did not say how ${alias} authorizes, so whether a shared connection or a personal one is required cannot be told from here.`,
     unblockedBy: [
-      `Check ${alias} in the project's connectors: a shared one can be connected once for everyone, a personal one has to be connected by the account the session runs as.`,
+      `Check ${alias} in the workspace's connectors: a shared one can be connected once for everyone, a personal one has to be connected by the account the session runs as.`,
     ],
     canMintConnectLink: false,
   };

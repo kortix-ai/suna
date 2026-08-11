@@ -32,13 +32,13 @@ When this skill is invoked, reply with the single word: loaded.
 
 run("create-skill", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix);
+  const workspaceId = await pickProjectId(kortix);
   const sessionId = await pickOrCreateSessionId(
     kortix,
-    projectId,
+    workspaceId,
     "sdk skill test",
   );
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
 
   console.log("readying session…");
   await retryUntilReady(() => session.ensureReady());

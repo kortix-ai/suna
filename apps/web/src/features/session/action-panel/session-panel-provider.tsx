@@ -81,7 +81,7 @@ export type OpenSource = 'row' | 'auto' | 'chip' | 'nav' | 'quick';
 
 export interface SessionPanelValue {
   sessionId: string;
-  projectSessionId?: string;
+  workspaceSessionId?: string;
 
   /** Card data — everything the floating overlay renders. */
   files: OutputItem[];
@@ -134,8 +134,8 @@ export function SessionPanelProvider({
   sessionId,
   messages,
   isSessionBusy = false,
-  projectId,
-  projectSessionId,
+  workspaceId,
+  workspaceSessionId,
   children,
 }: {
   sessionId: string;
@@ -145,8 +145,8 @@ export function SessionPanelProvider({
   /** Route ids the Audit detail needs to resolve a session's audit trail —
    *  see `session-audit-shared.ts`. Absent while booting/transient, in which
    *  case the palette's "Open Audit" consume below becomes a no-op. */
-  projectId?: string;
-  projectSessionId?: string;
+  workspaceId?: string;
+  workspaceSessionId?: string;
   children: ReactNode;
 }) {
   const parts = useMemo(() => collectAllToolParts(messages), [messages]);
@@ -498,8 +498,8 @@ export function SessionPanelProvider({
               url={output.url ?? ''}
               name={displayName}
               shareContext={
-                projectId && projectSessionId
-                  ? { projectId, sessionId: projectSessionId }
+                workspaceId && workspaceSessionId
+                  ? { workspaceId, sessionId: workspaceSessionId }
                   : undefined
               }
               onClose={closeDetail}
@@ -530,7 +530,7 @@ export function SessionPanelProvider({
             name={displayName}
             fileName={output.name}
             shareContext={
-              projectId && projectSessionId ? { projectId, sessionId: projectSessionId } : undefined
+              workspaceId && workspaceSessionId ? { workspaceId, sessionId: workspaceSessionId } : undefined
             }
             onClose={closeDetail}
             onAskForChanges={askForChanges}
@@ -546,8 +546,8 @@ export function SessionPanelProvider({
       closeDetail,
       openDetail,
       setPanelSplit,
-      projectId,
-      projectSessionId,
+      workspaceId,
+      workspaceSessionId,
       sendAppToAgent,
     ],
   );
@@ -696,9 +696,9 @@ export function SessionPanelProvider({
       key: 'audit',
       title: 'Audit',
       padded: false,
-      body: <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />,
+      body: <SessionAuditPanel workspaceId={workspaceId} workspaceSessionId={workspaceSessionId} />,
     });
-  }, [openDetail, projectId, projectSessionId]);
+  }, [openDetail, workspaceId, workspaceSessionId]);
 
   /**
    * The opt-in File Explorer (Marko's ask). Never a default view and never a
@@ -722,15 +722,15 @@ export function SessionPanelProvider({
         body: (
           <SessionFilesExplorer
             chatSessionId={sessionId}
-            projectId={projectId}
-            projectSessionId={projectSessionId}
+            workspaceId={workspaceId}
+            workspaceSessionId={workspaceSessionId}
             ephemeral
             initialMode={changes ? 'changes' : 'files'}
           />
         ),
       });
     },
-    [openDetail, sessionId, projectId, projectSessionId],
+    [openDetail, sessionId, workspaceId, workspaceSessionId],
   );
 
   /**
@@ -768,7 +768,7 @@ export function SessionPanelProvider({
     const { view, target } = request;
     if (view === 'terminal') {
       openTerminal();
-    } else if (view === 'audit' && projectId && projectSessionId) {
+    } else if (view === 'audit' && workspaceId && workspaceSessionId) {
       openAudit();
     } else if (view === 'browser') {
       openBrowser(target);
@@ -778,8 +778,8 @@ export function SessionPanelProvider({
   }, [
     pendingQuickView,
     sessionId,
-    projectId,
-    projectSessionId,
+    workspaceId,
+    workspaceSessionId,
     openTerminal,
     openAudit,
     openBrowser,
@@ -789,7 +789,7 @@ export function SessionPanelProvider({
   const value = useMemo<SessionPanelValue>(
     () => ({
       sessionId,
-      projectSessionId,
+      workspaceSessionId,
       files,
       context,
       apps,
@@ -808,7 +808,7 @@ export function SessionPanelProvider({
     }),
     [
       sessionId,
-      projectSessionId,
+      workspaceSessionId,
       files,
       context,
       apps,

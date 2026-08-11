@@ -27,7 +27,7 @@ describe('Apps public edge', () => {
     const response = await authorizeAppRequest(request, new URL(request.url), {
       appId: '11111111-1111-4111-8111-111111111111',
       accountId: '99999999-9999-4999-8999-999999999999',
-      projectId: '22222222-2222-4222-8222-222222222222',
+      workspaceId: '22222222-2222-4222-8222-222222222222',
       name: 'Public App',
       accessMode: 'public',
       accessPasswordHash: null,
@@ -43,7 +43,7 @@ describe('Apps public edge', () => {
     const app = {
       appId: '11111111-1111-4111-8111-111111111111',
       accountId: '99999999-9999-4999-8999-999999999999',
-      projectId: '22222222-2222-4222-8222-222222222222',
+      workspaceId: '22222222-2222-4222-8222-222222222222',
       name: 'Private App',
       accessMode: 'private',
       accessPasswordHash: null,
@@ -101,7 +101,7 @@ describe('Apps public edge', () => {
     const app = {
       appId: '11111111-1111-4111-8111-111111111111',
       accountId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      projectId: '22222222-2222-4222-8222-222222222222',
+      workspaceId: '22222222-2222-4222-8222-222222222222',
       createdBy: '33333333-3333-4333-8333-333333333333',
       name: 'Local private App',
       accessMode: 'private',
@@ -138,7 +138,7 @@ describe('Apps public edge', () => {
     const response = await authorizeAppRequest(request, new URL(request.url), {
       appId: '44444444-4444-4444-8444-444444444444',
       accountId: '99999999-9999-4999-8999-999999999999',
-      projectId: '22222222-2222-4222-8222-222222222222',
+      workspaceId: '22222222-2222-4222-8222-222222222222',
       name: 'Password App',
       accessMode: 'password',
       accessPasswordHash: 'unused',
@@ -163,7 +163,7 @@ describe('Apps public edge', () => {
     const response = await authorizeAppRequest(request, new URL(request.url), {
       appId: '44444444-4444-4444-8444-444444444444',
       accountId: '99999999-9999-4999-8999-999999999999',
-      projectId: '22222222-2222-4222-8222-222222222222',
+      workspaceId: '22222222-2222-4222-8222-222222222222',
       name: 'Password App',
       accessMode: 'password',
       accessPasswordHash: await Bun.password.hash(password, { algorithm: 'argon2id' }),
@@ -186,7 +186,7 @@ describe('Apps public edge', () => {
     const response = await authorizeAppRequest(request, new URL(request.url), {
       appId: '44444444-4444-4444-8444-444444444444',
       accountId: '99999999-9999-4999-8999-999999999999',
-      projectId: '22222222-2222-4222-8222-222222222222',
+      workspaceId: '22222222-2222-4222-8222-222222222222',
       name: 'Password App',
       accessMode: 'password',
       accessPasswordHash: await Bun.password.hash(password, { algorithm: 'argon2id' }),

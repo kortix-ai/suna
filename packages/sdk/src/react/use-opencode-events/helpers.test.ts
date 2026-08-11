@@ -32,7 +32,7 @@ describe('refetchKortixSessionMirrors', () => {
     ]);
   });
 
-  test('does nothing outside a project route (projectId null)', () => {
+  test('does nothing outside a project route (workspaceId null)', () => {
     const { client, calls } = fakeQueryClient();
     refetchKortixSessionMirrors(client, null);
     expect(calls).toEqual([]);

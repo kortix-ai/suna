@@ -29,7 +29,7 @@ export const useFilePreviewStore = create<FilePreviewState>((set) => ({
     // `…Silently` because Easy must never write `viewBySession`: that key is
     // Advanced's resume point, and session-layout.tsx promises Easy leaves it
     // untouched. The modal below is the fallback for surfaces with no side
-    // panel — the dashboard and project pages.
+    // panel — the dashboard and workspace pages.
     const sessionId = getActivePanelSessionId();
     if (sessionId) {
       openFileInSessionPanel(sessionId, filePath, lineNumber);

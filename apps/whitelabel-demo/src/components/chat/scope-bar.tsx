@@ -76,42 +76,42 @@ import {
 } from './scope-bar-model';
 
 export function ScopeBar({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   const router = useRouter();
   const qc = useQueryClient();
 
   const session = useQuery({
-    queryKey: qk.session(projectId, sessionId),
+    queryKey: qk.session(workspaceId, sessionId),
     queryFn: () =>
-      kortix.session(projectId, sessionId).get({ showErrors: false }),
+      kortix.session(workspaceId, sessionId).get({ showErrors: false }),
     retry: false,
   });
   const secrets = useQuery({
-    queryKey: qk.secrets(projectId),
-    queryFn: () => kortix.project(projectId).secrets.list(),
+    queryKey: qk.secrets(workspaceId),
+    queryFn: () => kortix.workspace(workspaceId).secrets.list(),
     retry: false,
   });
   const scope = useQuery({
-    queryKey: qk.sessionScope(projectId, sessionId),
-    queryFn: () => kortix.session(projectId, sessionId).scope(),
+    queryKey: qk.sessionScope(workspaceId, sessionId),
+    queryFn: () => kortix.session(workspaceId, sessionId).scope(),
     retry: false,
   });
-  const connectors = useConnectorBindingChoices(projectId);
+  const connectors = useConnectorBindingChoices(workspaceId);
   // Same query key the switcher inside the popover uses, so this label is the
   // switcher's own answer rather than a second opinion — and costs no second
   // request. The upstream field is named after the runtime, which is why this
   // goes through the neutral route instead of the SDK.
   const model = useQuery({
-    queryKey: ['session-model', projectId, sessionId],
+    queryKey: ['session-model', workspaceId, sessionId],
     queryFn: async () => {
       const token = getSessionToken();
       const res = await fetch(
-        `/api/session-model?projectId=${encodeURIComponent(projectId)}&sessionId=${encodeURIComponent(sessionId)}`,
+        `/api/session-model?workspaceId=${encodeURIComponent(workspaceId)}&sessionId=${encodeURIComponent(sessionId)}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
       );
       if (!res.ok) return { model: null as string | null };
@@ -163,7 +163,7 @@ export function ScopeBar({
   const start = useMutation({
     mutationFn: async () => {
       const nextId = generateSessionId();
-      await kortix.project(projectId).sessions.create(
+      await kortix.workspace(workspaceId).sessions.create(
         buildSessionCreateInput(
           // The agent comes along too, or "with this scope" would quietly drop
           // the one part of the scope that is already right.
@@ -179,8 +179,8 @@ export function ScopeBar({
       return nextId;
     },
     onSuccess: (nextId) => {
-      invalidateSessions(qc, projectId);
-      router.push(`/projects/${projectId}/sessions/${nextId}`);
+      invalidateSessions(qc, workspaceId);
+      router.push(`/workspaces/${workspaceId}/sessions/${nextId}`);
     },
     onError: (err) => {
       const failure = sessionCreateFailure(err);
@@ -199,7 +199,7 @@ export function ScopeBar({
         throw new Error('The current session scope is not available');
       }
       return kortix
-        .session(projectId, sessionId)
+        .session(workspaceId, sessionId)
         .rescope(
           buildCompleteSessionScopeReplacement(authoritativeScope, patch),
         );
@@ -221,7 +221,7 @@ export function ScopeBar({
           body.detail ?? 'Scope updated — applies from the next prompt.',
         );
       }
-      qc.setQueryData(qk.sessionScope(projectId, sessionId), body);
+      qc.setQueryData(qk.sessionScope(workspaceId, sessionId), body);
       setDraftSecrets(undefined);
       setDraftBindings(undefined);
     },
@@ -277,7 +277,7 @@ export function ScopeBar({
       <ScopeChip
         icon={<Bot className="size-3" />}
         label="Agent"
-        value={data.agent_name ?? 'Project default'}
+        value={data.agent_name ?? 'Workspace default'}
         title="Agent"
         badge={scopeControl('agent').badge}
         note={scopeControl('agent').note}
@@ -287,7 +287,7 @@ export function ScopeBar({
         icon={<Lock className="size-3" />}
         label="Secrets"
         // Derived from the session's own allowlist, so it stays true even when
-        // the project's secret list is the thing that failed to load.
+        // the workspace's secret list is the thing that failed to load.
         value={live.summary}
         title="Secrets"
         badge={scopeControl('secrets').badge}
@@ -304,11 +304,11 @@ export function ScopeBar({
         }
       >
         <div className="mt-3 space-y-2">
-          {/* An unread project list is not an empty one. "No secrets" here
+          {/* An unread workspace list is not an empty one. "No secrets" here
               would be a claim about secret access that nothing established. */}
           {secrets.isError && (
             <p className="text-xs text-muted-foreground">
-              This project&apos;s secrets could not be read just now, so only
+              This workspace&apos;s secrets could not be read just now, so only
               the allowlist itself is shown:{' '}
               {live.narrowed
                 ? authoritativeScope.secrets_allowlist?.join(', ') || 'nothing'
@@ -318,7 +318,7 @@ export function ScopeBar({
           )}
           {!secrets.isError && live.rows.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              This project has no secrets a session allowlist can name.
+              This workspace has no secrets a session allowlist can name.
             </p>
           )}
           {live.rows.map((row) => (
@@ -475,7 +475,7 @@ export function ScopeBar({
                   </p>
                 )}
                 {/* Said where they type it, not after the create fails: this
-                    app can list a project's secrets but cannot mint one, and
+                    app can list a workspace's secrets but cannot mint one, and
                     an allowlist naming an identifier that does not exist is
                     refused at start. */}
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
@@ -508,7 +508,7 @@ export function ScopeBar({
         {startAction}
         {/* The call behind the control, next to the control — the demo's job is
             to teach what to send, and re-scoping is the least obvious of these. */}
-        <CallSnippet id="session.rescope" context={{ projectId, sessionId }} />
+        <CallSnippet id="session.rescope" context={{ workspaceId, sessionId }} />
       </ScopeChip>
 
       <ScopeChip
@@ -522,7 +522,7 @@ export function ScopeBar({
         <div className="mt-3 space-y-2">
           {connections.rows.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              This project has no connectors connected yet.
+              This workspace has no connectors connected yet.
             </p>
           )}
           {connections.rows.map((row) => (
@@ -532,7 +532,7 @@ export function ScopeBar({
                   {row.alias}
                 </span>
                 <span className="truncate text-xs">
-                  {row.bound ?? 'Project default'}
+                  {row.bound ?? 'Workspace default'}
                 </span>
               </div>
               {/* The remedy is always a teammate. A wrapper acts under one
@@ -585,24 +585,24 @@ export function ScopeBar({
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               Takes effect on the next tool call — connections resolve
               server-side, so unlike secrets this change is complete. An alias
-              you unbind falls back to the project default.
+              you unbind falls back to the workspace default.
             </p>
           </div>
         )}
         {startAction}
-        <CallSnippet id="session.rescope" context={{ projectId, sessionId }} />
+        <CallSnippet id="session.rescope" context={{ workspaceId, sessionId }} />
       </ScopeChip>
 
       <ScopeChip
         icon={<Cpu className="size-3" />}
         label="Model"
-        value={model.data?.model ?? 'Project default'}
+        value={model.data?.model ?? 'Workspace default'}
         title="Model"
         badge={scopeControl('model').badge}
         note={scopeControl('model').note}
       >
         <div className="-ml-2 mt-2">
-          <ModelSwitcher projectId={projectId} sessionId={sessionId} />
+          <ModelSwitcher workspaceId={workspaceId} sessionId={sessionId} />
         </div>
       </ScopeChip>
     </div>

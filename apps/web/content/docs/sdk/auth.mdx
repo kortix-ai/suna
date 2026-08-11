@@ -32,10 +32,10 @@ A PAT acts as the user who created it. Its scope is fixed at creation:
 
 | Scope | Reach |
 |---|---|
-| Account (default) | Every project in the account |
-| Project | One project only; every other project returns `403` |
+| Account (default) | Every workspace in the account |
+| Workspace | One workspace only; every other workspace returns `403` |
 
-Choose the project scope for CI and other narrow-purpose credentials.
+Choose the workspace scope for CI and other narrow-purpose credentials.
 `kortix login` mints a PAT and stores it locally — it is the same credential
 type, not a separate token kind.
 
@@ -45,9 +45,9 @@ A service account is a separate credential family for non-human callers,
 prefixed `kortix_sa_`. Create one at **Account settings → Service accounts**.
 
 <Callout type="warn">
-  A new service account has no project access. If you point `getToken` at one
+  A new service account has no workspace access. If you point `getToken` at one
   before you grant it access, every call returns `403 "You do not have access
-  to this project"`. Grant the service account access first, or use a
+  to this workspace"`. Grant the service account access first, or use a
   personal access token for the SDK, the CLI, and demos instead.
 </Callout>
 
@@ -68,7 +68,7 @@ automatically.
 
 | You are building | Use |
 |---|---|
-| A backend, script, or CI job | A personal access token, account-wide or project-scoped |
+| A backend, script, or CI job | A personal access token, account-wide or workspace-scoped |
 | The Kortix CLI | `kortix login` (mints a personal access token) |
 | A web app on Kortix sign-in | A Supabase JWT |
-| An automated caller with a granted project | A service account |
+| An automated caller with a granted workspace | A service account |

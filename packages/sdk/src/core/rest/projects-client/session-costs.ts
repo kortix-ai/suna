@@ -130,7 +130,7 @@ export type ProjectCostSort = SessionCostSort | 'name_asc';
 
 export interface ListSessionCostsOptions extends CostWindowOptions {
   accountId?: string;
-  projectId?: string;
+  workspaceId?: string;
   /** Filter to sessions owned by this user/service-account id. */
   ownerId?: string;
   sort?: SessionCostSort;
@@ -140,7 +140,7 @@ export interface ListSessionCostsOptions extends CostWindowOptions {
 
 export interface GetSessionCostRecordOptions {
   accountId?: string;
-  projectId?: string;
+  workspaceId?: string;
 }
 
 function appendScopeOptions(
@@ -148,7 +148,7 @@ function appendScopeOptions(
   options: GetSessionCostRecordOptions,
 ): void {
   if (options.accountId) query.set('account_id', options.accountId);
-  if (options.projectId) query.set('project_id', options.projectId);
+  if (options.workspaceId) query.set('project_id', options.workspaceId);
 }
 
 function appendWindow(query: URLSearchParams, options: CostWindowOptions): void {
@@ -269,7 +269,7 @@ export interface CostSummary {
 
 export interface GetCostSummaryOptions extends CostWindowOptions {
   accountId?: string;
-  projectId?: string;
+  workspaceId?: string;
   sessionId?: string;
 }
 
@@ -303,7 +303,7 @@ export async function getCostSummary(
 // published.
 
 /** Options accepted by `costExportUrl('projects', …)` / `fetchCostExportCsv('projects', …)`.
- *  No `projectId`/`ownerId` — `/cost-by-project` has no such query param. */
+ *  No `workspaceId`/`ownerId` — `/cost-by-project` has no such query param. */
 export interface ProjectCostExportOptions extends CostWindowOptions {
   accountId?: string;
   sort?: ProjectCostSort;
@@ -315,7 +315,7 @@ export interface ProjectCostExportOptions extends CostWindowOptions {
  *  so passing it here would compile before this fix and 400 at request time). */
 export interface SessionCostExportOptions extends CostWindowOptions {
   accountId?: string;
-  projectId?: string;
+  workspaceId?: string;
   ownerId?: string;
   sort?: SessionCostSort;
 }
@@ -341,7 +341,7 @@ export function costExportUrl(
   if (options.accountId) query.set('account_id', options.accountId);
   if (kind === 'sessions') {
     const sessionOptions = options as SessionCostExportOptions;
-    if (sessionOptions.projectId) query.set('project_id', sessionOptions.projectId);
+    if (sessionOptions.workspaceId) query.set('project_id', sessionOptions.workspaceId);
     if (sessionOptions.ownerId) query.set('owner_id', sessionOptions.ownerId);
   }
   appendWindow(query, options);

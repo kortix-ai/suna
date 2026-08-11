@@ -26,13 +26,13 @@ Summarize the repository README in one sentence.
 
 run("create-command", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix);
+  const workspaceId = await pickProjectId(kortix);
   const sessionId = await pickOrCreateSessionId(
     kortix,
-    projectId,
+    workspaceId,
     "sdk command test",
   );
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
 
   console.log("readying session…");
   await retryUntilReady(() => session.ensureReady());

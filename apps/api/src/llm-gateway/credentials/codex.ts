@@ -2,9 +2,9 @@ import { eq } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
-  encryptProjectSecret,
-  resolveProjectSecretForConsumer,
-} from '../../projects/secrets';
+  encryptWorkspaceSecret,
+  resolveWorkspaceSecretForConsumer,
+} from '../../workspaces/secrets';
 import { recordAuditEvent } from '../../shared/audit';
 import {
   CodexRefreshError,
@@ -40,12 +40,12 @@ interface CodexCredentialContext {
 }
 
 async function loadCodexRow(
-  projectId: string,
+  workspaceId: string,
   userId: string,
   context: CodexCredentialContext,
 ): Promise<SecretRow | null> {
-  const resolved = await resolveProjectSecretForConsumer({
-    projectId,
+  const resolved = await resolveWorkspaceSecretForConsumer({
+    workspaceId,
     accountId: context.accountId,
     sessionId: context.sessionId,
     actorUserId: userId,
@@ -65,7 +65,7 @@ async function loadCodexRow(
 const inflightRefresh = new Map<string, Promise<StoredCodexAuth | null>>();
 
 async function refreshAndPersist(
-  projectId: string,
+  workspaceId: string,
   row: SecretRow,
   current: StoredCodexAuth,
   fetchImpl: FetchImpl,
@@ -91,14 +91,14 @@ async function refreshAndPersist(
     await db
       .update(projectSecrets)
       .set({
-        valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })),
+        valueEnc: encryptWorkspaceSecret(workspaceId, JSON.stringify({ openai: next })),
         updatedAt: new Date(),
       })
       .where(eq(projectSecrets.secretId, row.secretId));
 
     await recordAuditEvent({
       accountId: row.accountId,
-      projectId,
+      workspaceId,
       sessionId: row.sessionId,
       actorUserId: row.actorUserId,
       actorType: row.sessionId ? 'agent' : 'human',
@@ -121,7 +121,7 @@ async function refreshAndPersist(
         : new CodexRefreshError(err instanceof Error ? err.message : 'network error');
     await recordAuditEvent({
       accountId: row.accountId,
-      projectId,
+      workspaceId,
       sessionId: row.sessionId,
       actorUserId: row.actorUserId,
       actorType: row.sessionId ? 'agent' : 'human',
@@ -142,25 +142,25 @@ async function refreshAndPersist(
 }
 
 function refreshSingleFlight(
-  projectId: string,
+  workspaceId: string,
   row: SecretRow,
   current: StoredCodexAuth,
   fetchImpl: FetchImpl,
 ): Promise<StoredCodexAuth | null> {
   const existing = inflightRefresh.get(row.secretId);
   if (existing) return existing;
-  const pending = refreshAndPersist(projectId, row, current, fetchImpl).finally(() => inflightRefresh.delete(row.secretId));
+  const pending = refreshAndPersist(workspaceId, row, current, fetchImpl).finally(() => inflightRefresh.delete(row.secretId));
   inflightRefresh.set(row.secretId, pending);
   return pending;
 }
 
 export async function resolveCodexCredential(
-  projectId: string,
+  workspaceId: string,
   userId: string,
   fetchImpl: FetchImpl = (input, init) => fetch(input, init),
   context: CodexCredentialContext = {},
 ): Promise<CodexCredential | null> {
-  const row = await loadCodexRow(projectId, userId, context);
+  const row = await loadCodexRow(workspaceId, userId, context);
   if (!row) return null;
 
   let stored = parseCodexAuth(row.value);
@@ -168,7 +168,7 @@ export async function resolveCodexCredential(
 
   if (needsRefresh(stored, Date.now())) {
     try {
-      const refreshed = await refreshSingleFlight(projectId, row, stored, fetchImpl);
+      const refreshed = await refreshSingleFlight(workspaceId, row, stored, fetchImpl);
       if (refreshed?.access) stored = refreshed;
     } catch (err) {
       // Grace period: a refresh blip shouldn't fail every Codex request. If the

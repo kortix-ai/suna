@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realAccess from '../projects/lib/access';
+import * as realAccess from '../workspaces/lib/access';
 
 let dbResults: unknown[][] = [];
 const inserts: unknown[] = [];
@@ -28,7 +28,7 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../channels/install-store', () => ({
-  loadSlackTokenForProject: async () => 'xoxb',
+  loadSlackTokenForWorkspace: async () => 'xoxb',
 }));
 
 mock.module('../channels/slack-api', () => ({
@@ -41,7 +41,7 @@ mock.module('../channels/slack-api', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../projects/lib/access', () => ({
+mock.module('../workspaces/lib/access', () => ({
   ...realAccess,
   lookupEmailsByUserIds: async (ids: string[]) => new Map(ids.map((id) => [id, `${id}@example.com`])),
 }));
@@ -72,7 +72,7 @@ describe('Slack thread participants', () => {
 
   test('session owner is allowed without a participant request', async () => {
     const allowed = await ensureSlackThreadParticipant({
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       teamId: 'T1',
       channel: 'C1',
       threadId: '90.0',
@@ -97,7 +97,7 @@ describe('Slack thread participants', () => {
     ];
 
     const allowed = await ensureSlackThreadParticipant({
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       teamId: 'T1',
       channel: 'C1',
       threadId: '90.0',
@@ -111,7 +111,8 @@ describe('Slack thread participants', () => {
 
     expect(allowed).toBe(false);
     expect(inserts[0]).toMatchObject({
-      workspaceId: 'T1',
+      platform: 'slack',
+      platformWorkspaceId: 'T1',
       threadId: '90.0',
       sessionId: 'sess-1',
       platformUserId: 'Urequester',
@@ -134,7 +135,7 @@ describe('Slack thread participants', () => {
       teamId: 'T1',
       channelId: 'C1',
       deciderSlackUserId: 'Uowner',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       sessionId: 'sess-1',
       threadId: '90.0',
       requesterUserId: 'requester-user',
@@ -151,7 +152,7 @@ describe('Slack thread participants', () => {
 
   test('owner-only blocks linked project members without creating an approval request', async () => {
     const allowed = await ensureSlackThreadParticipant({
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       teamId: 'T1',
       channel: 'C1',
       threadId: '90.0',
@@ -181,7 +182,7 @@ describe('Slack thread participants', () => {
     ];
 
     const allowed = await ensureSlackThreadParticipant({
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       teamId: 'T1',
       channel: 'C1',
       threadId: '90.0',
@@ -203,7 +204,7 @@ describe('Slack thread participants', () => {
     dbResults = [[]]; // projectSessionGrants insert
 
     const allowed = await ensureSlackThreadParticipant({
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       teamId: 'T1',
       channel: 'C1',
       threadId: '90.0',

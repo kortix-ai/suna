@@ -520,10 +520,10 @@ flow(
   {
     domain: 'accounts',
     routes: [
-      'POST /v1/projects/:projectId/cli-token',
-      'DELETE /v1/projects/:projectId/cli-token/:tokenId',
-      'GET /v1/projects/:projectId',
-      'GET /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:workspaceId/cli-token',
+      'DELETE /v1/projects/:workspaceId/cli-token/:tokenId',
+      'GET /v1/projects/:workspaceId',
+      'GET /v1/projects/:workspaceId/secrets',
       'GET /v1/projects',
       'GET /v1/accounts/me',
       'GET /v1/accounts/tokens',
@@ -538,9 +538,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/cli-token',
+          '/v1/projects/:workspaceId/cli-token',
           { name: ctx.fixtures.name('proj-pat') },
-          { params: { projectId: projA.id } },
+          { params: { workspaceId: projA.id } },
         );
       r.status(201).body().exists('$.secret_key').has('$.project_id', projA.id);
       const j = r.json<any>();
@@ -549,12 +549,12 @@ flow(
     });
     const pat = () => ctx.client.withBearer(secret, 'PAT_PROJ');
     await ctx.step('allowed: GET its own project → 200', async () => {
-      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projA.id } });
+      const r = await pat().get('/v1/projects/:workspaceId', { params: { workspaceId: projA.id } });
       r.status(200);
     });
     await ctx.step("allowed: GET its own project's secrets → 200", async () => {
-      const r = await pat().get('/v1/projects/:projectId/secrets', {
-        params: { projectId: projA.id },
+      const r = await pat().get('/v1/projects/:workspaceId/secrets', {
+        params: { workspaceId: projA.id },
       });
       r.status(200);
     });
@@ -563,7 +563,7 @@ flow(
       r.status(200);
     });
     await ctx.step('denied: a different project → 403', async () => {
-      const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projB.id } });
+      const r = await pat().get('/v1/projects/:workspaceId', { params: { workspaceId: projB.id } });
       r.status(403);
     });
     await ctx.step('denied: enumerate projects → 403', async () => {
@@ -575,8 +575,8 @@ flow(
       r.status(403);
     });
     await ctx.step('revoke the project token → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
-        params: { projectId: projA.id, tokenId },
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:workspaceId/cli-token/:tokenId', {
+        params: { workspaceId: projA.id, tokenId },
       });
       r.status(200).body().has('$.ok', true);
     });
@@ -587,7 +587,7 @@ flow(
 // project PAT can't READ a foreign project; this proves it can't MUTATE one
 // either (POST secrets, POST triggers, DELETE secrets on a different project →
 // 403). enforceTokenProjectScope (apps/api/src/middleware/auth.ts:702-711)
-// rejects any /v1/projects/:projectId/* where the URL id ≠ the token's project
+// rejects any /v1/projects/:workspaceId/* where the URL id ≠ the token's project
 // at the auth layer, BEFORE the route handler's loadProjectForUser — so a
 // scope regression that only checked reads (or skipped writes) would let a
 // project PAT mutate another project. The positive path (write on its own
@@ -598,11 +598,11 @@ flow(
     domain: 'accounts',
     serial: true,
     routes: [
-      'POST /v1/projects/:projectId/cli-token',
-      'DELETE /v1/projects/:projectId/cli-token/:tokenId',
-      'POST /v1/projects/:projectId/secrets',
-      'DELETE /v1/projects/:projectId/secrets/:name',
-      'POST /v1/projects/:projectId/triggers',
+      'POST /v1/projects/:workspaceId/cli-token',
+      'DELETE /v1/projects/:workspaceId/cli-token/:tokenId',
+      'POST /v1/projects/:workspaceId/secrets',
+      'DELETE /v1/projects/:workspaceId/secrets/:name',
+      'POST /v1/projects/:workspaceId/triggers',
     ],
   },
   async (ctx) => {
@@ -618,9 +618,9 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/cli-token',
+          '/v1/projects/:workspaceId/cli-token',
           { name: ctx.fixtures.name('proj-pat-write') },
-          { params: { projectId: projA.id } },
+          { params: { workspaceId: projA.id } },
         );
       r.status(201).body().exists('$.secret_key').has('$.project_id', projA.id);
       const j = r.json<any>();
@@ -633,15 +633,15 @@ flow(
     //    denials below are the scope gate, not a malformed body / authz floor).
     await ctx.step('allowed: POST a secret on its OWN project → 200', async () => {
       const r = await pat().post(
-        '/v1/projects/:projectId/secrets',
+        '/v1/projects/:workspaceId/secrets',
         { name: 'MY_KEY', value: 'val' },
-        { params: { projectId: projA.id } },
+        { params: { workspaceId: projA.id } },
       );
       r.status(200);
     });
     await ctx.step('allowed: POST a trigger on its OWN project → 201', async () => {
       const r = await pat().post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/projects/:workspaceId/triggers',
         {
           name: 'Own Trigger',
           type: 'cron',
@@ -649,7 +649,7 @@ flow(
           timezone: 'UTC',
           prompt_template: 'x',
         },
-        { params: { projectId: projA.id } },
+        { params: { workspaceId: projA.id } },
       );
       r.status(201);
     });
@@ -658,15 +658,15 @@ flow(
     //    (enforceTokenProjectScope fires at the auth layer, before the handler).
     await ctx.step('denied: POST a secret on a FOREIGN project → 403', async () => {
       const r = await pat().post(
-        '/v1/projects/:projectId/secrets',
+        '/v1/projects/:workspaceId/secrets',
         { name: 'FOREIGN_KEY', value: 'val' },
-        { params: { projectId: projB.id } },
+        { params: { workspaceId: projB.id } },
       );
       r.status(403);
     });
     await ctx.step('denied: POST a trigger on a FOREIGN project → 403', async () => {
       const r = await pat().post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/projects/:workspaceId/triggers',
         {
           name: 'Foreign Trigger',
           type: 'cron',
@@ -674,20 +674,20 @@ flow(
           timezone: 'UTC',
           prompt_template: 'x',
         },
-        { params: { projectId: projB.id } },
+        { params: { workspaceId: projB.id } },
       );
       r.status(403);
     });
     await ctx.step('denied: DELETE a secret on a FOREIGN project → 403', async () => {
-      const r = await pat().del('/v1/projects/:projectId/secrets/:name', {
-        params: { projectId: projB.id, name: 'ANY_KEY' },
+      const r = await pat().del('/v1/projects/:workspaceId/secrets/:name', {
+        params: { workspaceId: projB.id, name: 'ANY_KEY' },
       });
       r.status(403);
     });
 
     await ctx.step('revoke the project token → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
-        params: { projectId: projA.id, tokenId },
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:workspaceId/cli-token/:tokenId', {
+        params: { workspaceId: projA.id, tokenId },
       });
       r.status(200).body().has('$.ok', true);
     });

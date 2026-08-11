@@ -206,24 +206,24 @@ export const credentialKeys = {
   events: (pid: string, name: string) => ['kortix', 'credentials', pid, name, 'events'] as const,
 };
 
-export function useCredentials(projectId?: string) {
+export function useCredentials(workspaceId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<CredentialItem[]>({
-    queryKey: credentialKeys.list(projectId),
-    queryFn: () => listCredentials(serverUrl, projectId!),
-    enabled: !!projectId,
+    queryKey: credentialKeys.list(workspaceId),
+    queryFn: () => listCredentials(serverUrl, workspaceId!),
+    enabled: !!workspaceId,
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
   });
 }
 
-export function useCredentialEvents(projectId?: string, name?: string) {
+export function useCredentialEvents(workspaceId?: string, name?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<CredentialEvent[]>({
-    queryKey: credentialKeys.events(projectId ?? '', name ?? ''),
-    queryFn: () => listCredentialEvents(serverUrl, projectId!, name!),
-    enabled: !!projectId && !!name,
+    queryKey: credentialKeys.events(workspaceId ?? '', name ?? ''),
+    queryFn: () => listCredentialEvents(serverUrl, workspaceId!, name!),
+    enabled: !!workspaceId && !!name,
     refetchInterval: 10_000,
   });
 }
@@ -232,14 +232,14 @@ export function useUpsertCredential() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
   return useMutation<CredentialItem, Error, {
-    projectId: string;
+    workspaceId: string;
     name: string;
     value: string;
     description?: string | null;
   }>({
-    mutationFn: ({ projectId, ...body }) => upsertCredential(serverUrl, projectId, body),
+    mutationFn: ({ workspaceId, ...body }) => upsertCredential(serverUrl, workspaceId, body),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: credentialKeys.list(vars.projectId) });
+      qc.invalidateQueries({ queryKey: credentialKeys.list(vars.workspaceId) });
     },
   });
 }
@@ -248,12 +248,12 @@ export function useUpsertCredential() {
 export function useRevealCredential() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
-  return useMutation<CredentialWithValue, Error, { projectId: string; name: string }>({
-    mutationFn: ({ projectId, name }) => revealCredential(serverUrl, projectId, name),
+  return useMutation<CredentialWithValue, Error, { workspaceId: string; name: string }>({
+    mutationFn: ({ workspaceId, name }) => revealCredential(serverUrl, workspaceId, name),
     onSuccess: (_res, vars) => {
       // Refresh list so last_read_at updates on the card
-      qc.invalidateQueries({ queryKey: credentialKeys.list(vars.projectId) });
-      qc.invalidateQueries({ queryKey: credentialKeys.events(vars.projectId, vars.name) });
+      qc.invalidateQueries({ queryKey: credentialKeys.list(vars.workspaceId) });
+      qc.invalidateQueries({ queryKey: credentialKeys.events(vars.workspaceId, vars.name) });
     },
   });
 }
@@ -261,10 +261,10 @@ export function useRevealCredential() {
 export function useDeleteCredential() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
-  return useMutation<{ ok: boolean }, Error, { projectId: string; name: string }>({
-    mutationFn: ({ projectId, name }) => deleteCredential(serverUrl, projectId, name),
+  return useMutation<{ ok: boolean }, Error, { workspaceId: string; name: string }>({
+    mutationFn: ({ workspaceId, name }) => deleteCredential(serverUrl, workspaceId, name),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: credentialKeys.list(vars.projectId) });
+      qc.invalidateQueries({ queryKey: credentialKeys.list(vars.workspaceId) });
     },
   });
 }
@@ -343,7 +343,7 @@ export function useKortixProjectForSession(
  */
 export function useKortixProjectSessions(
   identity: KortixMasterIdentity,
-  projectId: string,
+  workspaceId: string,
   options: KortixProjectQueryOptions = {},
 ) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -351,9 +351,9 @@ export function useKortixProjectSessions(
   // OpenCode-session shape isn't schema-typed at the source) — mirror that
   // here rather than lying about the element shape with `any`.
   return useQuery<unknown[]>({
-    queryKey: ['kortix', 'projects', projectId, 'sessions', identity.userId ?? 'anonymous', serverUrl],
-    queryFn: () => listKortixProjectSessions(serverUrl, projectId),
-    enabled: !identity.isLoading && !!identity.userId && !!serverUrl && !!projectId && (options.enabled ?? true),
+    queryKey: ['kortix', 'projects', workspaceId, 'sessions', identity.userId ?? 'anonymous', serverUrl],
+    queryFn: () => listKortixProjectSessions(serverUrl, workspaceId),
+    enabled: !identity.isLoading && !!identity.userId && !!serverUrl && !!workspaceId && (options.enabled ?? true),
     staleTime: 15_000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
@@ -397,7 +397,7 @@ interface KortixTaskQueryOptions {
 
 const taskKeys = {
   all: ['kortix', 'tasks'] as const,
-  byProject: (projectId: string) => ['kortix', 'tasks', projectId] as const,
+  byProject: (workspaceId: string) => ['kortix', 'tasks', workspaceId] as const,
   single: (id: string) => ['kortix', 'tasks', 'detail', id] as const,
   events: (id: string) => ['kortix', 'tasks', 'events', id] as const,
   status: (id: string) => ['kortix', 'tasks', 'status', id] as const,
@@ -438,18 +438,18 @@ export function normalizeTask(raw: unknown): KortixTask {
 }
 
 export function useKortixTasks(
-  projectId?: string,
+  workspaceId?: string,
   status?: string,
   options: KortixTaskQueryOptions = {},
 ) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery({
-    queryKey: [...taskKeys.all, projectId, status],
+    queryKey: [...taskKeys.all, workspaceId, status],
     queryFn: async () => {
-      const rows = await listTasks(serverUrl, { projectId, status });
+      const rows = await listTasks(serverUrl, { workspaceId, status });
       return Array.isArray(rows) ? rows.map(normalizeTask) : [];
     },
-    enabled: !!projectId && (options.enabled ?? true),
+    enabled: !!workspaceId && (options.enabled ?? true),
     refetchInterval: options.pollingEnabled === false ? false : 3000,
     refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
@@ -581,12 +581,12 @@ export const ticketKeys = {
   agents: (pid: string) => ['kortix', 'agents', pid] as const,
 };
 
-export function useTickets(projectId?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
+export function useTickets(workspaceId?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<Ticket[]>({
-    queryKey: ticketKeys.tickets(projectId),
-    queryFn: () => listTickets(serverUrl, projectId),
-    enabled: !!projectId && (opts?.enabled ?? true),
+    queryKey: ticketKeys.tickets(workspaceId),
+    queryFn: () => listTickets(serverUrl, workspaceId),
+    enabled: !!workspaceId && (opts?.enabled ?? true),
     refetchInterval: opts?.pollingEnabled === false ? false : 3000,
     refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
@@ -731,12 +731,12 @@ export function useDeleteTicket() {
 
 // ── Columns ──────────────────────────────────────────────────────────────────
 
-export function useColumns(projectId?: string) {
+export function useColumns(workspaceId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<TicketColumn[]>({
-    queryKey: ticketKeys.columns(projectId ?? ''),
-    queryFn: () => listColumns(serverUrl, projectId!),
-    enabled: !!projectId,
+    queryKey: ticketKeys.columns(workspaceId ?? ''),
+    queryFn: () => listColumns(serverUrl, workspaceId!),
+    enabled: !!workspaceId,
     staleTime: 30_000,
   });
 }
@@ -745,23 +745,23 @@ export function useReplaceColumns() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ projectId, columns }: { projectId: string; columns: Array<{ key: string; label: string; default_assignee_type?: AssigneeType | null; default_assignee_id?: string | null; is_terminal?: boolean; is_off_flow?: boolean; icon?: string | null }> }) =>
-      replaceColumns(serverUrl, projectId, columns),
+    mutationFn: ({ workspaceId, columns }: { workspaceId: string; columns: Array<{ key: string; label: string; default_assignee_type?: AssigneeType | null; default_assignee_id?: string | null; is_terminal?: boolean; is_off_flow?: boolean; icon?: string | null }> }) =>
+      replaceColumns(serverUrl, workspaceId, columns),
     onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: ticketKeys.columns(vars.projectId) });
-      qc.invalidateQueries({ queryKey: ticketKeys.tickets(vars.projectId) });
+      qc.invalidateQueries({ queryKey: ticketKeys.columns(vars.workspaceId) });
+      qc.invalidateQueries({ queryKey: ticketKeys.tickets(vars.workspaceId) });
     },
   });
 }
 
 // ── Fields ───────────────────────────────────────────────────────────────────
 
-export function useFields(projectId?: string) {
+export function useFields(workspaceId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<ProjectField[]>({
-    queryKey: ticketKeys.fields(projectId ?? ''),
-    queryFn: () => listFields(serverUrl, projectId!),
-    enabled: !!projectId,
+    queryKey: ticketKeys.fields(workspaceId ?? ''),
+    queryFn: () => listFields(serverUrl, workspaceId!),
+    enabled: !!workspaceId,
     staleTime: 30_000,
   });
 }
@@ -770,20 +770,20 @@ export function useReplaceFields() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ projectId, fields }: { projectId: string; fields: Array<{ key: string; label: string; type: 'text' | 'number' | 'date' | 'select'; options?: string[] | null }> }) =>
-      replaceFields(serverUrl, projectId, fields),
-    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.fields(vars.projectId) }); },
+    mutationFn: ({ workspaceId, fields }: { workspaceId: string; fields: Array<{ key: string; label: string; type: 'text' | 'number' | 'date' | 'select'; options?: string[] | null }> }) =>
+      replaceFields(serverUrl, workspaceId, fields),
+    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.fields(vars.workspaceId) }); },
   });
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────
 
-export function useTemplates(projectId?: string) {
+export function useTemplates(workspaceId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<TicketTemplate[]>({
-    queryKey: ticketKeys.templates(projectId ?? ''),
-    queryFn: () => listTemplates(serverUrl, projectId!),
-    enabled: !!projectId,
+    queryKey: ticketKeys.templates(workspaceId ?? ''),
+    queryFn: () => listTemplates(serverUrl, workspaceId!),
+    enabled: !!workspaceId,
     staleTime: 30_000,
   });
 }
@@ -792,9 +792,9 @@ export function useReplaceTemplates() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ projectId, templates }: { projectId: string; templates: Array<{ name: string; body_md: string }> }) =>
-      replaceTemplates(serverUrl, projectId, templates),
-    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.templates(vars.projectId) }); },
+    mutationFn: ({ workspaceId, templates }: { workspaceId: string; templates: Array<{ name: string; body_md: string }> }) =>
+      replaceTemplates(serverUrl, workspaceId, templates),
+    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.templates(vars.workspaceId) }); },
   });
 }
 
@@ -808,18 +808,18 @@ export function useReplaceTemplates() {
 export function useEnsurePmSession() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ projectId }: { projectId: string }) => ensurePmSession(serverUrl, projectId),
+    mutationFn: ({ workspaceId }: { workspaceId: string }) => ensurePmSession(serverUrl, workspaceId),
   });
 }
 
 // ── Agents (team) ────────────────────────────────────────────────────────────
 
-export function useProjectAgents(projectId?: string) {
+export function useProjectAgents(workspaceId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<ProjectAgent[]>({
-    queryKey: ticketKeys.agents(projectId ?? ''),
-    queryFn: () => listProjectAgents(serverUrl, projectId!),
-    enabled: !!projectId,
+    queryKey: ticketKeys.agents(workspaceId ?? ''),
+    queryFn: () => listProjectAgents(serverUrl, workspaceId!),
+    enabled: !!workspaceId,
     staleTime: 30_000,
   });
 }
@@ -829,16 +829,16 @@ export function useCreateProjectAgent() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
     mutationFn: ({
-      projectId, slug, name, body_md, execution_mode, tool_groups, default_assignee_columns, default_model, color_hue, icon,
+      workspaceId, slug, name, body_md, execution_mode, tool_groups, default_assignee_columns, default_model, color_hue, icon,
     }: {
-      projectId: string; slug: string; name: string; body_md: string;
+      workspaceId: string; slug: string; name: string; body_md: string;
       execution_mode?: ExecutionMode; tool_groups?: ToolGroup[]; default_assignee_columns?: string[];
       default_model?: string | null; color_hue?: number | null; icon?: string | null;
     }) =>
-      createProjectAgent(serverUrl, projectId, {
+      createProjectAgent(serverUrl, workspaceId, {
         slug, name, body_md, execution_mode, tool_groups, default_assignee_columns, default_model, color_hue, icon,
       }),
-    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.agents(vars.projectId) }); },
+    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.agents(vars.workspaceId) }); },
   });
 }
 
@@ -846,13 +846,13 @@ export function useUpdateProjectAgent() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ projectId, slug, ...body }: {
-      projectId: string; slug: string;
+    mutationFn: ({ workspaceId, slug, ...body }: {
+      workspaceId: string; slug: string;
       name?: string; body_md?: string;
       execution_mode?: ExecutionMode; tool_groups?: ToolGroup[]; default_assignee_columns?: string[];
       default_model?: string | null; color_hue?: number | null; icon?: string | null;
-    }) => updateProjectAgent(serverUrl, projectId, slug, body),
-    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.agents(vars.projectId) }); },
+    }) => updateProjectAgent(serverUrl, workspaceId, slug, body),
+    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.agents(vars.workspaceId) }); },
   });
 }
 
@@ -860,29 +860,29 @@ export function useDeleteProjectAgent() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ projectId, slug }: { projectId: string; slug: string }) =>
-      deleteProjectAgent(serverUrl, projectId, slug),
-    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.agents(vars.projectId) }); },
+    mutationFn: ({ workspaceId, slug }: { workspaceId: string; slug: string }) =>
+      deleteProjectAgent(serverUrl, workspaceId, slug),
+    onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.agents(vars.workspaceId) }); },
   });
 }
 
-export function useAgentPersona(projectId?: string, slug?: string, opts?: { enabled?: boolean }) {
+export function useAgentPersona(workspaceId?: string, slug?: string, opts?: { enabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<{ agent: ProjectAgent; body_md: string }>({
-    queryKey: ['kortix', 'agent-persona', projectId ?? '', slug ?? ''],
-    queryFn: () => getAgentPersona(serverUrl, projectId!, slug!),
-    enabled: !!projectId && !!slug && (opts?.enabled ?? true),
+    queryKey: ['kortix', 'agent-persona', workspaceId ?? '', slug ?? ''],
+    queryFn: () => getAgentPersona(serverUrl, workspaceId!, slug!),
+    enabled: !!workspaceId && !!slug && (opts?.enabled ?? true),
   });
 }
 
 // ── Project activity / notifications ─────────────────────────────────────────
 
-export function useProjectActivity(projectId?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
+export function useProjectActivity(workspaceId?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<TicketEvent[]>({
-    queryKey: ['kortix', 'project-activity', projectId ?? ''],
-    queryFn: () => getProjectActivity(serverUrl, projectId!, 200),
-    enabled: !!projectId && (opts?.enabled ?? true),
+    queryKey: ['kortix', 'project-activity', workspaceId ?? ''],
+    queryFn: () => getProjectActivity(serverUrl, workspaceId!, 200),
+    enabled: !!workspaceId && (opts?.enabled ?? true),
     refetchInterval: opts?.pollingEnabled === false ? false : 10_000,
     refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
@@ -988,20 +988,20 @@ export function computeNotifications(
   return out;
 }
 
-const LAST_SEEN_KEY = (projectId: string, handle: string) => `kortix:activity-last-seen:${projectId}:${handle}`;
+const LAST_SEEN_KEY = (workspaceId: string, handle: string) => `kortix:activity-last-seen:${workspaceId}:${handle}`;
 export const LAST_SEEN_EVENT = 'kortix:last-seen-changed';
 
-export function readLastSeen(projectId: string, handle: string): string | null {
+export function readLastSeen(workspaceId: string, handle: string): string | null {
   if (typeof window === 'undefined') return null;
-  try { return window.localStorage.getItem(LAST_SEEN_KEY(projectId, handle)); } catch { return null; }
+  try { return window.localStorage.getItem(LAST_SEEN_KEY(workspaceId, handle)); } catch { return null; }
 }
-export function writeLastSeen(projectId: string, handle: string, iso: string): void {
+export function writeLastSeen(workspaceId: string, handle: string, iso: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(LAST_SEEN_KEY(projectId, handle), iso);
+    window.localStorage.setItem(LAST_SEEN_KEY(workspaceId, handle), iso);
     // Same-tab listeners (e.g. the sidebar project rows) don't receive the
     // native 'storage' event — emit a custom one so they refresh instantly.
-    window.dispatchEvent(new CustomEvent(LAST_SEEN_EVENT, { detail: { projectId, handle, iso } }));
+    window.dispatchEvent(new CustomEvent(LAST_SEEN_EVENT, { detail: { workspaceId, handle, iso } }));
   } catch {}
 }
 
@@ -1027,43 +1027,43 @@ export const milestoneKeys = {
   events: (pid: string, ref: string) => ['kortix', 'milestone', pid, ref, 'events'] as const,
 };
 
-export function useMilestones(projectId?: string, statusFilter: 'open' | 'closed' | 'all' = 'all') {
+export function useMilestones(workspaceId?: string, statusFilter: 'open' | 'closed' | 'all' = 'all') {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<Milestone[]>({
-    queryKey: milestoneKeys.list(projectId, statusFilter),
-    queryFn: () => listMilestones(serverUrl, projectId!, statusFilter),
-    enabled: !!projectId,
+    queryKey: milestoneKeys.list(workspaceId, statusFilter),
+    queryFn: () => listMilestones(serverUrl, workspaceId!, statusFilter),
+    enabled: !!workspaceId,
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
   });
 }
 
-export function useMilestone(projectId?: string, ref?: string) {
+export function useMilestone(workspaceId?: string, ref?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<MilestoneDetail>({
-    queryKey: milestoneKeys.detail(projectId ?? '', ref ?? ''),
-    queryFn: () => getMilestone(serverUrl, projectId!, ref!),
-    enabled: !!projectId && !!ref,
+    queryKey: milestoneKeys.detail(workspaceId ?? '', ref ?? ''),
+    queryFn: () => getMilestone(serverUrl, workspaceId!, ref!),
+    enabled: !!workspaceId && !!ref,
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
   });
 }
 
-export function useMilestoneEvents(projectId?: string, ref?: string) {
+export function useMilestoneEvents(workspaceId?: string, ref?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<MilestoneEvent[]>({
-    queryKey: milestoneKeys.events(projectId ?? '', ref ?? ''),
-    queryFn: () => listMilestoneEvents(serverUrl, projectId!, ref!),
-    enabled: !!projectId && !!ref,
+    queryKey: milestoneKeys.events(workspaceId ?? '', ref ?? ''),
+    queryFn: () => listMilestoneEvents(serverUrl, workspaceId!, ref!),
+    enabled: !!workspaceId && !!ref,
     refetchInterval: 5000,
     placeholderData: keepPreviousData,
   });
 }
 
 export interface CreateMilestoneInput {
-  projectId: string;
+  workspaceId: string;
   title: string;
   description_md?: string;
   acceptance_md?: string;
@@ -1076,15 +1076,15 @@ export function useCreateMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
   return useMutation<Milestone, Error, CreateMilestoneInput>({
-    mutationFn: ({ projectId, ...body }) => createMilestone(serverUrl, projectId, body),
+    mutationFn: ({ workspaceId, ...body }) => createMilestone(serverUrl, workspaceId, body),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
+      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.workspaceId] });
     },
   });
 }
 
 export interface UpdateMilestoneInput {
-  projectId: string;
+  workspaceId: string;
   ref: string;
   patch: Partial<Pick<Milestone, 'title' | 'description_md' | 'acceptance_md' | 'due_at' | 'color_hue' | 'icon'>>;
 }
@@ -1093,10 +1093,10 @@ export function useUpdateMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
   return useMutation<Milestone, Error, UpdateMilestoneInput>({
-    mutationFn: ({ projectId, ref, patch }) => updateMilestone(serverUrl, projectId, ref, patch),
+    mutationFn: ({ workspaceId, ref, patch }) => updateMilestone(serverUrl, workspaceId, ref, patch),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
-      qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.projectId, vars.ref) });
+      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.workspaceId] });
+      qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.workspaceId, vars.ref) });
     },
   });
 }
@@ -1104,12 +1104,12 @@ export function useUpdateMilestone() {
 export function useCloseMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
-  return useMutation<Milestone, Error, { projectId: string; ref: string; summary_md?: string; cancelled?: boolean }>({
-    mutationFn: ({ projectId, ref, summary_md, cancelled }) =>
-      closeMilestone(serverUrl, projectId, ref, { summary_md, cancelled }),
+  return useMutation<Milestone, Error, { workspaceId: string; ref: string; summary_md?: string; cancelled?: boolean }>({
+    mutationFn: ({ workspaceId, ref, summary_md, cancelled }) =>
+      closeMilestone(serverUrl, workspaceId, ref, { summary_md, cancelled }),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
-      qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.projectId, vars.ref) });
+      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.workspaceId] });
+      qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.workspaceId, vars.ref) });
     },
   });
 }
@@ -1117,11 +1117,11 @@ export function useCloseMilestone() {
 export function useReopenMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
-  return useMutation<Milestone, Error, { projectId: string; ref: string }>({
-    mutationFn: ({ projectId, ref }) => reopenMilestone(serverUrl, projectId, ref),
+  return useMutation<Milestone, Error, { workspaceId: string; ref: string }>({
+    mutationFn: ({ workspaceId, ref }) => reopenMilestone(serverUrl, workspaceId, ref),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
-      qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.projectId, vars.ref) });
+      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.workspaceId] });
+      qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.workspaceId, vars.ref) });
     },
   });
 }
@@ -1129,10 +1129,10 @@ export function useReopenMilestone() {
 export function useDeleteMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
-  return useMutation<{ ok: boolean }, Error, { projectId: string; ref: string }>({
-    mutationFn: ({ projectId, ref }) => deleteMilestone(serverUrl, projectId, ref),
+  return useMutation<{ ok: boolean }, Error, { workspaceId: string; ref: string }>({
+    mutationFn: ({ workspaceId, ref }) => deleteMilestone(serverUrl, workspaceId, ref),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
+      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.workspaceId] });
     },
   });
 }
@@ -1141,11 +1141,11 @@ export function useDeleteMilestone() {
 export function useSetTicketMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
-  return useMutation<unknown, Error, { projectId: string; ticketId: string; milestoneId: string | null }>({
+  return useMutation<unknown, Error, { workspaceId: string; ticketId: string; milestoneId: string | null }>({
     mutationFn: ({ ticketId, milestoneId }) => updateTicket(serverUrl, ticketId, { milestone_id: milestoneId }),
     onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
-      qc.invalidateQueries({ queryKey: ['kortix', 'tickets', vars.projectId] });
+      qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.workspaceId] });
+      qc.invalidateQueries({ queryKey: ['kortix', 'tickets', vars.workspaceId] });
       qc.invalidateQueries({ queryKey: ['kortix', 'ticket', vars.ticketId] });
     },
   });

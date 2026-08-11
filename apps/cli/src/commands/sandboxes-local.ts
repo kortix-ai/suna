@@ -1,5 +1,5 @@
 /**
- * `kortix sandboxes build --local [slug]` — build a project's sandbox image on
+ * `kortix sandboxes build --local [slug]` — build a workspace's sandbox image on
  * THIS machine, the way the cloud would.
  *
  * `kortix validate`'s Dockerfile lint catches everything decidable from text.
@@ -61,13 +61,13 @@ export interface LocalBuildFlags {
  * Which template a bare `build --local` means. Precedence:
  *
  *   1. the slug the user named (positional or --slug)
- *   2. `sandbox.default` — the template this project's sessions actually boot
+ *   2. `sandbox.default` — the template this workspace's sessions actually boot
  *   3. the sole declared template, when there's exactly one (unambiguous)
  *   4. otherwise: error, listing the slugs
  *
  * Note what is NOT in that list: the platform `default` slug. Falling back to it
  * would produce a green build of `FROM ubuntu:24.04` + the layer — a build that
- * tests nothing the user wrote, while looking like it validated their project.
+ * tests nothing the user wrote, while looking like it validated their workspace.
  * An explicit `default` is still honored: "build the platform base" is a
  * legitimate thing to ask for, just never something to assume.
  */
@@ -78,7 +78,7 @@ export function resolveLocalTemplate(
 ): { template: SandboxTemplate } | { error: string } {
   const listSlugs = () =>
     templates.length === 0
-      ? 'This project declares no `sandbox.templates` in kortix.yaml.'
+      ? 'This workspace declares no `sandbox.templates` in kortix.yaml.'
       : `Declared templates: ${templates.map((t) => t.slug).join(', ')}.`;
 
   if (slugArg) {
@@ -103,7 +103,7 @@ export function resolveLocalTemplate(
   return {
     error:
       templates.length === 0
-        ? `${listSlugs()} Nothing project-specific to build — pass \`--slug default\` to build the platform base image.`
+        ? `${listSlugs()} Nothing workspace-specific to build — pass \`--slug default\` to build the platform base image.`
         : `Ambiguous: ${templates.length} templates and no \`sandbox.default\`. Name one — ${listSlugs()}`,
   };
 }
@@ -177,10 +177,10 @@ export function dockerBuildArgs(opts: { platform: string; tag: string; noCache: 
 }
 
 /**
- * `--local` needs no auth and no linked project — it only reads kortix.yaml,
+ * `--local` needs no auth and no linked workspace — it only reads kortix.yaml,
  * a Dockerfile, and the local Docker daemon. `sandboxes.ts` therefore routes it
- * above `resolveProjectContext`, alongside add/update/rm, and hands over the
- * argv it has already taken the shared flags (`--json`, `--project`, …) out of.
+ * above `resolveWorkspaceContext`, alongside add/update/rm, and hands over the
+ * argv it has already taken the shared flags (`--json`, `--workspace`, …) out of.
  */
 export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): number {
   let flags: LocalBuildFlags;
@@ -214,7 +214,7 @@ export function runSandboxBuildLocal(argv: string[], opts: { json: boolean }): n
   const manifest = resolveLocalManifest(process.cwd());
   if (!manifest) {
     process.stderr.write(
-      `${status.err('No kortix.yaml here.')} ${C.dim}Run from your project root.${C.reset}\n`,
+      `${status.err('No kortix.yaml here.')} ${C.dim}Run from your workspace root.${C.reset}\n`,
     );
     return 2;
   }

@@ -70,6 +70,11 @@ export const uncoveredAllow: AllowEntry[] = [
 ];
 
 export const externalRoutes: AllowEntry[] = [
+  { method: "GET", path: "/v1/llm/health", reason: "feature-gated in-process LLM gateway mount is not visible to the static main-API route dumper" },
+  { method: "GET", path: "/v1/llm/v1/models", reason: "feature-gated in-process LLM gateway compatibility mount" },
+  { method: "POST", path: "/v1/llm/v1/chat/completions", reason: "feature-gated in-process LLM gateway compatibility mount" },
+  { method: "POST", path: "/v1/llm/messages", reason: "LLM gateway Messages ingress; served by both the feature-gated in-process mount and standalone gateway" },
+  { method: "POST", path: "/v1/llm/v1/messages", reason: "feature-gated in-process LLM gateway Messages compatibility mount" },
   { method: "GET", path: "/v1/llm/models", reason: "llm-gateway standalone service (gateway-*.kortix.com), not in the main API manifest" },
   { method: "GET", path: "/v1/models", reason: "llm-gateway model-catalog alias" },
   { method: "GET", path: "/v1/openai/models", reason: "llm-gateway OpenAI-compat catalog alias" },

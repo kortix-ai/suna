@@ -6,8 +6,8 @@
  *     POST /v1/connectors/call                — { connector, action, args } → run
  *
  *   Admin (dashboard-facing, user auth + project access):
- *     GET  /v1/connectors/projects/:projectId/connectors          — list + status
- *     POST /v1/connectors/projects/:projectId/connectors/sync     — re-materialize from kortix.yaml
+ *     GET  /v1/connectors/projects/:workspaceId/connectors          — list + status
+ *     POST /v1/connectors/projects/:workspaceId/connectors/sync     — re-materialize from kortix.yaml
  *
  * Connectors are project-wide visible — the only access gate is the agent-side
  * `[[agents]].connectors` grant (iam/agent-scope.ts), enforced below.
@@ -29,7 +29,8 @@ import type { FeatureFlagKey } from '../feature-flags/registry';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { isAllowedSourceValidationError } from '../marketplace/catalog';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
+import { canonicalConnectorAlias } from '../workspaces/lib/session-connector-bindings';
+import { workspaceResponseCompatibility } from '../workspaces/compat';
 import {
   type ConnectorAttachmentStore,
   MAX_CONNECTOR_ATTACHMENT_BYTES,
@@ -134,7 +135,7 @@ const AttachmentUploadResponseSchema = z
 export interface ConnectorPrincipal {
   userId: string;
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   sessionId: string | null;
   /** The acting identity resolved to its group memberships. */
   subject: { userId: string; groupIds: string[] };
@@ -163,7 +164,7 @@ export interface CatalogConnector {
 
 export interface AdminConnectorView extends CatalogConnector {
   authSecret: string | null;
-  /** Project secret identifier used as the connector credential source. */
+  /** Workspace secret identifier used as the connector credential source. */
   secretIdentifier: string | null;
   /** Credential location. No credential value is returned. */
   credentialSource: 'none' | 'stored' | 'project_secret' | 'platform';
@@ -200,7 +201,7 @@ import {
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
 
-export interface ProjectPolicyView {
+export interface WorkspacePolicyView {
   match: string;
   action: PolicyAction;
   /** Optional ARGUMENT conditions — ALL must hold for the rule to apply. Lets a
@@ -208,8 +209,8 @@ export interface ProjectPolicyView {
   conditions?: PolicyArgCondition[] | null;
 }
 
-export interface ProjectPoliciesViewResponse {
-  policies: ProjectPolicyView[];
+export interface WorkspacePoliciesViewResponse {
+  policies: WorkspacePolicyView[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;
 }
@@ -222,7 +223,7 @@ export interface ConnectorRouterDeps {
    * Runs under combinedAuth; accepts ANY valid principal (session token OR a
    * logged-in user token) and pins the project from the path. Null → 403.
    */
-  resolveProjectPrincipal(c: Context, projectId: string): Promise<ConnectorPrincipal | null>;
+  resolveWorkspacePrincipal(c: Context, workspaceId: string): Promise<ConnectorPrincipal | null>;
   /** Build the DB-backed (or fake) gateway deps for a principal. */
   makeGatewayDeps(p: ConnectorPrincipal): GatewayDeps;
   /** The catalog the principal can actually use (agent-grant filtered, blocked hidden). */
@@ -235,11 +236,11 @@ export interface ConnectorRouterDeps {
    * real HTTP layer. Required, not optional: a new deps implementation must
    * decide what the gated routes see rather than silently opening them.
    */
-  featureFlagEnabled(projectId: string, key: FeatureFlagKey): Promise<boolean>;
+  featureFlagEnabled(workspaceId: string, key: FeatureFlagKey): Promise<boolean>;
   /** Admin auth: resolve user + verify project access, or null for 401/403. */
   resolveAdmin(
     c: Context,
-    projectId: string,
+    workspaceId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
   /** Read-tier auth for the connectors LIST: `project.connector.read` is in the
    *  member baseline (the Connectors/Channels rail sections gate on it), so the
@@ -247,86 +248,86 @@ export interface ConnectorRouterDeps {
    *  resolveAdmin when a deps implementation doesn't provide it. */
   resolveReader?(
     c: Context,
-    projectId: string,
+    workspaceId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
   /** Read-tier authorization for exact project secret identifiers. */
   resolveSecretReader?(
     c: Context,
-    projectId: string,
+    workspaceId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
-  listConnectors(projectId: string): Promise<AdminConnectorView[]>;
-  syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
+  listConnectors(workspaceId: string): Promise<AdminConnectorView[]>;
+  syncConnectors(workspaceId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
   createConnector?(
-    projectId: string,
+    workspaceId: string,
     accountId: string,
     draft: Record<string, unknown>,
     actorUserId?: string,
   ): Promise<CrudOutcome>;
   discoverConnectorAuth?(
-    projectId: string,
+    workspaceId: string,
     draft: Record<string, unknown>,
   ): Promise<ConnectorAuthDiscovery>;
   /** Remove a connector from kortix.yaml + drop its rows. */
-  deleteConnector?(projectId: string, slug: string): Promise<CrudOutcome>;
+  deleteConnector?(workspaceId: string, slug: string): Promise<CrudOutcome>;
   /** Set a connector's server-side static or OAuth2 credential. */
   setConnectorCredential?(
-    projectId: string,
+    workspaceId: string,
     slug: string,
     input: UpdateConnectionCredentialInput,
   ): Promise<CrudOutcome>;
   /** Bind or unbind a brokered project secret as the connector credential. */
   setConnectorSecretBinding?(
-    projectId: string,
+    workspaceId: string,
     slug: string,
     secretIdentifier: string | null,
   ): Promise<CrudOutcome>;
   /** Secret binding requires both connector-write and secret-write. */
   resolveSecretBindingAdmin?(
     c: Context,
-    projectId: string,
+    workspaceId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
   /** `userId` is accepted for back-compat but unused — a connector has exactly
    *  one (shared) credential since `per_user` was removed 2026-07-05. */
-  deleteConnectorCredential?(projectId: string, slug: string, userId: string): Promise<CrudOutcome>;
+  deleteConnectorCredential?(workspaceId: string, slug: string, userId: string): Promise<CrudOutcome>;
   /** `shared` is the only credential mode (`per_user` removed 2026-07-05). This
    *  route is kept as a restricted no-op for back-compat callers — the router
    *  rejects any `mode` other than `shared` before calling this. */
   setCredentialMode?(
-    projectId: string,
+    workspaceId: string,
     accountId: string,
     slug: string,
     mode: 'shared',
   ): Promise<CrudOutcome>;
   /** Set the exclusive connection owner model for this connector. */
   setAuthorizationStrategy?(
-    projectId: string,
+    workspaceId: string,
     accountId: string,
     slug: string,
     authorizationStrategy: 'project' | 'user',
   ): Promise<CrudOutcome>;
   /** Toggle a connector's `sensitive` flag (gate reads too) in kortix.yaml + re-sync. */
   setSensitive?(
-    projectId: string,
+    workspaceId: string,
     accountId: string,
     slug: string,
     sensitive: boolean,
   ): Promise<CrudOutcome>;
   /** Rename a connector (display label) in kortix.yaml + re-sync. */
   setConnectorName?(
-    projectId: string,
+    workspaceId: string,
     accountId: string,
     slug: string,
     name: string,
   ): Promise<CrudOutcome>;
   /** Read a connector's [[connectors.policies]] (per-tool/per-pattern permissions). */
   getConnectorPolicies?(
-    projectId: string,
+    workspaceId: string,
     slug: string,
   ): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
   /** Read a connector's definition (provider + connection fields) from kortix.yaml for editing. */
   getConnectorConfig?(
-    projectId: string,
+    workspaceId: string,
     slug: string,
   ): Promise<{
     slug: string;
@@ -361,7 +362,7 @@ export interface ConnectorRouterDeps {
   } | null>;
   /** Replace a connector's `policies:` list in kortix.yaml + re-sync. */
   setConnectorPolicies?(
-    projectId: string,
+    workspaceId: string,
     accountId: string,
     slug: string,
     policies: Array<{ match: string; action: string }>,
@@ -371,14 +372,14 @@ export interface ConnectorRouterDeps {
    *  the connection is always the shared project account (`per_user` removed
    *  2026-07-05). */
   pipedreamConnect?(
-    projectId: string,
+    workspaceId: string,
     slug: string,
     userId: string,
     redirects?: { success?: string; error?: string },
   ): Promise<{ token?: string; app?: string; connectUrl?: string } | null>;
   /** Pipedream 1-click: after the user finishes, persist the shared account binding. */
   pipedreamFinalize?(
-    projectId: string,
+    workspaceId: string,
     slug: string,
     userId: string,
   ): Promise<{ connected: boolean; accountId?: string } | null>;
@@ -440,19 +441,19 @@ export interface ConnectorRouterDeps {
   /** Resolve every known surface for one trusted catalogue record. */
   getDiscoverConnector?(id: string): Promise<unknown>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
-  getProjectPolicies?(projectId: string): Promise<ProjectPoliciesViewResponse | null>;
+  getWorkspacePolicies?(workspaceId: string): Promise<WorkspacePoliciesViewResponse | null>;
   /** Replace project policies + default_mode (CRUD round-trips to kortix.yaml). */
-  setProjectPolicies?(
-    projectId: string,
+  setWorkspacePolicies?(
+    workspaceId: string,
     accountId: string,
-    policies: ProjectPolicyView[],
+    policies: WorkspacePolicyView[],
     defaultMode: DefaultMode,
   ): Promise<CrudOutcome>;
 }
 
 // Path-param schema shared by all admin routes.
-const ProjectParam = z.object({ projectId: z.string() });
-const ProjectSlugParam = z.object({ projectId: z.string(), slug: z.string() });
+const WorkspaceParam = z.object({ workspaceId: z.string() });
+const WorkspaceSlugParam = z.object({ workspaceId: z.string(), slug: z.string() });
 const ConnectorSecretBindingInputSchema = z.object({
   secret_identifier: z
     .string()
@@ -581,8 +582,12 @@ function allowedSourceValidationResponse(c: Context, err: unknown): Response | n
   );
 }
 
-export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
+export function createConnectorRouter(
+  deps: ConnectorRouterDeps,
+  namespace: 'workspaces' | 'projects' = 'projects',
+): OpenAPIHono {
   const app = makeOpenApiApp();
+  if (namespace === 'workspaces') app.use('*', workspaceResponseCompatibility as any);
 
   // Shared gateway logic — used by BOTH the legacy flat routes (project derived
   // from a scoped session token) and the project-EXPLICIT routes
@@ -646,7 +651,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     const approvalExecutionId =
       typeof body?.approval_execution_id === 'string' ? body.approval_execution_id : null;
     const result = await handleCall(deps.makeGatewayDeps(p), {
-      projectId: p.projectId,
+      workspaceId: p.workspaceId,
       accountId: p.accountId,
       subject: p.subject,
       sessionId: p.sessionId,
@@ -714,7 +719,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         await deps.attachmentStore.stage(
           {
             accountId: p.accountId,
-            projectId: p.projectId,
+            workspaceId: p.workspaceId,
             sessionId: p.sessionId,
             userId: p.userId,
           },
@@ -807,12 +812,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/discover/connectors',
+      path: `/${namespace}/{workspaceId}/discover/connectors`,
       tags: ['connector'],
       summary: 'Browse the integrations.sh catalogue',
       ...auth,
       request: {
-        params: ProjectParam,
+        params: WorkspaceParam,
         query: z.object({ q: z.string().optional(), cursor: z.string().optional() }),
       },
       responses: {
@@ -821,11 +826,11 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       // Flag gate AFTER authz: a non-admin still learns nothing.
-      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
+      if (!(await deps.featureFlagEnabled(workspaceId, 'connectors_api_discover'))) {
         return c.json(featureDisabledBody('connectors_api_discover'), 403);
       }
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
@@ -845,11 +850,11 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/attachments',
+      path: `/${namespace}/{workspaceId}/attachments`,
       tags: ['connector'],
       summary: 'Stage a private attachment in a project from raw bytes',
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: WorkspaceParam },
       responses: {
         201: json(AttachmentUploadResponseSchema, 'Opaque attachment handle'),
         400: json(OpaqueSchema, 'Invalid attachment metadata or empty body'),
@@ -860,9 +865,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: Context) => {
-      const projectId = c.req.param('projectId');
-      if (!projectId) return c.json({ error: 'forbidden' }, 403);
-      const p = await deps.resolveProjectPrincipal(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      if (!workspaceId) return c.json({ error: 'forbidden' }, 403);
+      const p = await deps.resolveWorkspacePrincipal(c, workspaceId);
       if (!p) return c.json({ error: 'forbidden' }, 403);
       return attachmentResponse(c, p);
     },
@@ -871,12 +876,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/discover/connectors/detail',
+      path: `/${namespace}/{workspaceId}/discover/connectors/detail`,
       tags: ['connector'],
       summary: 'Resolve the surfaces for an integrations.sh catalogue record',
       ...auth,
       request: {
-        params: ProjectParam,
+        params: WorkspaceParam,
         query: z.object({ id: z.string().min(1) }),
       },
       responses: {
@@ -885,11 +890,11 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       // Flag gate AFTER authz: a non-admin still learns nothing.
-      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
+      if (!(await deps.featureFlagEnabled(workspaceId, 'connectors_api_discover'))) {
         return c.json(featureDisabledBody('connectors_api_discover'), 403);
       }
       if (!deps.getDiscoverConnector) return c.json({ error: 'catalogue unavailable' }, 502);
@@ -959,19 +964,19 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/catalog',
+      path: `/${namespace}/{workspaceId}/catalog`,
       tags: ['connector'],
       summary: 'List the connectors usable in a project (any valid principal)',
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: WorkspaceParam },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(403),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const p = await deps.resolveProjectPrincipal(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const p = await deps.resolveWorkspacePrincipal(c, workspaceId);
       if (!p) return c.json({ error: 'forbidden' }, 403);
       return catalogResponse(c, p);
     },
@@ -981,12 +986,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/call',
+      path: `/${namespace}/{workspaceId}/call`,
       tags: ['connector'],
       summary: 'Run a connector action in a project (any valid principal)',
       ...auth,
       request: {
-        params: ProjectParam,
+        params: WorkspaceParam,
         body: {
           content: {
             'application/json': {
@@ -1009,8 +1014,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const p = await deps.resolveProjectPrincipal(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const p = await deps.resolveWorkspacePrincipal(c, workspaceId);
       if (!p) return c.json({ error: 'forbidden' }, 403);
       return callResponse(c, p);
     },
@@ -1020,29 +1025,29 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/connectors',
+      path: `/${namespace}/{workspaceId}/connectors`,
       tags: ['connector'],
       summary: "List a project's connectors with status (dashboard)",
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: WorkspaceParam },
       responses: {
         200: json(AdminConnectorsResponseSchema, 'Connectors with admin status'),
         ...errors(403),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       // Read-tier: plain members hold project.connector.read and the dashboard
       // sections that render this list are visible to them. The response carries
       // no credential values (only whether one is set).
       const reader = deps.resolveReader
-        ? await deps.resolveReader(c, projectId)
-        : await deps.resolveAdmin(c, projectId);
+        ? await deps.resolveReader(c, workspaceId)
+        : await deps.resolveAdmin(c, workspaceId);
       if (!reader) return c.json({ error: 'forbidden' }, 403);
       const canReadSecretIdentifiers = deps.resolveSecretReader
-        ? Boolean(await deps.resolveSecretReader(c, projectId))
+        ? Boolean(await deps.resolveSecretReader(c, workspaceId))
         : false;
-      const connectors = await deps.listConnectors(projectId);
+      const connectors = await deps.listConnectors(workspaceId);
       return c.json({
         connectors: canReadSecretIdentifiers
           ? connectors
@@ -1055,12 +1060,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors/auth-discovery',
+      path: `/${namespace}/{workspaceId}/connectors/auth-discovery`,
       tags: ['connector'],
       summary: 'Discover authentication advertised by a connector source',
       ...auth,
       request: {
-        params: ProjectParam,
+        params: WorkspaceParam,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -1069,8 +1074,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.discoverConnectorAuth)
         return featureNotSupportedResponse(c, 'connector_auth_discovery');
@@ -1080,6 +1085,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       } catch {
         return c.json({ error: 'invalid_json' }, 400);
       }
+      if (namespace === 'workspaces' && body?.authorization_strategy === 'workspace') {
+        body.authorization_strategy = 'project';
+      }
       // `discoverConnectorAuth` calls `assertAllowedSourceAddress` (the LFI/SSRF
       // guard) on the draft's endpoint/spec URL, which throws a typed
       // `AllowedSourceValidationError` for a non-https / private / local source.
@@ -1087,7 +1095,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       // return a structured 400 instead of letting it propagate to
       // `app.onError` → Sentry (Better Stack pattern `f5c0ce61…`).
       try {
-        return c.json(await deps.discoverConnectorAuth(projectId, body));
+        return c.json(await deps.discoverConnectorAuth(workspaceId, body));
       } catch (err) {
         const validation = allowedSourceValidationResponse(c, err);
         if (validation) return validation;
@@ -1100,12 +1108,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors',
+      path: `/${namespace}/{workspaceId}/connectors`,
       tags: ['connector'],
       summary: 'Create or update a connector in kortix.yaml',
       ...auth,
       request: {
-        params: ProjectParam,
+        params: WorkspaceParam,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -1116,8 +1124,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     // Manual parse kept: the connector draft is an opaque record validated
     // downstream; original returns `invalid_json` / `not supported` envelopes.
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.createConnector) return featureNotSupportedResponse(c, 'connector_create');
       let body: any;
@@ -1128,6 +1136,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       }
       if (body?.create_only !== undefined && typeof body.create_only !== 'boolean') {
         return c.json({ error: 'create_only must be a boolean' }, 400);
+      }
+      if (namespace === 'workspaces' && body?.authorization_strategy === 'workspace') {
+        body.authorization_strategy = 'project';
       }
       let authDiscovery: ConnectorAuthDiscovery | undefined;
       if (body.auth === undefined && deps.discoverConnectorAuth) {
@@ -1140,7 +1151,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         // pattern `f5c0ce61…`). Same guard wraps `createConnector` below
         // (the sync path also asserts the source on re-materialize).
         try {
-          authDiscovery = await deps.discoverConnectorAuth(projectId, body);
+          authDiscovery = await deps.discoverConnectorAuth(workspaceId, body);
           if (authDiscovery.recommended) body.auth = authDiscovery.recommended;
         } catch (err) {
           const validation = allowedSourceValidationResponse(c, err);
@@ -1149,7 +1160,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         }
       }
       try {
-        const result = await deps.createConnector(projectId, admin.accountId, body, admin.userId);
+        const result = await deps.createConnector(workspaceId, admin.accountId, body, admin.userId);
         return result.ok
           ? c.json({ ok: true, sync: result.sync, authDiscovery })
           : c.json(result.body ?? { error: result.error }, result.status as 400 | 403 | 409 | 502);
@@ -1165,23 +1176,23 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'delete',
-      path: '/projects/{projectId}/connectors/{slug}',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}`,
       tags: ['connector'],
       summary: 'Delete a connector from kortix.yaml',
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: { params: WorkspaceSlugParam },
       responses: {
         200: json(OkSchema, 'Deleted'),
         ...errors(400, 403, 409, 501, 502),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.deleteConnector) return featureNotSupportedResponse(c, 'connector_delete');
-      const result = await deps.deleteConnector(projectId, slug);
+      const result = await deps.deleteConnector(workspaceId, slug);
       return result.ok
         ? c.json({ ok: true })
         : c.json({ error: result.error }, result.status as 400 | 409 | 502);
@@ -1192,12 +1203,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/credential',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/credential`,
       tags: ['connector'],
       summary: "Set a connector's credential value",
       ...auth,
       request: {
-        params: ProjectSlugParam,
+        params: WorkspaceSlugParam,
         body: {
           content: {
             'application/json': { schema: UpdateConnectionCredentialInputSchema },
@@ -1212,9 +1223,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     // Manual parse kept: original returns `invalid_json` and a `value is
     // required` 400 (empty string rejected) before delegating.
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setConnectorCredential)
         return featureNotSupportedResponse(c, 'connector_credential_set');
@@ -1238,7 +1249,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       }
       let result: CrudOutcome;
       try {
-        result = await deps.setConnectorCredential(projectId, slug, parsed.data);
+        result = await deps.setConnectorCredential(workspaceId, slug, parsed.data);
       } catch (error) {
         return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
       }
@@ -1252,12 +1263,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/secret-binding',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/secret-binding`,
       tags: ['connectors'],
       summary: "Bind a brokered project secret as a connector's credential",
       ...auth,
       request: {
-        params: ProjectSlugParam,
+        params: WorkspaceSlugParam,
         body: {
           content: { 'application/json': { schema: ConnectorSecretBindingInputSchema } },
         },
@@ -1268,10 +1279,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
       const admin = deps.resolveSecretBindingAdmin
-        ? await deps.resolveSecretBindingAdmin(c, projectId)
+        ? await deps.resolveSecretBindingAdmin(c, workspaceId)
         : null;
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setConnectorSecretBinding) {
@@ -1288,7 +1299,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         return c.json({ error: 'secret_identifier is invalid' }, 400);
       }
       const result = await deps.setConnectorSecretBinding(
-        projectId,
+        workspaceId,
         slug,
         parsed.data.secret_identifier,
       );
@@ -1302,24 +1313,24 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'delete',
-      path: '/projects/{projectId}/connectors/{slug}/credential',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/credential`,
       tags: ['connector'],
       summary: 'Disconnect a connector (remove its credential)',
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: { params: WorkspaceSlugParam },
       responses: {
         200: json(OkSchema, 'Disconnected'),
         ...errors(403, 404, 409, 501),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.deleteConnectorCredential)
         return featureNotSupportedResponse(c, 'connector_credential_delete');
-      const result = await deps.deleteConnectorCredential(projectId, slug, admin.userId);
+      const result = await deps.deleteConnectorCredential(workspaceId, slug, admin.userId);
       return result.ok
         ? c.json({ ok: true })
         : c.json({ error: result.error }, result.status as 404 | 409);
@@ -1330,12 +1341,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/pipedream/apps',
+      path: `/${namespace}/{workspaceId}/pipedream/apps`,
       tags: ['connector'],
       summary: 'Browse the Pipedream app catalogue',
       ...auth,
       request: {
-        params: ProjectParam,
+        params: WorkspaceParam,
         query: z.object({
           q: z.string().optional(),
           /** A category key from the same response's `categories` facet. */
@@ -1350,8 +1361,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.listPipedreamApps) return featureNotSupportedResponse(c, 'pipedream_apps');
       const limit = Number(c.req.query('limit'));
@@ -1373,12 +1384,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/pipedream/sections',
+      path: `/${namespace}/{workspaceId}/pipedream/sections`,
       tags: ['connector'],
       summary: 'Browse the Pipedream catalogue by category',
       ...auth,
       request: {
-        params: ProjectParam,
+        params: WorkspaceParam,
         query: z.object({
           perCategory: z.coerce.number().int().positive().max(24).optional(),
           maxCategories: z.coerce.number().int().positive().max(40).optional(),
@@ -1390,8 +1401,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.listPipedreamSections) return featureNotSupportedResponse(c, 'pipedream_apps');
       const perCategory = Number(c.req.query('perCategory'));
@@ -1434,21 +1445,21 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors/sync',
+      path: `/${namespace}/{workspaceId}/connectors/sync`,
       tags: ['connector'],
       summary: 'Re-materialize connectors from kortix.yaml',
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: WorkspaceParam },
       responses: {
         200: json(SyncResultSchema, 'Sync result'),
         ...errors(403),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      const result = await deps.syncConnectors(projectId, admin.accountId);
+      const result = await deps.syncConnectors(workspaceId, admin.accountId);
       return c.json(result);
     },
   );
@@ -1460,12 +1471,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/credential-mode',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/credential-mode`,
       tags: ['connector'],
       summary: "Set a connector's credential mode (shared only — per_user was removed)",
       ...auth,
       request: {
-        params: ProjectSlugParam,
+        params: WorkspaceSlugParam,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -1474,9 +1485,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setCredentialMode)
         return featureNotSupportedResponse(c, 'connector_credential_mode');
@@ -1498,7 +1509,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
           400,
         );
       }
-      const result = await deps.setCredentialMode(projectId, admin.accountId, slug, mode);
+      const result = await deps.setCredentialMode(workspaceId, admin.accountId, slug, mode);
       return result.ok
         ? c.json({ ok: true, sync: result.sync })
         : c.json({ error: result.error }, result.status as 400 | 409 | 502);
@@ -1509,12 +1520,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/authorization-strategy',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/authorization-strategy`,
       tags: ['connector'],
       summary: "Set a connector's connection strategy",
       ...auth,
       request: {
-        params: ProjectSlugParam,
+        params: WorkspaceSlugParam,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -1523,9 +1534,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setAuthorizationStrategy) {
         return featureNotSupportedResponse(c, 'connector_authorization_strategy');
@@ -1536,12 +1547,17 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       } catch {
         return c.json({ error: 'invalid_json' }, 400);
       }
-      const authorizationStrategy = body?.authorization_strategy;
+      const authorizationStrategy =
+        namespace === 'workspaces' && body?.authorization_strategy === 'workspace'
+          ? 'project'
+          : body?.authorization_strategy;
       if (authorizationStrategy !== 'project' && authorizationStrategy !== 'user') {
-        return c.json({ error: 'authorization_strategy must be "project" or "user"' }, 400);
+        return c.json({
+          error: `authorization_strategy must be "${namespace === 'workspaces' ? 'workspace' : 'project'}" or "user"`,
+        }, 400);
       }
       const result = await deps.setAuthorizationStrategy(
-        projectId,
+        workspaceId,
         admin.accountId,
         slug,
         authorizationStrategy,
@@ -1556,12 +1572,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/sensitive',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/sensitive`,
       tags: ['connector'],
       summary: "Toggle a connector's sensitive flag (gate reads too)",
       ...auth,
       request: {
-        params: ProjectSlugParam,
+        params: WorkspaceSlugParam,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -1570,9 +1586,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setSensitive) return featureNotSupportedResponse(c, 'connector_sensitive');
       let body: any;
@@ -1584,7 +1600,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       if (typeof body?.sensitive !== 'boolean') {
         return c.json({ error: 'sensitive must be a boolean' }, 400);
       }
-      const result = await deps.setSensitive(projectId, admin.accountId, slug, body.sensitive);
+      const result = await deps.setSensitive(workspaceId, admin.accountId, slug, body.sensitive);
       return result.ok
         ? c.json({ ok: true, sync: result.sync })
         : c.json({ error: result.error }, result.status as 400 | 409 | 502);
@@ -1595,12 +1611,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/name',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/name`,
       tags: ['connector'],
       summary: 'Rename a connector (display label)',
       ...auth,
       request: {
-        params: ProjectSlugParam,
+        params: WorkspaceSlugParam,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -1609,9 +1625,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setConnectorName) return featureNotSupportedResponse(c, 'connector_rename');
       let body: any;
@@ -1622,7 +1638,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       }
       const name = typeof body?.name === 'string' ? body.name : '';
       if (!name.trim()) return c.json({ error: '`name` is required' }, 400);
-      const result = await deps.setConnectorName(projectId, admin.accountId, slug, name);
+      const result = await deps.setConnectorName(workspaceId, admin.accountId, slug, name);
       return result.ok
         ? c.json({ ok: true, sync: result.sync })
         : c.json({ error: result.error }, result.status as 400 | 409 | 502);
@@ -1633,24 +1649,24 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/connectors/{slug}/policies',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/policies`,
       tags: ['connector'],
       summary: "Read a connector's tool-call policies",
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: { params: WorkspaceSlugParam },
       responses: {
         200: json(OpaqueSchema, 'Connector policies'),
         ...errors(403, 404),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.getConnectorPolicies)
         return featureNotSupportedResponse(c, 'connector_policies_read');
-      const result = await deps.getConnectorPolicies(projectId, slug);
+      const result = await deps.getConnectorPolicies(workspaceId, slug);
       if (!result) return c.json({ error: 'connector not found' }, 404);
       return c.json(result);
     },
@@ -1660,23 +1676,23 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/connectors/{slug}/config',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/config`,
       tags: ['connector'],
       summary: "Read a connector's connection config (provider, url, auth, …)",
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: { params: WorkspaceSlugParam },
       responses: {
         200: json(OpaqueSchema, 'Connector config'),
         ...errors(403, 404, 501),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.getConnectorConfig) return featureNotSupportedResponse(c, 'connector_config_read');
-      const result = await deps.getConnectorConfig(projectId, slug);
+      const result = await deps.getConnectorConfig(workspaceId, slug);
       if (!result) return c.json({ error: 'connector not found' }, 404);
       return c.json(result);
     },
@@ -1686,12 +1702,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/policies',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/policies`,
       tags: ['connector'],
       summary: "Replace a connector's tool-call policies",
       ...auth,
       request: {
-        params: ProjectSlugParam,
+        params: WorkspaceSlugParam,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -1700,9 +1716,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setConnectorPolicies)
         return featureNotSupportedResponse(c, 'connector_policies_write');
@@ -1714,7 +1730,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       }
       const policies = Array.isArray(body?.policies) ? body.policies : null;
       if (!policies) return c.json({ error: '`policies` must be an array' }, 400);
-      const result = await deps.setConnectorPolicies(projectId, admin.accountId, slug, policies);
+      const result = await deps.setConnectorPolicies(workspaceId, admin.accountId, slug, policies);
       return result.ok
         ? c.json({ ok: true, sync: result.sync })
         : c.json({ error: result.error }, result.status as 400 | 409 | 502);
@@ -1725,20 +1741,20 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors/{slug}/connect',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/connect`,
       tags: ['connector'],
       summary: 'Pipedream 1-click: mint a connect token',
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: { params: WorkspaceSlugParam },
       responses: {
         200: json(OpaqueSchema, 'Connect token / overlay info'),
         ...errors(403, 404, 501),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.pipedreamConnect) return featureNotSupportedResponse(c, 'pipedream_connect');
       // Native clients pass app deep-link redirect URIs so the in-app browser
@@ -1752,7 +1768,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       } catch {
         /* no body */
       }
-      const result = await deps.pipedreamConnect(projectId, slug, admin.userId, redirects);
+      const result = await deps.pipedreamConnect(workspaceId, slug, admin.userId, redirects);
       if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
       return c.json(result);
     },
@@ -1761,23 +1777,23 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors/{slug}/connect/finalize',
+      path: `/${namespace}/{workspaceId}/connectors/{slug}/connect/finalize`,
       tags: ['connector'],
       summary: 'Pipedream 1-click: persist the account binding',
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: { params: WorkspaceSlugParam },
       responses: {
         200: json(OpaqueSchema, 'Connection finalized'),
         ...errors(403, 404, 501),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const workspaceId = c.req.param('workspaceId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.pipedreamFinalize) return featureNotSupportedResponse(c, 'pipedream_finalize');
-      const result = await deps.pipedreamFinalize(projectId, slug, admin.userId);
+      const result = await deps.pipedreamFinalize(workspaceId, slug, admin.userId);
       if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
       return c.json(result);
     },
@@ -1787,22 +1803,22 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/policies',
+      path: `/${namespace}/{workspaceId}/policies`,
       tags: ['connector'],
       summary: 'Read project policies and default mode',
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: WorkspaceParam },
       responses: {
-        200: json(OpaqueSchema, 'Project policies view'),
+        200: json(OpaqueSchema, 'Workspace policies view'),
         ...errors(403, 404, 501),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.getProjectPolicies) return featureNotSupportedResponse(c, 'project_policies_read');
-      const result = await deps.getProjectPolicies(projectId);
+      if (!deps.getWorkspacePolicies) return featureNotSupportedResponse(c, 'project_policies_read');
+      const result = await deps.getWorkspacePolicies(workspaceId);
       if (!result) return c.json({ error: 'project not found' }, 404);
       return c.json(result);
     },
@@ -1812,12 +1828,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/policies',
+      path: `/${namespace}/{workspaceId}/policies`,
       tags: ['connector'],
       summary: 'Replace project policies and default mode',
       ...auth,
       request: {
-        params: ProjectParam,
+        params: WorkspaceParam,
         body: { content: { 'application/json': { schema: OpaqueSchema } } },
       },
       responses: {
@@ -1828,10 +1844,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     // Manual parse kept: original does per-policy validation with indexed error
     // messages (`policy #N: ...`) and tolerates a partial/missing body.
     async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
+      const workspaceId = c.req.param('workspaceId');
+      const admin = await deps.resolveAdmin(c, workspaceId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setProjectPolicies) return featureNotSupportedResponse(c, 'project_policies_write');
+      if (!deps.setWorkspacePolicies) return featureNotSupportedResponse(c, 'project_policies_write');
 
       let body: any;
       try {
@@ -1841,7 +1857,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       }
 
       const rawPolicies = Array.isArray(body?.policies) ? body.policies : [];
-      const policies: ProjectPolicyView[] = [];
+      const policies: WorkspacePolicyView[] = [];
       for (let i = 0; i < rawPolicies.length; i++) {
         const p = rawPolicies[i];
         const match = typeof p?.match === 'string' ? p.match.trim() : '';
@@ -1879,8 +1895,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       }
       const defaultMode = body?.defaultMode === 'risk' ? 'risk' : 'allow_all';
 
-      const result = await deps.setProjectPolicies(
-        projectId,
+      const result = await deps.setWorkspacePolicies(
+        workspaceId,
         admin.accountId,
         policies,
         defaultMode,

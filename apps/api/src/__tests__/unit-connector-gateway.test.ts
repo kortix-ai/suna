@@ -71,7 +71,7 @@ function makeDeps(o: FakeOpts = {}) {
       return o.secret === undefined ? 'sk_live_123' : o.secret;
     },
     loadPolicies: async () => o.policies ?? [],
-    loadProjectPolicies: async () => o.projectPolicies ?? [],
+    loadWorkspacePolicies: async () => o.projectPolicies ?? [],
     loadDefaultMode: async () => o.defaultMode ?? 'allow_all',
     enforcePolicies: o.enforcePolicies,
     recordExecution: async (r) => {
@@ -92,7 +92,7 @@ function makeDeps(o: FakeOpts = {}) {
 }
 
 const baseInput: CallInput = {
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   accountId: 'acct-1',
   subject: { userId: ALICE, groupIds: [] },
   sessionId: 'sess-1',
@@ -357,7 +357,7 @@ describe('handleCall — policy layer', () => {
     expect(waitedOn).toBeUndefined();
     expect(matched).toMatchObject({
       executionId: 'exec-existing',
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       sessionId: 'sess-1',
       connectorId: 'conn-stripe',
       actionPath: 'stripe.charges.create',
@@ -389,7 +389,7 @@ describe('handleCall — policy layer', () => {
     });
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      projectId: 'proj-1',
+      workspaceId: 'proj-1',
       sessionId: 'sess-1',
       connectorId: 'conn-stripe',
       actionPath: 'stripe.charges.create',
@@ -530,7 +530,7 @@ describe('handleCall — policy layer', () => {
 describe('handleCall — layered policies (project → connector → default)', () => {
   test('project [[policies]] block wins even when connector allows', async () => {
     // Connector says "always_run *" — but project says "*.delete*" → block.
-    // Project wins (admin trust property).
+    // Workspace wins (admin trust property).
     const { deps, fetchCalls } = makeDeps({
       action: {
         ...CREATE_CHARGE,
@@ -547,7 +547,7 @@ describe('handleCall — layered policies (project → connector → default)', 
   });
 
   test('project [[policies]] sees the fully-qualified path (slug.path)', async () => {
-    // Project pattern is "stripe.*" — must include connector slug.
+    // Workspace pattern is "stripe.*" — must include connector slug.
     const { deps } = makeDeps({
       projectPolicies: [{ match: 'stripe.*', action: 'require_approval' }],
     });

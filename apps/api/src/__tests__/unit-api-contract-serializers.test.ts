@@ -1,18 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  ProjectSchema,
-  ProjectSessionSandboxSchema,
-  ProjectSessionSchema,
-  SecretSchema,
-  SessionStartResultSchema,
+  WorkspaceSchema,
+  WorkspaceSessionSandboxSchema,
+  WorkspaceSessionSchema,
+  WorkspaceSecretSchema,
+  WorkspaceSessionStartResultSchema,
 } from '@kortix/api-contract';
 import type { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
-import { buildSecretView, serializeProject, serializeSession } from '../projects/lib/serializers';
-import { serializeSandboxRow } from '../projects/routes/shared';
+import { buildSecretView, serializeWorkspace, serializeSession } from '../workspaces/lib/serializers';
+import { serializeSandboxRow } from '../workspaces/routes/shared';
 
 const NOW = new Date('2026-07-01T12:00:00.000Z');
-const PROJECT_ID = '11111111-2222-4333-8444-555555555555';
+const WORKSPACE_ID = '11111111-2222-4333-8444-555555555555';
 const ACCOUNT_ID = '99999999-8888-4777-8666-555555555555';
 const USER_ID = '77777777-6666-4555-8444-333333333333';
 const SESSION_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -21,9 +21,9 @@ function projectRow(
   overrides: Partial<typeof projects.$inferSelect> = {},
 ): typeof projects.$inferSelect {
   return {
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     accountId: ACCOUNT_ID,
-    name: 'Demo Project',
+    name: 'Demo Workspace',
     sandboxProviderGeneration: 0,
     secretDefaultStrategy: 'runtime' as const,
     repoUrl: 'https://github.com/acme/demo',
@@ -45,7 +45,7 @@ function sessionRow(
   return {
     sessionId: SESSION_ID,
     accountId: ACCOUNT_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     branchName: 'kortix/session-1',
     baseRef: 'main',
     sandboxProvider: 'daytona',
@@ -77,7 +77,7 @@ function sandboxRow(
     sandboxId: SESSION_ID,
     sessionId: SESSION_ID,
     accountId: ACCOUNT_ID,
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     provider: 'platinum',
     activeSince: NOW,
     deadlineAt: NOW,
@@ -98,7 +98,7 @@ function secretRow(
 ): typeof projectSecrets.$inferSelect {
   return {
     secretId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     identifier: overrides.name ?? 'OPENAI_API_KEY',
     name: 'OPENAI_API_KEY',
     valueEnc: 'enc:v1:abc',
@@ -119,27 +119,27 @@ function secretRow(
   };
 }
 
-describe('serializeProject ⇄ ProjectSchema', () => {
+describe('serializeWorkspace ⇄ WorkspaceSchema', () => {
   test('output parses strictly and round-trips unchanged', () => {
-    const out = serializeProject(projectRow(), {
-      projectRole: 'editor',
+    const out = serializeWorkspace(projectRow(), {
+      workspaceRole: 'editor',
       effectiveRole: 'editor',
     });
-    expect(ProjectSchema.strict().parse(out)).toEqual(out);
+    expect(WorkspaceSchema.strict().parse(out)).toEqual(out);
   });
 
   test('output without access context parses with null roles', () => {
-    const out = serializeProject(projectRow({ lastOpenedAt: null }));
-    const parsed = ProjectSchema.strict().parse(out);
-    expect(parsed.project_role).toBeNull();
-    expect(parsed.effective_project_role).toBeNull();
+    const out = serializeWorkspace(projectRow({ lastOpenedAt: null }));
+    const parsed = WorkspaceSchema.strict().parse(out);
+    expect(parsed.workspace_role).toBeNull();
+    expect(parsed.effective_workspace_role).toBeNull();
     expect(parsed.last_opened_at).toBeNull();
   });
 
   test('experimental map carries every registered feature key', () => {
-    const out = serializeProject(projectRow());
+    const out = serializeWorkspace(projectRow());
     expect(Object.keys(out.experimental).sort()).toEqual(
-      Object.keys(ProjectSchema.shape.experimental.shape).sort(),
+      Object.keys(WorkspaceSchema.shape.experimental.shape).sort(),
     );
   });
 
@@ -149,9 +149,9 @@ describe('serializeProject ⇄ ProjectSchema', () => {
     config.ALLOWED_SANDBOX_PROVIDERS = ['e2b'];
     config.E2B_API_KEY = 'test-only';
     try {
-      const out = serializeProject(projectRow({ metadata: { default_sandbox_provider: 'e2b' } }));
+      const out = serializeWorkspace(projectRow({ metadata: { default_sandbox_provider: 'e2b' } }));
       expect(out.default_sandbox_provider).toBe('e2b');
-      expect(ProjectSchema.strict().parse(out)).toEqual(out);
+      expect(WorkspaceSchema.strict().parse(out)).toEqual(out);
     } finally {
       config.ALLOWED_SANDBOX_PROVIDERS = originalAllowed;
       config.E2B_API_KEY = originalKey;
@@ -161,29 +161,36 @@ describe('serializeProject ⇄ ProjectSchema', () => {
   test.each(['managed', 'justavps', 'unknown'])(
     'does not surface retired or unknown project pin %s',
     (provider) => {
-      const out = serializeProject(
+      const out = serializeWorkspace(
         projectRow({ metadata: { default_sandbox_provider: provider } }),
       );
       expect(out.default_sandbox_provider).toBeNull();
-      expect(ProjectSchema.strict().parse(out)).toEqual(out);
+      expect(WorkspaceSchema.strict().parse(out)).toEqual(out);
     },
   );
 });
 
-describe('serializeSession ⇄ ProjectSessionSchema', () => {
+describe('serializeSession ⇄ WorkspaceSessionSchema', () => {
   test('owner view parses strictly and round-trips unchanged', () => {
     const out = serializeSession(sessionRow(), {
       viewerId: USER_ID,
-      canManageProject: false,
+      canManageWorkspace: false,
     });
-    expect(ProjectSessionSchema.strict().parse(out)).toEqual(out);
+    expect(WorkspaceSessionSchema.strict().parse(out)).toEqual(out);
+  });
+
+  test('maps persisted Project-wide visibility to the canonical Workspace wire value', () => {
+    const out = serializeSession(sessionRow({ visibility: 'project' }));
+    expect(out.visibility).toBe('workspace');
+    expect(out.sharing).toEqual({ mode: 'workspace' });
+    expect(WorkspaceSessionSchema.strict().parse(out)).toEqual(out);
   });
 
   test('restricted shared view with grants parses', () => {
     const out = serializeSession(sessionRow({ visibility: 'restricted' }), {
       grants: [{ principalType: 'member', principalId: USER_ID }],
       viewerId: 'someone-else',
-      canManageProject: true,
+      canManageWorkspace: true,
       ownerEmail: 'owner@acme.dev',
       ownerName: 'Build Agent',
       ownerType: 'service_account',
@@ -192,7 +199,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       deletedAt: '2026-07-20T10:00:00.000Z',
       deletedBy: USER_ID,
     });
-    const parsed = ProjectSessionSchema.strict().parse(out);
+    const parsed = WorkspaceSessionSchema.strict().parse(out);
     expect(parsed.sharing).toEqual({ mode: 'members', memberIds: [USER_ID], groupIds: [] });
     expect(parsed.owner_email).toBe('owner@acme.dev');
     expect(parsed.owner_name).toBe('Build Agent');
@@ -206,7 +213,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
 
   test('custom_name override wins over the auto title', () => {
     const out = serializeSession(sessionRow({ metadata: { name: 'auto', custom_name: 'Mine' } }));
-    const parsed = ProjectSessionSchema.strict().parse(out);
+    const parsed = WorkspaceSessionSchema.strict().parse(out);
     expect(parsed.name).toBe('Mine');
     expect(parsed.custom_name).toBe('Mine');
   });
@@ -223,7 +230,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         },
       }),
     );
-    const parsed = ProjectSessionSchema.strict().parse(out);
+    const parsed = WorkspaceSessionSchema.strict().parse(out);
     expect(parsed.name).toBe('Dashboard Login Repair');
     expect(parsed.custom_name).toBeNull();
   });
@@ -241,7 +248,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         },
       }),
     );
-    expect(ProjectSessionSchema.strict().parse(out).name).toBe('Pinned Root Title');
+    expect(WorkspaceSessionSchema.strict().parse(out).name).toBe('Pinned Root Title');
   });
 
   test('a parentless entry stands in when no snapshot entry matches the pin', () => {
@@ -257,7 +264,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         },
       }),
     );
-    expect(ProjectSessionSchema.strict().parse(out).name).toBe('Tree Root Title');
+    expect(WorkspaceSessionSchema.strict().parse(out).name).toBe('Tree Root Title');
   });
 
   test('placeholder or blank runtime titles fall back to the Kortix auto title', () => {
@@ -271,7 +278,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         },
       }),
     );
-    expect(ProjectSessionSchema.strict().parse(placeholder).name).toBe('Real Kortix Title');
+    expect(WorkspaceSessionSchema.strict().parse(placeholder).name).toBe('Real Kortix Title');
 
     const blank = serializeSession(
       sessionRow({
@@ -281,7 +288,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         },
       }),
     );
-    expect(ProjectSessionSchema.strict().parse(blank).name).toBe('Real Kortix Title');
+    expect(WorkspaceSessionSchema.strict().parse(blank).name).toBe('Real Kortix Title');
   });
 
   test('custom_name wins over the runtime snapshot title', () => {
@@ -294,7 +301,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         },
       }),
     );
-    expect(ProjectSessionSchema.strict().parse(out).name).toBe('Mine');
+    expect(WorkspaceSessionSchema.strict().parse(out).name).toBe('Mine');
   });
 
   test('a viewer without access never reads the runtime snapshot title', () => {
@@ -307,33 +314,33 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       }),
       { viewerId: 'someone-else', canAccess: false },
     );
-    const parsed = ProjectSessionSchema.strict().parse(out);
+    const parsed = WorkspaceSessionSchema.strict().parse(out);
     expect(parsed.name).toBeNull();
     expect(parsed.opencode_sessions).toEqual([]);
   });
 
   test("opencode's frozen placeholder reads as untitled, a real title does not", () => {
-    const placeholder = ProjectSessionSchema.strict().parse(
+    const placeholder = WorkspaceSessionSchema.strict().parse(
       serializeSession(sessionRow({ metadata: { name: 'New session - 2026-07-28' } })),
     );
     expect(placeholder.name).toBeNull();
 
-    const veyrisPlaceholder = ProjectSessionSchema.strict().parse(
+    const veyrisPlaceholder = WorkspaceSessionSchema.strict().parse(
       serializeSession(sessionRow({ metadata: { name: 'New agent' } })),
     );
     expect(veyrisPlaceholder.name).toBeNull();
 
-    const real = ProjectSessionSchema.strict().parse(
+    const real = WorkspaceSessionSchema.strict().parse(
       serializeSession(sessionRow({ metadata: { name: 'Set Up MS Graph' } })),
     );
     expect(real.name).toBe('Set Up MS Graph');
   });
 });
 
-describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
+describe('serializeSandboxRow ⇄ WorkspaceSessionSandboxSchema', () => {
   test('output parses strictly and scrubs serviceKey from config', () => {
     const out = serializeSandboxRow(sandboxRow());
-    const parsed = ProjectSessionSandboxSchema.strict().parse(out);
+    const parsed = WorkspaceSessionSandboxSchema.strict().parse(out);
     expect(parsed).toEqual(out);
     expect(parsed.config).toEqual({ region: 'eu' });
   });
@@ -349,11 +356,11 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     };
-    expect(SessionStartResultSchema.strict().parse(payload)).toEqual(payload);
+    expect(WorkspaceSessionStartResultSchema.strict().parse(payload)).toEqual(payload);
   });
 });
 
-describe('buildSecretView ⇄ SecretSchema', () => {
+describe('buildSecretView ⇄ WorkspaceSecretSchema', () => {
   test('shared project secret parses strictly and round-trips unchanged', () => {
     const out = buildSecretView({
       identifier: 'OPENAI_API_KEY',
@@ -361,7 +368,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       shared: secretRow(),
       canManageShared: true,
     });
-    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(WorkspaceSecretSchema.strict().parse(out)).toEqual(out);
     expect(out.effective_source).toBe('shared');
     expect(out).toMatchObject({
       strategy: 'runtime',
@@ -382,7 +389,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       canManageShared: true,
     });
 
-    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(WorkspaceSecretSchema.strict().parse(out)).toEqual(out);
     expect(out).toMatchObject({
       strategy: 'denied',
       consumer: null,
@@ -403,7 +410,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       canManageShared: true,
     });
 
-    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(WorkspaceSecretSchema.strict().parse(out)).toEqual(out);
     expect(out.requires_rotation).toBe(true);
   });
 
@@ -420,7 +427,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       canManageShared: true,
     });
 
-    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(WorkspaceSecretSchema.strict().parse(out)).toEqual(out);
     expect(out).toMatchObject({
       strategy: 'broker',
       consumer: 'http_broker',
@@ -437,7 +444,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       canManageShared: true,
     });
 
-    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(WorkspaceSecretSchema.strict().parse(out)).toEqual(out);
     expect(out).toMatchObject({
       strategy: 'broker',
       consumer: 'llm_gateway',
@@ -459,8 +466,8 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       shared: secretRow({ identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY' }),
       canManageShared: true,
     });
-    expect(SecretSchema.strict().parse(primary)).toEqual(primary);
-    expect(SecretSchema.strict().parse(backup)).toEqual(backup);
+    expect(WorkspaceSecretSchema.strict().parse(primary)).toEqual(primary);
+    expect(WorkspaceSecretSchema.strict().parse(backup)).toEqual(backup);
     expect(primary.name).toBe(backup.name);
     expect(primary.identifier).not.toBe(backup.identifier);
   });
@@ -472,7 +479,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       personal: secretRow({ ownerUserId: USER_ID }),
       canManageShared: false,
     });
-    const parsed = SecretSchema.strict().parse(out);
+    const parsed = WorkspaceSecretSchema.strict().parse(out);
     expect(parsed.configured).toBe(false);
     expect(parsed.effective_source).toBe('mine');
     expect(parsed.mine).toEqual({ active: true, updated_at: NOW.toISOString() });
@@ -485,7 +492,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       shared: secretRow({ identifier: 'KORTIX_GIT_AUTH_TOKEN', name: 'KORTIX_GIT_AUTH_TOKEN' }),
       canManageShared: true,
     });
-    const parsed = SecretSchema.strict().parse(out);
+    const parsed = WorkspaceSecretSchema.strict().parse(out);
     expect(parsed.system).toBe(true);
     expect(parsed.purpose).toBe('git_auth');
     expect(parsed.can_manage_shared).toBe(false);

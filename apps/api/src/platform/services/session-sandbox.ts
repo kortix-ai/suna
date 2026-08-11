@@ -16,7 +16,7 @@ import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
-import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import { PROVISIONING_SESSION_STATUSES } from '../../workspaces/lib/session-status';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
@@ -28,7 +28,7 @@ import {
   type ProvisionResult,
   type ProviderName,
 } from '../providers';
-import { readActiveRouting } from '../../projects/provider-transition/provider-transition-store';
+import { readActiveRouting } from '../../workspaces/provider-transition/provider-transition-store';
 import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,
@@ -49,19 +49,18 @@ import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
-import type { GitBackedProject } from '../../projects/git';
+import type { GitBackedWorkspace } from '../../workspaces/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
-import { readManifest } from '../../projects/triggers';
-import { resolveAgentGrant } from '../../projects/agents';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveAgentGrant } from '../../workspaces/agents';
+import { workspaceLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
-import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
-import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
+import { RuntimeIdentityConflictError } from '../../workspaces/runtime-identity-error';
+import { grantWarmPoolLifetime } from '../../workspaces/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
-import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
-import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
+import { platformMetaAgentGrant } from '../../workspaces/lib/platform-meta-agent';
+import { resolveSessionNetworkBoundary } from '../../workspaces/lib/network-secret-boundary';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -82,7 +81,7 @@ const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 
 async function openComputeSessionForSandbox(
   sandboxId: string,
   accountId: string,
-  project: GitBackedProject,
+  project: GitBackedWorkspace,
   userId: string | null | undefined,
   sandboxSlug: string | undefined,
   provider: ProviderName,
@@ -134,10 +133,10 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
 async function mintConnectorToken(opts: {
   accountId: string;
   userId: string;
-  projectId: string;
+  workspaceId: string;
   sandboxId: string;
   agentName: string;
-  gitProject: GitBackedProject;
+  gitWorkspace: GitBackedWorkspace;
 }): Promise<string | null> {
   const platformMetaAgent = isMetaAgentName(opts.agentName);
   // The reserved coordinator uses a platform-owned full project grant. It acts
@@ -150,20 +149,20 @@ async function mintConnectorToken(opts: {
         // service account in parallel. The SA resolution is FAIL-SAFE: on error
         // we mint without a service_account_id, which is the legacy behavior
         // (authorize as the user ∩ grant). It never widens authority.
-        resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
+        resolveAgentGrant(opts.agentName, opts.gitWorkspace).catch((err) => {
           console.warn(
-            `[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`,
+            `[session-sandbox] failed to resolve agent grant for ${opts.workspaceId}:`,
             err,
           );
           return null;
         }),
         ensureAgentServiceAccount({
           accountId: opts.accountId,
-          projectId: opts.projectId,
+          workspaceId: opts.workspaceId,
           agentName: opts.agentName,
         }).catch((err) => {
           console.warn(
-            `[session-sandbox] failed to ensure agent service account for ${opts.projectId}:`,
+            `[session-sandbox] failed to ensure agent service account for ${opts.workspaceId}:`,
             err,
           );
           return null;
@@ -173,7 +172,7 @@ async function mintConnectorToken(opts: {
     const tok = await createAccountToken({
       accountId: opts.accountId,
       userId: opts.userId,
-      projectId: opts.projectId,
+      workspaceId: opts.workspaceId,
       // session_id == sandbox_id by construction — lets the LLM gateway attribute
       // usage_events to this session (the reaper's reliable activity signal).
       sessionId: opts.sandboxId,
@@ -183,7 +182,7 @@ async function mintConnectorToken(opts: {
     });
     return tok.secretKey;
   } catch (err) {
-    console.warn(`[session-sandbox] failed to mint connector token for ${opts.projectId}:`, err);
+    console.warn(`[session-sandbox] failed to mint connector token for ${opts.workspaceId}:`, err);
     return null;
   }
 }
@@ -242,7 +241,7 @@ export function decideSessionBoot(input: {
 export async function provisionSessionSandbox(opts: {
   sandboxId: string;
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   userId: string;
   /** The selected agent's name (= projectSessions.agentName). Resolves the
    *  per-agent grant stamped onto the session's account token. Defaults to
@@ -252,22 +251,22 @@ export async function provisionSessionSandbox(opts: {
   serverType?: string;
   location?: string;
   metadata?: Record<string, unknown>;
-  /** Project metadata, used for per-project experimental gates. */
-  projectMetadata?: unknown;
+  /** Workspace metadata, used for per-project experimental gates. */
+  workspaceMetadata?: unknown;
   /**
    * Extra env vars injected into the sandbox at provider create-time. These
    * land in the Daytona snapshot's environment so its boot script can read
-   * them (e.g. `KORTIX_PROJECT_REPO_URL`, `KORTIX_PROJECT_BRANCH`).
+   * them (e.g. `KORTIX_WORKSPACE_REPO_URL`, `KORTIX_WORKSPACE_BRANCH`).
    */
   extraEnvVars?: Record<string, string>;
   /**
-   * Project + ref the session boots against. The boot path resolves the
+   * Workspace + ref the session boots against. The boot path resolves the
    * commit SHA for `baseRef` and asks the snapshot builder for the matching
    * Daytona image — building inline if it doesn't exist yet. When `baseRef`
-   * is omitted, defaults to `gitProject.defaultBranch`.
+   * is omitted, defaults to `gitWorkspace.defaultBranch`.
    */
-  gitProject: GitBackedProject;
-  resolveGitProject?: () => Promise<GitBackedProject>;
+  gitWorkspace: GitBackedWorkspace;
+  resolveGitWorkspace?: () => Promise<GitBackedWorkspace>;
   baseRef?: string;
   /**
    * Slug of the sandbox template to boot from. Resolves against the project's
@@ -283,7 +282,7 @@ export async function provisionSessionSandbox(opts: {
    */
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
-  const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
+  const { sandboxId, accountId, workspaceId, userId, serverType, location } = opts;
   const providerWasExplicitlySelected = opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
@@ -298,17 +297,17 @@ export async function provisionSessionSandbox(opts: {
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
   // Resolve the project + fresh provider-neutral git access (the snapshot
   // builder may need it to read the repo's Dockerfile).
-  const resolveGitProject = async (): Promise<GitBackedProject> => {
-    if (!opts.resolveGitProject) return opts.gitProject;
-    return opts.resolveGitProject();
+  const resolveGitWorkspace = async (): Promise<GitBackedWorkspace> => {
+    if (!opts.resolveGitWorkspace) return opts.gitWorkspace;
+    return opts.resolveGitWorkspace();
   };
   const resolveImage = (
-    gitProject: GitBackedProject,
+    gitWorkspace: GitBackedWorkspace,
     targetProvider: string,
   ): Promise<EnsureSandboxImageResult> =>
     slug === META_SANDBOX_SLUG
       ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
-      : ensureSandboxImage(gitProject, {
+      : ensureSandboxImage(gitWorkspace, {
           slug,
           accountId,
           source: 'session-start',
@@ -321,15 +320,15 @@ export async function provisionSessionSandbox(opts: {
   // reason to wait for the tokens before asking the provider whether the image
   // already exists. On the warm path this overlaps the ~200ms token round-trip
   // with the ~100-300ms cache-check, taking the smaller off the critical path.
-  type FirstImage = EnsureSandboxImageResult & { gitProject: GitBackedProject };
+  type FirstImage = EnsureSandboxImageResult & { gitWorkspace: GitBackedWorkspace };
   // Cold-only: every session boots from its Dockerfile snapshot (the shared
   // default or a per-project template), resolved by ensureSandboxImage. No warm
   // / stateful-snapshot fast path — Platinum and Daytona take the identical cold
   // path.
   let firstImagePromise: Promise<FirstImage> | null = (async () => {
-    const gitProject = await resolveGitProject();
-    const image = await resolveImage(gitProject, providerName);
-    return { ...image, gitProject };
+    const gitWorkspace = await resolveGitWorkspace();
+    const image = await resolveImage(gitWorkspace, providerName);
+    return { ...image, gitWorkspace };
   })();
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
   // when it awaits the promise.
@@ -340,7 +339,7 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
+  const llmGatewayEnabled = workspaceLlmGatewayEnabled(opts.workspaceMetadata);
   const createOrClaimSandboxRow = async () => {
     const inserted = await db
       .insert(sessionSandboxes)
@@ -348,7 +347,7 @@ export async function provisionSessionSandbox(opts: {
         sandboxId,
         sessionId: sandboxId,
         accountId,
-        projectId,
+        workspaceId,
         provider: providerName,
         externalId: null,
         status: 'provisioning',
@@ -408,10 +407,10 @@ export async function provisionSessionSandbox(opts: {
     mintConnectorToken({
       accountId,
       userId,
-      projectId,
+      workspaceId,
       sandboxId,
       agentName: opts.agentName ?? 'default',
-      gitProject: opts.gitProject,
+      gitWorkspace: opts.gitWorkspace,
     }),
     llmGatewayEnabled
       ? accountEntitledToLlmGateway(accountId).catch((err) => {
@@ -520,10 +519,10 @@ export async function provisionSessionSandbox(opts: {
     // a name-boot, so the retry never re-attempts the dead pin.
     let activeRouting: { activeProvider: string | null; activeExternalTemplateId: string | null } | null = null;
     try {
-      activeRouting = await readActiveRouting(db, projectId);
+      activeRouting = await readActiveRouting(db, workspaceId);
     } catch (routingErr) {
       console.warn(
-        `[session-sandbox] readActiveRouting failed for ${projectId} (falling back to name-boot):`,
+        `[session-sandbox] readActiveRouting failed for ${workspaceId} (falling back to name-boot):`,
         routingErr instanceof Error ? routingErr.message : String(routingErr),
       );
     }
@@ -532,8 +531,8 @@ export async function provisionSessionSandbox(opts: {
     let lastProvisionMaxAttempts = SANDBOX_INIT_MAX_ATTEMPTS;
     provisioning: while (true) {
     try {
-      const branch = opts.baseRef || opts.gitProject.defaultBranch;
-      const networkBoundary = await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
+      const branch = opts.baseRef || opts.gitWorkspace.defaultBranch;
+      const networkBoundary = await resolveSessionNetworkBoundary(workspaceId, sandbox.sandboxId);
       if (networkBoundary.length > 0 && !provider.syncNetworkBoundary) {
         throw new Error(
           `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
@@ -551,8 +550,8 @@ export async function provisionSessionSandbox(opts: {
         image = await firstImagePromise;
         firstImagePromise = null;
       } else {
-        const gitProject = await resolveGitProject();
-        image = await resolveImage(gitProject, providerName);
+        const gitWorkspace = await resolveGitWorkspace();
+        image = await resolveImage(gitWorkspace, providerName);
       }
       imageInfo = {
         snapshotName: image.snapshotName,
@@ -889,7 +888,7 @@ export async function provisionSessionSandbox(opts: {
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.
-      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug, providerName).catch(
+      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitWorkspace, userId, imageInfo?.slug, providerName).catch(
         (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
@@ -903,7 +902,7 @@ export async function provisionSessionSandbox(opts: {
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug, provider: providerName }).catch((err) =>
+        await deleteSandboxImage(opts.gitWorkspace, { slug: imageInfo.slug, provider: providerName }).catch((err) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
             err,

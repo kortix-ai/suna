@@ -6,8 +6,8 @@ export type CatalogSubview =
   | { kind: 'connect'; providerId: string }
   | { kind: 'custom' };
 
-export interface ProjectProviderModalProps {
-  projectId: string;
+export interface WorkspaceProviderModalProps {
+  workspaceId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultTab?: ActiveTab;

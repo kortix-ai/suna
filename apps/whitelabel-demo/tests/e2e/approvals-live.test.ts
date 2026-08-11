@@ -1,8 +1,8 @@
 /**
- * Approvals + wrapper project access, end to end through a real `next start`.
+ * Approvals + wrapper workspace access, end to end through a real `next start`.
  *
  * This file brings its own upstream rather than using `mock-upstream.ts`: the
- * shared mock answers every `projects/:id/...` sub-path with a generic 200, and
+ * shared mock answers every `workspaces/:id/...` sub-path with a generic 200, and
  * the two things worth proving here are a SESSION-SCOPED audit body and a 403
  * that carries `APPROVAL_REQUIRES_HUMAN`. Both need real bodies and a real
  * status, so they are served here.
@@ -29,7 +29,7 @@ import {
   uniqueEmail,
 } from './harness';
 
-const PROJECT_ID = '00000000-0000-4000-8000-00000000a001';
+const WORKSPACE_ID = '00000000-0000-4000-8000-00000000a001';
 const SESSION_ID = '00000000-0000-4000-8000-00000000b001';
 /** The gate a human resolves normally. */
 const PENDING_EXECUTION = '00000000-0000-4000-8000-00000000c001';
@@ -75,13 +75,13 @@ function createApprovalUpstream() {
       const p = url.pathname.replace(/^\/v1\//, '');
       const now = new Date().toISOString();
 
-      if (p === 'projects/provision' && method === 'POST') {
+      if (p === 'workspaces/provision' && method === 'POST') {
         return Response.json(
           {
-            project_id: PROJECT_ID,
+            workspace_id: WORKSPACE_ID,
             account_id: 'acct_test',
-            name: 'Approvals project',
-            repo_url: `https://git.kortix.test/${PROJECT_ID}`,
+            name: 'Approvals workspace',
+            repo_url: `https://git.kortix.test/${WORKSPACE_ID}`,
             default_branch: 'main',
             manifest_path: 'kortix.yaml',
             status: 'active',
@@ -93,12 +93,12 @@ function createApprovalUpstream() {
         );
       }
 
-      if (p === `projects/${PROJECT_ID}/sessions` && method === 'GET') {
+      if (p === `workspaces/${WORKSPACE_ID}/sessions` && method === 'GET') {
         return Response.json([]);
       }
 
       if (
-        p === `projects/${PROJECT_ID}/sessions/${SESSION_ID}/audit` &&
+        p === `workspaces/${WORKSPACE_ID}/sessions/${SESSION_ID}/audit` &&
         method === 'GET'
       ) {
         return Response.json({
@@ -141,7 +141,7 @@ function createApprovalUpstream() {
         });
       }
 
-      const resolveMatch = p.match(/^projects\/([^/]+)\/approvals\/([^/]+)$/);
+      const resolveMatch = p.match(/^workspaces\/([^/]+)\/approvals\/([^/]+)$/);
       if (resolveMatch && method === 'POST') {
         if (resolveMatch[2] === SELF_APPROVAL_EXECUTION) {
           return Response.json(
@@ -173,7 +173,7 @@ function createApprovalUpstream() {
   };
 }
 
-describe('approvals + wrapper project access', () => {
+describe('approvals + wrapper workspace access', () => {
   let upstream: ReturnType<typeof createApprovalUpstream>;
   let app: AppInstance;
   let email: string;
@@ -186,9 +186,9 @@ describe('approvals + wrapper project access', () => {
     email = uniqueEmail('approvals');
     kortix = createTestKortix(app, await loginUser(app, email, DEMO_PASSWORD));
     // Ownership is recorded on provision, and the policy refuses every
-    // `projects/{id}/…` call for an id the caller doesn't own — so nothing
+    // `workspaces/{id}/…` call for an id the caller doesn't own — so nothing
     // below is reachable until this runs.
-    await kortix.projects.provision({ name: 'Approvals project' });
+    await kortix.workspaces.provision({ name: 'Approvals workspace' });
   }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
@@ -197,11 +197,11 @@ describe('approvals + wrapper project access', () => {
     resetUsersStore();
   });
 
-  test('a pending gate is read from the session-scoped audit, not the project inbox', async () => {
+  test('a pending gate is read from the session-scoped audit, not the workspace inbox', async () => {
     upstream.reset();
 
     const view = sessionApprovalsView(
-      await kortix.session(PROJECT_ID, SESSION_ID).audit(50),
+      await kortix.session(WORKSPACE_ID, SESSION_ID).audit(50),
     );
 
     expect(view.pending).toHaveLength(1);
@@ -213,9 +213,9 @@ describe('approvals + wrapper project access', () => {
     const read = upstream.requests.filter((r) => r.method === 'GET');
     expect(read).toHaveLength(1);
     expect(read[0]!.path).toBe(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/audit?limit=50`,
+      `/v1/workspaces/${WORKSPACE_ID}/sessions/${SESSION_ID}/audit?limit=50`,
     );
-    // The project-wide inbox would have handed this browser every OTHER
+    // The workspace-wide inbox would have handed this browser every OTHER
     // end-user's pending execution ids, and an execution id is all the resolve
     // route needs — so it must never be the read the panel makes.
     expect(upstream.requests.some((r) => r.path.includes('/approvals'))).toBe(
@@ -227,12 +227,12 @@ describe('approvals + wrapper project access', () => {
   test('approving posts the decision to the approval route for that execution', async () => {
     upstream.reset();
 
-    await kortix.project(PROJECT_ID).approvals.resolve(PENDING_EXECUTION, 'approve');
+    await kortix.workspace(WORKSPACE_ID).approvals.resolve(PENDING_EXECUTION, 'approve');
 
     expect(upstream.requests).toHaveLength(1);
     const posted = upstream.requests[0]!;
     expect(posted.method).toBe('POST');
-    expect(posted.path).toBe(`/v1/projects/${PROJECT_ID}/approvals/${PENDING_EXECUTION}`);
+    expect(posted.path).toBe(`/v1/workspaces/${WORKSPACE_ID}/approvals/${PENDING_EXECUTION}`);
     expect(posted.body).toEqual({ decision: 'approve' });
     expect(posted.authorization).toBe(`Bearer ${WRAPPER_KEY}`);
   });
@@ -241,7 +241,7 @@ describe('approvals + wrapper project access', () => {
     upstream.reset();
 
     await kortix
-      .project(PROJECT_ID)
+      .workspace(WORKSPACE_ID)
       .approvals.resolve(PENDING_EXECUTION, 'deny');
 
     expect(upstream.requests[0]!.body).toEqual({ decision: 'deny' });
@@ -256,7 +256,7 @@ describe('approvals + wrapper project access', () => {
   test('a decision can never carry a scope that widens it', async () => {
     upstream.reset();
 
-    await kortix.project(PROJECT_ID).approvals.resolve(PENDING_EXECUTION, 'approve');
+    await kortix.workspace(WORKSPACE_ID).approvals.resolve(PENDING_EXECUTION, 'approve');
 
     const body = upstream.requests[0]!.body as Record<string, unknown>;
     expect(body).toEqual({ decision: 'approve' });
@@ -265,7 +265,7 @@ describe('approvals + wrapper project access', () => {
 
   test('403 APPROVAL_REQUIRES_HUMAN survives the proxy and keeps its own meaning', async () => {
     const err = await kortix
-      .project(PROJECT_ID)
+      .workspace(WORKSPACE_ID)
       .approvals.resolve(SELF_APPROVAL_EXECUTION, 'approve')
       .then(
         () => null,
@@ -298,7 +298,7 @@ describe('approvals + wrapper project access', () => {
   test('the session list is forwarded without an attribution filter', async () => {
     upstream.reset();
 
-    await kortix.project(PROJECT_ID).sessions.list();
+    await kortix.workspace(WORKSPACE_ID).sessions.list();
 
     expect(upstream.requests).toHaveLength(1);
     const listed = new URL(upstream.requests[0]!.path, 'http://upstream.test');

@@ -5,7 +5,7 @@ import { useState } from 'react';
 import {
   fetchCostExportCsv,
   type CostExportResult,
-  type ProjectCostExportOptions,
+  type WorkspaceCostExportOptions,
   type SessionCostExportOptions,
 } from '@kortix/sdk';
 
@@ -18,7 +18,7 @@ import { useBillingAccountId } from '@/stores/billing-account-context';
 
 /** Which list route the export runs against — the same discriminant
  *  `fetchCostExportCsv` overloads on. */
-export type CostExportKind = 'projects' | 'sessions';
+export type CostExportKind = 'workspaces' | 'sessions';
 
 /**
  * The filename the browser saves the download as.
@@ -94,8 +94,8 @@ function pad2(value: number): string {
  * counting the header.
  *
  * `encodeField` (`apps/api/src/shared/cost-csv.ts`) quotes any value holding
- * CR, LF, a comma or a quote, and both `project_name` and `owner` are free
- * text the account's own users control. So a project named with an embedded
+ * CR, LF, a comma or a quote, and both `workspace_name` and `owner` are free
+ * text the account's own users control. So a workspace named with an embedded
  * newline puts a real line break inside a quoted field, and splitting the
  * body on newlines counts that one row twice.
  *
@@ -214,12 +214,12 @@ export function CostExportButtonView({ isExporting, onExport }: CostExportButton
 /** Everything the export query needs beyond the window and the account, which
  *  come from `range` and the billing account context. Split per kind so the
  *  compiler rejects a filter the route does not accept — `sort: 'name_asc'`
- *  is valid on the project rollup and a 400 on the session list. */
-export type ProjectCostExportFilters = Omit<ProjectCostExportOptions, 'from' | 'to' | 'accountId'>;
+ *  is valid on the workspace rollup and a 400 on the session list. */
+export type WorkspaceCostExportFilters = Omit<WorkspaceCostExportOptions, 'from' | 'to' | 'accountId'>;
 export type SessionCostExportFilters = Omit<SessionCostExportOptions, 'from' | 'to' | 'accountId'>;
 
 export type CostExportButtonProps = { range: CostRange } & (
-  | { kind: 'projects'; filters?: ProjectCostExportFilters }
+  | { kind: 'workspaces'; filters?: WorkspaceCostExportFilters }
   | { kind: 'sessions'; filters?: SessionCostExportFilters }
 );
 
@@ -239,11 +239,11 @@ export type CostExportButtonProps = { range: CostRange } & (
  *    `account_id` through `resolveScopedAccountId(c, 'query')` — the caller's
  *    PRIMARY account, which on a team billing page is the wrong one.
  *  - `/usage/session-costs` (`resolveSessionCostAccountId`, `usage.ts:48`)
- *    resolves it to the PROJECT's account whenever `project_id` is present,
+ *    resolves it to the PROJECT's account whenever `workspace_id` is present,
  *    after asserting `PROJECT_GATEWAY_SPEND_READ`; only a request with
  *    neither falls through to `resolveScopedAccountId`. The sole sessions
  *    caller here (`SessionsLevel`, via `buildSessionsLevelExportFilters`)
- *    always sends `project_id`, so that fallback is unreachable from it
+ *    always sends `workspace_id`, so that fallback is unreachable from it
  *    today. Passing `accountId` keeps the export on the same branch the
  *    table's own query already takes.
  *
@@ -283,9 +283,9 @@ export function CostExportButton(props: CostExportButtonProps) {
       // overloaded `fetchCostExportCsv` be called at all — and what makes the
       // per-kind filter type the compiler checks the one for this route.
       const result =
-        props.kind === 'projects'
+        props.kind === 'workspaces'
           ? await fetchCostExportCsv(
-              'projects',
+              'workspaces',
               buildCostExportOptions(props.range, accountId, props.filters),
             )
           : await fetchCostExportCsv(

@@ -70,7 +70,7 @@ function findRepoRoot(): string | null {
   return null;
 }
 
-function getProjectRoot(): string {
+function getWorkspaceRoot(): string {
   return findRepoRoot() ?? process.cwd();
 }
 
@@ -328,7 +328,7 @@ setupApp.openapi(
     },
   }),
   async (c: any) => {
-  const root = getProjectRoot();
+  const root = getWorkspaceRoot();
   const envExists = existsSync(resolve(root, '.env'));
 
   let dockerRunning = false;

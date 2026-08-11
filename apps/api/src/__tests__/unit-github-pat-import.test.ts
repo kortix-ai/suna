@@ -23,7 +23,7 @@ import type { accountGithubInstallations } from '@kortix/db';
 import {
   PAT_MANAGED_GIT_INSTALLATION_ID,
   serializeGitHubInstallations,
-} from '../projects/lib/serializers';
+} from '../workspaces/lib/serializers';
 
 const ACCOUNT_ID = '99999999-8888-4777-8666-555555555555';
 

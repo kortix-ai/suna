@@ -122,9 +122,9 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
 describe('/new failure states: 503 gets its own message and no retry', () => {
   test('the hook reuses isManagedGitUnavailableError instead of writing a second detector', () => {
     expect(hook).toContain('isManagedGitUnavailableError');
-    expect(hook).toContain("from '@/lib/onboarding/ensure-first-project'");
+    expect(hook).toContain("from '@/lib/onboarding/ensure-first-workspace'");
     // Paired negative: the 503-detection string itself lives ONLY in
-    // ensure-first-project.ts. If this file duplicated it, the two checks
+    // ensure-first-workspace.ts. If this file duplicated it, the two checks
     // could silently drift apart.
     expect(hook).not.toContain('is not configured on this server');
   });

@@ -11,11 +11,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-import { recordSessionActivity } from '../projects/session-activity';
+import { recordSessionActivity } from '../workspaces/session-activity';
 import { db } from '../shared/db';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const USER = crypto.randomUUID();
 
 let n = 0;
@@ -25,7 +25,7 @@ async function seed(metadata: Record<string, unknown> = {}): Promise<string> {
   await db.insert(projectSessions).values({
     sessionId,
     accountId: ACCOUNT,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     branchName: sessionId,
     createdBy: USER,
     metadata,
@@ -44,13 +44,12 @@ async function rowOf(sessionId: string) {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'session-activity-test' });
   await db.insert(projects).values({
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     name: 'p',
     repoUrl: 'https://example.com/p.git',
   });
 });
-
 afterAll(async () => {
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT)); // cascades sessions
@@ -61,7 +60,7 @@ describe('recordSessionActivity', () => {
     const sessionId = await seed();
     const at = Date.parse('2026-08-11T09:30:00.000Z');
 
-    await recordSessionActivity({ sessionId, projectId: PROJECT, at });
+    await recordSessionActivity({ sessionId, workspaceId: WORKSPACE, at });
 
     const row = await rowOf(sessionId);
     expect(row.metadata.last_activity_at).toBe('2026-08-11T09:30:00.000Z');
@@ -75,7 +74,7 @@ describe('recordSessionActivity', () => {
       opencode_sessions: [{ id: 'oc-1', updated_at: 1 }],
     });
 
-    await recordSessionActivity({ sessionId, projectId: PROJECT });
+    await recordSessionActivity({ sessionId, workspaceId: WORKSPACE });
 
     const { metadata } = await rowOf(sessionId);
     expect(metadata.name).toBe('Generated Title');
@@ -89,28 +88,28 @@ describe('recordSessionActivity', () => {
 
     await recordSessionActivity({
       sessionId,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       at: Date.parse('2026-08-10T09:00:00.000Z'),
     });
     await recordSessionActivity({
       sessionId,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       at: Date.parse('2026-08-11T09:00:00.000Z'),
     });
 
     expect((await rowOf(sessionId)).metadata.last_activity_at).toBe('2026-08-11T09:00:00.000Z');
   });
 
-  test('scoped to its project — a mismatched projectId writes nothing', async () => {
+  test('scoped to its workspace — a mismatched workspaceId writes nothing', async () => {
     const sessionId = await seed();
 
-    await recordSessionActivity({ sessionId, projectId: crypto.randomUUID() });
+    await recordSessionActivity({ sessionId, workspaceId: crypto.randomUUID() });
 
     expect((await rowOf(sessionId)).metadata.last_activity_at).toBeUndefined();
   });
 
   test('never throws on a missing identifier', async () => {
-    await recordSessionActivity({ sessionId: '', projectId: PROJECT });
-    await recordSessionActivity({ sessionId: 'x', projectId: '' });
+    await recordSessionActivity({ sessionId: '', workspaceId: WORKSPACE });
+    await recordSessionActivity({ sessionId: 'x', workspaceId: '' });
   });
 });

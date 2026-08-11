@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { sessionTabTitleFromSession } from './session-tab-title';
-import { listProjectSessions, type ProjectSession } from '@kortix/sdk';
+import { listWorkspaceSessions, type WorkspaceSession } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
 /**
@@ -24,10 +24,10 @@ import { qk } from '@kortix/sdk/react';
  * subscriber and no re-render.
  */
 export function SessionTabTitleSync({
-  projectId,
+  workspaceId,
   sessionId,
 }: {
-  projectId: string;
+  workspaceId: string;
   sessionId: string;
 }) {
   // A pure READER of the session list the page already loads. `enabled: false`
@@ -44,11 +44,11 @@ export function SessionTabTitleSync({
   // `session.updated`, rename, restart, create) then reject with "No queryFn
   // was passed" and the sidebar list silently stops syncing.
   const { data: title } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryKey: qk.workspace.sessions(workspaceId),
+    queryFn: () => listWorkspaceSessions(workspaceId),
     enabled: false,
     notifyOnChangeProps: ['data'],
-    select: (sessions: ProjectSession[]) => {
+    select: (sessions: WorkspaceSession[]) => {
       const session = sessions.find((item) => item.session_id === sessionId);
       // No record cached yet: leave whatever the server resolved alone rather
       // than overwriting a correct title with "Untitled session".

@@ -10,15 +10,15 @@ import { join } from 'node:path';
 
 describe('sandbox template update synchronization', () => {
   test('PATCH schedules the updated slug on every enabled template provider', () => {
-    const source = readFileSync(join(import.meta.dir, '..', 'projects', 'routes', 'r2.ts'), 'utf8');
-    const routeStart = source.indexOf('// PATCH /v1/projects/:projectId/sandbox-templates/:templateId');
-    const routeEnd = source.indexOf('// DELETE /v1/projects/:projectId/sandbox-templates/:templateId');
+    const source = readFileSync(join(import.meta.dir, '..', 'workspaces', 'routes', 'r2.ts'), 'utf8');
+    const routeStart = source.indexOf('// PATCH /v1/workspaces/:workspaceId/sandbox-templates/:templateId');
+    const routeEnd = source.indexOf('// DELETE /v1/workspaces/:workspaceId/sandbox-templates/:templateId');
     expect(routeStart).toBeGreaterThan(-1);
     expect(routeEnd).toBeGreaterThan(routeStart);
 
     const patchRoute = source.slice(routeStart, routeEnd);
-    expect(patchRoute).toContain('const updated = await updateTemplate(templateId, patch, projectId)');
-    expect(patchRoute).toContain('kickRoutedPreBuild(project, {');
+    expect(patchRoute).toContain('const updated = await updateTemplate(templateId, patch, workspaceId)');
+    expect(patchRoute).toContain('kickRoutedPreBuild(workspace, {');
     expect(patchRoute).toContain('slug: updated.slug');
     expect(patchRoute).toContain('accountId: loaded.row.accountId');
     expect(patchRoute).toContain("source: 'manual'");

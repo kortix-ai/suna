@@ -27,7 +27,7 @@ import type {
   ConnectorBindingChoice,
   ConnectorBindingUnavailable,
 } from '@/server/bindable-connections';
-import type { ProjectSecret } from '@kortix/sdk';
+import type { WorkspaceSecret } from '@kortix/sdk';
 
 // ── Which controls may touch THIS session ───────────────────────────────────
 
@@ -57,7 +57,7 @@ const COPY: Record<ScopeControlKey, { badge: string; note: string }> = {
   },
   connections: {
     badge: 'Changeable',
-    note: 'What you set REPLACES the current bindings. Unlike secrets this is fully retroactive — a binding is resolved server-side on each tool call, so the next call already uses the new one. An alias you unbind falls back to the project default.',
+    note: 'What you set REPLACES the current bindings. Unlike secrets this is fully retroactive — a binding is resolved server-side on each tool call, so the next call already uses the new one. An alias you unbind falls back to the workspace default.',
   },
 };
 
@@ -85,7 +85,7 @@ export const SECRET_MEMBERSHIP_LABEL: Record<SecretMembership, string> = {
 };
 
 export interface ScopeBarSecretRow {
-  /** What the allowlist addresses. Unique per project. */
+  /** What the allowlist addresses. Unique per workspace. */
   identifier: string;
   /** The env KEY the value lands on. Deliberately NOT unique. */
   name: string;
@@ -96,7 +96,7 @@ export interface ScopeBarSecrets {
   /** Whether the authoritative scope has an allowlist. */
   narrowed: boolean;
   rows: ScopeBarSecretRow[];
-  /** Allowlisted identifiers with no project secret behind them. */
+  /** Allowlisted identifiers with no workspace secret behind them. */
   missing: string[];
   /** Chip text — short enough to sit under the composer. */
   summary: string;
@@ -104,10 +104,10 @@ export interface ScopeBarSecrets {
 }
 
 export const MISSING_SECRET_NOTE =
-  'Named in this session’s allowlist but not a project secret now — it was removed, or it never existed.';
+  'Named in this session’s allowlist but not a workspace secret now — it was removed, or it never existed.';
 
 export function scopeBarSecrets(input: {
-  secrets: ProjectSecret[] | undefined;
+  secrets: WorkspaceSecret[] | undefined;
   /** `session.secrets_allowlist`. null/undefined = never narrowed. */
   allowlist: string[] | null | undefined;
 }): ScopeBarSecrets {
@@ -161,7 +161,7 @@ export function scopeBarSecrets(input: {
       missing,
       summary: 'None',
       detail:
-        'The current scope has an empty allowlist. This is a real choice: the session receives no project secrets.',
+        'The current scope has an empty allowlist. This is a real choice: the session receives no workspace secrets.',
     };
   }
   return {
@@ -199,7 +199,7 @@ export const NEW_IDENTIFIER_HINT =
  */
 export function scopeDraftIssues(
   draft: string[],
-  secrets: ProjectSecret[] | undefined,
+  secrets: WorkspaceSecret[] | undefined,
 ): ScopeDraftIssue[] {
   // Allowlistable rows ONLY. Create resolves the allowlist against runtime-scoped
   // secrets alone, so a channel-install row is not a candidate — judging the
@@ -218,7 +218,7 @@ export function scopeDraftIssues(
         identifier,
         kind: 'not_created',
         conflicts: [],
-        message: `${identifier} is not a project secret yet. Create it in Settings → Secrets before you apply this scope.`,
+        message: `${identifier} is not a workspace secret yet. Create it in Settings → Secrets before you apply this scope.`,
       });
       continue;
     }
@@ -246,7 +246,7 @@ export type TypedIdentifier =
 /** What the "add an identifier" field is looking at right now. */
 export function classifyTypedIdentifier(
   text: string,
-  input: { secrets: ProjectSecret[] | undefined; draft: string[] },
+  input: { secrets: WorkspaceSecret[] | undefined; draft: string[] },
 ): TypedIdentifier {
   const identifier = text.trim();
   if (identifier.length === 0) return { kind: 'empty' };
@@ -266,7 +266,7 @@ export function classifyTypedIdentifier(
 
 export interface ScopeBarConnector {
   alias: string;
-  /** What THIS session is bound to. null = the project default. */
+  /** What THIS session is bound to. null = the workspace default. */
   bound: string | null;
   boundConnectionId: string | null;
   /** Connections available for a replacement binding. */
@@ -282,12 +282,12 @@ export interface ScopeBarConnectors {
 }
 
 /**
- * Every alias worth a row: the ones the project has connections for, plus any
+ * Every alias worth a row: the ones the workspace has connections for, plus any
  * this session is bound to.
  *
  * The second half matters. A session bound to a connection that has since been
  * revoked disappears from the choices list entirely, and dropping the row would
- * quietly claim the session runs on the project default — which it does not.
+ * quietly claim the session runs on the workspace default — which it does not.
  */
 export function scopeBarConnectors(input: {
   choices: ConnectorBindingChoice[] | undefined;
@@ -331,7 +331,7 @@ export function scopeBarConnectors(input: {
     rows.length === 0
       ? 'None'
       : bound === 0
-        ? 'Project defaults'
+        ? 'Workspace defaults'
         : `${bound} bound`;
   return { rows, summary };
 }
@@ -342,7 +342,7 @@ export function scopeBarConnectors(input: {
  * The draft states are three-valued and easy to get wrong:
  *   `undefined` — untouched, so there is nothing to apply
  *   `null`      — deliberately "stop narrowing" (a real, applicable change)
- *   `string[]`  — an explicit list, including `[]` for "no project secrets"
+ *   `string[]`  — an explicit list, including `[]` for "no workspace secrets"
  *
  * The first version tested `draft !== null`, which is TRUE for the untouched
  * `undefined` — so the Apply button rendered from first paint, above a list the

@@ -48,7 +48,7 @@ const unavailableCatalog: SessionScopeSelectionCatalog = {
 export interface SessionOverrideSlot {
   /**
    * What it resolves to now. When nothing overrides the axis this names its
-   * real source ("Agent default", "Project default") — never "none".
+   * real source ("Agent default", "Workspace default") — never "none".
    */
   summary: string;
   overridden?: boolean;
@@ -60,7 +60,7 @@ export interface SessionOverrideSlot {
 }
 
 export interface SessionOverridesToolbarProps {
-  projectId: string;
+  workspaceId: string;
   sessionId?: string;
   agentName?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
@@ -100,7 +100,7 @@ function hasAvailableScopeAxis(catalog: SessionScopeSelectionCatalog): boolean {
  * editable would be a lie.
  */
 export function SessionOverridesToolbar({
-  projectId,
+  workspaceId,
   sessionId,
   agentName,
   onCommittedDraft,
@@ -110,7 +110,7 @@ export function SessionOverridesToolbar({
   sandbox,
 }: SessionOverridesToolbarProps) {
   const { scope, catalog, saveScope, isLoading, isScopeLoading } = useSessionScope({
-    projectId,
+    workspaceId,
     sessionId,
     agentName,
   });
@@ -119,13 +119,13 @@ export function SessionOverridesToolbar({
 
   const initializationKey = useMemo(() => {
     if (!catalog) return null;
-    const identity = `${projectId}:${sessionId ?? 'new'}:${agentName ?? ''}`;
+    const identity = `${workspaceId}:${sessionId ?? 'new'}:${agentName ?? ''}`;
     if (sessionId) {
       if (!scope) return null;
       return `${identity}:${catalog.secrets.status}:${catalog.connector_connections.status}:${activeScopeSignature(scope)}`;
     }
     return `${identity}:${newScopeCatalogSignature(catalog)}`;
-  }, [agentName, catalog, projectId, scope, sessionId]);
+  }, [agentName, catalog, workspaceId, scope, sessionId]);
 
   const [draftState, setDraftState] = useState<{ key: string | null; draft: SessionScopeDraft }>({
     key: null,
@@ -234,7 +234,7 @@ export function SessionOverridesToolbar({
         overridden: reasoningEffort.overridden,
         description:
           reasoningEffort.description ??
-          'How much the model reasons before it answers. This one is stored per project and per model, so every session in this project using this model follows it.',
+          'How much the model reasons before it answers. This one is stored per workspace and per model, so every session in this workspace using this model follows it.',
         editor: reasoningEffort.control,
         onReset: reasoningEffort.onReset,
         resetLabel: reasoningEffort.resetLabel,
@@ -272,8 +272,8 @@ export function SessionOverridesToolbar({
           : 'Unavailable',
       overridden: sessionConnectorsAreOverridden(draft),
       description:
-        'Which connected accounts this session may use. By default every connector the agent grants resolves to the project’s default connection; pick here only to pin this session to something else.',
-      resetLabel: 'Reset to project default',
+        'Which connected accounts this session may use. By default every connector the agent grants resolves to the workspace’s default connection; pick here only to pin this session to something else.',
+      resetLabel: 'Reset to workspace default',
       editor: (
         <SessionConnectorsEditor
           draft={draft}
@@ -297,7 +297,7 @@ export function SessionOverridesToolbar({
         <dl className="text-sm">
           <div className="border-border flex items-center justify-between gap-3 border-b py-2">
             <dt className="text-muted-foreground text-xs">Template</dt>
-            <dd className="text-foreground truncate text-xs">{sandbox?.slug ?? 'Project default'}</dd>
+            <dd className="text-foreground truncate text-xs">{sandbox?.slug ?? 'Workspace default'}</dd>
           </div>
           <div className="flex items-center justify-between gap-3 py-2">
             <dt className="text-muted-foreground text-xs">Provider</dt>

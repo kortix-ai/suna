@@ -6,7 +6,7 @@ import type { TeamsActivity } from './types';
 const PENDING_AUTH_TTL_MS = 10 * 60 * 1000;
 
 export async function createPendingTeamsAuthMessage(input: {
-  projectId: string;
+  workspaceId: string;
   tenantId: string;
   teamsUserId: string;
   activity: TeamsActivity;
@@ -17,9 +17,9 @@ export async function createPendingTeamsAuthMessage(input: {
     const rows = await db
       .insert(chatPendingAuthMessages)
       .values({
-        projectId: input.projectId,
+        workspaceId: input.workspaceId,
         platform: 'teams',
-        workspaceId: input.tenantId,
+        platformWorkspaceId: input.tenantId,
         platformUserId: input.teamsUserId,
         envelope: {},
         event: input.activity as unknown as Record<string, unknown>,
@@ -37,19 +37,19 @@ export async function consumePendingTeamsAuthMessage(input: {
   pendingId: string | undefined;
   tenantId: string;
   teamsUserId: string;
-}): Promise<{ projectId: string; activity: TeamsActivity } | null> {
+}): Promise<{ workspaceId: string; activity: TeamsActivity } | null> {
   if (!input.pendingId || !input.tenantId || !input.teamsUserId) return null;
   try {
     const [row] = await db
       .select({
-        projectId: chatPendingAuthMessages.projectId,
+        workspaceId: chatPendingAuthMessages.workspaceId,
         event: chatPendingAuthMessages.event,
       })
       .from(chatPendingAuthMessages)
       .where(
         and(
           eq(chatPendingAuthMessages.pendingId, input.pendingId),
-          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          eq(chatPendingAuthMessages.platformWorkspaceId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
         ),
@@ -57,7 +57,7 @@ export async function consumePendingTeamsAuthMessage(input: {
       .limit(1);
     if (!row) return null;
     await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.pendingId, input.pendingId));
-    return { projectId: row.projectId, activity: row.event as unknown as TeamsActivity };
+    return { workspaceId: row.workspaceId, activity: row.event as unknown as TeamsActivity };
   } catch (err) {
     console.warn('[teams-auth] failed to consume pending Teams message', err);
     return null;

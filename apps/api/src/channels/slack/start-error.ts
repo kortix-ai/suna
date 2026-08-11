@@ -2,7 +2,7 @@
  * Honest, actionable copy for EVERY non-success outcome of starting a Slack
  * session — surfaced in-thread instead of a generic "try again" so a real
  * blocker tells the user exactly what to do. Every error shape the create path
- * (createProjectSession + the session lifecycle) can return is mapped here:
+ * (createWorkspaceSession + the session lifecycle) can return is mapped here:
  * most-specific by `code`, then by HTTP status, then a safe generic fallback.
  *
  * The AGENT_NOT_DECLARED case is handled by its own inline-picker branch at the
@@ -24,7 +24,7 @@ export function startErrorMessage(status: number | undefined, body: unknown): st
   // Most specific: known error CODES from the create path.
   switch (code) {
     case 'UNKNOWN_SANDBOX_TEMPLATE':
-      return "I couldn't start a session — the sandbox template configured for this project no longer exists. Update it in the project's Kortix settings, then send your message again.";
+      return "I couldn't start a session — the sandbox template configured for this workspace no longer exists. Update it in the workspace's Kortix settings, then send your message again.";
     case 'KORTIX_URL_UNREACHABLE':
       return "I couldn't start a session — Kortix couldn't reach the sandbox runtime just now. This is usually a brief infrastructure hiccup; give it a moment and send your message again.";
     case 'WORKSPACE_MODE_UNAVAILABLE':
@@ -40,7 +40,7 @@ export function startErrorMessage(status: number | undefined, body: unknown): st
     case 403:
       return "I couldn't start a session — this workspace doesn't have permission to run one here. Ask a Kortix workspace admin to grant access, then send your message again.";
     case 404:
-      return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this channel with `/kortix switch`, then try again.";
+      return "I couldn't find this workspace to start a session — it may have been moved or deleted. Reconnect Kortix to this channel with `/kortix switch`, then try again.";
     case 409:
       return "I couldn't find a Kortix account to run this session as. Connect your account with `/kortix login`, then send your message again.";
     case 429:

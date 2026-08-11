@@ -40,8 +40,8 @@ export function flattenMarketplaceItems(pages: { items: MarketplaceItem[] }[]): 
 
 /** Groups items by their `TYPE_SECTIONS` label, preserving section order and
  *  bucketing anything unmatched into "Other". Extracted from the old
- *  `sections` useMemo so it's independently testable. Also reused by the project
- *  detail to render a project's contents in the same typed sections + grid as
+ *  `sections` useMemo so it's independently testable. Also reused by the workspace
+ *  detail to render a workspace's contents in the same typed sections + grid as
  *  the marketplace gallery. */
 export function groupMarketplaceItemsByType(
   items: MarketplaceItem[],

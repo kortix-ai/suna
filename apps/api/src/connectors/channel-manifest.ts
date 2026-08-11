@@ -15,7 +15,7 @@
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
-import type { ChannelPlatform } from '../projects/connectors';
+import type { ChannelPlatform } from '../workspaces/connectors';
 import { channelDefaultSlug, channelLabel } from './channels';
 import { withChannelDeclaration, withoutChannelDeclaration } from './channel-rules';
 import { mutateManifestWithRetry } from './manifest-mutation';
@@ -32,13 +32,13 @@ function connectorsOf(manifest: { raw: Record<string, unknown> }): Entry[] {
  * whether a commit was made. Never throws.
  */
 export async function ensureChannelConnectorDeclared(
-  projectId: string,
+  workspaceId: string,
   platform: ChannelPlatform,
   slug = channelDefaultSlug(platform),
   name = channelLabel(platform),
 ): Promise<boolean> {
   try {
-    const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const [row] = await db.select().from(projects).where(eq(projects.workspaceId, workspaceId)).limit(1);
     if (!row) return false;
     let changed = false;
     const result = await mutateManifestWithRetry(
@@ -66,12 +66,12 @@ export async function ensureChannelConnectorDeclared(
  * platform was disconnected. Best-effort; never throws.
  */
 export async function removeChannelConnectorDeclared(
-  projectId: string,
+  workspaceId: string,
   platform: ChannelPlatform,
   slug = channelDefaultSlug(platform),
 ): Promise<boolean> {
   try {
-    const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const [row] = await db.select().from(projects).where(eq(projects.workspaceId, workspaceId)).limit(1);
     if (!row) return false;
     let changed = false;
     const result = await mutateManifestWithRetry(

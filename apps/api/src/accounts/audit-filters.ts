@@ -23,7 +23,7 @@ export interface AuditFilterInput {
   untilRaw: string | null;
   /** Case-insensitive substring over action + resource_type + resource_id. */
   q: string | null;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorType?: string | null;
   source?: string | null;
@@ -44,7 +44,7 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   if (input.actor) {
     push(eq(auditEvents.actorUserId, input.actor));
   }
-  if (input.projectId) push(eq(auditEvents.projectId, input.projectId));
+  if (input.workspaceId) push(eq(auditEvents.workspaceId, input.workspaceId));
   if (input.sessionId) push(eq(auditEvents.sessionId, input.sessionId));
   if (input.actorType) push(eq(auditEvents.actorType, input.actorType));
   if (input.source) {
@@ -112,7 +112,7 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
         ilike(auditEvents.requestId, term),
         ilike(auditEvents.traceId, term),
         ilike(auditEvents.correlationId, term),
-        sql`${auditEvents.projectId}::text ilike ${term}`,
+        sql`${auditEvents.workspaceId}::text ilike ${term}`,
       ),
     );
   }

@@ -37,7 +37,7 @@ describe('desktop route allowlist', () => {
   });
 
   test('the desktop bounce lands on the door that resolves a real workspace', () => {
-    expect(source).toContain('NextResponse.redirect(new URL(PROJECT_LANDING_PATH');
+    expect(source).toContain('NextResponse.redirect(new URL(WORKSPACE_LANDING_PATH');
   });
 
   test('/new is NOT public — it requires authentication', () => {

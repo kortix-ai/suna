@@ -1,6 +1,6 @@
 'use client';
 
-import type { AdminConnector } from '@kortix/sdk';
+import type { WorkspaceAdminConnector } from '@kortix/sdk';
 
 import { Label } from '@/components/ui/label';
 import {
@@ -12,8 +12,8 @@ import {
 import { ComputerConnectorAccount } from './computer-connector-account';
 
 export interface ConnectorAccountsProps {
-  projectId: string;
-  connector: AdminConnector;
+  workspaceId: string;
+  connector: WorkspaceAdminConnector;
   displayName: string;
   canWrite: boolean;
   canManageConnections: boolean;
@@ -27,7 +27,7 @@ export interface ConnectorAccountsProps {
 /**
  * Accounts — which accounts this connector runs as.
  *
- * Pipedream connectors hold many authorizations (one project account plus one
+ * Pipedream connectors hold many authorizations (one workspace account plus one
  * per member), so they get `ConnectionsList` and, for a per-user connector, the
  * team roster below it. Every other connector has at most one credential, owned
  * by `ConnectionSection` — or `ChannelConnectionSection` for channels.
@@ -38,7 +38,7 @@ export interface ConnectorAccountsProps {
  * on both tabs would print the same form twice.
  */
 export function ConnectorAccounts({
-  projectId,
+  workspaceId,
   connector,
   displayName,
   canWrite,
@@ -52,14 +52,14 @@ export function ConnectorAccounts({
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
-  const usesProjectAuthorization = connector.authorizationStrategy === 'project';
+  const usesWorkspaceAuthorization = connector.authorizationStrategy === 'workspace';
   const showRoster =
     isPipedream && canManageConnections && connector.authorizationStrategy === 'user';
 
   if (isComputer) {
     return (
       <ComputerConnectorAccount
-        projectId={projectId}
+        workspaceId={workspaceId}
         connector={connector}
         canWrite={canWrite}
         onChanged={onChanged}
@@ -71,7 +71,7 @@ export function ConnectorAccounts({
     return (
       <div className="space-y-5">
         <ConnectionsList
-          projectId={projectId}
+          workspaceId={workspaceId}
           connector={connector}
           displayName={displayName}
           canManageConnections={canManageConnections}
@@ -83,7 +83,7 @@ export function ConnectorAccounts({
           <section className="space-y-2">
             <Label>Team members</Label>
             <ConnectionRoster
-              projectId={projectId}
+              workspaceId={workspaceId}
               connectorSlug={connector.slug}
               displayName={displayName}
             />
@@ -101,10 +101,10 @@ export function ConnectorAccounts({
     return (
       <p className="text-muted-foreground text-sm text-pretty">
         {displayName} runs on{' '}
-        {usesProjectAuthorization
-          ? 'one account shared by the whole project'
+        {usesWorkspaceAuthorization
+          ? 'one account shared by the whole workspace'
           : 'each person’s own account'}
-        . You do not have permission to change it — ask a project manager.
+        . You do not have permission to change it — ask a workspace manager.
       </p>
     );
   }
@@ -114,7 +114,7 @@ export function ConnectorAccounts({
   // authorization owner is moving would race it.
   return isChannel ? (
     <ChannelConnectionSection
-      projectId={projectId}
+      workspaceId={workspaceId}
       connector={connector}
       onChanged={onChanged}
       onRemoved={onRemoved}
@@ -122,11 +122,11 @@ export function ConnectorAccounts({
     />
   ) : (
     <ConnectionSection
-      projectId={projectId}
+      workspaceId={workspaceId}
       connector={connector}
       onChanged={onChanged}
       canWrite={!strategyUpdating}
-      onSetCredential={usesProjectAuthorization ? onSetCredential : undefined}
+      onSetCredential={usesWorkspaceAuthorization ? onSetCredential : undefined}
     />
   );
 }

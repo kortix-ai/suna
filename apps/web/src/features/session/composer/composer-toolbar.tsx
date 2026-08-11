@@ -58,7 +58,7 @@ export interface ComposerToolbarProps {
   selectedVariant: string | null;
   onVariantChange?: (variant: string | null) => void;
 
-  projectId: string | undefined;
+  workspaceId: string | undefined;
 
   messages: MessageWithParts[] | undefined;
   onContextClick?: () => void;
@@ -100,7 +100,7 @@ export function ComposerToolbar({
   variants,
   selectedVariant,
   onVariantChange,
-  projectId,
+  workspaceId,
   messages,
   onContextClick,
   toolbarSlot,
@@ -181,7 +181,7 @@ export function ComposerToolbar({
         )}
         {/* Capability-gated internally: renders nothing unless the selected
             model actually exposes a reasoning-effort knob. */}
-        <ReasoningEffortSelector model={selectedModel} projectId={projectId} />
+        <ReasoningEffortSelector model={selectedModel} workspaceId={workspaceId} />
       </div>
 
       {/* RIGHT: ambient token progress, any slot content, voice, send/stop. */}

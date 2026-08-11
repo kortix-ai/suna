@@ -33,7 +33,7 @@ Built-in hosts (always exist):
 Authentication:
   login [<name>]                      Sign in to a host (browser flow or
     [--token <pat>] [--api <url>]      --token PAT). Defaults to the active
-    [--no-project]                     host; an unknown <name> is registered
+    [--no-workspace]                   host; an unknown <name> is registered
                                       and signed in (like \`add\` + login).
   logout [<name>]                     Clear a host's stored token (default:
                                       active).
@@ -65,7 +65,7 @@ Examples:
   kortix hosts use selfhost
   kortix hosts use cloud
   kortix hosts whoami
-  kortix projects ls --host selfhost
+  kortix workspaces ls --host selfhost
   kortix hosts ls
 `;
 
@@ -76,7 +76,7 @@ the active host when <name> is omitted; an unknown <name> is registered
 and signed in (like \`kortix hosts add\` + login).
 
 A fresh login walks the hierarchy DOWN: host ✓ → account (auto when you
-belong to one, otherwise a prompt) → default project (prompt).
+belong to one, otherwise a prompt) → default workspace (prompt).
 
 Options:
   --token <pat>     Skip the browser flow and authenticate with a token.
@@ -85,7 +85,8 @@ Options:
                     new host with a non-default URL.
   --account <slug>  Pick the active account non-interactively (skips the
                     "Select your active account" prompt).
-  --no-project      Skip the default-project binding step at the end.
+  --no-workspace    Skip the default-workspace binding step at the end.
+  --no-project      Deprecated alias for --no-workspace.
   -h, --help        Show this help.
 
 Examples:
@@ -257,19 +258,19 @@ async function hostsLogin(args: string[]): Promise<number> {
   let token: string | undefined;
   let api: string | undefined;
   let account: string | undefined;
-  let noProject = false;
+  let noWorkspace = false;
   try {
     token = takeFlagValue(rest, ['--token']);
     api = takeFlagValue(rest, ['--api', '--url']);
     account = takeFlagValue(rest, ['--account']);
-    noProject = takeFlagBool(rest, ['--no-project']);
+    noWorkspace = takeFlagBool(rest, ['--no-workspace', '--no-project']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
   const positional = rest.find((a) => !a.startsWith('-'));
   const hostName = positional ?? activeHostName() ?? DEFAULT_HOST_NAME;
-  return performLogin({ hostName, token, api, account, noProject });
+  return performLogin({ hostName, token, api, account, noWorkspace });
 }
 
 async function hostsLogout(args: string[]): Promise<number> {

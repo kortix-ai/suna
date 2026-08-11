@@ -13,10 +13,10 @@ import {
 } from './drizzle-query-mock';
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'member';
+export type WorkspaceRole = 'manager' | 'editor' | 'member';
 
-export interface ProjectRow {
-  projectId: string;
+export interface WorkspaceRow {
+  workspaceId: string;
   accountId: string;
   name: string;
   repoUrl: string;
@@ -36,32 +36,32 @@ export interface AccountMemberRow {
   joinedAt: Date;
 }
 
-export interface ProjectMemberRow {
+export interface WorkspaceMemberRow {
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   userId: string;
-  projectRole: ProjectRole;
+  projectRole: WorkspaceRole;
   grantedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface ProjectsContractDbState {
+export interface WorkspacesContractDbState {
   accountMemberRows: AccountMemberRow[];
-  projectRows: ProjectRow[];
-  projectMemberRows: ProjectMemberRow[];
+  projectRows: WorkspaceRow[];
+  projectMemberRows: WorkspaceMemberRow[];
   installationRow: typeof accountGithubInstallations.$inferSelect | null;
   gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
-  nextProjectIds: string[];
+  nextWorkspaceIds: string[];
 }
 
 export const baseDate = new Date('2026-01-01T00:00:00Z');
 
-export function projectRow(overrides: Partial<ProjectRow> = {}): ProjectRow {
+export function projectRow(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
   return {
-    projectId: '00000000-0000-4000-a000-000000000201',
+    workspaceId: '00000000-0000-4000-a000-000000000201',
     accountId: '00000000-0000-4000-a000-000000000101',
-    name: 'Existing Project',
+    name: 'Existing Workspace',
     repoUrl: 'https://github.com/kortix/existing-project.git',
     defaultBranch: 'main',
     manifestPath: 'kortix.yaml',
@@ -75,7 +75,7 @@ export function projectRow(overrides: Partial<ProjectRow> = {}): ProjectRow {
 }
 
 function selectRows(
-  state: ProjectsContractDbState,
+  state: WorkspacesContractDbState,
   table: unknown,
   fields: Record<string, unknown> | undefined,
   condition: unknown,
@@ -83,7 +83,7 @@ function selectRows(
   const values = collectConditionValues(condition);
   const accountId = values.account_id as string | undefined;
   const userId = values.user_id as string | undefined;
-  const projectId = values.project_id as string | undefined;
+  const workspaceId = values.project_id as string | undefined;
   const repoUrl = values.repo_url as string | undefined;
   const status = values.status as string | undefined;
 
@@ -95,12 +95,19 @@ function selectRows(
     );
   }
   if (table === projectMembers) {
-    return state.projectMemberRows.filter(
+    const rows = state.projectMemberRows.filter(
       (row) =>
         (!accountId || row.accountId === accountId) &&
-        (!projectId || row.projectId === projectId) &&
+        (!workspaceId || row.workspaceId === workspaceId) &&
         (!userId || row.userId === userId),
     );
+    // Drizzle applies the canonical alias in
+    // `.select({ workspaceRole: projectMembers.projectRole })`. Preserve that
+    // projection in this black-box DB fixture instead of returning only the
+    // physical `projectRole` column name.
+    return fields && Object.hasOwn(fields, 'workspaceRole')
+      ? rows.map((row) => ({ ...row, workspaceRole: row.projectRole }))
+      : rows;
   }
   if (table === accountGithubInstallations)
     return state.installationRow ? [state.installationRow] : [];
@@ -108,28 +115,28 @@ function selectRows(
     return state.gitConnectionRows.filter(
       (row) =>
         (!accountId || row.accountId === accountId) &&
-        (!projectId || row.projectId === projectId),
+        (!workspaceId || row.workspaceId === workspaceId),
     );
   }
   if (table === projects) {
-    const inArrayProjectIds = extractStringArray(condition);
+    const inArrayWorkspaceIds = extractStringArray(condition);
     return state.projectRows.filter(
       (row) =>
         (!accountId || row.accountId === accountId) &&
-        (!projectId || row.projectId === projectId) &&
+        (!workspaceId || row.workspaceId === workspaceId) &&
         (!repoUrl || row.repoUrl === repoUrl) &&
         (!status || row.status === status) &&
-        (!inArrayProjectIds || inArrayProjectIds.includes(row.projectId)),
+        (!inArrayWorkspaceIds || inArrayWorkspaceIds.includes(row.workspaceId)),
     );
   }
   return [];
 }
 
-function insertProject(state: ProjectsContractDbState, values: any) {
-  const projectId = state.nextProjectIds.shift();
-  if (!projectId) throw new Error('test project id pool exhausted');
-  const row: ProjectRow = {
-    projectId,
+function insertWorkspace(state: WorkspacesContractDbState, values: any) {
+  const workspaceId = state.nextWorkspaceIds.shift();
+  if (!workspaceId) throw new Error('test project id pool exhausted');
+  const row: WorkspaceRow = {
+    workspaceId,
     accountId: values.accountId,
     name: values.name,
     repoUrl: values.repoUrl,
@@ -145,21 +152,21 @@ function insertProject(state: ProjectsContractDbState, values: any) {
   return row;
 }
 
-function grantProjectRole(
-  state: ProjectsContractDbState,
+function grantWorkspaceRole(
+  state: WorkspacesContractDbState,
   values: any,
-  set?: Partial<ProjectMemberRow>,
+  set?: Partial<WorkspaceMemberRow>,
 ) {
   const existing = state.projectMemberRows.find(
-    (row) => row.projectId === values.projectId && row.userId === values.userId,
+    (row) => row.workspaceId === values.workspaceId && row.userId === values.userId,
   );
   if (existing) {
     Object.assign(existing, set ?? values);
     return existing;
   }
-  const row: ProjectMemberRow = {
+  const row: WorkspaceMemberRow = {
     accountId: values.accountId,
-    projectId: values.projectId,
+    workspaceId: values.workspaceId,
     userId: values.userId,
     projectRole: values.projectRole,
     grantedBy: values.grantedBy ?? null,
@@ -170,8 +177,8 @@ function grantProjectRole(
   return row;
 }
 
-export function createProjectsContractDbMock(
-  state: ProjectsContractDbState,
+export function createWorkspacesContractDbMock(
+  state: WorkspacesContractDbState,
 ): any {
   const dbMock: any = {
     execute: async () => [],
@@ -200,7 +207,7 @@ export function createProjectsContractDbMock(
             }
             if (table === projectGitConnections) {
               const existingIndex = state.gitConnectionRows.findIndex(
-                (row) => row.projectId === values.projectId,
+                (row) => row.workspaceId === values.workspaceId,
               );
               const existing = state.gitConnectionRows[existingIndex];
               const row = {
@@ -208,7 +215,7 @@ export function createProjectsContractDbMock(
                   existing?.connectionId ??
                   '00000000-0000-4000-a000-000000000501',
                 accountId: values.accountId,
-                projectId: values.projectId,
+                workspaceId: values.workspaceId,
                 provider: values.provider,
                 repoUrl: values.repoUrl,
                 repoOwner: values.repoOwner ?? null,
@@ -236,10 +243,10 @@ export function createProjectsContractDbMock(
             }
             return table === projectMembers
               ? [
-                  grantProjectRole(
+                  grantWorkspaceRole(
                     state,
                     values,
-                    set as Partial<ProjectMemberRow>,
+                    set as Partial<WorkspaceMemberRow>,
                   ),
                 ]
               : [];
@@ -251,10 +258,10 @@ export function createProjectsContractDbMock(
             Promise.resolve(
               table === projectMembers
                 ? [
-                    grantProjectRole(
+                    grantWorkspaceRole(
                       state,
                       values,
-                      set as Partial<ProjectMemberRow>,
+                      set as Partial<WorkspaceMemberRow>,
                     ),
                   ]
                 : [],
@@ -262,7 +269,7 @@ export function createProjectsContractDbMock(
           catch: () => undefined,
         }),
         returning: async () => {
-          if (table === projects) return [insertProject(state, values)];
+          if (table === projects) return [insertWorkspace(state, values)];
           if (table === projectGitConnections) {
             return dbMock
               .insert(table)
@@ -271,19 +278,19 @@ export function createProjectsContractDbMock(
               .returning();
           }
           return table === projectMembers
-            ? [grantProjectRole(state, values)]
+            ? [grantWorkspaceRole(state, values)]
             : [];
         },
       }),
     }),
     update: (table: unknown) => ({
-      set: (updates: Partial<ProjectRow>) => ({
+      set: (updates: Partial<WorkspaceRow>) => ({
         where: (condition: unknown) => {
           const update = async () => {
             const values = collectConditionValues(condition);
             if (table !== projects) return [];
             const row = state.projectRows.find(
-              (project) => project.projectId === values.project_id,
+              (project) => project.workspaceId === values.project_id,
             );
             if (!row) return [];
             const normalizedUpdates = { ...updates };
@@ -314,7 +321,7 @@ export function createProjectsContractDbMock(
           state.projectMemberRows = state.projectMemberRows.filter(
             (row) =>
               !(
-                (!values.project_id || row.projectId === values.project_id) &&
+                (!values.project_id || row.workspaceId === values.project_id) &&
                 (!values.user_id || row.userId === values.user_id)
               ),
           );

@@ -10,7 +10,7 @@
  * a genuine timeout (its 30s timer fired) from an external abort, so this was a
  * real server-side hang — the handler took >30s to answer. The eligibility
  * handler awaits two UNBOUNDED DB ops: `latestSunaMigration` and, the likely
- * culprit, `countSunaProjects`, an un-LIMITed `count(*)` over the legacy
+ * culprit, `countSunaWorkspaces`, an un-LIMITed `count(*)` over the legacy
  * `public.projects` table (the OG Suna dataset, which can be large). It is polled
  * frequently by the Migrate button / suna-migration banner
  * (apps/web/src/hooks/legacy/use-suna-migration.ts: staleTime 15s, plus 2.5s

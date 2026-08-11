@@ -59,7 +59,7 @@ export {
   PhoneDisconnectIcon as IconPhoneOff,
   SpeakerHighIcon as IconVolume,
   // ── Files & folders ─────────────────────────────────────────
-  GitBranchIcon as IconProject,
+  GitBranchIcon as IconWorkspace,
   ArrowClockwiseIcon as IconRefresh,
   MinusIcon as IconRemove,
   MagnifyingGlassIcon as IconSearch,

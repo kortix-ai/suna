@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/marketing/button';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { latestWorkspacePath } from '@/lib/onboarding/last-workspace-cookie';
 import { cn } from '@/lib/utils';
 import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
@@ -82,7 +82,7 @@ export function ScrollCtaPill(): ReactNode {
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
-    window.location.href = user ? latestProjectPath(user?.id) : '/auth';
+    window.location.href = user ? latestWorkspacePath(user?.id) : '/auth';
   }, [user]);
 
   return (

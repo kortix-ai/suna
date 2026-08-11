@@ -1,6 +1,6 @@
 /**
- * SessionRenameSheet — bottom sheet to rename a project session.
- * Ported from web's RenameSessionModal: PATCH /projects/:id/sessions/:sid
+ * SessionRenameSheet — bottom sheet to rename a Workspace session.
+ * Ported from web's RenameSessionModal: PATCH /workspaces/:id/sessions/:sid
  * with { name }. Clearing the input reverts to the automatic title.
  */
 import React, { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
@@ -19,18 +19,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSheetBg } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
-import { updateProjectSession, type ProjectSession } from '@/lib/projects/projects-client';
-import { projectKeys } from '@/lib/projects/hooks';
+import { updateWorkspaceSession, type WorkspaceSession } from '@/lib/workspaces/workspaces-client';
+import { workspaceKeys } from '@/lib/workspaces/hooks';
 
 const MAX_NAME_LENGTH = 120;
 
 interface SessionRenameSheetProps {
-  projectId: string;
-  session: ProjectSession | null;
+  workspaceId: string;
+  session: WorkspaceSession | null;
 }
 
 export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameSheetProps>(
-  function SessionRenameSheet({ projectId, session }, ref) {
+  function SessionRenameSheet({ workspaceId, session }, ref) {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
     const insets = useSafeAreaInsets();
@@ -53,9 +53,9 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
     }, []);
 
     const rename = useMutation({
-      mutationFn: (name: string) => updateProjectSession(projectId, session!.session_id, { name }),
+      mutationFn: (name: string) => updateWorkspaceSession(workspaceId, session!.session_id, { name }),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+        queryClient.invalidateQueries({ queryKey: workspaceKeys.workspaceSessions(workspaceId) });
         haptics.success();
         dismiss();
       },

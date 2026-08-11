@@ -5,10 +5,10 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
-export function ProjectDeleteTool({ part }: ToolProps) {
+export function WorkspaceDeleteTool({ part }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
-  const project = (input.project as string) || '';
+  const project = (input.workspace as string) || '';
   return (
     <BasicTool
       icon={<Trash2 className="text-muted-foreground/40 size-3.5 shrink-0" />}
@@ -22,10 +22,10 @@ export function ProjectDeleteTool({ part }: ToolProps) {
     />
   );
 }
-ToolRegistry.register('project_delete', ProjectDeleteTool);
-ToolRegistry.register('project-delete', ProjectDeleteTool);
-ToolRegistry.register('oc-project_delete', ProjectDeleteTool);
-ToolRegistry.register('oc-project-delete', ProjectDeleteTool);
+ToolRegistry.register('project_delete', WorkspaceDeleteTool);
+ToolRegistry.register('project-delete', WorkspaceDeleteTool);
+ToolRegistry.register('oc-project_delete', WorkspaceDeleteTool);
+ToolRegistry.register('oc-project-delete', WorkspaceDeleteTool);
 
 function cleanWorkerOutput(raw: string): string {
   if (!raw) return '';

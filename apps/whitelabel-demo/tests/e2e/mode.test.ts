@@ -63,14 +63,29 @@ describe('mode bootstrap', () => {
     expect(html).toContain('animate-spin');
   });
 
+  test('deprecated Project browser routes redirect to canonical Workspace routes', async () => {
+    const list = await fetch(`${wrapperApp.baseUrl}/projects`, { redirect: 'manual' });
+    expect(list.status).toBe(307);
+    expect(new URL(list.headers.get('location')!, wrapperApp.baseUrl).pathname).toBe('/');
+
+    const detail = await fetch(
+      `${wrapperApp.baseUrl}/projects/workspace-1/sessions/session-1`,
+      { redirect: 'manual' },
+    );
+    expect(detail.status).toBe(307);
+    expect(new URL(detail.headers.get('location')!, wrapperApp.baseUrl).pathname).toBe(
+      '/workspaces/workspace-1/sessions/session-1',
+    );
+  });
+
   test('wrapper mode: the SDK reaches the enabled BFF and receives its auth gate', async () => {
     const kortix = createTestKortix(wrapperApp, 'invalid-wrapper-session');
-    await expect(kortix.projects.list()).rejects.toMatchObject({ status: 401 });
+    await expect(kortix.workspaces.list()).rejects.toMatchObject({ status: 401 });
   });
 
   test('direct mode: the SDK reports that the wrapper BFF is disabled', async () => {
     const kortix = createTestKortix(directApp, 'direct-mode-key');
-    await expect(kortix.projects.list()).rejects.toMatchObject({
+    await expect(kortix.workspaces.list()).rejects.toMatchObject({
       status: 500,
       details: {
         error: 'Wrapper mode is not enabled on this server (KORTIX_API_KEY is unset).',

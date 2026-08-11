@@ -151,12 +151,12 @@ export async function removeMarketplaceSource(id: string): Promise<{ ok: boolean
 }
 
 export async function createMarketplaceInstallSession(
-  projectId: string,
+  workspaceId: string,
   itemId: string,
 ): Promise<{ session_id: string }> {
   return unwrap(
     await backendApi.post<{ session_id: string }>(
-      `/projects/${encodeURIComponent(projectId)}/marketplace/install-session`,
+      `/projects/${encodeURIComponent(workspaceId)}/marketplace/install-session`,
       { id: itemId },
     ),
     'Failed to start marketplace install session',

@@ -73,7 +73,7 @@ const REPO = [
  */
 export function StepSourceOfTruth(): ReactNode {
   return (
-    <WebPanelWrapper activeTab="projects">
+    <WebPanelWrapper activeTab="workspaces">
       <PageHead
         title="Source of truth"
         sub="One git repo holds the whole company."

@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 
+import { workspaceIdFromEnv } from './workspace-env'
+
 /**
  * Outcome of a verified reload.
  *
@@ -47,7 +49,7 @@ import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
-import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
+import { mergeWorkspaceSecretEnv, type WorkspaceSecretEnvStore } from './workspace-secret-env'
 import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
@@ -287,11 +289,16 @@ export async function buildOpencodeConfigContent(
           KORTIX_CLI_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
           KORTIX_API_URL: connectorProxyMode ? connectorProxyUrl! : apiUrl!,
           PATH: '/usr/local/bin:/usr/bin:/bin',
-          // Lets the CLI target the project-explicit gateway route. Optional —
-          // the session token also pins the project for the legacy flat route,
-          // so this is belt-and-suspenders. Project id is session-independent so
+          // Lets the CLI target the workspace-explicit gateway route. Optional —
+          // the session token also pins the workspace for the legacy flat route.
+          // The workspace id is session-independent, so
           // it's safe to bake at seed.
-          ...(env.KORTIX_PROJECT_ID ? { KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID } : {}),
+          ...(workspaceIdFromEnv(env)
+            ? {
+                KORTIX_WORKSPACE_ID: workspaceIdFromEnv(env),
+                KORTIX_PROJECT_ID: workspaceIdFromEnv(env),
+              }
+            : {}),
         },
       },
     }
@@ -1102,7 +1109,7 @@ export type Opencode = {
    * config that fails to start.
    */
   reloadVerified(opts?: { forceFail?: boolean }): Promise<VerifiedReloadResult>
-  reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
+  reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextWorkspaceSecretEnv?: WorkspaceSecretEnvStore): void
   getPid(): number | null
   getInternalUrl(): string
   /**
@@ -1152,12 +1159,12 @@ export interface OpencodeSupervisorOptions {
 export function createOpencodeSupervisor(
   cfg: Config,
   opencodeConfigDir: string,
-  projectEnv?: ProjectEnvStore,
+  workspaceSecretEnv?: WorkspaceSecretEnvStore,
   options: OpencodeSupervisorOptions = {},
 ): Opencode {
   let currentCfg = cfg
   let currentOpencodeConfigDir = opencodeConfigDir
-  let currentProjectEnv = projectEnv
+  let currentWorkspaceSecretEnv = workspaceSecretEnv
   let child: ChildProcess | null = null
   let activePort = cfg.opencodeInternalPort
   let binaryPath: string | null = null
@@ -1217,7 +1224,7 @@ export function createOpencodeSupervisor(
         err: (err as Error).message,
       })
     }
-    const baseEnv = currentProjectEnv ? mergeProjectEnv(process.env, currentProjectEnv) : process.env
+    const baseEnv = currentWorkspaceSecretEnv ? mergeWorkspaceSecretEnv(process.env, currentWorkspaceSecretEnv) : process.env
     let env: NodeJS.ProcessEnv = applyManagedOpencodeEnv({
       ...baseEnv,
       ...buildGitIdentityEnv(currentCfg),
@@ -1535,8 +1542,8 @@ export function createOpencodeSupervisor(
   async function tryDisposeReload(): Promise<boolean> {
     // The SAME env spawnChild composes the config from, so a dispose and a
     // respawn can never disagree about what the config should be.
-    const baseEnv = currentProjectEnv
-      ? mergeProjectEnv(process.env, currentProjectEnv)
+    const baseEnv = currentWorkspaceSecretEnv
+      ? mergeWorkspaceSecretEnv(process.env, currentWorkspaceSecretEnv)
       : process.env
     const written = await writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
@@ -1817,7 +1824,7 @@ export function createOpencodeSupervisor(
       }
     },
 
-    reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore) {
+    reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextWorkspaceSecretEnv?: WorkspaceSecretEnvStore) {
       currentCfg = nextCfg
       if (
         activePort !== nextCfg.opencodeInternalPort &&
@@ -1826,10 +1833,10 @@ export function createOpencodeSupervisor(
         activePort = nextCfg.opencodeInternalPort
       }
       currentOpencodeConfigDir = nextOpencodeConfigDir
-      if (nextProjectEnv) currentProjectEnv = nextProjectEnv
+      if (nextWorkspaceSecretEnv) currentWorkspaceSecretEnv = nextWorkspaceSecretEnv
       state = 'starting'
       logger.info('[opencode] reconfigured', {
-        projectId: nextCfg.projectId,
+        workspaceId: nextCfg.workspaceId,
         opencodeConfigDir: nextOpencodeConfigDir,
       })
     },

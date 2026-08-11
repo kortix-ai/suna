@@ -42,7 +42,7 @@ mock.module('../../shared/daytona', () => ({
   listStoppedDaytonaSandboxesOldestFirst: async function* () {},
 }));
 
-mock.module('../../projects/disk-quota-guard', () => ({
+mock.module('../../workspaces/disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
 }));
 

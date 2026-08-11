@@ -56,7 +56,7 @@ mock.module('../shared/preview-ownership', () => ({
     accountId === 'acct-1',
   // No project-scoped PATs in this suite — stub so the real module's shape
   // stays satisfied for anything that imports it.
-  resolveSandboxProjectId: async () => null,
+  resolveSandboxWorkspaceId: async () => null,
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that

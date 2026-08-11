@@ -4,7 +4,7 @@ import { BILLING_RETURNS, BILLING_RETURN_PARAMS } from './billing-return';
 
 /**
  * The contract these tests protect: a Stripe return is handled wherever the
- * user lands, so no `success_url` has to point at the projects list.
+ * user lands, so no `success_url` has to point at the workspaces list.
  */
 describe('billing returns', () => {
   test('every return declares a distinct param', () => {

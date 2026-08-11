@@ -4,7 +4,7 @@ import type { AuditActorType, AuditEventInput } from '../../shared/audit';
 interface TunnelCentralAuditInput {
   tunnelId: string;
   accountId: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
   actorType?: AuditActorType | null;
@@ -20,7 +20,7 @@ interface TunnelCentralAuditInput {
 export function tunnelCentralAuditEvent(input: TunnelCentralAuditInput): AuditEventInput {
   return {
     accountId: input.accountId,
-    projectId: input.projectId ?? null,
+    workspaceId: input.workspaceId ?? null,
     sessionId: input.sessionId ?? null,
     actorUserId: input.actorUserId ?? null,
     actorType: input.actorType ?? (input.actorUserId ? 'human' : 'system'),

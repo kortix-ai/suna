@@ -44,12 +44,12 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
   }, [onClose, useNativePaywall, presentUpgradePaywall]);
 
   const handleThreadPress = React.useCallback(
-    (threadId: string, projectId: string | null) => {
+    (threadId: string, workspaceId: string | null) => {
       log.log('🎯 Thread pressed from UsagePage:', threadId);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onClose();
-      if (projectId) {
-        router.push(`/projects/${projectId}`);
+      if (workspaceId) {
+        router.push(`/workspaces/${workspaceId}`);
       }
     },
     [onClose, router]

@@ -3,18 +3,18 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import type { ProjectSummary } from '../api/types.ts';
+import type { WorkspaceSummary } from '../api/types.ts';
 import {
   gitCredentialRequestUrl,
   parseGitCredentialRequest,
-  resolveGitCredentialForProject,
+  resolveGitCredentialForWorkspace,
 } from '../commands/git-credential.ts';
 
 const CLI_ENTRY = resolve(import.meta.dir, '..', 'index.ts');
 
-function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+function workspace(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
   return {
-    project_id: 'proj_1',
+    workspace_id: 'proj_1',
     account_id: 'acct_1',
     name: 'Demo',
     repo_url: 'https://github.com/acme/demo.git',
@@ -50,9 +50,9 @@ describe('Git credential protocol', () => {
 
   test('returns the Kortix login token for the linked proxy URL', async () => {
     let mintCalls = 0;
-    const credential = await resolveGitCredentialForProject({
+    const credential = await resolveGitCredentialForWorkspace({
       requestUrl: 'https://dev-api.kortix.com/v1/git/proj_1.git',
-      project: project({
+      workspace: workspace({
         git_origin_url: 'https://dev-api.kortix.com/v1/git/proj_1.git',
       }),
       kortixToken: 'kortix_pat_test',
@@ -71,9 +71,9 @@ describe('Git credential protocol', () => {
 
   test('mints a provider token for a matching direct managed origin', async () => {
     let mintCalls = 0;
-    const credential = await resolveGitCredentialForProject({
+    const credential = await resolveGitCredentialForWorkspace({
       requestUrl: 'https://github.com/acme/demo.git/',
-      project: project({ metadata: { git: { managed: true } } }),
+      workspace: workspace({ metadata: { git: { managed: true } } }),
       kortixToken: 'kortix_pat_test',
       mintManagedToken: async () => {
         mintCalls += 1;
@@ -90,9 +90,9 @@ describe('Git credential protocol', () => {
 
   test('returns no credential for a different URL', async () => {
     let mintCalls = 0;
-    const credential = await resolveGitCredentialForProject({
+    const credential = await resolveGitCredentialForWorkspace({
       requestUrl: 'https://github.com/acme/other.git',
-      project: project({ metadata: { git: { managed: true } } }),
+      workspace: workspace({ metadata: { git: { managed: true } } }),
       kortixToken: 'kortix_pat_test',
       mintManagedToken: async () => {
         mintCalls += 1;

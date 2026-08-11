@@ -16,16 +16,16 @@ process.env.MANAGED_GIT_PROVIDER = 'github';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
-const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000000201';
 const REPO_OWNER = 'kortix-managed';
 const EXTERNAL_REPO_ID = 'gh-repo-1';
 const INSTALL_ID = 'install-1';
 const PUSH_TOKEN = 'scoped-push-token-789';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
-let insertedProject: any | null;
-let grantedProjectRole: any | null;
-let updatedProjectSets: any[];
+let insertedWorkspace: any | null;
+let grantedWorkspaceRole: any | null;
+let updatedWorkspaceSets: any[];
 let seedFilePaths: string[];
 let seedBaseFilePaths: string[];
 let seedFilesByPath: Map<string, string>;
@@ -94,7 +94,7 @@ const stubBackend = {
   },
 };
 
-mock.module('../projects/git-backends', () => ({
+mock.module('../workspaces/git-backends', () => ({
   hasBackend: (provider: string) => provider === 'github',
   getBackend: (provider: string) => (provider === 'github' ? stubBackend : stubBackend),
   getDefaultManagedBackend: () => stubBackend,
@@ -130,11 +130,11 @@ mock.module('../middleware/auth', () => ({
 // verifying provision/delete behavior, not the access-control engine itself.
 mockIamEngineAllowAll();
 
-// grantProjectRole syncs IAM policy rows; no-op those (they hit tables the
+// grantWorkspaceRole syncs IAM policy rows; no-op those (they hit tables the
 // lightweight db mock doesn't model).
 mockIamMembershipSyncNoop();
 
-mock.module('../projects/git', () => ({
+mock.module('../workspaces/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
   isRepoFileNotFoundError: () => false,
   grepRepoFiles: async () => [],
@@ -142,10 +142,10 @@ mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => undefined,
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
-  loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
+  loadWorkspaceConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
   readManifestFromRepo: async () => null,
-  invalidateProjectMirror: () => {},
+  invalidateWorkspaceMirror: () => {},
   remoteBranchExists: async () => remoteBranchAfterSeed,
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -178,13 +178,13 @@ mock.module("../snapshots/builder", () => ({
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
   templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
-  kickProjectTemplatePrebuilds: () => {},
+  kickWorkspaceTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
-  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
+  reconcileWorkspaceTemplates: async () => ({ checked: 0, updated: 0 }),
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => "a".repeat(40),
-  ensurePerProjectWarmImage: async () => ({
+  ensurePerWorkspaceWarmImage: async () => ({
     snapshotName: "kortix-ppwarm-test",
     tip: "a".repeat(40),
     built: false,
@@ -217,7 +217,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 function projectRowFrom(values: any) {
   return {
-    projectId: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
     accountId: values.accountId,
     name: values.name,
     repoUrl: values.repoUrl,
@@ -231,10 +231,10 @@ function projectRowFrom(values: any) {
   };
 }
 
-function existingProjectRow() {
+function existingWorkspaceRow() {
   return projectRowFrom({
     accountId: ACCOUNT_ID,
-    name: 'Existing Managed Project',
+    name: 'Existing Managed Workspace',
     repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
     defaultBranch: 'main',
     manifestPath: 'kortix.yaml',
@@ -274,12 +274,12 @@ mock.module('../shared/db', () => ({
                 return [{ projectRole: 'manager' }];
               }
               if (table === projects) {
-                return [existingProjectRow()];
+                return [existingWorkspaceRow()];
               }
               if (table === projectGitConnections) {
                 return [{
                   accountId: ACCOUNT_ID,
-                  projectId: PROJECT_ID,
+                  workspaceId: WORKSPACE_ID,
                   provider: 'github',
                   repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
                   upstreamUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
@@ -316,20 +316,20 @@ mock.module('../shared/db', () => ({
             throw new Error('managed project provisioning must insert a fresh project row');
           }
           if (table === projectMembers) {
-            grantedProjectRole = values;
+            grantedWorkspaceRole = values;
             return Promise.resolve([]);
           }
           return {
             returning: async () => {
               if (table !== projects) return [];
-              insertedProject = values;
+              insertedWorkspace = values;
               return [projectRowFrom(values)];
             },
           };
         },
         returning: async () => {
           if (table !== projects) return [];
-          insertedProject = values;
+          insertedWorkspace = values;
           return [projectRowFrom(values)];
         },
       }),
@@ -337,7 +337,7 @@ mock.module('../shared/db', () => ({
     update: (table: unknown) => ({
       set: (values: any) => ({
         where: () => {
-          if (table === projects) updatedProjectSets.push(values);
+          if (table === projects) updatedWorkspaceSets.push(values);
           // Real drizzle's UPDATE builder is thenable at every chain step
           // (a caller may `.catch()` it directly without `.returning()` —
           // see r1.ts's best-effort default_agent metadata mirror write, and
@@ -372,9 +372,9 @@ function createApp() {
 describe('POST /v1/projects/provision (managed git)', () => {
   beforeEach(() => {
     setTestAuth();
-    insertedProject = null;
-    updatedProjectSets = [];
-    grantedProjectRole = null;
+    insertedWorkspace = null;
+    updatedWorkspaceSets = [];
+    grantedWorkspaceRole = null;
     seedFilePaths = [];
     seedBaseFilePaths = [];
     seedFilesByPath = new Map();
@@ -402,14 +402,14 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // push token for the CLI.
     expect(createdSlug).toMatch(/^my-agent-[0-9a-f-]{36}$/);
     const expectedRepoUrl = `https://github.com/${REPO_OWNER}/${createdSlug}.git`;
-    expect(body.project_id).toBe(PROJECT_ID);
+    expect(body.project_id).toBe(WORKSPACE_ID);
     expect(body.repo_url).toBe(expectedRepoUrl);
     expect(body.repo_id).toBe(EXTERNAL_REPO_ID);
     expect(body.push_token).toBe(PUSH_TOKEN);
     expect(body.git_username).toBe('x-access-token');
 
     // Persisted row records the canonical typed git-remote reference.
-    expect(insertedProject).toMatchObject({
+    expect(insertedWorkspace).toMatchObject({
       accountId: ACCOUNT_ID,
       name: 'My Agent',
       repoUrl: expectedRepoUrl,
@@ -427,10 +427,10 @@ describe('POST /v1/projects/provision (managed git)', () => {
       },
     });
     // Provisioning does not stamp hidden experimental runtime metadata.
-    expect(insertedProject?.metadata).not.toHaveProperty('experimental');
-    expect(grantedProjectRole).toMatchObject({
+    expect(insertedWorkspace?.metadata).not.toHaveProperty('experimental');
+    expect(grantedWorkspaceRole).toMatchObject({
       accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       userId: USER_ID,
       projectRole: 'manager',
     });
@@ -440,7 +440,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     // An unseeded managed repo is a legitimate `kortix ship` state, but it must
     // be RECORDED, not silently indistinguishable from a seeded one.
-    expect(insertedProject.metadata.git.seed).toMatchObject({
+    expect(insertedWorkspace.metadata.git.seed).toMatchObject({
       seeded: false,
       expected: false,
       reason: 'caller_opted_out',
@@ -489,8 +489,8 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.seeded).toBe(true);
-    expect(updatedProjectSets.length).toBeGreaterThan(0);
-    expect(insertedProject.metadata.git.seed).toMatchObject({
+    expect(updatedWorkspaceSets.length).toBeGreaterThan(0);
+    expect(insertedWorkspace.metadata.git.seed).toMatchObject({
       seeded: false,
       expected: true,
       reason: 'pending',
@@ -505,7 +505,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'PAT Fallback Project' }),
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'PAT Fallback Workspace' }),
     });
 
     expect(res.status).toBe(201);
@@ -517,7 +517,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     managedPat = 'server-global-ghp-token';
 
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/git-token`, {
+    const res = await app.request(`/v1/projects/${WORKSPACE_ID}/git-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -539,11 +539,11 @@ describe('POST /v1/projects/provision (managed git)', () => {
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'No Membership Project' }),
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'No Membership Workspace' }),
     });
 
     expect(res.status).toBe(403);
-    expect(insertedProject).toBeNull();
+    expect(insertedWorkspace).toBeNull();
   });
 
   test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
@@ -552,7 +552,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // the plain starter scaffold. `marketplace_items` is accepted for API
     // back-compat but no longer installs anything at provision time; adding a
     // marketplace item to a project is now an agent import
-    // (POST /:projectId/marketplace/install-session), which needs the project
+    // (POST /:workspaceId/marketplace/install-session), which needs the project
     // (and a session) to already exist.
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
@@ -560,7 +560,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         account_id: ACCOUNT_ID,
-        name: 'Runtime Project',
+        name: 'Runtime Workspace',
         seed_starter: true,
         starter_template: 'minimal',
         marketplace_items: [
@@ -597,8 +597,8 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // 'default' sentinel and any agent-scope model pin set on 'kortix' was
     // never applied (see llm-gateway/resolution/default-model.ts). Provision
     // must now stamp the mirror at creation time.
-    expect(updatedProjectSets).toHaveLength(1);
-    expect(updatedProjectSets[0]?.metadata).toHaveProperty('queryChunks');
+    expect(updatedWorkspaceSets).toHaveLength(1);
+    expect(updatedWorkspaceSets[0]?.metadata).toHaveProperty('queryChunks');
   });
 
   test('returns 503 when managed git is not configured', async () => {

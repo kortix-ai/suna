@@ -12,7 +12,7 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import { cn } from '@/lib/utils';
-import { PROJECT_GLYPH_COLORS, PROJECT_GLYPH_NAMES, type ProjectGlyphColor } from '@kortix/shared';
+import { WORKSPACE_GLYPH_COLORS, WORKSPACE_GLYPH_NAMES, type WorkspaceGlyphColor } from '@kortix/shared';
 
 export interface GlyphSelection {
   name: string;
@@ -20,9 +20,9 @@ export interface GlyphSelection {
 }
 
 /**
- * Glyph grid for picking a project icon. Same geometry contract as
+ * Glyph grid for picking a workspace icon. Same geometry contract as
  * `emoji-picker.tsx` on purpose: `h-[368px]`, 9 columns of `size-8` cells in
- * rows padded `px-1.5`. `project-icon-field.tsx` sizes the popover to that
+ * rows padded `px-1.5`. `workspace-icon-field.tsx` sizes the popover to that
  * exact width (9 * 8 + 2 * 1.5 spacing units); a different column count or a
  * different fixed height changes the popover's geometry the moment the Icon
  * tab is selected, so both numbers are copied here, not re-derived.
@@ -37,12 +37,12 @@ export interface GlyphSelection {
  * either test pass or fail.
  *
  * All 202 catalogue glyphs render in ONE `grid-cols-9`, in
- * `PROJECT_GLYPH_NAMES`'s declaration order — no category headers. This
+ * `WORKSPACE_GLYPH_NAMES`'s declaration order — no category headers. This
  * shipped with an 8-category sub-grid (sticky header per category) first;
  * review feedback was that the categories added scannable structure but no
  * function — nothing filters, sorts, or navigates by category — so they were
- * cut. `PROJECT_GLYPH_GROUPS` (in `@kortix/shared`) still owns the grouping
- * and the ordering; `PROJECT_GLYPH_NAMES` is that same catalogue flattened in
+ * cut. `WORKSPACE_GLYPH_GROUPS` (in `@kortix/shared`) still owns the grouping
+ * and the ordering; `WORKSPACE_GLYPH_NAMES` is that same catalogue flattened in
  * declaration order, so related glyphs stay adjacent even with the headers
  * gone. Flattening it a second time here, instead of importing the flat
  * export, would risk a reordering that drifts from the shared source.
@@ -66,7 +66,7 @@ export interface GlyphSelection {
  * Hover-only ring colour, one literal class per palette colour.
  *
  * `glyph-tint.ts` exports the REST tile (`glyphTint`: fill + ring, always on —
- * built for a host like the project-icon trigger button that stays tinted
+ * built for a host like the workspace-icon trigger button that stays tinted
  * once an icon is picked) and the hover FILL restated on its own
  * (`glyphTintHover`, for fighting a host variant's `hover:bg-*`). Neither is a
  * hover-scoped RING. A glyph cell here has no rest-state tile at all — only
@@ -75,7 +75,7 @@ export interface GlyphSelection {
  * by scanning source TEXT, so gluing a `hover:` prefix onto a helper's return
  * value at runtime would compile to nothing.
  */
-const GLYPH_HOVER_RING: Record<ProjectGlyphColor, string> = {
+const GLYPH_HOVER_RING: Record<WorkspaceGlyphColor, string> = {
   grey: 'hover:inset-ring-glyph-ring-grey',
   red: 'hover:inset-ring-glyph-ring-red',
   orange: 'hover:inset-ring-glyph-ring-orange',
@@ -91,9 +91,9 @@ const GLYPH_HOVER_RING: Record<ProjectGlyphColor, string> = {
  *  map above is keyed by the narrow palette type, so an unrecognised value —
  *  stale cached data, a hand-edited row — falls back to grey rather than
  *  indexing to `undefined` and silently dropping the hover ring. */
-function resolveGlyphColor(color: string): ProjectGlyphColor {
-  return (PROJECT_GLYPH_COLORS as readonly string[]).includes(color)
-    ? (color as ProjectGlyphColor)
+function resolveGlyphColor(color: string): WorkspaceGlyphColor {
+  return (WORKSPACE_GLYPH_COLORS as readonly string[]).includes(color)
+    ? (color as WorkspaceGlyphColor)
     : 'grey';
 }
 
@@ -140,7 +140,7 @@ export function GlyphPicker({
   // Filtered even when `query` is empty — `matchesSearch` short-circuits to
   // `true` there, so this is the one code path for both states rather than a
   // branch that has to be proven to agree with its sibling.
-  const names = PROJECT_GLYPH_NAMES.filter((name) => matchesSearch(name, query));
+  const names = WORKSPACE_GLYPH_NAMES.filter((name) => matchesSearch(name, query));
 
   return (
     <div className={cn('isolate flex h-[368px] w-full flex-col', className)}>
@@ -177,7 +177,7 @@ export function GlyphPicker({
             1px `glyphTint` already draws, so the row doesn't shift geometry
             when the selection changes. */}
         <div className="flex items-center justify-between gap-1.5">
-          {PROJECT_GLYPH_COLORS.map((paletteColor) => (
+          {WORKSPACE_GLYPH_COLORS.map((paletteColor) => (
             <button
               key={paletteColor}
               type="button"

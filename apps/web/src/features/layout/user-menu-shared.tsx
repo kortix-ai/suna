@@ -4,7 +4,7 @@
  * The rows two different menus both need: Theme, Help, and the log-out flow.
  *
  * There are two account-ish menus in the product now — `UserMenu` in the app
- * header, and `WorkspaceSwitcher` in the project sidebar — and they are NOT the
+ * header, and `WorkspaceSwitcher` in the workspace sidebar — and they are NOT the
  * same menu. The header one is about the person (account settings, billing, user
  * settings); the sidebar one is about the workspace, and only carries the handful
  * of account rows that have nowhere else to live. What they share is exactly

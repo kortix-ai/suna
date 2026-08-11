@@ -3,7 +3,7 @@
  * round-trip. Secrets are project-scoped env vars every session's agent can
  * read at runtime. Pure platform REST — no sandbox.
  *
- * Run (from packages/sdk):  bun run playground/env/12-env-and-secrets.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/env/12-env-and-secrets.ts [workspaceId]
  */
 import { makeKortix, pickProjectId, run } from "../_shared";
 
@@ -11,10 +11,10 @@ const TEST_SECRET = "SDK_PLAYGROUND_TEST_SECRET";
 
 run("env-and-secrets", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
-  const project = kortix.project(projectId);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
+  const project = kortix.project(workspaceId);
 
-  const detail = await kortix.projects.detail(projectId);
+  const detail = await kortix.projects.detail(workspaceId);
   console.log("✓ manifest-declared env:");
   console.log(`    required: ${detail.config.env.required.join(", ") || "—"}`);
   console.log(

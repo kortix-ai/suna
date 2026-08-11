@@ -20,7 +20,7 @@ const ACTIVE_RECORD = {
   status: 'active',
   serviceKey: 'svc-key',
   sessionId: 'sess-1',
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   accountId: 'acct-1',
   externalId: 'ext-1',
   agentName: 'default',
@@ -48,11 +48,11 @@ mock.module('../../shared/preview-ownership', () => ({
 }));
 // The connector pre-flight now runs on every turn-start. This file is about a
 // different concern, so keep it satisfied — unstubbed it reaches a real DB.
-mock.module('../../projects/lib/prompt-connector-preflight', () => ({
+mock.module('../../workspaces/lib/prompt-connector-preflight', () => ({
   PromptConnectorPreflightUnresolved: class PromptConnectorPreflightUnresolved extends Error {},
   missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
-mock.module('../../projects/lib/sandbox-env-sync', () => ({
+mock.module('../../workspaces/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
 }));
 // Same reason as the env sync above: the pre-prompt grant re-mint reads the
@@ -61,14 +61,14 @@ mock.module('../../projects/lib/sandbox-env-sync', () => ({
 // prompt CLOSED when it cannot read the token (a prompt must never run under an
 // unverified grant), so an unmocked db here turns every delivery test red for a
 // reason that has nothing to do with delivery.
-mock.module('../../projects/lib/session-token-grant', () => ({
+mock.module('../../workspaces/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
+mock.module('../../workspaces/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../workspaces/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 mock.module('../backend', () => ({

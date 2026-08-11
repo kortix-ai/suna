@@ -24,11 +24,11 @@ import {
   useDeleteGatewayBudget,
   useGatewayBudgets,
   useSetGatewayBudget,
-} from '@/hooks/projects/use-project-gateway';
+} from '@/hooks/workspaces/use-workspace-gateway';
 import type {
-  GatewayBudgetRow,
+  WorkspaceGatewayBudgetRow,
   GatewayMemberSpend,
-} from '@/lib/projects-gateway-client';
+} from '@/lib/workspaces-gateway-client';
 
 const PERIODS: { value: 'day' | 'week' | 'month'; label: string }[] = [
   { value: 'day', label: 'Daily' },
@@ -69,26 +69,26 @@ function Meter({ spent, limit, className }: { spent: number; limit: number; clas
 }
 
 type EditTarget =
-  | { scope: 'project' }
+  | { scope: 'workspace' }
   | { scope: 'member'; subjectUserId: string; email: string | null };
 
 export function GatewayBudgets({
-  projectId,
+  workspaceId,
   canWrite = false,
 }: {
-  projectId: string;
+  workspaceId: string;
   canWrite?: boolean;
 }) {
-  const { data } = useGatewayBudgets(projectId);
-  const setBudget = useSetGatewayBudget(projectId);
-  const delBudget = useDeleteGatewayBudget(projectId);
+  const { data } = useGatewayBudgets(workspaceId);
+  const setBudget = useSetGatewayBudget(workspaceId);
+  const delBudget = useDeleteGatewayBudget(workspaceId);
   const [editing, setEditing] = useState<EditTarget | null>(null);
 
   const budgets = data?.budgets ?? [];
   const members = data?.members ?? [];
-  const projectSpend = data?.project_spend?.cost ?? 0;
-  const projectBudget = budgets.find((b) => b.scope === 'project') ?? null;
-  const memberBudget = (uid: string | null): GatewayBudgetRow | null =>
+  const workspaceSpend = data?.workspace_spend?.cost ?? 0;
+  const workspaceBudget = budgets.find((b) => b.scope === 'workspace') ?? null;
+  const memberBudget = (uid: string | null): WorkspaceGatewayBudgetRow | null =>
     budgets.find((b) => b.scope === 'member' && b.subject_user_id === uid) ?? null;
 
   const remove = (budgetId: string) =>
@@ -98,8 +98,8 @@ export function GatewayBudgets({
     });
 
   const alerts: { label: string; pct: number }[] = [];
-  if (projectBudget && projectBudget.limit_usd > 0 && projectSpend / projectBudget.limit_usd >= 0.8) {
-    alerts.push({ label: 'Project', pct: (projectSpend / projectBudget.limit_usd) * 100 });
+  if (workspaceBudget && workspaceBudget.limit_usd > 0 && workspaceSpend / workspaceBudget.limit_usd >= 0.8) {
+    alerts.push({ label: 'Workspace', pct: (workspaceSpend / workspaceBudget.limit_usd) * 100 });
   }
   for (const m of members) {
     const b = memberBudget(m.user_id);
@@ -126,47 +126,47 @@ export function GatewayBudgets({
           </InfoBanner>
         )}
         <Panel
-          title="Project budget"
-          description="Cap total spend across everyone in this project's gateway"
+          title="Workspace budget"
+          description="Cap total spend across everyone in this workspace's gateway"
           action={
             canWrite ? (
-              <Button size="sm" variant="outline" onClick={() => setEditing({ scope: 'project' })}>
-                {projectBudget ? 'Edit' : 'Set budget'}
+              <Button size="sm" variant="outline" onClick={() => setEditing({ scope: 'workspace' })}>
+                {workspaceBudget ? 'Edit' : 'Set budget'}
               </Button>
             ) : undefined
           }
         >
-          {projectBudget ? (
+          {workspaceBudget ? (
             (() => {
-              const pct = projectBudget.limit_usd > 0 ? (projectSpend / projectBudget.limit_usd) * 100 : 0;
-              const remaining = Math.max(0, projectBudget.limit_usd - projectSpend);
+              const pct = workspaceBudget.limit_usd > 0 ? (workspaceSpend / workspaceBudget.limit_usd) * 100 : 0;
+              const remaining = Math.max(0, workspaceBudget.limit_usd - workspaceSpend);
               return (
                 <div className="space-y-3">
                   <div className="flex items-end justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-2xl font-semibold tabular-nums text-foreground">
-                          {fmtUsd(projectSpend)}
+                          {fmtUsd(workspaceSpend)}
                         </span>
                         <span className="text-sm text-muted-foreground">
-                          of {fmtUsd(projectBudget.limit_usd)} / {projectBudget.period}
+                          of {fmtUsd(workspaceBudget.limit_usd)} / {workspaceBudget.period}
                         </span>
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {fmtUsd(remaining)} remaining ·{' '}
-                        {projectBudget.action === 'block' ? 'blocks at limit' : 'warns only'}
+                        {workspaceBudget.action === 'block' ? 'blocks at limit' : 'warns only'}
                       </div>
                     </div>
                     <span className={cn('text-2xl font-semibold tabular-nums', meterTextTone(pct))}>
                       {pct.toFixed(0)}%
                     </span>
                   </div>
-                  <Meter spent={projectSpend} limit={projectBudget.limit_usd} />
+                  <Meter spent={workspaceSpend} limit={workspaceBudget.limit_usd} />
                   {canWrite && (
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        onClick={() => remove(projectBudget.budget_id)}
+                        onClick={() => remove(workspaceBudget.budget_id)}
                         className="text-xs text-muted-foreground transition-colors hover:text-foreground"
                       >
                         Remove budget
@@ -179,7 +179,7 @@ export function GatewayBudgets({
           ) : (
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-2xl font-semibold tabular-nums text-foreground">{fmtUsd(projectSpend)}</div>
+                <div className="text-2xl font-semibold tabular-nums text-foreground">{fmtUsd(workspaceSpend)}</div>
                 <div className="mt-0.5 text-xs text-muted-foreground">spent this month · no cap set</div>
               </div>
             </div>
@@ -218,7 +218,7 @@ export function GatewayBudgets({
         <BudgetDialog
           target={editing}
           existing={
-            editing.scope === 'project' ? projectBudget : memberBudget(editing.subjectUserId)
+            editing.scope === 'workspace' ? workspaceBudget : memberBudget(editing.subjectUserId)
           }
           saving={setBudget.isPending}
           onClose={() => setEditing(null)}
@@ -255,7 +255,7 @@ function MemberRow({
 }: {
   member: GatewayMemberSpend;
   maxCost: number;
-  budget: GatewayBudgetRow | null;
+  budget: WorkspaceGatewayBudgetRow | null;
   canWrite: boolean;
   onSetCap: () => void;
   onRemove: (id: string) => void;
@@ -310,7 +310,7 @@ function BudgetDialog({
   onSave,
 }: {
   target: EditTarget;
-  existing: GatewayBudgetRow | null;
+  existing: WorkspaceGatewayBudgetRow | null;
   saving: boolean;
   onClose: () => void;
   onSave: (input: {
@@ -324,7 +324,7 @@ function BudgetDialog({
   const [action, setAction] = useState<'block' | 'warn'>(existing?.action ?? 'block');
 
   const who =
-    target.scope === 'project' ? 'this project' : (target.email ?? 'this member');
+    target.scope === 'workspace' ? 'this workspace' : (target.email ?? 'this member');
   const amount = Number(limit);
   const valid = Number.isFinite(amount) && amount > 0;
 
@@ -332,7 +332,7 @@ function BudgetDialog({
     <Modal open onOpenChange={(next) => (next ? undefined : onClose())}>
       <ModalContent className="sm:max-w-md">
         <ModalHeader>
-          <ModalTitle>{target.scope === 'project' ? 'Project budget' : 'Member cap'}</ModalTitle>
+          <ModalTitle>{target.scope === 'workspace' ? 'Workspace budget' : 'Member cap'}</ModalTitle>
           <ModalDescription>Cap gateway spend for {who}.</ModalDescription>
         </ModalHeader>
         <ModalBody className="space-y-4">

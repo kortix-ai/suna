@@ -38,13 +38,13 @@ function actionVariant(a: PolicyAction) {
   return 'default' as const;
 }
 
-export function PoliciesTab({ projectId }: { projectId: string }) {
+export function PoliciesTab({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
-  const key = ['project-policies', projectId] as const;
+  const key = ['workspace-policies', workspaceId] as const;
 
   const policies = useQuery({
     queryKey: key,
-    queryFn: () => kortix.project(projectId).policies.list(),
+    queryFn: () => kortix.workspace(workspaceId).policies.list(),
   });
 
   const [rules, setRules] = useState<Rule[]>([]);
@@ -62,7 +62,7 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
 
   const save = useMutation({
     mutationFn: () =>
-      kortix.project(projectId).policies.set(
+      kortix.workspace(workspaceId).policies.set(
         rules.filter((r) => r.match.trim()),
         defaultMode,
       ),

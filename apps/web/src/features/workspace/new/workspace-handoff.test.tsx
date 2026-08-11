@@ -16,7 +16,7 @@ const markup = (html: string): string => html.match(/<svg[\s\S]*<\/svg>/)?.[0] ?
 
 describe('WorkspaceHandoff', () => {
   test('announces itself as a status, with the caption as the content', () => {
-    const html = render({ workspaceName: 'suna-web', projectId: null });
+    const html = render({ workspaceName: 'suna-web', workspaceId: null });
     expect(html).toContain('role="status"');
     // Explicit alongside the role, for ATs that do not map role=status to a
     // polite live region.
@@ -26,23 +26,23 @@ describe('WorkspaceHandoff', () => {
   });
 
   test('the mark is decoration — hidden from the accessibility tree', () => {
-    const html = render({ workspaceName: 'x', projectId: null });
+    const html = render({ workspaceName: 'x', workspaceId: null });
     expect(markup(html)).toContain('aria-hidden="true"');
   });
 
-  test('ONE mark across both waiting windows — byte-identical with and without a project', () => {
+  test('ONE mark across both waiting windows — byte-identical with and without a workspace', () => {
     // This is the whole point of the component: the moment the create SUCCEEDS
     // must not be rendered as the waiting UI being torn down and replaced.
     // If these two ever diverge, the seam is visible again.
-    const creating = markup(render({ workspaceName: 'x', projectId: null }));
-    const onboarding = markup(render({ workspaceName: 'x', projectId: 'proj-1' }));
+    const creating = markup(render({ workspaceName: 'x', workspaceId: null }));
+    const onboarding = markup(render({ workspaceName: 'x', workspaceId: 'workspace-1' }));
     expect(creating).not.toBe('');
     expect(onboarding).toBe(creating);
   });
 
   test('the caption is the same string in both windows, so nothing flickers at the seam', () => {
-    const creating = stripTags(render({ workspaceName: 'suna-web', projectId: null }));
-    const onboarding = stripTags(render({ workspaceName: 'suna-web', projectId: 'proj-1' }));
+    const creating = stripTags(render({ workspaceName: 'suna-web', workspaceId: null }));
+    const onboarding = stripTags(render({ workspaceName: 'suna-web', workspaceId: 'workspace-1' }));
     expect(creating).toContain('Creating suna-web');
     expect(onboarding).toContain('Creating suna-web');
   });
@@ -50,23 +50,23 @@ describe('WorkspaceHandoff', () => {
   test('a reload of /new?onboarding=<id> has no name, and says something true instead', () => {
     // `state.name` is the form's own useState, so a reload arrives with it
     // empty. The workspace exists by then — this is always window 2.
-    const html = render({ workspaceName: '', projectId: 'proj-1' });
+    const html = render({ workspaceName: '', workspaceId: 'workspace-1' });
     const text = stripTags(html);
     expect(text).toContain('Opening your workspace');
     expect(text).not.toContain('Creating ');
   });
 
   test('NO escape hatch, in either state — this screen offers the mark and the caption, nothing else', () => {
-    // There used to be a delayed "Go to workspace" link once `projectId`
+    // There used to be a delayed "Go to workspace" link once `workspaceId`
     // existed. It is gone on purpose: the wizard is a fullscreen portal and
-    // covers this screen as soon as `getProjectDetail` settles, so the link
+    // covers this screen as soon as `getWorkspaceDetail` settles, so the link
     // was an offer to leave at the exact moment the user is being taken
     // somewhere. Both states are asserted because the link was conditioned on
-    // `projectId` — checking only the null case would not notice it coming
+    // `workspaceId` — checking only the null case would not notice it coming
     // back.
     for (const html of [
-      render({ workspaceName: 'x', projectId: null }),
-      render({ workspaceName: 'x', projectId: 'proj-1' }),
+      render({ workspaceName: 'x', workspaceId: null }),
+      render({ workspaceName: 'x', workspaceId: 'workspace-1' }),
     ]) {
       expect(html).not.toContain('Go to workspace');
       expect(html).not.toContain('<a ');
@@ -98,7 +98,7 @@ describe('WorkspaceHandoff', () => {
     // `session-starting-loader.tsx` uses TextShimmer for the same job, so
     // "working on it" reads the same here as it does mid-session.
     expect(source).toContain("from '@/components/ui/text-shimmer'");
-    const html = render({ workspaceName: 'suna-web', projectId: null });
+    const html = render({ workspaceName: 'suna-web', workspaceId: null });
     // TextShimmer paints the text with a moving gradient, so the glyphs
     // themselves are transparent — if this class is gone, the caption is
     // invisible, not merely unanimated.
@@ -110,8 +110,8 @@ describe('WorkspaceHandoff', () => {
     // The empty-name branch only renders on a hard reload of
     // `/new?onboarding=<id>`, which is exactly why it is easy to leave
     // untreated: it never appears in the normal create flow.
-    const named = render({ workspaceName: 'suna-web', projectId: null });
-    const nameless = render({ workspaceName: '', projectId: 'proj-1' });
+    const named = render({ workspaceName: 'suna-web', workspaceId: null });
+    const nameless = render({ workspaceName: '', workspaceId: 'workspace-1' });
     for (const html of [named, nameless]) {
       expect(html).toContain('bg-clip-text');
       expect(html).toContain('--spread:');
@@ -128,6 +128,6 @@ describe('WorkspaceHandoff', () => {
   test('the mark resolves before the caption travels — no y on the default render', () => {
     // Paired negative for the branch above: the non-reduced path really does
     // carry the transform, so the reduced branch is removing something.
-    expect(render({ workspaceName: 'x', projectId: null })).toContain('translateY(4px)');
+    expect(render({ workspaceName: 'x', workspaceId: null })).toContain('translateY(4px)');
   });
 });

@@ -3,10 +3,10 @@ import { isRuntimeManagedModelId } from '../models/managed-models';
 // One definition of how a default model/agent is chosen across scopes. Keeping
 // the precedence here means Slack, the web picker, and the gateway agree.
 
-/** Where an effective model came from — drives honest UI copy ("· project default"). */
-export type ModelSource = 'explicit' | 'agent' | 'project' | 'account' | 'platform';
+/** Where an effective model came from — drives honest UI copy ("Workspace default"). */
+export type ModelSource = 'explicit' | 'agent' | 'workspace' | 'account' | 'platform';
 /** Where an effective agent came from. */
-export type AgentSource = 'explicit' | 'project' | 'fallback';
+export type AgentSource = 'explicit' | 'workspace' | 'fallback';
 
 const KORTIX_PREFIX = 'kortix/';
 
@@ -39,7 +39,7 @@ function isManagedRef(ref: string): boolean {
 /**
  * Pure precedence for the DEFAULT model chain (no explicit/request override —
  * that's handled by the async resolver, which must validate servability):
- *   per-agent default → project default → account default → platform default.
+ *   per-agent default → Workspace default → account default → platform default.
  *
  * The MOST-SPECIFIC present layer wins; the free-tier managed-drop then applies
  * to that single chosen candidate (dropping to the platform default rather than
@@ -47,7 +47,7 @@ function isManagedRef(ref: string): boolean {
  */
 export function chooseEffectiveModel(params: {
   agentDefault?: string | null;
-  projectDefault?: string | null;
+  workspaceDefault?: string | null;
   accountDefault?: string | null;
   freeModelsOnly?: boolean;
 }): { model: string | null; source: ModelSource } {
@@ -56,9 +56,9 @@ export function chooseEffectiveModel(params: {
   if (params.agentDefault) {
     candidate = params.agentDefault;
     source = 'agent';
-  } else if (params.projectDefault) {
-    candidate = params.projectDefault;
-    source = 'project';
+  } else if (params.workspaceDefault) {
+    candidate = params.workspaceDefault;
+    source = 'workspace';
   } else if (params.accountDefault) {
     candidate = params.accountDefault;
     source = 'account';
@@ -75,7 +75,7 @@ export function chooseEffectiveModel(params: {
  * the gateway or UI. A stored default can silently go unservable after
  * the fact — overwhelmingly a BYOK model (`provider/model`) whose provider key was
  * later disconnected, or that was auto-seeded on connect and never had a key in
- * THIS environment (the `seedProjectDefaultModelOnConnect` path).
+ * THIS environment (the `seedWorkspaceDefaultModelOnConnect` path).
  *
  * Managed/platform defaults are servable whenever the tier allows (already enforced
  * upstream by `chooseEffectiveModel`'s free-tier drop), so they are trusted without
@@ -88,33 +88,33 @@ export function chooseEffectiveModel(params: {
  * whose provider key was disconnected/rotated away. Rather than silently
  * dropping straight to the (possibly ALSO unservable, e.g. an unconnected
  * platform default like Codex) platform default, a caller can supply a
- * best-effort "something this project can actually run right now" lookup
+ * best-effort "something this workspace can actually run right now" lookup
  * (see default-model.ts's connectedByokFallback). Returning null from
  * `fallback` (or omitting it) preserves the original platform-default
  * behavior exactly.
  */
 export async function degradeUnservableDefault(
   model: string | null | undefined,
-  ctx: { hasProject: boolean },
+  ctx: { hasWorkspace: boolean },
   probe: () => Promise<boolean>,
   fallback?: () => Promise<string | null>,
 ): Promise<string | null> {
   if (!model) return null;
   if (isManagedRef(model)) return model;
-  if (!ctx.hasProject) return null; // BYOK resolves its key from a project secret
+  if (!ctx.hasWorkspace) return null; // BYOK resolves its key from a workspace secret
   if (await probe()) return model;
   return fallback ? await fallback() : null;
 }
 
 /**
  * Pure precedence for the effective AGENT:
- *   explicit (channel/session) → project default → 'default'.
+ *   explicit (channel/session) → Workspace default → 'default'.
  */
 export function chooseEffectiveAgent(params: {
   explicit?: string | null;
-  projectDefault?: string | null;
+  workspaceDefault?: string | null;
 }): { agent: string; source: AgentSource } {
   if (params.explicit) return { agent: params.explicit, source: 'explicit' };
-  if (params.projectDefault) return { agent: params.projectDefault, source: 'project' };
+  if (params.workspaceDefault) return { agent: params.workspaceDefault, source: 'workspace' };
   return { agent: 'default', source: 'fallback' };
 }

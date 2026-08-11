@@ -18,7 +18,7 @@ import type { AuthedPrincipal, UpstreamDescriptor } from '@kortix/llm-gateway';
 import { verifyProviderConnection, type ProviderVerifyDeps } from './provider-verify';
 
 function principal(overrides: Partial<AuthedPrincipal> = {}): AuthedPrincipal {
-  return { userId: 'user-1', accountId: 'acct-1', projectId: 'project-1', ...overrides };
+  return { userId: 'user-1', accountId: 'acct-1', workspaceId: 'workspace-1', ...overrides };
 }
 
 function descriptor(overrides: Partial<UpstreamDescriptor> = {}): UpstreamDescriptor {
@@ -70,7 +70,7 @@ describe('verifyProviderConnection', () => {
         resolveCandidates: async () => {
           throw new GatewayResolutionError(
             'provider_not_connected',
-            'No openai API key is connected for this project.',
+            'No openai API key is connected for this workspace.',
             'Add a key.',
           );
         },

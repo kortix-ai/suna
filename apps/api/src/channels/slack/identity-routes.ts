@@ -17,7 +17,7 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { combinedAuth } from '../../middleware/auth';
-import { listProjectsForWorkspace, loadSlackTeamNameForProject } from '../install-store';
+import { listWorkspacesForWorkspace, loadSlackTeamNameForWorkspace } from '../install-store';
 import { spawnAgentTurn } from './dispatch';
 import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from './auth-resume';
 import { verifyLoginState } from './login';
@@ -93,17 +93,17 @@ slackIdentityApp.openapi(
     const payload = verifyLoginState(token);
     if (!payload) return c.json({ error: 'This link is invalid or has expired. Run `/kortix login` again.' }, 410);
 
-    // The workspace must be connected to at least one Kortix project, and the
-    // accepting user must be a member of that project's account — otherwise a
+    // The workspace must be connected to at least one Kortix workspace, and the
+    // accepting user must be a member of that workspace's account — otherwise a
     // stranger could bind into a workspace they have no access to.
-    const projectIds = await listProjectsForWorkspace('slack', payload.teamId);
-    if (projectIds.length === 0) {
-      return c.json({ error: 'This Slack workspace is not connected to any Kortix project.' }, 403);
+    const workspaceIds = await listWorkspacesForWorkspace('slack', payload.teamId);
+    if (workspaceIds.length === 0) {
+      return c.json({ error: 'This Slack workspace is not connected to any Kortix workspace.' }, 403);
     }
     const accountRows = await db
       .select({ accountId: projects.accountId })
       .from(projects)
-      .where(inArray(projects.projectId, projectIds));
+      .where(inArray(projects.workspaceId, workspaceIds));
     const accountIds = Array.from(new Set(accountRows.map((r) => r.accountId)));
     const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
     const hasAccess = memberships.some(Boolean);
@@ -123,13 +123,13 @@ slackIdentityApp.openapi(
     });
     if (pending) {
       void replaceSlackAuthPromptConnected(pending.slackResponseUrl, { hasAccess });
-      void spawnAgentTurn(pending.projectId, pending.envelope, pending.event).catch((err) => {
+      void spawnAgentTurn(pending.workspaceId, pending.envelope, pending.event).catch((err) => {
         console.error('[slack-auth] failed to resume pending Slack message after bind', err);
       });
     }
 
-    const workspaceName = projectIds.length
-      ? await loadSlackTeamNameForProject(projectIds[0]).catch(() => null)
+    const workspaceName = workspaceIds.length
+      ? await loadSlackTeamNameForWorkspace(workspaceIds[0]).catch(() => null)
       : null;
     return c.json({ ok: true, workspaceName: workspaceName || null, hasAccess, resumed: !!pending });
   },

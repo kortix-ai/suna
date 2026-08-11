@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { listProjectSessions } from '@kortix/sdk';
+import { listWorkspaceSessions } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   useGatewayBreakdown,
@@ -20,7 +20,7 @@ import {
   useGatewayOverview,
   useGatewaySeries,
   useGatewaySessions,
-} from '@/hooks/projects/use-project-gateway';
+} from '@/hooks/workspaces/use-workspace-gateway';
 
 import {
   MeterRow,
@@ -62,35 +62,35 @@ const METRICS: {
  * Overview, Cost and Usage tabs together: headline stats, a single chart you
  * pivot across metrics, and the spend/error breakdowns underneath.
  */
-export function GatewayOverview({ projectId }: { projectId: string }) {
+export function GatewayOverview({ workspaceId }: { workspaceId: string }) {
   const [days, setDays] = useState(30);
   const [metric, setMetric] = useState<MetricKey>('cost');
 
-  const { data: overview } = useGatewayOverview(projectId, days);
-  const { data: seriesData } = useGatewaySeries(projectId, days);
-  const { data: breakdown } = useGatewayBreakdown(projectId, days);
-  const { data: sessionsData } = useGatewaySessions(projectId, days);
-  const { data: errorData } = useGatewayErrors(projectId, days);
+  const { data: overview } = useGatewayOverview(workspaceId, days);
+  const { data: seriesData } = useGatewaySeries(workspaceId, days);
+  const { data: breakdown } = useGatewayBreakdown(workspaceId, days);
+  const { data: sessionsData } = useGatewaySessions(workspaceId, days);
+  const { data: errorData } = useGatewayErrors(workspaceId, days);
 
   // Resolve session ids → human names so spend reads as "Fix login bug", not a
   // raw uuid. Map both the kortix and opencode ids since the gateway may key on
   // either.
-  const { data: projectSessions } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
-    enabled: !!projectId,
+  const { data: workspaceSessions } = useQuery({
+    queryKey: qk.workspace.sessions(workspaceId),
+    queryFn: () => listWorkspaceSessions(workspaceId),
+    enabled: !!workspaceId,
     ...contract('inventory'),
   });
   const sessionNames = useMemo(() => {
     const m = new Map<string, string>();
-    for (const s of projectSessions ?? []) {
+    for (const s of workspaceSessions ?? []) {
       const label = s.name ?? s.custom_name ?? null;
       if (!label) continue;
       m.set(s.session_id, label);
       if (s.opencode_session_id) m.set(s.opencode_session_id, label);
     }
     return m;
-  }, [projectSessions]);
+  }, [workspaceSessions]);
 
   const requests = overview?.requests ?? 0;
   const errors = overview?.errors ?? 0;

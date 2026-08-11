@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import * as realAccess from '../../projects/lib/access';
+import * as realAccess from '../../workspaces/lib/access';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
-const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
+const WORKSPACE_ID = '00000000-0000-4000-a000-000000000002';
 const SECONDARY_ACCOUNT_ID = '00000000-0000-4000-a000-000000000003';
 const USER_ID = '00000000-0000-4000-a000-000000000004';
 const SESSION_ID = 'session-cost-summary-test';
@@ -12,11 +12,11 @@ const SESSION_ID = 'session-cost-summary-test';
 let authType = 'supabase';
 let sandboxId: string | null = null;
 let summaryInput: Record<string, unknown> | null = null;
-let projectAccessInput: { projectId: string; action: string } | null = null;
+let projectAccessInput: { workspaceId: string; action: string } | null = null;
 let projectCapabilityInput: {
   userId: string;
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   action: string;
 } | null = null;
 let projectCapabilityDenied = false;
@@ -59,27 +59,27 @@ mock.module('../../shared/resolve-account', () => ({
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../projects/lib/access', () => ({
+mock.module('../../workspaces/lib/access', () => ({
   ...realAccess,
-  loadProjectForUser: async (_c: TestContext, projectId: string, action: string) => {
-    projectAccessInput = { projectId, action };
+  loadWorkspaceForUser: async (_c: TestContext, workspaceId: string, action: string) => {
+    projectAccessInput = { workspaceId, action };
     return { userId: USER_ID, row: { accountId: SECONDARY_ACCOUNT_ID } };
   },
-  assertProjectCapability: async (
+  assertWorkspaceCapability: async (
     _c: TestContext,
     userId: string,
     accountId: string,
-    projectId: string,
+    workspaceId: string,
     action: string,
   ) => {
-    projectCapabilityInput = { userId, accountId, projectId, action };
+    projectCapabilityInput = { userId, accountId, workspaceId, action };
     if (projectCapabilityDenied) {
       throw new HTTPException(403, { message: 'Forbidden' });
     }
   },
 }));
 
-// listCostByProject is mocked alongside getCostSummary purely because both
+// listCostByWorkspace is mocked alongside getCostSummary purely because both
 // live in the same module usage.ts imports from — this file never exercises
 // the /cost-by-project route.
 mock.module('../../shared/cost-rollups', () => ({
@@ -87,7 +87,7 @@ mock.module('../../shared/cost-rollups', () => ({
     summaryInput = input;
     return summary;
   },
-  listCostByProject: async () => ({
+  listCostByWorkspace: async () => ({
     projects: [],
     total: 0,
     limit: 25,
@@ -134,6 +134,28 @@ beforeEach(() => {
 });
 
 describe('GET /v1/usage/cost-summary', () => {
+  test('accepts canonical workspace_id scope', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/cost-summary?workspace_id=${WORKSPACE_ID}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(projectAccessInput).toEqual({ workspaceId: WORKSPACE_ID, action: 'read' });
+    expect(summaryInput).toMatchObject({
+      accountId: SECONDARY_ACCOUNT_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+  });
+
+  test('rejects conflicting canonical and legacy Workspace scope fields', async () => {
+    const response = await createTestApp().request(
+      `/v1/usage/cost-summary?workspace_id=${WORKSPACE_ID}&project_id=other-workspace`,
+    );
+
+    expect(response.status).toBe(400);
+    expect(summaryInput).toBeNull();
+  });
+
   test('scopes to the account by default and returns the summary envelope', async () => {
     const response = await createTestApp().request(
       `/v1/usage/cost-summary?account_id=${ACCOUNT_ID}`,
@@ -141,7 +163,7 @@ describe('GET /v1/usage/cost-summary', () => {
 
     expect(response.status).toBe(200);
     expect(summaryInput?.accountId).toBe(ACCOUNT_ID);
-    expect(summaryInput?.projectId).toBeUndefined();
+    expect(summaryInput?.workspaceId).toBeUndefined();
     expect(summaryInput?.sessionId).toBeUndefined();
     expect(await response.json()).toEqual(summary);
   });
@@ -173,7 +195,7 @@ describe('GET /v1/usage/cost-summary', () => {
     expect(response.status).toBe(200);
     expect(summaryInput?.accountId).toBe(ACCOUNT_ID);
     expect(summaryInput?.sessionId).toBe(SESSION_ID);
-    expect(summaryInput?.projectId).toBeUndefined();
+    expect(summaryInput?.workspaceId).toBeUndefined();
   });
 
   test('rejects an inverted window with 400', async () => {
@@ -187,33 +209,33 @@ describe('GET /v1/usage/cost-summary', () => {
 
   test('infers the account from an accessible project when account_id is omitted', async () => {
     const response = await createTestApp().request(
-      `/v1/usage/cost-summary?project_id=${PROJECT_ID}`,
+      `/v1/usage/cost-summary?project_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(200);
-    expect(projectAccessInput).toEqual({ projectId: PROJECT_ID, action: 'read' });
+    expect(projectAccessInput).toEqual({ workspaceId: WORKSPACE_ID, action: 'read' });
     expect(projectCapabilityInput).toEqual({
       userId: USER_ID,
       accountId: SECONDARY_ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       action: 'project.gateway.spend.read',
     });
     expect(summaryInput?.accountId).toBe(SECONDARY_ACCOUNT_ID);
-    expect(summaryInput?.projectId).toBe(PROJECT_ID);
+    expect(summaryInput?.workspaceId).toBe(WORKSPACE_ID);
   });
 
   test('denies project-scoped summaries without the spend capability', async () => {
     projectCapabilityDenied = true;
 
     const response = await createTestApp().request(
-      `/v1/usage/cost-summary?project_id=${PROJECT_ID}`,
+      `/v1/usage/cost-summary?project_id=${WORKSPACE_ID}`,
     );
 
     expect(response.status).toBe(403);
     expect(projectCapabilityInput).toEqual({
       userId: USER_ID,
       accountId: SECONDARY_ACCOUNT_ID,
-      projectId: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
       action: 'project.gateway.spend.read',
     });
     expect(summaryInput).toBeNull();

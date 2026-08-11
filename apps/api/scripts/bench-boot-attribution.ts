@@ -27,11 +27,11 @@
  *   cd apps/api
  *   BENCH_DB_URL="$(dotenvx get DATABASE_URL -f .env.prod)" \
  *   BENCH_TOKEN=... BENCH_API=https://api.kortix.com \
- *   BENCH_TARGETS='[{"label":"daytona","projectId":"..."},{"label":"platinum","projectId":"..."}]' \
+ *   BENCH_TARGETS='[{"label":"daytona","workspaceId":"..."},{"label":"platinum","workspaceId":"..."}]' \
  *   bun run scripts/bench-boot-attribution.ts
  *
  * Env:
- *   BENCH_TARGETS   JSON array of {label, projectId}. Required.
+ *   BENCH_TARGETS   JSON array of {label, workspaceId}. Required.
  *   BENCH_DB_URL    Postgres URL for host-side transitions. Required.
  *   BENCH_API       API base origin (default https://api.kortix.com).
  *   BENCH_TOKEN     kortix_pat_… Required. Read from env only, never from a
@@ -64,7 +64,7 @@ const DB_URL = process.env.BENCH_DB_URL ?? '';
 //      js/file-data-in-outbound-request), rather than suppressing the alert.
 const TOKEN = (process.env.BENCH_TOKEN ?? '').trim();
 
-interface Target { label: string; projectId: string }
+interface Target { label: string; workspaceId: string }
 const TARGETS: Target[] = JSON.parse(process.env.BENCH_TARGETS ?? '[]');
 
 if (!TARGETS.length || !DB_URL || !TOKEN) {
@@ -123,7 +123,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
   const at = () => Math.round(performance.now() - t0);
 
   try {
-    const res = await api(`/v1/projects/${target.projectId}/sessions`, {
+    const res = await api(`/v1/projects/${target.workspaceId}/sessions`, {
       method: 'POST',
       body: JSON.stringify({}),
     });
@@ -189,7 +189,7 @@ async function measureBoot(target: Target, round: number): Promise<Boot> {
     boot.error = err instanceof Error ? err.message : String(err);
   } finally {
     if (boot.sessionId && !KEEP) {
-      await api(`/v1/projects/${target.projectId}/sessions/${boot.sessionId}`, { method: 'DELETE' }).catch(() => {});
+      await api(`/v1/projects/${target.workspaceId}/sessions/${boot.sessionId}`, { method: 'DELETE' }).catch(() => {});
     }
   }
   return boot;
@@ -274,7 +274,7 @@ function report(boots: Boot[]): void {
 
 async function main() {
   console.error(`session-boot attribution — API ${API}, ${ROUNDS} rounds/target`);
-  console.error(`targets: ${TARGETS.map((t) => `${t.label}(${t.projectId.slice(0, 8)})`).join(', ')}\n`);
+  console.error(`targets: ${TARGETS.map((t) => `${t.label}(${t.workspaceId.slice(0, 8)})`).join(', ')}\n`);
 
   const results = await Promise.all(
     TARGETS.map(async (t) => {

@@ -1,8 +1,8 @@
 'use client';
 
-import { useQueryClient } from '@tanstack/react-query';
 import { qk } from '@kortix/sdk/react';
 import { CheckIcon as Check, LockIcon as Lock, UsersIcon as Users } from '@phosphor-icons/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -17,23 +17,23 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-connect-member';
-import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { usePipedreamConnectWorkspace } from '@/hooks/connectors/use-pipedream-connect-workspace';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
 import { type ConnectorGateConnection, useConnectorGateStore } from '@/stores/connector-gate-store';
 
 export function ConnectorConnectionGateContent({
   connections,
   connectedIds,
   pendingId,
-  canManageProjectConnections,
+  canManageWorkspaceConnections,
   onConnect,
   onCancel,
 }: {
   connections: ConnectorGateConnection[];
   connectedIds: ReadonlySet<string>;
   pendingId: string | null;
-  canManageProjectConnections: boolean;
+  canManageWorkspaceConnections: boolean;
   onConnect: (connection: ConnectorGateConnection) => void;
   onCancel: () => void;
 }) {
@@ -57,7 +57,7 @@ export function ConnectorConnectionGateContent({
           const connected = connectedIds.has(connection.id);
           const pending = pendingId === connection.id;
           const managerRequired =
-            connection.authorization_strategy === 'project' && !canManageProjectConnections;
+            connection.authorization_strategy === 'workspace' && !canManageWorkspaceConnections;
           return (
             <div
               key={connection.id}
@@ -67,15 +67,15 @@ export function ConnectorConnectionGateContent({
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-sm font-medium">{connection.name}</span>
                   <Badge variant="muted" size="xs">
-                    {connection.authorization_strategy === 'user' ? 'Private' : 'Project'}
+                    {connection.authorization_strategy === 'user' ? 'Private' : 'Workspace'}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-0.5 text-xs">
                   {managerRequired
-                    ? 'A project manager must create this connection.'
+                    ? 'A workspace manager must create this connection.'
                     : connection.authorization_strategy === 'user'
                       ? 'Only your private sessions can use this connection.'
-                      : 'Eligible project members can use this connection.'}
+                      : 'Eligible workspace members can use this connection.'}
                 </p>
               </div>
 
@@ -117,22 +117,22 @@ export function ConnectorConnectionGateContent({
 }
 
 function ConnectorConnectionAction({
-  projectId,
+  workspaceId,
   connection,
   active,
   onPending,
   onConnected,
 }: {
-  projectId: string;
+  workspaceId: string;
   connection: ConnectorGateConnection;
   active: boolean;
   onPending: (id: string | null) => void;
   onConnected: (id: string) => void;
 }) {
   const connected = useCallback(() => onConnected(connection.id), [onConnected, connection.id]);
-  const member = usePipedreamConnectMember(projectId, connection.slug, connected);
-  const project = usePipedreamConnectProject(projectId, connection.slug, connected);
-  const mutation = connection.authorization_strategy === 'user' ? member : project;
+  const member = usePipedreamConnectMember(workspaceId, connection.slug, connected);
+  const workspace = usePipedreamConnectWorkspace(workspaceId, connection.slug, connected);
+  const mutation = connection.authorization_strategy === 'user' ? member : workspace;
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -150,12 +150,14 @@ function ConnectorConnectionAction({
  * Global gate for a structured `CONNECTOR_CONNECTION_REQUIRED` response.
  */
 export function ConnectorConnectionGateDialog() {
-  const { isOpen, projectId, connectorConnections, retry, closeConnectorGate } =
+  const { isOpen, workspaceId, connectorConnections, retry, closeConnectorGate } =
     useConnectorGateStore();
   const queryClient = useQueryClient();
-  const canManageProjectConnections =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)
-      .allowed === true;
+  const canManageWorkspaceConnections =
+    useWorkspaceCan(
+      workspaceId ?? undefined,
+      WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_CONNECTIONS_MANAGE,
+    ).allowed === true;
   const [connectedIds, setConnectedIds] = useState<Set<string>>(() => new Set());
   const [pendingId, setPendingId] = useState<string | null>(null);
   const connectionKey = useMemo(
@@ -179,21 +181,29 @@ export function ConnectorConnectionGateDialog() {
   useEffect(() => {
     if (!isOpen || connectorConnections.length === 0) return;
     if (!connectorConnections.every((connection) => connectedIds.has(connection.id))) return;
-    if (projectId) {
+    if (workspaceId) {
       void queryClient.invalidateQueries({
-        queryKey: ['connections', projectId],
+        queryKey: ['connections', workspaceId],
       });
       void queryClient.invalidateQueries({
-        queryKey: qk.project.connectors(projectId),
+        queryKey: qk.workspace.connectors(workspaceId),
       });
       void queryClient.invalidateQueries({
-        queryKey: ['session-scope-catalog', projectId],
+        queryKey: ['session-scope-catalog', workspaceId],
       });
     }
     const run = retry;
     closeConnectorGate();
     run?.();
-  }, [closeConnectorGate, connectedIds, connectorConnections, isOpen, projectId, queryClient, retry]);
+  }, [
+    closeConnectorGate,
+    connectedIds,
+    connectorConnections,
+    isOpen,
+    workspaceId,
+    queryClient,
+    retry,
+  ]);
 
   const activeConnection =
     pendingId === null
@@ -207,13 +217,13 @@ export function ConnectorConnectionGateDialog() {
           connections={connectorConnections}
           connectedIds={connectedIds}
           pendingId={pendingId}
-          canManageProjectConnections={canManageProjectConnections}
+          canManageWorkspaceConnections={canManageWorkspaceConnections}
           onConnect={(connection) => setPendingId(connection.id)}
           onCancel={closeConnectorGate}
         />
-        {activeConnection && projectId ? (
+        {activeConnection && workspaceId ? (
           <ConnectorConnectionAction
-            projectId={projectId}
+            workspaceId={workspaceId}
             connection={activeConnection}
             active
             onPending={setPendingId}

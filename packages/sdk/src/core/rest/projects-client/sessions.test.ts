@@ -591,7 +591,7 @@ test('setProjectSessionScope clears a connector override with null', async () =>
       retroactive: true,
       connector_bindings_configured: false,
       connector_bindings_inherit_unbound: false,
-      detail: 'Connector access is back to the project defaults.',
+      detail: 'Connector access is back to the workspace defaults.',
     },
   };
   const result = await setProjectSessionScope('P1', 'S1', { connector_bindings: null });

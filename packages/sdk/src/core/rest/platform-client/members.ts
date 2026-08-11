@@ -165,24 +165,24 @@ async function fetchKortixMaster<T>(
 
 export async function listSandboxProjectMembers(
   sandbox: SandboxInfo,
-  projectId: string,
+  workspaceId: string,
 ): Promise<SandboxProjectMembersResponse> {
   return fetchKortixMaster<SandboxProjectMembersResponse>(
     sandbox,
-    `/kortix/projects/${encodeURIComponent(projectId)}/members`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/members`,
     { method: 'GET' },
   );
 }
 
 export async function grantSandboxProjectAccess(
   sandbox: SandboxInfo,
-  projectId: string,
+  workspaceId: string,
   userId: string,
   role: 'admin' | 'member' = 'member',
 ): Promise<void> {
   await fetchKortixMaster<void>(
     sandbox,
-    `/kortix/projects/${encodeURIComponent(projectId)}/members`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/members`,
     {
       method: 'POST',
       body: JSON.stringify({ user_id: userId, role }),
@@ -192,12 +192,12 @@ export async function grantSandboxProjectAccess(
 
 export async function revokeSandboxProjectAccess(
   sandbox: SandboxInfo,
-  projectId: string,
+  workspaceId: string,
   userId: string,
 ): Promise<void> {
   await fetchKortixMaster<void>(
     sandbox,
-    `/kortix/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
     { method: 'DELETE' },
   );
 }

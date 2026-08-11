@@ -1,0 +1,1330 @@
+import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { createRoute, z } from '@hono/zod-openapi';
+import {
+  gatewayBudgets,
+  gatewayRequestLogs,
+} from '@kortix/db';
+import {
+  calculateCost,
+  callUpstream,
+  GatewayResolutionError,
+  type AuthedPrincipal,
+} from '@kortix/llm-gateway';
+import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
+import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
+import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
+import { db } from '../../shared/db';
+import { auth, errors, json } from '../../openapi';
+import { authorize } from '../../iam';
+import { deriveRequestContext } from '../../iam/cache';
+import { WORKSPACE_ACTIONS } from '../../iam/actions';
+import { assertWorkspaceCapability, loadWorkspaceForUser, lookupEmailsByUserIds } from '../lib/access';
+import { workspaceRoutesApp } from '../lib/app';
+import { UUID_V4_REGEX } from '../lib/serializers';
+import {
+  createGatewayKey,
+  listGatewayKeys,
+  revokeGatewayKey,
+} from '../../llm-gateway/gateway-keys';
+import {
+  assertGatewayBudget,
+  persistGatewayTrace,
+  recordGatewayUsage,
+} from '../../llm-gateway/hooks';
+import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
+import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
+import { config } from '../../config';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { getAccountModelDefaults } from '../../repositories/model-preferences';
+import {
+  getWorkspaceRoutingPolicy,
+  resetWorkspaceRoutingPolicy,
+  setWorkspaceRoutingPolicy,
+} from '../../repositories/workspace-routing-policies';
+import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
+import { parseWorkspaceRoutingPolicyInput } from '../../llm-gateway/routing/workspace-policy';
+import { resolveGatewayRoute } from '../../llm-gateway/routing';
+import { listWorkspaceGatewaySessionSpend } from '../../shared/session-costs';
+import { classifyGatewayLogReference } from './gateway-log-reference';
+
+async function canDo(
+  c: any,
+  workspaceId: string,
+  accountId: string,
+  action: string,
+): Promise<boolean> {
+  const verdict = await authorize(
+    c.get('userId'),
+    accountId,
+    action,
+    { type: 'project', id: workspaceId },
+    c.get('iamTokenId'),
+    deriveRequestContext(c),
+  );
+  return verdict.allowed;
+}
+
+const canSetBudget = (c: any, workspaceId: string, accountId: string) =>
+  canDo(c, workspaceId, accountId, WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_BUDGET_SET);
+const canManageKeys = (c: any, workspaceId: string, accountId: string) =>
+  canDo(c, workspaceId, accountId, WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_KEYS_MANAGE);
+
+const LIST_LIMIT_DEFAULT = 50;
+const LIST_LIMIT_MAX = 100;
+
+const LIST_COLUMNS = {
+  logId: gatewayRequestLogs.logId,
+  requestId: gatewayRequestLogs.requestId,
+  createdAt: gatewayRequestLogs.createdAt,
+  requestedModel: gatewayRequestLogs.requestedModel,
+  resolvedModel: gatewayRequestLogs.resolvedModel,
+  provider: gatewayRequestLogs.provider,
+  status: gatewayRequestLogs.status,
+  ok: gatewayRequestLogs.ok,
+  errorCode: gatewayRequestLogs.errorCode,
+  errorMessage: gatewayRequestLogs.errorMessage,
+  latencyMs: gatewayRequestLogs.latencyMs,
+  attempts: gatewayRequestLogs.attempts,
+  inputTokens: gatewayRequestLogs.inputTokens,
+  outputTokens: gatewayRequestLogs.outputTokens,
+  cachedTokens: gatewayRequestLogs.cachedTokens,
+  cacheWriteTokens: gatewayRequestLogs.cacheWriteTokens,
+  upstreamCost: gatewayRequestLogs.upstreamCost,
+  finalCost: gatewayRequestLogs.finalCost,
+  streaming: gatewayRequestLogs.streaming,
+  billingMode: gatewayRequestLogs.billingMode,
+  actorUserId: gatewayRequestLogs.actorUserId,
+  keyId: gatewayRequestLogs.keyId,
+};
+
+function serializeLogRow(r: Record<string, any>) {
+  return {
+    log_id: r.logId,
+    request_id: r.requestId,
+    created_at: r.createdAt,
+    requested_model: r.requestedModel,
+    resolved_model: r.resolvedModel,
+    provider: r.provider,
+    status: r.status,
+    ok: r.ok,
+    error_code: r.errorCode,
+    error_message: r.errorMessage,
+    latency_ms: r.latencyMs,
+    attempts: r.attempts,
+    input_tokens: r.inputTokens,
+    output_tokens: r.outputTokens,
+    cached_tokens: r.cachedTokens,
+    cache_write_tokens: r.cacheWriteTokens,
+    upstream_cost: Number(r.upstreamCost ?? 0),
+    final_cost: Number(r.finalCost ?? 0),
+    streaming: r.streaming,
+    billing_mode: r.billingMode,
+    actor_user_id: r.actorUserId,
+    key_id: r.keyId,
+  };
+}
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/logs',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/logs',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      query: z.object({
+        limit: z.string().optional(),
+        offset: z.string().optional(),
+        ok: z.enum(['true', 'false']).optional(),
+      }),
+    },
+    responses: { 200: json(z.any(), 'Gateway request logs'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_LOGS_READ,
+    );
+
+    const limit = Math.min(
+      Math.max(Number(c.req.query('limit')) || LIST_LIMIT_DEFAULT, 1),
+      LIST_LIMIT_MAX,
+    );
+    const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
+    const okFilter = c.req.query('ok');
+
+    const conds = [eq(gatewayRequestLogs.workspaceId, workspaceId)];
+    if (okFilter === 'true') conds.push(eq(gatewayRequestLogs.ok, true));
+    if (okFilter === 'false') conds.push(eq(gatewayRequestLogs.ok, false));
+
+    const rows = await db
+      .select(LIST_COLUMNS)
+      .from(gatewayRequestLogs)
+      .where(and(...conds))
+      .orderBy(desc(gatewayRequestLogs.createdAt))
+      .limit(limit + 1)
+      .offset(offset);
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return c.json({
+      logs: page.map(serializeLogRow),
+      next_offset: hasMore ? offset + limit : null,
+    });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/logs/{logId}',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/logs/:logId',
+    ...auth,
+    request: { params: z.object({ workspaceId: z.string(), logId: z.string() }) },
+    responses: { 200: json(z.any(), 'Gateway request log detail'), ...errors(400, 404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const logReference = c.req.param('logId');
+    const referenceKind = classifyGatewayLogReference(logReference);
+    if (referenceKind === 'invalid') {
+      return c.json({ error: 'Invalid log id or request id' }, 400);
+    }
+
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_LOGS_READ,
+    );
+
+    const [row] = await db
+      .select()
+      .from(gatewayRequestLogs)
+      .where(
+        and(
+          referenceKind === 'both'
+            ? or(
+                eq(gatewayRequestLogs.logId, logReference),
+                eq(gatewayRequestLogs.requestId, logReference),
+              )
+            : eq(gatewayRequestLogs.requestId, logReference),
+          eq(gatewayRequestLogs.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+
+    return c.json({
+      ...serializeLogRow(row),
+      candidates_tried: row.candidatesTried ?? [],
+      request: row.request ?? null,
+      response: row.response ?? null,
+      metadata: row.metadata ?? {},
+    });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/overview',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/overview',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      query: z.object({ days: z.string().optional() }),
+    },
+    responses: { 200: json(z.any(), 'Gateway usage overview'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_SPEND_READ,
+    );
+
+    const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
+    const [agg] = await db
+      .select({
+        requests: sql<number>`count(*)::int`,
+        errors: sql<number>`count(*) filter (where not ok)::int`,
+        totalCost: sql<number>`coalesce(sum(final_cost), 0)::float8`,
+        inputTokens: sql<string>`coalesce(sum(input_tokens), 0)`,
+        outputTokens: sql<string>`coalesce(sum(output_tokens), 0)`,
+      })
+      .from(gatewayRequestLogs)
+      .where(
+        and(
+          eq(gatewayRequestLogs.workspaceId, workspaceId),
+          sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
+        ),
+      );
+
+    return c.json({
+      window_days: days,
+      requests: agg?.requests ?? 0,
+      errors: agg?.errors ?? 0,
+      total_cost: agg?.totalCost ?? 0,
+      input_tokens: Number(agg?.inputTokens ?? 0),
+      output_tokens: Number(agg?.outputTokens ?? 0),
+    });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/series',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/series',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      query: z.object({ days: z.string().optional() }),
+    },
+    responses: { 200: json(z.any(), 'Gateway daily usage series'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_SPEND_READ,
+    );
+
+    const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
+    const rows = await db
+      .select({
+        day: sql<string>`to_char(date_trunc('day', ${gatewayRequestLogs.createdAt}), 'YYYY-MM-DD')`,
+        requests: sql<number>`count(*)::int`,
+        errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
+        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        inputTokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens}), 0)`,
+        outputTokens: sql<string>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)`,
+        p50: sql<number>`coalesce(percentile_cont(0.5) within group (order by ${gatewayRequestLogs.latencyMs}), 0)::int`,
+        p95: sql<number>`coalesce(percentile_cont(0.95) within group (order by ${gatewayRequestLogs.latencyMs}), 0)::int`,
+        p99: sql<number>`coalesce(percentile_cont(0.99) within group (order by ${gatewayRequestLogs.latencyMs}), 0)::int`,
+      })
+      .from(gatewayRequestLogs)
+      .where(
+        and(
+          eq(gatewayRequestLogs.workspaceId, workspaceId),
+          sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
+        ),
+      )
+      .groupBy(sql`date_trunc('day', ${gatewayRequestLogs.createdAt})`)
+      .orderBy(sql`date_trunc('day', ${gatewayRequestLogs.createdAt})`);
+
+    const byDay = new Map(rows.map((r) => [r.day, r]));
+    const series: {
+      day: string;
+      requests: number;
+      errors: number;
+      cost: number;
+      input_tokens: number;
+      output_tokens: number;
+      p50: number;
+      p95: number;
+      p99: number;
+    }[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86_400_000);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      const r = byDay.get(key);
+      series.push({
+        day: key,
+        requests: r?.requests ?? 0,
+        errors: r?.errors ?? 0,
+        cost: r?.cost ?? 0,
+        input_tokens: Number(r?.inputTokens ?? 0),
+        output_tokens: Number(r?.outputTokens ?? 0),
+        p50: r?.p50 ?? 0,
+        p95: r?.p95 ?? 0,
+        p99: r?.p99 ?? 0,
+      });
+    }
+    return c.json({ window_days: days, series });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/sessions',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/sessions',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      query: z.object({ days: z.string().optional() }),
+    },
+    responses: { 200: json(z.any(), 'Gateway spend by session'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_SPEND_READ,
+    );
+
+    const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
+    return c.json(
+      await listWorkspaceGatewaySessionSpend({
+        accountId: loaded.row.accountId,
+        workspaceId,
+        days,
+      }),
+    );
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/breakdown',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/breakdown',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      query: z.object({ days: z.string().optional() }),
+    },
+    responses: { 200: json(z.any(), 'Gateway usage by model'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_SPEND_READ,
+    );
+
+    const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
+    const rows = await db
+      .select({
+        model: gatewayRequestLogs.requestedModel,
+        provider: gatewayRequestLogs.provider,
+        requests: sql<number>`count(*)::int`,
+        errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
+        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
+      })
+      .from(gatewayRequestLogs)
+      .where(
+        and(
+          eq(gatewayRequestLogs.workspaceId, workspaceId),
+          sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
+        ),
+      )
+      .groupBy(gatewayRequestLogs.requestedModel, gatewayRequestLogs.provider)
+      .orderBy(desc(sql`count(*)`))
+      .limit(12);
+
+    return c.json({
+      window_days: days,
+      models: rows.map((r) => ({
+        model: r.model,
+        provider: r.provider,
+        requests: r.requests,
+        errors: r.errors,
+        cost: r.cost,
+        tokens: Number(r.tokens),
+      })),
+    });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/budgets',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/budgets',
+    ...auth,
+    request: { params: z.object({ workspaceId: z.string() }) },
+    responses: { 200: json(z.any(), 'Gateway budgets + per-member spend'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_SPEND_READ,
+    );
+
+    const budgets = await db
+      .select()
+      .from(gatewayBudgets)
+      .where(eq(gatewayBudgets.workspaceId, workspaceId));
+
+    const memberRows = await db
+      .select({
+        userId: gatewayRequestLogs.actorUserId,
+        requests: sql<number>`count(*)::int`,
+        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
+      })
+      .from(gatewayRequestLogs)
+      .where(
+        and(
+          eq(gatewayRequestLogs.workspaceId, workspaceId),
+          sql`${gatewayRequestLogs.actorUserId} is not null`,
+          sql`${gatewayRequestLogs.createdAt} >= date_trunc('month', now())`,
+        ),
+      )
+      .groupBy(gatewayRequestLogs.actorUserId)
+      .orderBy(desc(sql`sum(${gatewayRequestLogs.finalCost})`));
+
+    const [workspaceAgg] = await db
+      .select({
+        requests: sql<number>`count(*)::int`,
+        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+      })
+      .from(gatewayRequestLogs)
+      .where(
+        and(
+          eq(gatewayRequestLogs.workspaceId, workspaceId),
+          sql`${gatewayRequestLogs.createdAt} >= date_trunc('month', now())`,
+        ),
+      );
+
+    const emails = await lookupEmailsByUserIds(
+      memberRows.map((r) => r.userId).filter((v): v is string => !!v),
+    );
+
+    return c.json({
+      workspace_spend: { requests: workspaceAgg?.requests ?? 0, cost: workspaceAgg?.cost ?? 0 },
+      budgets: budgets.map((b) => ({
+        budget_id: b.budgetId,
+        scope: b.scope,
+        subject_user_id: b.subjectUserId,
+        limit_usd: Number(b.limitUsd),
+        period: b.period,
+        action: b.action,
+      })),
+      members: memberRows.map((r) => ({
+        user_id: r.userId,
+        email: r.userId ? (emails.get(r.userId) ?? null) : null,
+        requests: r.requests,
+        cost: r.cost,
+        tokens: Number(r.tokens),
+      })),
+    });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{workspaceId}/gateway/budgets',
+    tags: ['gateway'],
+    summary: 'PUT /:workspaceId/gateway/budgets',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              scope: z.enum(['workspace', 'member']),
+              subject_user_id: z.string().nullable().optional(),
+              limit_usd: z.number().positive(),
+              period: z.enum(['day', 'week', 'month']).optional(),
+              action: z.enum(['block', 'warn']).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: { 200: json(z.any(), 'Budget upserted'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!(await canSetBudget(c, workspaceId, loaded.row.accountId))) {
+      return c.json({ error: 'You do not have permission to set budgets' }, 403);
+    }
+
+    const body = await c.req.json();
+    const scope = body.scope as 'workspace' | 'member';
+    const storageScope = scope === 'workspace' ? 'project' : scope;
+    const subjectUserId = scope === 'member' ? (body.subject_user_id ?? null) : null;
+    if (scope === 'member' && !subjectUserId) {
+      return c.json({ error: 'subject_user_id is required for a member budget' }, 400);
+    }
+    const period = (body.period ?? 'month') as 'day' | 'week' | 'month';
+    const action = (body.action ?? 'block') as 'block' | 'warn';
+    const limit = String(body.limit_usd);
+
+    const existing = await db
+      .select({ id: gatewayBudgets.budgetId })
+      .from(gatewayBudgets)
+      .where(
+        and(
+          eq(gatewayBudgets.workspaceId, workspaceId),
+          eq(gatewayBudgets.scope, storageScope),
+          subjectUserId
+            ? eq(gatewayBudgets.subjectUserId, subjectUserId)
+            : sql`${gatewayBudgets.subjectUserId} is null`,
+        ),
+      )
+      .limit(1);
+
+    if (existing[0]) {
+      await db
+        .update(gatewayBudgets)
+        .set({ limitUsd: limit, period, action, updatedAt: new Date() })
+        .where(eq(gatewayBudgets.budgetId, existing[0].id));
+    } else {
+      await db.insert(gatewayBudgets).values({
+        workspaceId,
+        scope: storageScope,
+        subjectUserId,
+        limitUsd: limit,
+        period,
+        action,
+        createdBy: c.get('userId'),
+      });
+    }
+    return c.json({ ok: true });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{workspaceId}/gateway/budgets/{budgetId}',
+    tags: ['gateway'],
+    summary: 'DELETE /:workspaceId/gateway/budgets/:budgetId',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string(), budgetId: z.string().regex(UUID_V4_REGEX) }),
+    },
+    responses: { 200: json(z.any(), 'Budget removed'), ...errors(403, 404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const budgetId = c.req.param('budgetId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!(await canSetBudget(c, workspaceId, loaded.row.accountId))) {
+      return c.json({ error: 'You do not have permission to set budgets' }, 403);
+    }
+    await db
+      .delete(gatewayBudgets)
+      .where(and(eq(gatewayBudgets.budgetId, budgetId), eq(gatewayBudgets.workspaceId, workspaceId)));
+    return c.json({ ok: true });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/errors',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/errors',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      query: z.object({ days: z.string().optional() }),
+    },
+    responses: { 200: json(z.any(), 'Gateway error breakdown'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_LOGS_READ,
+    );
+
+    const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
+    const rows = await db
+      .select({
+        code: sql<string>`coalesce(${gatewayRequestLogs.errorCode}, 'unknown')`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(gatewayRequestLogs)
+      .where(
+        and(
+          eq(gatewayRequestLogs.workspaceId, workspaceId),
+          sql`not ${gatewayRequestLogs.ok}`,
+          sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
+        ),
+      )
+      .groupBy(gatewayRequestLogs.errorCode)
+      .orderBy(desc(sql`count(*)`))
+      .limit(12);
+
+    return c.json({ window_days: days, errors: rows });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/keys',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/keys',
+    ...auth,
+    request: { params: z.object({ workspaceId: z.string() }) },
+    responses: { 200: json(z.any(), 'Gateway API keys'), ...errors(403, 404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!(await canManageKeys(c, workspaceId, loaded.row.accountId))) {
+      return c.json({ error: 'You do not have permission to manage gateway keys' }, 403);
+    }
+    const keys = await listGatewayKeys(workspaceId);
+    return c.json({
+      // Env-correct public host (dev vs prod) so the UI's curl example points at
+      // the right gateway instead of a hardcoded one.
+      gateway_url: publicGatewayBaseUrl(config.LLM_GATEWAY_BASE_URL),
+      keys: keys.map((k) => ({
+        key_id: k.keyId,
+        name: k.name,
+        key_prefix: k.keyPrefix,
+        status: k.status,
+        last_used_at: k.lastUsedAt,
+        created_at: k.createdAt,
+      })),
+    });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/gateway/keys',
+    tags: ['gateway'],
+    summary: 'POST /:workspaceId/gateway/keys',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      body: {
+        content: {
+          'application/json': { schema: z.object({ name: z.string().min(1).max(255) }) },
+        },
+      },
+    },
+    responses: { 200: json(z.any(), 'Gateway API key created'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!(await canManageKeys(c, workspaceId, loaded.row.accountId))) {
+      return c.json({ error: 'You do not have permission to manage gateway keys' }, 403);
+    }
+    const body = await c.req.json();
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) return c.json({ error: 'A key name is required' }, 400);
+    const created = await createGatewayKey({
+      accountId: loaded.row.accountId,
+      workspaceId,
+      name,
+      createdBy: c.get('userId'),
+    });
+    return c.json(created);
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{workspaceId}/gateway/keys/{keyId}',
+    tags: ['gateway'],
+    summary: 'DELETE /:workspaceId/gateway/keys/:keyId',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string(), keyId: z.string().regex(UUID_V4_REGEX) }),
+    },
+    responses: { 200: json(z.any(), 'Gateway API key revoked'), ...errors(403, 404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const keyId = c.req.param('keyId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!(await canManageKeys(c, workspaceId, loaded.row.accountId))) {
+      return c.json({ error: 'You do not have permission to manage gateway keys' }, 403);
+    }
+    const ok = await revokeGatewayKey(workspaceId, keyId);
+    return c.json({ ok });
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/gateway/playground',
+    tags: ['gateway'],
+    summary: 'POST /:workspaceId/gateway/playground',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              prompt: z.string().min(1).max(8000),
+              models: z.array(z.string()).min(1).max(6),
+              system: z.string().max(4000).optional(),
+              // Per-model generation-parameter overrides for THIS run only —
+              // never persisted. Same shape + same server-side capability
+              // clamp as the persisted routing-policy config (see
+              // clampGenerationConfig below); an unsupported/out-of-range
+              // field for a given model is silently dropped, not rejected.
+              generationConfig: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: { 200: json(z.any(), 'Playground results'), ...errors(400, 404) },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_GATEWAY_SPEND_READ,
+    );
+
+    const body = await c.req.json();
+    const prompt = typeof body.prompt === 'string' ? body.prompt : '';
+    const models: string[] = Array.isArray(body.models) ? body.models.slice(0, 6) : [];
+    const system = typeof body.system === 'string' && body.system.trim() ? body.system : undefined;
+    const rawGenerationConfig =
+      body.generationConfig && typeof body.generationConfig === 'object'
+        ? (body.generationConfig as Record<string, unknown>)
+        : {};
+    if (!prompt || models.length === 0) {
+      return c.json({ error: 'prompt and models are required' }, 400);
+    }
+
+    const principal: AuthedPrincipal = {
+      userId: c.get('userId'),
+      accountId: loaded.row.accountId,
+      workspaceId,
+    };
+    await assertGatewayBudget(principal);
+
+    const results = await Promise.all(
+      models.map(async (model) => {
+        const requestId = crypto.randomUUID();
+        // Same capability clamp the persisted routing-policy write path
+        // uses — a playground run must never send a param the resolved
+        // model can't honor either. Applied on top of the 512-token
+        // default so an explicit override can raise (or lower) it.
+        const clamped = clampGenerationConfig(
+          rawGenerationConfig[model] as GenerationConfig | undefined,
+          catalogModelForWireModel(model),
+        );
+        const request: Record<string, unknown> = {
+          model,
+          messages: [
+            ...(system ? [{ role: 'system', content: system }] : []),
+            { role: 'user', content: prompt },
+          ],
+          stream: false,
+          max_tokens: clamped.maxOutputTokens ?? 512,
+          ...(clamped.temperature !== undefined ? { temperature: clamped.temperature } : {}),
+          ...(clamped.topP !== undefined ? { top_p: clamped.topP } : {}),
+          ...(clamped.reasoningEffort !== undefined
+            ? { reasoning_effort: clamped.reasoningEffort }
+            : {}),
+        };
+        try {
+          const candidates = await resolveCandidates(principal, model);
+          if (candidates.length === 0) {
+            return { model, ok: false, error: 'No upstream configured for this model' };
+          }
+          const descriptor = candidates[0]!;
+          const start = Date.now();
+          const res = await callUpstream(request, descriptor);
+          const latencyMs = Date.now() - start;
+          const data = (await res.json()) as any;
+          const usage = data?.usage ?? {};
+          const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
+          const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
+          const cachedTokens =
+            Number(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0) || 0;
+          const cacheWriteTokens =
+            Number(
+              usage.cache_write_tokens ?? usage.prompt_tokens_details?.cache_write_tokens ?? 0,
+            ) || 0;
+          const resolvedModel = String(data?.model ?? descriptor.resolvedModel ?? model);
+          const { upstreamCost, finalCost } = calculateCost(
+            resolvedModel,
+            { promptTokens, completionTokens, cachedTokens, cacheWriteTokens },
+            descriptor.billingMode === 'none' ? 0 : descriptor.markup,
+            typeof usage.cost === 'number' ? usage.cost : undefined,
+            descriptor.pricing,
+          );
+          await persistGatewayTrace({
+            requestId,
+            startedAt: new Date(start).toISOString(),
+            accountId: principal.accountId,
+            actorUserId: principal.userId,
+            workspaceId,
+            requestedModel: model,
+            resolvedModel,
+            provider: descriptor.provider,
+            billingMode: descriptor.billingMode,
+            streaming: false,
+            status: res.status,
+            ok: res.ok,
+            errorMessage: res.ok
+              ? undefined
+              : (data?.error?.message ?? data?.message ?? `HTTP ${res.status}`),
+            latencyMs,
+            attempts: 1,
+            candidatesTried: [descriptor.provider],
+            usage: { promptTokens, completionTokens, cachedTokens, cacheWriteTokens },
+            upstreamCost,
+            finalCost,
+            request,
+            response: data,
+            metadata: { surface: 'gateway_playground' },
+          });
+          if (promptTokens + completionTokens > 0) {
+            await recordGatewayUsage({
+              promptTokens,
+              completionTokens,
+              cachedTokens,
+              cacheWriteTokens,
+              accountId: principal.accountId,
+              actorUserId: principal.userId,
+              workspaceId,
+              provider: descriptor.provider,
+              model: resolvedModel,
+              upstreamCost,
+              finalCost,
+              billingMode: descriptor.billingMode,
+              streaming: false,
+              requestId,
+            });
+          }
+          if (!res.ok) {
+            return {
+              model,
+              ok: false,
+              latency_ms: latencyMs,
+              error: data?.error?.message ?? data?.message ?? `HTTP ${res.status}`,
+            };
+          }
+          return {
+            model,
+            ok: true,
+            latency_ms: latencyMs,
+            output: data?.choices?.[0]?.message?.content ?? '',
+            input_tokens: promptTokens,
+            output_tokens: completionTokens,
+            cost: finalCost,
+            resolved_model: resolvedModel,
+            provider: descriptor.provider,
+          };
+        } catch (err) {
+          return { model, ok: false, error: err instanceof Error ? err.message : 'Request failed' };
+        }
+      }),
+    );
+
+    return c.json({ results });
+  },
+);
+
+// GAP C1 — "Connected" (a secret row exists) is not the same claim as "the
+// key works". This makes ONE cheap, single-attempt completion through the
+// same resolveCandidates -> callUpstream path a real turn uses and reports
+// verified/invalid/unknown/not_connected — see provider-verify.ts for the
+// full classification rationale. Gated on WORKSPACE_SECRET_READ (same leaf as
+// GET /secrets): it never exposes the key itself, only whether it works, so
+// any member who can already see that the provider is connected can check
+// whether it's actually usable.
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/gateway/providers/{providerId}/verify',
+    tags: ['gateway'],
+    summary: 'POST /:workspaceId/gateway/providers/:providerId/verify',
+    ...auth,
+    request: { params: z.object({ workspaceId: z.string(), providerId: z.string() }) },
+    responses: {
+      200: json(z.any(), 'Provider credential verification result'),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const providerId = c.req.param('providerId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_SECRET_READ,
+    );
+
+    const principal: AuthedPrincipal = {
+      userId: c.get('userId'),
+      accountId: loaded.row.accountId,
+      workspaceId,
+    };
+    // The ping is a real (if tiny) paid upstream call for a platform-fee-billed
+    // BYOK workspace — it must respect an already-exceeded workspace budget like
+    // any other gateway call (see playground's identical guard above). Caught
+    // rather than left to propagate: a budget block is exactly the "couldn't
+    // verify" case this endpoint already models, not a hard failure.
+    try {
+      await assertGatewayBudget(principal);
+    } catch (err) {
+      return c.json({
+        status: 'unknown',
+        message: err instanceof Error ? err.message : 'Workspace budget exceeded — try again later.',
+        checked_at: new Date().toISOString(),
+      });
+    }
+    const result = await verifyProviderConnection(principal, providerId);
+    return c.json({ ...result, checked_at: new Date().toISOString() });
+  },
+);
+
+type RoutingContext = { workspaceId: string; accountId: string; userId: string };
+
+function operatorFallbackFor(model: string) {
+  const policy = config.LLM_GATEWAY_FALLBACK_POLICIES.find((candidate) =>
+    candidate.models.includes(model),
+  );
+  return policy
+    ? { models: [...policy.fallbackModels], fallbackOn: policy.fallbackOn }
+    : { models: [], fallbackOn: 'transient' as const };
+}
+
+async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
+  const [stored, defaults] = await Promise.all([
+    getWorkspaceRoutingPolicy(ctx.workspaceId),
+    getAccountModelDefaults(ctx.accountId, ctx.workspaceId),
+  ]);
+  const workspaceDefault = defaults.workspaces[ctx.workspaceId] ?? null;
+  const effectiveDefault = workspaceDefault ?? defaults.account ?? platformDefaultModelId();
+  const defaultModelSource = workspaceDefault
+    ? ('workspace' as const)
+    : defaults.account
+      ? ('account' as const)
+      : ('platform' as const);
+  const route = await resolveGatewayRoute(
+    {
+      userId: ctx.userId,
+      accountId: ctx.accountId,
+      workspaceId: ctx.workspaceId,
+      defaultModel: effectiveDefault,
+    },
+    { requestedModel: effectiveDefault, requires: { imageInput: false } },
+  );
+  return {
+    version: 1 as const,
+    workspace: {
+      defaultModel: workspaceDefault,
+      visionModel: stored?.visionModel ?? null,
+      defaultFallback: stored?.defaultFallback ?? null,
+      rules: stored?.rules ?? [],
+      // Re-clamped on every READ too (not just trusted from what was stored) —
+      // the live catalog can change after a value was written (a model
+      // losing reasoning_options, temperature support flipping, ...), and
+      // the UI must never render a stale, now-invalid control value as if
+      // it were still honored. Entries that clamp to nothing are dropped.
+      modelGenerationConfig: Object.fromEntries(
+        Object.entries(stored?.modelGenerationConfig ?? {})
+          .map(
+            ([model, entry]) =>
+              [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,
+          )
+          .filter(([, clamped]) => Object.keys(clamped).length > 0),
+      ),
+    },
+    effective: {
+      defaultModel: effectiveDefault,
+      defaultModelSource,
+      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL ?? null,
+      defaultFallback: {
+        models: [...(route.fallbackModels ?? [])],
+        fallbackOn: route.fallbackOn ?? 'transient',
+      },
+    },
+    platform: {
+      defaultModel: platformDefaultModelId(),
+      visionModel: config.LLM_GATEWAY_VISION_MODEL ?? null,
+      defaultFallback: operatorFallbackFor(platformDefaultModelId()),
+    },
+    capabilities: { write: canWrite },
+  };
+}
+
+const routingPolicyResponses = {
+  200: json(z.any(), 'Workspace gateway routing policy'),
+  ...errors(400, 403, 404),
+};
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{workspaceId}/gateway/routing-policy',
+    tags: ['gateway'],
+    summary: 'GET /:workspaceId/gateway/routing-policy',
+    ...auth,
+    request: { params: z.object({ workspaceId: z.string() }) },
+    responses: routingPolicyResponses,
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const canWrite = await canDo(
+      c,
+      workspaceId,
+      loaded.row.accountId,
+      WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE,
+    );
+    return c.json(
+      await routingPolicyDocument(
+        {
+          workspaceId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        canWrite,
+      ),
+    );
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{workspaceId}/gateway/routing-policy',
+    tags: ['gateway'],
+    summary: 'PUT /:workspaceId/gateway/routing-policy',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      body: { content: { 'application/json': { schema: z.any() } } },
+    },
+    responses: routingPolicyResponses,
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE,
+    );
+    let policy;
+    try {
+      policy = parseWorkspaceRoutingPolicyInput(await c.req.json());
+    } catch (error) {
+      return c.json(
+        {
+          error: error instanceof Error ? error.message : 'Invalid routing policy',
+          code: 'invalid_routing_policy',
+        },
+        400,
+      );
+    }
+    const defaults = await getAccountModelDefaults(loaded.row.accountId, workspaceId);
+    const effectivePrimary =
+      policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
+    if (policy.defaultFallback?.models.includes(effectivePrimary)) {
+      return c.json(
+        {
+          error: `model "${effectivePrimary}" cannot fall back to itself`,
+          code: 'invalid_routing_policy',
+        },
+        400,
+      );
+    }
+    // Clamp every configured entry against the model's LIVE catalog
+    // capabilities before it's ever persisted — never store a temperature
+    // for a temperature:false model, a reasoning effort outside the model's
+    // own reasoning_options, or a max-output-tokens above its limit.output.
+    // An entry that clamps to nothing (every field dropped) is dropped
+    // entirely rather than stored as an empty object.
+    const clampedGenerationConfig = Object.fromEntries(
+      Object.entries(policy.modelGenerationConfig)
+        .map(
+          ([model, entry]) =>
+            [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,
+        )
+        .filter(([, clamped]) => Object.keys(clamped).length > 0),
+    );
+    await setWorkspaceRoutingPolicy({
+      workspaceId,
+      accountId: loaded.row.accountId,
+      updatedBy: loaded.userId,
+      policy: { ...policy, modelGenerationConfig: clampedGenerationConfig },
+    });
+    invalidateAccountModelDefaults(loaded.row.accountId);
+    return c.json(
+      await routingPolicyDocument(
+        {
+          workspaceId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        true,
+      ),
+    );
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{workspaceId}/gateway/routing-policy',
+    tags: ['gateway'],
+    summary: 'DELETE /:workspaceId/gateway/routing-policy',
+    ...auth,
+    request: { params: z.object({ workspaceId: z.string() }) },
+    responses: routingPolicyResponses,
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertWorkspaceCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      workspaceId,
+      WORKSPACE_ACTIONS.WORKSPACE_CUSTOMIZE_WRITE,
+    );
+    await resetWorkspaceRoutingPolicy({ workspaceId, accountId: loaded.row.accountId });
+    invalidateAccountModelDefaults(loaded.row.accountId);
+    return c.json(
+      await routingPolicyDocument(
+        {
+          workspaceId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        true,
+      ),
+    );
+  },
+);
+
+workspaceRoutesApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{workspaceId}/gateway/routing-policy/preview',
+    tags: ['gateway'],
+    summary: 'POST /:workspaceId/gateway/routing-policy/preview',
+    ...auth,
+    request: {
+      params: z.object({ workspaceId: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              requestedModel: z.string().trim().min(1).max(128),
+              imageInput: z.boolean().default(false),
+            }),
+          },
+        },
+      },
+    },
+    responses: routingPolicyResponses,
+  }),
+  async (c: any) => {
+    const workspaceId = c.req.param('workspaceId');
+    const loaded = await loadWorkspaceForUser(c, workspaceId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const body = await c.req.json();
+    const defaults = await getAccountModelDefaults(loaded.row.accountId, workspaceId);
+    const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
+    const principal: AuthedPrincipal = {
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      workspaceId,
+      freeModelsOnly,
+      defaultModel: defaults.workspaces[workspaceId] ?? defaults.account ?? undefined,
+    };
+    const route = await resolveGatewayRoute(principal, {
+      requestedModel: body.requestedModel,
+      requires: { imageInput: body.imageInput === true },
+    });
+    const models = [route.primaryModel, ...(route.fallbackModels ?? [])];
+    // This is an AVAILABILITY PREVIEW, not a generation request: its whole
+    // contract is "tell me which of these models are usable right now",
+    // per-model. resolveCandidates THROWS a typed GatewayResolutionError
+    // (e.g. provider_not_connected) instead of returning [] when a model
+    // isn't servable — correct for an actual generation call, but here it
+    // must degrade to `available: false` for JUST that model rather than
+    // fail the whole Promise.all/response for every model in the list.
+    const availability = await Promise.all(
+      models.map(async (model) => {
+        try {
+          return { model, available: (await resolveCandidates(principal, model)).length > 0 };
+        } catch (err) {
+          if (err instanceof GatewayResolutionError) return { model, available: false };
+          throw err;
+        }
+      }),
+    );
+    return c.json({ version: 1, route, models: availability });
+  },
+);

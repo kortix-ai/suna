@@ -15,7 +15,7 @@ const approvalDetailOf = (i: ReviewItem) => (i as Extract<ReviewItem, { kind: 'a
 const row: ApiReviewItem = {
   review_item_id: 'rv-1',
   account_id: 'acc-1',
-  project_id: 'proj-1',
+  workspace_id: 'proj-1',
   origin_session_id: null,
   kind: 'output',
   status: 'needs_you',
@@ -49,7 +49,7 @@ describe('mapApiReviewItem', () => {
     expect(item.id).toBe('rv-1');
     expect(item.kind).toBe('output');
     expect(item.status).toBe('needs_you');
-    expect(item.project).toBe('Acme Growth');
+    expect(item.workspace).toBe('Acme Growth');
     expect(item.actor).toEqual({ name: 'Growth agent', initials: 'GA' });
     expect(item.primaryAction).toBe(PRIMARY_ACTION.output);
     expect(item.secondaryAction).toBe('Request changes');

@@ -129,7 +129,7 @@ export interface KortixTaskLiveStatus {
 }
 
 export interface ListTasksParams {
-  projectId?: string;
+  workspaceId?: string;
   status?: string;
 }
 
@@ -146,7 +146,7 @@ export interface CreateTaskInput {
  * `'todo'`) before trusting `KortixTask['status']`. */
 export async function listTasks(baseUrl: string, params: ListTasksParams = {}): Promise<unknown[]> {
   const search = new URLSearchParams();
-  if (params.projectId) search.set('project_id', params.projectId);
+  if (params.workspaceId) search.set('project_id', params.workspaceId);
   if (params.status) search.set('status', params.status);
   const qs = search.toString() ? `?${search}` : '';
   return kortixMasterRequest<unknown[]>(baseUrl, `/kortix/tasks${qs}`);
@@ -323,8 +323,8 @@ export interface UpdateTicketInput {
   actor_id: string;
 }
 
-export async function listTickets(baseUrl: string, projectId?: string): Promise<Ticket[]> {
-  const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
+export async function listTickets(baseUrl: string, workspaceId?: string): Promise<Ticket[]> {
+  const qs = workspaceId ? `?project_id=${encodeURIComponent(workspaceId)}` : '';
   return kortixMasterRequest<Ticket[]>(baseUrl, `/kortix/tickets${qs}`);
 }
 
@@ -415,16 +415,16 @@ export interface ReplaceColumnInput {
   icon?: string | null;
 }
 
-export async function listColumns(baseUrl: string, projectId: string): Promise<TicketColumn[]> {
-  return kortixMasterRequest<TicketColumn[]>(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/columns`);
+export async function listColumns(baseUrl: string, workspaceId: string): Promise<TicketColumn[]> {
+  return kortixMasterRequest<TicketColumn[]>(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/columns`);
 }
 
 export async function replaceColumns(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   columns: ReplaceColumnInput[],
 ): Promise<TicketColumn[]> {
-  return kortixMasterRequest<TicketColumn[]>(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/columns`, {
+  return kortixMasterRequest<TicketColumn[]>(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/columns`, {
     method: 'PUT',
     body: JSON.stringify({ columns }),
   });
@@ -441,16 +441,16 @@ export interface ReplaceFieldInput {
   options?: string[] | null;
 }
 
-export async function listFields(baseUrl: string, projectId: string): Promise<ProjectField[]> {
-  return kortixMasterRequest<ProjectField[]>(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/fields`);
+export async function listFields(baseUrl: string, workspaceId: string): Promise<ProjectField[]> {
+  return kortixMasterRequest<ProjectField[]>(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/fields`);
 }
 
 export async function replaceFields(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   fields: ReplaceFieldInput[],
 ): Promise<ProjectField[]> {
-  return kortixMasterRequest<ProjectField[]>(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/fields`, {
+  return kortixMasterRequest<ProjectField[]>(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/fields`, {
     method: 'PUT',
     body: JSON.stringify({ fields }),
   });
@@ -465,18 +465,18 @@ export interface ReplaceTemplateInput {
   body_md: string;
 }
 
-export async function listTemplates(baseUrl: string, projectId: string): Promise<TicketTemplate[]> {
-  return kortixMasterRequest<TicketTemplate[]>(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/templates`);
+export async function listTemplates(baseUrl: string, workspaceId: string): Promise<TicketTemplate[]> {
+  return kortixMasterRequest<TicketTemplate[]>(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/templates`);
 }
 
 export async function replaceTemplates(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   templates: ReplaceTemplateInput[],
 ): Promise<TicketTemplate[]> {
   return kortixMasterRequest<TicketTemplate[]>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/templates`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/templates`,
     { method: 'PUT', body: JSON.stringify({ templates }) },
   );
 }
@@ -488,8 +488,8 @@ export async function replaceTemplates(
 /** Ensure (create-if-missing) a project-level session bound to the Project
  * Manager agent. Idempotent on the daemon — first call creates + binds,
  * subsequent calls return the existing session id. */
-export async function ensurePmSession(baseUrl: string, projectId: string): Promise<{ session_id: string; reused: boolean }> {
-  return kortixMasterRequest(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/pm-session`, {
+export async function ensurePmSession(baseUrl: string, workspaceId: string): Promise<{ session_id: string; reused: boolean }> {
+  return kortixMasterRequest(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/pm-session`, {
     method: 'POST',
   });
 }
@@ -512,16 +512,16 @@ export interface CreateProjectAgentInput {
 
 export type UpdateProjectAgentInput = Partial<Omit<CreateProjectAgentInput, 'slug'>>;
 
-export async function listProjectAgents(baseUrl: string, projectId: string): Promise<ProjectAgent[]> {
-  return kortixMasterRequest<ProjectAgent[]>(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/agents`);
+export async function listProjectAgents(baseUrl: string, workspaceId: string): Promise<ProjectAgent[]> {
+  return kortixMasterRequest<ProjectAgent[]>(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/agents`);
 }
 
 export async function createProjectAgent(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   body: CreateProjectAgentInput,
 ): Promise<ProjectAgent> {
-  return kortixMasterRequest<ProjectAgent>(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/agents`, {
+  return kortixMasterRequest<ProjectAgent>(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/agents`, {
     method: 'POST',
     body: JSON.stringify(body),
   });
@@ -529,33 +529,33 @@ export async function createProjectAgent(
 
 export async function updateProjectAgent(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   slug: string,
   body: UpdateProjectAgentInput,
 ): Promise<ProjectAgent> {
   return kortixMasterRequest<ProjectAgent>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(slug)}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(slug)}`,
     { method: 'PATCH', body: JSON.stringify(body) },
   );
 }
 
-export async function deleteProjectAgent(baseUrl: string, projectId: string, slug: string): Promise<{ deleted: true }> {
+export async function deleteProjectAgent(baseUrl: string, workspaceId: string, slug: string): Promise<{ deleted: true }> {
   return kortixMasterRequest(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(slug)}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(slug)}`,
     { method: 'DELETE' },
   );
 }
 
 export async function getAgentPersona(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   slug: string,
 ): Promise<{ agent: ProjectAgent; body_md: string }> {
   return kortixMasterRequest(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(slug)}/persona`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(slug)}/persona`,
   );
 }
 
@@ -563,10 +563,10 @@ export async function getAgentPersona(
 // Project activity — /kortix/projects/:id/activity
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getProjectActivity(baseUrl: string, projectId: string, limit = 200): Promise<TicketEvent[]> {
+export async function getProjectActivity(baseUrl: string, workspaceId: string, limit = 200): Promise<TicketEvent[]> {
   return kortixMasterRequest<TicketEvent[]>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/activity?limit=${limit}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/activity?limit=${limit}`,
   );
 }
 
@@ -625,8 +625,8 @@ export async function getKortixProjectBySession(baseUrl: string, sessionId: stri
   return kortixMasterRequest<KortixMasterProject>(baseUrl, `/kortix/projects/by-session/${encodeURIComponent(sessionId)}`);
 }
 
-export async function listKortixProjectSessions(baseUrl: string, projectId: string): Promise<unknown[]> {
-  return kortixMasterRequest<unknown[]>(baseUrl, `/kortix/projects/${encodeURIComponent(projectId)}/sessions`);
+export async function listKortixProjectSessions(baseUrl: string, workspaceId: string): Promise<unknown[]> {
+  return kortixMasterRequest<unknown[]>(baseUrl, `/kortix/projects/${encodeURIComponent(workspaceId)}/sessions`);
 }
 
 export async function deleteKortixProject(
@@ -715,79 +715,79 @@ export type UpdateMilestoneBody = Partial<
 
 export async function listMilestones(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   statusFilter: 'open' | 'closed' | 'all' = 'all',
 ): Promise<Milestone[]> {
   return kortixMasterRequest<Milestone[]>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/milestones?status=${statusFilter}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/milestones?status=${statusFilter}`,
   );
 }
 
-export async function getMilestone(baseUrl: string, projectId: string, ref: string): Promise<MilestoneDetail> {
+export async function getMilestone(baseUrl: string, workspaceId: string, ref: string): Promise<MilestoneDetail> {
   return kortixMasterRequest<MilestoneDetail>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/milestones/${encodeURIComponent(ref)}`,
   );
 }
 
-export async function listMilestoneEvents(baseUrl: string, projectId: string, ref: string): Promise<MilestoneEvent[]> {
+export async function listMilestoneEvents(baseUrl: string, workspaceId: string, ref: string): Promise<MilestoneEvent[]> {
   return kortixMasterRequest<MilestoneEvent[]>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}/events`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/milestones/${encodeURIComponent(ref)}/events`,
   );
 }
 
 export async function createMilestone(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   body: CreateMilestoneBody,
 ): Promise<Milestone> {
   return kortixMasterRequest<Milestone>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/milestones`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/milestones`,
     { method: 'POST', body: JSON.stringify(body) },
   );
 }
 
 export async function updateMilestone(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   ref: string,
   patch: UpdateMilestoneBody,
 ): Promise<Milestone> {
   return kortixMasterRequest<Milestone>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/milestones/${encodeURIComponent(ref)}`,
     { method: 'PATCH', body: JSON.stringify(patch) },
   );
 }
 
 export async function closeMilestone(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   ref: string,
   body: { summary_md?: string; cancelled?: boolean },
 ): Promise<Milestone> {
   return kortixMasterRequest<Milestone>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}/close`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/milestones/${encodeURIComponent(ref)}/close`,
     { method: 'POST', body: JSON.stringify(body) },
   );
 }
 
-export async function reopenMilestone(baseUrl: string, projectId: string, ref: string): Promise<Milestone> {
+export async function reopenMilestone(baseUrl: string, workspaceId: string, ref: string): Promise<Milestone> {
   return kortixMasterRequest<Milestone>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}/reopen`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/milestones/${encodeURIComponent(ref)}/reopen`,
     { method: 'POST' },
   );
 }
 
-export async function deleteMilestone(baseUrl: string, projectId: string, ref: string): Promise<{ ok: boolean }> {
+export async function deleteMilestone(baseUrl: string, workspaceId: string, ref: string): Promise<{ ok: boolean }> {
   return kortixMasterRequest(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/milestones/${encodeURIComponent(ref)}`,
     { method: 'DELETE' },
   );
 }
@@ -827,32 +827,32 @@ export interface UpsertCredentialBody {
   description?: string | null;
 }
 
-export async function listCredentials(baseUrl: string, projectId: string): Promise<CredentialItem[]> {
+export async function listCredentials(baseUrl: string, workspaceId: string): Promise<CredentialItem[]> {
   return kortixMasterRequest<CredentialItem[]>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/credentials`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/credentials`,
   );
 }
 
 export async function listCredentialEvents(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   name: string,
 ): Promise<CredentialEvent[]> {
   return kortixMasterRequest<CredentialEvent[]>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/credentials/${encodeURIComponent(name)}/events`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/credentials/${encodeURIComponent(name)}/events`,
   );
 }
 
 export async function upsertCredential(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   body: UpsertCredentialBody,
 ): Promise<CredentialItem> {
   return kortixMasterRequest<CredentialItem>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/credentials`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/credentials`,
     { method: 'POST', body: JSON.stringify(body) },
   );
 }
@@ -861,23 +861,23 @@ export async function upsertCredential(
  * by the daemon. */
 export async function revealCredential(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   name: string,
 ): Promise<CredentialWithValue> {
   return kortixMasterRequest<CredentialWithValue>(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/credentials/${encodeURIComponent(name)}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/credentials/${encodeURIComponent(name)}`,
   );
 }
 
 export async function deleteCredential(
   baseUrl: string,
-  projectId: string,
+  workspaceId: string,
   name: string,
 ): Promise<{ ok: boolean }> {
   return kortixMasterRequest(
     baseUrl,
-    `/kortix/projects/${encodeURIComponent(projectId)}/credentials/${encodeURIComponent(name)}`,
+    `/kortix/projects/${encodeURIComponent(workspaceId)}/credentials/${encodeURIComponent(name)}`,
     { method: 'DELETE' },
   );
 }
@@ -932,7 +932,7 @@ export interface RegisterSandboxServicePayload {
   adapter?: SandboxServiceAdapter;
   scope?: SandboxServiceScope;
   description?: string;
-  projectId?: string | null;
+  workspaceId?: string | null;
   template?: string | null;
   framework?: string | null;
   sourcePath?: string | null;

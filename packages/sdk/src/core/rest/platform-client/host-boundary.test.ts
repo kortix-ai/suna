@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { ConnectorSetupLinkInfo, SecretSetupLinkInfo } from './host-boundary';
 
 const originalFetch = globalThis.fetch;
 const requests: Array<{ url: string; init?: RequestInit }> = [];
@@ -20,6 +21,46 @@ afterEach(() => {
 const boundary = await import('./host-boundary');
 
 describe('host boundary transport', () => {
+  test('setup-link types expose canonical Workspace names and legacy Project aliases', () => {
+    const connector: ConnectorSetupLinkInfo = {
+      workspace_name: 'Workspace One',
+      project_name: 'Workspace One',
+      slug: 'github',
+      app: 'github',
+      expires_at: '2026-08-10T00:00:00.000Z',
+    };
+    const secret: SecretSetupLinkInfo = {
+      workspace_name: 'Workspace One',
+      project_name: 'Workspace One',
+      fields: [],
+      expires_at: '2026-08-10T00:00:00.000Z',
+    };
+
+    expect(connector.workspace_name).toBe(connector.project_name);
+    expect(secret.workspace_name).toBe(secret.project_name);
+  });
+
+  test('setup-link readers normalize an older API project_name into workspace_name', async () => {
+    responseFactory = () =>
+      Response.json({
+        project_name: 'Legacy API Workspace',
+        slug: 'github',
+        app: 'github',
+        fields: [],
+        expires_at: '2026-08-10T00:00:00.000Z',
+      });
+
+    const connector = await boundary.getConnectorSetupLink('connector-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+    const secret = await boundary.getSecretSetupLink('secret-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    expect(connector.workspace_name).toBe('Legacy API Workspace');
+    expect(secret.workspace_name).toBe('Legacy API Workspace');
+  });
+
   test('public marketplace reads accept explicit cache options', async () => {
     responseFactory = () => Response.json({ items: [{ id: 'skill-1' }] });
     const result = await boundary.listPublicMarketplaceItems(
@@ -63,6 +104,18 @@ describe('host boundary transport', () => {
     expect(requests[1]?.init?.headers).not.toHaveProperty('Authorization');
   });
 
+  test('session start uses the canonical Workspace route', async () => {
+    await boundary.startSessionWithToken('workspace/one', 'session/two', {
+      backendUrl: 'https://api.example.test/v1',
+      accessToken: 'token-1',
+    });
+
+    expect(requests[0]?.url).toBe(
+      'https://api.example.test/v1/workspaces/workspace%2Fone/sessions/session%2Ftwo/start',
+    );
+    expect(requests[0]?.init?.method).toBe('POST');
+  });
+
   test('connector setup-link finalize POSTs anonymously and returns the connected flag', async () => {
     responseFactory = () => Response.json({ connected: true });
 
@@ -88,7 +141,7 @@ describe('host boundary transport', () => {
     expect(result).toEqual({ connected: false });
   });
 
-  test('audit export sends project and session reconstruction filters', async () => {
+  test('audit export sends canonical workspace and session reconstruction filters', async () => {
     responseFactory = () =>
       new Response('', {
         status: 200,
@@ -103,7 +156,7 @@ describe('host boundary transport', () => {
       'account-1',
       {
         format: 'csv',
-        project_id: 'project-1',
+        workspace_id: 'workspace-1',
         session_id: 'session-1',
         actor_type: 'agent',
         source: 'connector',
@@ -118,7 +171,7 @@ describe('host boundary transport', () => {
     const url = new URL(requests[0]!.url);
     expect(Object.fromEntries(url.searchParams)).toEqual({
       format: 'csv',
-      project_id: 'project-1',
+      workspace_id: 'workspace-1',
       session_id: 'session-1',
       actor_type: 'agent',
       source: 'connector',
@@ -134,5 +187,14 @@ describe('host boundary transport', () => {
     );
     expect(result.complete).toBe(false);
     expect(result.nextCursor).toBe('2026-08-07T12:00:00.000Z|event-1');
+
+    await boundary.downloadAccountAudit(
+      'account-1',
+      { format: 'csv', project_id: 'legacy-project-1' },
+      { backendUrl: 'https://api.example.test/v1', accessToken: 'token-1' },
+    );
+    const legacyUrl = new URL(requests[2]!.url);
+    expect(legacyUrl.searchParams.get('project_id')).toBe('legacy-project-1');
+    expect(legacyUrl.searchParams.has('workspace_id')).toBe(false);
   });
 });

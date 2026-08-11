@@ -26,8 +26,8 @@ import {
   handleCall,
 } from '../connectors/gateway';
 import type { NormalizedAction } from '../connectors/types';
-import { connectorSpecToTomlEntry, extractConnectors } from '../projects/connectors';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { connectorSpecToTomlEntry, extractConnectors } from '../workspaces/connectors';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../workspaces/triggers';
 
 function expectDefined<T>(value: T | null | undefined): T {
   expect(value).toBeDefined();
@@ -434,7 +434,7 @@ function makeDeps(body: string, status = 200) {
     loadAction: async () => SEND,
     resolveCredential: async () => 'xoxb-install-token',
     loadPolicies: async () => [],
-    loadProjectPolicies: async () => [],
+    loadWorkspacePolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
     recordExecution: async () => null,
     fetchImpl: async (url, init) => {
@@ -446,7 +446,7 @@ function makeDeps(body: string, status = 200) {
 }
 
 const input: CallInput = {
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   accountId: 'acct-1',
   subject: { userId: 'u1', groupIds: [] },
   sessionId: 'sess-1',
@@ -513,7 +513,7 @@ describe('handleCall — channel (slack)', () => {
       resolveCredential: async (connector) =>
         connector.provider === 'channel' ? 'xoxb-install-token' : 'pipedream-account-id',
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       fetchImpl: async (url, init) => {
@@ -546,7 +546,7 @@ describe('handleCall — channel (email)', () => {
       loadAction: async () => EMAIL_REPLY,
       resolveCredential: async () => 'am_project_token',
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       attachmentStore: {
@@ -554,7 +554,7 @@ describe('handleCall — channel (email)', () => {
           throw new Error('not used');
         },
         claimForEmail: async (scope, args) => {
-          lifecycle.push(`claim:${scope.projectId}:${scope.sessionId}:${scope.userId}`);
+          lifecycle.push(`claim:${scope.workspaceId}:${scope.sessionId}:${scope.userId}`);
           return {
             args: {
               ...args,
@@ -620,7 +620,7 @@ describe('handleCall — channel (email)', () => {
       loadAction: async () => EMAIL_REPLY,
       resolveCredential: async () => 'am_project_token',
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       attachmentStore: {
@@ -668,7 +668,7 @@ describe('handleCall — channel (email)', () => {
       loadAction: async () => EMAIL_REPLY,
       resolveCredential: async () => 'am_project_token',
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [
+      loadWorkspacePolicies: async () => [
         { match: 'kortix_email.reply_message', action: 'require_approval', position: 0 },
       ],
       loadDefaultMode: async () => 'allow_all',
@@ -719,7 +719,7 @@ describe('handleCall — channel (email)', () => {
         connectorId === EMAIL.connectorId && relPath === 'reply_message' ? EMAIL_REPLY : null,
       resolveCredential: async () => 'am_project_token',
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       fetchImpl: async (url, init) => {
@@ -777,7 +777,7 @@ describe('handleCall — channel (email)', () => {
       resolveEmailCredentialForInbox: async (_projectId, inboxId) =>
         inboxId === 'inb_active' ? 'am_active_inbox_token' : null,
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       fetchImpl: async (url, init) => {
@@ -826,7 +826,7 @@ describe('handleCall — channel (email)', () => {
       loadEmailConnectorContext: async (_projectId, connectorSlug) =>
         connectorSlug === 'email_fabian_u7vq' ? { inboxId: 'email-inbox@agentmail.to' } : null,
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       fetchImpl: async (url, init) => {
@@ -884,7 +884,7 @@ const JOIN_GMEET: GatewayAction = {
 };
 
 const voiceInput: CallInput = {
-  projectId: 'proj-1',
+  workspaceId: 'proj-1',
   accountId: 'acct-1',
   subject: { userId: 'u1', groupIds: [] },
   sessionId: 'sess-1',
@@ -904,7 +904,7 @@ describe('handleCall — channel (voice)', () => {
         throw new Error('spawn_room has no credential — resolveCredential must not be called');
       },
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       fetchImpl: async () => {
@@ -935,7 +935,7 @@ describe('handleCall — channel (voice)', () => {
       loadAction: async () => JOIN_GMEET,
       resolveCredential: async () => null,
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       fetchImpl: async () => ({ status: 200, ok: true, text: async () => '{}' }),
@@ -965,7 +965,7 @@ describe('handleCall — channel (voice)', () => {
       loadAction: async () => SPAWN_ROOM,
       resolveCredential: async () => null,
       loadPolicies: async () => [],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       fetchImpl: async () => ({ status: 200, ok: true, text: async () => '{}' }),
@@ -984,7 +984,7 @@ describe('handleCall — channel (voice)', () => {
       loadAction: async () => SPAWN_ROOM,
       resolveCredential: async () => null,
       loadPolicies: async () => [{ match: 'spawn_room', action: 'block', position: 0 }],
-      loadProjectPolicies: async () => [],
+      loadWorkspacePolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
       recordExecution: async () => null,
       fetchImpl: async () => ({ status: 200, ok: true, text: async () => '{}' }),

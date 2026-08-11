@@ -128,18 +128,18 @@ describe('/new page: uses the shared form model, not local rules', () => {
   });
 });
 
-describe('/new page: ProjectIconField wiring', () => {
+describe('/new page: WorkspaceIconField wiring', () => {
   test('uses the three narrow callbacks — not one wide onChange, and no onClear', () => {
-    const fields = code.match(/<ProjectIconField[\s\S]*?\/>/g) ?? [];
+    const fields = code.match(/<WorkspaceIconField[\s\S]*?\/>/g) ?? [];
     expect(fields).toHaveLength(1);
     const field = fields[0]!;
 
     expect(field).toContain('value={state.icon}');
-    // `onChange` receives a plain emoji STRING, not a `ProjectIconValue` — the
+    // `onChange` receives a plain emoji STRING, not a `WorkspaceIconValue` — the
     // brief's own draft got this wrong (`onChange={(icon) => ...}` passing the
     // whole value through). The parameter name it is called with here doubles
     // as the regression check: a wide-callback rewrite would not type-check
-    // against `{ emoji }` on a value already shaped as `ProjectIconValue`.
+    // against `{ emoji }` on a value already shaped as `WorkspaceIconValue`.
     expect(field).toContain('onChange={(emoji) => setState((s) => ({ ...s, icon: { emoji } }))}');
     expect(field).toContain(
       'onGlyphChange={(glyph) => setState((s) => ({ ...s, icon: { glyph } }))}',
@@ -158,12 +158,12 @@ describe('/new page: ProjectIconField wiring', () => {
  * Account picking lives in the top bar, not here.
  */
 function findFieldGroup(source: string): number {
-  const iconAt = source.indexOf('<ProjectIconField');
+  const iconAt = source.indexOf('<WorkspaceIconField');
   if (iconAt < 0) return -1;
   let from = source.lastIndexOf('<div', iconAt);
   while (from > 0) {
     const element = elementText(source, 'div', from);
-    if (element.includes('<ProjectIconField') && element.includes('<Input')) return from;
+    if (element.includes('<WorkspaceIconField') && element.includes('<Input')) return from;
     from = source.lastIndexOf('<div', from - 1);
   }
   return -1;
@@ -182,7 +182,7 @@ describe('/new page: layout shape (design is a release gate here)', () => {
   });
 
   test('the icon sits LEFT of the name field, in one grid row', () => {
-    const icon = code.match(/<ProjectIconField[\s\S]*?\/>/)?.[0];
+    const icon = code.match(/<WorkspaceIconField[\s\S]*?\/>/)?.[0];
     expect(icon).toBeDefined();
     expect(icon).toContain('triggerClassName="size-10');
     // The default face is this workspace's own initial, not a smiley.
@@ -200,7 +200,7 @@ describe('/new page: layout shape (design is a release gate here)', () => {
     // (0 and size-10's 2.5rem), clipped so the icon is revealed rather than
     // squashed.
     const group = code.slice(findFieldGroup(code));
-    const iconAt = group.indexOf('<ProjectIconField');
+    const iconAt = group.indexOf('<WorkspaceIconField');
     const inputAt = group.indexOf('<Input');
     expect(iconAt).toBeGreaterThan(-1);
     expect(inputAt).toBeGreaterThan(iconAt);
@@ -250,7 +250,7 @@ describe('/new page: layout shape (design is a release gate here)', () => {
     expect(groupStart).toBeGreaterThan(0);
     const group = elementText(code, 'div', groupStart);
 
-    expect(group).toContain('<ProjectIconField');
+    expect(group).toContain('<WorkspaceIconField');
     expect(group).toContain('<Input');
     expect(group).not.toContain('<AccountPicker');
     // Not "one panel with a footer" — the submit control is not a descendant.
@@ -344,13 +344,13 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     const handoff = code.match(/<WorkspaceHandoff[\s\S]*?\/>/)?.[0];
     expect(handoff).toBeDefined();
     expect(handoff).toContain('workspaceName={state.name.trim()}');
-    expect(handoff).toContain('projectId={onboardingProjectId}');
+    expect(handoff).toContain('workspaceId={onboardingWorkspaceId}');
   });
 
   test('the form and the handoff are mutually exclusive — never both, never neither', () => {
     // A single ternary on one derived flag, not two independent conditionals:
     // the second shape can render neither branch (or both) as `submitting`
-    // and `onboardingProjectId` drift relative to each other, which is exactly
+    // and `onboardingWorkspaceId` drift relative to each other, which is exactly
     // what happens at the moment a create succeeds.
     const swapMatch = code.match(/\{handingOff \? \(([\s\S]*?)\) : \(([\s\S]*?)\)\}/);
     expect(swapMatch).not.toBeNull();
@@ -363,7 +363,7 @@ describe('/new page: WorkspaceHandoff wiring', () => {
     // The seam between "creating" and "onboarding" is where the old UI swapped
     // one screen for another. Folding both into `handingOff` is what makes a
     // successful create a visual non-event.
-    expect(code).toContain('const handingOff = submitting || Boolean(onboardingProjectId);');
+    expect(code).toContain('const handingOff = submitting || Boolean(onboardingWorkspaceId);');
   });
 
   test('nothing renders phase progress — the create reports no steps to the user', () => {

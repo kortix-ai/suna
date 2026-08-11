@@ -19,7 +19,7 @@ async function connectorFetch(
   method: 'POST' | 'PUT',
   url: string,
   body: unknown,
-  projectId?: string,
+  workspaceId?: string,
 ): Promise<{ ok: boolean; status: number; id: string | null; error?: string }> {
   // Defense-in-depth chokepoint: the bot connector token is attached below, so
   // the destination URL MUST be a validated Microsoft Bot Framework endpoint.
@@ -39,7 +39,7 @@ async function connectorFetch(
     return { ok: false, status: 0, id: null, error: 'untrusted service url' };
   }
   try {
-    const creds = projectId ? await loadTeamsBotCredentials(projectId) : null;
+    const creds = workspaceId ? await loadTeamsBotCredentials(workspaceId) : null;
     const token = await botConnectorToken(creds);
     const res = await fetch(url, {
       method,
@@ -76,7 +76,7 @@ export function cardActivity(card: unknown): OutboundActivity {
 
 export async function sendActivity(ref: TeamsConversationRef, activity: OutboundActivity): Promise<string | null> {
   const url = joinUrl(ref.serviceUrl, `v3/conversations/${encodeURIComponent(ref.conversationId)}/activities`);
-  const r = await connectorFetch('POST', url, activity, ref.projectId);
+  const r = await connectorFetch('POST', url, activity, ref.workspaceId);
   return r.ok ? r.id : null;
 }
 
@@ -89,7 +89,7 @@ export async function updateActivity(
     ref.serviceUrl,
     `v3/conversations/${encodeURIComponent(ref.conversationId)}/activities/${encodeURIComponent(activityId)}`,
   );
-  const r = await connectorFetch('PUT', url, activity, ref.projectId);
+  const r = await connectorFetch('PUT', url, activity, ref.workspaceId);
   return r.ok;
 }
 

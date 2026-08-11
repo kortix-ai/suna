@@ -1,11 +1,11 @@
 /**
- * DevPage — "work on this project from your own machine" guide (web parity:
+ * DevPage — "work on this workspace from your own machine" guide (web parity:
  * customize/sections/dev-view).
  *
- * A project can live entirely in the cloud, so this surface hands you the exact
+ * A workspace can live entirely in the cloud, so this surface hands you the exact
  * copy-pasteable commands to clone the repo, run the same agent locally, and
  * ship changes back as a change request. Every command is pre-filled with this
- * project's real clone URL, id, and default branch. Managed (Kortix-owned) repos
+ * workspace's real clone URL, id, and default branch. Managed (Kortix-owned) repos
  * get an extra first step to invite yourself as a GitHub collaborator.
  *
  * Mobile branding: PageHeader + PageContent chrome, design tokens.
@@ -22,9 +22,9 @@ import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
-import { useProject } from '@/lib/projects/hooks';
-import { inviteRepoCollaborator, isManagedGithubProject } from '@/lib/projects/projects-client';
-import type { KortixProject } from '@/lib/projects/projects-client';
+import { useWorkspace } from '@/lib/workspaces/hooks';
+import { inviteRepoCollaborator, isManagedGithubWorkspace } from '@/lib/workspaces/workspaces-client';
+import type { KortixWorkspace } from '@/lib/workspaces/workspaces-client';
 import { haptics } from '@/lib/haptics';
 
 const MONO = 'Menlo';
@@ -37,7 +37,7 @@ interface PageTabLike {
 
 interface DevPageProps {
   page: PageTabLike;
-  projectId: string;
+  workspaceId: string;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -133,7 +133,7 @@ function LauncherChip({ label, command, isDark }: { label: string; command: stri
 
 // ─── repo-access invite form (managed repos only) ─────────────────────────────
 
-function RepoAccessForm({ projectId, isDark }: { projectId: string; isDark: boolean }) {
+function RepoAccessForm({ workspaceId, isDark }: { workspaceId: string; isDark: boolean }) {
   const theme = useThemeColors();
   const [username, setUsername] = useState('');
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -142,7 +142,7 @@ function RepoAccessForm({ projectId, isDark }: { projectId: string; isDark: bool
   const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
 
   const invite = useMutation({
-    mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), 'write'),
+    mutationFn: () => inviteRepoCollaborator(workspaceId, username.trim(), 'write'),
     onSuccess: (res) => {
       haptics.success();
       setUsername('');
@@ -207,7 +207,7 @@ function Step({ n, title, hint, isDark, children }: { n: number; title: string; 
 
 export function DevPage({
   page,
-  projectId,
+  workspaceId,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -217,7 +217,7 @@ export function DevPage({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
 
-  const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
+  const { data: workspace, isLoading, isError, error, refetch } = useWorkspace(workspaceId);
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -225,7 +225,7 @@ export function DevPage({
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
   const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
 
-  const steps = useMemo(() => buildSteps(project), [project]);
+  const steps = useMemo(() => buildSteps(workspace), [workspace]);
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
@@ -241,19 +241,19 @@ export function DevPage({
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Text style={{ fontSize: 19, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 6 }}>Develop on your own machine</Text>
           <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, marginBottom: 22 }}>
-            This project lives in one git repo. Clone it, open it in your own coding agent — Claude Code, Cursor, Codex, opencode — and send your changes back as a change request, the same way a cloud session does.
+            This workspace lives in one git repo. Clone it, open it in your own coding agent — Claude Code, Cursor, Codex, opencode — and send your changes back as a change request, the same way a cloud session does.
           </Text>
 
           {isLoading ? (
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
           ) : isError ? (
             <View style={{ padding: 20, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.05)', gap: 12 }}>
-              <Text style={{ fontSize: 13.5, color: '#ef4444' }}>Couldn't load this project: {(error as Error)?.message}</Text>
+              <Text style={{ fontSize: 13.5, color: '#ef4444' }}>Couldn't load this workspace: {(error as Error)?.message}</Text>
               <TouchableOpacity onPress={() => { haptics.tap(); refetch(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
               </TouchableOpacity>
             </View>
-          ) : project ? (
+          ) : workspace ? (
             <View style={{ gap: 22 }}>
               {steps.map((s, i) => (
                 <Step key={i} n={i + 1} title={s.title} hint={s.hint} isDark={isDark}>
@@ -264,7 +264,7 @@ export function DevPage({
                       {LAUNCHERS.map((l) => <LauncherChip key={l.label} label={l.label} command={l.command} isDark={isDark} />)}
                     </View>
                   ) : (
-                    <RepoAccessForm projectId={projectId} isDark={isDark} />
+                    <RepoAccessForm workspaceId={workspaceId} isDark={isDark} />
                   )}
                   {s.footer && (
                     <Text style={{ fontSize: 11.5, lineHeight: 17, color: muted, marginTop: 2 }}>
@@ -288,12 +288,12 @@ type DevStep =
   | { kind: 'commands'; title: string; hint?: string; lines: string[]; footer?: string }
   | { kind: 'launchers'; title: string; hint?: string; footer?: string };
 
-function buildSteps(project: KortixProject | undefined): DevStep[] {
-  if (!project) return [];
-  const cloneUrl = cloneUrlFor(project.repo_url);
-  const repoDir = repoDirFor(project.repo_url) || 'my-project';
-  const branch = project.default_branch || 'main';
-  const managed = isManagedGithubProject(project);
+function buildSteps(workspace: KortixWorkspace | undefined): DevStep[] {
+  if (!workspace) return [];
+  const cloneUrl = cloneUrlFor(workspace.repo_url);
+  const repoDir = repoDirFor(workspace.repo_url) || 'my-workspace';
+  const branch = workspace.default_branch || 'main';
+  const managed = isManagedGithubWorkspace(workspace);
 
   const steps: DevStep[] = [];
   if (managed) {
@@ -312,7 +312,7 @@ function buildSteps(project: KortixProject | undefined): DevStep[] {
   steps.push({
     kind: 'commands',
     title: 'Install the Kortix CLI',
-    hint: "Manages this project's secrets, sessions, and change requests from your terminal.",
+    hint: "Manages this workspace's secrets, sessions, and change requests from your terminal.",
     lines: ['curl -fsSL https://kortix.com/install | bash', 'kortix login'],
   });
   steps.push({
@@ -324,7 +324,7 @@ function buildSteps(project: KortixProject | undefined): DevStep[] {
   steps.push({
     kind: 'commands',
     title: 'Pull secrets',
-    hint: "Writes a .env with this project's secret names — fill in the values locally. Plaintext never leaves the cloud.",
+    hint: "Writes a .env with this workspace's secret names — fill in the values locally. Plaintext never leaves the cloud.",
     lines: ['kortix env pull'],
   });
   steps.push({

@@ -1,7 +1,7 @@
 'use client';
 
-import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
+import { getWorkspaceDetail, listConnectors, type WorkspaceAdminConnector } from '@kortix/sdk';
+import { contract, qk, useFeatureFlag, useWorkspaceAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
@@ -31,8 +31,8 @@ import {
   connectorSetupStatus,
 } from '@/features/workspace/customize/sections/connector-connection-form';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { WORKSPACE_ACTIONS } from '@/lib/workspace-actions';
+import { useWorkspaceCan } from '@/lib/use-workspace-can';
 import {
   ConnectorAppIcon,
   ConnectorConnectedMark,
@@ -111,10 +111,10 @@ function ModalFormFallback() {
 
 /**
  * Tab order is deliberate, and so is the landing tab: Discovery leads and is
- * always what opens, for every project. The project's own list sits last —
+ * always what opens, for every workspace. The workspace's own list sits last —
  * reachable in one click, but never in the way of adding something.
  *
- * There is no Available tab. It showed the catalogue minus what the project
+ * There is no Available tab. It showed the catalogue minus what the workspace
  * already had, which is the same catalogue with a handful of cards deleted
  * from it — and the cards it deleted were exactly the ones already marked `✓`
  * on the other two tabs. Removing a card the user can already see is connected
@@ -133,15 +133,15 @@ const SCOPE_LABEL: Record<ConnectorScope, string> = {
 type Panel = 'custom';
 
 /**
- * /projects/[id]/connectors — the standalone Connectors catalogue.
+ * /workspaces/[id]/connectors — the standalone Connectors catalogue.
  *
- * Reads the project's own connectors off `qk.project.connectors(projectId)`,
+ * Reads the workspace's own connectors off `qk.workspace.connectors(workspaceId)`,
  * the same key `ConnectorsMasterDetail` uses, so the two surfaces cannot
- * disagree about what a project has.
+ * disagree about what a workspace has.
  *
  * **Three tabs, one list each.** Discovery is the catalogue in category
  * sections, each expandable in place; All is the same catalogue flat;
- * Connected is the project's own connectors. There is no Needs-attention tab —
+ * Connected is the workspace's own connectors. There is no Needs-attention tab —
  * see `connector-filter.ts` for why it became a sort key instead — and no
  * Available tab, see `SCOPES` below.
  *
@@ -159,14 +159,14 @@ type Panel = 'custom';
  * saying "this connector's modal was open" is gone — but `?c=` survives,
  * because the redirect URL is built from the current one.
  */
-export function ConnectorsPage({ projectId }: { projectId: string }) {
+export function ConnectorsPage({ workspaceId }: { workspaceId: string }) {
   // `accountId` comes off the detail this page already loads. Without it
-  // `useProjectCan` fetches the project a second time under its own key AND
+  // `useWorkspaceCan` fetches the workspace a second time under its own key AND
   // holds the IAM probe disabled until that lands — so `+` and every write
   // affordance appeared two sequential round-trips after paint.
-  const accountId = useProjectAccountId(projectId);
+  const accountId = useWorkspaceAccountId(workspaceId);
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE, { accountId }).allowed ===
+    useWorkspaceCan(workspaceId, WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_WRITE, { accountId }).allowed ===
     true;
   const queryClient = useQueryClient();
 
@@ -198,13 +198,13 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   );
 
   const connectorsQuery = useQuery({
-    queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryKey: qk.workspace.connectors(workspaceId),
+    queryFn: () => listConnectors(workspaceId),
     ...contract('config'),
   });
-  const projectQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+  const workspaceQuery = useQuery({
+    queryKey: qk.workspace.detail(workspaceId),
+    queryFn: () => getWorkspaceDetail(workspaceId),
     ...contract('config'),
   });
 
@@ -215,20 +215,20 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // What the card actually shows, handed to the search so typing a word the
   // user can read on screen matches the card carrying it.
   const describeConnector = useCallback(
-    (connector: AdminConnector) => connectorSummary(connector, providerLabel(connector.provider)),
+    (connector: WorkspaceAdminConnector) => connectorSummary(connector, providerLabel(connector.provider)),
     [],
   );
 
   // The one gating primitive. `useFeatureFlag` reads the SAME
-  // `qk.project.detail(projectId)` entry `projectQuery` above holds, so this is
-  // the same fetch and the same fail-closed semantics — `projectQuery` stays
+  // `qk.workspace.detail(workspaceId)` entry `workspaceQuery` above holds, so this is
+  // the same fetch and the same fail-closed semantics — `workspaceQuery` stays
   // only to surface a load FAILURE and drive Retry (see `isError`/`retry`).
-  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
-  const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
+  const discoverEnabled = useFeatureFlag(workspaceId, 'connectors_api_discover').enabled;
+  const emailChannelEnabled = useFeatureFlag(workspaceId, 'agentmail_email').enabled;
 
   const authorizationQueryKeys = useMemo(
-    () => connectorConnectionQueryKeys(projectId),
-    [projectId],
+    () => connectorConnectionQueryKeys(workspaceId),
+    [workspaceId],
   );
   const invalidate = useCallback(() => {
     for (const key of authorizationQueryKeys) {
@@ -257,28 +257,28 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // Both queries gate what this page can offer, so both have to be able to
   // report a failure and both have to be retried.
   //
-  // `projectQuery` is the SAME cache entry `useFeatureFlag` reads, and every
+  // `workspaceQuery` is the SAME cache entry `useFeatureFlag` reads, and every
   // flag read off it FAILS CLOSED: a 500 leaves `discoverEnabled` and
   // `emailChannelEnabled` false.
   // `settled` does not save us — react-query drops `isLoading` once a query
   // has exhausted its retries, so on failure the page rendered as fully loaded
   // with capabilities silently gone. Naming only `connectorsQuery` here also
   // meant the one Retry on screen refetched the query that had not failed.
-  const isError = connectorsQuery.isError || projectQuery.isError;
+  const isError = connectorsQuery.isError || workspaceQuery.isError;
   const retry = useCallback(() => {
     if (connectorsQuery.isError) void connectorsQuery.refetch();
-    if (projectQuery.isError) void projectQuery.refetch();
-  }, [connectorsQuery, projectQuery]);
+    if (workspaceQuery.isError) void workspaceQuery.refetch();
+  }, [connectorsQuery, workspaceQuery]);
 
   // Gates the Connected grid only. Its empty state's wording depends on
-  // `projectQuery` as well as `connectorsQuery`, so it cannot say "no
+  // `workspaceQuery` as well as `connectorsQuery`, so it cannot say "no
   // connectors yet" until both have landed. The TAB STRIP no longer waits on
   // this: with a constant landing tab and no per-tab count, nothing in it is
   // derived from a query, so making it appear a beat late bought nothing.
-  const settled = !connectorsQuery.isLoading && !projectQuery.isLoading;
+  const settled = !connectorsQuery.isLoading && !workspaceQuery.isLoading;
 
-  // Discovery, always — never derived from what the project already has.
-  // `defaultConnectorScope` used to open a project with connectors on its own
+  // Discovery, always — never derived from what the workspace already has.
+  // `defaultConnectorScope` used to open a workspace with connectors on its own
   // list, which put the least useful tab in front of the user most often: a
   // returning user opening this page is far more likely to be adding a
   // connector than reading the ones already there, and the ones already there
@@ -298,7 +298,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const focusCategory =
     catalogActive && category !== ALL_CATEGORIES && query.trim().length === 0 ? category : null;
 
-  const catalog = useCatalog(projectId, query, {
+  const catalog = useCatalog(workspaceId, query, {
     enabled: catalogActive,
     discoverEnabled,
     focusCategory,
@@ -454,10 +454,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       ) : (
         <CatalogGrid
           // `!settled`, not `connectorsQuery.isLoading`: the empty state's
-          // wording depends on `projectQuery` too. Same gate as the filter row.
+          // wording depends on `workspaceQuery` too. Same gate as the filter row.
           isLoading={!settled}
           isError={isError}
-          error={connectorsQuery.error ?? projectQuery.error}
+          error={connectorsQuery.error ?? workspaceQuery.error}
           onRetry={retry}
           isEmpty={emptyKind !== null}
           empty={
@@ -502,7 +502,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           vice versa. Each receives `null` unless the target is its own kind,
           which is also what keeps them closed. */}
       <DiscoverAddFlow
-        projectId={projectId}
+        workspaceId={workspaceId}
         connector={catalogTarget?.source === 'discover' ? catalogTarget.connector : null}
         existingSlugs={existingSlugs}
         canWrite={canWrite}
@@ -510,7 +510,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         onAdded={onCatalogAdded}
       />
       <EasyConnectAddFlow
-        projectId={projectId}
+        workspaceId={workspaceId}
         app={catalogTarget?.source === 'easy-connect' ? catalogTarget.app : null}
         existingSlugs={existingSlugs}
         canWrite={canWrite}
@@ -518,7 +518,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         onAdded={onCatalogAdded}
       />
       <ComputersAddFlow
-        projectId={projectId}
+        workspaceId={workspaceId}
         open={catalogTarget?.source === 'computer'}
         existingSlugs={existingSlugs}
         canWrite={canWrite}
@@ -543,7 +543,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           </ModalHeader>
           <ModalBody className="max-h-[75vh] overflow-y-auto">
             <CustomConnectorForm
-              projectId={projectId}
+              workspaceId={workspaceId}
               emailChannelEnabled={emailChannelEnabled}
               onAdded={(slug) => {
                 invalidate();
@@ -560,7 +560,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
       {detailMounted ? (
         <ConnectorModal
-          projectId={projectId}
+          workspaceId={workspaceId}
           connector={detail.record}
           canWrite={canWrite}
           open={detail.open}

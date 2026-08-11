@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { applyDetailCapabilityFilter } from '../projects/lib/detail-capability-filter';
-import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
+import { applyDetailCapabilityFilter } from '../workspaces/lib/detail-capability-filter';
+import { resolveManifestVerdict } from '../workspaces/lib/manifest-verdict';
 
 // Record<string, unknown> so the filtered fields (which the runtime blanks to
 // {} / [] / null) type as `unknown` at the assertions — otherwise the literal

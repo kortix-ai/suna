@@ -26,7 +26,7 @@ import {
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { completeAuthorizationCodeSession } from '../connectors/oauth2-store';
-import { PROJECT_ACTIONS } from '../iam';
+import { WORKSPACE_ACTIONS } from '../iam';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
@@ -39,7 +39,7 @@ import {
 } from '../shared/session-public-shares';
 
 const ACCOUNT = crypto.randomUUID();
-const PROJECT = crypto.randomUUID();
+const WORKSPACE = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 const ALICE = crypto.randomUUID();
 const BOB = crypto.randomUUID();
@@ -52,7 +52,7 @@ const ALICE_CONNECTION = crypto.randomUUID();
 const BOB_CONNECTION = crypto.randomUUID();
 const SERVICE_ACCOUNT_CONNECTION = crypto.randomUUID();
 const SERVICE_ACCOUNT_PIPEDREAM_CONNECTION = crypto.randomUUID();
-const USER_STRATEGY_PROJECT_CONNECTION = crypto.randomUUID();
+const USER_STRATEGY_WORKSPACE_CONNECTION = crypto.randomUUID();
 const SESSION = crypto.randomUUID();
 const DEFAULT_SCOPE_SESSION = crypto.randomUUID();
 const PREEXISTING_SHARE = crypto.randomUUID();
@@ -108,7 +108,7 @@ beforeAll(async () => {
   );
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'connection-owner-http' });
   await db.insert(projects).values({
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     accountId: ACCOUNT,
     name: 'connection-owner-http',
     repoUrl: repository,
@@ -120,9 +120,9 @@ beforeAll(async () => {
     { accountId: ACCOUNT, userId: BOB, accountRole: 'member' },
   ]);
   await db.insert(projectMembers).values([
-    { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: ALICE, projectRole: 'member' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: BOB, projectRole: 'member' },
+    { accountId: ACCOUNT, workspaceId: WORKSPACE, userId: MANAGER, projectRole: 'manager' },
+    { accountId: ACCOUNT, workspaceId: WORKSPACE, userId: ALICE, projectRole: 'member' },
+    { accountId: ACCOUNT, workspaceId: WORKSPACE, userId: BOB, projectRole: 'member' },
   ]);
   const serviceAccount = await createServiceAccount({
     accountId: ACCOUNT,
@@ -141,10 +141,10 @@ beforeAll(async () => {
   });
   await db.insert(iamRoleActions).values(
     [
-      PROJECT_ACTIONS.PROJECT_READ,
-      PROJECT_ACTIONS.PROJECT_SESSION_START,
-      PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+      WORKSPACE_ACTIONS.WORKSPACE_READ,
+      WORKSPACE_ACTIONS.WORKSPACE_SESSION_START,
+      WORKSPACE_ACTIONS.WORKSPACE_SESSION_BINDINGS_WRITE,
+      WORKSPACE_ACTIONS.WORKSPACE_CONNECTOR_CONNECTIONS_MANAGE,
     ].map((action) => ({ roleId: serviceAccountRoleId, action })),
   );
   await db.insert(iamPolicies).values({
@@ -153,13 +153,13 @@ beforeAll(async () => {
     principalId: serviceAccountId,
     roleId: serviceAccountRoleId,
     scopeType: 'project',
-    scopeId: PROJECT,
+    scopeId: WORKSPACE,
   });
   await db.insert(connectors).values([
     {
       connectorId: CONNECTOR,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       slug: 'customer_data',
       name: 'Customer data',
       providerType: 'http',
@@ -168,7 +168,7 @@ beforeAll(async () => {
     {
       connectorId: USER_CONNECTOR,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       slug: 'personal_data',
       name: 'Personal data',
       providerType: 'http',
@@ -178,7 +178,7 @@ beforeAll(async () => {
     {
       connectorId: PIPEDREAM_CONNECTOR,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       slug: 'google_sheets',
       name: 'Google Sheets',
       providerType: 'pipedream',
@@ -190,15 +190,15 @@ beforeAll(async () => {
     {
       connectionId: DEFAULT_CONNECTION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: CONNECTOR,
-      label: 'Project default',
+      label: 'Workspace default',
       isDefault: true,
     },
     {
       connectionId: EXTERNAL_CONNECTION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: CONNECTOR,
       ownerType: 'external',
       ownerId: 'managed-customer',
@@ -207,7 +207,7 @@ beforeAll(async () => {
     {
       connectionId: ALICE_CONNECTION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: USER_CONNECTOR,
       ownerType: 'member',
       ownerId: ALICE,
@@ -216,7 +216,7 @@ beforeAll(async () => {
     {
       connectionId: BOB_CONNECTION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: USER_CONNECTOR,
       ownerType: 'member',
       ownerId: BOB,
@@ -225,7 +225,7 @@ beforeAll(async () => {
     {
       connectionId: SERVICE_ACCOUNT_CONNECTION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: USER_CONNECTOR,
       ownerType: 'member',
       ownerId: serviceAccountId,
@@ -234,16 +234,16 @@ beforeAll(async () => {
     {
       connectionId: SERVICE_ACCOUNT_PIPEDREAM_CONNECTION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: PIPEDREAM_CONNECTOR,
       ownerType: 'member',
       ownerId: serviceAccountId,
       label: 'Forged service-account OAuth connection',
     },
     {
-      connectionId: USER_STRATEGY_PROJECT_CONNECTION,
+      connectionId: USER_STRATEGY_WORKSPACE_CONNECTION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       connectorId: PIPEDREAM_CONNECTOR,
       ownerType: 'project',
       ownerId: null,
@@ -254,7 +254,7 @@ beforeAll(async () => {
     {
       sessionId: SESSION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       branchName: SESSION,
       createdBy: ALICE,
       visibility: 'private',
@@ -262,7 +262,7 @@ beforeAll(async () => {
     {
       sessionId: DEFAULT_SCOPE_SESSION,
       accountId: ACCOUNT,
-      projectId: PROJECT,
+      workspaceId: WORKSPACE,
       branchName: DEFAULT_SCOPE_SESSION,
       createdBy: ALICE,
       visibility: 'private',
@@ -271,7 +271,7 @@ beforeAll(async () => {
   await db.insert(projectSessionConnectorBindings).values({
     sessionId: SESSION,
     accountId: ACCOUNT,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     connectorAlias: 'personal_data',
     connectorId: USER_CONNECTOR,
     connectionId: ALICE_CONNECTION,
@@ -283,7 +283,7 @@ beforeAll(async () => {
     tokenHash: publicShareTokenHash(PREEXISTING_SHARE_TOKEN),
     sessionId: SESSION,
     accountId: ACCOUNT,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     createdBy: ALICE,
     port: 3000,
   });
@@ -293,11 +293,11 @@ afterAll(async () => {
   for (const tokenId of minted) {
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
   }
-  await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
+  await db.delete(projectSessions).where(eq(projectSessions.workspaceId, WORKSPACE));
   await db
     .delete(connectorConnections)
-    .where(eq(connectorConnections.projectId, PROJECT));
-  await db.delete(projects).where(eq(projects.projectId, PROJECT));
+    .where(eq(connectorConnections.workspaceId, WORKSPACE));
+  await db.delete(projects).where(eq(projects.workspaceId, WORKSPACE));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
   if (previousGitCacheDir === undefined) delete process.env.KORTIX_GIT_CACHE_DIR;
   else process.env.KORTIX_GIT_CACHE_DIR = previousGitCacheDir;
@@ -307,7 +307,7 @@ afterAll(async () => {
 async function mint(userId: string): Promise<string> {
   const token = await createAccountToken({
     accountId: ACCOUNT,
-    projectId: PROJECT,
+    workspaceId: WORKSPACE,
     userId,
     name: 'connection-owner-http',
     agentGrant: null,
@@ -331,7 +331,7 @@ describe('connection owner authorization over HTTP', () => {
   test('members list the project default and only their own personal connection', async () => {
     const response = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections`,
+      `/v1/projects/${WORKSPACE}/connections`,
       await mint(ALICE),
     );
     expect(response.status).toBe(200);
@@ -344,7 +344,7 @@ describe('connection owner authorization over HTTP', () => {
   test('managers administer system connections but cannot enumerate personal connections', async () => {
     const response = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections`,
+      `/v1/projects/${WORKSPACE}/connections`,
       await mint(MANAGER),
     );
     expect(response.status).toBe(200);
@@ -357,7 +357,7 @@ describe('connection owner authorization over HTTP', () => {
   test('managers see EVERY member connection via the read-only roster (/all)', async () => {
     const response = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections/all`,
+      `/v1/projects/${WORKSPACE}/connections/all`,
       await mint(MANAGER),
     );
     expect(response.status).toBe(200);
@@ -372,7 +372,7 @@ describe('connection owner authorization over HTTP', () => {
   test('a non-manager member cannot use the roster (/all) — 403', async () => {
     const response = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections/all`,
+      `/v1/projects/${WORKSPACE}/connections/all`,
       await mint(ALICE),
     );
     expect(response.status).toBe(403);
@@ -381,7 +381,7 @@ describe('connection owner authorization over HTTP', () => {
   test('member reconciliation forces ownership to the bearer-token user', async () => {
     const response = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections/me`,
+      `/v1/projects/${WORKSPACE}/connections/me`,
       await mint(ALICE),
       { connector_alias: 'personal_data', label: 'Alice data' },
     );
@@ -397,7 +397,7 @@ describe('connection owner authorization over HTTP', () => {
   test('generic manager reconciliation rewrites a submitted member owner to the bearer', async () => {
     const response = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections`,
+      `/v1/projects/${WORKSPACE}/connections`,
       await mint(MANAGER),
       {
         connector_alias: 'personal_data',
@@ -417,7 +417,7 @@ describe('connection owner authorization over HTTP', () => {
   test('service accounts cannot mint member connections through either reconciliation route', async () => {
     const self = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections/me`,
+      `/v1/projects/${WORKSPACE}/connections/me`,
       serviceAccountToken,
       { connector_alias: 'personal_data', label: 'Service account personal connection' },
     );
@@ -425,7 +425,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const generic = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections`,
+      `/v1/projects/${WORKSPACE}/connections`,
       serviceAccountToken,
       {
         connector_alias: 'personal_data',
@@ -440,7 +440,7 @@ describe('connection owner authorization over HTTP', () => {
   test('service accounts cannot list or mutate pre-existing service-account-owned member rows', async () => {
     const listed = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections`,
+      `/v1/projects/${WORKSPACE}/connections`,
       serviceAccountToken,
     );
     expect(listed.status).toBe(200);
@@ -456,7 +456,7 @@ describe('connection owner authorization over HTTP', () => {
     ] as const) {
       const response = await request(
         'PUT',
-        `/v1/projects/${PROJECT}/connections/${SERVICE_ACCOUNT_CONNECTION}/${operation}`,
+        `/v1/projects/${WORKSPACE}/connections/${SERVICE_ACCOUNT_CONNECTION}/${operation}`,
         serviceAccountToken,
         body,
       );
@@ -502,7 +502,7 @@ describe('connection owner authorization over HTTP', () => {
       for (const operation of ['connect', 'connect/finalize'] as const) {
         const response = await request(
           'POST',
-          `/v1/projects/${PROJECT}/connections/${SERVICE_ACCOUNT_PIPEDREAM_CONNECTION}/${operation}`,
+          `/v1/projects/${WORKSPACE}/connections/${SERVICE_ACCOUNT_PIPEDREAM_CONNECTION}/${operation}`,
           serviceAccountToken,
           {},
         );
@@ -517,7 +517,7 @@ describe('connection owner authorization over HTTP', () => {
     const alice = await mint(ALICE);
     const self = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/credential`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/credential`,
       alice,
       { value: 'alice-capability' },
     );
@@ -525,7 +525,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const manager = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/credential`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/credential`,
       await mint(MANAGER),
       { value: 'manager-impersonation' },
     );
@@ -533,7 +533,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const mismatched = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${EXTERNAL_CONNECTION}/credential`,
+      `/v1/projects/${WORKSPACE}/connections/${EXTERNAL_CONNECTION}/credential`,
       await mint(MANAGER),
       { value: 'operator-capability' },
     );
@@ -544,7 +544,7 @@ describe('connection owner authorization over HTTP', () => {
     const token = await mint(MANAGER);
     const self = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections/me`,
+      `/v1/projects/${WORKSPACE}/connections/me`,
       token,
       { connector_alias: 'customer_data', label: 'Rejected member authorization' },
     );
@@ -552,7 +552,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const managed = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections`,
+      `/v1/projects/${WORKSPACE}/connections`,
       token,
       {
         connector_alias: 'customer_data',
@@ -567,7 +567,7 @@ describe('connection owner authorization over HTTP', () => {
   test('user strategy rejects project authorization reconciliation', async () => {
     const response = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections`,
+      `/v1/projects/${WORKSPACE}/connections`,
       await mint(MANAGER),
       {
         connector_alias: 'personal_data',
@@ -581,7 +581,7 @@ describe('connection owner authorization over HTTP', () => {
   test('project strategy accepts project authorization reconciliation', async () => {
     const response = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections`,
+      `/v1/projects/${WORKSPACE}/connections`,
       await mint(MANAGER),
       {
         connector_alias: 'customer_data',
@@ -600,7 +600,7 @@ describe('connection owner authorization over HTTP', () => {
   test('project OAuth bootstrap rejects a user authorization strategy', async () => {
     const response = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connectors/google_sheets/oauth2/connection`,
+      `/v1/projects/${WORKSPACE}/connectors/google_sheets/oauth2/connection`,
       await mint(MANAGER),
       {},
     );
@@ -611,7 +611,7 @@ describe('connection owner authorization over HTTP', () => {
     const manager = await mint(MANAGER);
     const connectRequest = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connect-requests`,
+      `/v1/projects/${WORKSPACE}/connect-requests`,
       manager,
       { slug: 'google_sheets' },
     );
@@ -619,14 +619,14 @@ describe('connection owner authorization over HTTP', () => {
 
     const sharedCredential = await request(
       'PUT',
-      `/v1/connectors/projects/${PROJECT}/connectors/google_sheets/credential`,
+      `/v1/connectors/projects/${WORKSPACE}/connectors/google_sheets/credential`,
       manager,
       { value: 'shared-user-strategy-credential' },
     );
     expect(sharedCredential.status).toBe(409);
     const sharedDisconnect = await request(
       'DELETE',
-      `/v1/connectors/projects/${PROJECT}/connectors/google_sheets/credential`,
+      `/v1/connectors/projects/${WORKSPACE}/connectors/google_sheets/credential`,
       manager,
     );
     expect(sharedDisconnect.status).toBe(409);
@@ -634,14 +634,14 @@ describe('connection owner authorization over HTTP', () => {
     for (const operation of ['connect', 'connect/finalize'] as const) {
       const response = await request(
         'POST',
-        `/v1/connectors/projects/${PROJECT}/connectors/google_sheets/${operation}`,
+        `/v1/connectors/projects/${WORKSPACE}/connectors/google_sheets/${operation}`,
         manager,
         {},
       );
       expect(response.status).toBe(404);
     }
 
-    const { token } = mintSetupLink(PROJECT, {
+    const { token } = mintSetupLink(WORKSPACE, {
       kind: 'connector',
       slug: 'google_sheets',
       app: 'google_sheets',
@@ -659,28 +659,28 @@ describe('connection owner authorization over HTTP', () => {
 
     const project = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections/${DEFAULT_CONNECTION}/oauth2/status`,
+      `/v1/projects/${WORKSPACE}/connections/${DEFAULT_CONNECTION}/oauth2/status`,
       manager,
     );
     expect(project.status).toBe(200);
 
     const personal = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/status`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/oauth2/status`,
       alice,
     );
     expect(personal.status).toBe(200);
 
-    const mismatchedProject = await request(
+    const mismatchedWorkspace = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections/${USER_STRATEGY_PROJECT_CONNECTION}/oauth2/status`,
+      `/v1/projects/${WORKSPACE}/connections/${USER_STRATEGY_WORKSPACE_CONNECTION}/oauth2/status`,
       manager,
     );
-    expect(mismatchedProject.status).toBe(404);
+    expect(mismatchedWorkspace.status).toBe(404);
 
     const mismatchedExternal = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections/${EXTERNAL_CONNECTION}/oauth2/status`,
+      `/v1/projects/${WORKSPACE}/connections/${EXTERNAL_CONNECTION}/oauth2/status`,
       manager,
     );
     expect(mismatchedExternal.status).toBe(404);
@@ -690,7 +690,7 @@ describe('connection owner authorization over HTTP', () => {
     const alice = await mint(ALICE);
     const saved = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/application`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/oauth2/application`,
       alice,
       {
         authorization_url: 'https://identity.example.test/authorize',
@@ -702,7 +702,7 @@ describe('connection owner authorization over HTTP', () => {
     expect(saved.status).toBe(200);
     const started = await request(
       'POST',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/authorize`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/oauth2/authorize`,
       alice,
       {},
     );
@@ -740,7 +740,7 @@ describe('connection owner authorization over HTTP', () => {
     const alice = await mint(ALICE);
     const shared = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/sessions/${SESSION}/sharing`,
+      `/v1/projects/${WORKSPACE}/sessions/${SESSION}/sharing`,
       alice,
       { mode: 'project' },
     );
@@ -751,7 +751,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const publicLink = await request(
       'POST',
-      `/v1/projects/${PROJECT}/sessions/${SESSION}/public-shares`,
+      `/v1/projects/${WORKSPACE}/sessions/${SESSION}/public-shares`,
       alice,
       {},
     );
@@ -770,7 +770,7 @@ describe('connection owner authorization over HTTP', () => {
     const token = await mint(ALICE);
     const connected = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/credential`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/credential`,
       token,
       { value: 'scope-read-capability' },
     );
@@ -778,7 +778,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const response = await request(
       'GET',
-      `/v1/projects/${PROJECT}/sessions/${SESSION}/scope`,
+      `/v1/projects/${WORKSPACE}/sessions/${SESSION}/scope`,
       token,
     );
     expect(response.status).toBe(200);
@@ -797,7 +797,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const effective = await request(
       'GET',
-      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      `/v1/projects/${WORKSPACE}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
       token,
     );
     expect(effective.status).toBe(200);
@@ -812,7 +812,7 @@ describe('connection owner authorization over HTTP', () => {
     const token = await mint(ALICE);
     const connected = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/credential`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/credential`,
       token,
       { value: 'scope-effective-capability' },
     );
@@ -820,7 +820,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const secretsOnly = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      `/v1/projects/${WORKSPACE}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
       token,
       { secrets: [] },
     );
@@ -841,7 +841,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const replaced = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      `/v1/projects/${WORKSPACE}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
       token,
       { connector_bindings: {} },
     );
@@ -855,7 +855,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const readBack = await request(
       'GET',
-      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      `/v1/projects/${WORKSPACE}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
       token,
     );
     expect(readBack.status).toBe(200);
@@ -880,7 +880,7 @@ describe('connection owner authorization over HTTP', () => {
 
   test('scope reports whether the session holds a connector override, and null clears it', async () => {
     // The resolved `connector_bindings` map looks the same whether a session
-    // overrode its connectors or merely inherited the project defaults. A
+    // overrode its connectors or merely inherited the workspace defaults. A
     // client that cannot tell the two apart renders an inherited session as
     // "none" and writes an explicit zero-connector override on the next save.
     // So: the flag says which state the row is in, and `null` is the verb that
@@ -888,7 +888,7 @@ describe('connection owner authorization over HTTP', () => {
     const token = await mint(ALICE);
     const connected = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/credential`,
+      `/v1/workspaces/${WORKSPACE}/connections/${ALICE_CONNECTION}/credential`,
       token,
       { value: 'scope-clear-capability' },
     );
@@ -901,7 +901,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const inherited = await request(
       'GET',
-      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      `/v1/workspaces/${WORKSPACE}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
       token,
     );
     expect(inherited.status).toBe(200);
@@ -913,7 +913,7 @@ describe('connection owner authorization over HTTP', () => {
     // A save that names no connector axis must not create an override.
     const secretsOnly = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      `/v1/workspaces/${WORKSPACE}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
       token,
       { secrets: null },
     );
@@ -922,7 +922,7 @@ describe('connection owner authorization over HTTP', () => {
 
     const explicit = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      `/v1/workspaces/${WORKSPACE}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
       token,
       { connector_bindings: {} },
     );
@@ -931,14 +931,14 @@ describe('connection owner authorization over HTTP', () => {
 
     const cleared = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
+      `/v1/workspaces/${WORKSPACE}/sessions/${DEFAULT_SCOPE_SESSION}/scope`,
       token,
       { connector_bindings: null },
     );
     expect(cleared.status).toBe(200);
     expect(await cleared.json()).toMatchObject({
       connector_bindings_configured: false,
-      // Back to resolving the project default, which is the whole point.
+      // Back to resolving the workspace default, which is the whole point.
       connector_bindings: {
         personal_data: { connection_id: ALICE_CONNECTION },
       },
@@ -961,7 +961,7 @@ describe('connection owner authorization over HTTP', () => {
     const ownerToken = await mint(ALICE);
     const connected = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/credential`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/credential`,
       ownerToken,
       { value: 'scope-owner-capability' },
     );
@@ -975,7 +975,7 @@ describe('connection owner authorization over HTTP', () => {
         .where(eq(projectSessions.sessionId, SESSION));
       const shared = await request(
         'PUT',
-        `/v1/projects/${PROJECT}/sessions/${SESSION}/scope`,
+        `/v1/projects/${WORKSPACE}/sessions/${SESSION}/scope`,
         managerToken,
         {
           connector_bindings: {
@@ -1003,7 +1003,7 @@ describe('connection owner authorization over HTTP', () => {
         await tx.insert(projectSessionConnectorBindings).values({
           sessionId: SESSION,
           accountId: ACCOUNT,
-          projectId: PROJECT,
+          workspaceId: WORKSPACE,
           connectorAlias: 'personal_data',
           connectorId: USER_CONNECTOR,
           connectionId: ALICE_CONNECTION,
@@ -1018,7 +1018,7 @@ describe('connection owner authorization over HTTP', () => {
     const token = await mint(ALICE);
     const credential = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/credential`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/credential`,
       token,
       { value: 'scope-replacement-capability' },
     );
@@ -1027,7 +1027,7 @@ describe('connection owner authorization over HTTP', () => {
     try {
       const rejected = await request(
         'PUT',
-        `/v1/projects/${PROJECT}/sessions/${SESSION}/scope`,
+        `/v1/projects/${WORKSPACE}/sessions/${SESSION}/scope`,
         token,
         {
           secrets: [],
@@ -1060,7 +1060,7 @@ describe('connection owner authorization over HTTP', () => {
 
       const replaced = await request(
         'PUT',
-        `/v1/projects/${PROJECT}/sessions/${SESSION}/scope`,
+        `/v1/projects/${WORKSPACE}/sessions/${SESSION}/scope`,
         token,
         { secrets: [], connector_bindings: {} },
       );
@@ -1102,7 +1102,7 @@ describe('connection owner authorization over HTTP', () => {
         await tx.insert(projectSessionConnectorBindings).values({
           sessionId: SESSION,
           accountId: ACCOUNT,
-          projectId: PROJECT,
+          workspaceId: WORKSPACE,
           connectorAlias: 'personal_data',
           connectorId: USER_CONNECTOR,
           connectionId: ALICE_CONNECTION,
@@ -1117,14 +1117,14 @@ describe('connection owner authorization over HTTP', () => {
     const token = await mint(ALICE);
     const read = await request(
       'GET',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/policies`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/policies`,
       token,
     );
     expect(read.status).toBe(404);
 
     const replace = await request(
       'PUT',
-      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/policies`,
+      `/v1/projects/${WORKSPACE}/connections/${ALICE_CONNECTION}/policies`,
       token,
       { policies: [{ match: '*', action: 'always_run' }] },
     );

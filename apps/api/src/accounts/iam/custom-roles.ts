@@ -19,7 +19,7 @@ import {
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
 import { listAgentServiceAccounts, ensureAgentServiceAccount } from '../../repositories/service-accounts';
-import { loadConfigWithFiles } from '../../projects/lib/project-resources';
+import { loadConfigWithFiles } from '../../workspaces/lib/workspace-resources';
 import {
   ACTION_CATALOG_WIRE,
   BUILTIN_BY_ID,
@@ -414,10 +414,10 @@ iamRouter.openapi(
     // Start from already-provisioned identities (the implicit `default` + any
     // agent that has been launched). Keyed (project, agent) to dedupe.
     for (const r of await listAgentServiceAccounts(accountId)) {
-      byKey.set(`${r.projectId}|${r.agentName}`, {
+      byKey.set(`${r.workspaceId}|${r.agentName}`, {
         service_account_id: r.serviceAccountId,
         name: r.name,
-        project_id: r.projectId,
+        project_id: r.workspaceId,
         agent_name: r.agentName,
       });
     }
@@ -429,12 +429,12 @@ iamRouter.openapi(
     // already provisioned. ensureAgentServiceAccount is idempotent, so this
     // only mints on first sight. Capped to bound the git work on accounts with
     // a very large project count (the picker is a manager-only admin surface).
-    const PROJECT_CAP = 50;
+    const WORKSPACE_CAP = 50;
     const projectRows = await db
       .select()
       .from(projects)
       .where(and(eq(projects.accountId, accountId), ne(projects.status, 'archived')))
-      .limit(PROJECT_CAP);
+      .limit(WORKSPACE_CAP);
     await Promise.all(
       projectRows.map(async (p) => {
         let agentNames: string[] = ['default'];
@@ -445,11 +445,11 @@ iamRouter.openapi(
           // repo momentarily unreachable — still expose the implicit `default`.
         }
         for (const agentName of agentNames) {
-          const key = `${p.projectId}|${agentName}`;
+          const key = `${p.workspaceId}|${agentName}`;
           if (byKey.has(key)) continue;
           try {
-            const serviceAccountId = await ensureAgentServiceAccount({ accountId, projectId: p.projectId, agentName });
-            byKey.set(key, { service_account_id: serviceAccountId, name: `${agentName} · ${p.name}`, project_id: p.projectId, agent_name: agentName });
+            const serviceAccountId = await ensureAgentServiceAccount({ accountId, workspaceId: p.workspaceId, agentName });
+            byKey.set(key, { service_account_id: serviceAccountId, name: `${agentName} · ${p.name}`, project_id: p.workspaceId, agent_name: agentName });
           } catch {
             // minting unavailable (e.g. API_KEY_SECRET unset) — skip this agent.
           }
@@ -809,9 +809,9 @@ async function parsePolicyInput(
   // intent). Validate existence + ownership up front.
   if (scopeType === 'project' && scopeId) {
     const [proj] = await db
-      .select({ projectId: projects.projectId })
+      .select({ workspaceId: projects.workspaceId })
       .from(projects)
-      .where(and(eq(projects.projectId, scopeId), eq(projects.accountId, accountId)))
+      .where(and(eq(projects.workspaceId, scopeId), eq(projects.accountId, accountId)))
       .limit(1);
     if (!proj) return { ok: false, status: 404, error: 'scopeId does not match a project in this account' };
   }
@@ -833,7 +833,7 @@ async function parsePolicyInput(
   // (engine-v2 customPolicyAllows returns true for any target when
   // scopeType==='account'), so binding a project "department" role at account
   // scope would silently smear it over every project — a broadening the role's
-  // author never intended. Project roles bind at project scope, account roles
+  // author never intended. Workspace roles bind at project scope, account roles
   // at account scope.
   if (role.scopeType !== scopeType) {
     return {

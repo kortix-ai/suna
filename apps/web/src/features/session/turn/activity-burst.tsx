@@ -499,7 +499,7 @@ function ActivityBurstImpl({
             )}
           >
             {/* Shimmer while the burst works, which is how every row inside it
-  						    already says "still going" — one running vocabulary per surface. */}
+                already says "still going" — one running vocabulary per surface. */}
             {/* The ramp is pinned to `--muted-foreground`: `TextShimmer` sets
                 `text-transparent` and paints its own hard-coded `#a1a1aa`→`#000`
                 (`text-shimmer.tsx`), discarding the inherited muted tone — at the
@@ -523,11 +523,11 @@ function ActivityBurstImpl({
               <span className="min-w-0 truncate tabular-nums">{title}</span>
             )}
             {/* The title now states the failure in words ("· 1 failed"), so this
-  					    mark is the SHAPE half of that signal — what a reader who cannot see
-  					    the destructive tint gets, and what survives a truncated title. It is
-  					    the same glyph the failed row carries inside; it sits before the caret
-  					    so the caret keeps its job as the affordance. Hidden while open — the
-  					    chain body (failed rows + closing step) already carries the verdict. */}
+                mark is the SHAPE half of that signal — what a reader who cannot see
+                the destructive tint gets, and what survives a truncated title. It is
+                the same glyph the failed row carries inside; it sits before the caret
+                so the caret keeps its job as the affordance. Hidden while open — the
+                chain body (failed rows + closing step) already carries the verdict. */}
             {failures > 0 && !open && (
               <WarningIcon
                 weight="fill"

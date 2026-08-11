@@ -9,7 +9,7 @@ import { join } from 'node:path';
  * the enforcement: the rule is only worth anything if EVERY path that turns an
  * authentication into a destination actually calls it. A path that quietly
  * stops calling it puts a brand-new account back on a stranger's "Request
- * access to this project" page, which is how this bug shipped in the first
+ * access to this workspace" page, which is how this bug shipped in the first
  * place — the destination logic lives in four separate places and only the
  * invite case had ever been special-cased.
  *

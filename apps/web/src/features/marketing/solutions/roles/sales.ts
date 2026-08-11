@@ -105,11 +105,11 @@ export const sales: RoleContent = {
 
   reach: {
     title: 'Your CRM and your inbox — without handing over the keys.',
-    sub: 'A sales agent is only useful if it can reach the systems the pipeline actually lives in. Connect each one once for the whole project. The raw credential is decrypted on our side and attached to the outbound call; it never lands in the machine the model is driving.',
+    sub: 'A sales agent is only useful if it can reach the systems the pipeline actually lives in. Connect each one once for the whole workspace. The raw credential is decrypted on our side and attached to the outbound call; it never lands in the machine the model is driving.',
     rows: [
       {
         k: 'Salesforce, HubSpot',
-        v: 'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the project. Read accounts, opportunities and activity; write back the fields you allow it to write.',
+        v: 'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the workspace. Read accounts, opportunities and activity; write back the fields you allow it to write.',
       },
       {
         k: 'Gmail and Outlook',
@@ -125,7 +125,7 @@ export const sales: RoleContent = {
       },
       {
         k: 'Whose account it acts as',
-        v: 'Choose one project-managed connection the whole team shares, or a personal authorization where every member acts as themselves — and an automated principal cannot act at all.',
+        v: 'Choose one workspace-managed connection the whole team shares, or a personal authorization where every member acts as themselves — and an automated principal cannot act at all.',
       },
     ],
     footnote:
@@ -164,7 +164,7 @@ export const sales: RoleContent = {
       {
         id: 'gates',
         k: 'Approval gates are off until you set them',
-        v: 'The shipped default is permissive — an action runs unless you have said otherwise. For a sales project the first thing to do is set the outbound actions to Ask and the destructive ones to Block. We are telling you this rather than letting you assume the safer default was chosen for you.',
+        v: 'The shipped default is permissive — an action runs unless you have said otherwise. For a sales workspace the first thing to do is set the outbound actions to Ask and the destructive ones to Block. We are telling you this rather than letting you assume the safer default was chosen for you.',
       },
       {
         id: 'pause',
@@ -179,7 +179,7 @@ export const sales: RoleContent = {
       {
         id: 'creds',
         k: 'Connector credentials never enter the machine',
-        v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. Your CRM credential is decrypted server-side and attached to the outbound request. Turning a connector off takes effect on the next call — there is nothing in the sandbox to rotate.',
+        v: 'The sandbox carries one workspace-scoped Kortix token and no third-party keys. Your CRM credential is decrypted server-side and attached to the outbound request. Turning a connector off takes effect on the next call — there is nothing in the sandbox to rotate.',
       },
       {
         id: 'audit',

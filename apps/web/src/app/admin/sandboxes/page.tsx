@@ -83,7 +83,7 @@ interface Sbx {
   sandboxId: string;
   sessionId: string;
   accountId: string;
-  projectId: string;
+  workspaceId: string;
   provider: string;
   externalId: string | null;
   status: string;

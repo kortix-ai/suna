@@ -7,11 +7,13 @@ function escapeSql(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "''");
 }
 
-interface SeedProjectOptions {
+interface SeedWorkspaceOptions {
   accountId: string;
   userId: string;
   name: string;
   repoUrl?: string;
+  workspaceRole?: "manager" | "editor" | "member";
+  /** @deprecated Use workspaceRole. */
   projectRole?: "manager" | "editor" | "member";
 }
 
@@ -40,24 +42,26 @@ export async function queryDatabaseRows<
   }
 }
 
-export async function seedDatabaseProject({
+export async function seedDatabaseWorkspace({
   accountId,
   userId,
   name,
   repoUrl,
-  projectRole = "editor",
-}: SeedProjectOptions): Promise<string> {
-  const projectId = randomUUID();
-  const projectRepoUrl =
-    repoUrl ?? `https://github.com/kortix-ai/browser-${projectId}.git`;
+  workspaceRole,
+  projectRole,
+}: SeedWorkspaceOptions): Promise<string> {
+  const workspaceId = randomUUID();
+  const workspaceRepoUrl =
+    repoUrl ?? `https://github.com/kortix-ai/browser-${workspaceId}.git`;
+  const role = workspaceRole ?? projectRole ?? "editor";
   await runDatabaseSql(`
 insert into kortix.projects (
   project_id, account_id, name, repo_url, default_branch, manifest_path, status, metadata
 ) values (
-  '${projectId}'::uuid,
+  '${workspaceId}'::uuid,
   '${escapeSql(accountId)}'::uuid,
   '${escapeSql(name)}',
-  '${escapeSql(projectRepoUrl)}',
+  '${escapeSql(workspaceRepoUrl)}',
   'main',
   'kortix.yaml',
   'active',
@@ -68,11 +72,14 @@ insert into kortix.project_members (
   account_id, project_id, user_id, project_role, granted_by
 ) values (
   '${escapeSql(accountId)}'::uuid,
-  '${projectId}'::uuid,
+  '${workspaceId}'::uuid,
   '${escapeSql(userId)}'::uuid,
-  '${escapeSql(projectRole)}',
+  '${escapeSql(role)}',
   '${escapeSql(userId)}'::uuid
 );
 `);
-  return projectId;
+  return workspaceId;
 }
+
+/** @deprecated Use seedDatabaseWorkspace. The database schema retains physical project identifiers. */
+export const seedDatabaseProject = seedDatabaseWorkspace;

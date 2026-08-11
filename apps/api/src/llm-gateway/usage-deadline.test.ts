@@ -46,8 +46,8 @@ mock.module('../shared/usage-events', () => ({
 // reaches the wallet, and a partial stub of that module breaks its other
 // importers (mock.module replaces the whole module, exports and all).
 
-const realPolicy = await import('../projects/sandbox-deadline-policy');
-mock.module('../projects/sandbox-deadline', () => ({
+const realPolicy = await import('../workspaces/sandbox-deadline-policy');
+mock.module('../workspaces/sandbox-deadline', () => ({
   ...realPolicy,
   extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
     extendCalls.push({ target, grantMs });
@@ -66,7 +66,7 @@ function usage(over: Record<string, unknown> = {}) {
   return {
     accountId: 'acct-1',
     actorUserId: 'user-1',
-    projectId: 'proj-1',
+    workspaceId: 'proj-1',
     sessionId,
     provider: 'anthropic',
     model: 'claude-sonnet-4.6',

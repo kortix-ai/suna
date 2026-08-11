@@ -19,7 +19,7 @@ import {
   addGroupMembers,
   type PermissionProbeInput,
 } from './accounts-client';
-import type { AccountRole } from '@/lib/projects/projects-client';
+import type { AccountRole } from '@/lib/workspaces/workspaces-client';
 
 export const accountKeys = {
   account: (id: string | null | undefined) => ['account', id] as const,

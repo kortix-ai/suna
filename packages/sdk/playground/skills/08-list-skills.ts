@@ -3,16 +3,16 @@
  *
  * `readProjectFile` is a platform REST read (repo content) — no sandbox needed.
  *
- * Run (from packages/sdk):  bun run playground/skills/08-list-skills.ts [projectId]
+ * Run (from packages/sdk):  bun run playground/skills/08-list-skills.ts [workspaceId]
  */
 import { readProjectFile } from "../../src/index";
 import { makeKortix, pickProjectId, run } from "../_shared";
 
 run("list-skills", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix, process.argv[2]);
+  const workspaceId = await pickProjectId(kortix, process.argv[2]);
 
-  const detail = await kortix.projects.detail(projectId);
+  const detail = await kortix.projects.detail(workspaceId);
   const skills = detail.config.skills;
 
   console.log(`✓ ${skills.length} skill(s):\n`);
@@ -26,7 +26,7 @@ run("list-skills", async () => {
 
   if (skills.length > 0) {
     const first = skills[0]!;
-    const file = await readProjectFile(projectId, first.path);
+    const file = await readProjectFile(workspaceId, first.path);
     console.log(`✓ readProjectFile('${first.path}') — first 300 chars:\n`);
     console.log(file.content.slice(0, 300));
   }

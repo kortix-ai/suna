@@ -21,7 +21,7 @@ import {
   describeAccountInvite,
   type AccountInviteDescribe,
 } from '@kortix/sdk';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { WORKSPACE_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
@@ -63,11 +63,11 @@ export default function InvitePage() {
       return { kind: 'account' as const, data: await acceptAccountInvite(inviteId!) };
     },
     onSuccess: () => {
-      // Land a newly-joined member straight in a project of the account they
-      // just joined, not the account settings page and not the projects list.
+      // Land a newly-joined member straight in a workspace of the account they
+      // just joined, not the account settings page and not the workspaces list.
       // The door (not the remembered project) because that cookie still names a
       // project in the account they came from.
-      router.replace(PROJECT_LANDING_PATH);
+      router.replace(WORKSPACE_LANDING_PATH);
     },
   });
 
@@ -90,7 +90,7 @@ export default function InvitePage() {
     // "wrong account" state instead. Auto-claimed invites (already accepted on
     // first sign-in) use the same destination as a manual accept.
     if (!item || !inv?.email_matches_caller || !inv.accepted_at) return;
-    router.replace(PROJECT_LANDING_PATH);
+    router.replace(WORKSPACE_LANDING_PATH);
   }, [inviteQuery.data, router]);
 
   if (authLoading || !user || inviteQuery.isLoading) {

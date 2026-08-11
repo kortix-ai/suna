@@ -20,9 +20,9 @@ import {
 
 run("use-agent", async () => {
   const kortix = makeKortix();
-  const projectId = await pickProjectId(kortix);
+  const workspaceId = await pickProjectId(kortix);
 
-  const detail = await kortix.projects.detail(projectId);
+  const detail = await kortix.projects.detail(workspaceId);
   const agents = detail.config.agents.map((a) => a.name);
   const agent =
     process.argv[2] ?? detail.config.open_code_default_agent ?? agents[0];
@@ -39,10 +39,10 @@ run("use-agent", async () => {
 
   const sessionId = await pickOrCreateSessionId(
     kortix,
-    projectId,
+    workspaceId,
     `sdk agent ${agent}`,
   );
-  const session = kortix.session(projectId, sessionId);
+  const session = kortix.session(workspaceId, sessionId);
 
   const turn = await sendAndWait(
     session,

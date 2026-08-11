@@ -84,24 +84,36 @@ function deriveFrontendFromApiBase(apiBase: string): string {
 }
 
 /**
- * Web (dashboard) URL for a project. Prefers the server-provided `dashboardUrl`
+ * Web (dashboard) URL for a workspace. Prefers the server-provided `dashboardUrl`
  * (authoritative) and only falls back to {@link webDashboardUrl} when absent.
  */
 export function projectWebUrl(
   apiBase: string,
-  projectId: string,
+  workspaceId: string,
   dashboardUrl?: string | null,
 ): string {
   if (dashboardUrl && dashboardUrl.trim()) return stripTrailingSlash(dashboardUrl.trim());
-  return `${webDashboardUrl(apiBase)}/projects/${projectId}`;
+  return `${webDashboardUrl(apiBase)}/projects/${workspaceId}`;
 }
 
-/** Web (dashboard) URL for a session within a project. */
+/** Canonical Web dashboard URL for a Workspace. */
+export function workspaceWebUrl(
+  apiBase: string,
+  workspaceId: string,
+  dashboardUrl?: string | null,
+): string {
+  if (dashboardUrl && dashboardUrl.trim()) {
+    return stripTrailingSlash(dashboardUrl.trim()).replace('/projects/', '/workspaces/');
+  }
+  return `${webDashboardUrl(apiBase)}/workspaces/${workspaceId}`;
+}
+
+/** Web (dashboard) URL for a session within a workspace. */
 export function sessionWebUrl(
   apiBase: string,
-  projectId: string,
+  workspaceId: string,
   sessionId: string,
   dashboardUrl?: string | null,
 ): string {
-  return `${projectWebUrl(apiBase, projectId, dashboardUrl)}/sessions/${sessionId}`;
+  return `${projectWebUrl(apiBase, workspaceId, dashboardUrl)}/sessions/${sessionId}`;
 }

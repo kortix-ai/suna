@@ -27,7 +27,7 @@ let stdout = '';
 let stderr = '';
 let requests: Array<{ url: string; method: string; body: any }> = [];
 
-// Built-in `member` (project floor role) + a custom `support_agent` role.
+// Built-in `member` (workspace floor role) + a custom `support_agent` role.
 const ROLES = [
   { role_id: 'builtin:member', key: 'member', name: 'Member', description: null, resource_type: 'project', is_system: true, account_id: null },
   { role_id: 'role_77', key: 'support_agent', name: 'Support Agent', description: 'Read + run', resource_type: 'project', is_system: false, account_id: 'account_1' },

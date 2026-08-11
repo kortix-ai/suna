@@ -35,7 +35,7 @@
  *
  *  - EMAIL and VOICE are `stability: 'experimental'` with
  *    `platformDefault: () => false` (`apps/api/src/experimental/features.ts`).
- *    Per-project opt-in. Voice is not even a Channels row — it is its own rail
+ *    Per-workspace opt-in. Voice is not even a Channels row — it is its own rail
  *    item. `join_gmeet` / `join_zoom` are declared and NOT IMPLEMENTED.
  *
  *  - TELEGRAM, WHATSAPP, SMS, DISCORD ARE NOT CHANNELS. Telegram has an inbound
@@ -60,7 +60,7 @@
 export const hero = {
   eyebrow: 'Channels',
   title: 'Reach it where people already work.',
-  sub: 'Connect Slack to a project and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread. Nobody has to open a new tool to ask for something.',
+  sub: 'Connect Slack to a workspace and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread. Nobody has to open a new tool to ask for something.',
   ctaPrimary: 'Connect Slack',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
@@ -78,7 +78,7 @@ export const hero = {
 export const surfaces = {
   eyebrow: 'The surfaces',
   title: 'One is live. Three are behind a switch. We will say which.',
-  sub: 'A channel is a chat platform bound to a project — a closed set of four, not an open field. Here is the real state of each one, including the parts a marketing page usually leaves out.',
+  sub: 'A channel is a chat platform bound to a workspace — a closed set of four, not an open field. Here is the real state of each one, including the parts a marketing page usually leaves out.',
   columns: ['Surface', 'State', 'What that means'] as const,
   /** `icon` keys map to `features/icon`. `state` is the honest one. */
   rows: [
@@ -101,14 +101,14 @@ export const surfaces = {
       icon: 'Gmail',
       name: 'Email',
       state: 'Experimental',
-      body: 'A project inbox, so a message to an address starts a session and a reply continues it. Opt in per project under Customize → Feature flags. Real, and not finished.',
+      body: 'A workspace inbox, so a message to an address starts a session and a reply continues it. Opt in per workspace under Customize → Feature flags. Real, and not finished.',
     },
     {
       id: 'voice',
       icon: 'Kortix',
       name: 'Voice',
       state: 'Experimental',
-      body: 'A realtime call the agent speaks in. Same per-project opt-in. It spawns a room and shares the link — it does not dial into a meeting you already started.',
+      body: 'A realtime call the agent speaks in. Same per-workspace opt-in. It spawns a room and shares the link — it does not dial into a meeting you already started.',
     },
   ],
   notChannels: {
@@ -146,7 +146,7 @@ export const thread = {
     },
   ],
   footnote:
-    'Two events for the same brand-new thread arriving at once do not produce two sessions: the second joins the first and is delivered as a follow-up. One Slack workspace bound to more than one project shows a project picker on the first mention instead of guessing.',
+    'Two events for the same brand-new thread arriving at once do not produce two sessions: the second joins the first and is delivered as a follow-up. One Slack workspace bound to more than one Kortix workspace shows a workspace picker on the first mention instead of guessing.',
   /**
    * The illustrated thread. Fictional workspace and people only — Acme,
    * Northwind, Globex. Never a real customer, never a real colleague.
@@ -244,23 +244,29 @@ export const back = {
 
 export const commands = {
   eyebrow: 'From the thread',
-  title: 'Run the project without leaving the conversation.',
+  title: 'Run the workspace without leaving the conversation.',
   sub: 'Type these as /kortix <command> in Slack, or as plain text in a direct message. Most of what you would otherwise open the dashboard for is one line in the channel.',
   columns: ['Command', 'What it does'] as const,
   rows: [
     { cmd: 'login, logout', v: 'Link or unlink your chat identity to your Kortix account' },
-    { cmd: 'switch, unbind', v: 'Rebind this channel to a different project, or unbind it' },
-    { cmd: 'projects', v: 'List the projects you can bind this channel to' },
+    { cmd: 'switch, unbind', v: 'Rebind this channel to a different workspace, or unbind it' },
+    { cmd: 'workspaces', v: 'List the workspaces you can bind this channel to' },
     { cmd: 'sessions', v: 'List the recent sessions started from this workspace' },
     { cmd: 'agent <name>, model <id>', v: 'Set the agent and the model this channel uses' },
     { cmd: 'policy <mode>', v: 'Set who may start a session here' },
-    { cmd: 'whoami', v: 'Show the panel: project, agent, model, policy, linked identity' },
+    { cmd: 'whoami', v: 'Show the panel: workspace, agent, model, policy, linked identity' },
   ],
   policy: {
     title: 'Three answers to “who may start a session here”',
     values: [
-      { k: 'project_open', v: 'The default. Any project member who mentions the bot gets a session.' },
-      { k: 'owner_approval', v: 'A session starts only once the channel owner approves the request.' },
+      {
+        k: 'workspace_open',
+        v: 'The default. Any workspace member who mentions the bot gets a session.',
+      },
+      {
+        k: 'owner_approval',
+        v: 'A session starts only once the channel owner approves the request.',
+      },
       { k: 'owner_only', v: 'Only the owner. Everyone else gets nothing, predictably.' },
     ],
   },
@@ -279,7 +285,7 @@ export const rules = {
     {
       id: 'credentials',
       k: 'The bot token never enters a sandbox',
-      v: 'A connected channel’s token is a connector-scoped secret. It does not appear on the project’s Secrets page, and Kortix never injects it into a cloud computer. It is resolved server-side at the moment the agent sends a message.',
+      v: 'A connected channel’s token is a connector-scoped secret. It does not appear on the workspace’s Secrets page, and Kortix never injects it into a cloud computer. It is resolved server-side at the moment the agent sends a message.',
     },
     {
       id: 'agent',

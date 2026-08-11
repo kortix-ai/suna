@@ -45,7 +45,7 @@ interface Row extends Record<string, unknown> {
   account_id: string;
 }
 
-interface ProjectRow extends Record<string, unknown> {
+interface WorkspaceRow extends Record<string, unknown> {
   project_id: string;
   account_id: string;
   name: string;
@@ -72,7 +72,7 @@ async function callApi(token: string, path: string, init?: RequestInit) {
 }
 
 async function main() {
-  process.stdout.write('\n  \x1b[1mProject-scoped CLI token E2E\x1b[0m\n');
+  process.stdout.write('\n  \x1b[1mWorkspace-scoped CLI token E2E\x1b[0m\n');
   dim('api', API_BASE);
 
   // ── 1. Pick a user + two projects they own ──────────────────────────
@@ -84,7 +84,7 @@ async function main() {
   const m = memberRows[0];
   if (!m) die('No account_members rows.');
 
-  const projects = await db.execute<ProjectRow>(sql`
+  const projects = await db.execute<WorkspaceRow>(sql`
     select project_id, account_id, name
     from kortix.projects
     where account_id = ${m.account_id}
@@ -92,27 +92,27 @@ async function main() {
     limit 2
   `);
   const projectRows =
-    (projects as unknown as { rows?: ProjectRow[] }).rows
-    ?? (projects as unknown as ProjectRow[]);
+    (projects as unknown as { rows?: WorkspaceRow[] }).rows
+    ?? (projects as unknown as WorkspaceRow[]);
   if (projectRows.length < 2) {
     die(`Need ≥ 2 projects on account ${m.account_id} for the cross-project test. Have ${projectRows.length}.`);
   }
   const [projA, projB] = projectRows;
-  const foreignProjects = await db.execute<ProjectRow>(sql`
+  const foreignWorkspaces = await db.execute<WorkspaceRow>(sql`
     select project_id, account_id, name
     from kortix.projects
     where account_id <> ${m.account_id}
     order by created_at desc
     limit 1
   `);
-  const foreignProjectRows =
-    (foreignProjects as unknown as { rows?: ProjectRow[] }).rows
-    ?? (foreignProjects as unknown as ProjectRow[]);
-  const foreignProject = foreignProjectRows[0] ?? null;
+  const foreignWorkspaceRows =
+    (foreignWorkspaces as unknown as { rows?: WorkspaceRow[] }).rows
+    ?? (foreignWorkspaces as unknown as WorkspaceRow[]);
+  const foreignWorkspace = foreignWorkspaceRows[0] ?? null;
   dim('user', m.user_id);
   dim('projA', `${projA.project_id} (${projA.name})`);
   dim('projB', `${projB.project_id} (${projB.name})`);
-  if (foreignProject) dim('foreign', `${foreignProject.project_id} (${foreignProject.name})`);
+  if (foreignWorkspace) dim('foreign', `${foreignWorkspace.project_id} (${foreignWorkspace.name})`);
 
   // ── 2. Mint a project-scoped token for projA via direct DB insert ───
   const { publicKey, secretKey } = generateAccountTokenPair();
@@ -183,24 +183,24 @@ async function main() {
   }
   ok('token can use connector management routes for its own project → 200');
 
-  const crossProjectCatalog = await callApi(secretKey, `/connectors/projects/${projB.project_id}/catalog`);
-  if (crossProjectCatalog.status !== 403) {
-    die(`projA token → /connectors/projects/<projB>/catalog should 403, got ${crossProjectCatalog.status}: ${JSON.stringify(crossProjectCatalog.body)}`);
+  const crossWorkspaceCatalog = await callApi(secretKey, `/connectors/projects/${projB.project_id}/catalog`);
+  if (crossWorkspaceCatalog.status !== 403) {
+    die(`projA token → /connectors/projects/<projB>/catalog should 403, got ${crossWorkspaceCatalog.status}: ${JSON.stringify(crossWorkspaceCatalog.body)}`);
   }
   ok('token cannot use Connector gateway routes for a different project → 403');
 
   // ── 8b. Defense-in-depth: forged foreign project scope is rejected ───
-  if (foreignProject) {
+  if (foreignWorkspace) {
     const forged = generateAccountTokenPair();
     const forgedHash = hashSecretKey(forged.secretKey);
     await db.execute(sql`
       insert into kortix.account_tokens
         (account_id, user_id, project_id, name, public_key, secret_key_hash)
       values
-        (${m.account_id}, ${m.user_id}, ${foreignProject.project_id}, 'e2e-forged-foreign-scope', ${forged.publicKey}, ${forgedHash})
+        (${m.account_id}, ${m.user_id}, ${foreignWorkspace.project_id}, 'e2e-forged-foreign-scope', ${forged.publicKey}, ${forgedHash})
     `);
     try {
-      const forgedCatalog = await callApi(forged.secretKey, `/connectors/projects/${foreignProject.project_id}/catalog`);
+      const forgedCatalog = await callApi(forged.secretKey, `/connectors/projects/${foreignWorkspace.project_id}/catalog`);
       if (forgedCatalog.status !== 403) {
         die(`foreign-scoped forged token → /connectors/projects/<foreign>/catalog should 403, got ${forgedCatalog.status}: ${JSON.stringify(forgedCatalog.body)}`);
       }

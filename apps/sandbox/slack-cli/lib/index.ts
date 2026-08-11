@@ -10,6 +10,7 @@ export {
 export {
   getEnv,
   requireEnv,
+  kortixWorkspaceId,
   kortixProjectId,
   kortixSessionId,
   kortixWorkspace,

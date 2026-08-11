@@ -12,7 +12,7 @@ import {
   hasBackend,
   parseBasicAuthHeader,
   type GitConnectionRef,
-} from '../projects/git-backends';
+} from '../workspaces/git-backends';
 
 function ref(overrides: Partial<GitConnectionRef>): GitConnectionRef {
   return {

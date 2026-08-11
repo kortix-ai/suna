@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 
-import type { ProjectSessionRow } from '../projects/lib/serializers';
-import { projectSessionMetadataMerge } from '../projects/lib/session-metadata-merge';
+import type { WorkspaceSessionRow } from '../workspaces/lib/serializers';
+import { workspaceSessionMetadataMerge } from '../workspaces/lib/session-metadata-merge';
 
 // Mock the DB write and the sandbox session listing before importing the module.
 const dbUpdates: Array<Record<string, unknown>> = [];
@@ -21,24 +21,24 @@ mock.module('../shared/db', () => ({
 }));
 
 let listResult: { ok: boolean; sessions: unknown[]; reason?: string } = { ok: true, sessions: [] };
-mock.module('../projects/opencode-mapping', () => ({
+mock.module('../workspaces/opencode-mapping', () => ({
   listSandboxOpencodeSessions: async () => listResult,
   resolveRootSessionId: ({ sessions }: { sessions: Array<{ id: string }> }) =>
     sessions[0]?.id ?? null,
 }));
 
 const { syncOpencodeSessionSnapshot, scheduleOpencodeSnapshotSync, pendingSnapshotSyncs } =
-  await import('../projects/opencode-session-snapshot');
+  await import('../workspaces/opencode-session-snapshot');
 
-function row(over: Partial<ProjectSessionRow> = {}): ProjectSessionRow {
+function row(over: Partial<WorkspaceSessionRow> = {}): WorkspaceSessionRow {
   return {
     sessionId: 's',
-    projectId: 'p',
+    workspaceId: 'p',
     accountId: 'a',
     opencodeSessionId: 'ses_root',
     metadata: {},
     ...over,
-  } as unknown as ProjectSessionRow;
+  } as unknown as WorkspaceSessionRow;
 }
 
 async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
@@ -60,12 +60,12 @@ describe('syncOpencodeSessionSnapshot', () => {
     // survive: a read-modify-write of the whole object would drop it, and for a
     // one-shot automation session nothing ever re-titles.
     await syncOpencodeSessionSnapshot({
-      row: row({ metadata: { name: 'Set Up MS Graph' } } as Partial<ProjectSessionRow>),
+      row: row({ metadata: { name: 'Set Up MS Graph' } } as Partial<WorkspaceSessionRow>),
       externalId: 'ext',
     });
     expect(dbUpdates).toHaveLength(1);
     expect(dbUpdates[0].metadata).toEqual(
-      projectSessionMetadataMerge({
+      workspaceSessionMetadataMerge({
         opencode_sessions: [
           {
             id: 'ses_root',
@@ -96,7 +96,7 @@ describe('syncOpencodeSessionSnapshot', () => {
     ];
     listResult = { ok: true, sessions: [{ id: 'ses_root', parentID: null }] };
     await syncOpencodeSessionSnapshot({
-      row: row({ metadata: { opencode_sessions: existing } } as Partial<ProjectSessionRow>),
+      row: row({ metadata: { opencode_sessions: existing } } as Partial<WorkspaceSessionRow>),
       externalId: 'ext',
     });
     expect(dbUpdates).toHaveLength(0);
@@ -114,14 +114,14 @@ describe('scheduleOpencodeSnapshotSync', () => {
       firstMs: 0,
       retryMs: 0,
       loadRow: async () => row(),
-      sync: async ({ row: r }: { row: ProjectSessionRow }) => {
+      sync: async ({ row: r }: { row: WorkspaceSessionRow }) => {
         calls.push(r.sessionId);
         return r;
       },
     };
-    scheduleOpencodeSnapshotSync({ sessionId: 's', projectId: 'p', externalId: 'ext' }, opts);
+    scheduleOpencodeSnapshotSync({ sessionId: 's', workspaceId: 'p', externalId: 'ext' }, opts);
     // A second schedule while the first is in flight is deduped.
-    scheduleOpencodeSnapshotSync({ sessionId: 's', projectId: 'p', externalId: 'ext' }, opts);
+    scheduleOpencodeSnapshotSync({ sessionId: 's', workspaceId: 'p', externalId: 'ext' }, opts);
     expect(pendingSnapshotSyncs()).toBe(1);
     await waitFor(() => calls.length === 2 && pendingSnapshotSyncs() === 0);
     expect(calls).toEqual(['s', 's']);
@@ -132,7 +132,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
     await expect(
       (async () => {
         scheduleOpencodeSnapshotSync(
-          { sessionId: 's2', projectId: 'p', externalId: 'ext' },
+          { sessionId: 's2', workspaceId: 'p', externalId: 'ext' },
           {
             firstMs: 0,
             retryMs: 0,

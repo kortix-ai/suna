@@ -29,12 +29,12 @@ import { db } from './db';
 import {
   isPlaceholderOpencodeTitle,
   runtimeRootTitleFromSnapshot,
-} from '../projects/lib/opencode-title';
+} from '../workspaces/lib/opencode-title';
 import {
   sandboxOpencodeEndpoint,
   listSandboxOpencodeSessions,
   resolveRootSessionId,
-} from '../projects/opencode-mapping';
+} from '../workspaces/opencode-mapping';
 import type { PublicShareRow } from './session-public-shares';
 
 const WORKSPACE_DIRECTORY = '/workspace';

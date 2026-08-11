@@ -2,15 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { ProjectSnapshotBuild } from '@kortix/sdk';
+import type { WorkspaceSnapshotBuild } from '@kortix/sdk';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-import type { FailedBuildRelevance } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import type { FailedBuildRelevance } from '@/features/workspace/workspace-sidebar/footer/sandbox-alert-state';
 import type { SandboxProviderMode } from './sandbox-provider-coverage';
-import { BuildRow, isProjectAcceleratorBuild } from './sandbox-view';
+import { BuildRow, isWorkspaceAcceleratorBuild } from './sandbox-view';
 
-const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBuild => ({
+const build = (overrides: Partial<WorkspaceSnapshotBuild> = {}): WorkspaceSnapshotBuild => ({
   build_id: 'build-1',
   slug: 'essentia',
   template_slug: 'essentia',
@@ -27,10 +27,10 @@ const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBu
   ...overrides,
 });
 
-describe('project accelerator build presentation', () => {
+describe('workspace accelerator build presentation', () => {
   test('identifies only ppwarm snapshots as project accelerators', () => {
     expect(
-      isProjectAcceleratorBuild(
+      isWorkspaceAcceleratorBuild(
         build({
           slug: 'default-warm',
           template_slug: 'default',
@@ -39,7 +39,7 @@ describe('project accelerator build presentation', () => {
       ),
     ).toBe(true);
     expect(
-      isProjectAcceleratorBuild(
+      isWorkspaceAcceleratorBuild(
         build({
           slug: 'worker-warm',
           template_slug: 'worker-warm',
@@ -63,7 +63,7 @@ describe('project accelerator build presentation', () => {
 
 function renderBuildRow(
   providerMode: SandboxProviderMode,
-  overrides?: Partial<ProjectSnapshotBuild>,
+  overrides?: Partial<WorkspaceSnapshotBuild>,
   relevance?: FailedBuildRelevance | null,
 ) {
   return renderToStaticMarkup(
@@ -107,7 +107,7 @@ describe('failed build rows that no longer apply', () => {
 });
 
 describe('sandbox template build row provider disclosure', () => {
-  test('never names the resolved provider when the project is on Automatic', () => {
+  test('never names the resolved provider when the workspace is on Automatic', () => {
     const html = renderBuildRow('automatic');
 
     expect(html).not.toContain('Daytona');
@@ -117,7 +117,7 @@ describe('sandbox template build row provider disclosure', () => {
     expect(html).toContain('Manual rebuild');
   });
 
-  test('names the resolved provider once the project has explicitly pinned one', () => {
+  test('names the resolved provider once the workspace has explicitly pinned one', () => {
     const html = renderBuildRow('pinned');
 
     expect(html).toContain('Daytona');

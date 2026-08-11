@@ -20,7 +20,7 @@ export function stripKortixSystemTags(text: string): string {
 export interface SessionReport {
 	sessionId: string
 	status: "COMPLETE" | "FAILED"
-	project: string
+	workspace: string
 	prompt: string
 	result: string
 }
@@ -41,7 +41,7 @@ export function extractSessionReport(text: string): SessionReport | null {
 	return {
 		sessionId: get("session-id"),
 		status: get("status") === "FAILED" ? "FAILED" : "COMPLETE",
-		project: get("project"),
+		workspace: get("workspace"),
 		prompt: get("prompt"),
 		result: get("result"),
 	}
@@ -118,7 +118,7 @@ function describeSystemMessage(type: string, source: string, body: string): { la
 
 	// Project status injection
 	if (type === "project-status") {
-		return { label: "Project", detail: "status" }
+		return { label: "Workspace", detail: "status" }
 	}
 
 	// Rules / instructions

@@ -260,7 +260,7 @@ describe('buildLayeredDockerfile', () => {
   test('does NOT bake the project workspace into the image', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
     expect(merged).not.toContain('kortix-workspace.tar.gz');
-    // The daemon clones at boot via KORTIX_PROJECT_AUTO_CLONE; the layer just
+    // The daemon clones at boot via KORTIX_WORKSPACE_AUTO_CLONE; the layer just
     // creates an empty /workspace.
     expect(merged).toContain('mkdir -p /workspace');
   });

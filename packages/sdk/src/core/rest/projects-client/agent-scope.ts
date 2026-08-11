@@ -11,7 +11,7 @@ import { unwrap } from './shared';
 export type AgentGrantSet = string[] | 'all';
 
 export async function setAgentScope(
-  projectId: string,
+  workspaceId: string,
   agentName: string,
   scope: {
     env?: AgentGrantSet;
@@ -29,7 +29,7 @@ export async function setAgentScope(
       env: AgentGrantSet;
       connectors: AgentGrantSet;
       connectors_required: string[];
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/scope`, canonicalScope),
+    }>(`/projects/${workspaceId}/agents/${encodeURIComponent(agentName)}/scope`, canonicalScope),
   );
 }
 

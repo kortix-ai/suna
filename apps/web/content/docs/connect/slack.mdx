@@ -1,11 +1,11 @@
 ---
 title: Slack & channels
-description: Connect Slack to a project and control sessions from a channel.
+description: Connect Slack to a workspace and control sessions from a channel.
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-A channel connects a chat platform to a project. A message in a connected
+A channel connects a chat platform to a workspace. A message in a connected
 channel starts a [session](/docs/work/sessions). The agent replies in the
 same thread.
 
@@ -32,7 +32,7 @@ Teams follows the same session, identity-linking, and credential rules.
 The first message in a Slack thread or Teams conversation creates a session.
 Every later message in that thread goes to the same session, even after the
 sandbox stops and resumes. A Slack workspace connected to more than one
-project shows a project picker on the first mention.
+workspace shows a workspace picker on the first mention.
 
 ## Identity linking
 
@@ -44,7 +44,7 @@ session run.
 ## Where credentials live
 
 A connected channel's bot token is a connector-scoped
-[secret](/docs/project/secrets). It does not appear on the project's Secrets
+[secret](/docs/workspace/secrets). It does not appear on the Workspace Secrets
 page. Kortix never injects it into a sandbox. Kortix resolves the token
 server-side when the agent sends a chat message.
 
@@ -66,7 +66,7 @@ this prints a one-click install link. Open the link and pick the workspace.
 Click **Allow**. Add `--wait` to make the command poll until the install
 lands.
 
-From the dashboard, open the project's Channels page and connect Slack there
+From the dashboard, open the Workspace Channels page and connect Slack there
 instead. It uses the same install flow.
 </Step>
 
@@ -115,16 +115,18 @@ words from plain text there.
 | Command | What it does |
 |---|---|
 | `login`, `logout` | Link or unlink your Slack identity |
-| `switch`, `unbind` | Rebind or unbind this channel from its project |
-| `projects` | List projects you can bind to |
+| `switch`, `unbind` | Rebind or unbind this channel from its workspace |
+| `workspaces` | List workspaces you can bind to |
+| `projects` | Deprecated alias for `workspaces` |
 | `sessions` | List recent sessions started in this workspace |
-| `whoami` | Show the channel panel: project, agent, model, policy, and your linked identity |
+| `whoami` | Show the channel panel: workspace, agent, model, policy, and your linked identity |
 | `agent <name>`, `model <id>` | Set the agent or model this channel uses |
 | `policy <mode>` | Set who can start sessions here |
 | `help` | List all commands |
 
-`policy` accepts `project_open` (default — any project member who mentions
-the bot gets a session), `owner_approval`, or `owner_only`.
+`policy` accepts `project_open`, `owner_approval`, or `owner_only`.
+`project_open` is the stable persisted value for the default policy. It lets
+any workspace member who mentions the bot start a session.
 
 ## What does not work
 

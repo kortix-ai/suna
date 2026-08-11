@@ -14,17 +14,17 @@ import {
   GRANTABLE_KORTIX_CLI,
   sandboxFromLoadedAgents,
   type AgentSpec,
-} from '../projects/agents';
-import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+} from '../workspaces/agents';
+import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../workspaces/triggers';
 import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
 
-const MIN_PROJECT = `
+const MIN_WORKSPACE = `
 [project]
 name = "test"
 `;
 
 function manifestWith(body: string): string {
-  return [`kortix_version = ${KNOWN_SCHEMA_VERSION}`, MIN_PROJECT, body].join('\n');
+  return [`kortix_version = ${KNOWN_SCHEMA_VERSION}`, MIN_WORKSPACE, body].join('\n');
 }
 
 function parse(body: string) {
@@ -42,7 +42,7 @@ describe('[[agents]] — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('41 grantable project actions (all of PROJECT_ACTIONS)', () => {
+  test('41 grantable project actions (all of WORKSPACE_ACTIONS)', () => {
     expect(GRANTABLE_KORTIX_CLI.size).toBe(41);
   });
 

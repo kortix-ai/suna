@@ -60,7 +60,7 @@ function walk(root: string, relPrefix = ''): string[] {
 
 describe('applyScaffold', () => {
   test('writes the default (full) Kortix starter into a fresh directory', () => {
-    const result = applyScaffold({ repoRoot: dir, projectName: 'Hello World' });
+    const result = applyScaffold({ repoRoot: dir, workspaceName: 'Hello World' });
 
     // The one starter kit is the default — the full skill kit ships with it.
     for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);

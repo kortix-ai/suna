@@ -2,7 +2,7 @@ import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
-import { ChangeRequest } from '@/features/marketing/company-as-code/change-request';
+import { WorkspaceChangeRequest } from '@/features/marketing/company-as-code/change-request';
 import { CodePanel } from '@/features/marketing/company-as-code/code-panel';
 import {
   change,
@@ -226,7 +226,7 @@ export default function CompanyAsCodePage(): ReactNode {
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="min-w-0 lg:col-span-8">
-            <ChangeRequest />
+            <WorkspaceChangeRequest />
           </Reveal>
 
           <Reveal delay={0.1} className="min-w-0 lg:col-span-4">

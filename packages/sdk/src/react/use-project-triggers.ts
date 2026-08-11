@@ -2,56 +2,59 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  createProjectTrigger,
-  deleteProjectTrigger,
-  fireProjectTrigger,
-  listProjectTriggers,
-  updateProjectTrigger,
-  type ProjectTriggerListing,
-} from '../core/rest/projects-client';
+  createWorkspaceTrigger,
+  deleteWorkspaceTrigger,
+  fireWorkspaceTrigger,
+  listWorkspaceTriggers,
+  updateWorkspaceTrigger,
+  type WorkspaceTriggerListing,
+} from '../core/rest/workspaces-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
 /** Stable query-key factory — reuse to read/invalidate the same cache entry
- *  `useProjectTriggers` populates. Delegates to `qk.project.triggers` — the
+ *  `useWorkspaceTriggers` populates. Delegates to `qk.workspace.triggers` — the
  *  SAME entry the Customize settings pause switch and the schedule/triggers
- *  view build directly via `qk.project.triggers(id)` too. */
-export const projectTriggersKey = (projectId: string | null | undefined) =>
-  qk.project.triggers(projectId ?? '');
+ *  view build directly via `qk.workspace.triggers(id)` too. */
+export const workspaceTriggersKey = (workspaceId: string | null | undefined) =>
+  qk.workspace.triggers(workspaceId ?? '');
+
+/** @deprecated Use `workspaceTriggersKey`. */
+export const projectTriggersKey = workspaceTriggersKey;
 
 /**
- * Project triggers (cron/webhook, file-defined in the repo manifest) — list +
+ * Workspace triggers (cron/webhook, file-defined in the repo manifest) — list +
  * create/update/remove/fire. Thin React Query binding over
- * `projects-client/triggers.ts`; every mutation invalidates the listing so a
+ * `workspaces-client/triggers.ts`; every mutation invalidates the listing so a
  * newly created/edited/fired trigger shows up without a manual refetch.
  */
-export function useProjectTriggers(projectId: string | null | undefined) {
+export function useWorkspaceTriggers(workspaceId: string | null | undefined) {
   const queryClient = useQueryClient();
-  const queryKey = projectTriggersKey(projectId);
+  const queryKey = workspaceTriggersKey(workspaceId);
 
-  const query = useQuery<ProjectTriggerListing>({
+  const query = useQuery<WorkspaceTriggerListing>({
     queryKey,
-    queryFn: () => listProjectTriggers(projectId as string),
-    enabled: !!projectId,
+    queryFn: () => listWorkspaceTriggers(workspaceId as string),
+    enabled: !!workspaceId,
     ...contract('config'),
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const create = useMutation({
-    mutationFn: (input: Parameters<typeof createProjectTrigger>[1]) =>
-      createProjectTrigger(projectId as string, input),
+    mutationFn: (input: Parameters<typeof createWorkspaceTrigger>[1]) =>
+      createWorkspaceTrigger(workspaceId as string, input),
     onSuccess: invalidate,
   });
 
   const update = useMutation({
-    mutationFn: (args: { slug: string; input: Parameters<typeof updateProjectTrigger>[2] }) =>
-      updateProjectTrigger(projectId as string, args.slug, args.input),
+    mutationFn: (args: { slug: string; input: Parameters<typeof updateWorkspaceTrigger>[2] }) =>
+      updateWorkspaceTrigger(workspaceId as string, args.slug, args.input),
     onSuccess: invalidate,
   });
 
   const remove = useMutation({
-    mutationFn: (slug: string) => deleteProjectTrigger(projectId as string, slug),
+    mutationFn: (slug: string) => deleteWorkspaceTrigger(workspaceId as string, slug),
     onSuccess: invalidate,
   });
 
@@ -59,8 +62,11 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   // session and returns its id; `last_fired_at` isn't reflected until the
   // next natural list refetch.
   const fire = useMutation({
-    mutationFn: (slug: string) => fireProjectTrigger(projectId as string, slug),
+    mutationFn: (slug: string) => fireWorkspaceTrigger(workspaceId as string, slug),
   });
 
   return { ...query, create, update, remove, fire };
 }
+
+/** @deprecated Use `useWorkspaceTriggers`. */
+export const useProjectTriggers = useWorkspaceTriggers;

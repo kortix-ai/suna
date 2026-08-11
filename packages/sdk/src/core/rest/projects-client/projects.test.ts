@@ -292,7 +292,7 @@ test('a project response carries the icon through to KortixProject', async () =>
 
 // ── B44: `icon` on the updateProject body ────────────────────────────────────
 //
-// `PATCH /v1/projects/:projectId` reads THREE states off `icon`, and only the
+// `PATCH /v1/projects/:workspaceId` reads THREE states off `icon`, and only the
 // request body can tell them apart (apps/api/src/projects/routes/r5.ts):
 //
 //   key absent  → the stored icon is left alone
