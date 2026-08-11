@@ -10,7 +10,8 @@ import { creditAccounts, creditLedger } from '@kortix/db';
 import { and, eq, gt, lte } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { clearAccountLimitCache } from '../../shared/account-limits';
-import { getCreditAccount, upsertCreditAccount } from '../repositories/credit-accounts';
+import { getCreditAccount } from '../repositories/credit-accounts';
+import { applyAdminOverride } from './account-write-owner';
 import { TRIAL_STATUS } from './effective-tier';
 import { grantCredits } from './credits';
 import { invalidateCachedAccountTier } from './entitlements';
@@ -110,15 +111,19 @@ export async function grantTrial(input: GrantTrialInput): Promise<{
   const now = new Date();
   const endsAt = new Date(now.getTime() + input.durationDays * 24 * 60 * 60 * 1000);
 
-  await upsertCreditAccount(input.accountId, {
-    trialStatus: TRIAL_STATUS.ACTIVE,
-    trialTier: input.tierKey,
-    trialSeats: input.seats,
-    trialStartedAt: now.toISOString(),
-    trialEndsAt: endsAt.toISOString(),
-    trialNote: input.note?.slice(0, 2000) ?? null,
-    trialGrantedBy: input.actorUserId ?? null,
-  });
+  await applyAdminOverride(
+    input.accountId,
+    {
+      trialStatus: TRIAL_STATUS.ACTIVE,
+      trialTier: input.tierKey,
+      trialSeats: input.seats,
+      trialStartedAt: now.toISOString(),
+      trialEndsAt: endsAt.toISOString(),
+      trialNote: input.note?.slice(0, 2000) ?? null,
+      trialGrantedBy: input.actorUserId ?? null,
+    },
+    { userId: input.actorUserId ?? null, action: 'admin.account.trial.grant' },
+  );
 
   const creditGranted = input.creditGrant ?? 0;
   if (creditGranted > 0) {
@@ -157,9 +162,40 @@ export async function revokeTrial(accountId: string): Promise<{
   if (before.status !== TRIAL_STATUS.ACTIVE) {
     throw new Error(`no active trial to revoke (status: ${before.status})`);
   }
-  await upsertCreditAccount(accountId, { trialStatus: TRIAL_STATUS.REVOKED });
+  await applyAdminOverride(
+    accountId,
+    { trialStatus: TRIAL_STATUS.REVOKED },
+    { action: 'admin.account.trial.revoke' },
+  );
   invalidateEntitlementCaches(accountId);
   return { before, current: trialSnapshotFromRow(await getCreditAccount(accountId)) };
+}
+
+/**
+ * Flip an ACTIVE trial to 'converted' because a real subscription landed.
+ *
+ * A deliberate cross-domain write, and the only one in the file: `trial_status`
+ * is admin-owned (an operator issues the trial), but the FACT that ends it —
+ * a paying subscription — is only ever observed by the billing-provider
+ * webhook. Rather than let `applyStripeSync` carry an admin-owned key (it
+ * throws on one, on purpose), the webhook calls this narrow verb, which writes
+ * exactly one field and nothing else.
+ *
+ * Self-guarding: it re-reads the row and no-ops unless the trial is still
+ * ACTIVE, so a redelivered webhook cannot turn 'none'/'expired'/'revoked' into
+ * 'converted'. Returns whether it wrote.
+ */
+export async function markTrialConverted(accountId: string): Promise<boolean> {
+  const row = await getCreditAccount(accountId);
+  if (row?.trialStatus !== TRIAL_STATUS.ACTIVE) return false;
+
+  await applyAdminOverride(
+    accountId,
+    { trialStatus: TRIAL_STATUS.CONVERTED },
+    { action: 'billing.trial.converted' },
+  );
+  invalidateEntitlementCaches(accountId);
+  return true;
 }
 
 const MS_PER_TRIAL_MONTH = 30 * 24 * 60 * 60 * 1000;

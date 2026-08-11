@@ -776,22 +776,18 @@ adminApp.openapi(
       );
     }
 
-    const { getSubscriptionInfo, upsertCreditAccount } = await import(
-      '../billing/repositories/credit-accounts'
-    );
+    const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
+    const { applyAdminOverride } = await import('../billing/services/account-write-owner');
     const before = await getSubscriptionInfo(accountId);
-    await upsertCreditAccount(accountId, { tier });
-
-    // Tier feeds TWO caches: the limit cache (60s) and the gateway tier-
-    // snapshot cache (30s, entitlements.ts — the managed-models decision on
-    // the auth hot path). Clear both so the change is visible immediately;
-    // clearing only the limit cache left the gateway serving the old tier for
-    // up to 30s. The per-request entitlement read (SSO/SCIM gates) is uncached
-    // and already sees it.
-    const { clearAccountLimitCache } = await import('../shared/account-limits');
-    const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
-    clearAccountLimitCache();
-    invalidateCachedAccountTier(accountId);
+    // `tier` is provider-owned everywhere else, and ADMIN_ASSIGNABLE here: an
+    // operator reassigning a plan by hand is a real support operation. The
+    // chokepoint still refuses 'enterprise' (the 400 above catches it first)
+    // and invalidates the one billing cache the value feeds.
+    await applyAdminOverride(
+      accountId,
+      { tier },
+      { userId: actorUserId ?? null, action: 'admin.account.tier.set' },
+    );
 
     try {
       const { recordAuditEvent } = await import('../shared/audit');
@@ -862,12 +858,14 @@ adminApp.openapi(
         return c.json({ error: 'enabled must be a boolean' }, 400);
       }
 
-      const {
-        isEnterpriseEntitled,
-        setEnterpriseEntitled,
-      } = await import('../billing/repositories/credit-accounts');
+      const { isEnterpriseEntitled } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = await isEnterpriseEntitled(accountId);
-      await setEnterpriseEntitled(accountId, enabled);
+      await applyAdminOverride(
+        accountId,
+        { enterpriseEntitled: enabled },
+        { userId: actorUserId ?? null, action: 'admin.account.enterprise_entitlement.set' },
+      );
 
       // The per-request entitlement read (SSO/SCIM gates) is uncached and sees
       // the change immediately; no tier-cache invalidation needed because
@@ -937,9 +935,8 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const actorUserId = (c.get('userId') as string | undefined) ?? null;
     const body = c.req.valid('json') as { max_concurrent_sessions: number | null };
-    const { getSubscriptionInfo, upsertCreditAccount } = await import(
-      '../billing/repositories/credit-accounts'
-    );
+    const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
+    const { applyAdminOverride } = await import('../billing/services/account-write-owner');
     const { clearAccountLimitCache } = await import('../shared/account-limits');
     const { recordAuditEvent } = await import('../shared/audit');
 
@@ -954,7 +951,11 @@ adminApp.openapi(
       {
         getCurrent: async () => (await getSubscriptionInfo(accountId))?.maxConcurrentSessions ?? null,
         persist: async (id, value) => {
-          await upsertCreditAccount(id, { maxConcurrentSessions: value });
+          await applyAdminOverride(
+            id,
+            { maxConcurrentSessions: value },
+            { userId: actorUserId, action: 'admin.account.session_limit.set' },
+          );
         },
         clearCache: clearAccountLimitCache,
         recordAudit: recordAuditEvent,
@@ -1145,19 +1146,16 @@ adminApp.openapi(
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as { override: boolean | null };
 
-      const { getCreditAccount, setManagedModelsOverride } = await import(
-        '../billing/repositories/credit-accounts'
-      );
+      const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = (await getCreditAccount(accountId))?.managedModelsOverride ?? null;
-      await setManagedModelsOverride(accountId, body.override);
-
-      // The managed-models answer is served from the shared tier-snapshot
-      // cache (gateway auth hot path) AND the limit cache (sandbox-provision
-      // gateway mount) — clear both so the flip is visible immediately.
-      const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
-      const { clearAccountLimitCache } = await import('../shared/account-limits');
-      invalidateCachedAccountTier(accountId);
-      clearAccountLimitCache();
+      // The chokepoint invalidates this account's billing cache — the one cache
+      // the managed-models answer is served from on the gateway auth hot path.
+      await applyAdminOverride(
+        accountId,
+        { managedModelsOverride: body.override },
+        { userId: actorUserId, action: 'admin.account.managed_models.set' },
+      );
 
       try {
         const { recordAuditEvent } = await import('../shared/audit');
@@ -1217,11 +1215,14 @@ adminApp.openapi(
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as { enabled: boolean };
 
-      const { isDemoEnterprise, setDemoEnterprise } = await import(
-        '../billing/repositories/credit-accounts'
-      );
+      const { isDemoEnterprise } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = await isDemoEnterprise(accountId);
-      await setDemoEnterprise(accountId, body.enabled);
+      await applyAdminOverride(
+        accountId,
+        { demoEnterprise: body.enabled },
+        { userId: actorUserId, action: 'admin.account.enterprise_demo.set' },
+      );
 
       try {
         const { recordAuditEvent } = await import('../shared/audit');

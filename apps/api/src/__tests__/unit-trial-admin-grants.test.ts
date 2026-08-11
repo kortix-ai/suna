@@ -30,6 +30,10 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async (_id: string, patch: Record<string, unknown>) => {
     storedRow = { ...(storedRow ?? {}), ...patch };
   },
+  // account-write-owner.ts imports this name; partial mocks break the chain.
+  updateCreditAccount: async (_id: string, patch: Record<string, unknown>) => {
+    storedRow = { ...(storedRow ?? {}), ...patch };
+  },
 }));
 mock.module('../billing/services/entitlements', () => ({
   invalidateCachedAccountTier: () => {},

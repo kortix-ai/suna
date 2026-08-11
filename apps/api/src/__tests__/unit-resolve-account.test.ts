@@ -101,6 +101,11 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     upsertCreditAccountCalls.push({ accountId, data });
   },
+  // The write-ownership chokepoint (account-write-owner.ts) imports this name;
+  // a partial mock without it fails the whole import chain at module load.
+  updateCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
+    upsertCreditAccountCalls.push({ accountId, data });
+  },
 }));
 
 mock.module('../billing/services/credits', () => ({

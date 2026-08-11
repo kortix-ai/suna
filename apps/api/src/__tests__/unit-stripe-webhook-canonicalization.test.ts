@@ -47,6 +47,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     state.updateCreditAccountCalls.push({ accountId, data });
   },
+  getSubscriptionInfo: async () => state.getCreditAccountResult,
 }));
 
 mock.module('../billing/repositories/customers', () => ({
