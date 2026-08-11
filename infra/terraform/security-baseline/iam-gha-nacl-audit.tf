@@ -46,9 +46,8 @@ resource "aws_iam_role" "gha_nacl_audit" {
 }
 
 resource "aws_iam_role_policy" "gha_nacl_audit" {
-  # checkov:skip=CKV_AWS_355: DescribeRegions and DescribeNetworkAcls are
-  # account-wide describes; neither API supports resource-level permissions.
-  # checkov:skip=CKV_AWS_290: Read-only describes; the policy grants no writes.
+  #checkov:skip=CKV_AWS_355:ec2:DescribeRegions and ec2:DescribeNetworkAcls are account-wide describe APIs; neither supports resource-level permissions, so Resource must be "*".
+  #checkov:skip=CKV_AWS_290:Read-only describe policy; it grants no write action.
   name = "nacl-admin-port-audit"
   role = aws_iam_role.gha_nacl_audit.id
   policy = jsonencode({
