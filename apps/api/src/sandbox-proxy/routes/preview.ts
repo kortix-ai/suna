@@ -57,7 +57,13 @@ import {
   isLongTurnCompletionRequest,
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
-import { claimPromptDelivery, promptDeliveryKey, releasePromptDelivery } from '../prompt-dedupe';
+import {
+  claimPromptDelivery,
+  isNonIdempotentSessionWrite,
+  promptDeliveryKey,
+  releasePromptDelivery,
+  shouldClaimPromptDelivery,
+} from '../prompt-dedupe';
 import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
@@ -851,7 +857,15 @@ export async function forwardToSandbox(
   // observation, the preview-use extend, the auto-resume — must exclude them or
   // the self-renewing lease this design deletes is rebuilt through the proxy.
   const sandboxAuthored = access.kind === 'principal' && access.sandboxAuthored;
-  const promptDelivery = shouldSyncProjectEnvBeforeProxy(port, method, remainingPath);
+  // "May the proxy send this body twice?" — its OWN predicate, no longer
+  // borrowed from `shouldSyncProjectEnvBeforeProxy`. The two questions look
+  // alike and are not: env sync is about `/message` + `/prompt_async` carrying
+  // a user prompt, non-idempotency is about ANY call that creates a turn — and
+  // `/command` does that while needing neither the agent-lock rewrite nor
+  // title generation. Sharing one path list meant `/command` fell out of BOTH,
+  // and losing the second one is what let a single `/webapp` submit execute
+  // four times. See `isNonIdempotentSessionWrite`.
+  const promptDelivery = isNonIdempotentSessionWrite(port, method, remainingPath);
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -1022,9 +1036,14 @@ export async function forwardToSandbox(
   // under the same Idempotency-Key hits the bogus 200 "duplicate" and the user's
   // prompt is silently lost.
   let promptDedupeKey: string | null = null;
-  if (promptDelivery) {
+  const idempotencyKey = incomingHeaders.get('idempotency-key');
+  // Non-idempotent (never re-sent by us) and dedupe-claimed (a later lookalike
+  // is short-circuited) are DIFFERENT guarantees — see
+  // `shouldClaimPromptDelivery`. A command body has no client-unique field, so
+  // claiming one on content alone silently swallows a deliberate re-run.
+  if (promptDelivery && shouldClaimPromptDelivery(remainingPath, !!idempotencyKey?.trim())) {
     promptDedupeKey = promptDeliveryKey({
-      idempotencyKey: incomingHeaders.get('idempotency-key'),
+      idempotencyKey,
       sandboxId,
       sessionId: record.sessionId,
       body: requestBody,

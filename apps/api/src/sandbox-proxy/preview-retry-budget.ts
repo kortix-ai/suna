@@ -17,10 +17,18 @@ export const PROXY_ATTEMPT_TIMEOUT_MS = 15_000;
 // interval as a multipart upload, just mirrored: uploads can't emit headers
 // until the client finishes WRITING the body, this can't emit headers until
 // the server finishes COMPUTING it.
+//
+// `/command` blocks in exactly the same way and for the same reason — a `/`
+// slash-command runs a full agent turn before the response is emitted — and it
+// was missing from this matcher until 2026-08-11. The consequence was not a
+// slow request but a DUPLICATED one: a command got the generic 15s connect cap,
+// the abort read as a stalled connection, and the retry loop re-POSTed the same
+// non-idempotent body. Session 9f6b0d87 recorded one `/webapp` submit as four
+// identical user messages, 11.0s / 11.8s / 13.7s apart.
 export function isLongTurnCompletionRequest(request: { method: string; path: string }): boolean {
   return (
     request.method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/message(?:$|[/?#])/.test(request.path)
+    /^\/session\/[^/]+\/(?:message|command)(?:$|[/?#])/.test(request.path)
   );
 }
 

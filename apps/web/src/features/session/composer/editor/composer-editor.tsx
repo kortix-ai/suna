@@ -25,7 +25,13 @@ export interface ComposerEditorHandle {
    * the chip contributes no text of its own, so no stripping is needed at the
    * call site.
    */
-  getContent(): { text: string; mentions: TrackedMention[]; commandName?: string };
+  getContent(): {
+    text: string;
+    mentions: TrackedMention[];
+    commandName?: string;
+    /** Where the command chip sat in `text` — display only. See `serialize.ts`. */
+    commandSplit?: { before: string; after: string };
+  };
   /**
    * `text` — not `markdown`, and there is nothing for markdown to become.
    * The schema is paragraphs, text, hard breaks and chips (extensions.ts):

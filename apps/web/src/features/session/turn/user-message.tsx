@@ -11,7 +11,6 @@ import {
   CaretDownIcon as ChevronDown,
   PencilSimpleIcon,
   ScissorsIcon as Scissors,
-  TerminalWindowIcon as Terminal,
   TimerIcon as Timer,
 } from '@phosphor-icons/react';
 
@@ -48,6 +47,8 @@ import {
   TILE_INTERACTIVE,
   TILE_SURFACE,
 } from '../attachment-tile';
+import { MentionChip } from '../mention-chip';
+import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -670,7 +671,16 @@ export function UserMessage({
 }: {
   message: MessageWithParts;
   agentNames?: string[];
-  commandInfo?: { name: string; args?: string };
+  commandInfo?: {
+    name: string;
+    args?: string;
+    /**
+     * Where the `/` chip sat in `args`. Absent for a message whose command was
+     * inferred from its template (`detectCommandFromText`) rather than typed in
+     * this tab — that path has no position to recover, so the chip leads.
+     */
+    split?: { before: string; after: string };
+  };
   commands?: Command[];
   sessionId: string;
   ownsPlan: boolean;
@@ -747,6 +757,25 @@ export function UserMessage({
     () => commandInfo ?? detectCommandFromText(rawText, commands),
     [commandInfo, rawText, commands],
   );
+
+  /**
+   * What the bubble actually says.
+   *
+   * For a command message that is the command's ARGUMENTS, not `text` — a
+   * command's `text` is the fully expanded template the runtime sent (often
+   * the whole `.md` file), which is exactly why `detectCommandFromText`
+   * extracts args in the first place. The command itself is drawn as a chip
+   * ahead of this, matching the composer, where the chip contributes no text
+   * of its own and the rest of the line IS the args (`editor/serialize.ts`).
+   *
+   * Declared here, above the overflow-measuring effect that lists it as a
+   * dependency — a `const` read from a dependency array before its own
+   * initializer runs is a TDZ throw, not a stale value.
+   */
+  const commandSplit = commandInfo?.split;
+  const bodyText = effectiveCommandInfo
+    ? (commandSplit ? commandSplit.after : (effectiveCommandInfo.args ?? ''))
+    : text;
 
   const copyText = useMemo(() => {
     const textParts = message.parts.filter(
@@ -861,7 +890,7 @@ export function UserMessage({
       cancelAnimationFrame(rafId);
       ro.disconnect();
     };
-  }, [text, expanded]);
+  }, [bodyText, expanded]);
 
   const handleCopy = async () => {
     if (!text) return;
@@ -870,99 +899,71 @@ export function UserMessage({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Build highlighted text segments
-  const segments = useMemo(() => {
-    if (!text) return [];
-    type SegType = 'file' | 'agent' | 'session';
-
-    // Detect session @mentions first (titles can contain spaces, so indexOf is used)
-    const sessionDetected: { start: number; end: number; type: SegType }[] = [];
-    for (const s of sessionRefs) {
-      const needle = `@${s.title}`;
-      const idx = text.indexOf(needle);
-      if (idx !== -1) {
-        sessionDetected.push({
-          start: idx,
-          end: idx + needle.length,
-          type: 'session',
-        });
-      }
-    }
-
-    // Collect server-provided source refs (file/agent), filtering out any that
-    // overlap with a session mention (the server sees @Title as a file mention
-    // for the first word only — the session range is more accurate).
-    const serverRefs = [
+  /**
+   * Server-located mention spans. Deliberately dropped for a command message:
+   * these offsets index the full template text, and `bodyText` is a slice of
+   * it, so they would point at the wrong characters. The regex fill in
+   * `buildMentionSegments` covers the args either way.
+   */
+  const sourceRefs = useMemo<MentionSourceRef[]>(() => {
+    if (effectiveCommandInfo) return [];
+    return [
       ...filesWithSource.map((f) => ({
         start: f.source!.text!.start,
         end: f.source!.text!.end,
-        type: 'file' as SegType,
+        type: 'file' as const,
       })),
       ...agentParts
         .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
         .map((a) => ({
           start: a.source!.start,
           end: a.source!.end,
-          type: 'agent' as SegType,
+          type: 'agent' as const,
         })),
-    ].filter((r) => !sessionDetected.some((s) => r.start >= s.start && r.start < s.end));
+    ];
+  }, [effectiveCommandInfo, filesWithSource, agentParts]);
 
-    // Merge session + server refs
-    const allRefs = [...sessionDetected, ...serverRefs];
+  const sessionTitles = useMemo(() => sessionRefs.map((s) => s.title), [sessionRefs]);
 
-    if (allRefs.length > 0) {
-      allRefs.sort((a, b) => a.start - b.start || b.end - a.end);
-      const result: { text: string; type?: SegType }[] = [];
-      let lastIndex = 0;
-      for (const ref of allRefs) {
-        if (ref.start < lastIndex) continue;
-        if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
-        result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
-        lastIndex = ref.end;
-      }
-      if (lastIndex < text.length) result.push({ text: text.slice(lastIndex) });
-      return result;
-    }
+  // Build highlighted text segments — see `../mention-segments.ts`. The walk
+  // used to live inline here and in `optimistic-turn.tsx`, and the two copies
+  // had already diverged.
+  const segments = useMemo(
+    () =>
+      buildMentionSegments({
+        text: bodyText,
+        sourceRefs,
+        sessionTitles,
+        agentNames,
+      }),
+    [bodyText, sourceRefs, sessionTitles, agentNames],
+  );
 
-    // Fallback: detect @mentions from text using regex
-    const agentSet = new Set(agentNames || []);
-    const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: SegType }[] = [];
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(text)) !== null) {
-      const mStart = match.index;
-      const token = match[1];
-      // Treat @ses_<id> tokens as session mentions
-      const type: SegType = token.startsWith('ses_')
-        ? 'session'
-        : agentSet.has(token)
-          ? 'agent'
-          : 'file';
-      detected.push({
-        start: mStart,
-        end: match.index + match[0].length,
-        type,
+  const openSessionMention = (raw: string) => {
+    // Direct session ID (ses_...) — navigate without title lookup
+    if (raw.startsWith('ses_')) {
+      openTabAndNavigate({
+        id: raw,
+        title: 'Session',
+        type: 'session',
+        href: `/sessions/${raw}`,
       });
+      return;
     }
-
-    if (detected.length === 0) return [{ text, type: undefined }];
-
-    detected.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: { text: string; type?: SegType }[] = [];
-    let lastIndex = 0;
-    for (const ref of detected) {
-      if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
-      result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
-      lastIndex = ref.end;
-    }
-    if (lastIndex < text.length) result.push({ text: text.slice(lastIndex) });
-    return result;
-  }, [text, filesWithSource, agentParts, agentNames, sessionRefs]);
+    const ref = sessionRefs.find((s) => s.title === raw);
+    if (!ref) return;
+    openTabAndNavigate({
+      id: ref.id,
+      title: ref.title || 'Session',
+      type: 'session',
+      href: `/sessions/${ref.id}`,
+    });
+  };
 
   // If the message is purely notifications (no real user content), render only the cards
   const hasUserContent = !!(
     text ||
+    effectiveCommandInfo ||
     replyContext ||
     uploadedFiles.length > 0 ||
     sessionRefs.length > 0 ||
@@ -1047,43 +1048,14 @@ export function UserMessage({
     );
   }
 
-  // Command messages: render as a right-aligned card instead of the raw template text
-  if (effectiveCommandInfo) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-lg border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Terminal className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground font-mono text-sm">/{effectiveCommandInfo.name}</span>
-          </div>
-          {effectiveCommandInfo.args && (
-            <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word"
-              style={{ paddingLeft: '1.375rem' }}
-            >
-              {effectiveCommandInfo.args}
-            </div>
-          )}
-        </div>
-        {/* DCP notifications from ignored parts */}
-        {dcpNotifications.length > 0 && (
-          <div className="mt-1 flex w-full flex-col gap-1.5">
-            {dcpNotifications.map((n, i) => (
-              <DCPNotificationCard key={i} notification={n} />
-            ))}
-          </div>
-        )}
-        {systemNotifications.length > 0 && (
-          <div className="mt-1 flex w-full flex-col gap-1.5">
-            {systemNotifications.map((n, i) => (
-              <SystemNotificationCard key={`cmd-${n.tag}-${i}`} notification={n} />
-            ))}
-          </div>
-        )}
-        {actions}
-      </div>
-    );
-  }
+  // A `/command` message used to return early here as a bordered card with a
+  // terminal icon and its args in muted 12px underneath. That card was the
+  // whole complaint: the composer draws the command as an inline chip leading
+  // the sentence (`composer/editor/mention-node.ts`), and sending the message
+  // swapped it for different chrome, a different type scale, and — because the
+  // branch returned before the main path — silently dropped the message's
+  // attachments. A command is now just a message whose first token is a chip,
+  // so it falls through to the one bubble below.
 
   return (
     // The whole message is ONE right-aligned column capped at 80%, so the
@@ -1104,7 +1076,7 @@ export function UserMessage({
       {/* No text means no bubble. Attach a file and send with nothing typed and
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
-      {(text || replyContext) && (
+      {(bodyText || replyContext || effectiveCommandInfo) && (
         <div
           className={cn(
             BUBBLE_SURFACE,
@@ -1144,7 +1116,7 @@ export function UserMessage({
           )}
 
           {/* Text content */}
-          {text && (
+          {(bodyText || effectiveCommandInfo) && (
             <div className="relative">
               <div
                 ref={textRef}
@@ -1154,64 +1126,41 @@ export function UserMessage({
                   !expanded && 'max-h-[200px] overflow-hidden',
                 )}
               >
-                {segments.length > 0 ? (
-                  segments.map((seg, i) => {
-                    const mentionClass =
-                      'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-                    return seg.type === 'file' ? (
-                      <button
-                        key={i}
-                        type="button"
-                        className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openFileInComputer(seg.text.replace(/^@/, ''));
-                        }}
-                      >
-                        {seg.text}
-                      </button>
-                    ) : seg.type === 'session' ? (
-                      <button
-                        key={i}
-                        type="button"
-                        className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const raw = seg.text.replace(/^@/, '');
-                          // Direct session ID (ses_...) — navigate without title lookup
-                          if (raw.startsWith('ses_')) {
-                            openTabAndNavigate({
-                              id: raw,
-                              title: 'Session',
-                              type: 'session',
-                              href: `/sessions/${raw}`,
-                            });
-                            return;
-                          }
-                          const ref = sessionRefs.find((s) => s.title === raw);
-                          if (ref) {
-                            openTabAndNavigate({
-                              id: ref.id,
-                              title: ref.title || 'Session',
-                              type: 'session',
-                              href: `/sessions/${ref.id}`,
-                            });
-                          }
-                        }}
-                      >
-                        {seg.text}
-                      </button>
-                    ) : (
-                      <span
-                        key={i}
-                        className={cn(seg.type === 'agent' && 'text-foreground font-medium')}
-                      >
-                        {seg.text}
-                      </span>
-                    );
-                  })
-                ) : (
-                  <span>{text}</span>
+                {/* The `/command` chip sits exactly where it was typed —
+                    leading the line, between two words, or trailing — because
+                    that is where the composer drew it. `split.before` is the
+                    prose that preceded the chip; without it every command
+                    message rebuilt as `/name` + args and a chip typed
+                    mid-sentence silently jumped to the front. */}
+                {effectiveCommandInfo && (
+                  <>
+                    {commandSplit?.before ? <span>{commandSplit.before} </span> : null}
+                    <MentionChip kind="command" label={effectiveCommandInfo.name} />
+                    {bodyText ? ' ' : null}
+                  </>
+                )}
+                {segments.map((seg, i) =>
+                  seg.type === 'file' ? (
+                    <MentionChip
+                      key={i}
+                      kind="file"
+                      label={seg.text.replace(/^@/, '')}
+                      onClick={() => openFileInComputer(seg.text.replace(/^@/, ''))}
+                    />
+                  ) : seg.type === 'session' ? (
+                    <MentionChip
+                      key={i}
+                      kind="session"
+                      label={seg.text.replace(/^@/, '')}
+                      onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
+                    />
+                  ) : seg.type === 'agent' ? (
+                    // Static: an agent is named, not navigable. Same surface,
+                    // no press affordance it cannot honour.
+                    <MentionChip key={i} kind="agent" label={seg.text.replace(/^@/, '')} />
+                  ) : (
+                    <span key={i}>{seg.text}</span>
+                  ),
                 )}
               </div>
 

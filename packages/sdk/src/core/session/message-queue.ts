@@ -47,6 +47,26 @@ export interface QueuedMessageInput<TFile = unknown, TMention = unknown> {
   agent?: string | null;
   model?: { providerID: string; modelID: string } | null;
   variant?: string | null;
+  /**
+   * A `/` slash command, when this entry runs one instead of sending `text`.
+   *
+   * The queue held only prompts, so a host with a command to send had nowhere
+   * to put it and ran it immediately — straight past a busy agent, ahead of
+   * everything already waiting. Ordering is the queue's entire purpose, and a
+   * command is a turn like any other; the only difference is which call puts it
+   * on the wire, which is the host's business at dispatch time.
+   *
+   * `name`, not a resolved command object: entries are serialized to survive a
+   * reload, and the command list is re-read when the entry actually runs, so a
+   * queued command can never go stale against a list that changed underneath
+   * it. `text` still carries the arguments, so an entry stays renderable and
+   * editable with no special case.
+   */
+  command?: {
+    name: string;
+    /** Where the chip sat in `text`, for display. See the host's serializer. */
+    split?: { before: string; after: string };
+  };
   createdAt: number;
 }
 

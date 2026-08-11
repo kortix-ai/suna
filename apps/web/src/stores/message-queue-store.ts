@@ -70,6 +70,8 @@ export interface EnqueueInput {
   agent?: string | null;
   model?: { providerID: string; modelID: string } | null;
   variant?: string | null;
+  /** A `/` slash command to run instead of sending `text`. See the SDK type. */
+  command?: { name: string; split?: { before: string; after: string } };
 }
 
 interface MessageQueueState {
@@ -140,8 +142,15 @@ function strip(message: WebQueuedMessage) {
 function reviveMessage(raw: unknown): WebQueuedMessage | null {
   if (!raw || typeof raw !== 'object') return null;
   const m = raw as Record<string, unknown>;
-  if (typeof m.id !== 'string' || typeof m.text !== 'string' || !m.text) return null;
+  const command = reviveCommand(m.command);
+  // Empty text is normally a dead entry, but `/webapp` with no arguments is a
+  // complete instruction whose `text` is legitimately ''. Requiring text
+  // unconditionally dropped exactly those on reload.
+  if (typeof m.id !== 'string' || typeof m.text !== 'string' || (!m.text && !command)) {
+    return null;
+  }
   return {
+    ...(command ? { command } : {}),
     id: m.id,
     clientMessageId: typeof m.clientMessageId === 'string' ? m.clientMessageId : m.id,
     text: m.text,
@@ -158,6 +167,28 @@ function reviveMessage(raw: unknown): WebQueuedMessage | null {
     attempts: typeof m.attempts === 'number' ? m.attempts : 0,
     ...(typeof m.lastError === 'string' ? { lastError: m.lastError } : {}),
   };
+}
+
+/**
+ * Revive a persisted `command`, or `undefined`.
+ *
+ * Validated field by field rather than cast: this comes back from
+ * localStorage, which any tab (or an older build) may have written, and a
+ * malformed entry must degrade to "an ordinary queued message" instead of
+ * reaching `runCommand` with a non-string name.
+ */
+function reviveCommand(value: unknown): WebQueuedMessage['command'] {
+  if (!value || typeof value !== 'object') return undefined;
+  const c = value as Record<string, unknown>;
+  if (typeof c.name !== 'string' || !c.name) return undefined;
+  const s = c.split;
+  if (s && typeof s === 'object') {
+    const split = s as Record<string, unknown>;
+    if (typeof split.before === 'string' && typeof split.after === 'string') {
+      return { name: c.name, split: { before: split.before, after: split.after } };
+    }
+  }
+  return { name: c.name };
 }
 
 function isModel(value: unknown): value is { providerID: string; modelID: string } {
@@ -227,6 +258,7 @@ export const useMessageQueueStore = create<MessageQueueState>((set, get) => {
           agent: input.agent,
           model: input.model,
           variant: input.variant,
+          command: input.command,
           createdAt: Date.now(),
         }),
       ),

@@ -166,3 +166,59 @@ grep -E treats `\t` in single quotes as a literal `t` while macOS grep interpret
 it, so a locally-green pattern can be dead on ubuntu runners. Use ANSI-C
 quoting (`$'\t'`) and test the exact pattern in an ubuntu container.
 *Incident:* staging web verify failed twice on the same one-line assertion.
+
+### A path allowlist that gates non-idempotency must list EVERY turn-creating endpoint (2026-08-11)
+
+**When:** touching the sandbox proxy's retry loop, or adding an OpenCode endpoint
+that starts an agent turn.
+`routes/preview.ts` derived "is this safe to retry?" from
+`shouldSyncProjectEnvBeforeProxy`, a predicate named after env sync whose regex
+listed only `/session/:id/{message,prompt_async}`. `POST /session/:id/command` —
+what every `/` slash-command posts to — matched neither that nor
+`isLongTurnCompletionRequest`. One omission silently disabled FOUR independent
+safeguards at once: no dedupe claim, retry-on-5xx allowed, retry-on-ambiguous-
+timeout allowed, and a 15s connect cap applied to an endpoint that blocks for the
+whole turn. `MAX_RETRIES = 3` then re-POSTed the non-idempotent body, so one user
+submit ran the agent four times and billed four turns.
+**Rules:** (1) a predicate that answers "may I send this twice?" gets its OWN
+name and its own list — never reuse one written for a different question, because
+adding an endpoint to one concern silently opts it into or out of the other;
+(2) any new turn-creating path must be added to `isNonIdempotentSessionWrite`
+(`sandbox-proxy/prompt-dedupe.ts`) AND `isLongTurnCompletionRequest`
+(`sandbox-proxy/preview-retry-budget.ts`) in the same commit.
+**Enforcement:** both predicates are unit-tested per endpoint in
+`prompt-dedupe.test.ts` / `preview-retry-budget.test.ts`. Black-box proof: two
+identical `/command` POSTs must yield exactly one new user message.
+*Incident:* session `9f6b0d87`, one `/webapp` submit recorded as 4 identical user
+messages 11.0s / 11.8s / 13.7s apart (attempt timeout + `RETRY_DELAYS_MS`
+[250, 1000, 3000]).
+
+### Two proxy layers must agree on which upstream calls legitimately block (2026-08-11)
+
+**When:** changing a timeout in `kortix-sandbox-agent-server/src/proxy.ts` or
+`apps/api/src/sandbox-proxy/`, or adding an OpenCode endpoint that withholds
+headers until its work completes.
+The daemon bounded EVERY proxied header wait at `UPSTREAM_RESPONSE_TIMEOUT_MS =
+10_000`, reasoning only about SSE (headers arrive fast) and a wedged opencode.
+`POST /session/:id/command` emits nothing until the whole turn finishes, so
+every command over 10s was aborted and answered `502 {"error":"upstream
+unreachable"}` — the banner users saw in chat, on a healthy turn. Its own
+comment said the 502 exists so "apps/api's retry+auto-wake loop can act on it
+immediately" — and that loop assumed idempotency. **A fail-fast designed to
+trigger a retry met a retry loop that assumed it was safe to repeat.** One
+`/webapp` submit ran the agent four times, each retry aborting the turn the
+previous one started, which is where the "Interrupted" labels came from.
+**Rules:** (1) a header-wait timeout is only valid for endpoints that ANSWER
+fast — blocking-turn endpoints need their own generous bound
+(`isBlockingTurnRequest` / `LONG_TURN_RESPONSE_TIMEOUT_MS`); (2) when one layer
+fails fast *expecting* another to retry, the retry decision must be written down
+in both layers, never inferred; (3) a client must not render a
+delivered-then-disconnected prompt as a failed send — the retry it invites is
+what aborts the live turn (`delivered-but-disconnected.ts`).
+**Enforcement:** `blocking-turn-timeout.test.ts` drives BOTH layers' predicates
+with the same inputs and requires identical verdicts (verified falsifiable — it
+goes red when either side drifts).
+**Deployment trap:** the daemon ships inside the sandbox image, so this fix
+reaches only sandboxes created from a NEW snapshot. Existing sessions keep the
+10s bound; the web-side classifier is what covers them.
+*Incident:* session `9f6b0d87`.

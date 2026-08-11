@@ -56,6 +56,24 @@ export interface QueueDrainGates {
   /** The user pressed stop. "Stop doing things" includes the queue. */
   isPaused: boolean;
   readOnly: boolean;
+  /**
+   * The sandbox is up and answering.
+   *
+   * The ONE gate whose polarity is inverted — every field above means "do not
+   * send", this one means "may send". It keeps the name `runtimeReady` because
+   * that is what the signal is called everywhere it comes from
+   * (`useRuntimeReady`, `sessionComposerReadiness`), and a `runtimeAsleep`
+   * spelling here would mean every call site negates it on the way in, which is
+   * where polarity bugs actually happen.
+   *
+   * This gate is what lets the composer stay usable while the box is stopped.
+   * Previously the composer was DISABLED until the runtime answered, because
+   * `send()` only checks that an opencode session id exists — not that its
+   * runtime is up — so a prompt submitted against a sleeping box is accepted
+   * and lost. Holding it in the queue instead means the message survives, and
+   * goes out by itself the moment the sandbox wakes.
+   */
+  runtimeReady: boolean;
 }
 
 export function canDrainQueue(gates: QueueDrainGates): boolean {
@@ -68,7 +86,8 @@ export function canDrainQueue(gates: QueueDrainGates): boolean {
     !gates.hasPendingApproval &&
     gates.pendingPermissionCount === 0 &&
     !gates.isPaused &&
-    !gates.readOnly
+    !gates.readOnly &&
+    gates.runtimeReady
   );
 }
 
@@ -90,7 +109,17 @@ export function shouldQueueInsteadOfSend(input: {
   isBusy: boolean;
   pendingCount: number;
   hasInFlight: boolean;
+  /**
+   * Defaults to `true` so every existing caller is unchanged. `false` — the
+   * sandbox is stopped or still waking — routes the message to the queue,
+   * which is what makes leaving the composer ENABLED safe: `send()` would
+   * accept a prompt against a sleeping box and lose it, whereas the queue
+   * holds it and `canDrainQueue`'s matching `runtimeReady` gate releases it
+   * once the box answers.
+   */
+  runtimeReady?: boolean;
 }): boolean {
+  if (input.runtimeReady === false) return true;
   return input.isBusy || input.pendingCount > 0 || input.hasInFlight;
 }
 

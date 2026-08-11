@@ -316,3 +316,87 @@ describe('transitions are delegated to the SDK reducer', () => {
     expect(pending[0].clientMessageId).not.toBe(pending[1].clientMessageId);
   });
 });
+
+// ── Queued `/` slash commands ──────────────────────────────────────────────
+//
+// The queue held only prompts, so `composer.tsx` had nowhere to put a command
+// and dispatched it immediately — past a busy agent, ahead of everything
+// already waiting, aborting the turn in progress. A command is a turn like any
+// other; only the call that puts it on the wire differs.
+describe('queued slash commands', () => {
+  test('a command rides along with its entry', () => {
+    useMessageQueueStore
+      .getState()
+      .enqueue(A, { text: 'explain to me', command: { name: 'webapp' } });
+
+    const [queued] = useMessageQueueStore.getState().getSessionQueue(A).pending;
+    expect(queued.command).toEqual({ name: 'webapp' });
+    // The arguments stay in `text`, so the entry renders and edits with no
+    // special case anywhere in the queue UI.
+    expect(queued.text).toBe('explain to me');
+  });
+
+  test('the chip position survives being stored', () => {
+    useMessageQueueStore.getState().enqueue(A, {
+      text: 'explain to me',
+      command: { name: 'webapp', split: { before: 'explain', after: 'to me' } },
+    });
+    const [queued] = useMessageQueueStore.getState().getSessionQueue(A).pending;
+    expect(queued.command?.split).toEqual({ before: 'explain', after: 'to me' });
+  });
+
+  test('a command with no arguments survives a reload', () => {
+    // `revive` dropped any entry with empty text, which is exactly the shape of
+    // `/webapp` submitted on its own — a complete instruction whose args are ''.
+    useMessageQueueStore.getState().enqueue(A, { text: '', command: { name: 'webapp' } });
+    const stored = (globalThis as { localStorage?: Storage }).localStorage!.getItem(
+      QUEUE_STORAGE_KEY,
+    );
+    expect(stored).toBeTruthy();
+
+    install(fakeStorage({ [QUEUE_STORAGE_KEY]: stored! }));
+    useMessageQueueStore.setState({ queues: {}, hydrated: false });
+    useMessageQueueStore.getState().hydrate();
+
+    const [revived] = useMessageQueueStore.getState().getSessionQueue(A).pending;
+    expect(revived?.command?.name).toBe('webapp');
+    expect(revived?.text).toBe('');
+  });
+
+  test('an ordinary message with empty text is still dropped on reload', () => {
+    // The relaxation above must not become "revive anything". Without a
+    // command there is nothing to send, so the entry is still dead.
+    install(
+      fakeStorage({
+        [QUEUE_STORAGE_KEY]: JSON.stringify({
+          [A]: { pending: [{ id: 'q1', clientMessageId: 'cm1', text: '' }], failed: [], inFlightId: null },
+        }),
+      }),
+    );
+    useMessageQueueStore.setState({ queues: {}, hydrated: false });
+    useMessageQueueStore.getState().hydrate();
+    expect(useMessageQueueStore.getState().getSessionQueue(A).pending).toEqual([]);
+  });
+
+  test('a malformed persisted command degrades to a plain message', () => {
+    // localStorage is writable by any tab and any older build. A bad shape must
+    // never reach `runCommand` with a non-string name.
+    install(
+      fakeStorage({
+        [QUEUE_STORAGE_KEY]: JSON.stringify({
+          [A]: {
+            pending: [{ id: 'q1', clientMessageId: 'cm1', text: 'hi', command: { name: 42 } }],
+            failed: [],
+            inFlightId: null,
+          },
+        }),
+      }),
+    );
+    useMessageQueueStore.setState({ queues: {}, hydrated: false });
+    useMessageQueueStore.getState().hydrate();
+
+    const [revived] = useMessageQueueStore.getState().getSessionQueue(A).pending;
+    expect(revived.text).toBe('hi');
+    expect(revived.command).toBeUndefined();
+  });
+});

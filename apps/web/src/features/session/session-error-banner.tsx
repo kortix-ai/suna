@@ -25,19 +25,62 @@ import {
 // Abort detection — user-initiated stops get a lowkey treatment
 // ============================================================================
 
-const ABORT_PATTERNS = ['operation was aborted', 'aborted', 'abort', 'cancelled', 'canceled'];
+/**
+ * Phrases that mean a HUMAN stopped this, not that a connection died.
+ *
+ * The list used to include bare `'abort'` and `'aborted'`, and its own comment
+ * predicted the consequence: any message that merely mentions the word renders
+ * as a muted "Interrupted" and the real error is never shown. That prediction
+ * came true. A proxy hop that severs a live turn reports
+ * `upstream unreachable … The operation was aborted` — a transport failure,
+ * shown to the user as though they had pressed stop. Users saw a message go
+ * quiet with no explanation, immediately after sending the next one.
+ *
+ * Phrases, never bare words: "aborted" is a substring of every one of those
+ * transport messages, and a substring is not evidence of intent.
+ */
+const ABORT_PATTERNS = [
+  'operation was aborted',
+  'aborted by user',
+  'interrupted by user',
+  'cancelled by user',
+  'canceled by user',
+  'request was cancelled',
+  'request was canceled',
+  'aborterror',
+];
+
+/**
+ * Words that mean the TRANSPORT failed. Their presence disqualifies the sniff
+ * outright, however abort-ish the rest of the prose reads — an aborted fetch
+ * against an unreachable upstream is a failure with a cause worth showing, and
+ * `'operation was aborted'` is exactly how such a fetch describes itself.
+ */
+const TRANSPORT_FAILURE_PATTERNS = [
+  'unreachable',
+  'upstream',
+  'econnreset',
+  'econnrefused',
+  'socket hang up',
+  'network',
+  'fetch failed',
+  'timed out',
+  'timeout',
+  'gateway',
+  '502',
+  '503',
+  '504',
+];
 
 /**
  * LAST RESORT ONLY — a substring sniff over arbitrary error prose.
  *
- * `'abort'` bare matches any message that merely mentions the word, so a real
- * failure ("upstream connection aborted", "signal is aborted without reason")
- * renders as a muted "Interrupted" and the actual error is never shown. Callers
- * that can determine this properly pass `isAbort` instead; this only covers the
- * send-failure path, where all we have is a message.
+ * Callers that can determine this properly pass `isAbort` instead; this only
+ * covers the send-failure path, where all we have is a message.
  */
 function looksLikeAbortText(text: string): boolean {
   const lower = text.toLowerCase();
+  if (TRANSPORT_FAILURE_PATTERNS.some((p) => lower.includes(p))) return false;
   return ABORT_PATTERNS.some((p) => lower.includes(p));
 }
 

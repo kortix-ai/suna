@@ -36,6 +36,7 @@ import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { Close } from '@/features/icon/icons/close';
 import { AttachmentTiles } from './attachment-tiles';
 import {
@@ -77,7 +78,13 @@ export interface SessionChatInputProps {
   queuePaused?: boolean;
   /** The agent is mid-turn, so the per-row send must stop it first. */
   queueIsRunning?: boolean;
-  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  onQueueMessage?: (
+    text: string,
+    files?: AttachedFile[],
+    mentions?: TrackedMention[],
+    /** Present when this entry runs a `/` command instead of sending `text`. */
+    command?: { name: string; split?: { before: string; after: string } },
+  ) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
@@ -91,7 +98,12 @@ export interface SessionChatInputProps {
   onAgentChange?: (agentName: string | null | undefined) => void;
   agentSelectorLocked?: boolean;
   commands?: Command[];
-  onCommand?: (command: Command, args?: string) => void;
+  /**
+   * `split` is where the chip sat in `args` — display only. Without it every
+   * consumer rebuilds the sent message as `/name` + args, so a command typed
+   * mid-sentence (`explain /webapp to me`) came back reordered to the front.
+   */
+  onCommand?: (command: Command, args?: string, split?: { before: string; after: string }) => void;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
@@ -103,6 +115,19 @@ export interface SessionChatInputProps {
   sessionId?: string;
   projectId?: string;
   disabled?: boolean;
+  /**
+   * The session's runtime is up. `false` — a stopped or still-waking sandbox —
+   * does NOT disable anything: it routes a submit to the queue instead of the
+   * wire (`shouldQueueInsteadOfSend`), where the drain's matching gate holds it
+   * until the box answers. Pair it with `notice` so the reason is on screen.
+   */
+  runtimeReady?: boolean;
+  /**
+   * A line shown in a bar directly ABOVE the composer card. Used for "this
+   * session is still waking" — a state that used to disable the input and show
+   * a spinner with no explanation, which was indistinguishable from broken.
+   */
+  notice?: string | null;
   clearOnSend?: boolean;
   modelRequired?: boolean;
   modelsLoading?: boolean;
@@ -199,6 +224,8 @@ function ComposerImpl({
   sessionId,
   projectId,
   disabled = false,
+  runtimeReady = true,
+  notice = null,
   clearOnSend = true,
   modelRequired = false,
   modelsLoading = false,
@@ -648,7 +675,31 @@ function ComposerImpl({
       commands: commands ?? [],
     });
     if (plan.kind === 'command') {
-      onCommand?.(plan.command, plan.args);
+      // A command takes its turn like everything else.
+      //
+      // This branch used to `return` before the queue decision below, which
+      // made a `/` command STRUCTURALLY unqueueable: submitting one while the
+      // agent was mid-turn put it straight on the wire, ahead of every message
+      // already waiting — and, because a new prompt aborts the running turn,
+      // killed the answer in progress. Ordering is the queue's whole purpose;
+      // a command is a turn, and the only thing that differs is which call
+      // dispatches it, which the drain decides at dispatch time.
+      if (
+        onQueueMessage &&
+        shouldQueueInsteadOfSend({
+          isBusy,
+          pendingCount: queuedMessages?.length ?? 0,
+          hasInFlight: queueInFlightId != null,
+          runtimeReady,
+        })
+      ) {
+        onQueueMessage(plan.args ?? '', undefined, undefined, {
+          name: plan.command.name,
+          split: draft?.commandSplit,
+        });
+      } else {
+        onCommand?.(plan.command, plan.args, draft?.commandSplit);
+      }
       if (clearOnSend) {
         editorRef.current?.clear();
         setAttachedFiles((prev) => {
@@ -696,6 +747,7 @@ function ComposerImpl({
         isBusy,
         pendingCount: queuedMessages?.length ?? 0,
         hasInFlight: queueInFlightId != null,
+        runtimeReady,
       })
     ) {
       onQueueMessage(trimmed, filesToSend, mentionsToSend);
@@ -764,7 +816,35 @@ function ComposerImpl({
 
   return (
     <div className="relative z-10 mx-auto w-full max-w-210 shrink-0 px-2 pb-3 sm:px-0">
+      {/*
+        The "still waking" notice. Above the card, in flow, so it pushes the
+        composer down rather than covering anything — the same reasoning as the
+        `/` dock below it.
+
+        This replaces disabling the input. A stopped sandbox does not clear on
+        its own, so the old treatment (dead editor, spinner where the send
+        button belongs, no text) was indistinguishable from a broken composer.
+        The input stays live; `shouldQueueInsteadOfSend` routes the submit to
+        the queue and the drain's `runtimeReady` gate releases it when the box
+        answers, so nothing is lost by letting people type.
+
+        `role="status"` + `aria-live="polite"`: this appears without the user
+        doing anything, and it changes what the send button will DO. A screen
+        reader that never announces it leaves exactly the confusion this bar
+        exists to remove.
+      */}
       <div id={dockId} />
+
+      {notice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="bg-sidebar border-border relative isolate flex items-center gap-2 overflow-hidden rounded-t-xl border border-b-0 px-3 py-1.5"
+        >
+          <Loading className="size-3.5 shrink-0" />
+          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{notice}</span>
+        </div>
+      )}
 
       {replyTo && (
         <div className="bg-sidebar border-border flex items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5">
@@ -801,7 +881,7 @@ function ComposerImpl({
           'transition-[background-color,border-color,box-shadow] duration-75',
           cardClassName,
           isDragOver && 'border-primary',
-          replyTo && 'rounded-t-none',
+          (replyTo || notice) && 'rounded-t-none',
         )}
       >
         <div className="relative z-[1] flex w-full flex-col overflow-visible">

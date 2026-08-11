@@ -1,6 +1,6 @@
-import { cn } from '@/lib/utils';
 import { Editor, Node, mergeAttributes } from '@tiptap/core';
 
+import { chipAriaLabel, chipClass, chipText } from '../../mention-chip';
 import type { ChipKind } from '../types';
 
 export interface MentionAttrs {
@@ -9,45 +9,12 @@ export interface MentionAttrs {
   value: string;
 }
 
-/** `/` for a slash command, `@` for every reference kind. */
-export function chipPrefix(kind: string): string {
-  return kind === 'command' ? '/' : '@';
-}
-
-/** The one place a chip's visible text is built. */
-export function chipText(kind: string, label: string): string {
-  return `${chipPrefix(kind)}${label}`;
-}
-
-/**
- * Two visual registers, one node. A mention is a REFERENCE — neutral, it sits
- * in the sentence. A command is an INSTRUCTION — it takes the primary tint so
- * `/deep-research` reads as a thing being invoked rather than a thing being
- * pointed at. Both keep `text-[0.9em]` and `align-baseline` so they ride the
- * surrounding line instead of stretching it.
- *
- * `cn`, not a template literal, and the difference is not cosmetic. The
- * variant adds `bg-primary/[0.08]` while the base carries `bg-muted`, so both
- * classes would otherwise reach the element — and class order in the
- * `class` ATTRIBUTE decides nothing. CSS resolves the tie by which rule
- * Tailwind emitted later in the stylesheet, which is not something this file
- * can see or control. `cn`'s twMerge pass deletes the losing class outright,
- * which is the only way "the variant wins" is actually true.
- *
- * `dark:bg-primary/[0.08]` is there for the same reason: `dark:bg-card` sits
- * in a different variant group, so twMerge does NOT treat it as conflicting
- * with the unprefixed `bg-primary/[0.08]`. Without an explicit dark override
- * the command chip would take the primary tint in light mode and the plain
- * card surface in dark — the two themes disagreeing about whether a command
- * looks different to a mention at all.
- */
-function chipClass(kind: string): string {
-  const base =
-    'rounded-sm border border-[0.5px] bg-muted px-1.5 py-[0.08rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card  font-medium whitespace-nowrap align-baseline text-base sm:text-sm';
-  return kind === 'command'
-    ? cn(base, 'bg-primary/[0.08] text-foreground dark:bg-primary/[0.08]')
-    : cn(base, 'bg-muted text-foreground');
-}
+// `chipPrefix` / `chipText` / `chipClass` / `chipAriaLabel` used to live here.
+// They moved to `features/session/mention-chip.tsx` so the SENT message can
+// draw the identical chip — see that module's header for what was broken
+// while this file was their only home. Re-exported because this node is the
+// composer's canonical entry point for them.
+export { chipAriaLabel, chipClass, chipPrefix, chipText } from '../../mention-chip';
 
 /**
  * An indivisible inline badge — an `@` mention or a `/` command.
@@ -110,7 +77,7 @@ export const MentionNode = Node.create({
     return [
       'span',
       mergeAttributes(HTMLAttributes, {
-        'aria-label': kind === 'command' ? `command: /${label}` : `${kind} mention: ${label}`,
+        'aria-label': chipAriaLabel(kind, label),
         class: chipClass(kind),
       }),
       chipText(kind, label),

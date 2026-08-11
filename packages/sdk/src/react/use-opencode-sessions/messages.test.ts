@@ -347,3 +347,34 @@ describe('getSendRetryDelayMs', () => {
     expect(getSendRetryDelayMs(1, 400, err)).toBe(400);
   });
 });
+
+// ── The prompt mutation must never be retried by TanStack Query ────────────
+//
+// `promptOpenCodeMessage` POSTs `prompt_async`, which CREATES a user message.
+// Its two siblings — `useExecuteOpenCodeCommand` and the session-init mutation
+// — both carry `retry: false` with that exact reasoning; this one did not, so
+// it inherited the host's default. apps/web's is:
+//
+//   retry: (failureCount, error) => {
+//     if (error?.status >= 400 && error?.status < 500) return false;
+//     return failureCount < 1;                       // ← a 502 lands HERE
+//   }
+//
+// A 502 is >= 500, so the guard misses it and the prompt is re-POSTed. The
+// sandbox proxy's content-hash dedupe is the only thing that has been catching
+// it, which is precisely the "one layer relies on another's guard" shape that
+// produced the 4x duplicate command. A non-idempotent call declares its own
+// retry policy.
+describe('useSendOpenCodeMessage retry policy', () => {
+  const SRC = require('node:fs').readFileSync(
+    new URL('./messages.ts', import.meta.url).pathname,
+    'utf8',
+  ) as string;
+
+  test('declares retry: false rather than inheriting the host default', () => {
+    const start = SRC.indexOf('export function useSendOpenCodeMessage()');
+    expect(start).toBeGreaterThan(-1);
+    const body = SRC.slice(start, SRC.indexOf('\n}', start));
+    expect(body).toContain('retry: false');
+  });
+});

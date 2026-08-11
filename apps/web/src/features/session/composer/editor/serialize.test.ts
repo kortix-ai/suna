@@ -1,5 +1,6 @@
 import { getSchema } from '@tiptap/core';
 import Document from '@tiptap/extension-document';
+import HardBreak from '@tiptap/extension-hard-break';
 import Paragraph from '@tiptap/extension-paragraph';
 import Text from '@tiptap/extension-text';
 import { Node as PMNode } from '@tiptap/pm/model';
@@ -45,7 +46,7 @@ describe('collectMentions', () => {
 // ── serializeDocument — built on a real ProseMirror doc, same house pattern
 // as mention-node.test.ts (getSchema + PMNode.fromJSON, no jsdom). ──────────
 
-const schema = getSchema([Document, Paragraph, Text, MentionNode]);
+const schema = getSchema([Document, Paragraph, Text, HardBreak, MentionNode]);
 
 function docWith(...paragraphContent: unknown[]) {
   return PMNode.fromJSON(schema, {
@@ -171,5 +172,110 @@ describe('serializeDocument — command chips', () => {
     const doc = docWith(textJSON('just a message'), mentionJSON('file', 'README.md'));
 
     expect(serializeDocument(doc).commandName).toBeUndefined();
+  });
+});
+
+// ── Where the chip actually sat ────────────────────────────────────────────
+//
+// A command chip contributes no characters, so serializing threw its POSITION
+// away — and "threw away" meant "silently moved to the front". Typing
+// `explain /webapp to me` produced a sent message reading `/webapp explain to
+// me`, because every consumer downstream rebuilt the display as `/name` + args
+// and had nothing to say otherwise.
+describe('serializeDocument — command chip position', () => {
+  test('a chip between words reports the text on each side', () => {
+    const doc = docWith(
+      textJSON('explain '),
+      mentionJSON('command', 'webapp'),
+      textJSON(' to me'),
+    );
+    const result = serializeDocument(doc);
+    expect(result.commandName).toBe('webapp');
+    // The wire value is unchanged — the server still gets the whole prose.
+    expect(result.text).toBe('explain to me');
+    expect(result.commandSplit).toEqual({ before: 'explain', after: 'to me' });
+  });
+
+  test('a leading chip reports an empty prefix', () => {
+    const doc = docWith(mentionJSON('command', 'webapp'), textJSON(' build a site'));
+    expect(serializeDocument(doc).commandSplit).toEqual({ before: '', after: 'build a site' });
+  });
+
+  test('a trailing chip reports an empty suffix', () => {
+    const doc = docWith(textJSON('do this '), mentionJSON('command', 'webapp'));
+    expect(serializeDocument(doc).commandSplit).toEqual({ before: 'do this', after: '' });
+  });
+
+  test('re-joining the halves reconstructs the args', () => {
+    const doc = docWith(
+      textJSON('explain '),
+      mentionJSON('command', 'webapp'),
+      textJSON(' to me'),
+    );
+    const { text, commandSplit } = serializeDocument(doc);
+    expect([commandSplit!.before, commandSplit!.after].filter(Boolean).join(' ')).toBe(text);
+  });
+
+  test('a mention chip before the command does not shift the split', () => {
+    // `@README.md` DOES contribute characters, so the prefix must be measured
+    // through the same walk rather than counted from the source text.
+    const doc = docWith(
+      mentionJSON('file', 'README.md'),
+      textJSON(' then '),
+      mentionJSON('command', 'webapp'),
+      textJSON(' go'),
+    );
+    const result = serializeDocument(doc);
+    expect(result.text).toBe('@README.md then go');
+    expect(result.commandSplit).toEqual({ before: '@README.md then', after: 'go' });
+  });
+
+  test('no command chip means no split', () => {
+    expect(serializeDocument(docWith(textJSON('just text'))).commandSplit).toBeUndefined();
+  });
+});
+
+describe('serializeDocument — command split across blocks', () => {
+  // The split slices `rawText` by the LENGTH of a second `textBetween` call.
+  // That is only sound if the prefix walk emits the same characters as the full
+  // walk — block separators and hard breaks included. A paragraph boundary
+  // between the prefix and the chip is where that assumption would break.
+  const multi = (blocks: unknown[][]) =>
+    PMNode.fromJSON(schema, {
+      type: 'doc',
+      content: blocks.map((content) => ({ type: 'paragraph', content })),
+    });
+
+  test('a chip in the SECOND paragraph keeps the first paragraph as its prefix', () => {
+    const doc = multi([
+      [textJSON('first para')],
+      [textJSON('second '), mentionJSON('command', 'webapp'), textJSON(' tail')],
+    ]);
+    const result = serializeDocument(doc);
+    expect(result.commandName).toBe('webapp');
+    expect(result.commandSplit).toEqual({ before: 'first para\nsecond', after: 'tail' });
+    // Whatever the split says, the halves must still reconstruct the args.
+    expect(
+      [result.commandSplit!.before, result.commandSplit!.after].filter(Boolean).join(' '),
+    ).toBe(result.text);
+  });
+
+  test('a chip that OPENS the second paragraph still splits cleanly', () => {
+    const doc = multi([[textJSON('first para')], [mentionJSON('command', 'webapp'), textJSON(' go')]]);
+    const result = serializeDocument(doc);
+    expect(result.commandSplit!.before).toBe('first para');
+    expect(result.commandSplit!.after).toBe('go');
+  });
+
+  test('a hard break before the chip is counted, not skipped', () => {
+    const doc = docWith(
+      textJSON('line one'),
+      { type: 'hardBreak' },
+      textJSON('line two '),
+      mentionJSON('command', 'webapp'),
+      textJSON(' end'),
+    );
+    const result = serializeDocument(doc);
+    expect(result.commandSplit).toEqual({ before: 'line one\nline two', after: 'end' });
   });
 });

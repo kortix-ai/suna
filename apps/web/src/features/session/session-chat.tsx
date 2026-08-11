@@ -6,6 +6,7 @@ import { SessionApprovalPrompt } from '@/features/session/session-approval-promp
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
+import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
@@ -16,19 +17,18 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   StackIcon as Layers,
   ArrowCounterClockwiseIcon as RotateCcw,
-  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { hasOpenAssistantTurn } from './assistant-turn-open';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
-import { hasOpenAssistantTurn } from './assistant-turn-open';
 import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
@@ -38,6 +38,7 @@ import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
 import { useMessageQueueDrain } from './use-message-queue-drain';
 
+import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
@@ -45,14 +46,13 @@ import {
   ConnectProviderDialog,
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import {
   type QuestionAction,
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
-import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
@@ -186,7 +186,7 @@ import {
   useSessionStateStore,
   useSessionSync,
 } from '@kortix/sdk/react';
-import { SandboxUrlDetector } from './sandbox-url-detector';
+import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
 import { sessionComposerReadiness } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
@@ -1398,19 +1398,21 @@ function SessionTurnImpl({
             !hasSteps &&
             response &&
             (commandForTurn ? (
-              <div className="border-border/60 from-muted/15 to-background overflow-hidden rounded-2xl border bg-gradient-to-b">
-                <div className="border-border/50 bg-muted/25 flex items-center gap-2 border-b px-3 py-2">
-                  <Terminal className="text-muted-foreground size-3.5 shrink-0" />
-                  <span className="text-foreground font-mono text-xs">/{commandForTurn.name}</span>
-                  {commandForTurn.args && (
-                    <span className="text-muted-foreground truncate text-xs">
-                      {commandForTurn.args}
+              <div className="space-y-2">
+                <div className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg">
+                  <div className="text-foreground flex min-w-0 items-center justify-between gap-2 p-3 pb-0 text-xs [&>svg]:size-4">
+                    <span
+                      className="bg-popover text-foreground/95 dark:bg-card min-w-0 truncate rounded-[calc(var(--radius-sm)-0.5px)] border px-1.5 py-[0.08rem] align-baseline font-mono text-[0.95em] font-medium wrap-anywhere whitespace-nowrap"
+                      title={`/${commandForTurn.name}`}
+                    >
+                      {commandForTurn.name}
                     </span>
-                  )}
+                  </div>
+                  <div className="min-h-0 overflow-hidden px-4 py-3 text-sm">
+                    <SandboxUrlDetector content={response} isStreaming={false} />
+                  </div>
                 </div>
-                <div className="px-3 py-2.5 text-sm">
-                  <SandboxUrlDetector content={response} isStreaming={false} />
-                </div>
+                <CodeBlockEndpoints content={response} />
               </div>
             ) : (
               <div className="text-sm">
@@ -1831,10 +1833,17 @@ export function SessionChat({
   }, [sessionPrefill, sessionId]);
   // Map of user message IDs → command info, so UserMessage can render
   // a compact command pill instead of the raw expanded template text.
-  const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
+  const commandMessagesRef = useRef<
+    Map<string, { name: string; args?: string; split?: { before: string; after: string } }>
+  >(new Map());
   // Stash the pending command info so we can associate it with the user message
   // even if the busy signal arrives before the message list updates.
-  const pendingCommandStashRef = useRef<{ name: string; args?: string } | null>(null);
+  const pendingCommandStashRef = useRef<{
+    name: string;
+    args?: string;
+    /** Where the chip sat in `args` — display only. See `handleCommand`. */
+    split?: { before: string; after: string };
+  } | null>(null);
   // Track whether a pending prompt send is in flight (dashboard→session flow).
   // Keeps isBusy true until the server acknowledges with a busy status.
   const [pendingSendInFlight, setPendingSendInFlight] = useState(false);
@@ -2212,7 +2221,12 @@ export function SessionChat({
   // if this component mounts late.
 
   const handleQueueMessage = useCallback(
-    (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
+    (
+      text: string,
+      files?: AttachedFile[],
+      mentions?: TrackedMention[],
+      command?: { name: string; split?: { before: string; after: string } },
+    ) => {
       // Capture the agent, model and variant AS THEY ARE NOW. A message queued
       // under one model must not send under whatever is selected minutes later
       // when its turn comes up — `handleSend`'s `overrides` parameter has
@@ -2228,6 +2242,7 @@ export function SessionChat({
         agent: lockedAgentName ?? local.agent.current?.name ?? undefined,
         model: local.model.sendKey ?? undefined,
         variant: local.model.variant.current ?? undefined,
+        command,
       });
     },
     [sessionId, lockedAgentName, local.agent, local.model],
@@ -3208,8 +3223,13 @@ export function SessionChat({
       pendingPermissionCount: pendingPermissions.length,
       isPaused: false,
       readOnly: !!readOnly,
+      // Holds a queued message while the sandbox is stopped or waking, and
+      // releases it by itself when the box answers. This is what makes leaving
+      // the composer ENABLED safe — see `sessionComposerReadiness`.
+      runtimeReady,
     }),
     [
+      runtimeReady,
       isServerBusy,
       pendingSendInFlight,
       isOptimisticCompacting,
@@ -3221,6 +3241,11 @@ export function SessionChat({
     ],
   );
 
+  /** See `sendQueuedMessage`'s command branch for why this is a ref. */
+  const handleCommandRef = useRef<
+    ((command: Command, args?: string, split?: { before: string; after: string }) => boolean) | null
+  >(null);
+
   const sendQueuedMessage = useCallback(
     async (message: WebQueuedMessage) => {
       // ONE message. The queue is first-come-first-served: `queue[0]` goes out
@@ -3231,6 +3256,36 @@ export function SessionChat({
       // Files that did not survive being stored carry no data — send the text
       // rather than a broken attachment. The composer shows the user that the
       // attachments were dropped.
+      // A queued `/` command runs through the command path, not the prompt
+      // path. `runCommand` expands a server-side template; sending the same
+      // entry as text would deliver the literal arguments with no command at
+      // all. The command list is re-read HERE rather than captured at enqueue,
+      // so an entry can never dispatch a command that has since been removed.
+      if (message.command) {
+        const resolved = commands?.find((c) => c.name === message.command!.name);
+        if (!resolved) {
+          throw new Error(`Command /${message.command.name} is no longer available`);
+        }
+        // Through a ref, not the binding. `handleCommand` is declared ~180
+        // lines BELOW this callback, so naming it in the dependency array
+        // would read a `const` in its temporal dead zone — a ReferenceError
+        // thrown during render, every render. The ref is written in an effect
+        // after both exist, and only ever read here at dispatch time.
+        const dispatched = handleCommandRef.current?.(
+          resolved,
+          message.text || undefined,
+          message.command.split,
+        );
+        // A swallowed dispatch must REJECT. `dispatchOne` marks a resolved send
+        // complete and deletes the entry, so reporting success here would drop
+        // the command silently — the one outcome a queue must never have.
+        // Throwing puts it in `failed` with a reason and a retry button.
+        if (!dispatched) {
+          throw new Error('Another command is still being sent — this one was not dispatched');
+        }
+        return;
+      }
+
       const files = message.files?.filter((f): f is AttachedFile => f.kind !== 'lost');
       await handleSend(message.text, files?.length ? files : undefined, message.mentions, {
         agent: message.agent,
@@ -3238,7 +3293,7 @@ export function SessionChat({
         variant: message.variant,
       });
     },
-    [handleSend],
+    [handleSend, commands],
   );
 
   const queueDrain = useMessageQueueDrain({
@@ -3398,19 +3453,61 @@ export function SessionChat({
   // the old executeCommand.isPending check from the TQ mutation).
   const commandInFlightRef = useRef(false);
 
+  // Publish `handleCommand` for `sendQueuedMessage`, which is declared above it
+  // and therefore cannot name it directly (temporal dead zone). Written on
+  // every commit so the queue always dispatches through the CURRENT closure,
+  // not one captured when the callback was first created.
+  useEffect(() => {
+    handleCommandRef.current = handleCommand;
+  });
+
   const handleCommand = useCallback(
-    (cmd: Command, args?: string) => {
-      if (commandInFlightRef.current) return;
+    (cmd: Command, args?: string, split?: { before: string; after: string }): boolean => {
+      // Returns whether the command was DISPATCHED, not whether it succeeded.
+      // The queue needs that distinction: a swallowed dispatch that reports
+      // success has its entry marked complete and deleted, so the command is
+      // lost with nothing on screen to say so. See `sendQueuedMessage`.
+      if (commandInFlightRef.current) return false;
       setCommandError(null);
 
       playSound('send');
-      const label = args ? `/${cmd.name} ${args}` : `/${cmd.name}`;
+      // Rebuild the sentence the way it was WRITTEN, not command-first. This
+      // used to be `/${name} ${args}` unconditionally, which is why typing
+      // `explain /webapp to me` produced `/webapp explain to me` — the chip's
+      // position is not recoverable from `args`, so it has to be carried
+      // (`split`, from the editor's serializer) or it is lost here.
+      const label = split
+        ? [split.before, `/${cmd.name}`, split.after].filter(Boolean).join(' ')
+        : args
+          ? `/${cmd.name} ${args}`
+          : `/${cmd.name}`;
       const selectedModel = local.model.sendKey ?? undefined;
       const handleCommandError = (err?: unknown) => {
+        // A command that was DELIVERED and then lost its connection is not a
+        // failed command. `/command` blocks for the whole turn, so both proxy
+        // hops routinely stop waiting while opencode is still working — and the
+        // request was already on the wire when they did. Clearing the session
+        // to `idle` and painting an error here told the user their message had
+        // not sent while the agent was actively answering it, and invited the
+        // retry that aborts the live turn and stamps it "Interrupted".
+        // See `delivered-but-disconnected.ts`.
+        if (isDeliveredButDisconnected(errorMessageOf(err))) {
+          setPendingCommand(null);
+          setPendingUserMessage(null);
+          setPendingUserMessageId(null);
+          pendingCommandStashRef.current = null;
+          // `pollingActive` and the session status stay put on purpose: the
+          // turn is live and SSE owns it from here.
+          return;
+        }
         setPendingCommand(null);
         setPendingUserMessage(null);
         setPendingUserMessageId(null);
         setPollingActive(false);
+        // Release the drain gate taken at dispatch. The 30s safety timeout
+        // would eventually do it, but until then the whole queue is frozen
+        // behind a command that already failed.
+        setPendingSendInFlight(false);
         pendingCommandStashRef.current = null;
         useSessionStateStore.getState().setStatus(sessionId, { type: 'idle' });
         setCommandError(classifySessionError(err));
@@ -3423,10 +3520,22 @@ export function SessionChat({
       pendingCommandStashRef.current = {
         name: cmd.name,
         args: args || cmd.description,
+        // Carried to `UserMessage` via `commandMessagesRef` so the sent bubble
+        // draws the chip where it was typed. Display only.
+        split,
       };
       setPendingUserMessage(label);
       setPendingUserMessageId(null);
       setPollingActive(true);
+      // Closes the queue drain's `pendingSendInFlight` gate SYNCHRONOUSLY, the
+      // way `beginOptimisticSend` does for an ordinary prompt. Without it a
+      // command dispatched from the queue left every gate clear: the drain's
+      // 700ms settle window would elapse before the server reported busy, the
+      // next queued message would go out, and a new prompt mid-turn aborts the
+      // one running — the "Interrupted" symptom the queue exists to prevent.
+      // Self-clearing: the effect above drops it as soon as the server reports
+      // busy or an assistant reply lands, with a 30s safety timeout behind it.
+      setPendingSendInFlight(true);
       lastSendTimeRef.current = Date.now();
 
       // Match SolidJS reference (submit.ts:259-289): fire command
@@ -3462,6 +3571,7 @@ export function SessionChat({
           commandInFlightRef.current = false;
         });
       setTimeout(() => scrollToBottom(), 50);
+      return true;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -4179,8 +4289,8 @@ export function SessionChat({
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
-                disabled={composerReadiness.disabled}
-                placeholder={composerReadiness.placeholder}
+                runtimeReady={composerReadiness.ready}
+                notice={composerReadiness.notice}
               />
               <ConfirmDialog
                 open={!!rewindTarget}

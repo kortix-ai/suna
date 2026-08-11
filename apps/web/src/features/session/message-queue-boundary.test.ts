@@ -22,6 +22,7 @@ const CLEAR: QueueDrainGates = {
   pendingPermissionCount: 0,
   isPaused: false,
   readOnly: false,
+  runtimeReady: true,
 };
 
 describe('canDrainQueue', () => {
@@ -301,5 +302,74 @@ describe('planDrainTick', () => {
     const skewed = planDrainTick({ ...base, machine: armed.machine, pendingCount: 1, now: -5_000 });
 
     expect(skewed.action.kind === 'wait' && skewed.action.ms >= 0).toBe(true);
+  });
+});
+
+/**
+ * The runtime gate — what lets the composer stay ENABLED while the sandbox is
+ * stopped without losing the message.
+ *
+ * `send()` only checks that an opencode session id exists, not that its runtime
+ * answers, so a prompt submitted against a sleeping box is accepted and lost.
+ * These two rules are the replacement for disabling the input: route it to the
+ * queue on the way in, hold it there until the box wakes.
+ */
+describe('runtimeReady gate', () => {
+  test('a sleeping runtime blocks the drain even with every other gate clear', () => {
+    expect(canDrainQueue({ ...CLEAR, runtimeReady: false })).toBe(false);
+  });
+
+  test('the drain resumes on its own once the runtime answers', () => {
+    // Nothing else has to change — no re-enqueue, no user action. This is the
+    // whole promise the notice makes ("messages will go out automatically").
+    expect(canDrainQueue({ ...CLEAR, runtimeReady: false })).toBe(false);
+    expect(canDrainQueue({ ...CLEAR, runtimeReady: true })).toBe(true);
+  });
+
+  test('a sleeping runtime holds the settle machine at zero, never dispatching', () => {
+    const gates = { ...CLEAR, runtimeReady: false };
+    let machine = createDrainMachine();
+
+    // Well past the settle window — a gate that only delayed would fire here.
+    for (const now of [0, 1_000, 10_000, 60_000]) {
+      const step = stepDrainMachine(machine, gates, now);
+      machine = step.machine;
+      expect(step.dispatch).toBe(false);
+    }
+    expect(machine.clearSince).toBeNull();
+  });
+
+  test('submitting against a sleeping runtime queues, even on a totally idle session', () => {
+    // The case that used to be impossible because the input was disabled:
+    // nothing busy, nothing queued, nothing in flight — and it must STILL
+    // queue, because the wire would swallow it.
+    expect(
+      shouldQueueInsteadOfSend({
+        isBusy: false,
+        pendingCount: 0,
+        hasInFlight: false,
+        runtimeReady: false,
+      }),
+    ).toBe(true);
+  });
+
+  test('a ready runtime restores the ordinary rules', () => {
+    expect(
+      shouldQueueInsteadOfSend({
+        isBusy: false,
+        pendingCount: 0,
+        hasInFlight: false,
+        runtimeReady: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('omitting runtimeReady defaults to ready — existing callers are unchanged', () => {
+    expect(
+      shouldQueueInsteadOfSend({ isBusy: false, pendingCount: 0, hasInFlight: false }),
+    ).toBe(false);
+    expect(
+      shouldQueueInsteadOfSend({ isBusy: true, pendingCount: 0, hasInFlight: false }),
+    ).toBe(true);
   });
 });

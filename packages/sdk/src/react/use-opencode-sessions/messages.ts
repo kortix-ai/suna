@@ -296,7 +296,25 @@ export async function promptOpenCodeMessage({
 }
 
 export function useSendOpenCodeMessage() {
-  return useMutation({ mutationFn: promptOpenCodeMessage });
+  return useMutation({
+    mutationFn: promptOpenCodeMessage,
+    // Same rationale as `useExecuteOpenCodeCommand`: this POSTs `prompt_async`,
+    // which CREATES a user message. Retrying it sends the prompt twice.
+    //
+    // It is stated here rather than left to the host because a host default
+    // cannot know that. apps/web's is
+    // `error?.status >= 400 && error?.status < 500 ? false : failureCount < 1`,
+    // which reads like "don't retry client errors" but lets every 5xx through —
+    // and a 502 from the sandbox proxy is exactly the case where opencode may
+    // already hold the message. The proxy's content-hash dedupe has been
+    // absorbing that, which is the same "one layer relying on another's guard"
+    // shape that let a `/command` execute four times.
+    //
+    // `promptOpenCodeMessage` already runs its own bounded boot-window retry
+    // for the states that ARE safe to repeat (`opencode not ready`, sandbox
+    // still waking), so nothing is lost by switching the outer one off.
+    retry: false,
+  });
 }
 
 export function useAbortOpenCodeSession() {

@@ -107,6 +107,26 @@ export function flattenDocument(doc: ProseMirrorNode): SerializableNode[] {
  * doc separately. Both are kept literally identical (`@${label}`) so the two
  * paths can never disagree if something starts calling `getText()` later.
  */
+/**
+ * The ProseMirror position of the FIRST `/` command chip, or null.
+ *
+ * `collectCommandName` already finds that chip, but a flattened list has no
+ * positions, and a position is what the split below needs. Same "first, not
+ * last" rule and the same reason — see `collectCommandName`.
+ */
+function findCommandPos(doc: ProseMirrorNode): number | null {
+  let found: number | null = null;
+  doc.descendants((node, pos) => {
+    if (found !== null) return false;
+    if (node.type.name === 'mention' && node.attrs.kind === 'command') {
+      found = pos;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
 export function serializeDocument(doc: ProseMirrorNode): {
   text: string;
   mentions: TrackedMention[];
@@ -118,9 +138,25 @@ export function serializeDocument(doc: ProseMirrorNode): {
    * call site.
    */
   commandName?: string;
+  /**
+   * `text`, split at the point the chip actually sat.
+   *
+   * The chip contributes no characters, so without this its POSITION is lost
+   * the moment the document is serialized — and "lost" meant "silently moved
+   * to the front". Type `explain /webapp to me` and the sent message came back
+   * as `/webapp explain to me`, because every consumer downstream rebuilt the
+   * display as `/name` + args with nothing to say otherwise.
+   *
+   * Display only. `text` is unchanged and remains exactly what the server
+   * receives as `$ARGUMENTS` — where the chip sat in the sentence is a fact
+   * about how the user wrote it, not about what the command should run on.
+   * Both halves are trimmed, so re-joining them with a single space
+   * reconstructs `text` for a chip that sat between words.
+   */
+  commandSplit?: { before: string; after: string };
 } {
   const flat = flattenDocument(doc);
-  const text = doc.textBetween(0, doc.content.size, '\n', (node) => {
+  const leafText = (node: ProseMirrorNode) => {
     // A command chip contributes no text — see `MentionNode.renderText`'s
     // doc comment. The remainder of the paragraph is the args verbatim.
     if (node.type.name === 'mention' && node.attrs.kind === 'command') return '';
@@ -143,10 +179,37 @@ export function serializeDocument(doc: ProseMirrorNode): {
     // `getText()`-based assertions could not see this.
     if (node.type.name === 'hardBreak') return '\n';
     return '';
-  });
+  };
+  const rawText = doc.textBetween(0, doc.content.size, '\n', leafText);
+
+  // Split BEFORE trimming: `rawText` and this prefix are produced by the same
+  // walk with the same `leafText`, so the prefix is a genuine prefix of
+  // `rawText` and `slice` is exact. Trimming first would shift every offset by
+  // however much leading whitespace the draft happened to have.
+  const commandPos = findCommandPos(doc);
+  const commandSplit =
+    commandPos === null
+      ? undefined
+      : (() => {
+          const before = doc.textBetween(0, commandPos, '\n', leafText);
+          return { before: before.trim(), after: rawText.slice(before.length).trim() };
+        })();
+
   return {
-    text: text.trim(),
+    // For a command draft the args are the two halves rejoined with ONE space,
+    // not `rawText`. Removing a chip from between two spaced words leaves both
+    // spaces behind, so `explain /webapp to me` serialized to `explain  to me`
+    // — a double space on the wire, and worse, a value that disagreed with the
+    // same function's own `commandSplit`. Two representations of one thing that
+    // do not match is how the next bug gets written; deriving one from the
+    // other makes them agree by construction. Non-command drafts keep
+    // `rawText` untouched — collapsing whitespace in ordinary prose is not
+    // this function's business.
+    text: commandSplit
+      ? [commandSplit.before, commandSplit.after].filter(Boolean).join(' ')
+      : rawText.trim(),
     mentions: collectMentions(flat),
     commandName: collectCommandName(flat),
+    commandSplit,
   };
 }

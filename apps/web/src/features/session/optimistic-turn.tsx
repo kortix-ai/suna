@@ -11,6 +11,8 @@ import {
   parseReplyContext,
   parseSessionReferences,
 } from '@/features/session/message-parsing';
+import { MentionChip } from '@/features/session/mention-chip';
+import { buildMentionSegments } from '@/features/session/mention-segments';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import {
   MessageAttachments,
@@ -20,9 +22,17 @@ import { cn } from '@/lib/utils';
 import { getFilename } from '@/lib/utils/file-utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
 
-/** Matches `BUBBLE_SURFACE` / `BUBBLE_TEXT` in `turn/user-message.tsx`. */
+/**
+ * Matches `BUBBLE_SURFACE` / `BUBBLE_TEXT` in `turn/user-message.tsx`.
+ *
+ * The dark fill was `dark:bg-sidebar-accent-foreground/9` here and
+ * `dark:bg-muted` there — the exact drift this file's header warns about,
+ * introduced a day apart (2c7a689aca, then 4ea9ffb620) and visible as the
+ * bubble changing shade the instant the optimistic turn handed over to the
+ * server turn. `dark:bg-muted` is the later decision, so it wins.
+ */
 const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-sidebar-accent-foreground/9 text-foreground flex max-w-full flex-col rounded-lg px-3 py-2.5 select-none',
+  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col rounded-lg px-3 py-2.5 select-none',
 );
 const BUBBLE_TEXT = cn(
   'text-[0.9rem] leading-[22px] font-medium',
@@ -154,7 +164,16 @@ function OptimisticUserBubble({
   );
 }
 
-/** Highlight @mentions in plain text (for optimistic & user messages). */
+/**
+ * Highlight @mentions in plain text (for optimistic & user messages).
+ *
+ * Draws the SAME chip the composer draws (`../mention-chip`) over the SAME
+ * segmentation the sent message uses (`../mention-segments`). Both used to be
+ * local to this file — an underlined-text treatment and its own copy of the
+ * range walk — so a mention visibly changed shape twice on its way through the
+ * app: chip in the composer, underline in the optimistic bubble, underline
+ * again in the server turn.
+ */
 export function HighlightMentions({
   text,
   agentNames,
@@ -177,123 +196,58 @@ export function HighlightMentions({
     };
   }, [text]);
 
-  const segments = useMemo(() => {
-    type MentionType = 'file' | 'agent' | 'session';
-    if (!cleanText) return [{ text: cleanText, type: undefined as MentionType | undefined }];
+  const sessionTitles = useMemo(() => sessions.map((s) => s.title), [sessions]);
 
-    // Detect session @mentions first (titles can contain spaces)
-    const sessionDetected: { start: number; end: number; type: MentionType }[] = [];
-    for (const s of sessions) {
-      const needle = `@${s.title}`;
-      const idx = cleanText.indexOf(needle);
-      if (idx !== -1) {
-        sessionDetected.push({
-          start: idx,
-          end: idx + needle.length,
-          type: 'session',
-        });
-      }
-    }
+  const segments = useMemo(
+    () => buildMentionSegments({ text: cleanText, sessionTitles, agentNames }),
+    [cleanText, sessionTitles, agentNames],
+  );
 
-    const agentSet = new Set(agentNames || []);
-    const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: MentionType }[] = [...sessionDetected];
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(cleanText)) !== null) {
-      const mStart = match.index;
-      // Skip if overlaps with a session mention
-      if (sessionDetected.some((s) => mStart >= s.start && mStart < s.end)) continue;
-      const name = match[1];
-      // Treat @ses_<id> tokens as session mentions
-      const type: MentionType = name.startsWith('ses_')
-        ? 'session'
-        : agentSet.has(name)
-          ? 'agent'
-          : 'file';
-      detected.push({
-        start: mStart,
-        end: match.index + match[0].length,
-        type,
+  const openSessionMention = (raw: string) => {
+    // Direct session ID (ses_...) — navigate without title lookup
+    if (raw.startsWith('ses_')) {
+      openTabAndNavigate({
+        id: raw,
+        title: 'Session',
+        type: 'session',
+        href: `/sessions/${raw}`,
       });
+      return;
     }
-    if (detected.length === 0) return [{ text: cleanText, type: undefined }];
-
-    detected.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: { text: string; type?: MentionType }[] = [];
-    let lastIndex = 0;
-    for (const ref of detected) {
-      if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex) result.push({ text: cleanText.slice(lastIndex, ref.start) });
-      result.push({
-        text: cleanText.slice(ref.start, ref.end),
-        type: ref.type,
-      });
-      lastIndex = ref.end;
-    }
-    if (lastIndex < cleanText.length) result.push({ text: cleanText.slice(lastIndex) });
-    return result;
-  }, [cleanText, agentNames, sessions]);
-
-  // Uniform monochrome mention style — Kortix brand is strictly neutral, so
-  // every mention kind (file / agent / session) renders identically
-  // as an underlined foreground chip. Kind is distinguished by click target.
-  const mentionClass =
-    'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-  const mentionClassStatic = 'font-medium text-foreground';
+    const ref = sessions.find((s) => s.title === raw);
+    if (!ref) return;
+    openTabAndNavigate({
+      id: ref.id,
+      title: ref.title || 'Session',
+      type: 'session',
+      href: `/sessions/${ref.id}`,
+    });
+  };
 
   return (
     <>
       {segments.map((seg, i) =>
-        seg.type === 'file' && onFileClick ? (
-          <button
+        seg.type === 'file' ? (
+          // Static when there is no runtime to open the file in yet (the
+          // instant shell) — a chip that looks pressable and does nothing is
+          // worse than one that plainly does not.
+          <MentionChip
             key={i}
-            type="button"
-            className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-            onClick={(e) => {
-              e.stopPropagation();
-              onFileClick(seg.text.replace(/^@/, ''));
-            }}
-          >
-            {seg.text}
-          </button>
+            kind="file"
+            label={seg.text.replace(/^@/, '')}
+            onClick={onFileClick ? () => onFileClick(seg.text.replace(/^@/, '')) : undefined}
+          />
         ) : seg.type === 'session' ? (
-          <button
+          <MentionChip
             key={i}
-            type="button"
-            className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-            onClick={(e) => {
-              e.stopPropagation();
-              const raw = seg.text.replace(/^@/, '');
-              // Direct session ID (ses_...) — navigate without title lookup
-              if (raw.startsWith('ses_')) {
-                openTabAndNavigate({
-                  id: raw,
-                  title: 'Session',
-                  type: 'session',
-                  href: `/sessions/${raw}`,
-                });
-                return;
-              }
-              const ref = sessions.find((s) => s.title === raw);
-              if (ref) {
-                openTabAndNavigate({
-                  id: ref.id,
-                  title: ref.title || 'Session',
-                  type: 'session',
-                  href: `/sessions/${ref.id}`,
-                });
-              }
-            }}
-          >
-            {seg.text}
-          </button>
+            kind="session"
+            label={seg.text.replace(/^@/, '')}
+            onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
+          />
+        ) : seg.type === 'agent' ? (
+          <MentionChip key={i} kind="agent" label={seg.text.replace(/^@/, '')} />
         ) : (
-          <span
-            key={i}
-            className={cn((seg.type === 'file' || seg.type === 'agent') && mentionClassStatic)}
-          >
-            {seg.text}
-          </span>
+          <span key={i}>{seg.text}</span>
         ),
       )}
     </>
