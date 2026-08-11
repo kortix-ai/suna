@@ -185,6 +185,10 @@ describe('decideImpersonation', () => {
       '/v1/projects/p1/sessions/s1/public-shares',
       '/v1/tunnel/connections',
       '/v1/tunnel/connections/t1/rotate-token',
+      // Agent governance: both routes commit `kortix.yaml` changes that widen
+      // what an agent may read in every future session, outliving the grant.
+      '/v1/projects/p1/agents/researcher/scope',
+      '/v1/projects/p1/secrets/OPENAI_API_KEY/grant',
     ]) {
       expect(decide({ path })).toEqual({ ok: false, reason: 'route_forbidden' });
     }
@@ -228,6 +232,10 @@ describe('decideImpersonation', () => {
       '/v1/p/sandbox/8000/session',
       // Near-misses for the new patterns — these must stay reachable.
       '/v1/projects/p1/sessions/s1/messages',
+      // Secret CRUD and the agents list are ordinary project surfaces; only
+      // the /grant and /scope leaves mint durable agent governance.
+      '/v1/projects/p1/secrets',
+      '/v1/projects/p1/agents',
       // Audit READ (not the webhooks sub-route) stays open for support.
       '/v1/accounts/33333333-3333-4333-8333-333333333333/audit',
     ]) {
@@ -265,6 +273,9 @@ describe('decideImpersonation', () => {
       '/v1/tunnel/permissions/x',
       // Public shares without expiry = permanent unauthenticated link.
       '/v1/projects/p1/sessions/s1/public-shares',
+      // Agent governance written into kortix.yaml.
+      '/v1/projects/p1/agents/researcher/scope',
+      '/v1/projects/p1/secrets/OPENAI_API_KEY/grant',
     ]) {
       expect(isImpersonationForbiddenPath(path, 'POST'), `POST ${path}`).toBe(true);
     }
