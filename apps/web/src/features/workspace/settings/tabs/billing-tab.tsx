@@ -138,7 +138,7 @@ import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
@@ -270,12 +270,12 @@ export function BillingTabView({
         // right, all inside ONE bordered card. Previously the name and pitch
         // sat outside the card as a section header with the two buttons
         // stranded in a box below them, which read as two unrelated blocks.
-        // `SettingsSectionHeader` stays — it is what emits this section's h2,
+        // `SettingsSubsectionHeader` stays — it is what emits this section's h2,
         // and moving it inside the card changes only where the border is
         // drawn.
         <section>
           <div className="bg-popover rounded-md border p-4">
-            <SettingsSectionHeader
+            <SettingsSubsectionHeader
               title="Kortix Team"
               description="Subscribe to put your whole team on Kortix — LLM compute and AI Computers, one wallet."
               action={
@@ -318,7 +318,7 @@ export function BillingTabView({
           )}
 
           <section className="space-y-3">
-            <SettingsSectionHeader title="Plan, wallet and spend" />
+            <SettingsSubsectionHeader title="Plan, wallet and spend" />
             {accountOverviewSlot}
           </section>
 
@@ -333,7 +333,7 @@ export function BillingTabView({
           {/* 3. Auto top-up — mutation, gated on canManageBilling too. */}
           {canPurchaseCredits && canManageBilling && (
             <section className="space-y-3">
-              <SettingsSectionHeader title="Auto top-up" description="Never run out again" />
+              <SettingsSubsectionHeader title="Auto top-up" description="Never run out again" />
               <SettingsRowGroup className="px-4 py-3">{autoTopupSlot}</SettingsRowGroup>
             </section>
           )}
@@ -341,7 +341,7 @@ export function BillingTabView({
           {/* 4. Buy credits — mutation, gated on canManageBilling too. */}
           {canPurchaseCredits && canManageBilling && (
             <section className="space-y-3">
-              <SettingsSectionHeader title="Buy credits" description="One-time top-up" />
+              <SettingsSubsectionHeader title="Buy credits" description="One-time top-up" />
               <SettingsRowGroup className="px-4 py-3">{creditTopupSlot}</SettingsRowGroup>
             </section>
           )}
@@ -363,7 +363,7 @@ export function BillingTabView({
             // place rather than sitting loose under the header, so the row
             // reads the same whether or not the viewer holds `billing.write`.
             <section className="space-y-3">
-              <SettingsSectionHeader title="Billing portal" />
+              <SettingsSubsectionHeader title="Billing portal" />
               <SettingsRowGroup>
                 <SettingsRow
                   label="Invoices and payment methods"

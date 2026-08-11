@@ -215,7 +215,9 @@ describe('SnapshotsTabView', () => {
   });
 
   test('shows no status banner for a healthy project', () => {
-    const out = renderToStaticMarkup(<SnapshotsTabView status={runtimeStatus({ state: 'ready' })} />);
+    const out = renderToStaticMarkup(
+      <SnapshotsTabView status={runtimeStatus({ state: 'ready' })} />,
+    );
     expect(out).not.toContain('Sessions can’t start');
     expect(out).not.toContain('Some sessions won’t start');
   });

@@ -142,7 +142,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -218,7 +218,7 @@ export function OrganizationTabView({
             session lifetime/idle timeout hide under the closed-by-default
             Advanced disclosure. */}
         <section className="space-y-4">
-          <SettingsSectionHeader
+          <SettingsSubsectionHeader
             title="Security"
             description="Account-wide sign-in requirements."
           />
@@ -247,7 +247,7 @@ export function OrganizationTabView({
             reproduced exactly, see this file's header comment. */}
         {enterpriseVisible ? (
           <section className="space-y-4">
-            <SettingsSectionHeader
+            <SettingsSubsectionHeader
               title="Enterprise features"
               description="Preview SSO, SCIM, advanced RBAC, and audit logs before upgrading."
             />
@@ -260,7 +260,7 @@ export function OrganizationTabView({
             slot: same as source's DangerZoneCard, this row has no hooks. */}
         {canDeleteAccount ? (
           <section className="space-y-4">
-            <SettingsSectionHeader title="Danger zone" />
+            <SettingsSubsectionHeader title="Danger zone" />
             <div className="bg-popover rounded-md border px-4 py-3">
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">

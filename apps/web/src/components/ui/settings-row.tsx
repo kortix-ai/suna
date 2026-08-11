@@ -107,32 +107,3 @@ export function SettingsRow({
     </Field>
   );
 }
-
-/**
- * The label that sits above a `SettingsRowGroup`, naming the group.
- *
- * Linear puts a plain small heading with an optional one-line description
- * between groups — no border, no card chrome, no action slot. That is
- * deliberately weaker than `SettingsSectionHeader`, which is the pane's page
- * title; a section label must not compete with it.
- *
- * Promoted here after the Profile and Workspace restyles independently grew
- * byte-identical private copies of it. Two copies of a heading is how two
- * panes start disagreeing about what a heading looks like.
- */
-export function SettingsSectionLabel({
-  title,
-  description,
-}: {
-  title: string;
-  description?: string;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <h2 className="text-foreground text-sm font-medium">{title}</h2>
-      {description ? (
-        <p className="text-muted-foreground text-xs text-pretty">{description}</p>
-      ) : null}
-    </div>
-  );
-}

@@ -5,7 +5,7 @@ import { UsageTabView } from './usage-tab';
 
 /** Section titles in document order, read from the h2s SettingsSectionHeader emits. */
 const headings = (html: string): string[] =>
-  [...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1]);
+  [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
 
 describe('UsageTabView', () => {
   test('the cost explorer renders above the credit ledger', () => {

@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { ProjectAccessMember, ProjectRole } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
 import { memberAccessLabel } from './member-access-label';
 

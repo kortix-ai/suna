@@ -6,7 +6,7 @@ import { PreferencesTabView } from './preferences-tab';
 
 /** Section titles in document order, read from the h2s SettingsSectionHeader emits. */
 const headings = (html: string): string[] =>
-  [...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1]);
+  [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
 
 const html = () => renderToStaticMarkup(<PreferencesTabView />);
 
@@ -26,6 +26,25 @@ describe('PreferencesTabView', () => {
   test('renders every preference section in order', () => {
     expect(headings(html())).toEqual([
       'Preferences',
+      'Theme',
+      'Wallpaper',
+      'Sounds',
+      'Notifications',
+      'Keyboard shortcuts',
+      'Language',
+    ]);
+  });
+
+  test('the pane title outranks its sections — exactly one h2, the rest h3', () => {
+    // The hierarchy this pane exists to demonstrate. Asserted on LEVEL, not
+    // just text: an h2-only reader agreed happily with a pane that had lost
+    // five of its six section headings, because it could only see the one that
+    // remained.
+    const out = html();
+    const h2s = [...out.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1]);
+    const h3s = [...out.matchAll(/<h3[^>]*>([^<]*)<\/h3>/g)].map((m) => m[1]);
+    expect(h2s).toEqual(['Preferences']);
+    expect(h3s).toEqual([
       'Theme',
       'Wallpaper',
       'Sounds',

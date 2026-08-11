@@ -179,9 +179,7 @@ describe('GeneralTab wires the archive mutation to runProjectArchive', () => {
   const source = Bun.file(new URL('./general-tab.tsx', import.meta.url).pathname).text();
 
   test('the archive mutationFn drives runProjectArchive with the suppression callback', async () => {
-    const code = (await source)
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const code = (await source).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
     expect(code).toContain('runProjectArchive(');
     expect(code).toContain('accountProjectCountForArchive(accountProjectsQuery.data)');
     expect(code).toContain('{ archiveProject }');

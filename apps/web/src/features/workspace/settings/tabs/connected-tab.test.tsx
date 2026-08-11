@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ConnectedAccountsTabView } from './connected-tab';
 
 const headings = (html: string): string[] =>
-  [...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1]);
+  [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
 
 describe('ConnectedAccountsTabView', () => {
   test('renders one row per provider, in order', () => {

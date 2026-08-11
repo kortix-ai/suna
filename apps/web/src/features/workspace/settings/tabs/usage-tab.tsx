@@ -90,7 +90,7 @@
 
 import type { ReactNode } from 'react';
 
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { CostExplorer } from '@/features/billing/cost-explorer/cost-explorer';
 import CreditTransactions from '@/features/billing/credit-transactions';
 import { usePermission } from '@/lib/use-permission';
@@ -117,7 +117,7 @@ export function UsageTabView({ sessionCostsSlot, creditLedgerSlot }: UsageTabVie
     <div className="mx-auto w-full max-w-4xl space-y-8 px-6 py-10">
       <SettingsTabHeader tab="usage" />
       <section className="space-y-4">
-        <SettingsSectionHeader
+        <SettingsSubsectionHeader
           title="Session costs"
           description="Where LLM and compute spend went, by project and session."
         />
@@ -125,7 +125,7 @@ export function UsageTabView({ sessionCostsSlot, creditLedgerSlot }: UsageTabVie
       </section>
 
       <section className="space-y-4">
-        <SettingsSectionHeader
+        <SettingsSubsectionHeader
           title="Credit ledger"
           description="Every credit grant, purchase, and debit on this account."
         />

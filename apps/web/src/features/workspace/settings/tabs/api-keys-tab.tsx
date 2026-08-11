@@ -117,7 +117,7 @@ import type { ReactNode } from 'react';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { CopyButton } from '@/components/markdown/copy-button';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { usePermission } from '@/lib/use-permission';
 
 import { SettingsTabHeader } from '../settings-tab-header';
@@ -177,7 +177,7 @@ export function ApiKeysTabView({ patPolicySlot, serviceAccountsSlot }: ApiKeysTa
         {patPolicySlot}
 
         <section className="space-y-4">
-          <SettingsSectionHeader
+          <SettingsSubsectionHeader
             title="Using a key"
             description="Send it as a bearer token on every request."
           />

@@ -28,7 +28,7 @@
  * - `sounds-tab.tsx`, `keyboard-shortcuts-tab.tsx`, `language-switcher.tsx`
  *   — no exported pieces worth reusing (each is a single self-contained
  *   component with no sub-parts split out), so their JSX bodies are
- *   re-implemented here against `SettingsSectionHeader` instead of the old
+ *   re-implemented here against `SettingsSubsectionHeader` instead of the old
  *   bare `<label>` headers. This task's report documents this as the
  *   precise duplication: the markup shape of these three sections, not any
  *   shared logic (every store call is a live import, not a copy).
@@ -71,7 +71,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { WallpaperCard } from '@/features/accounts/settings/appearance-tab';
@@ -284,7 +284,7 @@ export function PreferencesTabView({
 
       {/* 1. Theme */}
       <section className="space-y-3">
-        <SettingsSectionHeader
+        <SettingsSubsectionHeader
           title="Theme"
           description="Choose how Kortix looks on this device."
         />
@@ -316,7 +316,7 @@ export function PreferencesTabView({
 
       {/* 2. Wallpaper */}
       <section className="space-y-3">
-        <SettingsSectionHeader
+        <SettingsSubsectionHeader
           title="Wallpaper"
           description="The background behind your workspace."
         />
@@ -335,7 +335,10 @@ export function PreferencesTabView({
 
       {/* 3. Sounds */}
       <section className="space-y-3">
-        <SettingsSectionHeader title="Sounds" description="Sound pack played for session events." />
+        <SettingsSubsectionHeader
+          title="Sounds"
+          description="Sound pack played for session events."
+        />
         <RadioGroup
           value={soundPack}
           onValueChange={(value) => onSoundPackChange(value as SoundPack)}
@@ -409,7 +412,7 @@ export function PreferencesTabView({
 
       {/* 4. Notifications */}
       <section className="space-y-3">
-        <SettingsSectionHeader
+        <SettingsSubsectionHeader
           title="Notifications"
           description="Browser notifications for what happens in your sessions."
         />
@@ -487,7 +490,7 @@ export function PreferencesTabView({
 
       {/* 5. Keyboard shortcuts */}
       <section className="space-y-3">
-        <SettingsSectionHeader
+        <SettingsSubsectionHeader
           title="Keyboard shortcuts"
           description="The modifier key used for tab switching, and every shortcut in the app."
         />
@@ -523,7 +526,7 @@ export function PreferencesTabView({
 
       {/* 6. Language */}
       <section className="space-y-3">
-        <SettingsSectionHeader title="Language" description="The language Kortix displays." />
+        <SettingsSubsectionHeader title="Language" description="The language Kortix displays." />
         <Select value={locale} onValueChange={(value) => onLocaleChange(value as Locale)}>
           <SelectTrigger id="preferences-language" className="!h-11 w-full max-w-xs">
             <SelectValue>{LANGUAGE_NAMES[locale] ?? locale}</SelectValue>

@@ -62,7 +62,7 @@ describe('GroupsTabView — terminal no-account state', () => {
   test('accountResolutionFailed renders an honest terminal state, not an indefinite skeleton', () => {
     const out = renderToStaticMarkup(<GroupsTabView accountResolutionFailed isLoading />);
     expect(out).not.toContain('animate-pulse');
-    expect(out).toContain("determine your account");
+    expect(out).toContain('determine your account');
   });
 
   test('accountResolutionFailed takes precedence over isLoading and rbacEnabled', () => {
@@ -76,7 +76,7 @@ describe('GroupsTabView — terminal no-account state', () => {
     );
     expect(out).not.toContain('real-groups-content');
     expect(out).not.toContain('animate-pulse');
-    expect(out).toContain("determine your account");
+    expect(out).toContain('determine your account');
   });
 
   test('the terminal state renders a Retry action when a retry handler is supplied', () => {
@@ -94,6 +94,6 @@ describe('GroupsTabView — terminal no-account state', () => {
   test('accountResolutionFailed defaults to false — ordinary loading is unaffected', () => {
     const out = renderToStaticMarkup(<GroupsTabView isLoading />);
     expect(out).toContain('animate-pulse');
-    expect(out).not.toContain("determine your account");
+    expect(out).not.toContain('determine your account');
   });
 });

@@ -47,9 +47,7 @@ function groupsWithCustomRoleFrom(policiesData: unknown, projectId: string): Set
     toArray(policiesData)
       .filter(
         (p: any) =>
-          p.principal_type === 'group' &&
-          p.scope_type === 'project' &&
-          p.scope_id === projectId,
+          p.principal_type === 'group' && p.scope_type === 'project' && p.scope_id === projectId,
       )
       .map((p: any) => p.principal_id),
   );
@@ -89,7 +87,7 @@ describe('members-tab source guard — no unguarded (query.data ?? []).filter/.m
   // useMemo. Every query-data-derived array in this file must go through
   // `toArray(...)` so a non-array response can never reach `.filter` / `.map`.
   test('imports toArray from the shared customize utils', () => {
-    expect(membersTabSource).toContain('from \'@/features/workspace/customize/shared/utils\'');
+    expect(membersTabSource).toContain("from '@/features/workspace/customize/shared/utils'");
     expect(membersTabSource).toContain('toArray(');
   });
 
@@ -102,7 +100,9 @@ describe('members-tab source guard — no unguarded (query.data ?? []).filter/.m
   test('no remaining unguarded (query.data ?? []).filter or .map in the file', () => {
     // Any `(X ?? []).filter(` or `(X ?? []).map(` whose receiver is a query data
     // field would re-open the same class of throw. Catch them all.
-    const unguarded = membersTabSource.match(/\(\w+Query\.data(?:\?\.\w+)? \?\? \[\]\)\.(?:filter|map)\(/g);
+    const unguarded = membersTabSource.match(
+      /\(\w+Query\.data(?:\?\.\w+)? \?\? \[\]\)\.(?:filter|map)\(/g,
+    );
     expect(unguarded).toBeNull();
   });
 

@@ -8,7 +8,7 @@ import { FactorRow, ProfileTabView, totpQrSrc } from './profile-tab';
  *  `SettingsRowGroup`, and a row's label is a `FieldTitle`, not a heading. The
  *  row-order test below pins those separately. */
 const headings = (html: string): string[] =>
-  [...html.matchAll(/<h2[^>]*>([^<]*)<\/h2>/g)].map((m) => m[1]);
+  [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
 
 const html = () => renderToStaticMarkup(<ProfileTabView />);
 

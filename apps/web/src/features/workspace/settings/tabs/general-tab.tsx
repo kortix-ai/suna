@@ -104,7 +104,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { SettingsRow, SettingsRowGroup, SettingsSectionLabel } from '@/components/ui/settings-row';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -231,7 +232,7 @@ export function GeneralTabView({
           {sandboxProviderSlot}
           {canDelete ? (
             <section className="space-y-3">
-              <SettingsSectionLabel title="Danger zone" />
+              <SettingsSubsectionHeader title="Danger zone" />
               <SettingsRowGroup>
                 <SettingsRow
                   label="Delete workspace"
@@ -525,7 +526,7 @@ function SandboxProviderRow({
 
   return (
     <section className="space-y-3">
-      <SettingsSectionLabel title="Sandbox" />
+      <SettingsSubsectionHeader title="Sandbox" />
       <SettingsRowGroup>
         <SettingsRow
           label={

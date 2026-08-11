@@ -71,7 +71,8 @@ import {
 } from '@/components/ui/modal';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
-import { SettingsRow, SettingsRowGroup, SettingsSectionLabel } from '@/components/ui/settings-row';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -407,7 +408,7 @@ export function ProfileTabView({
 
       {/* Security */}
       <section className="space-y-3">
-        <SettingsSectionLabel title="Security" />
+        <SettingsSubsectionHeader title="Security" />
 
         <SettingsRowGroup>
           <SettingsRow
@@ -542,7 +543,7 @@ export function ProfileTabView({
 
       {/* Danger zone */}
       <section className="space-y-3">
-        <SettingsSectionLabel title="Danger zone" />
+        <SettingsSubsectionHeader title="Danger zone" />
         <SettingsRowGroup>
           <SettingsRow label="Delete account" description={deleteAccountDescription}>
             {!accountDeletionSupported ? (

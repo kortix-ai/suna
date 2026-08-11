@@ -377,7 +377,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 // `Table` itself is deliberately NOT imported — this pane needs Linear's
 // borderless container, which that component hard-codes against. See
@@ -986,7 +986,7 @@ export function MembersTabView({
 
       {showPendingInvites ? (
         <section className="space-y-4">
-          <SettingsSectionHeader
+          <SettingsSubsectionHeader
             title="Pending invites"
             description="Invitations sent, awaiting sign-up."
           />
@@ -1063,7 +1063,7 @@ export function MembersTabView({
 
       {showAccessRequests ? (
         <section className="space-y-4">
-          <SettingsSectionHeader
+          <SettingsSubsectionHeader
             title="Access requests"
             description="People who asked to join this project."
           />
@@ -1135,7 +1135,7 @@ export function MembersTabView({
           invites. */}
       {showAccountInvites ? (
         <section className="space-y-4">
-          <SettingsSectionHeader
+          <SettingsSubsectionHeader
             title="Account invites"
             description="Invitations to join this account, awaiting sign-up."
             action={
@@ -1215,7 +1215,7 @@ export function MembersTabView({
 
       {showLeaveAccount ? (
         <section className="space-y-4">
-          <SettingsSectionHeader title="Leave account" />
+          <SettingsSubsectionHeader title="Leave account" />
           {isAccountRosterLoading ? (
             <Skeleton className="h-[58px] w-full rounded-md" />
           ) : (

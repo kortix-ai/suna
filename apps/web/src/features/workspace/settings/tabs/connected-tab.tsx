@@ -137,7 +137,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { providerDisconnectPlan } from '@/features/workspace/customize/sections/llm-provider/utils';
@@ -303,7 +303,7 @@ export function ConnectedAccountsTabView({
       {canManageAccount ? (
         <>
           <section className="space-y-3">
-            <SettingsSectionHeader
+            <SettingsSubsectionHeader
               title="GitHub"
               description={githubDescription}
               action={githubAction}
@@ -330,7 +330,7 @@ export function ConnectedAccountsTabView({
 
       {/* 2. ChatGPT — project-scoped. */}
       <section className="space-y-3">
-        <SettingsSectionHeader
+        <SettingsSubsectionHeader
           title="ChatGPT"
           description={chatgptDescription}
           action={chatgptAction}
@@ -343,7 +343,7 @@ export function ConnectedAccountsTabView({
           this codebase (see this file's header comment). Honest disabled
           state rather than a button that does nothing. */}
       <section className="space-y-3">
-        <SettingsSectionHeader
+        <SettingsSubsectionHeader
           title="Claude Code"
           description="Claude Pro/Max subscription sign-in for this workspace isn't available yet — bring your own Anthropic API key from Models instead."
           action={

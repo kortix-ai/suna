@@ -87,7 +87,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
@@ -546,7 +546,7 @@ export function SnapshotsTabView({
             ) : null}
 
             <section className="space-y-4">
-              <SettingsSectionHeader title="Build log" />
+              <SettingsSubsectionHeader title="Build log" />
               {templateBuilds.length === 0 ? (
                 <div className="border-border rounded-md border">
                   <InlinePanelEmpty message="No builds recorded yet. The platform default builds once globally; custom templates build on first use." />
@@ -567,7 +567,7 @@ export function SnapshotsTabView({
 
             {acceleratorBuilds.length > 0 ? (
               <section className="space-y-4">
-                <SettingsSectionHeader title="Project accelerator" />
+                <SettingsSubsectionHeader title="Project accelerator" />
                 <InfoBanner
                   tone="neutral"
                   icon={SparklesSolid}

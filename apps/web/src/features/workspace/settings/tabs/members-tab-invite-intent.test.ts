@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { buildSettingsPanelSettingsNav } from '@/features/workspace/settings/settings-panel';
 import { consumeMembersTabIntent } from '@/features/workspace/customize/sections/view/members-view';
+import { buildSettingsPanelSettingsNav } from '@/features/workspace/settings/settings-panel';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**
@@ -33,7 +33,7 @@ beforeEach(() => {
   useSettingsPanelStore.setState({ open: false, tab: 'secrets', membersTab: 'people' });
 });
 
-describe('MembersTabInner\'s invite-intent consumption (command-palette.tsx:1146 -> members-tab.tsx)', () => {
+describe("MembersTabInner's invite-intent consumption (command-palette.tsx:1146 -> members-tab.tsx)", () => {
   test('a fresh Cmd+K "Invite members" intent is consumed on mount — the dialog should open', () => {
     // Step 1: Cmd+K "Invite members" -> openSettings('members', { membersTab: 'invite' }).
     useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
@@ -57,7 +57,11 @@ describe('MembersTabInner\'s invite-intent consumption (command-palette.tsx:1146
   test('consuming clears the intent in the same shot — a re-render does not see it again', () => {
     useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
     const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
-    consumeMembersTabIntent({ membersTab: nav.membersTab, activeTab: nav.activeTab, navigate: nav.navigate });
+    consumeMembersTabIntent({
+      membersTab: nav.membersTab,
+      activeTab: nav.activeTab,
+      navigate: nav.navigate,
+    });
 
     // Cleared on the live store.
     expect(useSettingsPanelStore.getState().membersTab).toBe('people');
