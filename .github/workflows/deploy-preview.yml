@@ -19,6 +19,7 @@ on:
           - auto
           - platinum
           - daytona
+          - e2b
   schedule:
     - cron: "17 6 * * *"
 
@@ -88,7 +89,7 @@ jobs:
             echo "::error::Pull request head is not a full Git SHA."
             exit 1
           }
-          case "$provider" in auto|platinum|daytona) ;; *) exit 1 ;; esac
+          case "$provider" in auto|platinum|daytona|e2b) ;; *) exit 1 ;; esac
 
           current="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.sha)"
           [ "$current" = "$sha" ] || {
