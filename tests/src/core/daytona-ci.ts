@@ -12,8 +12,8 @@ import {
   providerMetadataIdentifier,
 } from './platinum-ci';
 
-export const DAYTONA_CI_SNAPSHOT_VERSION = 'v5';
-const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v3';
+export const DAYTONA_CI_SNAPSHOT_VERSION = 'v6';
+const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v4';
 
 const POLL_MS = 3_000;
 const SNAPSHOT_TIMEOUT_MS = 45 * 60_000;
@@ -127,7 +127,7 @@ export function buildDaytonaBaseDockerfile(input: {
   return `FROM ${PLATINUM_CI_NODE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
-RUN set -eux; apt-get update; apt-get install -y --no-install-recommends ca-certificates curl docker.io git iptables jq kmod postgresql-client procps ripgrep unzip xz-utils; rm -rf /var/lib/apt/lists/*
+RUN set -eux; apt-get update; apt-get install -y --no-install-recommends ca-certificates curl docker.io fuse-overlayfs git iptables jq kmod postgresql-client procps ripgrep unzip xz-utils; rm -rf /var/lib/apt/lists/*
 RUN set -eux; ${dockerComposeInstallCommand()}
 RUN npm install --global bun@${PLATINUM_CI_BUN_VERSION} && corepack prepare pnpm@${PLATINUM_CI_PNPM_VERSION} --activate
 RUN set -eux; mkdir -p /workspace /root/.cache/ms-playwright; git init /workspace/suna; git -C /workspace/suna remote add origin https://github.com/${input.repository}.git; git -C /workspace/suna fetch --depth=1 origin ${input.cacheSha}; git -C /workspace/suna checkout --detach FETCH_HEAD; test "$(git -C /workspace/suna rev-parse HEAD)" = "${input.cacheSha}"
@@ -495,7 +495,7 @@ exec > >(tee -a /workspace/daytona-warm.log) 2>&1
 cd /workspace/suna
 rm -f /workspace/.kortix-ci-warm-ready /var/run/docker.pid /var/run/docker.sock
 for module in bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module" || true; done
-dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs >/workspace/daytona-dockerd.log 2>&1 &
+dockerd --host=unix:///var/run/docker.sock --storage-driver=fuse-overlayfs >/workspace/daytona-dockerd.log 2>&1 &
 timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 docker info >/dev/null
 pnpm exec supabase start --ignore-health-check

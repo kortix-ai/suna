@@ -176,7 +176,7 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toMatch(/if docker compose .* up -d --wait --wait-timeout 300; then/);
     expect(script).toContain('test "$stack_attempt" -lt 2');
     expect(script).toContain('pnpm test -- --target-full');
-    expect(script).not.toContain('--storage-driver=vfs');
+    expect(script).not.toContain('--storage-driver=fuse-overlayfs');
     expect(script).toContain('/workspace/kortix-test-results.tar.gz');
     expect(script).toContain('kortix-preview.exit');
     expect(script).not.toContain('ecs-preview');
@@ -192,7 +192,9 @@ describe('provider-neutral preview lifecycle', () => {
       origin: 'https://preview.example.com/',
     });
 
-    expect(script).toContain('dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs');
+    expect(script).toContain(
+      'dockerd --host=unix:///var/run/docker.sock --storage-driver=fuse-overlayfs',
+    );
   });
 
   it('falls back only after a Platinum infrastructure failure', async () => {

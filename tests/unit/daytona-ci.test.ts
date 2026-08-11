@@ -38,9 +38,9 @@ describe('Daytona CI worker plan', () => {
   });
 
   test('uses one content-addressed warm snapshot for one lockfile', () => {
-    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v5');
-    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v5-bbbbbbbbbbbbbbbb');
-    expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v3-bbbbbbbbbbbbbbbb-base');
+    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v6');
+    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v6-bbbbbbbbbbbbbbbb');
+    expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v4-bbbbbbbbbbbbbbbb-base');
   });
 
   test('builds the same pinned toolchain and repository cache as Platinum', () => {
@@ -55,6 +55,7 @@ describe('Daytona CI worker plan', () => {
     expect(dockerfile).toContain('sha256sum -c -');
     expect(dockerfile).toContain('docker compose version');
     expect(dockerfile).toContain('kmod');
+    expect(dockerfile).toContain('fuse-overlayfs');
     expect(dockerfile).toContain('postgresql-client');
     expect(dockerfile).toContain('bun@1.3.14');
     expect(dockerfile).toContain('pnpm@8.11.0');
@@ -70,7 +71,7 @@ describe('Daytona CI worker plan', () => {
     expect(script).toContain('.kortix-ci-warm-ready');
     expect(script).toContain('daytona-warm.exit');
     expect(script).toContain('modprobe "$module" || true');
-    expect(script).toContain('--storage-driver=vfs');
+    expect(script).toContain('--storage-driver=fuse-overlayfs');
     expect(script).toContain('pkill -TERM -x dockerd');
     expect(script).toContain('pgrep -x containerd');
     expect(script).toContain('rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes');

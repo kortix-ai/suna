@@ -227,7 +227,7 @@ describe('Platinum CI worker plan', () => {
     expect(script).not.toContain('supabase_bridge_ready=1');
     expect(script).toContain('tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results');
     expect(script).toContain('tests/test-results/platinum');
-    expect(script).not.toContain('--storage-driver=vfs');
+    expect(script).not.toContain('--storage-driver=fuse-overlayfs');
   });
 
   test('uses the kernel-independent Docker storage driver on Daytona workers', () => {
@@ -239,7 +239,9 @@ describe('Platinum CI worker plan', () => {
       provider: 'daytona',
     });
 
-    expect(script).toContain('dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs');
+    expect(script).toContain(
+      'dockerd --host=unix:///var/run/docker.sock --storage-driver=fuse-overlayfs',
+    );
   });
 
   test('prestarts only the disposable browser database and leaves product processes to the root runner', () => {

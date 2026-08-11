@@ -209,7 +209,7 @@ for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; 
 done
 if ! docker info >/dev/null 2>&1; then
   rm -f /var/run/docker.pid /var/run/docker.sock
-  nohup dockerd --host=unix:///var/run/docker.sock ${input.provider === 'daytona' ? '--storage-driver=vfs' : ''} > "$STATE/dockerd.log" 2>&1 &
+  nohup dockerd --host=unix:///var/run/docker.sock ${input.provider === 'daytona' ? '--storage-driver=fuse-overlayfs' : ''} > "$STATE/dockerd.log" 2>&1 &
   timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 fi
 docker info >/dev/null
