@@ -21,8 +21,8 @@ const input = {
   sha: 'a'.repeat(40),
 };
 
-const previewPrivateKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey
-  .export({ type: 'pkcs8', format: 'pem' })
+const previewPrivateKey = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  .privateKey.export({ type: 'pkcs8', format: 'pem' })
   .toString();
 
 const previewSecrets = {
@@ -34,7 +34,7 @@ const previewSecrets = {
 };
 
 describe('provider-neutral preview lifecycle', () => {
-  it('accepts one dedicated managed Git installation with repository administration', async () => {
+  it('accepts one dedicated managed Git installation with repository and organization administration', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -47,7 +47,12 @@ describe('provider-neutral preview lifecycle', () => {
               id: 140097279,
               account: { login: 'managed-kortix', type: 'Organization' },
               repository_selection: 'all',
-              permissions: { administration: 'write', contents: 'write', metadata: 'read' },
+              permissions: {
+                administration: 'write',
+                organization_administration: 'write',
+                contents: 'write',
+                metadata: 'read',
+              },
             },
           ]),
           { status: 200 },
@@ -111,7 +116,12 @@ describe('provider-neutral preview lifecycle', () => {
               id: 140097279,
               account: { login: 'managed-kortix', type: 'Organization' },
               repository_selection: 'selected',
-              permissions: { administration: 'write', contents: 'write', metadata: 'read' },
+              permissions: {
+                administration: 'write',
+                organization_administration: 'write',
+                contents: 'write',
+                metadata: 'read',
+              },
             },
           ]),
           { status: 200 },
@@ -123,7 +133,7 @@ describe('provider-neutral preview lifecycle', () => {
     ).rejects.toThrow('repository access must include all repositories; received selected');
   });
 
-  it('rejects the dedicated installation without repository administration permission', async () => {
+  it('rejects the dedicated installation without either administration permission', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -146,8 +156,37 @@ describe('provider-neutral preview lifecycle', () => {
     await expect(
       assertPreviewManagedGitInstallation({ secrets: previewSecrets, fetchImpl }),
     ).rejects.toThrow(
-      'permissions must be administration:write and contents:write; received administration:missing contents:write',
+      'permissions must be administration:write, organization_administration:write, and contents:write; received administration:missing organization_administration:missing contents:write',
     );
+  });
+
+  it('rejects repository administration without organization administration', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 3812697, slug: 'kortix-preview-test' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: 140097279,
+              account: { login: 'managed-kortix', type: 'Organization' },
+              repository_selection: 'all',
+              permissions: {
+                administration: 'write',
+                contents: 'write',
+                metadata: 'read',
+              },
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+
+    await expect(
+      assertPreviewManagedGitInstallation({ secrets: previewSecrets, fetchImpl }),
+    ).rejects.toThrow('organization_administration:missing');
   });
 
   it('uses one stable sandbox name per pull request', () => {

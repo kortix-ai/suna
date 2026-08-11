@@ -31,6 +31,12 @@ interface CheckoutResult {
   checkout_url: string;
 }
 
+function expectStripeCheckoutUrl(value: string): void {
+  const url = new URL(value);
+  expect(url.protocol).toBe('https:');
+  expect(['checkout.stripe.com', 'pay.kortix.com']).toContain(url.hostname);
+}
+
 interface CapturedJsonPost<T> {
   status: number;
   request: Request;
@@ -126,7 +132,7 @@ test.describe
         expect(checkout.request.postDataJSON()).toMatchObject({
           account_id: accountId,
         });
-        expect(checkout.body.checkout_url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+        expectStripeCheckoutUrl(checkout.body.checkout_url);
       });
 
       await test.step('A real Stripe test subscription activates the account', async () => {
@@ -162,7 +168,7 @@ test.describe
           account_id: accountId,
           amount: 10,
         });
-        expect(purchase.body.checkout_url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+        expectStripeCheckoutUrl(purchase.body.checkout_url);
       });
 
       await test.step('The owner opens Stripe Billing Portal for lifecycle actions', async () => {

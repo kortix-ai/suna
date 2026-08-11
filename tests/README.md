@@ -102,7 +102,8 @@ The runtime secret allowlist contains `DAYTONA_API_KEY`,
 for the dedicated preview GitHub App installation. Mailpit handles preview
 email. The GitHub App runs the real managed repository and CLI push flows. Its
 single `managed-kortix` organization installation must grant access to all
-repositories with `Administration: write` and `Contents: write`.
+repositories with repository `Administration: write`, organization
+`Administration: write`, and repository `Contents: write`.
 OAuth initiation is the only allowed preview browser exclusion. All API flow
 exclusions and all other browser journey exclusions fail the preview test.
 

@@ -108,7 +108,7 @@ export async function assertPreviewManagedGitInstallation(input: {
   ) {
     throw new Error(
       `preview GitHub App installation mismatch: expected ${expectedInstallationId}/${expectedOwner}/Organization; ` +
-      `received ${installation.id ?? 'missing'}/${actualOwner || 'missing'}/${installation.account?.type ?? 'missing'}`,
+        `received ${installation.id ?? 'missing'}/${actualOwner || 'missing'}/${installation.account?.type ?? 'missing'}`,
     );
   }
   if (installation.repository_selection !== 'all') {
@@ -118,11 +118,19 @@ export async function assertPreviewManagedGitInstallation(input: {
     );
   }
   const administration = installation.permissions?.administration;
+  const organizationAdministration = installation.permissions?.organization_administration;
   const contents = installation.permissions?.contents;
-  if (administration !== 'write' || contents !== 'write') {
+  if (
+    administration !== 'write' ||
+    organizationAdministration !== 'write' ||
+    contents !== 'write'
+  ) {
     throw new Error(
-      `preview GitHub App permissions must be administration:write and contents:write; ` +
-        `received administration:${administration ?? 'missing'} contents:${contents ?? 'missing'}`,
+      `preview GitHub App permissions must be administration:write, ` +
+        `organization_administration:write, and contents:write; ` +
+        `received administration:${administration ?? 'missing'} ` +
+        `organization_administration:${organizationAdministration ?? 'missing'} ` +
+        `contents:${contents ?? 'missing'}`,
     );
   }
   return {
@@ -261,7 +269,10 @@ printf 'ready\n' > "$PHASE"
 }
 
 export class PreviewInfrastructureError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(
+    message: string,
+    readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'PreviewInfrastructureError';
   }
@@ -301,7 +312,9 @@ export async function runSandboxPreview(
     return await runners.platinum(input);
   } catch (error) {
     if (!(error instanceof PreviewInfrastructureError)) throw error;
-    console.warn(`[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`);
+    console.warn(
+      `[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`,
+    );
     return runners.daytona(input);
   }
 }

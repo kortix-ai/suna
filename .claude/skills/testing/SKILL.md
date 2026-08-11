@@ -172,5 +172,6 @@ must change together.
 The preview warm image can contain dependencies and Docker layers. It must not
 contain a database or runtime secret. Keep the runtime secret allowlist in
 `tests/src/core/preview-stack.ts`. Use the dedicated preview GitHub App for the
-managed repository and CLI push flows. OAuth initiation remains an explicit
-preview exclusion until a stable callback broker exists.
+managed repository and CLI push flows. It requires repository and organization
+`Administration: write` plus repository `Contents: write`. OAuth initiation
+remains an explicit preview exclusion until a stable callback broker exists.
