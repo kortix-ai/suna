@@ -157,12 +157,17 @@ await runAll([
 
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
 // removing idle CPU time between independent load classes. The API has three
-// workers. The CLI has four. The agent server and pnpm each add one supervisor.
+// workers. The CLI has two. The agent server and pnpm each add one supervisor.
 await runAll([
   runWorkspaceTests(['kortix-api'], 1, {
     KORTIX_API_TEST_WORKERS: '3',
   }),
-  runWorkspaceTests(['@kortix/cli', '@kortix/sandbox-agent-server'], 2),
+  runWorkspaceTests(['@kortix/cli', '@kortix/sandbox-agent-server'], 2, {
+    // Keep the package lane within the 6 vCPU Daytona worker. The API wave
+    // uses three workers concurrently. Four CLI workers can starve git setup
+    // hooks until their 30-second timeout expires.
+    KORTIX_CLI_TEST_WORKERS: '2',
+  }),
 ]);
 await runAll([
   (async () => {
