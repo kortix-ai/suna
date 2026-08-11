@@ -6,11 +6,13 @@
 // rotation = disable + create new.
 
 import { errorToast, successToast } from '@/components/ui/toast';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
   CheckIcon as Check,
   CopyIcon as Copy,
   ArrowSquareOutIcon as ExternalLink,
+  KeyIcon as KeyRound,
   DotsThreeIcon as MoreHorizontal,
   PauseCircleIcon as PauseCircle,
   PlusIcon as Plus,
@@ -136,15 +138,44 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
           }
         />
       ) : sas.length === 0 ? (
-        <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
-          No service accounts yet. Create one to get a bearer token for your CI and automations.
-        </div>
+        /* The empty state told you to "create one" and gave you nothing to
+           click — the only trigger was the small secondary button in this
+           card's header, which is where an empty list is least likely to send
+           your eye. Reported as "there is no option to create a new API key".
+           It now carries the action itself, on the same `canManage` gate as
+           the header button so a read-only viewer is not offered a control
+           that would fail. */
+        <EmptyState
+          size="sm"
+          icon={KeyRound}
+          title="No service accounts yet"
+          description="Create one to get a bearer token for your CI and automations."
+          action={
+            canManage ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCreateOpen(true)}
+                className="gap-1.5"
+              >
+                <Plus className="size-4 shrink-0" />
+                New service account
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
         <Table className="overflow-hidden rounded-md">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Name</TableHead>
               <TableHead>Status</TableHead>
+              {/* `created_at` has always been on `ServiceAccount`
+                  (`projects-client/iam.ts:743`) and was never surfaced — the
+                  gap recorded when this tab was built. "When was this key
+                  made" is the question you ask before revoking one, so it
+                  earns a column rather than a tooltip. */}
+              <TableHead>Created</TableHead>
               <TableHead>Last used</TableHead>
               <TableHead className="w-[52px]">
                 <span className="sr-only">Actions</span>
@@ -170,7 +201,12 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
                     {sa.status}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-muted-foreground align-top text-xs whitespace-normal">
+                <TableCell className="text-muted-foreground align-top text-xs whitespace-normal tabular-nums">
+                  {formatRelative(sa.created_at)}
+                </TableCell>
+                {/* `tabular-nums` on both date columns so the figures line up
+                    down the table instead of wandering row to row. */}
+                <TableCell className="text-muted-foreground align-top text-xs whitespace-normal tabular-nums">
                   {sa.last_used_at ? formatRelative(sa.last_used_at) : 'never'}
                 </TableCell>
                 <TableCell className="align-top">

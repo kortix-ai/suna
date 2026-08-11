@@ -32,14 +32,26 @@ describe('ApiKeysTabView', () => {
     expect(out).toContain('service-accounts-content');
   });
 
-  test('the PAT policy slot renders before the service accounts slot — matches page.tsx:591-592', () => {
+  /**
+   * This assertion used to run the other way — service accounts after the PAT
+   * policy, "matches page.tsx:591-592". That pinned fidelity to the legacy
+   * account page's order, which was the right call while this tab was a port
+   * of it and the wrong one afterwards: it put a CLI-token *policy* form first
+   * and the actual key table, with the only control that creates a key, third.
+   * Jay reported it as "there is no option to create a new API key" — the
+   * button existed, behind a form nobody opened this tab for.
+   *
+   * Rewritten rather than deleted, so the order stays pinned and a future
+   * reorder is a decision someone makes on purpose.
+   */
+  test('the service accounts slot renders before the PAT policy slot', () => {
     const out = renderToStaticMarkup(
       <ApiKeysTabView
         patPolicySlot={<div>pat-policy-marker</div>}
         serviceAccountsSlot={<div>service-accounts-marker</div>}
       />,
     );
-    expect(out.indexOf('pat-policy-marker')).toBeLessThan(out.indexOf('service-accounts-marker'));
+    expect(out.indexOf('service-accounts-marker')).toBeLessThan(out.indexOf('pat-policy-marker'));
   });
 
   test('with no slots supplied, the header still renders (each real card does its own loading state)', () => {

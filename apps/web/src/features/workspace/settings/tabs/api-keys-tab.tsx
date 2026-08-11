@@ -167,8 +167,14 @@ export function ApiKeysTabView({ patPolicySlot, serviceAccountsSlot }: ApiKeysTa
     <div className="mx-auto w-full max-w-4xl px-6 py-10">
       <div className="space-y-10">
         <SettingsTabHeader tab="api-keys" />
-        {patPolicySlot}
+        {/* Service accounts lead, policy follows. They were the other way
+            round, so landing on "API keys" put a CLI-token *policy* form
+            first and the actual key table — and the only control that makes a
+            key — third. Reported as "there is no option to create a new API
+            key": the create button was real, just behind a form nobody came
+            for. The thing the tab is named after goes first. */}
         {serviceAccountsSlot}
+        {patPolicySlot}
 
         <section className="space-y-4">
           <SettingsSectionHeader
