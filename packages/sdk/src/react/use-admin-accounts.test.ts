@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ADMIN_OVERRIDE_KEYS,
   adminAccountLookupPath,
+  adminAccountOverridesPath,
   adminMemberRolePath,
   useAdminAccount,
   useAdminSetMemberRole,
+  useAdminSetOverrides,
   type AdminAccount,
   type AdminAccountMemberRole,
+  type AdminEntitlementOverridePatch,
+  type AdminEntitlementOverrides,
 } from './use-admin-accounts';
 
 describe('admin single-account lookup contract', () => {
@@ -62,5 +67,85 @@ describe('admin accounts list — resolved plan block', () => {
     expect(grandfathered.plan?.label).toBe('Team');
     expect(grandfathered.plan?.sublabel).toContain('grandfathered');
     expect(olderApi.plan).toBeUndefined();
+  });
+});
+
+describe('admin entitlement-override mutation contract', () => {
+  // PUT /admin/api/accounts/{id}/overrides is the ONE route behind every
+  // override the console can set, so the path builder is the single place the
+  // hook derives the wire contract from.
+  test('adminAccountOverridesPath targets the merge-patch route', () => {
+    expect(adminAccountOverridesPath('acct_1')).toBe('/admin/api/accounts/acct_1/overrides');
+  });
+
+  test('adminAccountOverridesPath encodes an id that needs it', () => {
+    expect(adminAccountOverridesPath('acct 1/2')).toBe('/admin/api/accounts/acct%201%2F2/overrides');
+  });
+
+  test('useAdminSetOverrides is exported as a hook', () => {
+    expect(typeof useAdminSetOverrides).toBe('function');
+  });
+
+  // The ten keys the server's `validateOverridePatch` accepts — an unknown key
+  // is a 400, so the console must not be able to invent one.
+  test('ADMIN_OVERRIDE_KEYS is exactly the server-side override catalog', () => {
+    expect([...ADMIN_OVERRIDE_KEYS]).toEqual([
+      'enterpriseEntitled',
+      'demoEnterprise',
+      'managedModelsOverride',
+      'maxConcurrentSessions',
+      'computeRateMultiplier',
+      'sso',
+      'scim',
+      'rbac',
+      'auditAccess',
+      'managedModels',
+    ]);
+  });
+
+  // Merge-patch (RFC 7386): an entry sets, `null` deletes, an absent key is
+  // left alone. The type must permit `null` or a form that only knows one
+  // field cannot delete it.
+  test('a patch accepts an entry, an expiring entry, and null to delete', () => {
+    const patch: AdminEntitlementOverridePatch = {
+      computeRateMultiplier: { value: 0.5 },
+      sso: { value: true, expires_at: '2026-09-01T00:00:00.000Z' },
+      managedModels: null,
+    };
+
+    expect(patch.computeRateMultiplier).toEqual({ value: 0.5 });
+    expect(patch.sso?.expires_at).toBe('2026-09-01T00:00:00.000Z');
+    expect(patch.managedModels).toBeNull();
+  });
+});
+
+describe('admin accounts list — stored entitlement overrides', () => {
+  // The row carries the STORED map (expiry not applied), which is what an
+  // operator must see — including a lapsed entry — plus the RESOLVED compute
+  // multiplier the meter actually bills at. Both stay optional so a console
+  // pointed at an older API still type-checks.
+  test('AdminAccount carries the stored override map and it is optional', () => {
+    const overridden: Pick<AdminAccount, 'entitlementOverrides' | 'computeRateMultiplier'> = {
+      entitlementOverrides: {
+        computeRateMultiplier: { value: 0.5 },
+        sso: { value: true, expires_at: '2026-09-01T00:00:00.000Z' },
+      },
+      computeRateMultiplier: 0.5,
+    };
+    const olderApi: Pick<AdminAccount, 'entitlementOverrides' | 'computeRateMultiplier'> = {};
+
+    expect(overridden.entitlementOverrides?.computeRateMultiplier?.value).toBe(0.5);
+    expect(overridden.entitlementOverrides?.sso?.expires_at).toBe('2026-09-01T00:00:00.000Z');
+    expect(overridden.computeRateMultiplier).toBe(0.5);
+    expect(olderApi.entitlementOverrides).toBeUndefined();
+  });
+
+  // JSONB written by admin routes, migrations, and operator SQL: the value is
+  // `unknown` on purpose, so every reader narrows before it renders.
+  test('an override entry value is unknown until narrowed', () => {
+    const stored: AdminEntitlementOverrides = { maxConcurrentSessions: { value: 12 } };
+    const raw: unknown = stored.maxConcurrentSessions?.value;
+
+    expect(typeof raw === 'number' ? raw : null).toBe(12);
   });
 });

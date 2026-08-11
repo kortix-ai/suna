@@ -61,6 +61,8 @@ jobs:
         run: python3 infra/terraform/scripts/test_audit_nacl_admin_ports.py
       - name: web ALB WAF association tests
         run: python3 infra/terraform/scripts/test_web_waf_associations.py
+      - name: ALB log bucket versioning regression test
+        run: python3 infra/terraform/scripts/test_alb_log_bucket_versioning.py
       - name: preview runtime contract tests
         run: python3 infra/scripts/test-ecs-preview-runtime.py
       - name: terraform validate (every root)

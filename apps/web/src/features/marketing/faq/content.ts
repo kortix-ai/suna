@@ -41,10 +41,12 @@
  * 2026-07-31. Do not soften, inflate, or "restore" any of it.
  * ==========================================================================
  *  - PRICE. Managed cloud is $40 / seat / mo — `apps/web/src/features/billing/
- *    pricing-plans.ts:33` (`price: '$40'`, `unit: '/ seat / mo'`). Free is $0
- *    with "200 credits / month for sandbox compute" and "1 project" (:22-27).
- *    Team carries "2,500 credits / month per seat, pooled" (:40). Quote no other
- *    figure, and never invent a discount, a trial length or a usage rate.
+ *    pricing-plans.ts`, the `team_seat` entry of `PRICING_PLANS` (`price: '$40'`,
+ *    `unit: '/ seat / mo'`). Its `free` entry is $0 with "200 credits / month for
+ *    sandbox compute" and "1 project". `team_seat` carries "2,500 credits /
+ *    month per seat, pooled". (Cited by plan id, not line number — the ids are
+ *    stable, the line numbers were not.) Quote no other figure, and never invent
+ *    a discount, a trial length or a usage rate.
  *  - MODELS. The ChatGPT subscription path is REAL — Codex device-grant OAuth,
  *    `apps/api/src/projects/codex-device-auth.ts`. There is NO Cursor auth path
  *    and no Claude-subscription auth path anywhere in the codebase, however

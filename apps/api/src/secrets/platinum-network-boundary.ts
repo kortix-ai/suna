@@ -26,6 +26,14 @@ const DESCRIPTION_PREFIX = 'kortix-network-v1';
  * name only: it also paid 40 sequential round-trips, so the real ceiling was
  * 10s PLUS provider latency, and it hammered the provider with 40 GETs.
  *
+ * 45s because the old 10s was simply below the provider's real latency, which is
+ * why arming a boundary secret failed provisioning outright. Measured against
+ * api.platinum.dev on a live dev sandbox: PUT returned `arming` in 1.9s and the
+ * edge reported `armed` after **17s**. 45s leaves room for a slower day without
+ * waiting forever. Session provisioning already takes ~40-60s and is fail-closed
+ * here on purpose, so it can afford the wait; the user's turn cannot, which is
+ * why the prompt path bounds its own patience instead of shortening this.
+ *
  * The budget stays generous because the caller that must NOT proceed without an
  * armed edge — session provision (platform/services/session-sandbox.ts) — has to
  * either arm or fail. Callers on a user's hot path must not adopt this as their
@@ -33,7 +41,7 @@ const DESCRIPTION_PREFIX = 'kortix-network-v1';
  * background (see PROMPT_BOUNDARY_ARM_WAIT_MS in
  * projects/lib/sandbox-env-sync.ts).
  */
-const ARM_TIMEOUT_MS = 10_000;
+const ARM_TIMEOUT_MS = 45_000;
 const ARM_POLL_MIN_MS = 150;
 const ARM_POLL_MAX_MS = 1_000;
 

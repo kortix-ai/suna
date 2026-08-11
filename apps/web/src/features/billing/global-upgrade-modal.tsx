@@ -121,6 +121,9 @@ export function UpgradePlansModal({
     });
   };
 
+  // Keyed by MARKETING plan id (display-only — see pricing-plans.ts). The
+  // account's real plan is `isPerSeat` / `resolvedPlan(accountState)`, never
+  // one of these ids.
   const planActions: Record<UpgradeModalPlanId, React.ReactNode> = {
     free: (
       <Button
@@ -132,7 +135,7 @@ export function UpgradePlansModal({
         Continue on Free
       </Button>
     ),
-    team: canManageBilling ? (
+    team_seat: canManageBilling ? (
       <div className="space-y-2">
         {hasSeatMath && (
           <p className="text-muted-foreground text-center text-xs tabular-nums">
@@ -180,7 +183,7 @@ export function UpgradePlansModal({
   // core bug here). The top-up view already handles per-seat/subscribed
   // accounts, so this plans view is only reached for free/no-plan accounts.
   const planBadges: Partial<Record<UpgradeModalPlanId, string>> = isPerSeat
-    ? { team: 'Current plan' }
+    ? { team_seat: 'Current plan' }
     : { free: 'Current plan' };
 
   return (
@@ -207,7 +210,7 @@ export function UpgradePlansModal({
                 compact
                 action={planActions[plan.id]}
                 badgeOverride={planBadges[plan.id]}
-                priceOverride={plan.id === 'team' ? `$${pricePerSeat}` : undefined}
+                priceOverride={plan.id === 'team_seat' ? `$${pricePerSeat}` : undefined}
               />
             ))}
           </div>

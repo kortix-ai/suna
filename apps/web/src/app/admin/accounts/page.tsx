@@ -11,6 +11,7 @@ import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   CreditCardIcon as CreditCard,
+  EyeIcon as Eye,
   ArrowSquareOutIcon as ExternalLink,
   FunnelIcon as Filter,
   KanbanIcon as FolderKanban,
@@ -62,11 +63,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { CreditTransactionsTable } from '@/features/billing/transactions-table';
 import {
   useAdminAccountLedger,
   useAdminAccountProjects,
   useAdminAccountUsers,
   useAdminAccounts,
+  useAdminImpersonate,
   useAdminDebitCredits,
   useAdminGrantCredits,
   useAdminGrantTrial,
@@ -75,6 +78,7 @@ import {
   useAdminAccount,
   useAdminSetEnterpriseEntitled,
   useAdminSetMemberRole,
+  useAdminSetOverrides,
   type AdminAccountMemberRole,
   useAdminSetManagedModels,
   type AdminAccount,
@@ -83,9 +87,24 @@ import {
   type AdminAccountsSortDir,
 } from '@/hooks/admin/use-admin-accounts';
 import { useDebounce } from '@/hooks/use-debounced-value';
+import { clearLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
+import { adminLedgerRows } from './ledger-rows';
+import {
+  MAX_COMPUTE_RATE_MULTIPLIER,
+  MAX_CONCURRENT_SESSIONS_OVERRIDE,
+  describeOverridePatch,
+  draftFromOverrides,
+  isEmptyPatch,
+  isOverrideExpired,
+  overrideExpiresAt,
+  overridesPatch,
+  type BooleanOverrideKey,
+  type OverrideTriState,
+  type OverridesDraft,
+} from './overrides-form';
 import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 
 const PAGE_SIZE = 50;
@@ -1134,15 +1153,98 @@ function AccountDetailSheet({
   account: AdminAccount | null;
   onClose: () => void;
 }) {
+  // 1120 on lg, not 960: the Ledger tab renders the same six-column credit
+  // table the customer sees, which needs ~1040px before it starts hiding
+  // "Credits after" behind a horizontal scrollbar nobody finds.
   return (
     <Sheet open={!!account} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto p-0 sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[960px]"
+        className="w-full overflow-y-auto p-0 sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[1120px]"
       >
         {account && <AccountDetail account={account} />}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * "Open as account" — mint a one-hour act-as grant and walk into the product
+ * as this customer.
+ *
+ * Behind a confirm, because it is the single most invasive thing this console
+ * can do: from the click on, everything the operator sees and every write they
+ * make lands on the customer's account, and the customer's own audit log
+ * records it. The reason box is optional but asked for by default — it is what
+ * makes the audit row answer "why" and not just "who".
+ *
+ * The navigation is a full page load, not a router push: the SDK's request
+ * layer starts attaching the grant to every call, and a soft transition would
+ * leave a React Query cache full of the OPERATOR's data behind a banner
+ * naming the customer.
+ */
+function OpenAsAccountButton({ account }: { account: AdminAccount }) {
+  const impersonate = useAdminImpersonate();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const start = () => {
+    impersonate.mutate(
+      { accountId: account.accountId, reason: reason.trim() || undefined },
+      {
+        onSuccess: () => {
+          setOpen(false);
+          // Drop the "project you had open last" cookie first: it points at one
+          // of the OPERATOR's own projects, and the landing door reads it. The
+          // API now (correctly) refuses that project inside a session, because
+          // impersonation confines the operator to one account.
+          clearLastProjectId();
+          // Land on the customer's ACCOUNT page, not the landing door. The
+          // landing door is `/projects/start`, which AUTO-PROVISIONS a first
+          // project for an account that has none — so simply opening a quiet
+          // customer's account would silently create a project inside it. The
+          // account page creates nothing and is where a support question about
+          // billing, members or entitlements actually lives.
+          //
+          // A HARD load, deliberately — a router push would keep the React
+          // Query cache this console filled with the operator's own data.
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+          window.location.assign(`/accounts/${account.accountId}`);
+        },
+        onError: (error) => errorToast(error.message || 'Could not open the account'),
+      },
+    );
+  };
+
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
+        <Eye className="h-3.5 w-3.5" />
+        Open as account
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Act as ${account.name || 'this account'}?`}
+        description={
+          <span className="space-y-3">
+            <span className="block">
+              For up to one hour, everything you do lands on this account. Every change you
+              make is written to the customer's own audit log with your identity attached.
+            </span>
+            <Input
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Reason (e.g. ticket #1234)"
+              maxLength={500}
+            />
+          </span>
+        }
+        confirmLabel="Open as account"
+        onConfirm={start}
+        isPending={impersonate.isPending}
+      />
+    </>
   );
 }
 
@@ -1175,6 +1277,9 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           </span>
           <span className="font-mono text-xs">{account.accountId}</span>
         </SheetDescription>
+        <div className="pt-3">
+          <OpenAsAccountButton account={account} />
+        </div>
         {actions.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pt-3">
             {actions.map((a) => (
@@ -1480,19 +1585,254 @@ function CreditsTab({ account }: { account: AdminAccount }) {
 function EntitlementRow({
   title,
   description,
+  titleSuffix,
   children,
 }: {
   title: string;
   description: string;
+  /** Sits beside the title — an expiry chip, a status badge. */
+  titleSuffix?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
-        <div className="text-foreground text-sm font-medium">{title}</div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-foreground text-sm font-medium">{title}</span>
+          {titleSuffix}
+        </div>
         <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">{description}</p>
       </div>
       <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * The per-entitlement override rows. These apply AFTER the enterprise
+ * expansion, which is what makes them useful: one capability can be switched
+ * off for an account whose plan (or Enterprise flag) grants all of them.
+ */
+const OVERRIDE_ENTITLEMENT_ROWS: {
+  key: BooleanOverrideKey;
+  title: string;
+  description: string;
+}[] = [
+  { key: 'sso', title: 'SSO', description: 'SAML / OIDC single sign-on for the account.' },
+  { key: 'scim', title: 'SCIM', description: 'Directory-driven user provisioning.' },
+  { key: 'rbac', title: 'Advanced RBAC', description: 'Custom roles and per-resource permissions.' },
+  {
+    key: 'auditAccess',
+    title: 'Audit log access',
+    description: "Read access to the account's own audit trail.",
+  },
+  {
+    key: 'managedModels',
+    title: 'Managed models entitlement',
+    description:
+      'Applied after the switch above, so it can withdraw managed models from an otherwise entitled account.',
+  },
+];
+
+const OVERRIDE_TRI_STATE_OPTIONS: { value: OverrideTriState; label: string }[] = [
+  { value: 'inherit', label: 'Inherit' },
+  { value: 'on', label: 'Force on' },
+  { value: 'off', label: 'Force off' },
+];
+
+/** Short date for an expiry chip — the year matters, the minute does not. */
+function formatDay(value: string): string {
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/**
+ * An override with an `expires_at`. Shown even once it has lapsed: the row
+ * projection does not apply expiry, so the operator sees what is stored and can
+ * clear it.
+ */
+function OverrideExpiryChip({ expiresAt }: { expiresAt: string | null }) {
+  if (!expiresAt) return null;
+  const expired = isOverrideExpired(expiresAt);
+  return (
+    <Badge variant={expired ? 'muted' : 'warning'} size="xs">
+      {expired ? `expired ${formatDay(expiresAt)}` : `expires ${formatDay(expiresAt)}`}
+    </Badge>
+  );
+}
+
+/**
+ * Every override an account can carry, on one merge-patch save.
+ *
+ * The form holds a draft and sends only the rows that changed — see
+ * `overrides-form.ts` for why an untouched row must never be re-sent. It has no
+ * expiry field on purpose: an expiring grant comes from the trial primitive
+ * above, and this card is where an operator inspects or clears one.
+ */
+function OverridesCard({ account }: { account: AdminAccount }) {
+  const setOverrides = useAdminSetOverrides();
+  const stored = account.entitlementOverrides ?? null;
+
+  // Re-seed the draft whenever the account row changes underneath it (a save,
+  // a trial grant, another operator). Comparing the serialized map is the
+  // documented "adjust state during render" pattern — no effect, no flash of
+  // stale controls.
+  const storedKey = JSON.stringify(stored ?? {});
+  const [syncedKey, setSyncedKey] = useState(storedKey);
+  const [draft, setDraft] = useState<OverridesDraft>(() => draftFromOverrides(stored));
+  if (storedKey !== syncedKey) {
+    setSyncedKey(storedKey);
+    setDraft(draftFromOverrides(stored));
+  }
+
+  const result = overridesPatch(draft, stored);
+  const patch = result.ok ? result.patch : {};
+  const nothingToSave = result.ok && isEmptyPatch(patch);
+  const dirty = !result.ok || !nothingToSave;
+
+  function setRow<K extends keyof OverridesDraft>(key: K, value: OverridesDraft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleSave() {
+    if (!result.ok || isEmptyPatch(result.patch)) return;
+    try {
+      await setOverrides.mutateAsync({ accountId: account.accountId, patch: result.patch });
+      successToast('Overrides saved', { description: describeOverridePatch(result.patch) });
+    } catch (error) {
+      errorToast('Failed to save overrides', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  const effectiveMultiplier = account.computeRateMultiplier;
+
+  return (
+    <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-foreground text-sm font-medium">Overrides</div>
+          <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">
+            Per-account values that beat the plan. Blank or Inherit means the plan decides. Saving a
+            row writes it permanently — a grant that should end belongs in a trial.
+          </p>
+        </div>
+        {dirty && (
+          <Badge variant="kortix" size="sm">
+            unsaved
+          </Badge>
+        )}
+      </div>
+
+      <div className="border-border/60 divide-border divide-y rounded-md border">
+        {OVERRIDE_ENTITLEMENT_ROWS.map(({ key, title, description }) => (
+          <div key={key} className="px-4 py-3">
+            <EntitlementRow
+              title={title}
+              description={description}
+              titleSuffix={<OverrideExpiryChip expiresAt={overrideExpiresAt(stored, key)} />}
+            >
+              <Select
+                value={draft[key]}
+                onValueChange={(value) => setRow(key, value as OverrideTriState)}
+                disabled={setOverrides.isPending}
+              >
+                <SelectTrigger className="h-8 w-[140px]" aria-label={`${title} override`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OVERRIDE_TRI_STATE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </EntitlementRow>
+          </div>
+        ))}
+
+        <div className="px-4 py-3">
+          <EntitlementRow
+            title="Max concurrent sessions"
+            description="Session cap for the whole account. Blank inherits the plan cap."
+            titleSuffix={
+              <OverrideExpiryChip expiresAt={overrideExpiresAt(stored, 'maxConcurrentSessions')} />
+            }
+          >
+            <Input
+              type="number"
+              min={1}
+              max={MAX_CONCURRENT_SESSIONS_OVERRIDE}
+              step={1}
+              inputMode="numeric"
+              placeholder="Plan cap"
+              className="h-8 w-[140px] tabular-nums"
+              aria-label="Max concurrent sessions override"
+              value={draft.maxConcurrentSessions}
+              disabled={setOverrides.isPending}
+              onChange={(e) => setRow('maxConcurrentSessions', e.target.value)}
+            />
+          </EntitlementRow>
+        </div>
+
+        <div className="px-4 py-3">
+          <EntitlementRow
+            title="Compute rate multiplier"
+            description="0.5 = half-price compute, 0 = free, blank = plan default."
+            titleSuffix={
+              <OverrideExpiryChip expiresAt={overrideExpiresAt(stored, 'computeRateMultiplier')} />
+            }
+          >
+            <Input
+              type="number"
+              min={0}
+              max={MAX_COMPUTE_RATE_MULTIPLIER}
+              step={0.05}
+              inputMode="decimal"
+              placeholder="1"
+              className="h-8 w-[140px] tabular-nums"
+              aria-label="Compute rate multiplier override"
+              value={draft.computeRateMultiplier}
+              disabled={setOverrides.isPending}
+              onChange={(e) => setRow('computeRateMultiplier', e.target.value)}
+            />
+          </EntitlementRow>
+          {effectiveMultiplier !== undefined && (
+            <p className="text-muted-foreground mt-2 text-xs">
+              Sandbox compute currently bills at{' '}
+              <span className="text-foreground/80 tabular-nums">{effectiveMultiplier}×</span> list
+              price.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {!result.ok && <p className="text-kortix-red text-xs">{result.error}</p>}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          onClick={handleSave}
+          disabled={!dirty || !result.ok || setOverrides.isPending}
+          className="gap-1.5"
+        >
+          {setOverrides.isPending && <Loading className="h-3.5 w-3.5" />}
+          Save overrides
+        </Button>
+        {dirty && (
+          <Button
+            variant="outline"
+            onClick={() => setDraft(draftFromOverrides(stored))}
+            disabled={setOverrides.isPending}
+          >
+            Reset
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1851,6 +2191,11 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
         </div>
       </div>
 
+      {/* Every remaining override, on one merge-patch save. Sits last because
+          the resolver applies these last: plan → enterprise expansion →
+          managed-models switch → these. */}
+      <OverridesCard account={account} />
+
       {/* Read-only context the operator needs before issuing a trial. */}
       <div className="border-border/60 bg-card divide-border grid grid-cols-2 divide-x rounded-2xl border text-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -2122,52 +2467,12 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
     );
   }
 
+  // The same table the customer sees under Billing → Credit ledger, fed from
+  // the admin endpoint. One implementation, so an operator reading a support
+  // ticket and the customer reading their own history see identical rows.
   return (
-    <div className="border-border/60 bg-card divide-border max-h-[50vh] divide-y overflow-y-auto rounded-2xl border">
-      {entries.map((entry) => {
-        const amount = Number(entry.amount);
-        const positive = amount >= 0;
-        return (
-          <div key={entry.id} className="flex items-start justify-between gap-3 px-4 py-3 text-sm">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <Badge variant="muted" size="sm" className="capitalize">
-                  {entry.type.replace(/_/g, ' ')}
-                </Badge>
-                {entry.isExpiring && (
-                  <Badge variant="warning" size="sm">
-                    expiring
-                  </Badge>
-                )}
-              </div>
-              {entry.description && (
-                <div className="text-muted-foreground mt-1 line-clamp-2 text-xs">
-                  {entry.description}
-                </div>
-              )}
-              <div className="text-muted-foreground mt-0.5 text-xs">
-                {formatDateTime(entry.createdAt)}
-              </div>
-            </div>
-            <div className="shrink-0 text-right">
-              <div
-                className={cn(
-                  'font-mono text-sm font-medium',
-                  positive
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-red-600 dark:text-red-400',
-                )}
-              >
-                {positive ? '+' : '-'}
-                {money(amount)}
-              </div>
-              <div className="text-muted-foreground font-mono text-xs">
-                → {formatCredits(entry.balanceAfter)}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+    <div className="max-h-[50vh] overflow-y-auto">
+      <CreditTransactionsTable rows={adminLedgerRows(entries)} />
     </div>
   );
 }

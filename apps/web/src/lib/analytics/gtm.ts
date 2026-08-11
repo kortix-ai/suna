@@ -457,8 +457,8 @@ export function trackSendAuthLink() {
 // =============================================================================
 
 export interface PurchaseItem {
-  item_id: string;          // e.g., "tier_2_20", "tier_6_50", "free"
-  item_name: string;        // e.g., "Plus", "Pro", "Basic"
+  item_id: string;          // API tier key, e.g. "free", "per_seat"
+  item_name: string;        // Plan label, e.g. "Free", "Team"
   coupon?: string;
   discount?: number;
   item_brand: string;       // "Kortix AI"
@@ -558,7 +558,7 @@ export function storeCheckoutData(data: {
   billing_period: string;
   coupon?: string;
   discount?: number;
-  previous_tier?: string; // User's tier before checkout (e.g., "free", "tier_2_20")
+  previous_tier?: string; // User's API tier key before checkout (e.g. "free")
 }) {
   if (typeof window === 'undefined') return;
   safeSessionSetItem('gtm_checkout_data', JSON.stringify({

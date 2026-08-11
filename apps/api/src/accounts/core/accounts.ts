@@ -5,6 +5,7 @@ import { accountMembers, accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
+import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
@@ -40,6 +41,37 @@ export function registerAccountRoutes(): void {
     async (c: any) => {
       const userId = c.get('userId') as string;
       const userEmail = c.get('userEmail') as string;
+
+      // ACT-AS: the operator's OWN accounts are not part of this session. The
+      // list is what the whole app scopes itself from — the sidebar reads it,
+      // then asks for that account's projects — so returning the admin's own
+      // memberships here would make every downstream call carry the wrong
+      // account id, which `resolveScopedAccountId` then (correctly) refuses.
+      // One account in, one account out: the account the banner names.
+      const impersonated = impersonatedAccountFor(userId);
+      if (impersonated) {
+        const [row] = await db
+          .select()
+          .from(accounts)
+          .where(eq(accounts.accountId, impersonated))
+          .limit(1);
+        if (!row) return c.json([]);
+        return c.json([
+          {
+            account_id: row.accountId,
+            name: accountDisplayName(row.name, null),
+            slug: row.accountId.slice(0, 8),
+            created_at: row.createdAt.toISOString(),
+            updated_at: row.updatedAt.toISOString(),
+            // Owner, matching the effective role every other gate resolves for
+            // an impersonated request (see iam/engine-v2.ts and
+            // projects/lib/git.ts). A lower label here would make the console
+            // hide controls the server would in fact allow.
+            account_role: 'owner',
+            is_primary_owner: true,
+          },
+        ]);
+      }
 
       await autoClaimPendingInvites(userId, userEmail);
 
