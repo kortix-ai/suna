@@ -1,20 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { StrictSkipReporter } from '../e2e/strict-skip-reporter';
 
-describe('strict Playwright skip reporter', () => {
-  it('fails a strict browser lane when one journey is skipped', async () => {
-    const reporter = new StrictSkipReporter({ requireAll: true });
-    reporter.onTestEnd({ titlePath: () => ['journey'] } as never, { status: 'skipped' } as never);
+function skipped(title: string[]) {
+  return {
+    titlePath: () => title,
+  } as never;
+}
 
-    await expect(reporter.onEnd({ status: 'passed' } as never)).resolves.toEqual({
-      status: 'failed',
-    });
+describe('strict browser skip reporter', () => {
+  it('fails an unapproved skip', async () => {
+    const reporter = new StrictSkipReporter({ requireAll: true, writeExclusions: async () => {} });
+    reporter.onTestEnd(skipped(['chromium', 'journey']), { status: 'skipped' } as never);
+    await expect(reporter.onEnd({} as never)).resolves.toEqual({ status: 'failed' });
   });
 
-  it('keeps ordinary browser lanes compatible with explicit skips', async () => {
-    const reporter = new StrictSkipReporter({ requireAll: false });
-    reporter.onTestEnd({ titlePath: () => ['journey'] } as never, { status: 'skipped' } as never);
-
-    await expect(reporter.onEnd({ status: 'passed' } as never)).resolves.toBeUndefined();
+  it('records only the preview OAuth exclusion without failing the run', async () => {
+    const reporter = new StrictSkipReporter({
+      requireAll: true,
+      allowPreviewOAuthExclusion: true,
+      writeExclusions: async () => {},
+    });
+    reporter.onTestEnd(
+      skipped(['chromium', '17 — OAuth provider initiation', 'Google accepts callback']),
+      { status: 'skipped' } as never,
+    );
+    await expect(reporter.onEnd({} as never)).resolves.toBeUndefined();
   });
 });

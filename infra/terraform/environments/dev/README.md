@@ -29,41 +29,49 @@ autoscaling), `cloudflare-dns` (the `dev-api` CNAME → ALB).
 
 ## Apply
 
+CI applies this root. `deploy-dev.yml` -> `terraform-dev-api` runs
+`terraform-apply.yml` on every push to `main` that touches a dev root,
+`modules/**`, or either workflow, before the API image rolls onto ECS. There is
+no `terraform.tfvars`: every input is a committed default in `variables.tf`.
+
+To plan it by hand:
+
 ```bash
 cd infra/terraform/environments/dev
 
 export AWS_PROFILE=...                          # us-west-2 creds
 export TF_VAR_cloudflare_api_token=...           # = CLOUDFLARE_API_TOKEN secret
-export TF_VAR_cloudflare_zone_id=$(curl -s \
-  -H "Authorization: Bearer $TF_VAR_cloudflare_api_token" \
-  'https://api.cloudflare.com/client/v4/zones?name=kortix.com' | jq -r '.result[0].id')
 
-cp terraform.tfvars.example terraform.tfvars     # fill in image + secret ARNs
 terraform init                                   # bootstrap S3 state first (../../scripts/bootstrap-state.sh)
 terraform plan
-terraform apply
 ```
 
 ### Secrets
 
-App secrets are **not** in Terraform. Store the dev secret bundle in AWS Secrets
-Manager and reference each key's ARN in `api_secrets` (see
-`terraform.tfvars.example`). The execution role is granted read on exactly those
-ARNs. Non-secret config goes in `api_environment`. `container_port` must match
-the port the image binds (it's also injected as `PORT`).
+App secrets are **not** in Terraform. The dev bundle lives in the
+`kortix-dev-env` Secrets Manager blob, which `main.tf` passes to the module as
+`secrets_blob_arn`; ECS injects the whole document as `KORTIX_ENV_JSON` and the
+execution role can read only that ARN. `api_secrets` holds the per-key ARNs of
+the same blob and is currently inert (`modules/ecs-api` reads it only when
+`secrets_blob_arn` is empty). Non-secret config goes in `api_environment`.
+`container_port` (8008) must match the port the image binds — it is injected as
+`PORT` and it sets the ALB target-group port, which forces replacement when it
+changes.
 
 ### Image
 
-`api_image` defaults to `ghcr.io/kortix-ai/kortix-api:latest`. For a private
-GHCR image, add `repositoryCredentials` to the task def or mirror into ECR. Pin
-to a tag/sha for reproducible deploys.
+`api_image` is the one input CI supplies, not a committed value:
+`deploy-dev.yml` passes the `kortix/kortix-api:dev-<sha8>` tag the same run
+published. The committed default is the moving `:dev-latest` channel tag, so a
+bare `plan` still resolves to a real published image.
 
-> ⚠️ `terraform apply` here creates real, billable AWS resources (ALB + NAT +
-> Fargate). Nothing applies automatically.
+> ⚠️ `terraform apply` here changes real, billable AWS resources (ALB + NAT +
+> Fargate).
 
 ## Notes
 
-- `.terraform/`, `*.tfstate`, lockfile, and `*.tfvars` are gitignored
-  (`terraform.tfvars.example` is committed).
+- `.terraform/`, `*.tfstate`, lockfile, and `*.tfvars` are gitignored. This root
+  has no tfvars file and no `terraform.tfvars.example`: everything is a
+  committed default so CI plans exactly what an operator plans.
 - Logs: CloudWatch `/ecs/kortix-dev`. Scaling activity: the ECS service's
   Deployments/events + Application Auto Scaling history.

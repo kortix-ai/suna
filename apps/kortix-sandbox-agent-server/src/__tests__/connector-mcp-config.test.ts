@@ -173,7 +173,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     )
     const models = config.provider.kortix.models
     expect(Object.keys(models).length).toBeGreaterThan(0)
-    expect(models['claude-sonnet-4.6']).toBeDefined()
+    expect(models['glm-5.2']).toBeDefined()
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 

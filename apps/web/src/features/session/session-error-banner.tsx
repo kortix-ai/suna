@@ -12,6 +12,7 @@ import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/comp
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import type { GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
   WarningCircleIcon as AlertCircle,
@@ -140,15 +141,31 @@ function InsufficientCreditsCard({
 // TurnErrorDisplay — simple inline error card (matches SolidJS reference)
 // ============================================================================
 
-/** The LLM gateway's structured error fields, when the failure carries them —
- *  mirrors `GatewayErrorDetails`/`KortixSendError['gateway']` from the SDK,
- *  restated here so this component doesn't need a type-only SDK import for a
- *  handful of optional strings. */
-interface TurnErrorGatewayDetails {
-  provider?: string;
-  code?: string;
-  suggestion?: string;
-  requestId?: string;
+type TurnErrorGatewayDetails = Pick<
+  GatewayErrorDetails,
+  'provider' | 'code' | 'suggestion' | 'requestId' | 'attemptFailures'
+>;
+
+function failureTarget(failure: NonNullable<GatewayErrorDetails['attemptFailures']>[number]) {
+  const route =
+    failure.resolvedModel !== failure.routeModel ? ` (route ${failure.routeModel})` : '';
+  return `${failure.provider}/${failure.resolvedModel}${route}`;
+}
+
+function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDetails }) {
+  if (!details?.attemptFailures?.length) return null;
+
+  return (
+    <ol className="text-muted-foreground mt-1 space-y-1 text-xs">
+      {details.attemptFailures.map((failure) => (
+        <li key={failure.attempt}>
+          <span className="text-foreground font-medium">{failureTarget(failure)}</span> ·{' '}
+          {failure.status !== undefined ? `HTTP ${failure.status} · ` : ''}
+          {String(failure.code)} · {failure.message}
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 interface TurnErrorDisplayProps {
@@ -258,6 +275,7 @@ export function TurnErrorDisplay({
     gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
   const label = [
     gateway?.provider ? `${gateway.provider}: ${text}` : text,
+    gateway?.code,
     suggestion,
     gateway?.requestId,
   ]
@@ -265,12 +283,15 @@ export function TurnErrorDisplay({
     .join(' · ');
 
   return (
-    <Checkpoint className={className}>
-      <CheckpointIcon>
-        <AlertCircle className="text-muted-foreground size-4 shrink-0" />
-      </CheckpointIcon>
-      <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
-    </Checkpoint>
+    <div className={className}>
+      <Checkpoint>
+        <CheckpointIcon>
+          <AlertCircle className="text-muted-foreground size-4 shrink-0" />
+        </CheckpointIcon>
+        <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
+      </Checkpoint>
+      <GatewayAttemptFailureList details={gateway} />
+    </div>
   );
 }
 
@@ -278,6 +299,7 @@ interface SessionRetryDisplayProps {
   message: string;
   attempt: number;
   secondsLeft: number;
+  details?: GatewayErrorDetails;
   className?: string;
 }
 
@@ -285,30 +307,36 @@ export function SessionRetryDisplay({
   message,
   attempt,
   secondsLeft,
+  details,
   className,
 }: SessionRetryDisplayProps) {
   if (!message) return null;
 
   const title = secondsLeft > 0 ? `Retrying in ${secondsLeft}s` : 'Retrying now';
+  const metadata = [details?.provider, details?.code, details?.requestId]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <Item
-      role="status"
-      aria-live="polite"
-      variant="muted"
-      size="sm"
-      className={cn('items-start', className)}
-    >
-      <ItemMedia variant="icon">
-        <Loading className="text-muted-foreground size-4 shrink-0" />
-      </ItemMedia>
-      <ItemContent>
-        <ItemTitle className="tabular-nums">
-          {title}
-          <span className="text-muted-foreground font-normal">#{attempt}</span>
-        </ItemTitle>
-        <ItemDescription className="line-clamp-2 text-pretty">{message}</ItemDescription>
-      </ItemContent>
-    </Item>
+    <output aria-live="polite" className="block">
+      <Item variant="muted" size="sm" className={cn('items-start', className)}>
+        <ItemMedia variant="icon">
+          <Loading className="text-muted-foreground size-4 shrink-0" />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle className="tabular-nums">
+            {title}
+            <span className="text-muted-foreground font-normal">#{attempt}</span>
+          </ItemTitle>
+          <ItemDescription className={cn('text-pretty', !details && 'line-clamp-2')}>
+            {message}
+          </ItemDescription>
+          {metadata ? (
+            <p className="text-muted-foreground mt-1 text-xs text-pretty">{metadata}</p>
+          ) : null}
+          <GatewayAttemptFailureList details={details} />
+        </ItemContent>
+      </Item>
+    </output>
   );
 }

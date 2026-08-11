@@ -4,6 +4,7 @@ import type { ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
   groupSessionsByCoordinator,
+  projectSessionsRefetchInterval,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
@@ -53,75 +54,158 @@ describe('shouldPollProjectSessions', () => {
   });
 });
 
+describe('projectSessionsRefetchInterval', () => {
+  const settled = [makeSession({ status: 'running' })];
+
+  test('provisioning polls fast, and outranks the open-session interval', () => {
+    const sessions = [makeSession({ status: 'provisioning' })];
+    expect(projectSessionsRefetchInterval({ sessions, hasOpenSession: false })).toBe(5_000);
+    expect(projectSessionsRefetchInterval({ sessions, hasOpenSession: true })).toBe(5_000);
+  });
+
+  test('an open session polls slowly so its row can change section as it is used', () => {
+    expect(projectSessionsRefetchInterval({ sessions: settled, hasOpenSession: true })).toBe(
+      60_000,
+    );
+  });
+
+  test('a project page with no session open does not poll', () => {
+    expect(projectSessionsRefetchInterval({ sessions: settled, hasOpenSession: false })).toBe(
+      false,
+    );
+    expect(projectSessionsRefetchInterval({ sessions: undefined, hasOpenSession: false })).toBe(
+      false,
+    );
+  });
+});
+
+function openCodeSession(updatedAt: string | null, id = 'oc-1') {
+  return {
+    id,
+    title: null,
+    parent_id: null,
+    project_id: null,
+    created_at: null,
+    updated_at: updatedAt === null ? null : Date.parse(updatedAt),
+    archived_at: null,
+  };
+}
+
 describe('session last activity', () => {
   test('uses the latest OpenCode conversation activity, not row bookkeeping', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-08T08:00:09.000Z',
-      opencode_sessions: [
-        {
-          id: 'oc-1',
-          title: null,
-          parent_id: null,
-          project_id: null,
-          created_at: Date.parse('2026-01-01T00:00:00.000Z'),
-          updated_at: Date.parse('2026-01-03T04:05:06.000Z'),
-          archived_at: null,
-        },
-      ],
+      opencode_sessions: [openCodeSession('2026-01-03T04:05:06.000Z')],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-03T04:05:06.000Z');
   });
 
-  test('falls back to created_at when conversation activity is absent', () => {
+  test("the API's prompt stamp counts as activity", () => {
+    const session = makeSession({
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
+      opencode_sessions: [],
+    });
+
+    expect(sessionLastActivityAt(session)).toBe('2026-01-09T10:00:00.000Z');
+  });
+
+  test('the newer of the prompt stamp and the conversation snapshot wins', () => {
+    const staleSnapshot = makeSession({
+      metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
+      opencode_sessions: [openCodeSession('2026-01-02T00:00:00.000Z')],
+    });
+    // The agent keeps replying after the prompt was stamped, so the snapshot
+    // legitimately leads the stamp.
+    const stalePrompt = makeSession({
+      metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
+      opencode_sessions: [openCodeSession('2026-01-09T10:04:00.000Z')],
+    });
+
+    expect(sessionLastActivityAt(staleSnapshot)).toBe('2026-01-09T10:00:00.000Z');
+    expect(sessionLastActivityAt(stalePrompt)).toBe('2026-01-09T10:04:00.000Z');
+  });
+
+  test('a malformed stamp is ignored, not treated as activity', () => {
+    const session = makeSession({
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      metadata: { last_activity_at: 'not a date' },
+      opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
+    });
+
+    expect(sessionLastActivityAt(session)).toBe('2026-01-03T00:00:00.000Z');
+  });
+
+  test('a snapshot entry with no timestamp does not mask a later one', () => {
+    const session = makeSession({
+      opencode_sessions: [
+        openCodeSession(null, 'oc-a'),
+        openCodeSession('2026-01-05T00:00:00.000Z', 'oc-b'),
+      ],
+    });
+
+    expect(sessionLastActivityAt(session)).toBe('2026-01-05T00:00:00.000Z');
+  });
+
+  // The reported bug: a session with no activity record at all was pinned to
+  // its creation date, so one used every day never left "Older".
+  test('with no activity signal at all, updated_at beats created_at', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-08T08:00:09.000Z',
+      opencode_sessions: [],
+    });
+
+    expect(sessionLastActivityAt(session)).toBe('2026-01-08T08:00:09.000Z');
+  });
+
+  test('created_at is the last resort when the row carries no updated_at', () => {
+    const session = makeSession({
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: undefined,
       opencode_sessions: [],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-01T00:00:00.000Z');
   });
 
-  test('orders reused sessions by latest activity', () => {
+  // Guards the rule that survives from #6039: bookkeeping (runtime stop/resume,
+  // title sync, mapping repair) must never outrank real conversation activity.
+  test('row bookkeeping never outranks a session that has real activity', () => {
+    const session = makeSession({
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-20T00:00:00.000Z',
+      opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
+    });
+
+    expect(sessionLastActivityAt(session)).toBe('2026-01-03T00:00:00.000Z');
+  });
+
+  test('orders reused sessions by latest activity, not by row bookkeeping', () => {
+    // Every row's `updated_at` is deliberately in the opposite order to its
+    // real activity: sorting on bookkeeping would return ['a', 'b', 'c'].
     const oldest = makeSession({
       session_id: 'a',
       created_at: '2026-01-03T00:00:00.000Z',
-      updated_at: '2026-01-09T00:00:00.000Z',
-      opencode_sessions: [],
+      updated_at: '2026-01-20T00:00:00.000Z',
+      opencode_sessions: [openCodeSession('2026-01-04T00:00:00.000Z', 'oc-a')],
     });
     const middle = makeSession({
       session_id: 'b',
       created_at: '2026-01-02T00:00:00.000Z',
-      updated_at: '2026-01-10T00:00:00.000Z',
-      opencode_sessions: [
-        {
-          id: 'oc-b',
-          title: null,
-          parent_id: null,
-          project_id: null,
-          created_at: null,
-          updated_at: Date.parse('2026-01-05T00:00:00.000Z'),
-          archived_at: null,
-        },
-      ],
+      updated_at: '2026-01-19T00:00:00.000Z',
+      opencode_sessions: [openCodeSession('2026-01-05T00:00:00.000Z', 'oc-b')],
     });
     const newest = makeSession({
       session_id: 'c',
       created_at: '2026-01-01T00:00:00.000Z',
-      updated_at: '2026-01-08T00:00:00.000Z',
-      opencode_sessions: [
-        {
-          id: 'oc-c',
-          title: null,
-          parent_id: null,
-          project_id: null,
-          created_at: null,
-          updated_at: Date.parse('2026-01-06T00:00:00.000Z'),
-          archived_at: null,
-        },
-      ],
+      updated_at: '2026-01-18T00:00:00.000Z',
+      metadata: { last_activity_at: '2026-01-06T00:00:00.000Z' },
+      opencode_sessions: [],
     });
 
     const result = sortSessionsByLastActivity([oldest, newest, middle]);

@@ -6,12 +6,13 @@ import {
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
   buildWorkerScript,
+  dockerComposeInstallCommand,
   observePlatinumWorker,
   providerMetadataIdentifier,
 } from './platinum-ci';
 
-export const DAYTONA_CI_SNAPSHOT_VERSION = 'v3';
-const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v2';
+export const DAYTONA_CI_SNAPSHOT_VERSION = 'v4';
+const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v3';
 
 const POLL_MS = 3_000;
 const SNAPSHOT_TIMEOUT_MS = 45 * 60_000;
@@ -35,6 +36,7 @@ export interface DaytonaCiInput {
   runId: string;
   runAttempt: string;
   testArgs: string[];
+  skipSdkPackageTests?: boolean;
   root: string;
 }
 
@@ -125,6 +127,7 @@ export function buildDaytonaBaseDockerfile(input: {
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 RUN set -eux; apt-get update; apt-get install -y --no-install-recommends ca-certificates curl docker.io git iptables jq kmod postgresql-client procps ripgrep unzip xz-utils; rm -rf /var/lib/apt/lists/*
+RUN set -eux; ${dockerComposeInstallCommand()}
 RUN npm install --global bun@${PLATINUM_CI_BUN_VERSION} && corepack prepare pnpm@${PLATINUM_CI_PNPM_VERSION} --activate
 RUN set -eux; mkdir -p /workspace /root/.cache/ms-playwright; git init /workspace/suna; git -C /workspace/suna remote add origin https://github.com/${input.repository}.git; git -C /workspace/suna fetch --depth=1 origin ${input.cacheSha}; git -C /workspace/suna checkout --detach FETCH_HEAD; test "$(git -C /workspace/suna rev-parse HEAD)" = "${input.cacheSha}"
 RUN set -eux; cd /workspace/suna; corepack enable; pnpm install --frozen-lockfile; pnpm --dir tests exec playwright install --with-deps chromium; rm -rf /workspace/suna/tests/test-results
@@ -368,7 +371,7 @@ async function ensureBaseSnapshot(
   return waitForSnapshot(api, created);
 }
 
-async function waitForSandbox(api: DaytonaApi, sandbox: DaytonaSandbox): Promise<DaytonaSandbox> {
+export async function waitForSandbox(api: DaytonaApi, sandbox: DaytonaSandbox): Promise<DaytonaSandbox> {
   const deadline = Date.now() + SANDBOX_TIMEOUT_MS;
   let current = sandbox;
   let lastState = '';
@@ -392,7 +395,7 @@ async function waitForSandbox(api: DaytonaApi, sandbox: DaytonaSandbox): Promise
   );
 }
 
-async function getSandboxByName(api: DaytonaApi, name: string): Promise<DaytonaSandbox | null> {
+export async function getSandboxByName(api: DaytonaApi, name: string): Promise<DaytonaSandbox | null> {
   try {
     return await api.json<DaytonaSandbox>(
       `/sandbox/${encodeURIComponent(name)}`,
@@ -452,7 +455,7 @@ function toolboxBase(sandbox: DaytonaSandbox): string {
   return `${sandbox.toolboxProxyUrl.replace(/\/+$/, '')}/${encodeURIComponent(sandbox.id)}`;
 }
 
-async function execute(
+export async function execute(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   command: string,
@@ -506,7 +509,7 @@ rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes
 `;
 }
 
-async function deleteSandbox(api: DaytonaApi, idOrName: string): Promise<void> {
+export async function deleteSandbox(api: DaytonaApi, idOrName: string): Promise<void> {
   try {
     await api.json(`/sandbox/${encodeURIComponent(idOrName)}`, { method: 'DELETE' });
   } catch (error) {
@@ -549,7 +552,7 @@ async function waitForWarmSnapshotOwner(
   );
 }
 
-async function ensureWarmSnapshot(
+export async function ensureWarmSnapshot(
   api: DaytonaApi,
   input: DaytonaCiInput,
   lockHash: string,
@@ -682,7 +685,7 @@ async function ensureWarmSnapshot(
   }
 }
 
-async function readRemoteExitCode(
+export async function readRemoteExitCode(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -702,7 +705,7 @@ async function readRemoteExitCode(
   return exitCode;
 }
 
-async function statRemoteLog(
+export async function statRemoteLog(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -722,7 +725,7 @@ async function statRemoteLog(
   return { size };
 }
 
-async function readRemoteLog(
+export async function readRemoteLog(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   path: string,
@@ -740,7 +743,7 @@ async function readRemoteLog(
   return Uint8Array.from(Buffer.from(result.result.trim(), 'base64'));
 }
 
-async function downloadArtifacts(
+export async function downloadArtifacts(
   api: DaytonaApi,
   sandbox: DaytonaSandbox,
   root: string,

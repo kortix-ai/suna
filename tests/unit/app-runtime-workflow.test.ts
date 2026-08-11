@@ -14,4 +14,20 @@ describe('app runtime workflow coverage', () => {
 
     expect(workflow).toContain('apps/kortix-app-runtime/**');
   });
+
+  it('forces every deployable service for a manual all-surface Dev recovery', () => {
+    const workflow = readFileSync(
+      resolve(import.meta.dirname, '../../.github/workflows/deploy-dev.yml'),
+      'utf8',
+    );
+    const normalize = workflow.slice(
+      workflow.indexOf('      - name: Normalize outputs'),
+      workflow.indexOf('      - name: Summary'),
+    );
+    const allSurface = normalize.slice(normalize.indexOf('            else'));
+
+    expect(allSurface).toContain('api=true');
+    expect(allSurface).toContain('gateway=true');
+    expect(allSurface).toContain('frontend=true');
+  });
 });

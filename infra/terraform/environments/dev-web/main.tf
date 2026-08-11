@@ -68,6 +68,11 @@ data "aws_secretsmanager_secret" "web_env" {
   name = "kortix-dev-web-env"
 }
 
+data "aws_wafv2_web_acl" "regional" {
+  name  = "kortix-alb-waf"
+  scope = "REGIONAL"
+}
+
 module "web" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -95,6 +100,11 @@ module "web" {
   tags             = local.tags
 }
 
+resource "aws_wafv2_web_acl_association" "web" {
+  resource_arn = module.web.alb_arn
+  web_acl_arn  = data.aws_wafv2_web_acl.regional.arn
+}
+
 module "dns" {
   source  = "../../modules/cloudflare-dns"
   count   = var.manage_dns ? 1 : 0
@@ -107,6 +117,7 @@ module "dns" {
       value   = module.web.alb_dns_name
       proxied = true
       ttl     = 1
+      comment = "Kortix dev frontend on ECS Fargate; canonical ECS endpoint"
     }
   }
 }

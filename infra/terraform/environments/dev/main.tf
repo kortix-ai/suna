@@ -12,8 +12,8 @@
 # dev-api itself is the Worker's custom domain, NOT managed here.
 #
 # Same module set prod uses (../prod) — dev just runs smaller numbers + Fargate
-# Spot. App code ships via CI (deploy-dev rolls this in parallel with EKS).
-# Nothing here is applied automatically. See README.md.
+# Spot. App code ships via CI, and so does this root: deploy-dev.yml's
+# terraform-dev-api job applies it before the API image rolls. See README.md.
 #
 # NOTE: live was bootstrapped out-of-band (standalone ACM cert + manual proxied
 # CNAME via the Cloudflare API while EKS was made primary); a `terraform apply`

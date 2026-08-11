@@ -6,8 +6,8 @@ import {
   type CatalogReasoningOption,
   catalogModelForWireModel as catalogModelForWireModelCanonical,
 } from '@kortix/llm-catalog';
-import { resolveCatalogUpstream } from './provider-registry';
 import { codexModelIds } from './codex-models';
+import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
 import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
@@ -84,6 +84,14 @@ function codexName(id: string): string {
 // the client trusts to size conversations + fire auto-compaction (it does no
 // backfill of its own). Better to compact a little early than never.
 const DEFAULT_SERVED_LIMIT = { context: 200_000, output: 32_000 } as const;
+
+// The ChatGPT-subscription transport has a lower context window than the
+// generic OpenAI API entry in models.dev. Official OpenAI Codex documentation
+// specifies 272k total tokens for GPT-5.6 Sol. Reserve the model's published
+// 128k output ceiling so OpenCode compacts before the 144k input boundary.
+const CODEX_CONSUMER_LIMITS: Record<string, { context: number; input: number; output: number }> = {
+  'gpt-5.6-sol': { context: 272_000, input: 144_000, output: 128_000 },
+};
 
 // Coerce a (possibly partial or zero) models.dev limit into a guaranteed-positive
 // window. Some non-chat catalog entries (whisper audio, NVIDIA video/TTS models)
@@ -185,8 +193,14 @@ export function managedModels(): Record<string, GatewayModel> {
   // catalog must never advertise a model that request-time resolution refuses.
   if (SERVED_MANAGED_MODELS.length === 0) return out;
   // The managed lineup is curated and its slugs don't all exist on models.dev
-  // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision + limit are explicit
-  // on each model. All current managed models support reasoning/tools/temperature.
+  // (z-ai≠zhipuai), so vision + limit are explicit on each model and always
+  // win. Everything else (temperature, reasoning_options, structured_output,
+  // ...) comes from the model's REAL catalog record via its pricingRef when
+  // that resolves — hardcoding `temperature: true` here is exactly the bug
+  // class the sandbox fallback catalog documents: gpt-5.6-luna REJECTS a
+  // client-sent temperature, so advertising support makes OpenCode send one
+  // and 400 every turn. Unresolvable refs (glm-5.2) keep the permissive
+  // defaults.
   for (const m of SERVED_MANAGED_MODELS) {
     const cost = m.pricing
       ? {
@@ -200,13 +214,17 @@ export function managedModels(): Record<string, GatewayModel> {
             : {}),
         }
       : undefined;
+    const real = catalogModelForWireModel(m.id);
+    const caps = real && real.attachment !== undefined ? capabilitiesOf(real) : undefined;
     out[m.id] = {
       name: m.name,
       provider: m.providerBrand ?? KORTIX_PROVIDER_ID,
       reasoning: true,
       tool_call: true,
-      attachment: m.vision,
       temperature: true,
+      ...(caps ?? {}),
+      // Curated fields always win over the models.dev record.
+      attachment: m.vision,
       limit: m.limit,
       ...(cost ? { cost } : {}),
     };
@@ -246,6 +264,7 @@ export function gatewayCodexModels(
   const catalogModelById = modelsById(catalog);
   for (const id of codexModelIds()) {
     const model = catalogModelById.get(`openai/${id}`);
+    const consumerLimit = CODEX_CONSUMER_LIMITS[id];
     out[`codex/${id}`] = {
       name: `${model?.name ?? codexName(id)} (ChatGPT)`,
       // Codex is a ChatGPT subscription, not the raw `openai` BYOK provider —
@@ -271,7 +290,7 @@ export function gatewayCodexModels(
       ...(typeof model?.description === 'string' ? { description: model.description } : {}),
       ...(typeof model?.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
       ...(typeof model?.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
-      limit: servedLimit(model?.limit),
+      limit: consumerLimit ?? servedLimit(model?.limit),
     };
   }
   return out;

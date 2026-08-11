@@ -14,6 +14,7 @@ type BrowserSpawner = (
 interface BrowserOpenOptions {
   platform?: NodeJS.Platform;
   spawn?: BrowserSpawner;
+  env?: NodeJS.ProcessEnv;
 }
 
 function normalizeBrowserUrl(value: string): string | null {
@@ -27,6 +28,10 @@ function normalizeBrowserUrl(value: string): string | null {
 }
 
 export function openInBrowser(value: string, options: BrowserOpenOptions = {}): boolean {
+  // CI callers must handle the printed URL themselves. This also prevents
+  // black-box CLI tests from opening the host machine's default browser.
+  if ((options.env ?? process.env).CI) return false;
+
   const url = normalizeBrowserUrl(value);
   if (!url) return false;
 

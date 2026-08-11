@@ -78,6 +78,11 @@ const AppFilePreviewHost = lazy(() =>
     default: mod.AppFilePreviewHost,
   })),
 );
+const ImpersonationBanner = lazy(() =>
+  import('@/components/impersonation/impersonation-banner').then((mod) => ({
+    default: mod.ImpersonationBanner,
+  })),
+);
 
 export const viewport: Viewport = {
   themeColor: [
@@ -368,6 +373,14 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                       MaintenanceBannerHost above. */}
                       <Suspense fallback={null}>
                         <AppFilePreviewHost />
+                      </Suspense>
+                      {/* Act-as banner. Mounted at the ROOT, not under (app):
+                      a platform admin acting as a customer carries the grant on
+                      every request from this tab, including the admin console
+                      and account settings, so the banner has to be true
+                      everywhere too. Renders nothing when no grant is held. */}
+                      <Suspense fallback={null}>
+                        <ImpersonationBanner />
                       </Suspense>
                     </ReactQueryProvider>
                     {/* Analytics - lazy loaded to not block FCP */}

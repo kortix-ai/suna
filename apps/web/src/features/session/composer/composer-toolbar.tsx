@@ -9,7 +9,6 @@ import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
 import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
-import { ReasoningEffortSelector } from '../reasoning-effort-selector';
 import { VoiceRecorder } from '../voice-recorder';
 import { AgentSelector } from './agent-selector';
 import { SendStopControl } from './send-stop-control';
@@ -58,8 +57,6 @@ export interface ComposerToolbarProps {
   selectedVariant: string | null;
   onVariantChange?: (variant: string | null) => void;
 
-  projectId: string | undefined;
-
   messages: MessageWithParts[] | undefined;
   onContextClick?: () => void;
 
@@ -100,7 +97,6 @@ export function ComposerToolbar({
   variants,
   selectedVariant,
   onVariantChange,
-  projectId,
   messages,
   onContextClick,
   toolbarSlot,
@@ -179,9 +175,8 @@ export function ComposerToolbar({
             onSelect={onVariantChange!}
           />
         )}
-        {/* Capability-gated internally: renders nothing unless the selected
-            model actually exposes a reasoning-effort knob. */}
-        <ReasoningEffortSelector model={selectedModel} projectId={projectId} />
+        {/* Reasoning effort deliberately does NOT render on the bar — it lives
+            inside the session-overrides panel. The bar keeps only agent + model. */}
       </div>
 
       {/* RIGHT: ambient token progress, any slot content, voice, send/stop. */}

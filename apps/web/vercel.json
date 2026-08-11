@@ -13,7 +13,7 @@
     "deploymentEnabled": {
       "main": false,
       "staging": true,
-      "prod": true
+      "prod": false
     }
   }
 }

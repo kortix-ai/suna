@@ -126,26 +126,6 @@ resource "aws_iam_policy" "mfa_required" {
   tags = local.tags
 }
 
-# SES send-only — replaces the inline `ses-send-only` policy that used to hang
-# directly off the `kortix-ses-sender` user (Drata DCF-776 flags inline user
-# policies). Grants send on every SES identity in this account (the Kortix
-# verified sending identity is managed out-of-band, so it is referenced by
-# account-scoped ARN rather than a hard-coded identity name).
-resource "aws_iam_policy" "ses_send_only" {
-  name = "kortix-ses-send-only"
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Sid      = "SendEmail", Effect = "Allow",
-        Action   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendTemplatedEmail", "ses:SendBounce"],
-        Resource = ["arn:aws:ses:*:${local.account_id}:identity/*"]
-      }
-    ]
-  })
-  tags = local.tags
-}
-
 locals {
   # group => { policies = [arns], members = [usernames] }
   groups = {
@@ -161,11 +141,10 @@ locals {
       # authenticated with MFA (DCF-67). The AdministratorAccess Allow is still
       # gated by the MFA Deny — IAM evaluates Deny before Allow, so an admin
       # without MFA can do nothing except enroll an MFA device.
-      policies = [
+      policies = concat([
         "arn:aws:iam::aws:policy/AdministratorAccess",
         "arn:aws:iam::aws:policy/IAMUserChangePassword",
-        aws_iam_policy.mfa_required.arn
-      ]
+      ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
       members = []
     }
     bedrock-limited = {
@@ -205,19 +184,15 @@ locals {
       # login profile; mfa_required DENIES every other action until they do
       # (DCF-67). Together: a user with no MFA can do exactly one thing — enroll
       # an MFA device — and once enrolled, the deny lifts for MFA'd sessions.
-      policies = [
+      policies = concat([
         aws_iam_policy.mfa_self_manage.arn,
-        aws_iam_policy.mfa_required.arn
-      ]
+      ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
       members = []
     }
-    # SES send-only for the `kortix-ses-sender` user (was an inline `ses-send-only`
-    # policy — DCF-776 requires group-based permissions only). See aws_iam_policy
-    # .ses_send_only above.
-    ses-senders = {
-      policies = [aws_iam_policy.ses_send_only.arn]
-      members  = ["kortix-ses-sender"]
-    }
+    # ses-senders group RETIRED 2026-08-11: the kortix-ses-sender IAM user and
+    # its static key were deleted after DCF-71 moved email sending to the ECS
+    # task roles (ses_send policy in modules/ecs-api, role-based sends proven
+    # in all three environments).
   }
   # Use the policy index in the instance key. Customer-managed policy ARNs are
   # created in this stack, so deriving a key from the ARN makes the for_each
@@ -244,4 +219,24 @@ resource "aws_iam_user_group_membership" "this" {
   for_each = local.user_groups
   user     = each.key
   groups   = each.value
+}
+
+# DCF-67 MFA enforcement is an explicit, coordinated flip — NOT an automatic
+# side effect of the apply pipeline. Attaching kortix-mfa-required to the
+# administrators group instantly DENIES every non-MFA API call for its members
+# (sofia, markokraemer, vkubet), which kills long-lived access-key CLI sessions
+# mid-flight. Flip to true only after every admin has switched to MFA-derived
+# sessions (aws sts get-session-token --serial-number <mfa-arn> --token-code,
+# or aws-vault). The policy resource itself is always created so the flip is
+# attach-only. 2026-08-10: the unattached policy was created during the
+# tf-apply-pipeline bootstrap; enforcement deliberately deferred.
+variable "enforce_mfa_for_iam_users" {
+  description = "Attach kortix-mfa-required (deny-all-without-MFA) to the administrators and mfa-self-manage groups (DCF-67)."
+  type        = bool
+  # ENABLED 2026-08-11 (Marko's call): long-lived access keys no longer work
+  # bare for administrators — mint MFA sessions instead:
+  #   aws sts get-session-token --serial-number arn:aws:iam::935064898258:mfa/<name> --token-code <6 digits>
+  # markokraemer + vkubet have devices enrolled; sofia must enroll on next use
+  # (console login -> IAM -> her user -> enroll MFA; the deny allows exactly that).
+  default = true
 }

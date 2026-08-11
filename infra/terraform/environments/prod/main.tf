@@ -6,8 +6,8 @@
 #
 # SAME modules as dev (../dev) — prod just runs bigger numbers, no Spot, a NAT
 # per AZ, and Container Insights on. min_capacity=3 preserves one healthy
-# replica if two tasks fail together. Not applied
-# automatically. See README.md.
+# replica if two tasks fail together. Applied by deploy-prod.yml's
+# terraform-prod-api job on every release, before the image rolls. See README.md.
 
 terraform {
   required_version = ">= 1.5"

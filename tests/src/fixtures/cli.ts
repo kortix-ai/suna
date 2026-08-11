@@ -228,11 +228,11 @@ export async function runCliOnce(args: string[], opts?: CliRunOptions): Promise<
  *
  * `kortix login` (no --token) stands up a one-shot loopback callback server and
  * prints its URL — `…/cli/authorize?callback=http://127.0.0.1:<port>/callback&state=<hex>`
- * — to stdout, then tries to open a browser (harmless here). The dashboard's
- * only job is to POST `{state, token}` to that callback; we simulate the
- * dashboard by parsing the URL, then POSTing the (already-minted) PAT. The CLI
- * then verifies it via GET /accounts/me and saves the host. Returns the login
- * result once the process exits.
+ * — to stdout. The fixture's `CI=1` environment suppresses the browser process.
+ * The dashboard's only job is to POST `{state, token}` to that callback; we
+ * simulate the dashboard by parsing the URL, then POSTing the (already-minted)
+ * PAT. The CLI then verifies it via GET /accounts/me and saves the host. Returns
+ * the login result once the process exits.
  */
 export async function browserLogin(
   sb: CliSandbox,

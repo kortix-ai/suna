@@ -16,7 +16,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
-import { isDemoEnterprise, setDemoEnterprise } from '../../billing/repositories/credit-accounts';
+import { isDemoEnterprise } from '../../billing/repositories/credit-accounts';
+import { applyAdminOverride } from '../../billing/services/account-write-owner';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody } from './helpers';
@@ -76,7 +77,11 @@ iamRouter.openapi(
     }
 
     const before = await isDemoEnterprise(accountId);
-    await setDemoEnterprise(accountId, body.enabled);
+    await applyAdminOverride(
+      accountId,
+      { demoEnterprise: body.enabled },
+      { userId, action: 'enterprise_demo.set' },
+    );
     await auditIam(c, {
       accountId,
       action: body.enabled ? 'enterprise_demo.enable' : 'enterprise_demo.disable',

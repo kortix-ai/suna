@@ -11,6 +11,7 @@ variable "records" {
     value   = string
     proxied = bool
     ttl     = number
+    comment = optional(string)
   }))
   default = {}
 }

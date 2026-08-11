@@ -6,7 +6,7 @@
  * Uses KORTIX_SESSION_ID if set, otherwise creates a fresh session.
  *
  * Run (from packages/sdk):
- *   KORTIX_MODEL=claude-sonnet-4.6 bun run playground/chat/04-send-and-stream.ts "Say hello"
+ *   KORTIX_MODEL=glm-5.2 bun run playground/chat/04-send-and-stream.ts "Say hello"
  */
 import {
   makeKortix,

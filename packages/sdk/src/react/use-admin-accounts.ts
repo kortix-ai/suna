@@ -19,6 +19,83 @@ export interface AdminAccountTrial {
   note: string | null;
 }
 
+/**
+ * The plan an account BEHAVES as, as the list route resolves it.
+ *
+ * Distinct from `AdminAccount.tier`, which stays the STORED
+ * `credit_accounts.tier` the tier filter matches on. An active admin trial and
+ * the per-seat self-heal overlay that column, so the two disagree exactly when
+ * it matters most — and the console must show the resolved one.
+ */
+export interface AdminAccountPlan {
+  /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+  key: string;
+  /** Public ladder position: there are exactly three families. */
+  family: 'free' | 'team' | 'enterprise';
+  /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+  label: string;
+  /** Qualifier to render muted after the label, e.g.
+   *  '$40/seat/mo · grandfathered'. Null when the plan needs none. */
+  sublabel: string | null;
+  status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
+  /** Sold once, still honored exactly as sold, no longer offered. */
+  is_grandfathered: boolean;
+}
+
+/**
+ * One entitlement override as the account row stores it: a value plus an
+ * optional ISO-8601 expiry. Absent `expires_at` = never expires.
+ *
+ * `value` is `unknown` on purpose. The source is a JSONB column written by
+ * admin routes, data migrations, and operator SQL, so a reader narrows
+ * (`typeof v === 'boolean'`) before it renders — it never assumes the shape.
+ */
+export interface AdminEntitlementOverrideEntry {
+  value: unknown;
+  /** ISO-8601. At or past this instant the server ignores the entry. */
+  expires_at?: string;
+}
+
+/** The stored override map, keyed by {@link AdminOverrideKey}. */
+export type AdminEntitlementOverrides = Record<string, AdminEntitlementOverrideEntry>;
+
+/**
+ * Every override key the server accepts. Anything else is a 400 from
+ * `validateOverridePatch`, so the console builds its rows from this list rather
+ * than from free-form strings.
+ *
+ * Mirrors `OVERRIDE_KEYS` in
+ * `apps/api/src/billing/services/entitlement-overrides.ts`.
+ */
+export const ADMIN_OVERRIDE_KEYS = [
+  'enterpriseEntitled',
+  'demoEnterprise',
+  'managedModelsOverride',
+  'maxConcurrentSessions',
+  'computeRateMultiplier',
+  'sso',
+  'scim',
+  'rbac',
+  'auditAccess',
+  'managedModels',
+] as const;
+
+export type AdminOverrideKey = (typeof ADMIN_OVERRIDE_KEYS)[number];
+
+/**
+ * A merge patch (RFC 7386, scoped to the known keys): an entry SETS the key,
+ * `null` DELETES it, and a key that is absent is left exactly as it was. That
+ * is what makes the route safe to call from a form that only knows one field.
+ */
+export type AdminEntitlementOverridePatch = Partial<
+  Record<AdminOverrideKey, { value: boolean | number; expires_at?: string } | null>
+>;
+
+/** Wire path of the platform-admin entitlement-override merge-patch route. */
+export function adminAccountOverridesPath(accountId: string): string {
+  return `/admin/api/accounts/${encodeURIComponent(accountId)}/overrides`;
+}
+
 export interface AdminAccount {
   accountId: string;
   name: string | null;
@@ -28,7 +105,12 @@ export interface AdminAccount {
   expiringCredits: string | null;
   nonExpiringCredits: string | null;
   dailyCreditsBalance: string | null;
+  /** STORED `credit_accounts.tier` — what the tier filter matches on. For what
+   *  the account behaves as, read {@link AdminAccount.plan}. */
   tier: string | null;
+  /** Resolved plan. Optional: an API older than the plan resolver omits it, so
+   *  a console pointed at one falls back to the raw tier key. */
+  plan?: AdminAccountPlan;
   paymentStatus: string | null;
   provider: string | null;
   planType: string | null;
@@ -44,6 +126,19 @@ export interface AdminAccount {
   managedModelsOverride: boolean | null;
   demoEnterprise: boolean;
   enterpriseEntitled: boolean;
+  /**
+   * The STORED override map, exactly as the account row carries it — expiry is
+   * NOT applied, so a lapsed entry is still present and the console can show an
+   * operator what is on the row. Optional: an API older than the JSONB column
+   * omits it. Null is tolerated because the column itself is nullable.
+   */
+  entitlementOverrides?: AdminEntitlementOverrides | null;
+  /**
+   * The RESOLVED compute rate multiplier the meter bills at (1 = list price,
+   * 0.5 = half, 0 = free). Already clamped to [0, 10] by the server. Optional
+   * for the same reason as {@link AdminAccount.entitlementOverrides}.
+   */
+  computeRateMultiplier?: number;
 }
 
 export interface AdminAccountsSummary {
@@ -157,6 +252,34 @@ export function useAdminAccounts(filters: AdminAccountsFilters = {}) {
     },
     staleTime: 15_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+/** Wire path of the exact-id single-account lookup (list route + accountId filter). */
+export function adminAccountLookupPath(accountId: string): string {
+  return `/admin/api/accounts?accountId=${encodeURIComponent(accountId)}&limit=1`;
+}
+
+/**
+ * Live single-account row for the admin detail sheet. Uses the list route's
+ * exact-id filter, so it stays correct when the list's own filters (tier,
+ * balance, payment status) no longer match the account after a mutation —
+ * the bug where the sheet kept rendering a pre-mutation snapshot.
+ * Invalidated by the same ['admin','accounts', accountId] subtree every admin
+ * mutation already targets.
+ */
+export function useAdminAccount(accountId: string | null) {
+  return useQuery<AdminAccount | null>({
+    queryKey: ['admin', 'accounts', accountId, 'detail'],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const response = await backendApi.get<AdminAccountsResponse>(
+        adminAccountLookupPath(accountId!),
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data?.accounts?.[0] ?? null;
+    },
+    staleTime: 5_000,
   });
 }
 
@@ -355,6 +478,66 @@ export function useAdminSetEnterpriseEntitled() {
       const response = await backendApi.post<{ ok: boolean; enabled: boolean }>(
         `/admin/api/accounts/${accountId}/enterprise-entitlement`,
         { enabled },
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
+  });
+}
+
+/**
+ * Merge-patch an account's entitlement overrides — the ONE route behind every
+ * override, and the only one that can express an expiry.
+ *
+ * Send only the keys the form owns: an entry sets, `null` deletes, an absent
+ * key is untouched. The server mirrors a PERMANENT patch onto the four legacy
+ * columns and clears the column for a TIMED one, so the three single-purpose
+ * mutations above and this one stay consistent with each other.
+ */
+export function useAdminSetOverrides() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { ok: boolean; overrides: AdminEntitlementOverrides },
+    Error,
+    { accountId: string; patch: AdminEntitlementOverridePatch }
+  >({
+    mutationFn: async ({ accountId, patch }) => {
+      const response = await backendApi.put<{ ok: boolean; overrides: AdminEntitlementOverrides }>(
+        adminAccountOverridesPath(accountId),
+        patch,
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
+  });
+}
+
+export type AdminAccountMemberRole = 'owner' | 'admin' | 'member';
+
+/** Wire path of the platform-admin member-role override route. */
+export function adminMemberRolePath(accountId: string, userId: string): string {
+  return `/admin/api/accounts/${accountId}/members/${userId}/role`;
+}
+
+/**
+ * Platform-admin override of an account member's role. Bypasses the in-account
+ * permission rules (which require the caller to be a member), but the server
+ * still refuses to demote an account's last owner. Invalidates the account
+ * subtree, which includes the users list the Users tab renders.
+ */
+export function useAdminSetMemberRole() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { ok: boolean; user_id: string; account_role: string },
+    Error,
+    { accountId: string; userId: string; role: AdminAccountMemberRole }
+  >({
+    mutationFn: async ({ accountId, userId, role }) => {
+      const response = await backendApi.post<{ ok: boolean; user_id: string; account_role: string }>(
+        adminMemberRolePath(accountId, userId),
+        { role },
       );
       if (response.error) throw new Error(response.error.message);
       return response.data!;

@@ -11,6 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
+import { resolvedPlan } from '@kortix/sdk';
 import { dollarsToCredits, formatCredits } from '@kortix/shared';
 
 type LimitRow = {
@@ -49,18 +50,19 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
     );
   }
 
-  // Per-seat accounts don't use the legacy `tier` field (it stays 'free'), so
-  // show the seat plan from billing_model + seats instead of the tier label —
-  // otherwise a paying per-seat account renders as "Free".
+  // The plan the account BEHAVES as, named by the server (an admin trial and
+  // the per-seat self-heal overlay the stored tier). Per-seat accounts still
+  // get the seat count spelled out, which no plan label can carry.
   const seatCount = state.seats?.count ?? 1;
+  const plan = resolvedPlan(state);
   const tierName =
     state.billing_model === 'per_seat'
       ? `Team · ${seatCount} seat${seatCount === 1 ? '' : 's'}`
-      : state.tier?.display_name || state.tier?.name || 'No plan';
+      : plan.label;
+  const planSublabel = state.billing_model === 'per_seat' ? null : plan.sublabel;
   const subStatus = state.subscription?.status || null;
   const wallet = state.credits?.total ?? 0;
-  const tierKey = (state.subscription?.tier_key || state.tier?.name || '').toLowerCase();
-  const isFreeTier = state.billing_model !== 'per_seat' && tierKey === 'free';
+  const isFreeTier = state.billing_model !== 'per_seat' && plan.family === 'free';
   const walletValue = isFreeTier
     ? `${formatCredits(dollarsToCredits(wallet))} credits`
     : formatUsd(wallet);
@@ -77,6 +79,9 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
           <div className="bg-popover flex min-w-0 flex-col gap-3 rounded-md border p-4">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-foreground text-sm font-medium">{tierName}</p>
+              {planSublabel ? (
+                <p className="text-muted-foreground text-xs">· {planSublabel}</p>
+              ) : null}
               <Badge variant="secondary" size="sm">
                 Current
               </Badge>

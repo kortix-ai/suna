@@ -9,6 +9,8 @@
  * single-file version. No React / DOM / framework imports allowed.
  */
 
+import { extractGatewayErrorDetails, unwrapError } from './errors';
+import { isReasoningPart, isTextPart, isToolPart } from './parts';
 import type {
   MessageInfoLike,
   MessageWithPartsLike,
@@ -18,13 +20,11 @@ import type {
   PartWithMessage,
   RetryInfo,
   SessionStatusLike,
-  ToolPartLike,
   TokenUsageLike,
+  ToolPartLike,
   TurnCostInfo,
   TurnLike,
 } from './types';
-import { extractGatewayErrorDetails, unwrapError } from './errors';
-import { isReasoningPart, isTextPart, isToolPart } from './parts';
 
 // ============================================================================
 // Internal wire shapes (structural casts, never exported)
@@ -494,10 +494,12 @@ export function formatTokens(tokens: number): string {
 export function getRetryInfo(status: SessionStatusLike | undefined): RetryInfo | undefined {
   if (!status || status.type !== 'retry') return undefined;
   const retry = status as RetryStatusLike;
+  const fullMessage = unwrapError(retry.message);
   return {
     attempt: retry.attempt,
-    message: retry.message.length > 60 ? `${retry.message.slice(0, 60)}...` : retry.message,
+    message: fullMessage.length > 60 ? `${fullMessage.slice(0, 60)}...` : fullMessage,
     next: retry.next,
+    details: extractGatewayErrorDetails(retry.message),
   };
 }
 

@@ -18,6 +18,7 @@ import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
+import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { type ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
@@ -191,6 +192,13 @@ export async function resumeStoppedSandbox(row: {
       await markComputeSessionAlive(row.sandboxId, confirmedAt).catch((err) =>
         console.warn(`[projects] compute liveness stamp failed for ${row.sandboxId}:`, err),
       );
+      // A resume wakes the SAME powered-down VM, so the daemon's boot-time
+      // reconcile never re-runs and the box keeps the `kortix` binary its image
+      // was built with. Poke the daemon to re-converge on this deploy's runtime
+      // assets. Detached and after the rows are already active: it must not
+      // extend the wake the user is waiting on. It retries on its own, because
+      // provider-running precedes the guest daemon binding its port.
+      scheduleSandboxRuntimeRefresh(row.sessionId, 'resume');
       return true;
     },
     fail: async (reason) => {

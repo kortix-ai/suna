@@ -1,3 +1,4 @@
+import type { GatewayAttemptFailure } from './failure';
 import type { BillingMode } from './principal';
 import type { TokenCounts } from './usage';
 
@@ -21,6 +22,7 @@ export interface GatewayTrace {
   latencyMs: number;
   attempts: number;
   candidatesTried: string[];
+  attemptFailures?: GatewayAttemptFailure[];
   usage: TokenCounts;
   upstreamCost: number;
   finalCost: number;

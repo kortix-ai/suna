@@ -19,7 +19,12 @@ import {
   sessionLifecycleCommands,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { getCreditAccount, setDemoEnterprise } from '../billing/repositories/credit-accounts';
+import { getCreditAccount } from '../billing/repositories/credit-accounts';
+import { applyAdminOverride } from '../billing/services/account-write-owner';
+
+/** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
+const setDemoEnterprise = (accountId: string, enabled: boolean) =>
+  applyAdminOverride(accountId, { demoEnterprise: enabled }, { action: 'test.enterprise_demo.set' });
 import { config } from '../config';
 import { app } from '../index';
 import { metadataClearSubtreeKey, metadataMergeSubtree } from '../projects/lib/metadata-merge';

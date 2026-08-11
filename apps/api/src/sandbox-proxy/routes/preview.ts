@@ -21,6 +21,7 @@ import {
 } from '../../projects/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
+import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
   extendSandboxDeadline,
@@ -1031,6 +1032,16 @@ export async function forwardToSandbox(
     if (!claimPromptDelivery(promptDedupeKey)) {
       return jsonProxyError({ status: 'duplicate', deduplicated: true }, 200, origin);
     }
+    // Stamped HERE, and only here: past the dedupe claim, so a re-sent prompt
+    // cannot double-count, and outside the retry loop below, so a wake retry
+    // cannot either. This is the sidebar's authoritative "last activity" —
+    // unlike the opencode_sessions snapshot scheduled further down, it needs no
+    // sandbox round-trip, so a session stays correctly dated even when the box
+    // is unreachable. See projects/session-activity.ts.
+    void recordSessionActivity({
+      sessionId: record.sessionId,
+      projectId: record.projectId,
+    });
   }
 
   // 2. Forward with auto-wake retry.

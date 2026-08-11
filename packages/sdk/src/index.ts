@@ -383,6 +383,7 @@ export * from './core/http/auth';
 export * from './core/http/config';
 export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
+export * from './core/http/impersonation';
 export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';

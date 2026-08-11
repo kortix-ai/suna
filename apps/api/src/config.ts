@@ -368,7 +368,12 @@ const envSchema = z.object({
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
   LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('claude-sonnet-4.6'),
+  // Target when a DEFAULT-model request carries image input and the default
+  // model lacks vision. Empty = no reroute (the request goes to the default
+  // model as-is). gpt-5.6-luna is the cheapest vision-capable managed model
+  // ($0.20/$1.20) — the default platform model (deepseek-v4-flash) is
+  // text-only.
+  LLM_GATEWAY_VISION_MODEL: optStrDefault('gpt-5.6-luna'),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,
   // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
@@ -380,7 +385,7 @@ const envSchema = z.object({
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('claude-sonnet-4.6'),
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4-flash'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT: optInt(0),

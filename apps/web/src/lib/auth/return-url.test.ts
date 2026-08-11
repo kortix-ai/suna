@@ -198,6 +198,21 @@ describe('resolveAuthRedirectBaseUrl', () => {
     );
   });
 
+  test('falls back to APP_URL when ECS exposes its private compute hostname as the origin', () => {
+    expect(
+      resolveAuthRedirectBaseUrl(
+        'https://ip-10-10-153-159.us-west-2.compute.internal:3000',
+        'https://dev.kortix.com',
+      ),
+    ).toBe('https://dev.kortix.com');
+    expect(
+      resolveAuthRedirectBaseUrl(
+        'http://ip-10-10-155-24.us-west-2.compute.internal:3000',
+        'https://pr-6337.preview.kortix.com/',
+      ),
+    ).toBe('https://pr-6337.preview.kortix.com');
+  });
+
   test('keeps the wildcard origin only if no APP_URL is configured (nothing better to use)', () => {
     expect(resolveAuthRedirectBaseUrl('https://0.0.0.0:3000', undefined)).toBe('https://0.0.0.0:3000');
   });

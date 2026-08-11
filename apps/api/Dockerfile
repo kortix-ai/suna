@@ -58,6 +58,19 @@ WORKDIR /cli
 
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
+# Stamp the binary with the SAME version the API image bakes (the `runner` stage
+# below declares the identical ARGs, and every workflow that builds this image
+# passes both). Without this the sandbox-baked CLI compiled to the literal
+# fallback `dev` — production sandboxes reported `vdev` and nothing in the
+# system could tell that their CLI predated the API's route rename.
+#
+# Deliberately `<version>+<short-commit>`: the version alone repeats for every
+# build of a release, and the commit is what identifies the exact source. Local
+# builds with neither ARG produce `dev+unknown`; a bare `bun run build` outside
+# Docker still produces plain `dev` (no --define).
+ARG KORTIX_VERSION=dev
+ARG KORTIX_COMMIT=unknown
+
 # Minimal workspace so bun resolves the `@kortix/*` packages the CLI imports
 # to their source, then compile (inlines them + smol-toml into one binary).
 COPY apps/cli ./apps/cli
@@ -69,7 +82,9 @@ COPY packages/shared ./packages/shared
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
     && bun install --no-save \
-    && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash apps/cli/scripts/build.sh
+    && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} \
+       KORTIX_CLI_VERSION="${KORTIX_VERSION}+$(printf '%s' "${KORTIX_COMMIT}" | cut -c1-8)" \
+       bash apps/cli/scripts/build.sh
 
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
@@ -195,6 +210,7 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
+COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix.version
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
 COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-appd-linux-amd64
 COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64

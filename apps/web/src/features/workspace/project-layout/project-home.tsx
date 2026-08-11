@@ -222,17 +222,28 @@ export function ProjectHome({
             )}
             prefill={prefill}
             onAgentSelectionChange={setSelectedAgent}
-            toolbarSlot={
-              metaSelected ? (
-                <MetaRuntimeIndicator />
-              ) : showSandboxPicker ? (
-                <SandboxPicker
-                  items={sandboxItems}
-                  activeSlug={activeSlug}
-                  selectedSlug={selectedSlug}
-                  onSelect={setSelectedSlug}
-                />
-              ) : null
+            toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
+            // The template chooser lives inside the overrides panel, not on the
+            // bar — the bar keeps only agent + model.
+            sandboxSlot={
+              !metaSelected && showSandboxPicker
+                ? {
+                    summary: selectedSlug
+                      ? (sandboxItems.find((t) => t.slug === selectedSlug)?.name ?? selectedSlug)
+                      : 'Agent default',
+                    overridden: selectedSlug !== null,
+                    control: (
+                      <SandboxPicker
+                        items={sandboxItems}
+                        activeSlug={activeSlug}
+                        selectedSlug={selectedSlug}
+                        onSelect={setSelectedSlug}
+                      />
+                    ),
+                    onReset: () => setSelectedSlug(null),
+                    resetLabel: 'Reset to agent default',
+                  }
+                : undefined
             }
           />
         }
