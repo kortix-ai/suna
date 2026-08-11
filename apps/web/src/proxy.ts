@@ -157,7 +157,7 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/debug',
 ];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Dev and staging run behind one shared HTTP Basic credential. Read through

@@ -166,3 +166,18 @@ grep -E treats `\t` in single quotes as a literal `t` while macOS grep interpret
 it, so a locally-green pattern can be dead on ubuntu runners. Use ANSI-C
 quoting (`$'\t'`) and test the exact pattern in an ubuntu container.
 *Incident:* staging web verify failed twice on the same one-line assertion.
+
+### A 404 on a Next 16 page usually means the dev server is stale (2026-08-11)
+
+**When:** the web app serves a route that exists in source as 404 with the
+`app/not-found.tsx` body (no project shell, no `NotFoundCard`) and no `notFound()`
+call exists in the route subtree. A `pnpm install` that bumped `next` past a major
+boundary re-points `next` to the new version on disk, but any `next dev` /
+`next-server` already in memory keeps the OLD module, route table, and middleware
+convention. Restart the web dev server (or kill any orphan `next-server` eating the
+same `.next`) before chasing code changes — confirmed on 2026-08-11 when a stale
+v16.2.6 process served the session URL as a global 404 even after the repo sat
+on v16.3.0.
+*Enforcer:* TODO — `scripts/dev-local.sh` already wraps `next dev`; add a
+pre-start version guard that warns when `pnpm exec next --version` differs
+from the version any surviving `next-server` process loaded.
