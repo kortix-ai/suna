@@ -1,3 +1,7 @@
+import { createSign } from 'node:crypto';
+
+import type { PreviewRuntimeSecrets } from './preview-stack';
+
 export type SandboxPreviewProvider = 'auto' | 'platinum' | 'daytona';
 
 export interface SandboxPreviewInput {
@@ -12,6 +16,114 @@ export interface SandboxPreviewResult {
   exitCode: number;
   sandboxId?: string;
   previewUrl?: string;
+}
+
+interface GitHubAppIdentity {
+  id?: number;
+  slug?: string;
+}
+
+interface GitHubAppInstallation {
+  id?: number;
+  account?: { login?: string; type?: string };
+  permissions?: Record<string, string>;
+}
+
+function base64url(value: string): string {
+  return Buffer.from(value).toString('base64url');
+}
+
+function previewGitHubAppJwt(appId: string, privateKey: string, nowMs: number): string {
+  const now = Math.floor(nowMs / 1000);
+  const unsigned = `${base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${base64url(
+    JSON.stringify({ iat: now - 60, exp: now + 540, iss: appId }),
+  )}`;
+  const signer = createSign('RSA-SHA256');
+  signer.update(unsigned);
+  signer.end();
+  return `${unsigned}.${signer.sign(privateKey.replaceAll('\\n', '\n')).toString('base64url')}`;
+}
+
+async function previewGitHubJson<T>(
+  path: string,
+  jwt: string,
+  fetchImpl: typeof fetch,
+): Promise<T> {
+  const response = await fetchImpl(`https://api.github.com${path}`, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${jwt}`,
+      'user-agent': 'kortix-preview-controller',
+      'x-github-api-version': '2022-11-28',
+    },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => '')).slice(0, 500);
+    throw new Error(`preview GitHub App preflight ${path} returned ${response.status}: ${detail}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function assertPreviewManagedGitInstallation(input: {
+  secrets: PreviewRuntimeSecrets;
+  fetchImpl?: typeof fetch;
+  nowMs?: number;
+}): Promise<{ appId: number; slug: string; installationId: number; owner: string }> {
+  const appId = input.secrets.KORTIX_GITHUB_APP_ID?.trim() ?? '';
+  const privateKey = input.secrets.KORTIX_GITHUB_APP_PRIVATE_KEY?.trim() ?? '';
+  const expectedSlug = input.secrets.KORTIX_GITHUB_APP_SLUG?.trim() ?? '';
+  const expectedInstallationId = input.secrets.MANAGED_GIT_GITHUB_INSTALL_ID?.trim() ?? '';
+  const expectedOwner = input.secrets.MANAGED_GIT_GITHUB_OWNER?.trim() ?? '';
+  if (!appId || !privateKey || !expectedSlug || !expectedInstallationId || !expectedOwner) {
+    throw new Error('preview GitHub App preflight requires all five managed Git secrets');
+  }
+  if (!/^\d+$/.test(appId) || !/^\d+$/.test(expectedInstallationId)) {
+    throw new Error('preview GitHub App and installation IDs must be decimal integers');
+  }
+
+  const jwt = previewGitHubAppJwt(appId, privateKey, input.nowMs ?? Date.now());
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const [app, installations] = await Promise.all([
+    previewGitHubJson<GitHubAppIdentity>('/app', jwt, fetchImpl),
+    previewGitHubJson<GitHubAppInstallation[]>('/app/installations?per_page=100', jwt, fetchImpl),
+  ]);
+  if (String(app.id ?? '') !== appId || app.slug !== expectedSlug) {
+    throw new Error(
+      `preview GitHub App identity mismatch: expected ${appId}/${expectedSlug}; received ${app.id ?? 'missing'}/${app.slug ?? 'missing'}`,
+    );
+  }
+  if (installations.length !== 1) {
+    throw new Error(
+      `preview GitHub App must have exactly one installation; received ${installations.length}`,
+    );
+  }
+  const installation = installations[0]!;
+  const actualOwner = installation.account?.login ?? '';
+  if (
+    String(installation.id ?? '') !== expectedInstallationId ||
+    actualOwner.toLowerCase() !== expectedOwner.toLowerCase() ||
+    installation.account?.type !== 'Organization'
+  ) {
+    throw new Error(
+      `preview GitHub App installation mismatch: expected ${expectedInstallationId}/${expectedOwner}/Organization; ` +
+        `received ${installation.id ?? 'missing'}/${actualOwner || 'missing'}/${installation.account?.type ?? 'missing'}`,
+    );
+  }
+  const administration = installation.permissions?.administration;
+  const contents = installation.permissions?.contents;
+  if (administration !== 'write' || contents !== 'write') {
+    throw new Error(
+      `preview GitHub App permissions must be administration:write and contents:write; ` +
+        `received administration:${administration ?? 'missing'} contents:${contents ?? 'missing'}`,
+    );
+  }
+  return {
+    appId: Number(appId),
+    slug: expectedSlug,
+    installationId: Number(expectedInstallationId),
+    owner: expectedOwner,
+  };
 }
 
 export function previewLockfileHash(value: string): string {

@@ -50,6 +50,24 @@ interface TemplateCreateResult {
   template_id: string;
   slug: string;
 }
+interface TemplateCoverageResult {
+  items: Array<{
+    slug: string;
+    is_default: boolean;
+    source: string;
+    provider_coverage?: Array<{
+      provider: 'daytona' | 'platinum' | 'e2b';
+      available: boolean;
+    }>;
+  }>;
+  default_slug: string | null;
+}
+
+const providerLabels = {
+  daytona: 'Daytona',
+  platinum: 'Platinum',
+  e2b: 'E2B',
+} as const;
 
 async function openSandboxSection(page: Page, projectId: string) {
   await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
@@ -125,10 +143,11 @@ test.describe("12 — Sandbox templates UI", () => {
   });
 
   test("sandboxes API returns platform default before opening the panel", async () => {
-    const { status, json } = await api<{
-      items: Array<{ slug: string; is_default: boolean; source: string }>;
-      default_slug: string | null;
-    }>(session.access_token, "GET", `/projects/${projectId}/sandbox-templates`);
+    const { status, json } = await api<TemplateCoverageResult>(
+      session.access_token,
+      "GET",
+      `/projects/${projectId}/sandbox-templates`,
+    );
     expect(status).toBe(200);
     expect(json?.default_slug).toBe("default");
     const platformDefault = json?.items.find(
@@ -164,18 +183,29 @@ test.describe("12 — Sandbox templates UI", () => {
       page.getByText(/Platform default · shared by every project/),
     ).toBeVisible();
 
-    // Every available provider reports its real launch state. A local stack can
-    // legitimately report Not ready when no provider snapshot exists.
+    // Every provider enabled by this deployment reports its real launch state.
+    // Preview enables Daytona only. Local and managed stacks can enable more.
     const platformRow = page
       .getByRole("listitem")
       .filter({ hasText: "Platform default" });
     const launchState = "Ready|Building|Failed|Not ready|Unavailable|Unknown";
-    await expect(platformRow).toContainText(
-      new RegExp(`Daytona[^A-Za-z]*(?:${launchState})`),
+    const templates = await api<TemplateCoverageResult>(
+      session.access_token,
+      "GET",
+      `/projects/${projectId}/sandbox-templates`,
     );
-    await expect(platformRow).toContainText(
-      new RegExp(`Platinum[^A-Za-z]*(?:${launchState})`),
-    );
+    expect(templates.status).toBe(200);
+    const configuredProviders =
+      templates.json?.items
+        .find((template) => template.is_default)
+        ?.provider_coverage?.filter((provider) => provider.available)
+        .map((provider) => providerLabels[provider.provider]) ?? [];
+    expect(configuredProviders.length).toBeGreaterThan(0);
+    for (const provider of configuredProviders) {
+      await expect(platformRow).toContainText(
+        new RegExp(`${provider}[^A-Za-z]*(?:${launchState})`),
+      );
+    }
 
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
@@ -238,7 +268,7 @@ test.describe("12 — Sandbox templates UI", () => {
     const rebuildButton = templateRow.getByRole("button", {
       name: /^Rebuild$/i,
     });
-    await expect(templateRow.getByText(customSlug, { exact: true })).toBeVisible({
+    await expect(templateRow.getByText(customSlug, { exact: true }).first()).toBeVisible({
       timeout: 15_000,
     });
     await expect(rebuildButton).toBeEnabled({ timeout: 15_000 });

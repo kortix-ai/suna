@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { generateKeyPairSync } from 'node:crypto';
 import {
   PreviewInfrastructureError,
+  assertPreviewManagedGitInstallation,
   buildPreviewBootstrapScript,
   previewLockfileHash,
   previewSandboxName,
@@ -19,7 +21,107 @@ const input = {
   sha: 'a'.repeat(40),
 };
 
+const previewPrivateKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey
+  .export({ type: 'pkcs8', format: 'pem' })
+  .toString();
+
+const previewSecrets = {
+  KORTIX_GITHUB_APP_ID: '3812697',
+  KORTIX_GITHUB_APP_PRIVATE_KEY: previewPrivateKey,
+  KORTIX_GITHUB_APP_SLUG: 'kortix-preview-test',
+  MANAGED_GIT_GITHUB_INSTALL_ID: '140097279',
+  MANAGED_GIT_GITHUB_OWNER: 'managed-kortix',
+};
+
 describe('provider-neutral preview lifecycle', () => {
+  it('accepts one dedicated managed Git installation with repository administration', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 3812697, slug: 'kortix-preview-test' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: 140097279,
+              account: { login: 'managed-kortix', type: 'Organization' },
+              permissions: { administration: 'write', contents: 'write', metadata: 'read' },
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+
+    await expect(
+      assertPreviewManagedGitInstallation({
+        secrets: previewSecrets,
+        fetchImpl,
+        nowMs: 1_800_000_000_000,
+      }),
+    ).resolves.toEqual({
+      appId: 3812697,
+      slug: 'kortix-preview-test',
+      installationId: 140097279,
+      owner: 'managed-kortix',
+    });
+  });
+
+  it('rejects a shared App with more than one installation', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 3812697, slug: 'kortix-preview-test' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: 140097279,
+              account: { login: 'managed-kortix', type: 'Organization' },
+              permissions: { contents: 'write', metadata: 'read' },
+            },
+            {
+              id: 134718821,
+              account: { login: 'kortix-ai', type: 'Organization' },
+              permissions: { contents: 'write', metadata: 'read' },
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+
+    await expect(
+      assertPreviewManagedGitInstallation({ secrets: previewSecrets, fetchImpl }),
+    ).rejects.toThrow('exactly one installation; received 2');
+  });
+
+  it('rejects the dedicated installation without repository administration permission', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 3812697, slug: 'kortix-preview-test' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: 140097279,
+              account: { login: 'managed-kortix', type: 'Organization' },
+              permissions: { contents: 'write', metadata: 'read' },
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+
+    await expect(
+      assertPreviewManagedGitInstallation({ secrets: previewSecrets, fetchImpl }),
+    ).rejects.toThrow(
+      'permissions must be administration:write and contents:write; received administration:missing contents:write',
+    );
+  });
+
   it('uses one stable sandbox name per pull request', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
   });

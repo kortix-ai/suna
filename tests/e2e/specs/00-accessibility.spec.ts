@@ -5,6 +5,7 @@ const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 const THIRD_PARTY_BEACONS =
   /https:\/\/[^/]*(googletagmanager\.com|google-analytics\.com|doubleclick\.net|googleadservices\.com|googlesyndication\.com)\/|https:\/\/www\.google\.[a-z.]+\/(pagead|ccm|rmkt)\//;
 const CONTRAST_CEILING = Number(process.env.A11Y_CONTRAST_MAX ?? '560');
+const previewTarget = process.env.KE2E_TARGET === 'preview';
 
 type Violation = {
   id: string;
@@ -46,6 +47,27 @@ test.describe('00 - Accessibility', () => {
   test('the landing page meets the structural WCAG A and AA contract', async ({
     page,
   }, testInfo) => {
+    if (previewTarget) {
+      const redirect = await page.request.get('/', { maxRedirects: 0 });
+      expect(redirect.status()).toBe(307);
+      expect(redirect.headers().location).toBe('/auth');
+      const response = await page.goto('/auth', { waitUntil: 'domcontentloaded' });
+      expect(response?.ok()).toBe(true);
+      await expect(page).toHaveURL((url) => url.pathname === '/auth');
+      await expect(page.locator('form').first()).toBeVisible();
+
+      const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+      await testInfo.attach('axe-preview-auth-results.json', {
+        body: JSON.stringify(results.violations, null, 2),
+        contentType: 'application/json',
+      });
+      const structural = blocking(results.violations as Violation[]);
+      expect(structural, `Preview auth accessibility violations:\n${summarize(structural)}`).toEqual(
+        [],
+      );
+      return;
+    }
+
     const response = await page.goto('/', { waitUntil: 'domcontentloaded' });
     expect(response?.ok()).toBe(true);
 

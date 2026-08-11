@@ -96,7 +96,9 @@ export function buildPreviewCaddyfile(): string {
   }
 
   handle {
-    reverse_proxy frontend:3000
+    reverse_proxy frontend:3000 {
+      header_up X-Forwarded-Host {http.request.header.X-Forwarded-Host}
+    }
   }
 }
 `;

@@ -72,7 +72,7 @@ test.describe
     }) => {
       const billingUrl = `/accounts/${accountId}?tab=billing`;
       await installBrowserSessionDirect(page, session, billingUrl, authOptions);
-      await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Plan' })).toBeVisible();
 
       await test.step('The owner starts Team checkout from the Billing page', async () => {
         await page.getByRole('button', { name: 'Subscribe to Team' }).click();

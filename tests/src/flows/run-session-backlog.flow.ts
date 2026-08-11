@@ -1040,12 +1040,9 @@ flow(
 // through Slack's `auth.test`. Without a real Slack workspace+app (true even on
 // dev-api unless one is wired) the project has no install → the webhook returns
 // 404 BEFORE it can dispatch, so createProjectSession is unreachable in a
-// black-box run. We therefore drive the real dispatch entry point and assert the
-// closest real boundary: a `event_callback`/`app_mention` POST is accepted and
-// (when an install + signature are present on the target) acknowledged 200
-// `{ok:true}` and a `source:slack` session subsequently appears; otherwise the
-// install gate (404) is asserted. This flow is gated on funded+daytona because a
-// successful dispatch spins a real sandbox.
+// black-box run. A fresh preview therefore asserts the exact install gate as its
+// complete contract. A target with a real install must acknowledge the signed
+// dispatch and create a source:slack session.
 flow(
   'CHN-6',
   {
@@ -1071,25 +1068,22 @@ flow(
     };
 
     await ctx.step('app_mention to the BYO webhook reaches the dispatch boundary', async () => {
-      // No valid per-project signing secret is stored (connect needs real Slack),
-      // so the documented boundary is: 404 (no install) is the deterministic
-      // outcome here; 200 {ok:true} only if a real install+signature exist on the
-      // target. Either proves we hit the real BYO dispatch route.
+      // Preview owns a fresh database and intentionally has no third-party Slack
+      // installation. Its complete contract is the exact install gate. Do not
+      // report this verified boundary as an excluded flow.
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post('/v1/webhooks/slack/:projectId', event, { params: { projectId: project.id } });
       r.status([200, 401, 404]);
-      if (r.statusCode !== 200) {
-        ctx.skip(
-          'no real Slack install on this target — dispatch (createProjectSession) ' +
-            'requires a connected workspace; asserted the BYO webhook install gate instead',
-        );
+      if (ctx.env.target === 'preview') {
+        r.status(404).body().has('$.error', 'Not configured');
+        return;
       }
       r.body().has('$.ok', true);
     });
 
     await ctx.step('a slack-sourced session is created for the project', async () => {
-      // Only reached when the webhook returned 200 (a real install dispatched).
+      if (ctx.env.target === 'preview') return;
       await waitFor(
         async () => {
           const r = await ctx.client

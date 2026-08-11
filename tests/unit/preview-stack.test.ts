@@ -24,6 +24,7 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('handle_path /_mailpit/*');
     expect(caddy).toContain('reverse_proxy mailpit:8025');
     expect(caddy).toContain('reverse_proxy frontend:3000');
+    expect(caddy).toContain('header_up X-Forwarded-Host {http.request.header.X-Forwarded-Host}');
   });
 
   it('adds preview ingress, Mailpit, direct database access, and preview-only Auth capacity', () => {

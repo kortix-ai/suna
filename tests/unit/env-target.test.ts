@@ -12,4 +12,15 @@ describe('release target inference', () => {
     expect(defaultGatewayUrl('prod')).toBe('https://gateway.kortix.com');
     expect(defaultGatewayUrl('local')).toBe('http://localhost:8009');
   });
+
+  it('preserves the explicit preview target for preview-only browser contracts', () => {
+    const previous = process.env.KE2E_TARGET;
+    process.env.KE2E_TARGET = 'preview';
+    try {
+      expect(inferTarget('https://8080-preview.daytonaproxy01.net/v1')).toBe('preview');
+    } finally {
+      if (previous === undefined) delete process.env.KE2E_TARGET;
+      else process.env.KE2E_TARGET = previous;
+    }
+  });
 });

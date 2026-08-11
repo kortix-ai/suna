@@ -71,7 +71,7 @@ test.describe("09 - Admin console", () => {
   test("admin opens the current overview with live platform data", async ({
     page,
   }) => {
-    await json(await fetch(`${apiBase.replace(/\/v1$/, "")}/health`), 200);
+    await json(await fetch(`${apiBase}/health`), 200);
     const configuredAdminEmail = process.env.E2E_ADMIN_EMAIL?.trim();
     const syntheticEmail = `e2e-browser-admin-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
     const adminEmail = configuredAdminEmail || syntheticEmail;

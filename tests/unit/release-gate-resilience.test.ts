@@ -101,6 +101,27 @@ describe('release gate transient failure resilience', () => {
     expect(post).toHaveBeenCalledTimes(1);
   });
 
+  it('fails once and caches a permanent managed GitHub App permission error', async () => {
+    vi.useFakeTimers();
+    const denied = vi.fn().mockResolvedValue(
+      response(
+        502,
+        '{"error":"GitHub /orgs/managed-kortix/repos failed (403): Resource not accessible by integration"}',
+      ),
+    );
+    const unused = vi.fn();
+
+    await expect(
+      provisionProject(clientWithPost(denied), { name: 'permission-denied' }),
+    ).rejects.toThrow('Resource not accessible by integration');
+    await expect(
+      provisionProject(clientWithPost(unused), { name: 'must-fail-fast' }),
+    ).rejects.toThrow('managed Git provisioning is unavailable');
+    expect(denied).toHaveBeenCalledTimes(1);
+    expect(unused).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('retries an explicit HTTP 403 rate-limit response', async () => {
     vi.useFakeTimers();
     const attempts: number[] = [];

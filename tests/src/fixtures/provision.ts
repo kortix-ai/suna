@@ -29,8 +29,10 @@ function release(): void {
 }
 
 const RATE_LIMIT_RE = /rate limit|secondary rate|temporarily blocked|abuse/i;
+const PERMANENT_MANAGED_GIT_RE = /resource not accessible by integration/i;
 const PROVISION_REQUEST_TIMEOUT_MS = 180_000;
 const MAX_PROVISION_ATTEMPTS = 5;
+let permanentManagedGitFailure: string | null = null;
 
 function isRetryableProvisionStatus(status: number): boolean {
   return status >= 500 && status <= 599;
@@ -64,8 +66,14 @@ export async function provisionProject(
   client: Client,
   body: Record<string, unknown>,
 ): Promise<string> {
+  if (permanentManagedGitFailure) {
+    throw new Error(`managed Git provisioning is unavailable: ${permanentManagedGitFailure}`);
+  }
   await acquire();
   try {
+    if (permanentManagedGitFailure) {
+      throw new Error(`managed Git provisioning is unavailable: ${permanentManagedGitFailure}`);
+    }
     let lastFailure = '';
     let attempts = 0;
     for (let attempt = 0; attempt < MAX_PROVISION_ATTEMPTS; attempt++) {
@@ -88,6 +96,10 @@ export async function provisionProject(
       if (typeof id === 'string' && id.length > 0) return id;
       const responseText = r.text();
       lastFailure = `HTTP ${r.statusCode}: ${responseText}`;
+      if (PERMANENT_MANAGED_GIT_RE.test(responseText)) {
+        permanentManagedGitFailure = lastFailure;
+        break;
+      }
       const rateLimited = RATE_LIMIT_RE.test(responseText);
       const retryable = isRetryableProvisionStatus(r.statusCode) || rateLimited;
       if (!retryable || attempt === MAX_PROVISION_ATTEMPTS - 1) break;

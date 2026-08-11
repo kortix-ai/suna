@@ -47,6 +47,13 @@ interface AgentMailMessage {
   html?: string;
 }
 
+const MAILPIT_TIMESTAMP_TOLERANCE_MS = 5_000;
+
+export function mailpitMessageIsRecent(created: string, after: Date): boolean {
+  const createdAt = new Date(created).getTime();
+  return Number.isFinite(createdAt) && createdAt >= after.getTime() - MAILPIT_TIMESTAMP_TOLERANCE_MS;
+}
+
 function extractAuthAction(text: string): AuthEmailAction | null {
   const decoded = text.replaceAll("&amp;", "&");
   const urls = decoded.match(/https?:\/\/[^\s<>"')]+/g) ?? [];
@@ -96,7 +103,10 @@ function localMailpitInbox(mailpitUrl: string): DisposableInbox {
           (recipient) => recipient.Address?.toLowerCase() === email.toLowerCase(),
         ),
       )
-      .filter((candidate) => new Date(candidate.Created).getTime() >= after.getTime())
+      // Mailpit and the test process can stamp the same SMTP transaction on
+      // opposite sides of a sub-second clock boundary. The recipient remains
+      // unique, so a small tolerance cannot select another test's message.
+      .filter((candidate) => mailpitMessageIsRecent(candidate.Created, after))
       .sort(
         (left, right) =>
           new Date(right.Created).getTime() - new Date(left.Created).getTime(),

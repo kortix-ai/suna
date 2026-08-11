@@ -1,9 +1,22 @@
 import { expect, test } from '@playwright/test';
 
+const previewTarget = process.env.KE2E_TARGET === 'preview';
+
 test.describe('free-tier pricing and onboarding surface', () => {
   test('@target-smoke pricing page presents the free tier, model options, and sandbox compute terms', async ({
     page,
   }) => {
+    if (previewTarget) {
+      const redirect = await page.request.get('/pricing', { maxRedirects: 0 });
+      expect(redirect.status()).toBe(307);
+      expect(redirect.headers().location).toBe('/auth');
+      await page.goto('/pricing', { waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL((url) => url.pathname === '/auth');
+      await expect(page.getByRole('heading', { name: 'Welcome to Kortix' })).toBeVisible();
+      await expect(page.locator('form').first()).toBeVisible();
+      return;
+    }
+
     await page.goto('/pricing', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByRole('heading', { name: /simple per-seat/i })).toBeVisible();

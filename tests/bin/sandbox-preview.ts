@@ -3,6 +3,7 @@ import { appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+  assertPreviewManagedGitInstallation,
   type SandboxPreviewProvider,
   runSandboxPreview,
 } from '../src/core/sandbox-preview';
@@ -107,6 +108,12 @@ const daytona = {
 if (action === 'deploy') {
   const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
   const sha = required('PREVIEW_SHA');
+  const secrets = runtimeSecrets();
+  const managedGit = await assertPreviewManagedGitInstallation({ secrets });
+  console.log(
+    `[sandbox-preview] managed Git preflight app=${managedGit.appId}/${managedGit.slug} ` +
+      `installation=${managedGit.installationId} owner=${managedGit.owner}`,
+  );
   const deployment: SandboxPreviewDeploymentInput = {
     repository,
     ref: value('PREVIEW_REF', sha),
@@ -116,7 +123,7 @@ if (action === 'deploy') {
     runAttempt: value('GITHUB_RUN_ATTEMPT', '1'),
     root: resolve(value('PREVIEW_ROOT', resolve(import.meta.dir, '../..'))),
     lockfileHash: required('PREVIEW_LOCKFILE_SHA256'),
-    secrets: runtimeSecrets(),
+    secrets,
     platinum,
     daytona,
   };
