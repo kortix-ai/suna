@@ -21,6 +21,11 @@ import { analyticsApp } from './analytics';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
 
+// `account_id` reaches Postgres as a `uuid`, where a malformed value is a
+// 22P02 cast error long before any guard runs — a 500 on input the caller
+// controls. Shape-check first so a typo is a clean 400.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Every admin route requires a logged-in platform admin.
 adminApp.use('*', supabaseAuth, requireAdmin);
 
@@ -168,6 +173,10 @@ adminApp.openapi(
         managedModelsOverride: creditAccounts.managedModelsOverride,
         demoEnterprise: creditAccounts.demoEnterprise,
         enterpriseEntitled: creditAccounts.enterpriseEntitled,
+        // Same reason as maxConcurrentSessions above: the resolver reads the
+        // JSONB overrides FIRST, so a projection without them reports the
+        // legacy columns' answer for an account whose real answer expired.
+        entitlementOverrides: creditAccounts.entitlementOverrides,
         ownerEmail,
         memberCount,
       })
@@ -229,6 +238,12 @@ adminApp.openapi(
         managedModelsOverride: r.managedModelsOverride ?? null,
         demoEnterprise: r.demoEnterprise ?? false,
         enterpriseEntitled: r.enterpriseEntitled ?? false,
+        // The stored override map, exactly as PUT /accounts/{id}/overrides left
+        // it. Expiry is NOT applied here — the console shows an operator what
+        // is on the row, including entries that have lapsed; `resolved` above
+        // is what the gates enforce.
+        entitlementOverrides: r.entitlementOverrides ?? {},
+        computeRateMultiplier: resolved.compute.rateMultiplier,
         // Stripe customer id/email aren't on credit_accounts — left null until a
         // billing-customers join is added; the console degrades gracefully.
         billingCustomerId: null,
@@ -776,22 +791,18 @@ adminApp.openapi(
       );
     }
 
-    const { getSubscriptionInfo, upsertCreditAccount } = await import(
-      '../billing/repositories/credit-accounts'
-    );
+    const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
+    const { applyAdminOverride } = await import('../billing/services/account-write-owner');
     const before = await getSubscriptionInfo(accountId);
-    await upsertCreditAccount(accountId, { tier });
-
-    // Tier feeds TWO caches: the limit cache (60s) and the gateway tier-
-    // snapshot cache (30s, entitlements.ts — the managed-models decision on
-    // the auth hot path). Clear both so the change is visible immediately;
-    // clearing only the limit cache left the gateway serving the old tier for
-    // up to 30s. The per-request entitlement read (SSO/SCIM gates) is uncached
-    // and already sees it.
-    const { clearAccountLimitCache } = await import('../shared/account-limits');
-    const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
-    clearAccountLimitCache();
-    invalidateCachedAccountTier(accountId);
+    // `tier` is provider-owned everywhere else, and ADMIN_ASSIGNABLE here: an
+    // operator reassigning a plan by hand is a real support operation. The
+    // chokepoint still refuses 'enterprise' (the 400 above catches it first)
+    // and invalidates the one billing cache the value feeds.
+    await applyAdminOverride(
+      accountId,
+      { tier },
+      { userId: actorUserId ?? null, action: 'admin.account.tier.set' },
+    );
 
     try {
       const { recordAuditEvent } = await import('../shared/audit');
@@ -862,12 +873,14 @@ adminApp.openapi(
         return c.json({ error: 'enabled must be a boolean' }, 400);
       }
 
-      const {
-        isEnterpriseEntitled,
-        setEnterpriseEntitled,
-      } = await import('../billing/repositories/credit-accounts');
+      const { isEnterpriseEntitled } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = await isEnterpriseEntitled(accountId);
-      await setEnterpriseEntitled(accountId, enabled);
+      await applyAdminOverride(
+        accountId,
+        { enterpriseEntitled: enabled },
+        { userId: actorUserId ?? null, action: 'admin.account.enterprise_entitlement.set' },
+      );
 
       // The per-request entitlement read (SSO/SCIM gates) is uncached and sees
       // the change immediately; no tier-cache invalidation needed because
@@ -937,9 +950,8 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const actorUserId = (c.get('userId') as string | undefined) ?? null;
     const body = c.req.valid('json') as { max_concurrent_sessions: number | null };
-    const { getSubscriptionInfo, upsertCreditAccount } = await import(
-      '../billing/repositories/credit-accounts'
-    );
+    const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
+    const { applyAdminOverride } = await import('../billing/services/account-write-owner');
     const { clearAccountLimitCache } = await import('../shared/account-limits');
     const { recordAuditEvent } = await import('../shared/audit');
 
@@ -954,7 +966,11 @@ adminApp.openapi(
       {
         getCurrent: async () => (await getSubscriptionInfo(accountId))?.maxConcurrentSessions ?? null,
         persist: async (id, value) => {
-          await upsertCreditAccount(id, { maxConcurrentSessions: value });
+          await applyAdminOverride(
+            id,
+            { maxConcurrentSessions: value },
+            { userId: actorUserId, action: 'admin.account.session_limit.set' },
+          );
         },
         clearCache: clearAccountLimitCache,
         recordAudit: recordAuditEvent,
@@ -1145,19 +1161,16 @@ adminApp.openapi(
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as { override: boolean | null };
 
-      const { getCreditAccount, setManagedModelsOverride } = await import(
-        '../billing/repositories/credit-accounts'
-      );
+      const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = (await getCreditAccount(accountId))?.managedModelsOverride ?? null;
-      await setManagedModelsOverride(accountId, body.override);
-
-      // The managed-models answer is served from the shared tier-snapshot
-      // cache (gateway auth hot path) AND the limit cache (sandbox-provision
-      // gateway mount) — clear both so the flip is visible immediately.
-      const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
-      const { clearAccountLimitCache } = await import('../shared/account-limits');
-      invalidateCachedAccountTier(accountId);
-      clearAccountLimitCache();
+      // The chokepoint invalidates this account's billing cache — the one cache
+      // the managed-models answer is served from on the gateway auth hot path.
+      await applyAdminOverride(
+        accountId,
+        { managedModelsOverride: body.override },
+        { userId: actorUserId, action: 'admin.account.managed_models.set' },
+      );
 
       try {
         const { recordAuditEvent } = await import('../shared/audit');
@@ -1217,11 +1230,14 @@ adminApp.openapi(
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as { enabled: boolean };
 
-      const { isDemoEnterprise, setDemoEnterprise } = await import(
-        '../billing/repositories/credit-accounts'
-      );
+      const { isDemoEnterprise } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = await isDemoEnterprise(accountId);
-      await setDemoEnterprise(accountId, body.enabled);
+      await applyAdminOverride(
+        accountId,
+        { demoEnterprise: body.enabled },
+        { userId: actorUserId, action: 'admin.account.enterprise_demo.set' },
+      );
 
       try {
         const { recordAuditEvent } = await import('../shared/audit');
@@ -1241,6 +1257,118 @@ adminApp.openapi(
       }
 
       return c.json({ ok: true, enabled: body.enabled });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  },
+);
+
+// ── Set per-account entitlement overrides (the JSONB map) ────────────────────
+// One route for every override an account can carry, each with an OPTIONAL
+// EXPIRY — which the four single-purpose routes above cannot express at all
+// (their columns have nowhere to put a date, so every grant they make is
+// permanent until someone remembers to undo it).
+//
+// MERGE-PATCH semantics (RFC 7386, scoped to the known keys): a key present
+// with an entry sets it, a key present with `null` deletes it, and a key that
+// is absent is left exactly as it was. That is what makes the route safe to
+// call from a form that only knows about one field.
+adminApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/api/accounts/{id}/overrides',
+    tags: ['admin'],
+    summary: "Merge-patch an account's entitlement overrides",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            // Deliberately loose HERE and strict in `validateOverridePatch`:
+            // the domain rules (known keys, value type per key, ranges, ISO
+            // expiry) are one pure function that unit tests can drive, not a
+            // schema the tests would have to go through HTTP to exercise.
+            schema: z.record(
+              z.string(),
+              z
+                .object({
+                  value: z.union([z.boolean(), z.number()]),
+                  expires_at: z.string().optional(),
+                })
+                .nullable(),
+            ),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), overrides: z.record(z.string(), z.any()) }),
+        'Stored entitlement overrides',
+      ),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const accountId = c.req.param('id');
+      const actorUserId = (c.get('userId') as string | undefined) ?? null;
+      const raw = await c.req.json().catch(() => null);
+
+      const {
+        legacyMirrorPatch,
+        mergeOverridePatch,
+        toStoredOverrides,
+        validateOverridePatch,
+      } = await import('../billing/services/entitlement-overrides');
+      const validated = validateOverridePatch(raw);
+      if (!validated.ok) return c.json({ error: validated.error }, 400);
+
+      const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
+      const before = (await getCreditAccount(accountId))?.entitlementOverrides ?? {};
+      const merged = mergeOverridePatch(before, validated.patch);
+
+      await applyAdminOverride(
+        accountId,
+        {
+          entitlementOverrides: toStoredOverrides(merged),
+          // Mirror the four legacy columns for one release, so an API task
+          // that predates this column still resolves a PERMANENT override the
+          // same way. A timed entry clears its column instead — see
+          // legacyMirrorPatch for why mirroring it would defeat the expiry.
+          ...legacyMirrorPatch(validated.patch),
+        },
+        { userId: actorUserId, action: 'admin.account.overrides.set' },
+      );
+
+      // Two caches read these values: the unified billing cache (invalidated by
+      // applyAdminOverride) and the legacy per-process limit cache.
+      const { clearAccountLimitCache } = await import('../shared/account-limits');
+      clearAccountLimitCache();
+
+      const stored = (await getCreditAccount(accountId))?.entitlementOverrides ?? {};
+      try {
+        const { recordAuditEvent } = await import('../shared/audit');
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: 'admin.account.overrides.set',
+          resourceType: 'credit_account',
+          resourceId: accountId,
+          before: { entitlement_overrides: before },
+          after: { entitlement_overrides: stored },
+          ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          userAgent: c.req.header('user-agent') || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the override change */
+      }
+
+      return c.json({ ok: true, overrides: stored });
     } catch (e: any) {
       return c.json({ error: e?.message || String(e) }, 500);
     }
@@ -1529,5 +1657,227 @@ adminApp.openapi(
       },
       providers, latencyByDay, volumeByDay, migrations, recentErrors,
     });
+  },
+);
+
+// ── Act-as impersonation ─────────────────────────────────────────────────────
+// "Open this customer's account" for support and debugging. The grant is a ROW
+// (kortix.impersonation_grants), never a token: the client only ever holds an
+// id, and ownership, expiry, revocation and the operator's CURRENT platform
+// role are re-read on every request that presents it (shared/impersonation.ts +
+// middleware/impersonation.ts). Revocation is therefore instant, and demoting
+// an operator kills their live sessions mid-flight.
+//
+// These three routes are themselves unreachable from inside an impersonated
+// session — /v1/admin/* is on the forbidden list — so a session can neither
+// mint a second grant nor extend itself.
+
+// Mint a grant. TTL is capped at one hour and written by the server; the
+// request cannot ask for longer.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/impersonate',
+    tags: ['admin'],
+    summary: 'Start acting as an account',
+    ...auth,
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              account_id: z.string(),
+              reason: z.string().max(500).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({
+          grant_id: z.string(),
+          account_id: z.string(),
+          expires_at: z.string(),
+        }),
+        'Impersonation grant',
+      ),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      404: json(z.record(z.string(), z.any()), 'Account not found'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const adminUserId = c.get('userId') as string;
+      const body = await c.req.json().catch(() => null);
+      const accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
+      const reasonRaw = typeof body?.reason === 'string' ? body.reason.trim() : '';
+      const reason = reasonRaw ? reasonRaw.slice(0, 500) : null;
+      if (!UUID_RE.test(accountId)) {
+        return c.json({ error: 'account_id must be a uuid' }, 400);
+      }
+
+      const { db } = await import('../shared/db');
+      const { accounts } = await import('@kortix/db');
+      const { eq } = await import('drizzle-orm');
+      // Refuse a grant on an account that does not exist. A row pointing at a
+      // typo'd uuid would sit in the table looking like a real support session.
+      const [account] = await db
+        .select({ accountId: accounts.accountId, name: accounts.name })
+        .from(accounts)
+        .where(eq(accounts.accountId, accountId))
+        .limit(1);
+      if (!account) return c.json({ error: 'account not found' }, 404);
+
+      const { createImpersonationGrant, impersonationExpiryFrom, IMPERSONATION_START_ACTION } =
+        await import('../shared/impersonation');
+      const expiresAt = impersonationExpiryFrom(new Date());
+      const grant = await createImpersonationGrant({
+        adminUserId,
+        targetAccountId: accountId,
+        reason,
+        expiresAt,
+      });
+
+      // Audited against the TARGET account, not ours: the customer's own audit
+      // log (and any audit webhook they have configured) is where "an operator
+      // entered your account" has to appear. `actorUserId` is the real admin.
+      const { recordAuditEvent } = await import('../shared/audit');
+      await recordAuditEvent({
+        accountId,
+        actorUserId: adminUserId,
+        actorType: 'human',
+        action: IMPERSONATION_START_ACTION,
+        resourceType: 'account',
+        resourceId: accountId,
+        metadata: {
+          grant_id: grant.id,
+          impersonator_user_id: adminUserId,
+          target_account_id: accountId,
+          reason,
+          expires_at: expiresAt.toISOString(),
+        },
+        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        userAgent: c.req.header('user-agent') || null,
+      });
+
+      return c.json({
+        grant_id: grant.id,
+        account_id: accountId,
+        account_name: account.name ?? null,
+        expires_at: expiresAt.toISOString(),
+      });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  },
+);
+
+// Stop acting. Scoped to the caller's own grants — a non-owner gets the same
+// 404 as a nonexistent id, so this is not an enumeration oracle either.
+adminApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/api/impersonate/{grantId}',
+    tags: ['admin'],
+    summary: 'Stop acting as an account',
+    ...auth,
+    request: { params: z.object({ grantId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), grant_id: z.string(), revoked_at: z.string().nullable() }),
+        'Revoked grant',
+      ),
+      404: json(z.record(z.string(), z.any()), 'Grant not found'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const adminUserId = c.get('userId') as string;
+      const grantId = c.req.param('grantId');
+      const { revokeImpersonationGrant, IMPERSONATION_STOP_ACTION } = await import(
+        '../shared/impersonation'
+      );
+      const grant = await revokeImpersonationGrant({ grantId, adminUserId });
+      if (!grant) return c.json({ error: 'grant not found' }, 404);
+
+      const { recordAuditEvent } = await import('../shared/audit');
+      await recordAuditEvent({
+        accountId: grant.targetAccountId,
+        actorUserId: adminUserId,
+        actorType: 'human',
+        action: IMPERSONATION_STOP_ACTION,
+        resourceType: 'account',
+        resourceId: grant.targetAccountId,
+        metadata: {
+          grant_id: grant.id,
+          impersonator_user_id: adminUserId,
+          target_account_id: grant.targetAccountId,
+        },
+        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        userAgent: c.req.header('user-agent') || null,
+      });
+
+      return c.json({
+        ok: true,
+        grant_id: grant.id,
+        revoked_at: grant.revokedAt ? grant.revokedAt.toISOString() : null,
+      });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  },
+);
+
+// The caller's live grants. Lets a console that lost its sessionStorage (new
+// tab, cleared storage, another device) find the session it is still inside
+// and exit it, instead of waiting out the hour.
+adminApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/impersonate/active',
+    tags: ['admin'],
+    summary: 'List the caller-held impersonation grants',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({ grants: z.array(z.record(z.string(), z.any())) }),
+        'Active grants',
+      ),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    try {
+      const adminUserId = c.get('userId') as string;
+      const { listActiveImpersonationGrants } = await import('../shared/impersonation');
+      const grants = await listActiveImpersonationGrants(adminUserId);
+      const { db } = await import('../shared/db');
+      const { accounts } = await import('@kortix/db');
+      const { inArray } = await import('drizzle-orm');
+      const names = new Map<string, string | null>();
+      if (grants.length > 0) {
+        const rows = await db
+          .select({ accountId: accounts.accountId, name: accounts.name })
+          .from(accounts)
+          .where(inArray(accounts.accountId, grants.map((g) => g.targetAccountId)));
+        for (const row of rows) names.set(row.accountId, row.name ?? null);
+      }
+      return c.json({
+        grants: grants.map((g) => ({
+          grant_id: g.id,
+          account_id: g.targetAccountId,
+          account_name: names.get(g.targetAccountId) ?? null,
+          expires_at: g.expiresAt.toISOString(),
+        })),
+      });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
   },
 );

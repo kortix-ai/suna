@@ -266,6 +266,238 @@ describe('maxConcurrentSessions override', () => {
   });
 });
 
+// ─── entitlement_overrides (the JSONB column) ────────────────────────────────
+// Per key: the JSONB entry wins over the legacy column when it applies, the
+// legacy column answers when the key is absent or expired, and the five
+// per-entitlement keys land AFTER the enterprise expansion so one capability
+// can be switched off independently of the all-or-nothing flag.
+
+describe('entitlement_overrides precedence', () => {
+  test('a JSONB key beats the legacy column of the same name', () => {
+    const r = resolveBillingFromRow(
+      {
+        tier: 'free',
+        enterpriseEntitled: false,
+        entitlementOverrides: { enterpriseEntitled: { value: true } },
+      },
+      NOW,
+    );
+    expect(r.entitlements.sso).toBe(true);
+    expect(r.entitlements.scim).toBe(true);
+  });
+
+  test('the JSONB key wins in the OTHER direction too — false beats a true column', () => {
+    const r = resolveBillingFromRow(
+      {
+        tier: 'free',
+        enterpriseEntitled: true,
+        entitlementOverrides: { enterpriseEntitled: { value: false } },
+      },
+      NOW,
+    );
+    expect(r.entitlements.sso).toBe(false);
+  });
+
+  test('an EXPIRED entry is ignored and the legacy column answers', () => {
+    const r = resolveBillingFromRow(
+      {
+        tier: 'free',
+        enterpriseEntitled: true,
+        entitlementOverrides: { enterpriseEntitled: { value: false, expires_at: iso(-1) } },
+      },
+      NOW,
+    );
+    expect(r.entitlements.sso).toBe(true);
+  });
+
+  test('an expired entry with no legacy column falls all the way back to the plan', () => {
+    const live = resolveBillingFromRow(
+      { tier: 'free', entitlementOverrides: { managedModels: { value: true, expires_at: iso(HOUR) } } },
+      NOW,
+    );
+    expect(live.entitlements.managedModels).toBe(true);
+    const dead = resolveBillingFromRow(
+      { tier: 'free', entitlementOverrides: { managedModels: { value: true, expires_at: iso(-1) } } },
+      NOW,
+    );
+    expect(dead.entitlements.managedModels).toBe(false);
+  });
+
+  test('maxConcurrentSessions: JSONB over column, and expiry restores the column', () => {
+    const jsonb = resolveBillingFromRow(
+      {
+        tier: 'free',
+        maxConcurrentSessions: 7,
+        entitlementOverrides: { maxConcurrentSessions: { value: 900 } },
+      },
+      NOW,
+    );
+    expect(jsonb.limits.concurrentSessions).toEqual({ value: 900, source: 'account_override' });
+
+    const expired = resolveBillingFromRow(
+      {
+        tier: 'free',
+        maxConcurrentSessions: 7,
+        entitlementOverrides: { maxConcurrentSessions: { value: 900, expires_at: iso(-1) } },
+      },
+      NOW,
+    );
+    expect(expired.limits.concurrentSessions).toEqual({ value: 7, source: 'account_override' });
+
+    const gone = resolveBillingFromRow(
+      { tier: 'free', entitlementOverrides: { maxConcurrentSessions: { value: 900, expires_at: iso(-1) } } },
+      NOW,
+    );
+    expect(gone.limits.concurrentSessions).toEqual({ value: 50, source: 'plan' });
+  });
+
+  test('managedModelsOverride stays tri-state through the JSONB', () => {
+    expect(
+      resolveBillingFromRow(
+        { tier: 'pro', entitlementOverrides: { managedModelsOverride: { value: false } } },
+        NOW,
+      ).entitlements.managedModels,
+    ).toBe(false);
+    expect(
+      resolveBillingFromRow(
+        { tier: 'free', entitlementOverrides: { managedModelsOverride: { value: true } } },
+        NOW,
+      ).entitlements.managedModels,
+    ).toBe(true);
+  });
+
+  test('a malformed column cannot break resolution — it reads as no overrides', () => {
+    for (const overrides of [null, 'x', 7, [], { sso: 'yes' }, { sso: { value: 3 } }, {}]) {
+      const r = resolveBillingFromRow({ tier: 'pro', entitlementOverrides: overrides }, NOW);
+      expect(r.plan.key).toBe('pro');
+      expect(r.entitlements.sso).toBe(false);
+      expect(r.entitlements.managedModels).toBe(true);
+      expect(r.limits.concurrentSessions).toEqual({ value: 200, source: 'plan' });
+    }
+  });
+});
+
+describe('per-entitlement overrides', () => {
+  test('one capability can be switched OFF for an enterprise-entitled account', () => {
+    const r = resolveBillingFromRow(
+      {
+        tier: 'per_seat',
+        enterpriseEntitled: true,
+        entitlementOverrides: { sso: { value: false } },
+      },
+      NOW,
+    );
+    expect(r.entitlements.sso).toBe(false);
+    // …and only that one. The other three still come from the expansion.
+    expect(r.entitlements.scim).toBe(true);
+    expect(r.entitlements.rbac).toBe(true);
+    expect(r.entitlements.auditAccess).toBe(true);
+  });
+
+  test('one capability can be switched ON without the enterprise flag', () => {
+    const r = resolveBillingFromRow(
+      { tier: 'free', entitlementOverrides: { auditAccess: { value: true } } },
+      NOW,
+    );
+    expect(r.entitlements.auditAccess).toBe(true);
+    expect(r.entitlements.sso).toBe(false);
+  });
+
+  test('a per-entitlement override beats the plan on a real enterprise plan', () => {
+    const r = resolveBillingFromRow(
+      { tier: 'enterprise', entitlementOverrides: { scim: { value: false } } },
+      NOW,
+    );
+    expect(r.plan.key).toBe('enterprise');
+    expect(r.entitlements.scim).toBe(false);
+    expect(r.entitlements.sso).toBe(true);
+  });
+
+  test('managedModels as a per-entitlement key outranks managedModelsOverride', () => {
+    const r = resolveBillingFromRow(
+      {
+        tier: 'free',
+        managedModelsOverride: true,
+        entitlementOverrides: { managedModels: { value: false } },
+      },
+      NOW,
+    );
+    expect(r.entitlements.managedModels).toBe(false);
+  });
+
+  test('an expired per-entitlement override stops applying', () => {
+    const r = resolveBillingFromRow(
+      {
+        tier: 'per_seat',
+        enterpriseEntitled: true,
+        entitlementOverrides: { sso: { value: false, expires_at: iso(-1) } },
+      },
+      NOW,
+    );
+    expect(r.entitlements.sso).toBe(true);
+  });
+});
+
+describe('compute rate multiplier', () => {
+  test('every plan bills at list price by default', () => {
+    for (const key of ALL_KEYS) {
+      expect(resolveBillingFromRow({ tier: key }, NOW).compute).toEqual({
+        rateMultiplier: 1,
+        source: 'plan',
+      });
+    }
+    expect(resolveBillingFromRow(null, NOW).compute).toEqual({ rateMultiplier: 1, source: 'plan' });
+  });
+
+  test('an override sets the multiplier, including 0 (free compute)', () => {
+    expect(
+      resolveBillingFromRow(
+        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: 0.5 } } },
+        NOW,
+      ).compute,
+    ).toEqual({ rateMultiplier: 0.5, source: 'account_override' });
+    expect(
+      resolveBillingFromRow(
+        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: 0 } } },
+        NOW,
+      ).compute,
+    ).toEqual({ rateMultiplier: 0, source: 'account_override' });
+  });
+
+  test('the multiplier is clamped to [0, 10] — a fat finger cannot bill 1000×', () => {
+    expect(
+      resolveBillingFromRow(
+        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: 1000 } } },
+        NOW,
+      ).compute.rateMultiplier,
+    ).toBe(10);
+    expect(
+      resolveBillingFromRow(
+        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: -5 } } },
+        NOW,
+      ).compute.rateMultiplier,
+    ).toBe(0);
+  });
+
+  test('an expired or malformed multiplier falls back to list price', () => {
+    expect(
+      resolveBillingFromRow(
+        {
+          tier: 'per_seat',
+          entitlementOverrides: { computeRateMultiplier: { value: 0, expires_at: iso(-1) } },
+        },
+        NOW,
+      ).compute,
+    ).toEqual({ rateMultiplier: 1, source: 'plan' });
+    expect(
+      resolveBillingFromRow(
+        { tier: 'per_seat', entitlementOverrides: { computeRateMultiplier: { value: 'half' } } },
+        NOW,
+      ).compute,
+    ).toEqual({ rateMultiplier: 1, source: 'plan' });
+  });
+});
+
 describe('display naming', () => {
   test('family label, with a grandfathered sublabel where one applies', () => {
     expect(resolveBillingFromRow({ tier: 'free' }, NOW).display).toEqual({

@@ -1128,6 +1128,18 @@ app.onError((err, c) => {
       method,
     });
 
+    // An HTTPException built with an explicit `res` carries a machine-readable
+    // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
+    // (iam/dispatcher.ts's buildDenialError, which the web app's step-up dialog
+    // keys on) and `code:'impersonation_invalid'` (middleware/impersonation.ts).
+    // Rebuilding a generic `{error,message,status}` body here silently threw
+    // that field away, so every typed 4xx arrived at the client untyped. Honour
+    // the response the thrower constructed; everything else still gets the
+    // generic shape below.
+    if (err.res) {
+      return err.res;
+    }
+
     const response: Record<string, unknown> = {
       error: true,
       message: err.message,

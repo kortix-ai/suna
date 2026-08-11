@@ -16,6 +16,10 @@ import { accountGithubInstallationStates, accountGithubInstallations, accountMem
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
+import {
+  isImpersonatingAccount,
+  isImpersonationBlockedAccount,
+} from '../../shared/impersonation';
 // Imported from the leaf modules, not the `../../iam` barrel: this file is
 // pulled in by most of the project surface, and several suites mock the barrel
 // with a partial shape — a barrel import here turns those into module-load
@@ -54,6 +58,18 @@ const loadAccountMembership = ttlMemo({
 registerPrincipalScopedMemo(loadAccountMembership);
 
 export async function getAccountMembership(userId: string, accountId: string) {
+  // Act-as: a platform admin holding a live grant on this account resolves as
+  // its owner. Checked BEFORE the memo, never inside it — `loadAccountMembership`
+  // is keyed `${userId}|${accountId}` and shared across requests, so caching an
+  // impersonation-derived membership would hand the operator owner rights on
+  // their own later, non-impersonated requests for the whole TTL window.
+  if (isImpersonatingAccount(userId, accountId)) {
+    return { accountId, accountRole: 'owner' as const };
+  }
+  // …and CONFINES: while a grant is live, the operator's own memberships are
+  // out of reach. Otherwise "open the app" lands on their last project (a
+  // cookie), which is theirs, under a banner naming the customer.
+  if (isImpersonationBlockedAccount(userId, accountId)) return null;
   return loadAccountMembership(userId, accountId);
 }
 

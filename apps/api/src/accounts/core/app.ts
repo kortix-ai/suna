@@ -4,6 +4,10 @@ import { and, asc, count, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
+import {
+  isImpersonatingAccount,
+  isImpersonationBlockedAccount,
+} from '../../shared/impersonation';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import type { AppEnv } from '../../types';
@@ -188,6 +192,16 @@ export function parseRole(value: unknown, allowed: AccountRole[]): AccountRole |
 }
 
 export async function getMembership(userId: string, accountId: string) {
+  // ACT-AS: an operator with a live grant on this account reads as its owner.
+  // Only ever widens the OPERATOR's own id — `impersonatedAccountFor` compares
+  // against the grant's admin_user_id, so the several call sites that pass a
+  // TARGET user's id (member role changes, invites) keep getting that user's
+  // real membership, which is exactly what those routes must decide on.
+  if (isImpersonatingAccount(userId, accountId)) {
+    return { accountRole: 'owner' as const };
+  }
+  // Confinement, same as getAccountMembership: one account for the duration.
+  if (isImpersonationBlockedAccount(userId, accountId)) return null;
   const [row] = await db
     .select({ accountRole: accountMembers.accountRole })
     .from(accountMembers)

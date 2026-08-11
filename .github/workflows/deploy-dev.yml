@@ -38,9 +38,25 @@ on:
           - all
           - frontend
 
+# One group for every surface, and it must NOT cancel what is already running.
+#
+# `cancel-in-progress: true` starved the slowest surface out of existence. The
+# multi-arch API image takes ~23 min to build; main lands every ~10-20 min during
+# the day; and the group is workflow-wide, so a frontend-only push cancelled an
+# in-flight API build. Measured 2026-08-10: 19 of 30 runs cancelled, the API image
+# had not deployed in 3.5 h, and 5 API commits were stranded — the run that finally
+# landed only survived because the trunk went quiet in the evening.
+#
+# Queueing instead guarantees forward progress. GitHub keeps at most one pending
+# run per group and cancels the previous pending one, so a burst of pushes still
+# collapses into a single follow-up deploy — the newest commit wins, it just waits
+# its turn. This matches deploy-prod, rollback-prod and promote, which have always
+# used `false` for the same reason.
+#
+# It also stops `migrate-db` being killed mid-migration by an unrelated push.
 concurrency:
   group: deploy-dev
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ── Detect what changed (so unrelated surfaces are skipped) ─────────────────

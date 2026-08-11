@@ -75,7 +75,7 @@ export async function syncLegacyStripeSubscription(
     const { getStripe } = await import('../../shared/stripe');
     const stripe = getStripe();
     const { getBillingPeriodByPriceId, getTier, getTierByPriceId } = await import('./tiers');
-    const { upsertCreditAccount } = await import('../repositories/credit-accounts');
+    const { applyStripeSync } = await import('./account-write-owner');
     const { resetExpiringCredits } = await import('./credits');
 
     const candidateCustomerIds = new Set<string>();
@@ -134,6 +134,11 @@ export async function syncLegacyStripeSubscription(
             ...subscription.metadata,
             account_id: accountId,
             tier_key: tierConfig.name,
+            // Forward-compat alias, written in lockstep with tier_key. The
+            // webhook resolves `plan_key ?? tier_key`, so any writer that sets
+            // one and not the other would leave the OTHER one authoritative and
+            // stale. See subscriptions.ts for the same pairing.
+            plan_key: tierConfig.name,
             billing_period: billingPeriod,
           };
 
@@ -165,20 +170,24 @@ export async function syncLegacyStripeSubscription(
         if (!dryRun) {
           const tier = getTier(tierConfig.name);
 
-          await upsertCreditAccount(accountId, {
-            tier: tierConfig.name,
-            provider: 'stripe',
-            stripeSubscriptionId: subscription.id,
-            stripeSubscriptionStatus: subscription.status,
-            billingCycleAnchor: subscription.billing_cycle_anchor
-              ? new Date(subscription.billing_cycle_anchor * 1000).toISOString()
-              : undefined,
-            planType,
-            commitmentType,
-            commitmentEndDate: commitmentType && subscription.current_period_end
-              ? new Date(subscription.current_period_end * 1000).toISOString()
-              : null,
-          });
+          await applyStripeSync(
+            accountId,
+            {
+              tier: tierConfig.name,
+              provider: 'stripe',
+              stripeSubscriptionId: subscription.id,
+              stripeSubscriptionStatus: subscription.status,
+              billingCycleAnchor: subscription.billing_cycle_anchor
+                ? new Date(subscription.billing_cycle_anchor * 1000).toISOString()
+                : undefined,
+              planType,
+              commitmentType,
+              commitmentEndDate: commitmentType && subscription.current_period_end
+                ? new Date(subscription.current_period_end * 1000).toISOString()
+                : null,
+            },
+            { reason: 'legacy-stripe-sync' },
+          );
 
           if (tier.monthlyCredits > 0) {
             await resetExpiringCredits(

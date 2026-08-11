@@ -13,9 +13,11 @@ import Link from 'next/link';
 const START_URL = '/auth';
 const DEMO_URL = '/enterprise';
 
+// Keyed by MARKETING plan id (display-only — see pricing-plans.ts). Never an
+// API tier key.
 const PLAN_CTAS: Record<(typeof PRICING_PLANS)[number]['id'], { cta: string; href: string }> = {
   free: { cta: 'Get started', href: START_URL },
-  team: { cta: 'Get started', href: START_URL },
+  team_seat: { cta: 'Get started', href: START_URL },
   enterprise: { cta: 'Request demo', href: DEMO_URL },
 };
 

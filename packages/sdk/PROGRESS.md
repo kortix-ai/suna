@@ -12,6 +12,66 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-11 — session `billing-revamp-pr5-ui` claim
+
+No **Now** task claimed. User-directed work: the UI half of PR5 (the admin
+entitlement-override console) needs the SDK to expose the route the API half
+shipped in `52576c4849`.
+
+Claimed SDK scope — `src/react/use-admin-accounts.ts`, additive only:
+
+- `useAdminSetOverrides()` — `PUT /admin/api/accounts/{id}/overrides`, body is a
+  partial merge patch (RFC 7386: an entry sets, `null` deletes, an absent key is
+  untouched). Invalidates the same `['admin','accounts', id]` subtree as every
+  other admin mutation.
+- `adminAccountOverridesPath()`, `ADMIN_OVERRIDE_KEYS`, `AdminOverrideKey`,
+  `AdminEntitlementOverrideEntry`, `AdminEntitlementOverrides`,
+  `AdminEntitlementOverridePatch`.
+- `AdminAccount` gains OPTIONAL `entitlementOverrides` (the stored map, expiry
+  NOT applied) and `computeRateMultiplier` (the resolved multiplier the meter
+  bills at). Optional for the same reason `plan` is: a console pointed at an
+  older API still type-checks.
+
+No published name renamed, no field made required, `version` untouched.
+
+RED — `bun test src/react/use-admin-accounts.test.ts`:
+
+```
+# Unhandled error between tests
+SyntaxError: Export named 'adminAccountOverridesPath' not found in module '…/src/react/use-admin-accounts.ts'.
+ 0 pass
+ 1 fail
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and
+  `examples/tsconfig.json`.
+- `pnpm --filter @kortix/sdk test`: `1862 pass`, `2 skip`, `0 fail`, `7131
+  expect()` across `142` files (baseline this session: `1855 pass / 2 skip / 0
+  fail`, `1857` tests).
+- `pnpm test -- --sdk-only` (worktree root): `1864 pass`, `0 fail`, `7137
+  expect()` across `142` files — `[test] PASS sdk 22.9s`.
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+
+Both surface snapshots re-recorded. The diff is **10 insertions, 0 deletions** —
+runtime: `ADMIN_OVERRIDE_KEYS`, `adminAccountOverridesPath`,
+`useAdminSetOverrides`; type-level: those three plus
+`AdminEntitlementOverrideEntry`, `AdminEntitlementOverridePatch`,
+`AdminEntitlementOverrides`, `AdminOverrideKey`. Purely additive, so no alias
+and no major is needed. No subpath added, so the three-synchronized-edits rule
+does not apply.
+
+Verified against the live worktree stack (web `:15400`, API `:15408`) through
+the admin console: saving the Overrides card put exactly the changed keys on the
+wire — `{"managedModels":{"value":false},"computeRateMultiplier":{"value":0.5}}`
+→ `200`, and the untouched `sso`/`scim` entries kept their `expires_at`. A second
+save sent only `{"maxConcurrentSessions":{"value":12}}`.
+
+**Status:** COMPLETE on branch `billing-revamp-pr5`.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-10 — session `session-overrides-ux` claim
 
 No **Now** task claimed. This is user-directed session-scope correctness work.

@@ -11,6 +11,7 @@ import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { applyImpersonation } from './impersonation';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -49,6 +50,15 @@ async function jitSyncSso(
 // routes (/v1/p/*) — browser WebSocket API can't set custom headers, so PTY
 // terminals pass the token as ?token=<jwt>. SSE clients use fetch() with
 // Authorization headers; preview iframes use cookies set via POST /v1/p/auth.
+//
+// IMPERSONATION: `supabaseAuth` and `combinedAuth` are thin wrappers that run
+// `applyImpersonation` (middleware/impersonation.ts) between "the real user is
+// resolved" and "the handler runs". It lives HERE, inside the wrapper, and not
+// as a global `app.use('*')`, because auth is mounted per sub-router — a global
+// middleware runs BEFORE those and would see no identity to validate a grant
+// against. Wrapping also means every success branch below (JWT local, JWT
+// network, PAT, service account, sandbox token) is covered by construction,
+// instead of six call sites that a new branch could silently miss.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -129,6 +139,10 @@ export async function apiKeyAuth(c: Context, next: Next) {
  * not need a second project PAT or raw Git token in env.
  */
 export async function supabaseAuth(c: Context, next: Next) {
+  return resolveSupabaseAuth(c, () => applyImpersonation(c, next));
+}
+
+async function resolveSupabaseAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader?.startsWith('Bearer ')) {
@@ -366,6 +380,10 @@ export async function supabaseAuth(c: Context, next: Next) {
  * For preview proxy routes, also sets/refreshes the session cookie.
  */
 export async function combinedAuth(c: Context, next: Next) {
+  return resolveCombinedAuth(c, () => applyImpersonation(c, next));
+}
+
+async function resolveCombinedAuth(c: Context, next: Next) {
   // Skip auth for CORS preflight — OPTIONS never carries auth tokens.
   if (c.req.method === 'OPTIONS') {
     await next();

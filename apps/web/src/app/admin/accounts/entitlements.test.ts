@@ -127,6 +127,74 @@ describe('admin accounts — Entitlements tab', () => {
   });
 });
 
+describe('admin accounts — Overrides card', () => {
+  test('the card is mounted in the Entitlements tab', () => {
+    expect(pageSource).toMatch(/function EntitlementsTab[\s\S]*?<OverridesCard account=\{account\}/);
+  });
+
+  test('every override row the server accepts has a control', () => {
+    const rows = pageSource.match(/OVERRIDE_ENTITLEMENT_ROWS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
+    expect(rows).not.toBe('');
+    for (const key of ['sso', 'scim', 'rbac', 'auditAccess', 'managedModels']) {
+      expect(rows).toContain(`key: '${key}'`);
+    }
+    // The two numeric overrides are laid out by hand — an input, not a Select.
+    expect(pageSource).toContain("aria-label=\"Max concurrent sessions override\"");
+    expect(pageSource).toContain("aria-label=\"Compute rate multiplier override\"");
+  });
+
+  test('the entitlement rows are tri-state — inherit, force on, force off', () => {
+    const options =
+      pageSource.match(/OVERRIDE_TRI_STATE_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
+    for (const value of ['inherit', 'on', 'off']) {
+      expect(options).toContain(`value: '${value}'`);
+    }
+  });
+
+  test('the compute multiplier input carries the range and step the server enforces', () => {
+    const at = pageSource.indexOf('aria-label="Compute rate multiplier override"');
+    expect(at).toBeGreaterThan(-1);
+    const declaration = pageSource.slice(at - 400, at + 400);
+    expect(declaration).toContain('min={0}');
+    expect(declaration).toContain('max={MAX_COMPUTE_RATE_MULTIPLIER}');
+    expect(declaration).toContain('step={0.05}');
+    expect(declaration).toContain('draft.computeRateMultiplier');
+  });
+
+  test('the whole card saves through one merge-patch mutation', () => {
+    expect(pageSource).toContain('useAdminSetOverrides');
+    expect(pageSource).toMatch(
+      /setOverrides\.mutateAsync\(\{ accountId: account\.accountId, patch: result\.patch \}\)/,
+    );
+    // The diff is computed by the pure helper, never rebuilt inline — that is
+    // what keeps an untouched row (and its expiry) out of the patch.
+    expect(pageSource).toContain('overridesPatch(draft, stored)');
+  });
+
+  test('a stored expiry is visible on its row', () => {
+    expect(pageSource).toContain('<OverrideExpiryChip');
+    expect(pageSource).toContain('overrideExpiresAt(stored,');
+    expect(pageSource).toContain('isOverrideExpired(expiresAt)');
+  });
+
+  test('Save is inert until something actually changed', () => {
+    expect(pageSource).toContain('disabled={!dirty || !result.ok || setOverrides.isPending}');
+  });
+
+  test('a validation failure is shown inline, not sent to the server', () => {
+    expect(pageSource).toContain('{!result.ok && <p className="text-kortix-red text-xs">');
+  });
+});
+
+describe('admin accounts — Ledger tab', () => {
+  test('the ledger renders the customer-facing table, not a second list', () => {
+    expect(pageSource).toContain('<CreditTransactionsTable rows={adminLedgerRows(entries)} />');
+    // The hand-rolled row markup is gone: no per-entry amount coloring left in
+    // the page, which is what drifted from the customer surface.
+    expect(pageSource).not.toContain('text-emerald-600 dark:text-emerald-400');
+  });
+});
+
 describe('EnterpriseDemoCard — the self-serve toggle is now admin-only', () => {
   test('the switch is gated on the platform-admin role', () => {
     expect(demoCardSource).toContain('useAdminRole');
