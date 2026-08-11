@@ -18,7 +18,8 @@ export interface ResolvedProjectRoutingPolicy {
 
 export interface GatewayRouteResolverOptions {
   defaultModel: string;
-  visionModel: string;
+  /** Reroute target for image-bearing default requests; empty/undefined = no reroute. */
+  visionModel: string | undefined;
   policies: readonly ModelFallbackPolicy[];
   supportsImage: (model: string) => boolean;
   getProjectPolicy?: (projectId: string) => Promise<ResolvedProjectRoutingPolicy | null>;
@@ -73,7 +74,11 @@ export function createGatewayRouteResolver(
     let primaryModel = input.requestedModel;
 
     if (isDefaultRequest && input.requires.imageInput && !options.supportsImage(primaryModel)) {
-      primaryModel = projectPolicy?.visionModel || options.visionModel;
+      // No configured vision target (the managed lineup has no vision model
+      // since the 2026-08-10 slim-down) → keep the default model rather than
+      // rerouting to a dead ref that resolves as model_not_found.
+      const visionTarget = projectPolicy?.visionModel || options.visionModel;
+      if (visionTarget) primaryModel = visionTarget;
     }
 
     // Bound once per request (not per candidate) — cheap (a config lookup +

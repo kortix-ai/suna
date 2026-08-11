@@ -87,6 +87,21 @@ gh run list --repo kortix-ai/suna --branch staging --limit 10
 `qa-staging` must target `staging.kortix.com` / `staging-api.kortix.com`. A green
 run against dev is not a staging gate.
 
+### Step 3.6 — cost the pending PROD migrations
+
+Diff prod's `kortix_migrations.pgmigrations` against the promoted tree and cost
+every pending migration at prod data volume (a tag tree containing a file is
+NOT proof it ran — only the ledger is):
+```bash
+psql "$(aws secretsmanager get-secret-value --secret-id kortix-prod-env \
+  --query SecretString --output text | jq -r .DATABASE_URL)" \
+  -Atc "select name from kortix_migrations.pgmigrations order by id desc limit 5;"
+```
+Anything that rewrites a large hot table runs as a supervised batched
+out-of-band pass BEFORE the deploy. Full rule + the worked pattern: the
+**learnings** skill ("Never backfill data inside a single-transaction
+migration" / "Cost every pending prod migration", 2026-08-10 v0.12.7 outage).
+
 ### Step 4 — run Promote to Production
 
 `promote.yml` **requires** `title` and `notes` (this is enforced — you cannot cut a

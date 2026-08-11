@@ -25,15 +25,21 @@ mock.module('../../config', () => ({
   ),
 }));
 
+// One row, one reader. The limit layer resolves through the shared billing
+// cache (billing/services/billing-cache.ts), which loads the credit_accounts
+// row via getCreditAccount — so that is the mock the policy reads. Previously
+// the limit layer had its own getSubscriptionInfo read and its own 60s cache;
+// both are gone, and the two readers can no longer disagree about one row.
+const creditRow = () =>
+  currentTier === null && currentOverride === null
+    ? null
+    : { tier: currentTier, maxConcurrentSessions: currentOverride };
+
 mock.module('../../billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async () => undefined,
-  getSubscriptionInfo: async () =>
-    currentTier === null && currentOverride === null
-      ? null
-      : { tier: currentTier, maxConcurrentSessions: currentOverride },
-  // Imported (not called) by billing/services/entitlements via
-  // shared/account-limits — must exist on this wholesale mock.
-  getCreditAccount: async () => null,
+  getCreditAccount: async () => creditRow(),
+  // Still imported by shared/account-limits for resolveTrialSeatLimit.
+  getSubscriptionInfo: async () => creditRow(),
 }));
 
 const { resolveAccountSessionLimit, maxConcurrentSessionsForTier, clearAccountLimitCache } =

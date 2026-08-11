@@ -66,6 +66,11 @@
         "current": "Current Language",
         "select": "Select Language"
       },
+      "accountSettings": {
+        "title": "Account",
+        "description": "Manage billing, members, and organization settings",
+        "button": "Account Settings"
+      },
       "deleteAccount": {
         "title": "Delete Account",
         "description": "Permanently remove your account and all associated data",
@@ -7669,7 +7674,6 @@
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrAriaLabelOnboarding0aefa252": "Onboarding progress",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrTitleBookA7b71ab51": "Book a call with Marko",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrDescriptionACouple16048a01": "A couple of quick details so Marko can tailor the call.",
-    "autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428": "A sandbox picks up new providers when it starts. To use this in a running session, restart its sandbox from the session list.",
     "autoComponentsProjectsProjectProviderModalJsxTextChatGPTPlusPro0deb5530": "ChatGPT Plus/Pro",
     "autoComponentsProjectsProjectProviderModalJsxTextSignInWitha0c5128c": "Sign in with your ChatGPT subscription. We save the login as an encrypted project secret so future sessions reuse it.",
     "autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47": "Authorize in the browser",

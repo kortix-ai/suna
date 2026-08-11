@@ -67,12 +67,14 @@ describe('local test runner contract', () => {
     expect(source).toContain('packed agent-tunnel CLI cannot load its WebSocket fallback');
     expect(source).toContain("'--no-sort'");
     expect(source).toContain("KORTIX_API_TEST_WORKERS: '3'");
+    expect(source).toContain("KORTIX_TEST_TIMEOUT_MS: '30000'");
     expect(source).toContain("['@kortix/cli', '@kortix/sandbox-agent-server']");
     expect(source).toContain("await runWorkspaceTests(['@kortix/db'], 1)");
     expect(source).toContain('Promise.allSettled(tasks)');
     expect(source.match(/await runAll\(\[/g)).toHaveLength(5);
     expect(source).toContain("'!kortix-api'");
     expect(source).toContain("'!@kortix/db'");
+    expect(source).toContain("skipSdkTests ? ['!@kortix/sdk'] : []");
   });
 
   it('runs isolated API test files through a bounded parallel worker pool', () => {

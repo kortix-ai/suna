@@ -16,9 +16,7 @@ The stack owns `https://dev.kortix.com`. The Deploy Dev workflow also updates
 this CNAME before it verifies the deployed frontend. Vercel is disabled for the
 `main` branch.
 
-The first cutover requires a state migration because the previous stack owned
-`dev-fe-ecs.kortix.com`. Import the existing `dev.kortix.com` Cloudflare record
-into `module.dns.cloudflare_record.records[\"dev\"]` before the next apply. Then
-remove the old `dev-fe-ecs` state entry after confirming the alias is no longer
-required. Do not apply a plan that attempts to create a duplicate canonical
-record.
+The remote state owns the existing `dev.kortix.com` Cloudflare record at
+`module.dns[0].cloudflare_record.this[\"dev\"]`. The cutover imported record
+`e6511a4819a0f05dca09e275329ae1cb` in place. Do not create a second canonical
+record or reintroduce the retired `dev-fe-ecs.kortix.com` alias.

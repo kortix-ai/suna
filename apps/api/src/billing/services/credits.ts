@@ -248,16 +248,27 @@ export async function grantCredits(
   description: string,
   isExpiring = true,
   stripeEventId?: string,
+  opts?: {
+    /** Ledger expiry stamp for expiring grants (e.g. a trial's end date). */
+    expiresAt?: string | null;
+    /**
+     * Explicit idempotency key. NOTE: the RPC only dedupes keys seen within
+     * the last hour — callers that need long-window idempotency (monthly
+     * re-grants) must check the ledger for the key themselves before calling.
+     */
+    idempotencyKey?: string | null;
+  },
 ) {
   const supabase = getSupabase();
-  const idempotencyKey = stripeEventId ? `grant:${accountId}:${stripeEventId}` : null;
+  const idempotencyKey =
+    opts?.idempotencyKey ?? (stripeEventId ? `grant:${accountId}:${stripeEventId}` : null);
 
   const { data, error } = await supabase.rpc('atomic_add_credits', {
     p_account_id: accountId,
     p_amount: amount,
     p_is_expiring: isExpiring,
     p_description: description,
-    p_expires_at: null,
+    p_expires_at: opts?.expiresAt ?? null,
     p_type: type,
     p_stripe_event_id: stripeEventId ?? null,
     p_idempotency_key: idempotencyKey,

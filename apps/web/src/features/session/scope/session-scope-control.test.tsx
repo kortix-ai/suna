@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
-  SessionScopeControl,
-  SessionScopeControlContent,
+  SessionConnectorsEditor,
+  SessionSecretsEditor,
   setAllSessionSecrets,
   setSessionConnectorConnection,
   setSessionConnectorEnabled,
@@ -50,108 +50,75 @@ const catalog: SessionScopeSelectionCatalog = {
   },
 };
 
-function renderControl(
-  draft: SessionScopeDraft,
-  props: Partial<React.ComponentProps<typeof SessionScopeControlContent>> = {},
-) {
+const unavailable: SessionScopeSelectionCatalog = {
+  secrets: { status: 'unavailable' },
+  connector_connections: { status: 'unavailable' },
+};
+
+function renderSecrets(draft: SessionScopeDraft, scopeCatalog = catalog) {
   return renderToStaticMarkup(
-    <SessionScopeControlContent
-      draft={draft}
-      catalog={catalog}
-      onChange={() => {}}
-      onSave={() => {}}
-      {...props}
-    />,
+    <SessionSecretsEditor draft={draft} catalog={scopeCatalog} onChange={() => {}} />,
   );
 }
 
-describe('SessionScopeControlContent', () => {
-  test('uses a non-submit toolbar trigger inside the session composer', () => {
-    const html = renderToStaticMarkup(
-      <SessionScopeControl
-        draft={{ secrets: [], connector_bindings: {} }}
-        catalog={catalog}
-        onChange={() => {}}
-        onSave={() => {}}
-      />,
-    );
+function renderConnectors(draft: SessionScopeDraft, scopeCatalog = catalog) {
+  return renderToStaticMarkup(
+    <SessionConnectorsEditor draft={draft} catalog={scopeCatalog} onChange={() => {}} />,
+  );
+}
 
-    expect(html).toContain('aria-label="Configure session scope"');
-    expect(html).toContain('type="button"');
+describe('session scope editors', () => {
+  test('an inherited secrets axis keeps the project default checked', () => {
+    // `null` is the INHERITED state, so the box that says "use the project
+    // default" is the one that is on. Unchecking a secret is what converts the
+    // axis into an explicit allowlist — an override is never created by
+    // opening the panel.
+    const html = renderSecrets({ secrets: null });
+
+    expect(html).toContain('Use the project default');
+    expect(html).toContain('Calendar token');
+    expect(html).not.toContain('Reset to project default');
   });
 
-  test('renders compact collapsed summaries for the selected scope', () => {
-    const html = renderControl({
-      secrets: ['CALENDAR_TOKEN'],
-      connector_bindings: {
-        calendar: { connection_id: 'connection-calendar' },
-        crm: { connection_id: 'connection-crm' },
-      },
+  test('shows the connection picker only for a selected connector', () => {
+    const html = renderConnectors({
+      connector_bindings: { calendar: { connection_id: 'connection-calendar' } },
+      connector_bindings_inherited: false,
     });
 
-    expect(html).toContain('Session access');
-    expect(html).toContain('Share only the secrets and connectors this session needs.');
-    expect(html).toContain('1 selected');
-    expect(html).toContain('2 selected');
-    expect(html.match(/aria-expanded="false"/g)).toHaveLength(2);
-    expect(html).not.toContain('aria-label="Authorization for Calendar"');
-    expect(html).not.toContain('aria-label="Authorization for CRM"');
-    expect(html).toContain('Changes apply to the next prompt.');
+    expect(html).toContain('aria-label="Connection for Calendar"');
+    expect(html).not.toContain('aria-label="Connection for CRM"');
   });
 
-  test('distinguishes unrestricted secret access from an explicit empty allowlist', () => {
-    const allHtml = renderControl({ secrets: null, connector_bindings: {} });
-    const noneHtml = renderControl({ secrets: [], connector_bindings: {} });
-
-    expect(allHtml).toContain('All allowed');
-    expect(noneHtml).toContain('None selected');
-    expect(allHtml).not.toContain('aria-checked="true"');
-    expect(noneHtml).not.toContain('aria-checked="true"');
-  });
-
-  test('distinguishes an omitted secret axis from an explicit empty allowlist', () => {
-    const unchangedHtml = renderControl({ connector_bindings: {} });
-    const noneHtml = renderControl({ secrets: [], connector_bindings: {} });
-
-    expect(unchangedHtml).toContain('Unchanged');
-    expect(noneHtml).toContain('None selected');
-  });
-
-  test('shows catalog failures without converting them into empty selections', () => {
-    const html = renderToStaticMarkup(
-      <SessionScopeControlContent
-        draft={{}}
-        catalog={{
-          secrets: { status: 'unavailable' },
-          connector_connections: { status: 'unavailable' },
-        }}
-        onChange={() => {}}
-        onSave={() => {}}
-      />,
+  test('names a connector that has nothing connected as a requirement', () => {
+    // A binding carries a connection id, so it cannot express "this session
+    // needs Calendar and nothing is connected". The requirement can, and the
+    // next turn stops at a connect prompt instead of failing mid-answer.
+    const disconnected: SessionScopeSelectionCatalog = {
+      ...catalog,
+      connector_connections: {
+        status: 'ready',
+        items: [
+          { slug: 'calendar', name: 'Calendar', authorization_strategy: 'user', connections: [] },
+        ],
+      },
+    };
+    const html = renderConnectors(
+      {
+        connector_bindings: {},
+        require_connectors: ['calendar'],
+        connector_bindings_inherited: false,
+      },
+      disconnected,
     );
 
-    expect(html.match(/>Unavailable</g)).toHaveLength(2);
-    expect(html).not.toContain('None selected');
+    expect(html).toContain('Required — connect to continue');
+    expect(html).not.toContain('aria-label="Connection for Calendar"');
   });
 
-  test('shows saving state and the non-retroactive warning', () => {
-    const html = renderControl(
-      { secrets: [], connector_bindings: {} },
-      { saving: true, retroactive: false },
-    );
-
-    expect(html).toContain(
-      'Removed secret values can remain in the current conversation or existing shells.',
-    );
-    expect(html).toContain('animate-spinner-orbit');
-    expect(html).toContain('disabled=""');
-  });
-
-  test('disables only the save action when the current draft is unsafe to commit', () => {
-    const html = renderControl({ secrets: [], connector_bindings: {} }, { saveDisabled: true });
-
-    expect(html).toContain('type="button" disabled="">Save');
-    expect(html.match(/disabled=""/g)).toHaveLength(1);
+  test('reports catalog failures instead of rendering an empty selection', () => {
+    expect(renderSecrets({}, unavailable)).toContain('Secret access is unavailable');
+    expect(renderConnectors({}, unavailable)).toContain('Connector access is unavailable');
   });
 });
 

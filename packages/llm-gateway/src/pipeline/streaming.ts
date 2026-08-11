@@ -88,6 +88,41 @@ class StreamInactivityTimeoutError extends Error {
 const PROBE_MAX_CHUNKS = 64;
 const PROBE_MAX_BYTES = 64 * 1024;
 const PROBE_INACTIVITY_TIMEOUT_MS = 30_000;
+const SLOW_FIRST_BYTE_FLOOR_MS = 45_000;
+const PROBE_SIZE_STEP_BYTES = 1024 * 1024;
+const PROBE_SIZE_STEP_MS = 15_000;
+const MAX_ADAPTIVE_PROBE_TIMEOUT_MS = 120_000;
+
+export interface StreamProbeTimeoutInput {
+  requestBytes: number;
+  provider: string;
+  model: string;
+  /** Exact operator override. Omit it to use the adaptive policy. */
+  configuredTimeoutMs?: number;
+}
+
+/**
+ * Resolve the first-byte budget for a newly opened upstream stream.
+ *
+ * Large prompts need more prefill time. GLM through Aster also has a measured
+ * slow-first-byte floor. The cap prevents one silent candidate from holding a
+ * turn for more than two minutes before failover.
+ */
+export function resolveStreamProbeTimeoutMs(input: StreamProbeTimeoutInput): number {
+  if (input.configuredTimeoutMs !== undefined && input.configuredTimeoutMs > 0) {
+    return input.configuredTimeoutMs;
+  }
+
+  const requestBytes = Math.max(0, input.requestBytes);
+  const sizeSteps = Math.max(0, Math.ceil((requestBytes - 64 * 1024) / PROBE_SIZE_STEP_BYTES));
+  const sizeBasedTimeout = PROBE_INACTIVITY_TIMEOUT_MS + sizeSteps * PROBE_SIZE_STEP_MS;
+  const slowFirstByte =
+    input.provider.toLowerCase() === 'aster' || input.model.toLowerCase().includes('glm-5.2');
+  return Math.min(
+    MAX_ADAPTIVE_PROBE_TIMEOUT_MS,
+    Math.max(sizeBasedTimeout, slowFirstByte ? SLOW_FIRST_BYTE_FLOOR_MS : 0),
+  );
+}
 
 export interface StreamProbeOptions {
   /**
@@ -299,13 +334,14 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
       // means a disconnected client stops the upstream read loop immediately
       // instead of draining an upstream that keeps generating (and billing)
       // tokens for no one.
-      const clientAbort = opts.signal
+      const signal = opts.signal;
+      const clientAbort = signal
         ? new Promise<'aborted'>((resolve) => {
-            if (opts.signal!.aborted) {
+            if (signal.aborted) {
               resolve('aborted');
               return;
             }
-            opts.signal!.addEventListener('abort', () => resolve('aborted'), { once: true });
+            signal.addEventListener('abort', () => resolve('aborted'), { once: true });
           })
         : null;
 

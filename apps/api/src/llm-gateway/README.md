@@ -97,6 +97,75 @@ route is billable, debits the wallet via `deductForLlmUsage`. Full request trace
 (timings, candidates tried, captured bodies) go to `gateway_request_logs` via
 `persistGatewayTrace`.
 
+## Failure contract
+
+A gateway `502` means Kortix exhausted the configured route before it received a
+usable completion. It does not identify one provider by itself. The response
+body preserves each rejected candidate in `attempt_failures`, in observation
+order:
+
+```json
+{
+  "message": "req_...: All upstream candidates failed: openai-codex/gpt-5.6-sol [HTTP 400, context_length_exceeded]: ...; aster/glm-5.2 [stream_probe_timeout]: ...",
+  "code": "context_length_exceeded",
+  "provider": "aster",
+  "request_id": "req_...",
+  "attempt_failures": [
+    {
+      "attempt": 1,
+      "provider": "openai-codex",
+      "route_model": "codex/gpt-5.6-sol",
+      "resolved_model": "gpt-5.6-sol",
+      "stage": "stream_error",
+      "status": 400,
+      "code": "context_length_exceeded",
+      "message": "Your input exceeds the context window of this model."
+    },
+    {
+      "attempt": 2,
+      "provider": "aster",
+      "route_model": "glm-5.2",
+      "resolved_model": "glm-5.2",
+      "stage": "stream_probe",
+      "code": "stream_probe_timeout",
+      "message": "upstream stream probe timeout exceeded (60000ms with no bytes)"
+    }
+  ]
+}
+```
+
+The same array exists under `error.attempt_failures` for OpenAI-compatible
+clients. Each message is capped at 500 characters. The composite message is
+capped at 2,000 characters. The full chain is also stored in
+`gateway_request_logs.metadata.attemptFailures` and Langfuse metadata.
+
+If any exhausted candidate reports `context_length_exceeded`, the top-level
+`code`, nested `error.code`, and nested `error.type` keep that canonical value.
+The HTTP status can remain `502` because the configured route was exhausted.
+The gateway also normalizes message-only overflow responses. For example,
+OpenRouter can return numeric `error.code: 400` with `maximum context length`
+only in `error.message`. This response becomes `context_length_exceeded` while
+the original HTTP status and complete message remain available.
+OpenCode 1.17.11 reads nested `error.code` and converts this response into a
+`ContextOverflowError`. Its session processor then creates an automatic
+compaction turn. A later fallback timeout must not replace this classification.
+
+OpenCode 1.17.11 copies `APIError.data.message` into `session.status.message`
+but does not copy `responseBody`. The top-level message therefore contains the
+request ID and the complete provider/model/status/code chain. The retry UI
+remains actionable when that client discards the structured JSON fields.
+
+OpenTelemetry spans expose `kortix.failure_count`, `kortix.failure_codes`,
+`kortix.context_rejected`, `kortix.probe_timeout`, and
+`kortix.fallback_recovered`. Use `request_id` to correlate the client error,
+gateway trace, provider attempt, and session retry.
+
+The standalone and in-process hosts reject request bodies above 8 MiB with
+`413 request_too_large`. A new streaming response gets a 30-second first-byte
+budget. Aster/GLM gets at least 45 seconds. Large requests add 15 seconds per
+MiB, capped at 120 seconds. `GATEWAY_STREAM_PROBE_TIMEOUT_MS` replaces this
+adaptive policy with an exact positive override; `0` keeps the adaptive policy.
+
 ## Live e2e
 
 `__tests__/gateway.live.test.ts` exercises the unified pipeline against real

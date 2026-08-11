@@ -33,6 +33,10 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
+import {
+  isImpersonatingAccount,
+  isImpersonationBlockedAccount,
+} from '../shared/impersonation';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
@@ -525,6 +529,29 @@ export async function authorizeV2(
   const scope = scopeForActionV2(action);
   const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
 
+  // ACT-AS: a platform admin holding a live impersonation grant on THIS account
+  // authorizes as its owner. Placed at the very top, before `resolveActingActor`,
+  // for one reason that is easy to get wrong: `resolveActorV2` is a TTL memo
+  // keyed `${userId}|${accountId}` and shared across requests. Widening the
+  // actor inside it would cache "owner" and serve it to the same operator's own
+  // NON-impersonated requests for the rest of the TTL window. Short-circuiting
+  // here touches no cache at all.
+  //
+  // The grant was already validated this request (middleware/impersonation.ts):
+  // owned by this user, unrevoked, unexpired, and the user is a platform admin
+  // right now. `impersonatedAccountFor` additionally requires the user id to
+  // match the operator, so a second principal resolved during the same request
+  // (a session's creator, a service account) gets the ordinary answer.
+  if (isImpersonatingAccount(userId, accountId)) {
+    return { allowed: true, reason: 'impersonation' };
+  }
+  // And denies every OTHER account for the duration — the operator's own
+  // included. See isImpersonationBlockedAccount for why confinement, not just
+  // widening, is the correct shape.
+  if (isImpersonationBlockedAccount(userId, accountId)) {
+    return { allowed: false, reason: 'impersonation_scope' };
+  }
+
   // Load the acting token's binding once (memoized) — it carries the project
   // scope, the agent grant, AND the standing-identity service account. JWT/
   // browser requests have no actingTokenId, so they skip this entirely (the
@@ -681,6 +708,13 @@ export async function listAccessibleProjectsV2(
   | { mode: 'none' }
   | { mode: 'allow_only'; allowed: Set<string> }
 > {
+  // ACT-AS: same short-circuit as authorizeV2, and for the same cache reason.
+  // Without it the operator sees an empty project list inside an account whose
+  // every project they can already open by id — a confusing half-state, not a
+  // narrower one.
+  if (isImpersonatingAccount(userId, accountId)) return { mode: 'all' };
+  if (isImpersonationBlockedAccount(userId, accountId)) return { mode: 'none' };
+
   // Standing identity (opt-in): an activated agent-session SA lists the SA's
   // accessible projects; a role-less agent SA falls back to the launching user.
   // (Mirror authorizeV2 via the shared resolver.)

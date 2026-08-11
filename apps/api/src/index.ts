@@ -85,6 +85,7 @@ import {
 } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
 import { skillsApp } from './skills';
+import { runtimeAssetsApp } from './runtime-assets';
 import { oauthApp } from './oauth';
 import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
 import {
@@ -833,6 +834,15 @@ app.use('/v1/skills', combinedAuth);
 app.use('/v1/skills/*', combinedAuth);
 app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
 
+// /v1/runtime-assets — the sandbox runtime assets THIS deploy was built with:
+// the `kortix` CLI binary it bakes into snapshots and the managed-skill overlay.
+// A live sandbox reconciles against these on every session start/restart/resume,
+// which is what stops an old box from running a CLI that predates the routes it
+// calls. combinedAuth for the same reason as /v1/skills above: the callers are a
+// `kortix_pat_` CLI and the in-sandbox KORTIX_CLI_TOKEN.
+app.use('/v1/runtime-assets/*', combinedAuth);
+app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /managed-skills
+
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
 // so it is intentionally NOT wrapped in combinedAuth.
@@ -1115,6 +1125,18 @@ app.onError((err, c) => {
       path,
       method,
     });
+
+    // An HTTPException built with an explicit `res` carries a machine-readable
+    // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
+    // (iam/dispatcher.ts's buildDenialError, which the web app's step-up dialog
+    // keys on) and `code:'impersonation_invalid'` (middleware/impersonation.ts).
+    // Rebuilding a generic `{error,message,status}` body here silently threw
+    // that field away, so every typed 4xx arrived at the client untyped. Honour
+    // the response the thrower constructed; everything else still gets the
+    // generic shape below.
+    if (err.res) {
+      return err.res;
+    }
 
     const response: Record<string, unknown> = {
       error: true,

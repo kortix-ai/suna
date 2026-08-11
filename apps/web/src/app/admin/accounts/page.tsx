@@ -11,6 +11,7 @@ import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   CreditCardIcon as CreditCard,
+  EyeIcon as Eye,
   ArrowSquareOutIcon as ExternalLink,
   FunnelIcon as Filter,
   KanbanIcon as FolderKanban,
@@ -62,67 +63,93 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { CreditTransactionsTable } from '@/features/billing/transactions-table';
 import {
   useAdminAccountLedger,
   useAdminAccountProjects,
   useAdminAccountUsers,
   useAdminAccounts,
+  useAdminImpersonate,
   useAdminDebitCredits,
   useAdminGrantCredits,
   useAdminGrantTrial,
   useAdminRevokeTrial,
   useAdminSetEnterpriseDemo,
+  useAdminAccount,
   useAdminSetEnterpriseEntitled,
+  useAdminSetMemberRole,
+  useAdminSetOverrides,
+  type AdminAccountMemberRole,
   useAdminSetManagedModels,
-  useAdminSetTier,
   type AdminAccount,
   type AdminAccountsFilters,
   type AdminAccountsSortBy,
   type AdminAccountsSortDir,
 } from '@/hooks/admin/use-admin-accounts';
 import { useDebounce } from '@/hooks/use-debounced-value';
+import { clearLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
+import { adminLedgerRows } from './ledger-rows';
+import {
+  BOOLEAN_OVERRIDE_KEYS,
+  MAX_COMPUTE_RATE_MULTIPLIER,
+  MAX_CONCURRENT_SESSIONS_OVERRIDE,
+  describeOverridePatch,
+  draftFromOverrides,
+  isEmptyPatch,
+  isOverrideExpired,
+  overrideExpiresAt,
+  overridesPatch,
+  type BooleanOverrideKey,
+  type OverrideTriState,
+  type OverridesDraft,
+} from './overrides-form';
 import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 
 const PAGE_SIZE = 50;
 const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 
-// The canonical tier catalog, admin-labelled. Mirror the `value`s against the
-// TIERS map in apps/api/src/billing/services/tiers.ts — `tierLabel` renders
-// account rows off this list, so a missing entry shows the raw tier key.
+// Tier FILTER options — and nothing else.
 //
-// Only FOUR plans are current (sellable today): the billing-v3 credit plans
-// Starter/Team/Scale (paid, BYOK — no bundled managed inference) and
-// Enterprise (sales-assigned; SSO/SCIM/RBAC/audit). Everything marked legacy
-// is grandfathered compatibility — old plans existing customers keep, never
-// offered to new ones. `free`/`none` are non-plans.
-type TierOption = { value: string; label: string; legacy?: boolean };
-const TIER_CATALOG: TierOption[] = [
+// The `value`s are raw `credit_accounts.tier` keys because the list route
+// filters on that stored column server-side (`inArray(creditAccounts.tier, …)`
+// in apps/api/src/admin/index.ts), so this list has to keep spelling the keys
+// exactly. The LABELS are the only thing this page still names by hand, and
+// they name a KEY, never an account: what an account's plan is comes from the
+// API's resolved `plan` block (see `PlanBadge` below), which is the same
+// resolver every server gate uses. The page used to re-derive that from the
+// key and stamp its own suffix onto it, which is exactly how this file's plan
+// vocabulary drifted away from the server's.
+//
+// `grandfathered` groups the keys that were sold once and are still honored
+// exactly as sold; the price disambiguates the repeated product names (there
+// are two "Pro"s at different prices). Order and prices follow PLAN_CATALOG in
+// apps/api/src/billing/services/plan-catalog.ts.
+type TierFilterOption = { value: string; label: string; grandfathered?: boolean };
+const TIER_OPTIONS: TierFilterOption[] = [
+  { value: 'none', label: 'No plan' },
+  { value: 'free', label: 'Free' },
   { value: 'starter', label: 'Starter' },
   { value: 'team', label: 'Team' },
   { value: 'scale', label: 'Scale' },
   { value: 'enterprise', label: 'Enterprise' },
-  { value: 'free', label: 'Free' },
-  { value: 'none', label: 'No plan' },
-  { value: 'pro', label: 'Pro', legacy: true },
-  { value: 'per_seat', label: 'Team per-seat', legacy: true },
-  { value: 'tier_2_20', label: 'Plus', legacy: true },
-  { value: 'tier_6_50', label: 'Pro', legacy: true },
-  { value: 'tier_12_100', label: 'Business', legacy: true },
-  { value: 'tier_25_200', label: 'Ultra', legacy: true },
-  { value: 'tier_50_400', label: 'Enterprise', legacy: true },
-  { value: 'tier_125_800', label: 'Scale', legacy: true },
-  { value: 'tier_200_1000', label: 'Max', legacy: true },
-  { value: 'tier_150_1200', label: 'Enterprise Max', legacy: true },
+  { value: 'pro', label: 'Pro · $20/mo', grandfathered: true },
+  { value: 'tier_2_20', label: 'Plus · $20/mo', grandfathered: true },
+  { value: 'per_seat', label: 'Team · $40/seat/mo', grandfathered: true },
+  { value: 'tier_6_50', label: 'Pro · $50/mo', grandfathered: true },
+  { value: 'tier_12_100', label: 'Business · $100/mo', grandfathered: true },
+  { value: 'tier_25_200', label: 'Ultra · $200/mo', grandfathered: true },
+  { value: 'tier_50_400', label: 'Enterprise · $400/mo', grandfathered: true },
+  { value: 'tier_125_800', label: 'Scale · $800/mo', grandfathered: true },
+  { value: 'tier_200_1000', label: 'Max · $1,000/mo', grandfathered: true },
+  { value: 'tier_150_1200', label: 'Enterprise Max · $1,200/mo', grandfathered: true },
 ];
 
-// Filter list: every key an account row can carry, legacy ones labelled so.
-const TIER_OPTIONS: { value: string; label: string }[] = TIER_CATALOG.map((t) => ({
-  value: t.value,
-  label: t.legacy ? `${t.label} · legacy` : t.label,
-}));
+const TIER_LABELS: Record<string, string> = Object.fromEntries(
+  TIER_OPTIONS.map((t) => [t.value, t.label]),
+);
 
 const PAYMENT_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'active', label: 'Active' },
@@ -217,16 +244,61 @@ function formatDateTime(value: string | null | undefined) {
   });
 }
 
-function tierLabel(tier: string | null) {
+/**
+ * Label for a raw tier KEY — filter chips, and the trial tiers, which are keys
+ * an operator picked rather than a plan an account resolved to. Falls through
+ * to the key itself so an unknown key is visible instead of silently renamed.
+ *
+ * NOT for "what plan is this account on?" — that is `PlanBadge` / `planLabel`.
+ */
+function tierKeyLabel(tier: string | null | undefined): string {
   if (!tier) return 'No plan';
-  const entry = TIER_CATALOG.find((t) => t.value === tier);
-  if (!entry) return tier;
-  return entry.legacy ? `${entry.label} · legacy` : entry.label;
+  return TIER_LABELS[tier] ?? tier;
 }
 
-function tierBadgeVariant(tier: string | null): React.ComponentProps<typeof Badge>['variant'] {
-  if (!tier || tier === 'free' || tier === 'none') return 'muted';
-  return 'info';
+/**
+ * The plan the account BEHAVES as, straight off the API's resolved `plan`
+ * block: an active admin trial and the per-seat self-heal overlay the stored
+ * `tier` column, and the resolver applies the same precedence every gate does.
+ * The stored key stays available as `account.tier` for the filter.
+ *
+ * The fallback covers a console pointed at an API older than the resolver.
+ */
+function planLabel(account: AdminAccount): string {
+  return account.plan?.label ?? tierKeyLabel(account.tier);
+}
+
+function planBadgeVariant(account: AdminAccount): React.ComponentProps<typeof Badge>['variant'] {
+  const family = account.plan?.family ?? (isUnpaidTierKey(account.tier) ? 'free' : 'team');
+  return family === 'free' ? 'muted' : 'info';
+}
+
+/** `free` and `none` are the only two keys in the free family (UNPAID_TIERS in
+ *  apps/api/src/admin/accounts-query.ts). */
+function isUnpaidTierKey(tier: string | null): boolean {
+  return !tier || tier === 'free' || tier === 'none';
+}
+
+/**
+ * Plan name plus its qualifier — e.g. "Team · $40/seat/mo · grandfathered".
+ * The qualifier is the server's, not a claim this page invents from the key.
+ */
+function PlanBadge({
+  account,
+  size = 'sm',
+  className,
+}: {
+  account: AdminAccount;
+  size?: React.ComponentProps<typeof Badge>['size'];
+  className?: string;
+}) {
+  const sublabel = account.plan?.sublabel;
+  return (
+    <Badge variant={planBadgeVariant(account)} size={size} className={className}>
+      {planLabel(account)}
+      {sublabel ? <span className="ml-1 font-normal opacity-70">· {sublabel}</span> : null}
+    </Badge>
+  );
 }
 
 // ── Trial helpers ────────────────────────────────────────────────────────────
@@ -379,12 +451,16 @@ export default function AdminAccountsPage() {
 
   const filtersCount = activeFilterCount(filters);
 
-  // `selected` is the row object captured at click time. Re-resolve it against
-  // the latest page so an in-sheet mutation (credits, trial, entitlement flags)
-  // shows its own result once the invalidated list query refetches, instead of
-  // rendering the pre-mutation snapshot until the sheet is reopened.
+  // `selected` is the row object captured at click time. The live source is
+  // the exact-id lookup (immune to the list's filters — a mutation that pushes
+  // the row out of a filtered list no longer strands the sheet on a
+  // pre-mutation snapshot); the filtered list row and the click-time snapshot
+  // are fallbacks while the lookup loads.
+  const selectedDetail = useAdminAccount(selected?.accountId ?? null);
   const selectedAccount = selected
-    ? (accounts.find((a) => a.accountId === selected.accountId) ?? selected)
+    ? (selectedDetail.data ??
+      accounts.find((a) => a.accountId === selected.accountId) ??
+      selected)
     : null;
 
   const setSort = useCallback((sortBy: AdminAccountsSortBy) => {
@@ -506,7 +582,7 @@ export default function AdminAccountsPage() {
                   sortDir={filters.sortDir}
                   onSort={setSort}
                 />
-                <TableHead>Tier</TableHead>
+                <TableHead>Plan</TableHead>
                 <SortHeader
                   label="Balance"
                   column="balance"
@@ -553,9 +629,7 @@ export default function AdminAccountsPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={tierBadgeVariant(account.tier)} size="sm">
-                      {tierLabel(account.tier)}
-                    </Badge>
+                    <PlanBadge account={account} />
                   </TableCell>
                   <TableCell className="text-right">
                     <span
@@ -841,17 +915,23 @@ function FiltersPanel({
           )}
         </div>
         <div className="space-y-1">
-          {TIER_OPTIONS.map((t) => (
-            <label
-              key={t.value}
-              className="hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm"
-            >
-              <Checkbox
-                checked={filters.tier.includes(t.value)}
-                onCheckedChange={() => toggleTier(t.value)}
-              />
-              <span className="flex-1">{t.label}</span>
-            </label>
+          {TIER_OPTIONS.map((t, i) => (
+            <div key={t.value}>
+              {/* One heading, before the first grandfathered key — these are
+                  still-honored plans no account can be moved onto today. */}
+              {t.grandfathered && !TIER_OPTIONS[i - 1]?.grandfathered && (
+                <div className="text-muted-foreground/70 px-1.5 pt-2 pb-1 text-xs tracking-wider uppercase">
+                  Grandfathered
+                </div>
+              )}
+              <label className="hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm">
+                <Checkbox
+                  checked={filters.tier.includes(t.value)}
+                  onCheckedChange={() => toggleTier(t.value)}
+                />
+                <span className="flex-1">{t.label}</span>
+              </label>
+            </div>
           ))}
         </div>
       </div>
@@ -946,7 +1026,7 @@ function ActiveChips({
   for (const t of filters.tier) {
     chips.push({
       key: `tier:${t}`,
-      label: `Tier: ${tierLabel(t)}`,
+      label: `Tier: ${tierKeyLabel(t)}`,
       onRemove: () => onChange({ ...filters, tier: filters.tier.filter((x) => x !== t) }),
     });
   }
@@ -1074,15 +1154,98 @@ function AccountDetailSheet({
   account: AdminAccount | null;
   onClose: () => void;
 }) {
+  // 1120 on lg, not 960: the Ledger tab renders the same six-column credit
+  // table the customer sees, which needs ~1040px before it starts hiding
+  // "Credits after" behind a horizontal scrollbar nobody finds.
   return (
     <Sheet open={!!account} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto p-0 sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[960px]"
+        className="w-full overflow-y-auto p-0 sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[1120px]"
       >
         {account && <AccountDetail account={account} />}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * "Open as account" — mint a one-hour act-as grant and walk into the product
+ * as this customer.
+ *
+ * Behind a confirm, because it is the single most invasive thing this console
+ * can do: from the click on, everything the operator sees and every write they
+ * make lands on the customer's account, and the customer's own audit log
+ * records it. The reason box is optional but asked for by default — it is what
+ * makes the audit row answer "why" and not just "who".
+ *
+ * The navigation is a full page load, not a router push: the SDK's request
+ * layer starts attaching the grant to every call, and a soft transition would
+ * leave a React Query cache full of the OPERATOR's data behind a banner
+ * naming the customer.
+ */
+function OpenAsAccountButton({ account }: { account: AdminAccount }) {
+  const impersonate = useAdminImpersonate();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const start = () => {
+    impersonate.mutate(
+      { accountId: account.accountId, reason: reason.trim() || undefined },
+      {
+        onSuccess: () => {
+          setOpen(false);
+          // Drop the "project you had open last" cookie first: it points at one
+          // of the OPERATOR's own projects, and the landing door reads it. The
+          // API now (correctly) refuses that project inside a session, because
+          // impersonation confines the operator to one account.
+          clearLastProjectId();
+          // Land on the customer's ACCOUNT page, not the landing door. The
+          // landing door is `/projects/start`, which AUTO-PROVISIONS a first
+          // project for an account that has none — so simply opening a quiet
+          // customer's account would silently create a project inside it. The
+          // account page creates nothing and is where a support question about
+          // billing, members or entitlements actually lives.
+          //
+          // A HARD load, deliberately — a router push would keep the React
+          // Query cache this console filled with the operator's own data.
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+          window.location.assign(`/accounts/${account.accountId}`);
+        },
+        onError: (error) => errorToast(error.message || 'Could not open the account'),
+      },
+    );
+  };
+
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
+        <Eye className="h-3.5 w-3.5" />
+        Open as account
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Act as ${account.name || 'this account'}?`}
+        description={
+          <span className="space-y-3">
+            <span className="block">
+              For up to one hour, everything you do lands on this account. Every change you
+              make is written to the customer's own audit log with your identity attached.
+            </span>
+            <Input
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Reason (e.g. ticket #1234)"
+              maxLength={500}
+            />
+          </span>
+        }
+        confirmLabel="Open as account"
+        onConfirm={start}
+        isPending={impersonate.isPending}
+      />
+    </>
   );
 }
 
@@ -1097,9 +1260,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
       <SheetHeader className="border-border/60 border-b p-6">
         <SheetTitle className="flex items-center gap-2 text-lg">
           {account.name || 'Unnamed account'}
-          <Badge variant={tierBadgeVariant(account.tier)} size="sm">
-            {tierLabel(account.tier)}
-          </Badge>
+          <PlanBadge account={account} />
           {account.paymentStatus && account.paymentStatus !== 'active' && (
             <Badge
               variant={paymentStatusBadge(account.paymentStatus)}
@@ -1117,6 +1278,9 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           </span>
           <span className="font-mono text-xs">{account.accountId}</span>
         </SheetDescription>
+        <div className="pt-3">
+          <OpenAsAccountButton account={account} />
+        </div>
         {actions.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pt-3">
             {actions.map((a) => (
@@ -1194,7 +1358,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
             <EntitlementsTab account={account} />
           </TabsContent>
           <TabsContent value="users" className="mt-4">
-            <UsersTab usersQuery={usersQuery} />
+            <UsersTab usersQuery={usersQuery} accountId={account.accountId} />
           </TabsContent>
           <TabsContent value="projects" className="mt-4">
             <ProjectsTab projectsQuery={projectsQuery} />
@@ -1214,7 +1378,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 function CreditsTab({ account }: { account: AdminAccount }) {
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
-  const setTier = useAdminSetTier();
+  const setEnterpriseEntitled = useAdminSetEnterpriseEntitled();
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('Reimbursement');
   const [isExpiring, setIsExpiring] = useState(false);
@@ -1267,60 +1431,63 @@ function CreditsTab({ account }: { account: AdminAccount }) {
     }
   }
 
-  async function handleSetTier(tier: string, label: string) {
+  async function handleSetEnterprise(enabled: boolean) {
     try {
-      await setTier.mutateAsync({ accountId: account.accountId, tier });
-      toast.success(`Plan set to ${label}`, {
-        description: `${account.name || account.accountId} is now on ${label}.`,
+      await setEnterpriseEntitled.mutateAsync({ accountId: account.accountId, enabled });
+      toast.success(enabled ? 'Enterprise activated' : 'Enterprise entitlement revoked', {
+        description: `${account.name || account.accountId} ${enabled ? 'now has' : 'no longer has'} SSO, SCIM, RBAC and audit entitlements.`,
       });
     } catch (error) {
-      toast.error('Failed to set plan', {
+      toast.error('Failed to update Enterprise entitlement', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
 
-  const isEnterprise = account.tier === 'enterprise';
+  const isEnterprise = account.enterpriseEntitled;
 
   return (
     <>
-      {/* Plan / Enterprise activation — sales-assigned tiers have no self-serve
-          path; this flips the account onto Enterprise (unlocks SSO + SCIM). */}
+      {/* Plan / Enterprise activation. Enterprise is the `enterprise_entitled`
+          FLAG, not a tier write: the flag survives Stripe subscription sync,
+          while a `tier='enterprise'` write is reverted by the next
+          customer.subscription.updated event (the bug this replaced). The
+          plan shown is the RESOLVED one the API reports — an active trial and
+          the per-seat self-heal overlay the stored tier, and the entitlement
+          writes below act on the account, not on that plan. */}
       <div className="border-border/60 bg-card mb-4 space-y-3 rounded-2xl border p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="text-foreground text-sm font-medium">Plan</div>
             <div className="text-muted-foreground text-xs">
-              Current:{' '}
-              <span className="text-foreground font-medium">{tierLabel(account.tier)}</span>
-              {isEnterprise && ' · SSO + SCIM unlocked'}
+              Current: <span className="text-foreground font-medium">{planLabel(account)}</span>
+              {account.plan?.sublabel ? ` · ${account.plan.sublabel}` : ''}
+              {isEnterprise && ' · Enterprise entitlements active'}
             </div>
           </div>
-          <Badge variant={tierBadgeVariant(account.tier)} className="capitalize">
-            {tierLabel(account.tier)}
-          </Badge>
+          <PlanBadge account={account} size="default" />
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
-            onClick={() => handleSetTier('enterprise', 'Enterprise')}
-            disabled={setTier.isPending || isEnterprise}
+            onClick={() => handleSetEnterprise(true)}
+            disabled={setEnterpriseEntitled.isPending || isEnterprise}
             className="gap-1.5"
           >
-            {setTier.isPending && <Loading className="h-3.5 w-3.5" />}
+            {setEnterpriseEntitled.isPending && <Loading className="h-3.5 w-3.5" />}
             {isEnterprise ? 'Enterprise active' : 'Activate Enterprise'}
           </Button>
           {isEnterprise && (
             <Button
               variant="outline"
-              onClick={() => handleSetTier('per_seat', 'Team')}
-              disabled={setTier.isPending}
+              onClick={() => handleSetEnterprise(false)}
+              disabled={setEnterpriseEntitled.isPending}
             >
-              {'Revert to Team'}
+              {'Revoke Enterprise entitlement'}
             </Button>
           )}
         </div>
         <p className="text-muted-foreground text-xs">
-          {'Enterprise unlocks SAML SSO + SCIM directory sync for this account. Seat billing is unchanged.'}
+          {'Enterprise unlocks SAML SSO, SCIM directory sync, RBAC and audit access for this account. The billed plan and seat billing are unchanged.'}
         </p>
       </div>
 
@@ -1419,19 +1586,254 @@ function CreditsTab({ account }: { account: AdminAccount }) {
 function EntitlementRow({
   title,
   description,
+  titleSuffix,
   children,
 }: {
   title: string;
   description: string;
+  /** Sits beside the title — an expiry chip, a status badge. */
+  titleSuffix?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
-        <div className="text-foreground text-sm font-medium">{title}</div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-foreground text-sm font-medium">{title}</span>
+          {titleSuffix}
+        </div>
         <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">{description}</p>
       </div>
       <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * The per-entitlement override rows. These apply AFTER the enterprise
+ * expansion, which is what makes them useful: one capability can be switched
+ * off for an account whose plan (or Enterprise flag) grants all of them.
+ */
+const OVERRIDE_ENTITLEMENT_ROWS: {
+  key: BooleanOverrideKey;
+  title: string;
+  description: string;
+}[] = [
+  { key: 'sso', title: 'SSO', description: 'SAML / OIDC single sign-on for the account.' },
+  { key: 'scim', title: 'SCIM', description: 'Directory-driven user provisioning.' },
+  { key: 'rbac', title: 'Advanced RBAC', description: 'Custom roles and per-resource permissions.' },
+  {
+    key: 'auditAccess',
+    title: 'Audit log access',
+    description: "Read access to the account's own audit trail.",
+  },
+  {
+    key: 'managedModels',
+    title: 'Managed models entitlement',
+    description:
+      'Applied after the switch above, so it can withdraw managed models from an otherwise entitled account.',
+  },
+];
+
+const OVERRIDE_TRI_STATE_OPTIONS: { value: OverrideTriState; label: string }[] = [
+  { value: 'inherit', label: 'Inherit' },
+  { value: 'on', label: 'Force on' },
+  { value: 'off', label: 'Force off' },
+];
+
+/** Short date for an expiry chip — the year matters, the minute does not. */
+function formatDay(value: string): string {
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/**
+ * An override with an `expires_at`. Shown even once it has lapsed: the row
+ * projection does not apply expiry, so the operator sees what is stored and can
+ * clear it.
+ */
+function OverrideExpiryChip({ expiresAt }: { expiresAt: string | null }) {
+  if (!expiresAt) return null;
+  const expired = isOverrideExpired(expiresAt);
+  return (
+    <Badge variant={expired ? 'muted' : 'warning'} size="xs">
+      {expired ? `expired ${formatDay(expiresAt)}` : `expires ${formatDay(expiresAt)}`}
+    </Badge>
+  );
+}
+
+/**
+ * Every override an account can carry, on one merge-patch save.
+ *
+ * The form holds a draft and sends only the rows that changed — see
+ * `overrides-form.ts` for why an untouched row must never be re-sent. It has no
+ * expiry field on purpose: an expiring grant comes from the trial primitive
+ * above, and this card is where an operator inspects or clears one.
+ */
+function OverridesCard({ account }: { account: AdminAccount }) {
+  const setOverrides = useAdminSetOverrides();
+  const stored = account.entitlementOverrides ?? null;
+
+  // Re-seed the draft whenever the account row changes underneath it (a save,
+  // a trial grant, another operator). Comparing the serialized map is the
+  // documented "adjust state during render" pattern — no effect, no flash of
+  // stale controls.
+  const storedKey = JSON.stringify(stored ?? {});
+  const [syncedKey, setSyncedKey] = useState(storedKey);
+  const [draft, setDraft] = useState<OverridesDraft>(() => draftFromOverrides(stored));
+  if (storedKey !== syncedKey) {
+    setSyncedKey(storedKey);
+    setDraft(draftFromOverrides(stored));
+  }
+
+  const result = overridesPatch(draft, stored);
+  const patch = result.ok ? result.patch : {};
+  const nothingToSave = result.ok && isEmptyPatch(patch);
+  const dirty = !result.ok || !nothingToSave;
+
+  function setRow<K extends keyof OverridesDraft>(key: K, value: OverridesDraft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleSave() {
+    if (!result.ok || isEmptyPatch(result.patch)) return;
+    try {
+      await setOverrides.mutateAsync({ accountId: account.accountId, patch: result.patch });
+      successToast('Overrides saved', { description: describeOverridePatch(result.patch) });
+    } catch (error) {
+      errorToast('Failed to save overrides', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  const effectiveMultiplier = account.computeRateMultiplier;
+
+  return (
+    <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-foreground text-sm font-medium">Overrides</div>
+          <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">
+            Per-account values that beat the plan. Blank or Inherit means the plan decides. Saving a
+            row writes it permanently — a grant that should end belongs in a trial.
+          </p>
+        </div>
+        {dirty && (
+          <Badge variant="kortix" size="sm">
+            unsaved
+          </Badge>
+        )}
+      </div>
+
+      <div className="border-border/60 divide-border divide-y rounded-md border">
+        {OVERRIDE_ENTITLEMENT_ROWS.map(({ key, title, description }) => (
+          <div key={key} className="px-4 py-3">
+            <EntitlementRow
+              title={title}
+              description={description}
+              titleSuffix={<OverrideExpiryChip expiresAt={overrideExpiresAt(stored, key)} />}
+            >
+              <Select
+                value={draft[key]}
+                onValueChange={(value) => setRow(key, value as OverrideTriState)}
+                disabled={setOverrides.isPending}
+              >
+                <SelectTrigger className="h-8 w-[140px]" aria-label={`${title} override`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OVERRIDE_TRI_STATE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </EntitlementRow>
+          </div>
+        ))}
+
+        <div className="px-4 py-3">
+          <EntitlementRow
+            title="Max concurrent sessions"
+            description="Session cap for the whole account. Blank inherits the plan cap."
+            titleSuffix={
+              <OverrideExpiryChip expiresAt={overrideExpiresAt(stored, 'maxConcurrentSessions')} />
+            }
+          >
+            <Input
+              type="number"
+              min={1}
+              max={MAX_CONCURRENT_SESSIONS_OVERRIDE}
+              step={1}
+              inputMode="numeric"
+              placeholder="Plan cap"
+              className="h-8 w-[140px] tabular-nums"
+              aria-label="Max concurrent sessions override"
+              value={draft.maxConcurrentSessions}
+              disabled={setOverrides.isPending}
+              onChange={(e) => setRow('maxConcurrentSessions', e.target.value)}
+            />
+          </EntitlementRow>
+        </div>
+
+        <div className="px-4 py-3">
+          <EntitlementRow
+            title="Compute rate multiplier"
+            description="0.5 = half-price compute, 0 = free, blank = plan default."
+            titleSuffix={
+              <OverrideExpiryChip expiresAt={overrideExpiresAt(stored, 'computeRateMultiplier')} />
+            }
+          >
+            <Input
+              type="number"
+              min={0}
+              max={MAX_COMPUTE_RATE_MULTIPLIER}
+              step={0.05}
+              inputMode="decimal"
+              placeholder="1"
+              className="h-8 w-[140px] tabular-nums"
+              aria-label="Compute rate multiplier override"
+              value={draft.computeRateMultiplier}
+              disabled={setOverrides.isPending}
+              onChange={(e) => setRow('computeRateMultiplier', e.target.value)}
+            />
+          </EntitlementRow>
+          {effectiveMultiplier !== undefined && (
+            <p className="text-muted-foreground mt-2 text-xs">
+              Sandbox compute currently bills at{' '}
+              <span className="text-foreground/80 tabular-nums">{effectiveMultiplier}×</span> list
+              price.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {!result.ok && <p className="text-kortix-red text-xs">{result.error}</p>}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          onClick={handleSave}
+          disabled={!dirty || !result.ok || setOverrides.isPending}
+          className="gap-1.5"
+        >
+          {setOverrides.isPending && <Loading className="h-3.5 w-3.5" />}
+          Save overrides
+        </Button>
+        {dirty && (
+          <Button
+            variant="outline"
+            onClick={() => setDraft(draftFromOverrides(stored))}
+            disabled={setOverrides.isPending}
+          >
+            Reset
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1480,7 +1882,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
         note: note.trim() === '' ? undefined : note.trim(),
       });
       successToast(isActive ? 'Trial replaced' : 'Trial granted', {
-        description: `${accountLabel} behaves as ${tierLabel(tierKey)} for ${parsedDuration} days.`,
+        description: `${accountLabel} behaves as ${tierKeyLabel(tierKey)} for ${parsedDuration} days.`,
       });
       setNote('');
     } catch (error) {
@@ -1562,7 +1964,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
             <div className="text-foreground text-sm font-medium">Trial</div>
             <p className="text-muted-foreground mt-0.5 text-xs">
               Emulates a paid tier for a fixed window. Billed tier stays{' '}
-              <span className="text-foreground/80">{tierLabel(account.tier)}</span>.
+              <span className="text-foreground/80">{tierKeyLabel(account.tier)}</span>.
             </p>
           </div>
           <Badge variant={trialBadgeVariant(trial?.status ?? null)} size="sm">
@@ -1575,7 +1977,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
             <div className="px-3 py-2.5">
               <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">Tier</div>
               <div className="mt-0.5 text-sm font-medium">
-                {trial.tier ? tierLabel(trial.tier) : '—'}
+                {trial.tier ? tierKeyLabel(trial.tier) : '—'}
                 {trial.seats != null && (
                   <span className="text-muted-foreground font-normal">
                     {' '}
@@ -1790,6 +2192,11 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
         </div>
       </div>
 
+      {/* Every remaining override, on one merge-patch save. Sits last because
+          the resolver applies these last: plan → enterprise expansion →
+          managed-models switch → these. */}
+      <OverridesCard account={account} />
+
       {/* Read-only context the operator needs before issuing a trial. */}
       <div className="border-border/60 bg-card divide-border grid grid-cols-2 divide-x rounded-2xl border text-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -1812,7 +2219,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
           <div className="space-y-2 text-sm">
             <p>
               <span className="font-medium">{accountLabel}</span> drops back to{' '}
-              <span className="text-foreground font-medium">{tierLabel(account.tier)}</span>{' '}
+              <span className="text-foreground font-medium">{tierKeyLabel(account.tier)}</span>{' '}
               immediately.
             </p>
             <p className="text-muted-foreground text-xs">
@@ -1829,7 +2236,28 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
   );
 }
 
-function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccountUsers> }) {
+const MEMBER_ROLES: AdminAccountMemberRole[] = ['owner', 'admin', 'member'];
+
+function UsersTab({
+  usersQuery,
+  accountId,
+}: {
+  usersQuery: ReturnType<typeof useAdminAccountUsers>;
+  accountId: string;
+}) {
+  const setMemberRole = useAdminSetMemberRole();
+
+  async function handleRoleChange(userId: string, email: string, role: AdminAccountMemberRole) {
+    try {
+      await setMemberRole.mutateAsync({ accountId, userId, role });
+      toast.success('Role updated', { description: `${email} is now ${role}.` });
+    } catch (error) {
+      toast.error('Failed to update role', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
   if (usersQuery.isLoading) {
     return (
       <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
@@ -1877,9 +2305,24 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
                   </Badge>
                 )}
               </div>
-              <Badge variant="muted" size="sm" className="shrink-0 capitalize">
-                {user.account_role}
-              </Badge>
+              <Select
+                value={user.account_role}
+                disabled={setMemberRole.isPending}
+                onValueChange={(role) =>
+                  handleRoleChange(user.user_id, user.email, role as AdminAccountMemberRole)
+                }
+              >
+                <SelectTrigger size="sm" className="h-7 w-[7.5rem] shrink-0 text-xs capitalize">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {MEMBER_ROLES.map((role) => (
+                    <SelectItem key={role} value={role} className="capitalize">
+                      {role}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
               <div className="truncate">
@@ -2025,52 +2468,12 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
     );
   }
 
+  // The same table the customer sees under Billing → Credit ledger, fed from
+  // the admin endpoint. One implementation, so an operator reading a support
+  // ticket and the customer reading their own history see identical rows.
   return (
-    <div className="border-border/60 bg-card divide-border max-h-[50vh] divide-y overflow-y-auto rounded-2xl border">
-      {entries.map((entry) => {
-        const amount = Number(entry.amount);
-        const positive = amount >= 0;
-        return (
-          <div key={entry.id} className="flex items-start justify-between gap-3 px-4 py-3 text-sm">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <Badge variant="muted" size="sm" className="capitalize">
-                  {entry.type.replace(/_/g, ' ')}
-                </Badge>
-                {entry.isExpiring && (
-                  <Badge variant="warning" size="sm">
-                    expiring
-                  </Badge>
-                )}
-              </div>
-              {entry.description && (
-                <div className="text-muted-foreground mt-1 line-clamp-2 text-xs">
-                  {entry.description}
-                </div>
-              )}
-              <div className="text-muted-foreground mt-0.5 text-xs">
-                {formatDateTime(entry.createdAt)}
-              </div>
-            </div>
-            <div className="shrink-0 text-right">
-              <div
-                className={cn(
-                  'font-mono text-sm font-medium',
-                  positive
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-red-600 dark:text-red-400',
-                )}
-              >
-                {positive ? '+' : '-'}
-                {money(amount)}
-              </div>
-              <div className="text-muted-foreground font-mono text-xs">
-                → {formatCredits(entry.balanceAfter)}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+    <div className="max-h-[50vh] overflow-y-auto">
+      <CreditTransactionsTable rows={adminLedgerRows(entries)} />
     </div>
   );
 }
@@ -2079,12 +2482,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
   const actions = billingActionsFor(account);
 
   const summary: Array<[string, React.ReactNode]> = [
-    [
-      'Tier',
-      <Badge key="tier" variant={tierBadgeVariant(account.tier)} size="sm">
-        {tierLabel(account.tier)}
-      </Badge>,
-    ],
+    ['Plan', <PlanBadge key="tier" account={account} />],
     [
       'Payment status',
       account.paymentStatus ? (

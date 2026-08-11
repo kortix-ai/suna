@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v12';
-const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v10';
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v14';
+const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v11';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
 export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
+export const CI_DOCKER_COMPOSE_VERSION = 'v2.40.3';
+export const CI_DOCKER_COMPOSE_AMD64_SHA256 =
+  'dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372';
 
 const POLL_MS = 3_000;
 const TEMPLATE_TIMEOUT_MS = 45 * 60_000;
@@ -31,6 +34,7 @@ export interface PlatinumCiInput {
   runId: string;
   runAttempt: string;
   testArgs: string[];
+  skipSdkPackageTests?: boolean;
   root: string;
 }
 
@@ -124,6 +128,7 @@ export interface PlatinumSandbox {
   via?: 'restore' | 'cold-boot';
   metadata?: Record<string, unknown>;
   errorMessage?: string | null;
+  exposed?: Array<{ port: number; url: string; token?: string; public?: boolean }>;
 }
 
 interface PlatinumSandboxPage {
@@ -214,6 +219,18 @@ export function platinumBaseTemplateName(lockHash: string): string {
   return `kortix-ci-${PLATINUM_CI_BASE_TEMPLATE_VERSION}-${lockHash.slice(0, 16)}-base`;
 }
 
+export function dockerComposeInstallCommand(): string {
+  const plugin = '/usr/local/lib/docker/cli-plugins/docker-compose';
+  const url = `https://github.com/docker/compose/releases/download/${CI_DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64`;
+  return [
+    'install -d /usr/local/lib/docker/cli-plugins',
+    `curl -fsSL ${url} -o ${plugin}`,
+    `echo '${CI_DOCKER_COMPOSE_AMD64_SHA256}  ${plugin}' | sha256sum -c -`,
+    `chmod 0755 ${plugin}`,
+    'docker compose version',
+  ].join(' && ');
+}
+
 function platinumWarmEntrypoint(): string {
   return [
     'set -eux',
@@ -230,7 +247,7 @@ function platinumWarmEntrypoint(): string {
     'dockerd --host=unix:///var/run/docker.sock >/workspace/kortix-template-dockerd.log 2>&1 &',
     "timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'",
     'docker info >/dev/null',
-    'pnpm exec supabase start --ignore-health-check',
+    "timeout 2400 sh -c 'until pnpm exec supabase start --ignore-health-check; do sleep 30; done'",
     'docker image ls -q | sort -u | wc -l > /workspace/.kortix-ci-warm-ready',
     "grep -Eq '^[1-9][0-9]*$' /workspace/.kortix-ci-warm-ready",
     'docker image ls --digests',
@@ -277,6 +294,7 @@ export function buildPlatinumTemplateSpec(input: {
           'export DEBIAN_FRONTEND=noninteractive',
           'apt-get update',
           'apt-get install -y --no-install-recommends ca-certificates curl docker.io git jq procps ripgrep unzip xz-utils',
+          dockerComposeInstallCommand(),
           'rm -rf /var/lib/apt/lists/*',
           `npm install --global bun@${PLATINUM_CI_BUN_VERSION}`,
           `corepack prepare pnpm@${PLATINUM_CI_PNPM_VERSION} --activate`,
@@ -351,11 +369,16 @@ export function buildWorkerScript(input: {
   ref: string;
   sha: string;
   testArgs: string[];
+  skipSdkPackageTests?: boolean;
   provider?: 'platinum' | 'daytona';
 }): string {
   const provider = input.provider ?? 'platinum';
   const command = ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])];
   const testCommand = command.map(shellQuote).join(' ');
+  const prestartSupabase = input.testArgs.includes('--browser-only')
+    ? `pnpm exec supabase start --ignore-health-check
+echo "[${provider}-ci] supabase_prestarted=1"`
+    : '';
   const providerLogs =
     provider === 'daytona'
       ? '/workspace/daytona-bootstrap.log /workspace/daytona-warm.log /workspace/daytona-dockerd.log'
@@ -369,6 +392,7 @@ STATUS=/workspace/kortix-test.exit
 ARTIFACT=/workspace/kortix-test-results.tar.gz
 export HOME=/root
 export CI=1
+${input.skipSdkPackageTests ? 'export KORTIX_PACKAGE_SKIP_SDK_TESTS=1' : ''}
 
 exec > >(tee -a "$LOG") 2>&1
 rm -f "$STATUS" "$ARTIFACT"
@@ -431,6 +455,7 @@ echo "[${provider}-ci] docker_ready=1"
 docker network inspect bridge --format '{{.Driver}}' | grep -qx bridge
 echo "[${provider}-ci] docker_bridge_ready=1"
 
+${prestartSupabase}
 ${testCommand}
 `;
 }
@@ -439,7 +464,7 @@ export function platinumWorkerLaunchCommand(): string {
   return 'setsid -f /workspace/run-kortix-tests.sh >/workspace/kortix-bootstrap.log 2>&1 </dev/null';
 }
 
-class PlatinumApi {
+export class PlatinumApi {
   readonly base: string;
   readonly headers: Record<string, string>;
 
@@ -629,7 +654,7 @@ async function waitForTemplate(api: PlatinumApi, template: PlatinumTemplate): Pr
   throw new Error(`Platinum template ${template.id} did not become ready within ${TEMPLATE_TIMEOUT_MS}ms`);
 }
 
-async function ensureTemplate(
+export async function ensureTemplate(
   api: PlatinumApi,
   spec: PlatinumTemplateSpec,
 ): Promise<PlatinumTemplate> {
@@ -654,7 +679,7 @@ async function ensureTemplate(
   return waitForTemplate(api, queued);
 }
 
-async function ensureWarmTemplate(
+export async function ensureWarmTemplate(
   api: PlatinumApi,
   base: PlatinumTemplate,
   lockHash: string,
@@ -740,8 +765,18 @@ export async function observePlatinumSandboxStart(input: {
   );
 }
 
-async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<void> {
-  const deadline = Date.now() + PLATINUM_CI_WARM_TIMEOUT_MS;
+export function platinumWarmReadinessTimeoutMs(
+  via: PlatinumSandbox['via'],
+): number {
+  return via === 'cold-boot' ? WARM_PREPARE_TIMEOUT_MS : PLATINUM_CI_WARM_TIMEOUT_MS;
+}
+
+export async function waitForWarmSandbox(
+  api: PlatinumApi,
+  sandboxId: string,
+  timeoutMs = PLATINUM_CI_WARM_TIMEOUT_MS,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   let observationFailures = 0;
   while (Date.now() < deadline) {
     try {
@@ -778,11 +813,11 @@ async function waitForWarmSandbox(api: PlatinumApi, sandboxId: string): Promise<
     // The log is optional. The missing marker is the authoritative failure.
   }
   throw new Error(
-    `Platinum sandbox ${sandboxId} did not become warm within ${PLATINUM_CI_WARM_TIMEOUT_MS}ms\n${warmLog.slice(-20_000)}`,
+    `Platinum sandbox ${sandboxId} did not become warm within ${timeoutMs}ms\n${warmLog.slice(-20_000)}`,
   );
 }
 
-async function exec(
+export async function exec(
   api: PlatinumApi,
   sandboxId: string,
   command: string[],
@@ -798,7 +833,7 @@ async function exec(
   return response.result;
 }
 
-async function stat(
+export async function stat(
   api: PlatinumApi,
   sandboxId: string,
   path: string,
@@ -935,7 +970,7 @@ async function streamWorker(
   });
 }
 
-async function downloadArtifacts(
+export async function downloadArtifacts(
   api: PlatinumApi,
   sandboxId: string,
   root: string,
@@ -1030,7 +1065,7 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
     sandboxCreateDurationMs = Date.now() - createStartedAt;
 
     const warmStartedAt = Date.now();
-    await waitForWarmSandbox(api, sandboxId);
+    await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
     warmPrepareDurationMs = Date.now() - warmStartedAt;
 
     const workerScript = buildWorkerScript(input);

@@ -28,4 +28,5 @@ resource "cloudflare_record" "this" {
   content = each.value.value
   proxied = each.value.proxied
   ttl     = each.value.ttl
+  comment = each.value.comment
 }
