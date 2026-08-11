@@ -1,21 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { DisposablePostgres, dockerAvailable } from './disposable-postgres';
 
-const dockerOk = sh(['docker', 'info']).ok;
-const CONTAINER = 'kortix-lifetime-rollup-test';
-const PORT = Number(process.env.LIFETIME_ROLLUP_TEST_PORT || 55441);
 const ROOT = repoRoot();
-const ports: Ports = { ...computePorts(0), sbDb: PORT };
-const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
+const postgres = new DisposablePostgres('kortix-lifetime-rollup-test', 'LIFETIME_ROLLUP_TEST_PORT');
 
 function psql(sql: string): string {
-  const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
+  const res = sh(['psql', postgres.url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
   if (!res.ok) throw new Error(`psql failed: ${res.stderr}\n${sql}`);
   return res.stdout.trim();
-}
-
-function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
 }
 
 function newAccount(): string {
@@ -48,59 +41,37 @@ function lifetime(accountId: string): {
   };
 }
 
-const suite = dockerOk ? describe : describe.skip;
+const suite = dockerAvailable ? describe : describe.skip;
 
 suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
-    const up = sh([
-      'docker',
-      'run',
-      '-d',
-      '--name',
-      CONTAINER,
-      '-e',
-      'POSTGRES_PASSWORD=postgres',
-      '-e',
-      'POSTGRES_USER=postgres',
-      '-e',
-      'POSTGRES_DB=postgres',
-      '--tmpfs',
-      '/var/lib/postgresql/data',
-      '-p',
-      `127.0.0.1:${PORT}:5432`,
-      'postgres:16-alpine',
-      '-c',
-      'fsync=off',
-      '-c',
-      'synchronous_commit=off',
-      '-c',
-      'full_page_writes=off',
-    ]);
-    if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
-      await Bun.sleep(1000);
-    }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
-    const code = await runMigrate(ROOT, ports);
+    await postgres.start();
+    const code = await runMigrate(ROOT, postgres.ports);
     if (code !== 0) throw new Error('migrations failed');
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    postgres.stop();
   });
 
   test('a tier grant increments lifetime_granted, not purchased or used', () => {
     const account = newAccount();
     ledger(account, '25', 'tier_grant');
-    expect(lifetime(account)).toMatchObject({ granted: 25, purchased: 0, used: 0 });
+    expect(lifetime(account)).toMatchObject({
+      granted: 25,
+      purchased: 0,
+      used: 0,
+    });
   });
 
   test('a purchase increments lifetime_purchased, never lifetime_granted', () => {
     const account = newAccount();
     ledger(account, '20', 'purchase');
-    expect(lifetime(account)).toMatchObject({ granted: 0, purchased: 20, used: 0 });
+    expect(lifetime(account)).toMatchObject({
+      granted: 0,
+      purchased: 20,
+      used: 0,
+    });
   });
 
   test('a usage debit (stored negative) increments lifetime_used as a positive figure', () => {
@@ -162,7 +133,11 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
   test('an account with no ledger history stays at zero', () => {
     const account = newAccount();
     psql('select kortix.recompute_credit_account_lifetime(null)');
-    expect(lifetime(account)).toMatchObject({ granted: 0, purchased: 0, used: 0 });
+    expect(lifetime(account)).toMatchObject({
+      granted: 0,
+      purchased: 0,
+      used: 0,
+    });
   });
 
   test('the rollup functions carry explicit EXECUTE grants for service_role', () => {
@@ -191,11 +166,15 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
        insert into kortix.credit_ledger (account_id, amount_precise, type) values ('${account}', 25, 'tier_grant');
        reset role`,
     );
-    expect(lifetime(account)).toMatchObject({ granted: 25, purchased: 0, used: 0 });
+    expect(lifetime(account)).toMatchObject({
+      granted: 25,
+      purchased: 0,
+      used: 0,
+    });
   });
 });
 
-if (!dockerOk) {
+if (!dockerAvailable) {
   // biome-ignore lint/suspicious/noSkippedTests: This integration suite requires a running Docker daemon.
   test.skip('credit lifetime rollup (docker unavailable — skipped)', () => {});
 }

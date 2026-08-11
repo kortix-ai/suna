@@ -1,26 +1,22 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { DisposablePostgres, dockerAvailable } from './disposable-postgres';
 
-const dockerOk = sh(['docker', 'info']).ok;
-const CONTAINER = 'kortix-credit-rpc-overloads-test';
-const PORT = Number(process.env.CREDIT_RPC_OVERLOADS_TEST_PORT || 55444);
 const ROOT = repoRoot();
-const ports: Ports = { ...computePorts(0), sbDb: PORT };
-const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
+const postgres = new DisposablePostgres(
+  'kortix-credit-rpc-overloads-test',
+  'CREDIT_RPC_OVERLOADS_TEST_PORT',
+);
 
 function psql(sql: string): string {
-  const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
+  const res = sh(['psql', postgres.url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
   if (!res.ok) throw new Error(`psql failed: ${res.stderr}\n${sql}`);
   return res.stdout.trim();
 }
 
 function psqlAllowError(sql: string): { ok: boolean; stderr: string } {
-  const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
+  const res = sh(['psql', postgres.url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
   return { ok: res.ok, stderr: res.stderr };
-}
-
-function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
 }
 
 function fundedAccount(balance: string): string {
@@ -51,7 +47,12 @@ function atomicOverloads(): OverloadRow[] {
   if (!raw) return [];
   return raw.split('\n').map((line) => {
     const [name, args, minArity, maxArity] = line.split('|');
-    return { name, args, minArity: Number(minArity), maxArity: Number(maxArity) };
+    return {
+      name,
+      args,
+      minArity: Number(minArity),
+      maxArity: Number(maxArity),
+    };
   });
 }
 
@@ -83,47 +84,17 @@ function collidingPairs(rows: OverloadRow[]): string[] {
   return collisions;
 }
 
-const suite = dockerOk ? describe : describe.skip;
+const suite = dockerAvailable ? describe : describe.skip;
 
 suite('credit RPC overload resolution (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
-    const up = sh([
-      'docker',
-      'run',
-      '-d',
-      '--name',
-      CONTAINER,
-      '-e',
-      'POSTGRES_PASSWORD=postgres',
-      '-e',
-      'POSTGRES_USER=postgres',
-      '-e',
-      'POSTGRES_DB=postgres',
-      '--tmpfs',
-      '/var/lib/postgresql/data',
-      '-p',
-      `127.0.0.1:${PORT}:5432`,
-      'postgres:16-alpine',
-      '-c',
-      'fsync=off',
-      '-c',
-      'synchronous_commit=off',
-      '-c',
-      'full_page_writes=off',
-    ]);
-    if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
-      await Bun.sleep(1000);
-    }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
-    const code = await runMigrate(ROOT, ports);
+    await postgres.start();
+    const code = await runMigrate(ROOT, postgres.ports);
     if (code !== 0) throw new Error('migrations failed');
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    postgres.stop();
   });
 
   test('no public.atomic_* function has two overloads with overlapping callable arity', () => {

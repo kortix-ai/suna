@@ -1,12 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import {
-  type Ports,
-  computePorts,
-  hasKortixSchema,
-  repoRoot,
-  runMigrate,
-  sh,
-} from '../../scripts/worktree/lib';
+import { hasKortixSchema, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { DisposablePostgres, dockerAvailable } from './disposable-postgres';
 
 // Heavy integration test for the worktree's OWN migrate wrapper. The lightweight
 // scripts/worktree/__tests__ prove runMigrate references real things (the
@@ -18,68 +12,30 @@ import {
 //
 //   bun test tests/migration/worktree-migrate.test.ts   (needs docker)
 
-const dockerOk = sh(['docker', 'info']).ok;
-const CONTAINER = 'kortix-wt-migrate-test';
-const PORT = Number(process.env.WT_MIGRATE_TEST_PORT || 55440);
 const ROOT = repoRoot();
-const ports: Ports = { ...computePorts(0), sbDb: PORT };
+const postgres = new DisposablePostgres('kortix-wt-migrate-test', 'WT_MIGRATE_TEST_PORT');
 
-function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
-}
-
-const suite = dockerOk ? describe : describe.skip;
+const suite = dockerAvailable ? describe : describe.skip;
 
 suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
-    const up = sh([
-      'docker',
-      'run',
-      '-d',
-      '--name',
-      CONTAINER,
-      '-e',
-      'POSTGRES_PASSWORD=postgres',
-      '-e',
-      'POSTGRES_USER=postgres',
-      '-e',
-      'POSTGRES_DB=postgres',
-      '--tmpfs',
-      '/var/lib/postgresql/data',
-      '-p',
-      `127.0.0.1:${PORT}:5432`,
-      'postgres:16-alpine',
-      '-c',
-      'fsync=off',
-      '-c',
-      'synchronous_commit=off',
-      '-c',
-      'full_page_writes=off',
-    ]);
-    if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    for (let i = 0; i < 60; i++) {
-      if (pgReady()) return;
-      await Bun.sleep(1000);
-    }
-    throw new Error('test Postgres never became ready');
+    await postgres.start();
   }, 120_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    postgres.stop();
   });
 
   test('builds the kortix schema from scratch (prereqs + node-pg-migrate)', async () => {
-    const code = await runMigrate(ROOT, ports);
+    const code = await runMigrate(ROOT, postgres.ports);
     expect(code).toBe(0);
 
-    expect(hasKortixSchema(ports)).toBe(true);
+    expect(hasKortixSchema(postgres.ports)).toBe(true);
 
-    const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
     const count = Number(
       sh([
         'psql',
-        url,
+        postgres.url,
         '-tAc',
         "select count(*) from information_schema.tables where table_schema='kortix' and table_type='BASE TABLE'",
       ]).stdout.trim(),
@@ -88,13 +44,13 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
   }, 180_000);
 
   test('is idempotent — a second run applies nothing and still exits 0', async () => {
-    const code = await runMigrate(ROOT, ports);
+    const code = await runMigrate(ROOT, postgres.ports);
     expect(code).toBe(0);
-    expect(hasKortixSchema(ports)).toBe(true);
+    expect(hasKortixSchema(postgres.ports)).toBe(true);
   }, 120_000);
 });
 
-if (!dockerOk) {
+if (!dockerAvailable) {
   // biome-ignore lint/suspicious/noSkippedTests: This integration suite requires a running Docker daemon.
   test.skip('worktree runMigrate integration (docker unavailable — skipped)', () => {});
 }

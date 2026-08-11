@@ -1,33 +1,20 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { createDb } from '../../packages/db/src/client';
-import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
+import { DisposablePostgres, dockerAvailable } from './disposable-postgres';
 
-const dockerOk = sh(['docker', 'info']).ok;
-const CONTAINER = 'kortix-usage-breakdown-test';
-const PORT = Number(process.env.USAGE_BREAKDOWN_TEST_PORT || 55443);
 const ROOT = repoRoot();
-const ports: Ports = { ...computePorts(0), sbDb: PORT };
-const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
-
-mock.module('../../apps/api/src/shared/db', () => ({
-  hasDatabase: true,
-  db: createDb(url),
-}));
-
-const { getUsageBreakdownThisPeriod } = await import(
-  '../../apps/api/src/billing/services/usage-breakdown'
-);
+const postgres = new DisposablePostgres('kortix-usage-breakdown-test', 'USAGE_BREAKDOWN_TEST_PORT');
+let getUsageBreakdownThisPeriod: typeof import(
+  '../../apps/api/src/billing/services/usage-breakdown',
+).getUsageBreakdownThisPeriod;
 
 const PERIOD_START = '2026-07-01T00:00:00.000Z';
 
 function psql(sql: string): string {
-  const res = sh(['psql', url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
+  const res = sh(['psql', postgres.url, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
   if (!res.ok) throw new Error(`psql failed: ${res.stderr}\n${sql}`);
   return res.stdout.trim();
-}
-
-function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
 }
 
 function newAccount(): string {
@@ -57,47 +44,24 @@ function rawLedger(
   );
 }
 
-const suite = dockerOk ? describe : describe.skip;
+const suite = dockerAvailable ? describe : describe.skip;
 
 suite('usage breakdown reads metadata->>ledger_type (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
-    const up = sh([
-      'docker',
-      'run',
-      '-d',
-      '--name',
-      CONTAINER,
-      '-e',
-      'POSTGRES_PASSWORD=postgres',
-      '-e',
-      'POSTGRES_USER=postgres',
-      '-e',
-      'POSTGRES_DB=postgres',
-      '--tmpfs',
-      '/var/lib/postgresql/data',
-      '-p',
-      `127.0.0.1:${PORT}:5432`,
-      'postgres:16-alpine',
-      '-c',
-      'fsync=off',
-      '-c',
-      'synchronous_commit=off',
-      '-c',
-      'full_page_writes=off',
-    ]);
-    if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
-    for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
-      await Bun.sleep(1000);
-    }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
-    const code = await runMigrate(ROOT, ports);
+    await postgres.start();
+    mock.module('../../apps/api/src/shared/db', () => ({
+      hasDatabase: true,
+      db: createDb(postgres.url),
+    }));
+    ({ getUsageBreakdownThisPeriod } = await import(
+      '../../apps/api/src/billing/services/usage-breakdown'
+    ));
+    const code = await runMigrate(ROOT, postgres.ports);
     if (code !== 0) throw new Error('migrations failed');
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    postgres.stop();
   });
 
   test('a production-shaped compute debit lands in compute_usd', async () => {
@@ -182,11 +146,15 @@ suite('usage breakdown reads metadata->>ledger_type (throwaway Postgres)', () =>
 
     const breakdown = await getUsageBreakdownThisPeriod(account, PERIOD_START);
 
-    expect(breakdown).toMatchObject({ compute_usd: 0, llm_usd: 0, total_usd: 0 });
+    expect(breakdown).toMatchObject({
+      compute_usd: 0,
+      llm_usd: 0,
+      total_usd: 0,
+    });
   });
 });
 
-if (!dockerOk) {
+if (!dockerAvailable) {
   // biome-ignore lint/suspicious/noSkippedTests: This integration suite requires a running Docker daemon.
   test.skip('usage breakdown ledger_type (docker unavailable — skipped)', () => {});
 }

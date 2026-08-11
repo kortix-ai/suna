@@ -99,6 +99,24 @@ describe('local test runner contract', () => {
     expect(dbPackage.scripts.test).toBe('bun test --parallel=2 --max-concurrency 2');
   });
 
+  it('lets Docker allocate isolated ports for disposable migration databases', () => {
+    const helper = readFileSync(resolve(root, 'tests/migration/disposable-postgres.ts'), 'utf8');
+    expect(helper).toContain('127.0.0.1::5432');
+    expect(helper).toContain('.NetworkSettings.Ports');
+    expect(helper).toContain('randomUUID()');
+
+    for (const file of [
+      'credit-lifetime-rollup.test.ts',
+      'credit-rpc-overloads.test.ts',
+      'usage-breakdown-ledger-type.test.ts',
+      'worktree-migrate.test.ts',
+    ]) {
+      const source = readFileSync(resolve(root, 'tests/migration', file), 'utf8');
+      expect(source).toContain('new DisposablePostgres(');
+      expect(source).not.toMatch(/\|\|\s*5544\d/);
+    }
+  });
+
   it('keeps connector discovery convergence out of the parallel API lane', () => {
     const source = readFileSync(resolve(root, 'tests/src/flows/connectors.flow.ts'), 'utf8');
     const start = source.indexOf("'CONN-15'");
