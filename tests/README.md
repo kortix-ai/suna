@@ -187,7 +187,8 @@ Its labels include the repository, exact SHA, workflow run ID, and run attempt.
 The cleanup command deletes only the exact worker whose name and labels match.
 The worker first uses the captured overlay image store. If one Daytona host
 cannot mount overlay, it starts a clean `vfs` Docker data root and lets the
-unchanged root runner pull the pinned images. Package-only workers skip Docker.
+unchanged root runner pull the pinned images. Package-only and SDK-only workers
+restore the clean OCI base directly. They do not wait for or start Docker.
 
 Run a provider explicitly from a checkout with the provider key loaded:
 
