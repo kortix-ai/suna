@@ -7,6 +7,12 @@ export interface AllowEntry {
 export const uncoveredAllow: AllowEntry[] = [
   {
     method: "POST",
+    path: "/v1/admin/api/accounts/:*/members/:*/role",
+    reason:
+      "DEBT, not a considered exemption. The route has existed on the app for a while but was absent from tests/spec/routes.generated.json, so the gate never saw it; regenerating the manifest for the secret-grant route surfaced it. Nothing covers it — it needs a flow, and this entry exists so the gap stays visible instead of being re-hidden by a stale manifest.",
+  },
+  {
+    method: "POST",
     path: "/v1/projects/provision-stream",
     reason:
       "SSE progress-stream sibling of the flow-covered POST /projects/provision (#6276 /new create page) — same provisioning engine and auth boundary; the JSON sibling carries the contract coverage, and its own source-level guards live in apps/api/src/projects/provision-stream.test.ts",

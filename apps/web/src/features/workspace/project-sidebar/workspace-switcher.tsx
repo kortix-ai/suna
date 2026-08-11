@@ -12,10 +12,9 @@
  * like the things you can move to. No account name, no email, no avatar — you
  * already know who you are; what a sidebar has to tell you is where you are.
  *
- * Account settings lives here too: from a project sidebar the account is the
- * parent of the workspace you are in, so `/accounts/:id` (via the project's
- * `account_id`) is one hop away. The same destination exists in the header
- * `UserMenu` / account switcher.
+ * User settings opens the same `SidePanelUserSettings` panel as the header
+ * `UserMenu`. Account settings (`/accounts/:id`) is reached from that panel's
+ * General tab — not from this menu — so the switcher stays about the workspace.
  *
  * The rows that are genuinely account-level and have nowhere else to live in
  * this panel — Install App, Theme, Help, Log out — are shared with `UserMenu`
@@ -46,8 +45,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
+import { type SettingsTabId } from '@/lib/menu-registry';
 import { cn } from '@/lib/utils';
 import { getProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -68,11 +69,19 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
     requestAnimationFrame(() => fn());
   };
+
+  const openUserSettings = (tab: SettingsTabId) =>
+    deferAfterClose(() => {
+      setSettingsTab(tab);
+      setSettingsOpen(true);
+    });
 
   const { openConfirm: openLogoutConfirm, dialog: logoutDialog } = useLogoutFlow(deferAfterClose);
 
@@ -157,17 +166,10 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               </DropdownMenuSub>
               <DropdownMenuSeparator />
 
-              {project?.account_id ? (
-                <DropdownMenuItem
-                  onSelect={() =>
-                    deferAfterClose(() => router.push(`/accounts/${project.account_id}`))
-                  }
-                  size="sm"
-                >
-                  <CogOne />
-                  Account Settings
-                </DropdownMenuItem>
-              ) : null}
+              <DropdownMenuItem onSelect={() => openUserSettings('general')} size="sm">
+                <CogOne />
+                User Settings
+              </DropdownMenuItem>
 
               <DropdownMenuItem
                 onSelect={() => deferAfterClose(() => router.push('/download'))}
@@ -194,6 +196,12 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
           </DropdownMenu>
         </SidebarMenuItem>
       </SidebarMenu>
+
+      <SidePanelUserSettings
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        defaultTab={settingsTab}
+      />
 
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}

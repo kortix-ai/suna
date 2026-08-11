@@ -1,31 +1,36 @@
-Agent-bound sandboxes, terminal attach, and feature flags
+Entitlement overrides, act-as support sessions, and one-call agent secret grants
 
-**New**
+## New
 
-- Your terminal is now a first-class way to work with an agent: `kortix connect` opens a session picker and attaches a full terminal UI to any running session, and can create a session and connect in one step. Bare `kortix` shows the landing screen again.
-- Feature flags: one gating primitive across API, web, and CLI. Disabled features answer with a clear `feature_disabled` error everywhere, and each project gets a dedicated Feature flags section under Customize.
-- Network-boundary secrets: secrets can now be marked for delivery only inside the sandbox network boundary, enforced per provider, configurable from web and CLI. Protected Platinum credentials sync automatically, misconfigurations are caught at save time instead of at boot, and the UI only offers delivery modes the project can honour.
-- A workspace switcher and a `/new` create page: switch workspaces from anywhere, reach account settings from the switcher, and create projects from one place.
-- Connector approvals are reviewed inline in the session, and connector setup finishes through one atomic path — no more half-finished connections when a webhook and a redirect race each other.
-- The starter ships a continual-harness skill: agent scaffolding that reviews its own sessions and refines itself over time.
-- Live session reload: when a session restarts, the UI now streams the reload progress instead of going quiet.
+- **Act-as for support** — platform admins can open a customer account for up to one hour, with a visible banner and full auditing. Anything that would outlive the hour — tokens, memberships, invites, SSO providers, public shares, tunnels, agent scope changes — is refused during the session.
+- **Per-account entitlement overrides** — operators grant or extend individual entitlements per account, each with an optional expiry, from a new admin override console. Expired overrides stop applying on their own.
+- **One plan catalog** — plans now resolve through a single catalog and resolver across API, SDK and web. The duplicate frontend tier catalogs and the "· legacy" plan label are gone.
+- **Grant a secret to an agent in one call** — a new API route grants an agent access to a secret, and the web app offers that grant directly from the warning that reports the missing access.
+- **Session overrides in one place** — the Scope panel is replaced by a single overrides popover: agent, model, sandbox and connector overrides together, labels grounded in the agent's real defaults, and a reset that is always reachable.
+- **Managed model lineup refresh** — Muse Spark 1.2, MiniMax M3 and GPT-5.6 Luna join GLM 5.2, and DeepSeek V4 Flash becomes the platform default.
+- **Sandboxes stay current** — every deploy serves its CLI and managed skills at `/v1/runtime-assets`, and sandboxes reconcile against it on start, restart and resume.
 
-**Improved**
+## Improved
 
-- Sandbox lifetime is now bound to the agent. Active turns keep compute alive; finished or inactive sessions contract to a short retrieval window; every stop records why it happened. Wake billing starts only after the provider confirms the machine is actually running — concurrent and failed wakes no longer bill.
-- Session turns read in plain language, and rendering them costs far less.
-- Connector search covers the whole Pipedream catalogue, with categories filtered server-side. New sessions pick up server-resolved connector defaults.
-- Computer profiles are bound per machine, personal machines are allowed in project profiles, and the Computer Tunnel is hardened with computer-use restored.
-- Session titles converge on the runtime title everywhere — no more three names for one session.
-- Workspace file and spreadsheet reads retry during sandbox startup instead of failing on the first try.
-- Audit trails reconstruct complete session integrity chains, and runtime state survives provider restarts.
+- Project sessions are grouped by last activity instead of creation date.
+- Account settings are reachable from the user menu.
+- Model errors keep their upstream cause through gateway fallbacks, and context overflow is reported consistently — including after a fallback.
+- Managed-model capabilities reported by the gateway now come from real pricing data.
+- An outdated CLI now gets a clear "update your CLI" warning on the connector routes instead of a raw 404.
 
-**Fixed**
+## Fixed
 
-- A turn that is still being written can no longer be aborted mid-write, and "Interrupted" is only shown when a turn was actually interrupted.
-- The session error card no longer blinks after giving up, no longer appears while the runtime is intentionally parked, and a temporary 503 during startup is no longer treated as a failure.
-- The thinking shimmer only animates the thought the model is still writing.
-- Starter agent templates fetch managed skills through the CLI instead of assuming they are on disk.
-- A building sandbox shows a Details action instead of a broken Retry.
-- Inline content previews render again.
-- The public unauthenticated /review prototype page is gone, a connector URL parsing denial-of-service is eliminated, SES mail now runs on a task role instead of an IAM user, and production deploys refuse a mismatched Supabase auth configuration.
+- Two ways the session message queue could stall.
+- Saving session scope without touching connectors no longer writes a connector override, and a saved agent secret selection is retained.
+- Secret delivery on Platinum sandboxes resolves replicas reliably and arms the secrecy boundary within the provider's real timing budget, without re-arming on every turn.
+
+## Security and compliance
+
+- The impersonation deny-list also covers agent-governance writes (`agents/:name/scope`, `secrets/:id/grant`), connector and channel management, and setup-link minting — all closed during review, before release.
+- MFA enforcement for IAM users, WAF attached to the web load balancers, load-balancer log bucket versioning, and a tightly scoped CI Terraform role.
+
+## Internal
+
+- Terraform for dev and prod now applies from CI behind per-environment OIDC roles, with drift detection re-registered.
+- Production deploys stamp the frontend with the release version and no longer allow mixed frontend/API states; migrations with blocking backfills are rejected at lint time.
+- Full-stack PR previews run in warm sandboxes, and the local test gates were stabilized.

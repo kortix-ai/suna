@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Snapshot of migrations/*.sql that existed BEFORE the backfill guard (backfill-safe annotation) was introduced after the 2026-08-10 centralized_audit_v2 prod outage.",
+    "Same contract as grandfathered-migrations.json: these files are immutable and already applied in every environment; only the backfill-DML check exempts them.",
+    "Do not add to this list."
+  ],
+  "generatedAt": "2026-08-10T18:00:00Z",
+  "files": [
+    "20260717014205629_retire_provider_secret_private_override.sql",
+    "20260725010940000_credit_rpc_numeric_precision.sql",
+    "20260725012141489_gateway_cost_precision_sync.sql",
+    "20260730000452547_sandbox_deadline.sql",
+    "20260805202913539_secret_consumer_boundary.sql",
+    "20260805205103000_migrate_legacy_git_secret_consumer.sql",
+    "20260805205104000_isolate_codex_subscription_credentials.sql",
+    "20260805205105000_isolate_existing_llm_credentials.sql",
+    "20260806140107656_connector_physical_cutover.sql",
+    "20260806150353417_connector_compat_removal.sql",
+    "20260807160000000_reconcile_app_deployment_provenance.sql",
+    "20260807221200000_centralized_audit_v2.sql",
+    "20260809201539095_preserve_tunnel_audit_history.sql"
+  ]
+}

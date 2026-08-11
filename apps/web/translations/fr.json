@@ -66,6 +66,11 @@
         "current": "Langue Actuelle",
         "select": "Sélectionner la Langue"
       },
+      "accountSettings": {
+        "title": "Compte",
+        "description": "Gérer la facturation, les membres et les paramètres de l'organisation",
+        "button": "Paramètres du compte"
+      },
       "deleteAccount": {
         "title": "Supprimer le Compte",
         "description": "Supprime définitivement ton compte et toutes les données associées",
@@ -7640,7 +7645,6 @@
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrAriaLabelOnboarding0aefa252": "Progression de l'connecteur",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrTitleBookA7b71ab51": "Réservez un appel avec Marko",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrDescriptionACouple16048a01": "Quelques détails rapides pour que Marko puisse adapter l'appel.",
-    "autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428": "Un bac à sable sélectionne de nouveaux fournisseurs au démarrage. Pour l'utiliser dans une session en cours, redémarrez son bac à sable à partir de la liste des sessions.",
     "autoComponentsProjectsProjectProviderModalJsxTextChatGPTPlusPro0deb5530": "ChatGPT Plus/Pro",
     "autoComponentsProjectsProjectProviderModalJsxTextSignInWitha0c5128c": "Connectez-vous avec votre abonnement ChatGPT. Nous enregistrons la connexion en tant que secret de projet crypté afin que les sessions futures la réutilisent.",
     "autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47": "Autoriser dans le navigateur",

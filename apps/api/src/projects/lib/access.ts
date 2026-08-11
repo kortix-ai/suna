@@ -13,6 +13,10 @@ import { setContextField } from '../../lib/request-context';
 import { auth } from '../../openapi';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
+import {
+  IMPERSONATION_INVALID_CODE,
+  impersonatedAccountFor,
+} from '../../shared/impersonation';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
@@ -383,7 +387,26 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
     body?.account_id ??
     body?.accountId,
   );
-  const accountId = requested ?? await resolveAccountId(userId);
+  // ACT-AS: the grant, not the query string, decides the account. Defense in
+  // depth — under impersonation `/v1/accounts` returns only the target, so a
+  // correct client already sends the target id. A stale one that still holds
+  // the operator's OWN account id would otherwise resolve a real membership
+  // here and write to the operator's account while the banner named the
+  // customer's. Refuse instead.
+  const impersonated = impersonatedAccountFor(userId);
+  if (impersonated && requested && requested !== impersonated) {
+    throw new HTTPException(403, {
+      message: 'Impersonated requests cannot target another account',
+      res: new Response(
+        JSON.stringify({
+          error: 'Impersonated requests cannot target another account',
+          code: IMPERSONATION_INVALID_CODE,
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+  }
+  const accountId = impersonated ?? requested ?? await resolveAccountId(userId);
 
   const membership = await getAccountMembership(userId, accountId);
   if (!membership) {

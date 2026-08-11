@@ -20,6 +20,7 @@
  * closed union.
  */
 
+import type { MessageWithParts } from '../../transcript';
 import type {
   AgentPart,
   CompactionPart,
@@ -36,8 +37,7 @@ import type {
   ToolPart,
   ToolState,
 } from '../runtime/client';
-import type { MessageWithParts } from '../../transcript';
-import { extractGatewayErrorDetails, unwrapError } from './errors';
+import { type GatewayAttemptFailure, extractGatewayErrorDetails, unwrapError } from './errors';
 import { toolInfo } from './tool-registry';
 import type { TokenUsageLike } from './types';
 
@@ -412,7 +412,8 @@ export function classifyPart(part: Part): ClassifiedPart {
 /** Normalized turn-level error — the "failed turn renders as silence" bug
  *  class, solved once here instead of in every host's renderer.
  *
- *  `provider`/`code`/`suggestion`/`upstreamStatus`/`requestId` are populated
+ *  `provider`/`code`/`suggestion`/`upstreamStatus`/`requestId`/`attemptFailures`
+ *  are populated
  *  when the failure carries the LLM gateway's structured error envelope (see
  *  `extractGatewayErrorDetails`) — e.g. a BYOK auth failure, a rate limit, or
  *  an unroutable model — so a renderer can show WHICH provider failed and
@@ -425,6 +426,7 @@ export interface TurnError {
   suggestion?: string;
   upstreamStatus?: number;
   requestId?: string;
+  attemptFailures?: GatewayAttemptFailure[];
 }
 
 function normalizeTurnError(error: unknown): TurnError | undefined {
@@ -445,6 +447,7 @@ function normalizeTurnError(error: unknown): TurnError | undefined {
     suggestion: gateway?.suggestion,
     upstreamStatus: gateway?.upstreamStatus,
     requestId: gateway?.requestId,
+    attemptFailures: gateway?.attemptFailures,
   };
 }
 

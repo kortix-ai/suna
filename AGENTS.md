@@ -111,6 +111,16 @@ and actual Merit/Skill. It's hard, because you have to not only be very smart bu
 also crazy driven to push like a motherfucker and want to feel every edge and
 corner to make sure the output is good.
 
+## Learnings: incident rules live in the `learnings` skill
+
+`.claude/skills/learnings/SKILL.md` is the append-only register of rules paid
+for with real downtime — each with the incident that taught it and the
+automation that enforces it. Load it before writing or reviewing a DB
+migration, touching deploy/release workflows, planning a promote, or responding
+to a prod incident. After resolving ANY incident or near-miss, append its rule
+there in the same session — an incident that leaves no learning behind is not
+finished.
+
 ## How to communicate: precise, technically accurate, no fluff
 
 Write every response — chat, PR text, commit messages, code comments, docs — in
@@ -341,6 +351,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
   deterministic local stack.
+- Local browser runs use two Playwright workers. CI browser shards use one.
 - `pnpm test -- --packages-only` runs every app/package test and publish check.
 - `pnpm test -- --full` adds browser journeys and every app/package test. It
   starts the deterministic local stack.
@@ -369,6 +380,19 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
+- The `preview` label creates one full self-host preview in a persistent warm
+  Platinum sandbox. `auto` uses Daytona only for a Platinum infrastructure
+  failure. The preview has its own PostgreSQL, Supabase, API, gateway, frontend,
+  Mailpit, and HTTPS origin.
+- Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
+  pull request comment links the origin and its `/_tests/` HTML report.
+- A preview head change deletes the sandbox and removes the stale `preview`
+  label. Unlabel, close, and scheduled reconciliation also delete the sandbox.
+- Preview warm images contain dependencies and Docker layers only. They never
+  contain a database or runtime secret.
+- Preview Mailpit handles authentication and invite email. The dedicated
+  preview GitHub App runs the managed repository and CLI push flows. OAuth
+  initiation is the only allowed preview browser exclusion.
 
 ### Product flow source of truth
 

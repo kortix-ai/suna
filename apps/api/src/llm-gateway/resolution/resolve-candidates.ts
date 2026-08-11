@@ -189,6 +189,13 @@ export async function resolveCandidates(
       //
       // 1. Does this account pay the BYOK platform fee? Free accounts do not;
       //    every paid account does, including the v3 credit plans.
+      //    `tier` here is the RESOLVED plan key (getCachedAccountTier reads the
+      //    shared billing resolver: trial overlay and per-seat self-heal
+      //    applied), so a trial of a paid plan pays the fee for the trial
+      //    window and a stale-tier per-seat team is not waived by accident.
+      //    Deliberately plan-KEY equality with 'free', not "free family": an
+      //    unprovisioned account (`none`) has always paid this fee, and
+      //    widening the waiver to it is a pricing decision, not a refactor.
       const isFreeTier = config.KORTIX_BILLING_INTERNAL_ENABLED && tier === 'free';
       // 2. May this account use MANAGED inference at all? `models: []` says no
       //    for Starter/Team/Scale even though they are paid, so this cannot be a

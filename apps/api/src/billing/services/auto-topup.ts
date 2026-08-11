@@ -14,6 +14,7 @@ import {
   paymentMethodIdOf,
   resolveUsablePaymentMethod,
 } from './auto-topup-payment-method';
+import { resolveAccountBilling } from './billing-cache';
 import { isDeadSubscriptionStatus } from './billing-state';
 import { grantCredits } from './credits';
 import { isPaidTier } from './tiers';
@@ -91,8 +92,13 @@ export async function configureAutoTopup(accountId: string, cfg: AutoTopupConfig
   const account = await getCreditAccount(accountId);
   if (!account) throw new BillingError('Account not found');
 
-  const tierName = account.tier ?? 'free';
-  if (!isPaidTier(tierName)) {
+  // Resolved plan, not the stored `credit_accounts.tier`. The row is already in
+  // hand, so this costs no extra read. A paying per-seat team whose stored tier
+  // is stale ('free') behaves as paid everywhere else and was refused auto-topup
+  // here; an account on an active trial of a paid plan is likewise paid for the
+  // trial window.
+  const { plan } = await resolveAccountBilling(accountId, { row: account });
+  if (!isPaidTier(plan.key)) {
     throw new BillingError('Auto-topup is only available for paid plans');
   }
 
@@ -196,8 +202,9 @@ async function tryAutoTopup(accountId: string): Promise<void> {
   if (!account) return;
   if (!account.autoTopupEnabled) return;
 
-  const tierName = account.tier ?? 'free';
-  if (!isPaidTier(tierName)) return;
+  // Same resolved-plan gate as configureAutoTopup, off the row already fetched.
+  const { plan } = await resolveAccountBilling(accountId, { row: account });
+  if (!isPaidTier(plan.key)) return;
 
   const threshold = Number(account.autoTopupThreshold) || AUTO_TOPUP_DEFAULT_THRESHOLD;
   const amount = Number(account.autoTopupAmount) || AUTO_TOPUP_DEFAULT_AMOUNT;

@@ -66,6 +66,11 @@
         "current": "Aktuelle Sprache",
         "select": "Sprache auswählen"
       },
+      "accountSettings": {
+        "title": "Konto",
+        "description": "Abrechnung, Mitglieder und Organisationseinstellungen verwalten",
+        "button": "Kontoeinstellungen"
+      },
       "deleteAccount": {
         "title": "Konto löschen",
         "description": "Entferne dein Konto und alle zugehörigen Daten dauerhaft",
@@ -320,7 +325,10 @@
         "Moin moin! Was bauen wir heute?",
         "Morgen! Bereit durchzustarten?"
       ],
-      "afternoon": ["Guten Tag! Wie kann ich helfen?", "Na, wie läuft's? Was gibt's zu tun?"],
+      "afternoon": [
+        "Guten Tag! Wie kann ich helfen?",
+        "Na, wie läuft's? Was gibt's zu tun?"
+      ],
       "evening": [
         "Guten Abend! Nachtschicht?",
         "Abend! Woran arbeiten wir heute?",
@@ -7637,7 +7645,6 @@
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrAriaLabelOnboarding0aefa252": "Onboarding-Fortschritt",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrTitleBookA7b71ab51": "Vereinbaren Sie einen Anruf mit Marko",
     "autoComponentsProjectsProjectOnboardingWizardJsxAttrDescriptionACouple16048a01": "Ein paar kurze Details, damit Marko den Anruf individuell gestalten kann.",
-    "autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428": "Eine Sandbox nimmt beim Start neue Anbieter auf. Um dies in einer laufenden Sitzung zu verwenden, starten Sie die Sandbox über die Sitzungsliste neu.",
     "autoComponentsProjectsProjectProviderModalJsxTextChatGPTPlusPro0deb5530": "ChatGPT Plus/Pro",
     "autoComponentsProjectsProjectProviderModalJsxTextSignInWitha0c5128c": "Melden Sie sich mit Ihrem ChatGPT-Abonnement an. Wir speichern die Anmeldung als verschlüsseltes Projektgeheimnis, damit zukünftige Sitzungen sie wiederverwenden können.",
     "autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47": "Autorisieren Sie im Browser",

@@ -57,6 +57,57 @@ describe('lintMigration', () => {
   });
 });
 
+describe('backfill-DML guard (centralized_audit_v2 outage class)', () => {
+  test('rejects a top-level UPDATE without a backfill-safe sign-off', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      'ALTER TABLE kortix.widgets ADD COLUMN kind text;\nUPDATE kortix.widgets SET kind = \'x\' WHERE kind IS NULL;\n',
+    );
+    expect(errors.some((e) => e.includes('top-level DML'))).toBe(true);
+  });
+
+  test('rejects a data-modifying WITH ... UPDATE CTE', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      'WITH ranked AS (SELECT id FROM kortix.widgets)\nUPDATE kortix.widgets w SET n = 1 FROM ranked r WHERE w.id = r.id;\n',
+    );
+    expect(errors.some((e) => e.includes('top-level DML'))).toBe(true);
+  });
+
+  test('rejects DML that follows a drizzle statement-breakpoint on the same line', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      "ALTER TABLE kortix.widgets ADD COLUMN kind text;--> statement-breakpoint\nUPDATE kortix.widgets SET kind = 'x' WHERE kind IS NULL;--> statement-breakpoint\n",
+    );
+    expect(errors.some((e) => e.includes('top-level DML'))).toBe(true);
+  });
+
+  test('accepts DML with a backfill-safe sign-off', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      "-- backfill-safe: widgets has < 1000 rows in every env and no hot writers\nUPDATE kortix.widgets SET kind = 'x' WHERE kind IS NULL;\n",
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('ignores DML inside a dollar-quoted trigger function body', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      "CREATE OR REPLACE FUNCTION kortix.widget_audit() RETURNS trigger LANGUAGE plpgsql AS $$\nBEGIN\n  INSERT INTO kortix.audit_events(action) VALUES ('widget');\n  RETURN NEW;\nEND;\n$$;\n",
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('exempts a backfill-grandfathered migration', () => {
+    const { errors } = lintMigration(
+      GOOD_NAME,
+      "UPDATE kortix.widgets SET kind = 'x' WHERE kind IS NULL;\n",
+      { backfillGrandfathered: true },
+    );
+    expect(errors).toEqual([]);
+  });
+});
+
 describe('lintMigrationSet', () => {
   test('unique timestamps produce no errors', () => {
     const errors = lintMigrationSet([

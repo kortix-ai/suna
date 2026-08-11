@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { probeStream, relayStream } from './streaming';
+import { probeStream, relayStream, resolveStreamProbeTimeoutMs } from './streaming';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -233,6 +233,66 @@ describe('probeStream', () => {
 
     expect(result.hasContent).toBe(false);
     expect(result.errorFrame?.code).toBe(429);
+  });
+});
+
+describe('resolveStreamProbeTimeoutMs', () => {
+  test('keeps the 30-second default for an ordinary small prompt', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({ requestBytes: 64_000, provider: 'openrouter', model: 'x' }),
+    ).toBe(30_000);
+  });
+
+  test('gives a two-megabyte prompt 60 seconds to produce its first byte', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 2_023_225,
+        provider: 'aster',
+        model: 'glm-5.2',
+      }),
+    ).toBe(60_000);
+  });
+
+  test('gives slow-first-byte GLM requests at least 45 seconds even when small', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 64_000,
+        provider: 'aster',
+        model: 'glm-5.2',
+      }),
+    ).toBe(45_000);
+  });
+
+  test('an explicit operator timeout remains an exact override', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 2_023_225,
+        provider: 'aster',
+        model: 'glm-5.2',
+        configuredTimeoutMs: 12_345,
+      }),
+    ).toBe(12_345);
+  });
+
+  test('zero keeps the adaptive policy', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 64_000,
+        provider: 'aster',
+        model: 'glm-5.2',
+        configuredTimeoutMs: 0,
+      }),
+    ).toBe(45_000);
+  });
+
+  test('caps an extreme request at two minutes', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 50 * 1024 * 1024,
+        provider: 'openrouter',
+        model: 'x',
+      }),
+    ).toBe(120_000);
   });
 });
 

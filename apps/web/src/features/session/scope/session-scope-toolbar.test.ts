@@ -1,7 +1,11 @@
 import type { SessionScope, SessionScopeInput } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-import type { SessionScopeSelectionCatalog } from './session-scope-model';
+import {
+  createSessionScopeDraft,
+  resetSessionConnectorBindings,
+  type SessionScopeSelectionCatalog,
+} from './session-scope-model';
 import {
   commitSessionScopeDraft,
   createNewSessionScopeInitialization,
@@ -18,6 +22,8 @@ const scope = (overrides: Partial<SessionScope> = {}): SessionScope => ({
   added_secrets: [],
   dropped_bindings: [],
   retroactive: true,
+  connector_bindings_configured: false,
+  connector_bindings_inherit_unbound: true,
   detail: 'Current session scope.',
   ...overrides,
 });
@@ -131,9 +137,14 @@ describe('createNewSessionScopeInitialization', () => {
 
 describe('commitSessionScopeDraft', () => {
   test('saves a complete active-session replacement from authoritative read-back', async () => {
+    // The session already HOLDS a connector override, so its bindings are a
+    // user selection and the save must resend them in full — a partial map
+    // would silently drop whatever it left out.
     let replacement: SessionScopeInput | undefined;
+    const previous = scope({ connector_bindings_configured: true });
     const response = scope({
       secrets_allowlist: ['ISSUE_TOKEN'],
+      connector_bindings_configured: true,
       retroactive: false,
     });
 
@@ -141,7 +152,7 @@ describe('commitSessionScopeDraft', () => {
       sessionId: 'session-1',
       draft: { secrets: ['ISSUE_TOKEN'] },
       catalog: catalog(),
-      previousScope: scope(),
+      previousScope: previous,
       replaceScope: async (input) => {
         replacement = input;
         return response;
@@ -156,6 +167,51 @@ describe('commitSessionScopeDraft', () => {
       require_connectors: [],
     });
     expect(result?.retroactive).toBeFalse();
+  });
+
+  test('an untouched save on an inheriting session writes no connector override', async () => {
+    // The bug this replaced: opening the panel on an existing session and
+    // pressing Save posted the server-resolved bindings back as an explicit
+    // override, so `connector_bindings_configured` flipped to true and every
+    // unbound alias started failing closed — with nothing in the UI asking for
+    // it.
+    let replacement: SessionScopeInput | undefined;
+    const previous = scope({ connector_bindings_configured: false });
+
+    await commitSessionScopeDraft({
+      sessionId: 'session-1',
+      draft: createSessionScopeDraft(previous, catalog()),
+      catalog: catalog(),
+      previousScope: previous,
+      replaceScope: async (input) => {
+        replacement = input;
+        return previous;
+      },
+    });
+
+    expect(replacement).toBeDefined();
+    expect(Object.hasOwn(replacement as SessionScopeInput, 'connector_bindings')).toBe(false);
+  });
+
+  test('a reset on an overridden session sends the null clear verb', async () => {
+    let replacement: SessionScopeInput | undefined;
+    const previous = scope({ connector_bindings_configured: true });
+
+    await commitSessionScopeDraft({
+      sessionId: 'session-1',
+      draft: resetSessionConnectorBindings(
+        createSessionScopeDraft(previous, catalog()),
+        catalog(),
+      ),
+      catalog: catalog(),
+      previousScope: previous,
+      replaceScope: async (input) => {
+        replacement = input;
+        return scope({ connector_bindings_configured: false });
+      },
+    });
+
+    expect(replacement?.connector_bindings).toBeNull();
   });
 
   test('omits an unavailable catalog axis from active-session replacement', async () => {

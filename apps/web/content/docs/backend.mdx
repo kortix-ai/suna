@@ -41,7 +41,7 @@ curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
     "agent_name": "support",
-    "opencode_model": "kortix/claude-opus-4.8",
+    "opencode_model": "kortix/glm-5.2",
     "runtime_context": { "ticket_id": "ticket-123" },
     "connector_bindings": {
       "gmail": { "connection_id": "<connection-id>" }
@@ -64,7 +64,7 @@ const kortix = createScopedKortix({
 
 const session = await kortix.project(projectId).sessions.create({
   agent_name: 'support',
-  opencode_model: 'kortix/claude-opus-4.8',
+  opencode_model: 'kortix/glm-5.2',
   runtime_context: { ticket_id: 'ticket-123' },
   connector_bindings: {
     gmail: { connection_id: connectionId },

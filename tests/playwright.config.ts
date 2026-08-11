@@ -6,12 +6,11 @@ const environmentProtectionPassword = process.env.WEB_PROTECTION_PASSWORD;
 export function resolveBrowserWorkers(value: string | undefined, ci: boolean): number {
   const configuredWorkers = Number.parseInt(value ?? '', 10);
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
-  // Daytona provides the organization maximum of 12 GiB. Two browsers can
-  // make Next dev compile separate project routes concurrently and kill the
-  // web process. One worker keeps the local black-box stack stable. Deployed
-  // target runs set E2E_BROWSER_WORKERS explicitly.
+  // The warm Daytona lane has 6 vCPU and 12 GiB RAM. One worker keeps cold
+  // Next.js route compilation below the guest memory limit. Two local workers
+  // keep cold compilation below the full-suite deadline on development Macs.
   if (ci) return 1;
-  return 4;
+  return 2;
 }
 
 const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS, Boolean(process.env.CI));
@@ -27,10 +26,10 @@ export default defineConfig({
   workers,
   reporter: [
     ['list'],
-    ['html', { open: 'never', outputFolder: '../test-results/html' }],
+    ['html', { open: 'never', outputFolder: './test-results/html' }],
     ['./e2e/strict-skip-reporter.ts'],
   ],
-  outputDir: '../test-results/artifacts',
+  outputDir: './test-results/artifacts',
   use: {
     baseURL,
     httpCredentials: environmentProtectionPassword

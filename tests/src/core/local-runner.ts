@@ -44,6 +44,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
   const targetFull = args.includes('--target-full');
+  const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const modes = [
     full,
     flowsOnly,
@@ -58,6 +59,21 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, --target-smoke, or --target-full',
     );
   }
+  if (browserShardArgs.length > 1) {
+    throw new Error('choose only one --browser-shard value');
+  }
+  const browserShard = browserShardArgs[0]?.slice('--browser-shard='.length);
+  if (browserShardArgs.length === 1) {
+    const match = browserShard.match(/^(\d+)\/(\d+)$/);
+    const current = Number(match?.[1]);
+    const total = Number(match?.[2]);
+    if (!match || current < 1 || total < 2 || current > total) {
+      throw new Error('--browser-shard must use CURRENT/TOTAL with 1 <= CURRENT <= TOTAL');
+    }
+    if (!browserOnly) {
+      throw new Error('--browser-shard requires --browser-only');
+    }
+  }
 
   const flowArgs = args.filter(
     (arg) =>
@@ -67,7 +83,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--browser-only' &&
       arg !== '--packages-only' &&
       arg !== '--target-smoke' &&
-      arg !== '--target-full',
+      arg !== '--target-full' &&
+      !arg.startsWith('--browser-shard='),
   );
   const flows: LocalTestLane = {
     name: 'api-cli-flows',
@@ -91,7 +108,12 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   };
   const browser: LocalTestLane = {
     name: 'browser',
-    command: ['bun', 'run', 'test:browser'],
+    command: [
+      'bun',
+      'run',
+      'test:browser',
+      ...(browserShard ? ['--', `--shard=${browserShard}`] : []),
+    ],
     cwd: 'tests',
   };
   const packageQuality: LocalTestLane = {
@@ -120,9 +142,12 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       E2E_BROWSER_WORKERS: '2',
       E2E_ENABLE_SDK_ONLY_SESSION: '1',
       E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-      E2E_OAUTH_PROVIDER_INITIATION: '1',
+      E2E_OAUTH_PROVIDER_INITIATION: process.env.KE2E_TARGET === 'preview' ? '0' : '1',
       E2E_ENABLE_BILLING_JOURNEY: '1',
       E2E_REQUIRE_ALL_BROWSER: '1',
+      ...(process.env.KE2E_TARGET === 'preview'
+        ? { E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1' }
+        : {}),
     },
   };
 
@@ -146,7 +171,21 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       command: [...flows.command, '--api-workers', '4'],
     };
     const fullBrowser: LocalTestLane = { ...browser };
-    const lanes = [fullFlows, runnerUnit, routeCoverage, worktreeUnit, fullBrowser, packageQuality];
+    const fullPackageQuality: LocalTestLane = {
+      ...packageQuality,
+      // Full mode runs the SDK as a named lane. Keep package-only mode complete,
+      // but do not execute the same SDK tests twice inside one full run.
+      env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
+    };
+    const lanes = [
+      fullFlows,
+      sdk,
+      runnerUnit,
+      routeCoverage,
+      worktreeUnit,
+      fullBrowser,
+      fullPackageQuality,
+    ];
     return {
       mode: 'full',
       lanes,
@@ -154,9 +193,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
       stages: [
-        [fullFlows, runnerUnit, routeCoverage, worktreeUnit],
+        [fullFlows, sdk, runnerUnit, routeCoverage, worktreeUnit],
         [fullBrowser],
-        [packageQuality],
+        [fullPackageQuality],
       ],
     };
   }
@@ -241,9 +280,14 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         'KE2E_DATABASE_URL',
         'KE2E_STRIPE_SECRET_KEY',
         'KE2E_STRIPE_WEBHOOK_SECRET',
-        'E2E_AGENTMAIL_API_KEY',
       ] as const;
       const missing = required.filter((name) => !process.env[name]?.trim());
+      if (
+        !process.env.E2E_AGENTMAIL_API_KEY?.trim() &&
+        !process.env.E2E_MAILPIT_URL?.trim()
+      ) {
+        missing.push('E2E_AGENTMAIL_API_KEY or E2E_MAILPIT_URL' as never);
+      }
       if (missing.length > 0) {
         throw new Error(`deployed browser suite requires ${missing.join(', ')}`);
       }

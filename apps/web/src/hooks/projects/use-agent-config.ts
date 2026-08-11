@@ -8,10 +8,11 @@
  * agents list is drawn from, so every surface reflects the fresh manifest.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   type AgentConfigBlock,
+  type AgentConfigResponse,
   getAgentConfig,
   updateAgentConfig,
 } from '@kortix/sdk';
@@ -30,11 +31,32 @@ export function useAgentConfig(projectId: string | undefined, agentName: string 
   });
 }
 
+type AgentConfigSaveResponse = Awaited<ReturnType<typeof updateAgentConfig>>;
+
+export function applyAgentConfigSaveResponse(
+  queryClient: QueryClient,
+  projectId: string,
+  agentName: string,
+  response: AgentConfigSaveResponse,
+) {
+  queryClient.setQueryData<AgentConfigResponse>(
+    agentConfigQueryKey(projectId, agentName),
+    (current) => ({
+      agent: response.agent,
+      schema_version: response.schema_version,
+      editable: current?.editable ?? response.schema_version === 2,
+      default_agent: current?.default_agent ?? null,
+      block: response.block,
+    }),
+  );
+}
+
 export function useUpdateAgentConfig(projectId: string, agentName: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (block: AgentConfigBlock) => updateAgentConfig(projectId, agentName, block),
-    onSuccess: () => {
+    onSuccess: (response) => {
+      applyAgentConfigSaveResponse(qc, projectId, agentName, response);
       qc.invalidateQueries({ queryKey: agentConfigQueryKey(projectId, agentName) });
       // The agents list + its per-agent badges come from project-detail.
       void invalidateProject(qc, projectId);

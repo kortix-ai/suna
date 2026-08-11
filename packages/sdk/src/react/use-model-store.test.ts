@@ -52,7 +52,7 @@ describe('hasUsableModel — gateway connection gating prefers the explicit `pro
   });
 
   test('a managed model is usable iff the caller is not free-tier, regardless of `provider`', () => {
-    const models = [gatewayModel({ modelID: 'claude-opus-4.8', provider: 'kortix' })];
+    const models = [gatewayModel({ modelID: 'glm-5.2', provider: 'kortix' })];
     expect(hasUsableModel(models, { freeTier: true })).toBe(false);
     expect(hasUsableModel(models, { freeTier: false })).toBe(true);
   });

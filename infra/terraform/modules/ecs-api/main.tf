@@ -160,10 +160,21 @@ resource "aws_iam_role_policy" "ses_send" {
       Sid    = "SendEmail"
       Effect = "Allow"
       Action = ["ses:SendEmail"]
-      Resource = [
-        for identity in var.ses_send_identity_names :
-        "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:identity/${identity}"
-      ]
+      # SESv2 SendEmail authorizes against BOTH the sending identity AND the
+      # configuration set named in the request — omitting the config-set ARN
+      # 403s the whole send (found live on dev 2026-08-10: assumed-role send
+      # denied on configuration-set/kortix-transactional while the identity
+      # resources were correctly granted).
+      Resource = concat(
+        [
+          for identity in var.ses_send_identity_names :
+          "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:identity/${identity}"
+        ],
+        [
+          for cs in var.ses_send_configuration_set_names :
+          "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${cs}"
+        ],
+      )
     }]
   })
 }
@@ -253,6 +264,13 @@ resource "aws_s3_bucket" "alb_logs" {
   tags          = var.tags
 }
 
+resource "aws_s3_bucket_versioning" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "alb_logs" {
   bucket                  = aws_s3_bucket.alb_logs.id
   block_public_acls       = true
@@ -275,13 +293,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
     }
-  }
-}
-
-resource "aws_s3_bucket_versioning" "alb_logs" {
-  bucket = aws_s3_bucket.alb_logs.id
-  versioning_configuration {
-    status = "Enabled"
   }
 }
 
@@ -338,7 +349,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 
 #trivy:ignore:AVD-AWS-0053 This public API origin must accept Cloudflare traffic; the ALB security group restricts ingress to var.alb_ingress_cidrs.
 resource "aws_lb" "this" {
-  #checkov:skip=CKV2_AWS_28:The compliance-monitoring stack associates every account ALB with the regional kortix-alb-waf ACL.
+  #checkov:skip=CKV2_AWS_28:Environment roots associate this output ALB with a regional WAF; legacy API roots use the compliance-monitoring association.
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]

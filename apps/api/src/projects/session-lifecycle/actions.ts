@@ -10,6 +10,7 @@ import { revokeSessionConnectorTokens } from '../../repositories/account-tokens'
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
+import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
   sandboxSlugFromSessionMetadata,
@@ -402,6 +403,13 @@ export async function restartSession(input: {
         // Recompile from the session's ref and push. Best-effort and after the
         // session is already marked running: a box that is up with old config
         // beats one parked because a git read failed.
+        // A restart resumes the SAME VM, so the daemon's boot-time reconcile
+        // never re-runs and the box keeps whatever `kortix` binary its image was
+        // built with — the exact reason production sandboxes ran a CLI that
+        // predated the routes it calls. Poke the daemon to re-converge. Detached
+        // and after the session is already marked running: this must not extend
+        // the restart the user is waiting on.
+        scheduleSandboxRuntimeRefresh(sessionId, 'restart');
         void pushSessionAgentConfigToSandbox({
           projectId,
           sessionId,
