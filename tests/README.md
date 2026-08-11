@@ -173,9 +173,10 @@ deletion fails the workflow and keeps the exact sandbox ID in the log.
 ### Daytona
 
 Daytona first builds an OCI base snapshot. It starts a temporary builder from
-that base. The builder starts nested Docker, pulls the exact local-profile
-Supabase images without starting containers, stops dockerd, writes a warm
-marker, and captures the warm snapshot.
+that base. The builder starts nested Docker, creates the exact local-profile
+Supabase containers, removes them without a database backup, stops dockerd,
+writes a warm marker, and captures the warm snapshot. This capture keeps the
+Sysbox nested-Docker mounts that Daytona restores for the disposable worker.
 `DAYTONA_CI_TARGET` selects the nested-Docker region. It falls back to
 `DAYTONA_TARGET`, then `us`. Do not reuse the product `DAYTONA_WARM_TARGET`.
 That product variable can select a different sandbox class or region.
@@ -184,6 +185,9 @@ The disposable worker uses 6 vCPU, 12 GiB RAM, and 40 GiB disk. These are the
 current Daytona organization maxima. The worker is private.
 Its labels include the repository, exact SHA, workflow run ID, and run attempt.
 The cleanup command deletes only the exact worker whose name and labels match.
+The worker first uses the captured overlay image store. If one Daytona host
+cannot mount overlay, it starts a clean `vfs` Docker data root and lets the
+unchanged root runner pull the pinned images. Package-only workers skip Docker.
 
 Run a provider explicitly from a checkout with the provider key loaded:
 
@@ -290,15 +294,15 @@ script under `tests/`.
 The August 2026 consolidation removed the parallel runners below. Unique
 contracts moved into the canonical lanes before deletion.
 
-| Retired path | Canonical disposition |
-| --- | --- |
-| `tests/accessibility` | Axe checks moved to `tests/e2e/specs/00-accessibility.spec.ts`. |
-| `tests/pentest` | Unique transport checks moved to REST flow `SEC-J`. Existing auth and webhook checks stay in `SEC-A` through `SEC-I`. |
-| `tests/migration` shell runner | Four unique disposable-Postgres contracts run from `pnpm test -- --packages-only`. |
-| `tests/e2e/specs/10-production-*` | API behavior moved to REST access, project, session, trigger, and security flows. Browser-visible behavior stays in focused Playwright journeys. |
-| `tests/self-host-e2e/fast` | Co-located `apps/cli/src/self-host/__tests__` contracts run from the package lane. |
-| `tests/self-host-e2e/live` | Removed as opt-in image-orchestration scripts. They never gated changes and duplicated the CLI and API contracts without deterministic fixtures. |
-| Pact, example API, integration, mutation, smoke, and visual suites | Removed because they were placeholders, duplicates, or unmaintained snapshot harnesses. |
-| k6 and session benchmark scripts | Removed from correctness testing. Every root run now writes measured lane timing to the benchmark JSON artifact. |
-| Allure, standalone JUnit, portal, and shell quality wrappers | Removed. The root runner emits its own report and provider workers upload `tests/test-results`. |
-| Infrastructure and security shell wrappers | Removed from `tests/`. Dedicated deployment and security workflows retain their platform-specific scanners. |
+| Retired path                                                       | Canonical disposition                                                                                                                            |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tests/accessibility`                                              | Axe checks moved to `tests/e2e/specs/00-accessibility.spec.ts`.                                                                                  |
+| `tests/pentest`                                                    | Unique transport checks moved to REST flow `SEC-J`. Existing auth and webhook checks stay in `SEC-A` through `SEC-I`.                            |
+| `tests/migration` shell runner                                     | Four unique disposable-Postgres contracts run from `pnpm test -- --packages-only`.                                                               |
+| `tests/e2e/specs/10-production-*`                                  | API behavior moved to REST access, project, session, trigger, and security flows. Browser-visible behavior stays in focused Playwright journeys. |
+| `tests/self-host-e2e/fast`                                         | Co-located `apps/cli/src/self-host/__tests__` contracts run from the package lane.                                                               |
+| `tests/self-host-e2e/live`                                         | Removed as opt-in image-orchestration scripts. They never gated changes and duplicated the CLI and API contracts without deterministic fixtures. |
+| Pact, example API, integration, mutation, smoke, and visual suites | Removed because they were placeholders, duplicates, or unmaintained snapshot harnesses.                                                          |
+| k6 and session benchmark scripts                                   | Removed from correctness testing. Every root run now writes measured lane timing to the benchmark JSON artifact.                                 |
+| Allure, standalone JUnit, portal, and shell quality wrappers       | Removed. The root runner emits its own report and provider workers upload `tests/test-results`.                                                  |
+| Infrastructure and security shell wrappers                         | Removed from `tests/`. Dedicated deployment and security workflows retain their platform-specific scanners.                                      |
