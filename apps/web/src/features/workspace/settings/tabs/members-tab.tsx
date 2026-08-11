@@ -330,6 +330,52 @@
  * the same order, under the same gate: the three rehomed access cards, both
  * role columns, the account-role `Select` + remove, project pending invites,
  * access requests, account invites, and Leave account.
+ *
+ * **Three underline tabs (2026-08-12) — layout only.** Everything above had
+ * grown into NINE sections stacked in one scroll, all equally prominent, with
+ * three near-identical headings ("Pending invites" / "Account invites" /
+ * "Access requests") one screen apart. Jay's call: split it into `People`,
+ * `Invites`, `Access` using the shared `TabsList type="underline"` primitive
+ * (the same one `review-center.tsx` and the group detail page use — not a
+ * hand-rolled bar). Nothing moved between permission gates, no query, no
+ * mutation, and no capability was dropped:
+ *
+ * - **People** — the members table, the Invite action (now a labelled primary
+ *   button beside a client-side search field, per Jay's reference shots), and
+ *   Leave account as a quiet bordered row at the bottom. The search filters
+ *   `userLabel(member)` — the email the table already renders — in the
+ *   browser; it invents no field and hits no route. It is a controlled prop so
+ *   `MembersTabView` stays hook-free.
+ * - **Invites** — everyone waiting to get in: the project invites, the account
+ *   invites, and the access requests, each retitled to say who is waiting and
+ *   for what. See "Plain titles" below.
+ * - **Access** — `groupGrantsSlot` / `resourceAccessSlot` /
+ *   `roleAssignmentsSlot`, in the same order, behind the same gates the
+ *   container already passed them under. Out of the way until wanted.
+ *
+ * **Plain titles.** The three waiting lists were renamed for a non-technical
+ * reader; each is a display string with no other consumer (verified with
+ * `grep -rn "Pending invites\|Access requests\|Account invites" src` — the
+ * only matches were this file and its own test):
+ *
+ *   Pending invites  -> "Invited to this workspace"
+ *   Account invites  -> "Invited to this account"
+ *   Access requests  -> "Asked to join"
+ *
+ * No permission leaf, API field, query key, or prop name changed with them.
+ *
+ * **The Cmd+K deep link still lands.** `command-palette.tsx`'s
+ * `openSettings('members', { membersTab: 'invite' })` is consumed by the same
+ * one-shot `consumeMembersTabIntent` effect as before; it now ALSO forces the
+ * `people` section, because the project Invite button lives there, before
+ * opening the dialog. The dialog slots render outside `Tabs`, so an open
+ * dialog survives a tab switch.
+ *
+ * **Radix renders only the active panel.** An inactive `TabsContent` is an
+ * empty `<div hidden>` under `renderToStaticMarkup` — confirmed directly, not
+ * assumed. So every test that asserts on a non-default tab passes `section`
+ * explicitly; that prop exists for the container's state, and the tests ride
+ * the same door.
  */
 
 import { useTranslations } from 'next-intl';
@@ -379,6 +425,7 @@ import {
 } from '@/components/ui/select';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 // `Table` itself is deliberately NOT imported — this pane needs Linear's
 // borderless container, which that component hard-codes against. See
 // `TABLE_HEAD_CELL`'s comment below.
@@ -511,7 +558,22 @@ function formatDate(input: string | null | undefined) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** The three underline tabs this pane is split into — see this file's header
+ *  comment, "Three underline tabs". */
+export type MembersSection = 'people' | 'invites' | 'access';
+
 export interface MembersTabViewProps {
+  /** Which tab is showing. Controlled by `MembersTabInner` so the Cmd+K
+   *  invite deep link can force `people` (where the Invite button lives)
+   *  before opening the dialog. Defaults to `people`. */
+  section?: MembersSection;
+  onSectionChange?: (section: MembersSection) => void;
+  /** Client-side filter over `userLabel(member)` — the email this table
+   *  already renders. Controlled by the container so this view stays
+   *  hook-free; it adds no query parameter and no new field. */
+  memberSearch?: string;
+  onMemberSearchChange?: (value: string) => void;
+
   isLoading?: boolean;
   isError?: boolean;
   errorMessage?: string;
@@ -671,6 +733,10 @@ export interface MembersTabViewProps {
  *  `renderToStaticMarkup` with no `QueryClientProvider` — see
  *  `GeneralTabView`/`ApiKeysTabView` for the same split. */
 export function MembersTabView({
+  section = 'people',
+  onSectionChange = () => {},
+  memberSearch = '',
+  onMemberSearchChange = () => {},
   isLoading = false,
   isError = false,
   errorMessage = '',
@@ -742,485 +808,292 @@ export function MembersTabView({
 }: MembersTabViewProps) {
   const showPendingInvites = isPendingInvitesLoading || pendingInvites.length > 0;
   const showAccessRequests = isAccessRequestsLoading || accessRequests.length > 0;
-  // Both new sections need an account id to fetch/mutate against — hidden
-  // entirely (not a skeleton) while it's unresolved, same as every other
-  // account-scoped tab in this panel treats a missing accountId. JAY-549
-  // adds an OR-branch: an authorized viewer with zero pending invites should
-  // still see the header + Invite button, not just after the first invite
-  // exists — see this file's header comment, "JAY-549".
+  // Both account-scoped surfaces need an account id to fetch/mutate against —
+  // hidden entirely (not a skeleton) while it's unresolved, same as every
+  // other account-scoped tab in this panel treats a missing accountId. The
+  // `canManageAccountInvites` OR-branch keeps the section header (and its
+  // Invite button) visible for an authorized viewer with zero pending
+  // invites, not only after the first invite exists. Unchanged by the tab
+  // split — see this file's header comment, "JAY-549".
   const showAccountInvites =
     !!accountId &&
     (canManageAccountInvites || isAccountInvitesLoading || accountInvites.length > 0);
   const showLeaveAccount = !!accountId;
+  // The Access tab is exactly the three rehomed slots. The container decides
+  // whether each one exists at all (its gate, unchanged); this only decides
+  // whether the tab shows them or an EmptyState instead of a blank panel.
+  const showAccessCards = !!(groupGrantsSlot || resourceAccessSlot || roleAssignmentsSlot);
+  // Everyone waiting to get in, counted once for the Invites tab's own count.
+  const waitingCount =
+    pendingInvites.length + accessRequests.length + (accountId ? accountInvites.length : 0);
   // Every account-owner row, for the per-row "last owner" guard on "Remove
   // from account" — mirrors `page.tsx`'s own `isLastOwner` (computed inline
   // per row there too), off the SAME `members` array this table already
   // renders. See this file's header comment, "JAY-549".
   const accountOwnerCount = members.filter((m) => m.account_role === 'owner').length;
+  // Client-side, over data the table already renders (`userLabel` is the
+  // email, falling back to the user id). No route, no new field — the one
+  // filter this pane can honestly offer.
+  const search = memberSearch.trim().toLowerCase();
+  const visibleMembers = search
+    ? members.filter((member) => userLabel(member).toLowerCase().includes(search))
+    : members;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-10 px-6 py-10">
-      {/* No local title/description here — `SettingsTabHeader` pulls both
-          from the rail (`rail.ts`) so this pane's heading can never drift
-          from the "Members" row's own copy. The invite button and the role
-          explainer popover still ride in its `action` slot. */}
-      {/* Linear's members header is the pane title, the member count beside
-          it, and ONE `+` icon button at the far right — no toolbar, no filter
-          chips, no search box. The title and description still come from the
-          rail via `SettingsTabHeader` (they must: it is this pane's page
-          heading), so the count and the `+` ride in its right-hand action
-          slot, which is the same far-right position Linear puts the `+` in.
-          The Invite button is icon-only now; its accessible name is
-          unchanged, and so is its `canManageMembers` gate. */}
-      <SettingsTabHeader
-        tab="members"
-        action={
-          <div className="flex items-center gap-2">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
+      {/* The pane's page heading, above the tab bar — it titles the whole
+          pane, not one tab, and its copy comes from the rail (`rail.ts`) so it
+          can never drift from the "Members" row's own label. Only the role
+          explainer popover rides in its action slot now; the member count and
+          the Invite button belong to the People tab and moved there. */}
+      <SettingsTabHeader tab="members" action={permissionsHelpSlot} />
+
+      <Tabs
+        value={section}
+        onValueChange={(next) => onSectionChange(next as MembersSection)}
+        className="gap-6"
+      >
+        <TabsList type="underline" className="flex w-full items-center justify-start">
+          <TabsTrigger value="people" className="w-fit flex-none gap-1.5">
+            People
             {members.length > 0 ? (
-              <span className="text-muted-foreground text-sm tabular-nums">{members.length}</span>
+              <span className="text-muted-foreground text-xs tabular-nums">{members.length}</span>
             ) : null}
-            {permissionsHelpSlot}
-            {canManageMembers ? (
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                onClick={onOpenInvite}
-                aria-label="Invite"
-                title="Invite"
-              >
-                <Plus className="size-4" />
-              </Button>
+          </TabsTrigger>
+          <TabsTrigger value="invites" className="w-fit flex-none gap-1.5">
+            Invites
+            {waitingCount > 0 ? (
+              <span className="text-muted-foreground text-xs tabular-nums">{waitingCount}</span>
             ) : null}
-          </div>
-        }
-      />
+          </TabsTrigger>
+          <TabsTrigger value="access" className="w-fit flex-none">
+            Access
+          </TabsTrigger>
+        </TabsList>
 
-      {isLoading ? (
-        <Skeleton className="h-64 w-full rounded-md" />
-      ) : isError ? (
-        <ErrorState
-          size="sm"
-          title="Failed to load members"
-          description={errorMessage}
-          action={
-            <Button variant="outline" size="sm" onClick={onRetry}>
-              Retry
-            </Button>
-          }
-        />
-      ) : members.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No members yet"
-          description="Invite someone to get started."
-        />
-      ) : (
-        <div className="overflow-x-auto">
-          {/* See `TABLE_HEAD_CELL`'s comment above for why the container is
-              local markup while every cell primitive is still shared. */}
-          <table className="w-full caption-bottom text-sm">
-            <TableHeader className="bg-transparent">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className={TABLE_HEAD_CELL}>Member</TableHead>
-                <TableHead className={TABLE_HEAD_CELL}>Account role</TableHead>
-                <TableHead className={TABLE_HEAD_CELL}>Workspace access</TableHead>
-                <TableHead className={cn(TABLE_HEAD_CELL, 'text-right')}>Joined</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.map((member) => {
-                const { role, via } = memberAccessLabel(member);
-                const busy = pendingUserIds.has(member.user_id);
-                const editable =
-                  canManageMembers &&
-                  !member.has_implicit_access &&
-                  !isInheritedFromGroupOnly(member);
-
-                // JAY-549 — account-scope row actions. Hidden entirely on the
-                // viewer's own row (mirrors page.tsx's per-row `!isSelf`
-                // guard) — self goes through the separate "Leave account"
-                // section instead. See this file's header comment, "JAY-549".
-                const isSelfAccountRow = !!currentUserId && member.user_id === currentUserId;
-                const accountBusy = accountPendingUserIds.has(member.user_id);
-                const accountRoleEditable = canUpdateAccountRole && !isSelfAccountRow;
-                const accountRemovable = canRemoveFromAccount && !isSelfAccountRow;
-                const isLastAccountOwner =
-                  member.account_role === 'owner' && accountOwnerCount === 1;
-
-                return (
-                  <TableRow key={member.user_id} className="border-b-0">
-                    <TableCell className={cn(TABLE_CELL, 'whitespace-normal')}>
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <UserAvatar email={member.email ?? ''} size="sm" />
-                        <span className="text-foreground min-w-0 truncate">
-                          {userLabel(member)}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className={TABLE_CELL}>
-                      <div className="flex items-center gap-1">
-                        {accountBusy ? (
-                          <Loading className="text-muted-foreground size-3.5 shrink-0" />
-                        ) : accountRoleEditable ? (
-                          <Select
-                            value={member.account_role}
-                            onValueChange={(next) =>
-                              onRequestAccountRoleChange(member, next as AccountRole)
-                            }
-                          >
-                            <SelectTrigger
-                              className="h-7 w-28 text-xs capitalize"
-                              aria-label={`Account role for ${userLabel(member)}`}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="owner">
-                                {ACCOUNT_ROLE_DESCRIPTORS.owner.label}
-                              </SelectItem>
-                              <SelectItem value="admin">
-                                {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
-                              </SelectItem>
-                              <SelectItem value="member">
-                                {ACCOUNT_ROLE_DESCRIPTORS.member.label}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          // Coloured text, not a filled badge — Linear's own
-                          // treatment for this column. See
-                          // `accountRoleToneClass` above.
-                          <span
-                            className={cn('capitalize', accountRoleToneClass(member.account_role))}
-                          >
-                            {member.account_role}
-                          </span>
-                        )}
-                        {!accountBusy && accountRemovable ? (
-                          <Button
-                            type="button"
-                            size="icon-xs"
-                            variant="ghost"
-                            onClick={() => onRequestRemoveFromAccount(member)}
-                            disabled={isLastAccountOwner}
-                            title={
-                              isLastAccountOwner
-                                ? 'The account needs at least one owner.'
-                                : 'Remove from account'
-                            }
-                            aria-label={`Remove ${userLabel(member)} from account`}
-                          >
-                            <X className="size-3.5" />
-                          </Button>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    {/* One column, one fact: the workspace-access control now
-                        lives in the workspace-access column instead of a
-                        separate trailing actions column, so the label and the
-                        control it edits are no longer two columns apart. No
-                        annotation is lost — `memberAccessLabel` only returns a
-                        `via` for implicit or group-sourced access, and
-                        `editable` excludes both of those cases. */}
-                    <TableCell className={TABLE_CELL}>
-                      {busy ? (
-                        <Loading className="text-muted-foreground shrink-0" />
-                      ) : editable ? (
-                        <div className="flex shrink-0 items-center gap-1">
-                          <Select
-                            value={member.project_role ?? NO_ACCESS}
-                            onValueChange={(next) =>
-                              onRoleChange(member, next as ProjectRole | typeof NO_ACCESS)
-                            }
-                          >
-                            <SelectTrigger className="h-7 w-32 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={NO_ACCESS}>No access</SelectItem>
-                              <ProjectRoleSelectItem role="member" compact />
-                              <ProjectRoleSelectItem role="editor" compact />
-                              <ProjectRoleSelectItem role="manager" compact />
-                            </SelectContent>
-                          </Select>
-                          {member.project_role ? (
-                            <Button
-                              type="button"
-                              size="icon-xs"
-                              variant="ghost"
-                              onClick={() => onRequestRemove(member)}
-                              title="Remove"
-                              aria-label={`Remove ${userLabel(member)} from this workspace`}
-                            >
-                              <X className="size-3.5" />
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-foreground">{role}</span>
-                          {via ? (
-                            <span className="text-muted-foreground text-xs">{via}</span>
-                          ) : null}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className={cn(TABLE_CELL, TABLE_DATE_CELL)}>
-                      {member.joined_at ? formatDate(member.joined_at) : '—'}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </table>
-        </div>
-      )}
-
-      {/* Rehomed from `members-view.tsx`, in their existing order — see
-          this file's header comment, "Rehomed from MembersView". Each gate
-          is preserved exactly as that file passed it, not re-derived here. */}
-      {groupGrantsSlot}
-      {resourceAccessSlot}
-      {roleAssignmentsSlot}
-
-      {showPendingInvites ? (
-        <section className="space-y-4">
-          <SettingsSubsectionHeader
-            title="Pending invites"
-            description="Invitations sent, awaiting sign-up."
-          />
-          {isPendingInvitesLoading ? (
-            <Skeleton className="h-14 w-full rounded-md" />
-          ) : (
-            <ul className="space-y-2">
-              {pendingInvites.map((invite) => {
-                const busy = pendingInviteBusyIds.has(invite.invite_id);
-                return (
-                  <li
-                    key={invite.invite_id}
-                    className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5"
-                  >
-                    <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <Mail className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-foreground truncate text-sm font-medium">
-                          {invite.email}
-                        </span>
-                        <Badge variant="outline" size="sm" className="capitalize">
-                          {invite.project_role}
-                        </Badge>
-                      </div>
-                      <InlineMeta>
-                        <span className="tabular-nums">
-                          Invited {formatDate(invite.created_at)}
-                        </span>
-                        {invite.invite_expired ? (
-                          <span className="text-kortix-orange">Link expired</span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 tabular-nums">
-                            <Clock className="size-3" />
-                            Expires {formatDate(invite.invite_expires_at)}
-                          </span>
-                        )}
-                      </InlineMeta>
-                    </div>
-                    {busy ? (
-                      <Loading className="text-muted-foreground shrink-0" />
-                    ) : canManageMembers ? (
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onResendInvite(invite)}
-                          className="gap-1.5"
-                        >
-                          <RefreshCw className="size-3.5" />
-                          Resend
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onRequestRevokeInvite(invite)}
-                          className="gap-1.5"
-                        >
-                          <X className="size-3.5" />
-                          Revoke
-                        </Button>
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ) : null}
-
-      {showAccessRequests ? (
-        <section className="space-y-4">
-          <SettingsSubsectionHeader
-            title="Access requests"
-            description="People who asked to join this project."
-          />
-          {isAccessRequestsLoading ? (
-            <Skeleton className="h-14 w-full rounded-md" />
-          ) : (
-            <ul className="space-y-2">
-              {accessRequests.map((request) => {
-                const busy = accessRequestBusyIds.has(request.request_id);
-                return (
-                  <li
-                    key={request.request_id}
-                    className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5"
-                  >
-                    <span className="bg-kortix-yellow/10 text-kortix-yellow inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <Mail className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <span className="text-foreground truncate text-sm font-medium">
-                        {request.requester_email}
-                      </span>
-                      <InlineMeta>
-                        <span className="tabular-nums">
-                          Requested {formatDate(request.created_at)}
-                        </span>
-                        {request.message ? <span>"{request.message}"</span> : null}
-                      </InlineMeta>
-                    </div>
-                    {busy ? (
-                      <Loading className="text-muted-foreground shrink-0" />
-                    ) : (
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onApproveRequest(request)}
-                          className="gap-1.5"
-                        >
-                          <Check className="size-3.5" />
-                          Approve
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onRejectRequest(request)}
-                          className="gap-1.5"
-                        >
-                          <X className="size-3.5" />
-                          Decline
-                        </Button>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ) : null}
-
-      {/* JAY-548 — the two orphaned account-scoped surfaces from
-          `accounts/[id]/page.tsx` (`listAccountInvites`/`cancelAccountInvite`/
-          `resendAccountInvite`/`leaveAccount`), rehomed below this project's
-          own pending-invites/access-requests sections. See this file's header
-          comment. Distinct title from "Pending invites" above — that section
-          is project access invites, this one is account membership
-          invites. */}
-      {showAccountInvites ? (
-        <section className="space-y-4">
-          <SettingsSubsectionHeader
-            title="Account invites"
-            description="Invitations to join this account, awaiting sign-up."
-            action={
-              canManageAccountInvites ? (
-                <Button type="button" size="sm" onClick={onOpenAccountInvite} className="gap-1.5">
+        {/* ── People ────────────────────────────────────────────────────── */}
+        <TabsContent value="people" className="space-y-4">
+          {members.length > 0 || canManageMembers ? (
+            <div className="flex items-center justify-between gap-3">
+              {members.length > 0 ? (
+                <Input
+                  type="search"
+                  value={memberSearch}
+                  onChange={(event) => onMemberSearchChange(event.target.value)}
+                  placeholder="Search members"
+                  aria-label="Search members"
+                  className="h-8 max-w-64"
+                />
+              ) : (
+                <span />
+              )}
+              {canManageMembers ? (
+                <Button type="button" size="sm" onClick={onOpenInvite} className="shrink-0 gap-1.5">
                   <Plus className="size-3.5" />
                   Invite
                 </Button>
-              ) : undefined
-            }
-          />
-          {isAccountInvitesLoading ? (
-            <Skeleton className="h-14 w-full rounded-md" />
-          ) : accountInvites.length === 0 ? (
-            <p className="text-muted-foreground text-xs">No pending invites.</p>
-          ) : (
-            <ul className="space-y-2">
-              {accountInvites.map((invite) => {
-                const busy = accountInviteBusyIds.has(invite.invite_id);
-                return (
-                  <li key={invite.invite_id} className={MEMBER_ROW}>
-                    <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <Mail className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-foreground truncate text-sm font-medium">
-                          {invite.email}
-                        </span>
-                        <Badge variant="outline" size="sm" className="capitalize">
-                          {invite.initial_role}
-                        </Badge>
-                      </div>
-                      <InlineMeta>
-                        <span className="tabular-nums">
-                          Invited {formatDate(invite.created_at)}
-                        </span>
-                        <span className="inline-flex items-center gap-1 tabular-nums">
-                          <Clock className="size-3" />
-                          Expires {formatDate(invite.expires_at)}
-                        </span>
-                      </InlineMeta>
-                    </div>
-                    {busy ? (
-                      <Loading className="text-muted-foreground shrink-0" />
-                    ) : canManageAccountInvites ? (
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onResendAccountInvite(invite)}
-                          className="gap-1.5"
-                        >
-                          <RefreshCw className="size-3.5" />
-                          Resend
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onRequestCancelAccountInvite(invite)}
-                          className="gap-1.5"
-                        >
-                          <X className="size-3.5" />
-                          Cancel
-                        </Button>
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ) : null}
+              ) : null}
+            </div>
+          ) : null}
 
-      {showLeaveAccount ? (
-        <section className="space-y-4">
-          <SettingsSubsectionHeader title="Leave account" />
-          {isAccountRosterLoading ? (
-            <Skeleton className="h-[58px] w-full rounded-md" />
+          {isLoading ? (
+            <Skeleton className="h-64 w-full rounded-md" />
+          ) : isError ? (
+            <ErrorState
+              size="sm"
+              title="Failed to load members"
+              description={errorMessage}
+              action={
+                <Button variant="outline" size="sm" onClick={onRetry}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : members.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="No members yet"
+              description="Invite someone to get started."
+            />
+          ) : visibleMembers.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="No one matches that search"
+              description="Try part of an email address instead."
+            />
           ) : (
-            <div className="bg-popover rounded-md border px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
+            <div className="overflow-x-auto">
+              {/* See `TABLE_HEAD_CELL`'s comment above for why the container is
+                  local markup while every cell primitive is still shared. */}
+              <table className="w-full caption-bottom text-sm">
+                <TableHeader className="bg-transparent">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className={TABLE_HEAD_CELL}>Member</TableHead>
+                    <TableHead className={TABLE_HEAD_CELL}>Account role</TableHead>
+                    <TableHead className={TABLE_HEAD_CELL}>Workspace access</TableHead>
+                    <TableHead className={cn(TABLE_HEAD_CELL, 'text-right')}>Joined</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleMembers.map((member) => {
+                    const { role, via } = memberAccessLabel(member);
+                    const busy = pendingUserIds.has(member.user_id);
+                    const editable =
+                      canManageMembers &&
+                      !member.has_implicit_access &&
+                      !isInheritedFromGroupOnly(member);
+
+                    // JAY-549 — account-scope row actions. Hidden entirely on
+                    // the viewer's own row (mirrors page.tsx's per-row
+                    // `!isSelf` guard) — self goes through the separate "Leave
+                    // account" row instead. See this file's header comment.
+                    const isSelfAccountRow = !!currentUserId && member.user_id === currentUserId;
+                    const accountBusy = accountPendingUserIds.has(member.user_id);
+                    const accountRoleEditable = canUpdateAccountRole && !isSelfAccountRow;
+                    const accountRemovable = canRemoveFromAccount && !isSelfAccountRow;
+                    const isLastAccountOwner =
+                      member.account_role === 'owner' && accountOwnerCount === 1;
+
+                    return (
+                      <TableRow key={member.user_id} className="border-b-0">
+                        <TableCell className={cn(TABLE_CELL, 'whitespace-normal')}>
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <UserAvatar email={member.email ?? ''} size="sm" />
+                            <span className="text-foreground min-w-0 truncate">
+                              {userLabel(member)}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className={TABLE_CELL}>
+                          <div className="flex items-center gap-1">
+                            {accountBusy ? (
+                              <Loading className="text-muted-foreground size-3.5 shrink-0" />
+                            ) : accountRoleEditable ? (
+                              <Select
+                                value={member.account_role}
+                                onValueChange={(next) =>
+                                  onRequestAccountRoleChange(member, next as AccountRole)
+                                }
+                              >
+                                <SelectTrigger
+                                  className="h-7 w-28 text-xs capitalize"
+                                  aria-label={`Account role for ${userLabel(member)}`}
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="owner">
+                                    {ACCOUNT_ROLE_DESCRIPTORS.owner.label}
+                                  </SelectItem>
+                                  <SelectItem value="admin">
+                                    {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
+                                  </SelectItem>
+                                  <SelectItem value="member">
+                                    {ACCOUNT_ROLE_DESCRIPTORS.member.label}
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              // Coloured text, not a filled badge — Linear's
+                              // own treatment for this column. See
+                              // `accountRoleToneClass` above.
+                              <span
+                                className={cn(
+                                  'capitalize',
+                                  accountRoleToneClass(member.account_role),
+                                )}
+                              >
+                                {member.account_role}
+                              </span>
+                            )}
+                            {!accountBusy && accountRemovable ? (
+                              <Button
+                                type="button"
+                                size="icon-xs"
+                                variant="ghost"
+                                onClick={() => onRequestRemoveFromAccount(member)}
+                                disabled={isLastAccountOwner}
+                                title={
+                                  isLastAccountOwner
+                                    ? 'The account needs at least one owner.'
+                                    : 'Remove from account'
+                                }
+                                aria-label={`Remove ${userLabel(member)} from account`}
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        {/* One column, one fact: the workspace-access control
+                            lives in the workspace-access column it edits. No
+                            annotation is lost — `memberAccessLabel` only
+                            returns a `via` for implicit or group-sourced
+                            access, and `editable` excludes both. */}
+                        <TableCell className={TABLE_CELL}>
+                          {busy ? (
+                            <Loading className="text-muted-foreground shrink-0" />
+                          ) : editable ? (
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Select
+                                value={member.project_role ?? NO_ACCESS}
+                                onValueChange={(next) =>
+                                  onRoleChange(member, next as ProjectRole | typeof NO_ACCESS)
+                                }
+                              >
+                                <SelectTrigger className="h-7 w-32 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value={NO_ACCESS}>No access</SelectItem>
+                                  <ProjectRoleSelectItem role="member" compact />
+                                  <ProjectRoleSelectItem role="editor" compact />
+                                  <ProjectRoleSelectItem role="manager" compact />
+                                </SelectContent>
+                              </Select>
+                              {member.project_role ? (
+                                <Button
+                                  type="button"
+                                  size="icon-xs"
+                                  variant="ghost"
+                                  onClick={() => onRequestRemove(member)}
+                                  title="Remove"
+                                  aria-label={`Remove ${userLabel(member)} from this workspace`}
+                                >
+                                  <X className="size-3.5" />
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-foreground">{role}</span>
+                              {via ? (
+                                <span className="text-muted-foreground text-xs">{via}</span>
+                              ) : null}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className={cn(TABLE_CELL, TABLE_DATE_CELL)}>
+                          {member.joined_at ? formatDate(member.joined_at) : '—'}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </table>
+            </div>
+          )}
+
+          {/* Self-directed, and quiet: a single bordered row at the foot of
+              the People tab rather than its own titled section competing with
+              the table. NO permission probe gates it — leaving your own
+              account is not an IAM leaf; only `isLastOwner` can disable it.
+              See this file's header comment, "JAY-548". */}
+          {showLeaveAccount ? (
+            isAccountRosterLoading ? (
+              <Skeleton className="mt-2 h-12 w-full rounded-md" />
+            ) : (
+              <div className="mt-2 flex items-center justify-between gap-4 border-t pt-4">
                 <div className="min-w-0">
                   <p className="text-foreground text-sm font-medium">
                     Leave {accountName || 'this account'}
@@ -1233,9 +1106,9 @@ export function MembersTabView({
                 </div>
                 <Button
                   type="button"
-                  variant="destructive"
+                  variant="ghost"
                   size="sm"
-                  className="shrink-0 gap-1.5"
+                  className="text-destructive hover:text-destructive shrink-0 gap-1.5"
                   disabled={isLastOwner}
                   onClick={onOpenLeaveAccount}
                   title={isLastOwner ? "You're the only owner of this account." : undefined}
@@ -1244,10 +1117,269 @@ export function MembersTabView({
                   Leave
                 </Button>
               </div>
-            </div>
+            )
+          ) : null}
+        </TabsContent>
+
+        {/* ── Invites ───────────────────────────────────────────────────── */}
+        {/* Everyone waiting to get in, in one place. Three lists that used to
+            read as one broken list now say who is waiting and for what — see
+            this file's header comment, "Plain titles". No gate moved: the two
+            project lists still gate on `canManageMembers`
+            (`project.members.manage`), the account list on
+            `canManageAccountInvites` (`member.invite`). */}
+        <TabsContent value="invites" className="space-y-8">
+          {showPendingInvites ? (
+            <section className="space-y-4">
+              <SettingsSubsectionHeader
+                title="Invited to this workspace"
+                description="They already have a Kortix account and just need to accept."
+              />
+              {isPendingInvitesLoading ? (
+                <Skeleton className="h-14 w-full rounded-md" />
+              ) : (
+                <ul className="space-y-2">
+                  {pendingInvites.map((invite) => {
+                    const busy = pendingInviteBusyIds.has(invite.invite_id);
+                    return (
+                      <li key={invite.invite_id} className={MEMBER_ROW}>
+                        <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                          <Mail className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-foreground truncate text-sm font-medium">
+                              {invite.email}
+                            </span>
+                            <Badge variant="outline" size="sm" className="capitalize">
+                              {invite.project_role}
+                            </Badge>
+                          </div>
+                          <InlineMeta>
+                            <span className="tabular-nums">
+                              Invited {formatDate(invite.created_at)}
+                            </span>
+                            {invite.invite_expired ? (
+                              <span className="text-kortix-orange">Link expired</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 tabular-nums">
+                                <Clock className="size-3" />
+                                Expires {formatDate(invite.invite_expires_at)}
+                              </span>
+                            )}
+                          </InlineMeta>
+                        </div>
+                        {busy ? (
+                          <Loading className="text-muted-foreground shrink-0" />
+                        ) : canManageMembers ? (
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onResendInvite(invite)}
+                              className="gap-1.5"
+                            >
+                              <RefreshCw className="size-3.5" />
+                              Resend
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onRequestRevokeInvite(invite)}
+                              className="gap-1.5"
+                            >
+                              <X className="size-3.5" />
+                              Revoke
+                            </Button>
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {showAccountInvites ? (
+            <section className="space-y-4">
+              <SettingsSubsectionHeader
+                title="Invited to this account"
+                description="They still need to sign up. Once they do, you can add them to workspaces."
+                action={
+                  canManageAccountInvites ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={onOpenAccountInvite}
+                      className="gap-1.5"
+                    >
+                      <Plus className="size-3.5" />
+                      Invite
+                    </Button>
+                  ) : undefined
+                }
+              />
+              {isAccountInvitesLoading ? (
+                <Skeleton className="h-14 w-full rounded-md" />
+              ) : accountInvites.length === 0 ? (
+                <p className="text-muted-foreground text-xs">Nobody is waiting to sign up.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {accountInvites.map((invite) => {
+                    const busy = accountInviteBusyIds.has(invite.invite_id);
+                    return (
+                      <li key={invite.invite_id} className={MEMBER_ROW}>
+                        <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                          <Mail className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-foreground truncate text-sm font-medium">
+                              {invite.email}
+                            </span>
+                            <Badge variant="outline" size="sm" className="capitalize">
+                              {invite.initial_role}
+                            </Badge>
+                          </div>
+                          <InlineMeta>
+                            <span className="tabular-nums">
+                              Invited {formatDate(invite.created_at)}
+                            </span>
+                            <span className="inline-flex items-center gap-1 tabular-nums">
+                              <Clock className="size-3" />
+                              Expires {formatDate(invite.expires_at)}
+                            </span>
+                          </InlineMeta>
+                        </div>
+                        {busy ? (
+                          <Loading className="text-muted-foreground shrink-0" />
+                        ) : canManageAccountInvites ? (
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onResendAccountInvite(invite)}
+                              className="gap-1.5"
+                            >
+                              <RefreshCw className="size-3.5" />
+                              Resend
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onRequestCancelAccountInvite(invite)}
+                              className="gap-1.5"
+                            >
+                              <X className="size-3.5" />
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {showAccessRequests ? (
+            <section className="space-y-4">
+              <SettingsSubsectionHeader
+                title="Asked to join"
+                description="They requested access to this workspace. Approve to let them in."
+              />
+              {isAccessRequestsLoading ? (
+                <Skeleton className="h-14 w-full rounded-md" />
+              ) : (
+                <ul className="space-y-2">
+                  {accessRequests.map((request) => {
+                    const busy = accessRequestBusyIds.has(request.request_id);
+                    return (
+                      <li key={request.request_id} className={MEMBER_ROW}>
+                        <span className="bg-kortix-yellow/10 text-kortix-yellow inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                          <Mail className="size-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-foreground truncate text-sm font-medium">
+                            {request.requester_email}
+                          </span>
+                          <InlineMeta>
+                            <span className="tabular-nums">
+                              Requested {formatDate(request.created_at)}
+                            </span>
+                            {request.message ? <span>"{request.message}"</span> : null}
+                          </InlineMeta>
+                        </div>
+                        {busy ? (
+                          <Loading className="text-muted-foreground shrink-0" />
+                        ) : (
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onApproveRequest(request)}
+                              className="gap-1.5"
+                            >
+                              <Check className="size-3.5" />
+                              Approve
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onRejectRequest(request)}
+                              className="gap-1.5"
+                            >
+                              <X className="size-3.5" />
+                              Decline
+                            </Button>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {!showPendingInvites && !showAccountInvites && !showAccessRequests ? (
+            <EmptyState
+              icon={Mail}
+              title="Nobody is waiting"
+              description="Invitations you send, and requests to join, appear here until they are accepted."
+            />
+          ) : null}
+        </TabsContent>
+
+        {/* ── Access ────────────────────────────────────────────────────── */}
+        {/* The three rehomed cards, in their existing order and behind the
+            gates the container already passed them under — see this file's
+            header comment, "Rehomed from MembersView". Nothing is re-derived
+            here; this tab only decides where they sit. */}
+        <TabsContent value="access" className="space-y-8">
+          {showAccessCards ? (
+            <>
+              {groupGrantsSlot}
+              {resourceAccessSlot}
+              {roleAssignmentsSlot}
+            </>
+          ) : (
+            <EmptyState
+              icon={Shield}
+              title="No extra access rules"
+              description="Access given to a whole group, access to single agents or skills, and custom roles for this workspace appear here."
+            />
           )}
-        </section>
-      ) : null}
+        </TabsContent>
+      </Tabs>
 
       <ConfirmDialog
         open={removeTarget !== null}
@@ -1510,6 +1642,10 @@ function MembersTabInner({
   }
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Which of the three underline tabs is showing. Local, not persisted:
+  // reopening the pane should land on People, the thing you came for.
+  const [section, setSection] = useState<MembersSection>('people');
+  const [memberSearch, setMemberSearch] = useState('');
 
   // Consume-and-clear in one shot (JAY-530 shape — see the comment above
   // `requestedMembersTab`). Only ever runs while THIS tab is the active
@@ -1528,7 +1664,15 @@ function MembersTabInner({
       activeTab,
       navigate,
     });
-    if (consumed) setInviteOpen(true);
+    if (consumed) {
+      // The project Invite button lives on the People tab, so the deep link
+      // must land there before the dialog opens — otherwise dismissing the
+      // dialog would drop the user on whichever tab they last left behind,
+      // with no visible trace of what they asked for. See this file's header
+      // comment, "The Cmd+K deep link still lands".
+      setSection('people');
+      setInviteOpen(true);
+    }
   }, [requestedMembersTab, activeTab, navigate]);
 
   const [pendingInviteBusyIds, setPendingInviteBusyIds] = useState<Set<string>>(() => new Set());
@@ -1775,6 +1919,10 @@ function MembersTabInner({
 
   return (
     <MembersTabView
+      section={section}
+      onSectionChange={setSection}
+      memberSearch={memberSearch}
+      onMemberSearchChange={setMemberSearch}
       isLoading={accessQuery.isLoading}
       isError={accessQuery.isError}
       errorMessage={(accessQuery.error as Error)?.message ?? ''}

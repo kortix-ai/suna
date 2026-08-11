@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { consumeMembersTabIntent } from '@/features/workspace/customize/sections/view/members-view';
 import { buildSettingsPanelSettingsNav } from '@/features/workspace/settings/settings-panel';
@@ -91,5 +93,48 @@ describe("MembersTabInner's invite-intent consumption (command-palette.tsx:1146 
       navigate: nav.navigate,
     });
     expect(consumed).toBeNull();
+  });
+});
+
+/**
+ * The pane gained three underline tabs (People / Invites / Access) on
+ * 2026-08-12. The project Invite button now lives on the People tab, so the
+ * deep link has to do two things, not one: select `people` AND open the
+ * dialog. `MembersTabInner` can't render here (no `SettingsNavProvider`, no
+ * `QueryClientProvider`, no DOM library — this app has none), so the wiring is
+ * pinned at source level, the same mechanism `member-role-safety.test.ts` uses
+ * against this exact file.
+ *
+ * **Comments are stripped first.** This file's own header comment quotes the
+ * statement sequence; matching the raw source would let the documentation
+ * satisfy the assertion with the code deleted.
+ */
+const membersTabSource = readFileSync(join(import.meta.dir, 'members-tab.tsx'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '')
+  .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '');
+const flatMembersTab = membersTabSource.replace(/\s+/g, ' ');
+
+describe('the invite deep link lands on the People tab, not just any tab', () => {
+  test('consuming the intent selects the people section AND opens the dialog', () => {
+    expect(flatMembersTab).toContain(
+      "if (consumed) { setSection('people'); setInviteOpen(true); }",
+    );
+  });
+
+  test('the section state exists, defaults to people, and is handed to the view', () => {
+    expect(flatMembersTab).toContain(
+      "const [section, setSection] = useState<MembersSection>('people');",
+    );
+    expect(flatMembersTab).toContain('section={section} onSectionChange={setSection}');
+  });
+
+  test('the invite dialog slot is mounted outside Tabs, so it survives a tab switch', () => {
+    // Both dialog slots are rendered after `</Tabs>`; if either moved inside a
+    // `TabsContent`, Radix would unmount it the moment the user changed tab.
+    const closingTabs = flatMembersTab.indexOf('</Tabs>');
+    expect(closingTabs).toBeGreaterThan(-1);
+    expect(flatMembersTab.indexOf('{inviteDialogSlot}')).toBeGreaterThan(closingTabs);
+    expect(flatMembersTab.indexOf('{accountInviteDialogSlot}')).toBeGreaterThan(closingTabs);
   });
 });

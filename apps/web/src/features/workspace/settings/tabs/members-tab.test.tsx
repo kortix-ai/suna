@@ -1,4 +1,9 @@
-import type { AccountInvitation, ProjectAccessMember } from '@kortix/sdk';
+import type {
+  AccountInvitation,
+  PendingProjectInvite,
+  ProjectAccessMember,
+  ProjectAccessRequest,
+} from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -12,6 +17,33 @@ const accountInvite = (o: Partial<AccountInvitation>): AccountInvitation => ({
   created_at: '2026-01-01T00:00:00Z',
   expires_at: '2026-02-01T00:00:00Z',
   invite_url: 'https://kortix.com/invite/ainv1',
+  ...o,
+});
+
+const pendingInvite = (o: Partial<PendingProjectInvite>): PendingProjectInvite => ({
+  invite_id: 'inv1',
+  email: 'pending@kortix.com',
+  project_role: 'member',
+  expires_at: null,
+  invited_by_email: null,
+  created_at: '2026-01-01T00:00:00Z',
+  invite_expires_at: '2026-02-01T00:00:00Z',
+  invite_expired: false,
+  ...o,
+});
+
+const accessRequest = (o: Partial<ProjectAccessRequest>): ProjectAccessRequest => ({
+  request_id: 'req1',
+  account_id: 'acc1',
+  project_id: 'proj1',
+  requester_user_id: 'u9',
+  requester_email: 'requester@kortix.com',
+  message: null,
+  status: 'pending',
+  reviewed_by: null,
+  reviewed_at: null,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
   ...o,
 });
 
@@ -112,13 +144,16 @@ describe('MembersTabView', () => {
     expect(out).not.toContain('data-slot="badge"');
   });
 
-  test('the Invite control is an icon button carrying its name in aria-label', () => {
+  test('the Invite control is a labelled primary button on the People tab', () => {
     const out = renderToStaticMarkup(<MembersTabView canManageMembers members={[member({})]} />);
-    expect(out).toContain('aria-label="Invite"');
-    expect(out).not.toContain('>Invite<');
+    // Jay's reference shot: one primary Invite button on the right of the
+    // table toolbar, with a real label — not the icon-only `+` it used to be
+    // in the pane header.
+    expect(out).toContain('>Invite<');
+    expect(out).not.toContain('aria-label="Invite"');
   });
 
-  test('the member count renders beside the header once there are members', () => {
+  test('the member count renders beside the People tab label once there are members', () => {
     const withMembers = renderToStaticMarkup(
       <MembersTabView
         members={[member({ user_id: 'u1' }), member({ user_id: 'u2', email: 'b@kortix.com' })]}
@@ -126,10 +161,87 @@ describe('MembersTabView', () => {
     );
     expect(withMembers).toContain('>2<');
 
-    // No count while the table is empty — a bare "0" beside the title reads as
+    // No count while the table is empty — a bare "0" beside the label reads as
     // a broken widget, and the empty state already says there is nobody.
     const empty = renderToStaticMarkup(<MembersTabView members={[]} />);
     expect(empty).not.toContain('>0<');
+  });
+
+  // ── The three underline tabs (2026-08-12). Nine stacked sections became
+  // People / Invites / Access on the shared `TabsList type="underline"`
+  // primitive. Radix renders ONLY the active panel — an inactive
+  // `TabsContent` is an empty `<div hidden>` under `renderToStaticMarkup` —
+  // so every assertion about a non-default tab passes `section` explicitly. ──
+
+  test('renders exactly three underline tabs: People, Invites, Access', () => {
+    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
+    expect(out).toContain('role="tablist"');
+    // The shared primitive's underline chrome, not a hand-rolled bar.
+    expect(out).toContain('**:data-[slot=tabs-trigger]:data-[state=active]:after:bg-foreground');
+    expect(out.match(/role="tab"/g)?.length).toBe(3);
+    expect(out).toContain('>People<');
+    expect(out).toContain('>Invites<');
+    expect(out).toContain('>Access<');
+  });
+
+  test('People is the default tab — the table is what you land on', () => {
+    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
+    expect(out).toContain('<table');
+    expect(out).toContain('Workspace access');
+  });
+
+  test('the pane heading stays above the tab bar, outside every panel', () => {
+    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
+    expect(out.indexOf('Members')).toBeLessThan(out.indexOf('role="tablist"'));
+  });
+
+  test('the Invites tab counts everyone waiting across all three lists', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({})]}
+        accountId="acc1"
+        pendingInvites={[pendingInvite({})]}
+        accountInvites={[accountInvite({})]}
+        accessRequests={[accessRequest({})]}
+      />,
+    );
+    expect(out).toContain('>3<');
+  });
+
+  // ── The People tab's client-side search. It filters `userLabel(member)` —
+  // the email the table already renders — and is a controlled prop, so the
+  // view stays hook-free. No route, no invented field. ──
+
+  test('the search field filters the table by email, client-side', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[
+          member({ user_id: 'u1', email: 'ada@kortix.com' }),
+          member({ user_id: 'u2', email: 'grace@kortix.com' }),
+        ]}
+        memberSearch="ada"
+      />,
+    );
+    expect(out).toContain('ada@kortix.com');
+    expect(out).not.toContain('grace@kortix.com');
+    // The tab count stays the roster total, not the filtered total.
+    expect(out).toContain('>2<');
+  });
+
+  test('a search matching nobody shows an empty state, not a headerless table', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({ email: 'ada@kortix.com' })]} memberSearch="zzz" />,
+    );
+    expect(out).toContain('No one matches that search');
+    expect(out).not.toContain('<table');
+  });
+
+  test('no search field until there is a roster to search', () => {
+    const empty = renderToStaticMarkup(<MembersTabView members={[]} />);
+    expect(empty).not.toContain('aria-label="Search members"');
+
+    const withMembers = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
+    expect(withMembers).toContain('aria-label="Search members"');
   });
 
   test('the workspace-access control shares the workspace-access column — no trailing actions column', () => {
@@ -259,9 +371,10 @@ describe('MembersTabView', () => {
     expect(out).toContain('invite-dialog-marker');
   });
 
-  test('renders groupGrantsSlot, resourceAccessSlot, and roleAssignmentsSlot, in that order, below the table', () => {
+  test('the Access tab holds the three rehomed slots, in that order', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
+        section="access"
         members={[member({})]}
         groupGrantsSlot={<div>group-grants-marker</div>}
         resourceAccessSlot={<div>resource-access-marker</div>}
@@ -278,15 +391,27 @@ describe('MembersTabView', () => {
     expect(out.indexOf('resource-access-marker')).toBeLessThan(
       out.indexOf('role-assignments-marker'),
     );
-    // Below the table, not inside it.
-    expect(out.indexOf('</table>')).toBeLessThan(out.indexOf('group-grants-marker'));
   });
 
-  test('the three rehomed slots are absent by default (undefined), same as inviteDialogSlot', () => {
-    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
+  test('the access slots are NOT on the People tab — the table stands alone there', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({})]}
+        groupGrantsSlot={<div>group-grants-marker</div>}
+        resourceAccessSlot={<div>resource-access-marker</div>}
+        roleAssignmentsSlot={<div>role-assignments-marker</div>}
+      />,
+    );
+    expect(out).toContain('<table');
     expect(out).not.toContain('group-grants-marker');
     expect(out).not.toContain('resource-access-marker');
     expect(out).not.toContain('role-assignments-marker');
+  });
+
+  test('an Access tab with no slots shows an empty state, not a blank panel', () => {
+    const out = renderToStaticMarkup(<MembersTabView section="access" members={[member({})]} />);
+    expect(out).toContain('No extra access rules');
+    expect(out).not.toContain('group-grants-marker');
   });
 
   test('renders a loading skeleton for the table while isLoading', () => {
@@ -307,91 +432,112 @@ describe('MembersTabView', () => {
     expect(out).not.toContain('<table');
   });
 
-  test('pending invites render below the table', () => {
+  // ── The Invites tab. Three lists that used to sit one screen apart under
+  // three near-identical headings ("Pending invites" / "Account invites" /
+  // "Access requests") now share one tab, each retitled to say who is waiting
+  // and for what — see members-tab.tsx's header comment, "Plain titles". ──
+
+  test('project invites live on the Invites tab under a plain-language title', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
+        section="invites"
         members={[member({})]}
-        pendingInvites={[
-          {
-            invite_id: 'inv1',
-            email: 'pending@kortix.com',
-            project_role: 'member',
-            expires_at: null,
-            invited_by_email: null,
-            created_at: '2026-01-01T00:00:00Z',
-            invite_expires_at: '2026-02-01T00:00:00Z',
-            invite_expired: false,
-          },
-        ]}
+        pendingInvites={[pendingInvite({})]}
       />,
     );
-    expect(out).toContain('Pending invites');
+    expect(out).toContain('Invited to this workspace');
     expect(out).toContain('pending@kortix.com');
-    expect(out.indexOf('Pending invites')).toBeGreaterThan(out.indexOf('Account role'));
+    // The old jargon title is gone, not merely moved.
+    expect(out).not.toContain('Pending invites');
   });
 
-  test('access requests render below the table', () => {
+  test('access requests live on the Invites tab under a plain-language title', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        section="invites"
+        members={[member({})]}
+        accessRequests={[accessRequest({})]}
+      />,
+    );
+    expect(out).toContain('Asked to join');
+    expect(out).toContain('requester@kortix.com');
+    expect(out).not.toContain('Access requests');
+  });
+
+  test('all three waiting lists render together, invites before requests', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        section="invites"
+        members={[member({})]}
+        accountId="acc1"
+        pendingInvites={[pendingInvite({})]}
+        accountInvites={[accountInvite({})]}
+        accessRequests={[accessRequest({})]}
+      />,
+    );
+    expect(out.indexOf('Invited to this workspace')).toBeLessThan(
+      out.indexOf('Invited to this account'),
+    );
+    expect(out.indexOf('Invited to this account')).toBeLessThan(out.indexOf('Asked to join'));
+  });
+
+  test('the waiting lists are NOT on the People tab', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
         members={[member({})]}
-        accessRequests={[
-          {
-            request_id: 'req1',
-            account_id: 'acc1',
-            project_id: 'proj1',
-            requester_user_id: 'u9',
-            requester_email: 'requester@kortix.com',
-            message: null,
-            status: 'pending',
-            reviewed_by: null,
-            reviewed_at: null,
-            created_at: '2026-01-01T00:00:00Z',
-            updated_at: '2026-01-01T00:00:00Z',
-          },
-        ]}
+        pendingInvites={[pendingInvite({})]}
+        accessRequests={[accessRequest({})]}
       />,
     );
-    expect(out).toContain('Access requests');
-    expect(out).toContain('requester@kortix.com');
+    expect(out).not.toContain('Invited to this workspace');
+    expect(out).not.toContain('Asked to join');
   });
 
-  test('pending invites / access requests sections are absent with nothing pending', () => {
-    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
-    expect(out).not.toContain('Pending invites');
-    expect(out).not.toContain('Access requests');
+  test('an Invites tab with nobody waiting shows an empty state, not a blank panel', () => {
+    const out = renderToStaticMarkup(<MembersTabView section="invites" members={[member({})]} />);
+    expect(out).toContain('Nobody is waiting');
+    expect(out).not.toContain('pending@kortix.com');
   });
 
   // ── JAY-548: account invites + leave account (rehomed from
   // accounts/[id]/page.tsx — see members-tab.tsx's header comment). ──
 
-  test('account invites render below the table, under a title distinct from "Pending invites"', () => {
+  test('account invites live on the Invites tab, under a title distinct from the workspace list', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
+        section="invites"
         members={[member({})]}
         accountId="acc1"
         accountInvites={[accountInvite({ email: 'joiner@kortix.com' })]}
       />,
     );
-    expect(out).toContain('Account invites');
+    expect(out).toContain('Invited to this account');
     expect(out).toContain('joiner@kortix.com');
-    expect(out.indexOf('Account invites')).toBeGreaterThan(out.indexOf('Account role'));
+    expect(out).not.toContain('Account invites');
   });
 
   test('account invites section is absent with no accountId, even with invites data', () => {
     const out = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountInvites={[accountInvite({})]} />,
+      <MembersTabView
+        section="invites"
+        members={[member({})]}
+        accountInvites={[accountInvite({})]}
+      />,
     );
-    expect(out).not.toContain('Account invites');
+    expect(out).not.toContain('Invited to this account');
   });
 
   test('account invites section is absent with an accountId but nothing pending', () => {
-    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} accountId="acc1" />);
-    expect(out).not.toContain('Account invites');
+    const out = renderToStaticMarkup(
+      <MembersTabView section="invites" members={[member({})]} accountId="acc1" />,
+    );
+    expect(out).not.toContain('Invited to this account');
   });
 
   test('resend/cancel controls on an account invite gate on canManageAccountInvites, NOT canManageMembers', () => {
     const withoutPerm = renderToStaticMarkup(
       <MembersTabView
+        section="invites"
         members={[member({})]}
         accountId="acc1"
         accountInvites={[accountInvite({})]}
@@ -404,6 +550,7 @@ describe('MembersTabView', () => {
 
     const withPerm = renderToStaticMarkup(
       <MembersTabView
+        section="invites"
         members={[member({})]}
         accountId="acc1"
         accountInvites={[accountInvite({})]}
@@ -415,13 +562,20 @@ describe('MembersTabView', () => {
     expect(withPerm).toContain('>Cancel<');
   });
 
-  test('leave account section renders only when an accountId is resolved', () => {
+  test('the leave-account row sits at the foot of the People tab, only once an accountId resolves', () => {
     const withAccount = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" />,
+      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" />,
     );
     const withoutAccount = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
-    expect(withAccount).toContain('Leave account');
-    expect(withoutAccount).not.toContain('Leave account');
+    // A quiet row, not its own titled section competing with the table.
+    expect(withAccount).toContain('Leave Acme');
+    expect(withAccount.indexOf('</table>')).toBeLessThan(withAccount.indexOf('Leave Acme'));
+    expect(withoutAccount).not.toContain('Leave ');
+  });
+
+  test('the leave-account row falls back to "this account" with no account name', () => {
+    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} accountId="acc1" />);
+    expect(out).toContain('Leave this account');
   });
 
   test('the Leave button is disabled when the viewer is the last owner', () => {
@@ -556,17 +710,46 @@ describe('MembersTabView', () => {
     expect(out).toContain('account-invite-dialog-marker');
   });
 
-  test('the "Account invites" section shows an Invite button gated on canManageAccountInvites, even with zero invites', () => {
+  test('the account-invite section shows an Invite button gated on canManageAccountInvites, even with zero invites', () => {
     const withoutPerm = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" canManageAccountInvites={false} />,
+      <MembersTabView
+        section="invites"
+        members={[member({})]}
+        accountId="acc1"
+        canManageAccountInvites={false}
+      />,
     );
-    expect(withoutPerm).not.toContain('Account invites');
+    expect(withoutPerm).not.toContain('Invited to this account');
 
     const withPerm = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" canManageAccountInvites />,
+      <MembersTabView
+        section="invites"
+        members={[member({})]}
+        accountId="acc1"
+        canManageAccountInvites
+      />,
     );
-    expect(withPerm).toContain('Account invites');
-    expect(withPerm).toContain('No pending invites.');
+    expect(withPerm).toContain('Invited to this account');
+    expect(withPerm).toContain('Nobody is waiting to sign up.');
     expect(withPerm).toContain('>Invite<');
+  });
+
+  // ── Both dialog slots sit OUTSIDE `Tabs`, so an open dialog survives a tab
+  // switch — and so the Cmd+K invite deep link cannot be swallowed by whatever
+  // tab happened to be active. ──
+
+  test('both dialog slots render on every tab, not only on People', () => {
+    for (const section of ['people', 'invites', 'access'] as const) {
+      const out = renderToStaticMarkup(
+        <MembersTabView
+          section={section}
+          members={[member({})]}
+          inviteDialogSlot={<div>invite-dialog-marker</div>}
+          accountInviteDialogSlot={<div>account-invite-dialog-marker</div>}
+        />,
+      );
+      expect(out).toContain('invite-dialog-marker');
+      expect(out).toContain('account-invite-dialog-marker');
+    }
   });
 });
